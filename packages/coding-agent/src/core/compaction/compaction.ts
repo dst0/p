@@ -137,6 +137,16 @@ export function calculateContextTokens(usage: Usage): number {
 }
 
 /**
+ * Check if usage data is reliable for context token calculations.
+ * Local LLM providers (llama.cpp, Ollama) return prompt_tokens: 0 in streaming
+ * usage chunks, making input === 0 and totalTokens ≈ output only.
+ * When input is zero, the usage only reflects the response size, not the full context.
+ */
+export function isUsageReliable(usage: Usage): boolean {
+	return usage.input > 0;
+}
+
+/**
  * Get usage from an assistant message if available.
  * Skips aborted and error messages as they don't have valid usage data.
  */
@@ -174,7 +184,7 @@ export interface ContextUsageEstimate {
 function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const usage = getAssistantUsage(messages[i]);
-		if (usage) return { usage, index: i };
+		if (usage && isUsageReliable(usage)) return { usage, index: i };
 	}
 	return undefined;
 }

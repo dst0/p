@@ -46,6 +46,7 @@ import {
 	compact,
 	estimateContextTokens,
 	generateBranchSummary,
+	isUsageReliable,
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
@@ -1837,7 +1838,16 @@ export class AgentSession {
 			}
 			contextTokens = estimate.tokens;
 		} else {
-			contextTokens = calculateContextTokens(assistantMessage.usage);
+			// Use usage data only when it reports actual input tokens.
+			// Local LLM providers (llama.cpp, Ollama) return prompt_tokens: 0
+			// in streaming usage, making totalTokens ≈ output only.
+			if (isUsageReliable(assistantMessage.usage)) {
+				contextTokens = calculateContextTokens(assistantMessage.usage);
+			} else {
+				const messages = this.agent.state.messages;
+				const estimate = estimateContextTokens(messages);
+				contextTokens = estimate.tokens;
+			}
 		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			return await this._runAutoCompaction("threshold", false);
@@ -2948,8 +2958,9 @@ export class AgentSession {
 				if (entry.type === "message" && entry.message.role === "assistant") {
 					const assistant = entry.message;
 					if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
-						const contextTokens = calculateContextTokens(assistant.usage);
-						if (contextTokens > 0) {
+						// Only trust usage when it reports actual input tokens.
+						// Local LLM providers return prompt_tokens: 0 in streaming usage.
+						if (isUsageReliable(assistant.usage)) {
 							hasPostCompactionUsage = true;
 						}
 						break;
