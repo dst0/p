@@ -2,15 +2,81 @@
 
 ## [Unreleased]
 
+### Added
+
+- Exported `convertToPng` for extension authors.
+
+## [0.77.0] - 2026-05-28
+
+### New Features
+
+- **Startup session naming** - `--name` / `-n` sets the session display name at startup for interactive, print, JSON, and RPC modes.
+- **Claude Opus 4.8 support** - Adds Anthropic Claude Opus 4.8 metadata and updates Opus adaptive-thinking coverage.
+- **Selective tool disablement** - `--exclude-tools` / `-xt` disables specific built-in, extension, or custom tools while leaving the rest available. See [Tool Options](docs/usage.md#tool-options).
+- **Headless Codex subscription login** - `/login` can use device-code auth for ChatGPT Plus/Pro Codex subscriptions. See [Subscriptions](docs/providers.md#subscriptions) and [OpenAI Codex](docs/providers.md#openai-codex).
+- **Streaming-aware extension input** - extensions can distinguish idle prompts, mid-stream steers, and queued follow-ups with `InputEvent.streamingBehavior`. See [Input Events](docs/extensions.md#input-events).
+
+### Added
+
+- Added `--name` / `-n` to set the session display name at startup ([#5153](https://github.com/earendil-works/pi/issues/5153)).
+- Added `--exclude-tools` / `-xt` to disable specific built-in, extension, or custom tools while leaving the rest available ([#5109](https://github.com/earendil-works/pi/issues/5109)).
+- Added OpenAI Codex subscription device-code login as a selectable headless alternative while keeping browser login as the default ([#4911](https://github.com/earendil-works/pi/pull/4911) by [@vegarsti](https://github.com/vegarsti)).
+- Added `streamingBehavior` to extension input events so extensions can distinguish idle prompts from mid-stream steers and queued follow-ups ([#5107](https://github.com/earendil-works/pi/pull/5107) by [@DanielThomas](https://github.com/DanielThomas)).
+- Added Claude Opus 4.8 model metadata for Anthropic and updated Opus adaptive-thinking coverage to use it.
+
+### Fixed
+
+- Fixed startup timing output so `readPipedStdin` no longer includes `createAgentSessionRuntime` work ([#4829](https://github.com/earendil-works/pi/issues/4829)).
+- Fixed OpenRouter DeepSeek V4 `xhigh` reasoning metadata to preserve OpenRouter's native effort instead of sending DeepSeek's `max` effort ([#4801](https://github.com/earendil-works/pi/issues/4801)).
+- Fixed custom session directories so current-folder resume/continue lookups stay scoped to the active cwd while all-session listings cover the custom directory.
+- Fixed SIGTERM/SIGHUP exits to run extension `session_shutdown` cleanup and restore the terminal: signal-triggered shutdown now emits `session_shutdown` before any terminal writes, and SIGHUP no longer hard-exits, so extension resources (e.g. sockets) are released even when the terminal is gone ([#5080](https://github.com/earendil-works/pi/issues/5080)).
+- Fixed keyboard protocol negotiation to ignore mismatched or delayed terminal responses, avoiding false Kitty keyboard protocol detection ([#5091](https://github.com/earendil-works/pi/pull/5091) by [@mitsuhiko](https://github.com/mitsuhiko)).
+- Fixed Windows startup crashes under MSYS2 ucrt64 Node.js by updating the native clipboard addon to napi-rs 3.x ([#5028](https://github.com/earendil-works/pi/issues/5028)).
+- Fixed API key and header config resolution to treat plain strings as literals, support `$ENV_VAR` / `${ENV_VAR}` interpolation and `$!` bang escaping, and require explicit env syntax for config files, avoiding Windows case-insensitive env matches corrupting literal keys ([#5095](https://github.com/earendil-works/pi/issues/5095)).
+- Fixed session disposal to abort in-flight agent, compaction, branch summary, retry, and bash work ([#5029](https://github.com/earendil-works/pi/pull/5029) by [@TerminallyChilI](https://github.com/TerminallyChilI)).
+- Fixed `pi.getAllTools()` to expose each tool's `promptGuidelines` for extensions that need per-tool guideline attribution ([#4879](https://github.com/earendil-works/pi/issues/4879)).
+- Fixed OpenAI Codex Responses replay after switching from Anthropic extended-thinking sessions by generating unique fallback message item IDs for converted thinking/text blocks ([#5148](https://github.com/earendil-works/pi/issues/5148)).
+- Fixed Anthropic-compatible replay for providers that return empty thinking signatures by adding an opt-in `allowEmptySignature` compatibility flag ([#4464](https://github.com/earendil-works/pi/issues/4464)).
+- Fixed OpenAI and OpenRouter GPT-5.5 Pro thinking level metadata to expose only supported medium, high, and xhigh efforts.
+- Fixed OpenCode Go Kimi K2.6 thinking-off requests to send `thinking: "none"` ([#5078](https://github.com/earendil-works/pi/issues/5078)).
+- Fixed Xiaomi Token Plan model metadata to omit unsupported `mimo-v2-flash` variants ([#5075](https://github.com/earendil-works/pi/issues/5075)).
+- Fixed follow-up messages queued by `agent_end` extension handlers to drain before the agent becomes idle ([#5115](https://github.com/earendil-works/pi/pull/5115) by [@DanielThomas](https://github.com/DanielThomas)).
+- Fixed extension input events to report `streamingBehavior` only for prompts actually queued during streaming ([#5107](https://github.com/earendil-works/pi/pull/5107) by [@DanielThomas](https://github.com/DanielThomas)).
+- Fixed system prompt tool-selection guidance to avoid preferring unavailable file exploration tools ([#5132](https://github.com/earendil-works/pi/issues/5132)).
+- Fixed fenced `diff` code blocks and other highlight.js scopes to keep theme-aware syntax colors after the `cli-highlight` replacement ([#5092](https://github.com/earendil-works/pi/issues/5092)).
+
+## [0.76.0] - 2026-05-27
+
+### New Features
+
+- **Explicit session IDs for automation** - `--session-id <id>` lets scripts create or resume an exact project-local session. See [Sessions](docs/usage.md#sessions).
+- **RPC bash output can stay out of model context** - RPC clients can pass `excludeFromContext` to `bash` for commands whose output should not be sent with the next prompt. See [RPC mode](docs/rpc.md#bash).
+- **More predictable provider retries and timeouts** - Codex WebSocket/SSE waits are bounded, and `retry.provider.maxRetries` controls provider retries instead of hidden SDK defaults. See [Retry settings](docs/settings.md#retry).
+- **Better terminal editing across environments** - Apple Terminal Shift+Enter, Windows/JetBrains capability detection, and Unicode-aware word navigation improve interactive editing. See [Terminal setup](docs/terminal-setup.md) and [Keybindings](docs/keybindings.md).
+
+### Added
+
+- Added `--session-id` to let CLI callers use an exact project-local session ID, creating it if missing ([#4874](https://github.com/earendil-works/pi/issues/4874)).
+- Added `excludeFromContext` flag to the `bash` RPC command for parity with the internal `executeBash` API ([#5039](https://github.com/earendil-works/pi/issues/5039)).
+
 ### Fixed
 
 - Fixed user message transcript rendering to preserve user-authored ordered-list markers ([#5013](https://github.com/earendil-works/pi/issues/5013)).
 - Fixed self-update commands to bypass npm, pnpm, and Bun minimum release age gates for explicit `pi update` runs ([#4929](https://github.com/earendil-works/pi/issues/4929)).
 - Fixed context token estimates to count user image attachments consistently with tool result images ([#4983](https://github.com/earendil-works/pi/issues/4983)).
-- Fixed `httpIdleTimeoutMs` to apply to OpenAI Codex Responses WebSocket idle waits and added `websocketConnectTimeoutMs` for bounded WebSocket connect waits ([#4945](https://github.com/earendil-works/pi/issues/4945)).
+- Fixed `httpIdleTimeoutMs` to apply to OpenAI Codex Responses WebSocket idle waits, added `websocketConnectTimeoutMs` for bounded WebSocket connect waits, and added a 10s Codex SSE response-header timeout ([#4945](https://github.com/earendil-works/pi/issues/4945)).
 - Fixed `RpcClient` to reject pending requests and consume stdin pipe errors when the child process exits unexpectedly ([#4764](https://github.com/earendil-works/pi/issues/4764)).
 - Fixed managed npm extension updates to avoid package managers installing or resolving pi host packages as peer dependencies ([#4907](https://github.com/earendil-works/pi/issues/4907)).
 - Fixed RPC mode raw stdout writes to retry transient backpressure errors and flush queued protocol output during shutdown ([#4897](https://github.com/earendil-works/pi/issues/4897)).
+- Fixed OpenAI Codex Responses cache-affinity headers to send `session-id` instead of proxy-incompatible `session_id` ([#4967](https://github.com/earendil-works/pi/issues/4967)).
+- Fixed `openai-codex/gpt-5.3-codex-spark` model metadata to use its 128k context window ([#4969](https://github.com/earendil-works/pi/issues/4969)).
+- Fixed OpenRouter/Poolside context overflow detection for `maximum allowed input length` errors ([#4943](https://github.com/earendil-works/pi/issues/4943)).
+- Fixed provider retry controls so `retry.provider.maxRetries` is honored, SDK retries default to `0`, and quota/billing 429s are not retried behind Pi's retry handling ([#4991](https://github.com/earendil-works/pi-mono/pull/4991) by [@mitsuhiko](https://github.com/mitsuhiko)).
+- Fixed Apple Terminal `Shift+Enter` by detecting local macOS modifier state when Terminal.app sends plain Return.
+- Fixed Windows Terminal capability detection to enable OSC 8 hyperlinks, preserving clickable long URLs across wrapped lines ([#4923](https://github.com/earendil-works/pi/issues/4923)).
+- Fixed JetBrains terminal capability detection to enable truecolor while disabling unsupported OSC 8 hyperlinks ([#5037](https://github.com/earendil-works/pi-mono/pull/5037) by [@Perlence](https://github.com/Perlence)).
+- Fixed editor and input word navigation/deletion to use Unicode word boundaries while preserving ASCII punctuation boundaries ([#5022](https://github.com/earendil-works/pi-mono/pull/5022) by [@haoqixu](https://github.com/haoqixu), [#5067](https://github.com/earendil-works/pi-mono/pull/5067) by [@haoqixu](https://github.com/haoqixu), [#5068](https://github.com/earendil-works/pi-mono/pull/5068) by [@haoqixu](https://github.com/haoqixu)).
+- Fixed the development docs `AGENTS.md` link to point at the pi-mono guidelines ([#5041](https://github.com/earendil-works/pi/issues/5041)).
 
 ## [0.75.5] - 2026-05-23
 
@@ -25,6 +91,7 @@
 
 - Added `compat.forceAdaptiveThinking` support to custom Anthropic-compatible model configuration docs and validation ([#4797](https://github.com/earendil-works/pi-mono/pull/4797) by [@mbazso](https://github.com/mbazso)).
 - Added a standard unified patch to edit tool result details for SDK consumers ([#4821](https://github.com/earendil-works/pi/issues/4821)).
+- Added a Codex subscription login method selector with device-code auth for headless environments.
 
 ### Changed
 

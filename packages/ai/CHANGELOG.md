@@ -2,12 +2,31 @@
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-05-28
+
+### Added
+
+- Added OpenAI Codex subscription device-code login as a selectable headless alternative while keeping browser login as the default ([#4911](https://github.com/earendil-works/pi/pull/4911) by [@vegarsti](https://github.com/vegarsti)).
+- Added Claude Opus 4.8 model metadata for Anthropic and updated Opus adaptive-thinking coverage to use it.
+
+### Fixed
+
+- Fixed OpenRouter DeepSeek V4 `xhigh` reasoning metadata to preserve OpenRouter's native effort instead of sending DeepSeek's `max` effort ([#4801](https://github.com/earendil-works/pi/issues/4801)).
+- Fixed OpenAI Codex Responses replay after switching from Anthropic extended-thinking sessions by generating unique fallback message item IDs for converted thinking/text blocks ([#5148](https://github.com/earendil-works/pi/issues/5148)).
+- Fixed Anthropic-compatible replay for providers that return empty thinking signatures by adding an opt-in `allowEmptySignature` compatibility flag ([#4464](https://github.com/earendil-works/pi/issues/4464)).
+- Fixed OpenAI and OpenRouter GPT-5.5 Pro thinking level metadata to expose only supported medium, high, and xhigh efforts.
+- Fixed OpenCode Go Kimi K2.6 thinking-off requests to send `thinking: "none"` ([#5078](https://github.com/earendil-works/pi/issues/5078)).
+- Fixed Xiaomi Token Plan model metadata to omit unsupported `mimo-v2-flash` variants ([#5075](https://github.com/earendil-works/pi/issues/5075)).
+
+## [0.76.0] - 2026-05-27
+
 ### Fixed
 
 - Fixed OpenAI Codex Responses cache-affinity headers to send `session-id` instead of proxy-incompatible `session_id` ([#4967](https://github.com/earendil-works/pi/issues/4967)).
 - Fixed `openai-codex/gpt-5.3-codex-spark` generated metadata to use its 128k context window ([#4969](https://github.com/earendil-works/pi/issues/4969)).
 - Fixed OpenRouter/Poolside context overflow detection for `maximum allowed input length` errors ([#4943](https://github.com/earendil-works/pi/issues/4943)).
-- Fixed OpenAI Codex Responses WebSocket streams to apply bounded connect and idle timeouts instead of waiting indefinitely when no events arrive ([#4945](https://github.com/earendil-works/pi/issues/4945)).
+- Fixed OpenAI Codex Responses WebSocket streams and SSE response-header waits to apply bounded timeouts instead of waiting indefinitely when no events arrive ([#4945](https://github.com/earendil-works/pi/issues/4945)).
+- Fixed provider retry controls so OpenAI Codex Responses honors `maxRetries`, SDK retries default to `0`, and quota/billing 429s are not retried behind Pi's retry handling ([#4991](https://github.com/earendil-works/pi-mono/pull/4991) by [@mitsuhiko](https://github.com/mitsuhiko)).
 
 ## [0.75.5] - 2026-05-23
 

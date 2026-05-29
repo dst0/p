@@ -21,7 +21,7 @@ import {
 	ToolResultStatus,
 } from "@aws-sdk/client-bedrock-runtime";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
-import type { DocumentType } from "@smithy/types";
+import type { BuildMiddleware, DocumentType, MetadataBearer } from "@smithy/types";
 import { calculateCost } from "../models.ts";
 import type {
 	Api,
@@ -66,7 +66,7 @@ export interface BedrockOptions extends StreamOptions {
 	 * - "omitted": Thinking content is redacted but the signature still travels back
 	 *   for multi-turn continuity, reducing time-to-first-text-token.
 	 *
-	 * Note: Anthropic's API default for Claude Opus 4.7 and Mythos Preview is
+	 * Note: Anthropic's API default for Claude Opus 4.8 and Mythos Preview is
 	 * "omitted". We default to "summarized" here to keep behavior consistent with
 	 * older Claude 4 models. Only applies to Claude models on Bedrock.
 	 */
@@ -182,6 +182,9 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 
 		try {
 			const client = new BedrockRuntimeClient(config);
+			if (options.headers && Object.keys(options.headers).length > 0) {
+				addCustomHeadersMiddleware(client, options.headers);
+			}
 			const cacheRetention = resolveCacheRetention(options.cacheRetention);
 			const inferenceMaxTokens = options.maxTokens ?? (isAnthropicClaudeModel(model) ? model.maxTokens : undefined);
 			let commandInput = {
@@ -294,6 +297,42 @@ function formatBedrockError(error: unknown): string {
 		return `${prefix}: ${message}`;
 	}
 	return message;
+}
+
+/**
+ * Header keys that must never be overwritten by caller-supplied headers.
+ * `host` and `x-amz-*` participate in the SigV4 canonical request; `authorization`
+ * is owned by SigV4 or the bearer-token path (config.token + authSchemePreference).
+ * Compared case-insensitively (caller key is lower-cased before lookup).
+ */
+const RESERVED_HEADER_EXACT = new Set(["authorization", "host"]);
+
+function isReservedHeader(key: string): boolean {
+	const lower = key.toLowerCase();
+	return lower.startsWith("x-amz-") || RESERVED_HEADER_EXACT.has(lower);
+}
+
+/**
+ * Attach caller-supplied headers to the outgoing Bedrock request via a Smithy
+ * `build`-step middleware. The `build` step runs after request serialisation but
+ * before SigV4 signing, so injected headers are covered by the signature. Reserved
+ * SigV4 / auth headers (`x-amz-*`, `authorization`, `host`) are silently skipped;
+ * all other caller headers override any existing same-named header on the request.
+ */
+function addCustomHeadersMiddleware(client: BedrockRuntimeClient, headers: Record<string, string>): void {
+	const middleware: BuildMiddleware<object, MetadataBearer> = (next) => async (args) => {
+		const request = args.request;
+		if (request && typeof request === "object" && "headers" in request) {
+			const requestHeaders = (request as { headers: Record<string, string> }).headers;
+			for (const [key, value] of Object.entries(headers)) {
+				if (!isReservedHeader(key)) {
+					requestHeaders[key] = value;
+				}
+			}
+		}
+		return next(args);
+	};
+	client.middlewareStack.add(middleware, { step: "build", name: "pi-ai-custom-headers", priority: "low" });
 }
 
 export const streamSimpleBedrock: StreamFunction<"bedrock-converse-stream", SimpleStreamOptions> = (
@@ -481,12 +520,14 @@ function getModelMatchCandidates(modelId: string, modelName?: string): string[] 
 
 function supportsAdaptiveThinking(modelId: string, modelName?: string): boolean {
 	const candidates = getModelMatchCandidates(modelId, modelName);
-	return candidates.some((s) => s.includes("opus-4-6") || s.includes("opus-4-7") || s.includes("sonnet-4-6"));
+	return candidates.some(
+		(s) => s.includes("opus-4-6") || s.includes("opus-4-7") || s.includes("opus-4-8") || s.includes("sonnet-4-6"),
+	);
 }
 
 function supportsNativeXhighEffort(model: Model<"bedrock-converse-stream">): boolean {
 	const candidates = getModelMatchCandidates(model.id, model.name);
-	return candidates.some((s) => s.includes("opus-4-7"));
+	return candidates.some((s) => s.includes("opus-4-7") || s.includes("opus-4-8"));
 }
 
 function mapThinkingLevelToEffort(

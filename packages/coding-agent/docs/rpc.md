@@ -13,6 +13,7 @@ pi --mode rpc [options]
 Common options:
 - `--provider <name>`: Set the LLM provider (anthropic, openai, google, etc.)
 - `--model <pattern>`: Model pattern or ID (supports `provider/id` and optional `:<thinking>`)
+- `--name <name>` / `-n <name>`: Set the session display name at startup
 - `--no-session`: Disable session persistence
 - `--session-dir <path>`: Custom session storage directory
 
@@ -694,7 +695,7 @@ Response:
 }
 ```
 
-The current session name is available via `get_state` in the `sessionName` field.
+The current session name is available via `get_state` in the `sessionName` field. To set the initial name when starting RPC mode, pass `--name <name>` or `-n <name>` to the `pi --mode rpc` process.
 
 ### Commands
 
