@@ -424,6 +424,29 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 
+	agent.prepareNextTurn = async () => {
+		const msgs = agent.state.messages;
+		if (msgs.length === 0) return;
+
+		const lastAssistantMsg = msgs
+			.slice()
+			.reverse()
+			.find((msg) => msg.role === "assistant") as Extract<AgentMessage, { role: "assistant" }> | undefined;
+
+		if (lastAssistantMsg) {
+			const compacted = await session.checkCompaction(lastAssistantMsg, false);
+			if (compacted) {
+				return {
+					context: {
+						systemPrompt: agent.state.systemPrompt,
+						messages: agent.state.messages.slice(),
+						tools: agent.state.tools.slice(),
+					},
+				};
+			}
+		}
+	};
+
 	return {
 		session,
 		extensionsResult,

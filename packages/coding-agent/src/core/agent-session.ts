@@ -962,7 +962,7 @@ export class AgentSession {
 			this._retryAttempt = 0;
 		}
 
-		if (await this._checkCompaction(msg)) {
+		if (await this.checkCompaction(msg)) {
 			return true;
 		}
 
@@ -1062,7 +1062,7 @@ export class AgentSession {
 
 			// Check if we need to compact before sending (catches aborted responses)
 			const lastAssistant = this._findLastAssistantMessage();
-			if (lastAssistant && (await this._checkCompaction(lastAssistant, false))) {
+			if (lastAssistant && (await this.checkCompaction(lastAssistant, false))) {
 				try {
 					await this.agent.continue();
 					while (await this._handlePostAgentRun()) {
@@ -1787,7 +1787,7 @@ export class AgentSession {
 	 * @param assistantMessage The assistant message to check
 	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
 	 */
-	private async _checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
+	async checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
 		const settings = this.settingsManager.getCompactionSettings();
 		if (!settings.enabled) return false;
 
