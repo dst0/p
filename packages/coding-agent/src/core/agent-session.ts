@@ -41,7 +41,6 @@ import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
 	type CompactionResult,
-	calculateContextTokens,
 	collectEntriesForBranchSummary,
 	compact,
 	estimateContextTokens,
@@ -1842,10 +1841,10 @@ export class AgentSession {
 		// Case 2: Threshold - context is getting large
 		// For error messages (no usage data), estimate from last successful response.
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
-		let contextTokens: number;
+		const messages = this.agent.state.messages;
+		const estimate = estimateContextTokens(messages);
+
 		if (assistantMessage.stopReason === "error") {
-			const messages = this.agent.state.messages;
-			const estimate = estimateContextTokens(messages);
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
@@ -1858,19 +1857,9 @@ export class AgentSession {
 			) {
 				return false;
 			}
-			contextTokens = estimate.tokens;
-		} else {
-			// Use usage data only when it reports actual input tokens.
-			// Local LLM providers (llama.cpp, Ollama) return prompt_tokens: 0
-			// in streaming usage, making totalTokens ≈ output only.
-			if (isUsageReliable(assistantMessage.usage)) {
-				contextTokens = calculateContextTokens(assistantMessage.usage);
-			} else {
-				const messages = this.agent.state.messages;
-				const estimate = estimateContextTokens(messages);
-				contextTokens = estimate.tokens;
-			}
 		}
+
+		const contextTokens = estimate.tokens;
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
 			return await this._runAutoCompaction("threshold", false);
 		}
