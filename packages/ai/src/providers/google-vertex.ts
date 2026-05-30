@@ -395,7 +395,7 @@ function baseUrlIncludesApiVersion(baseUrl: string): boolean {
 }
 
 function resolveApiKey(options?: GoogleVertexOptions): string | undefined {
-	const apiKey = options?.apiKey?.trim() || process.env.GOOGLE_CLOUD_API_KEY?.trim();
+	const apiKey = options?.apiKey?.trim();
 	if (!apiKey || apiKey === GCP_VERTEX_CREDENTIALS_MARKER || isPlaceholderApiKey(apiKey)) {
 		return undefined;
 	}

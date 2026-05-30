@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-05-29
+
+### Fixed
+
+- Fixed ANSI text wrapping to avoid stack overflows on very long wrapped lines ([#5185](https://github.com/earendil-works/pi-mono/issues/5185)).
+- Clarified the IME hardware cursor docs to state that cursor visibility remains opt-in ([#5200](https://github.com/earendil-works/pi-mono/issues/5200)).
+- Fixed OSC 8 hyperlinks to pass through tmux when the client supports them ([#5189](https://github.com/earendil-works/pi-mono/pull/5189) by [@mpazik](https://github.com/mpazik)).
+
 ## [0.77.0] - 2026-05-28
 
 ### Fixed

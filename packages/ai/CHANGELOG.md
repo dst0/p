@@ -2,6 +2,23 @@
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-05-29
+
+### Breaking Changes
+
+- Changed direct provider stream functions to require explicit `options.apiKey`; top-level `stream*`/`complete*` helpers still resolve built-in environment auth.
+
+### Added
+
+- Added custom Amazon Bedrock request header support via `StreamOptions.headers`, excluding reserved AWS signing headers ([#5178](https://github.com/earendil-works/pi-mono/pull/5178) by [@stephanmck](https://github.com/stephanmck)).
+
+### Fixed
+
+- Fixed OpenRouter Moonshot Kimi K2.6 requests to use `system` instead of unsupported `developer` messages ([#5159](https://github.com/earendil-works/pi-mono/issues/5159)).
+- Fixed OpenCode Go Kimi K2.6 thinking requests to send `thinking` objects instead of invalid string values, and fixed OpenCode Zen Grok Build thinking requests to omit unsupported `reasoning_effort` ([#5169](https://github.com/earendil-works/pi-mono/issues/5169)).
+- Fixed OpenAI Codex Responses SSE streams to abort response body reads after terminal events.
+- Fixed OpenCode Kimi K2.6 generated metadata to use Anthropic-style thinking metadata instead of invalid reasoning-effort parameters.
+
 ## [0.77.0] - 2026-05-28
 
 ### Added

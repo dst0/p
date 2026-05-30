@@ -146,7 +146,7 @@ describe("InteractiveMode.shutdown ordering (#5080)", () => {
 
 		expect(order).toEqual(["drainInput", "stop", "dispose"]);
 		expect(stdoutWrite).toHaveBeenCalledWith(
-			`  ${chalk.dim("To resume this session:")} ${APP_NAME} --session test-session\n`,
+			`${chalk.dim("To resume this session:")} ${APP_NAME} --session test-session\n`,
 		);
 	});
 
