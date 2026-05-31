@@ -161,9 +161,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
 			}
-		)._checkCompaction.bind(session);
+		).checkCompaction.bind(session);
 
 		await checkCompaction(overflowMessage);
 		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 1 });
@@ -225,9 +225,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
 			}
-		)._checkCompaction.bind(session);
+		).checkCompaction.bind(session);
 
 		await checkCompaction(staleAssistant, false);
 
@@ -295,9 +295,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
 			}
-		)._checkCompaction.bind(session);
+		).checkCompaction.bind(session);
 
 		await checkCompaction(errorAssistant);
 
@@ -343,9 +343,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
 			}
-		)._checkCompaction.bind(session);
+		).checkCompaction.bind(session);
 
 		await checkCompaction(errorAssistant);
 
@@ -424,9 +424,9 @@ describe("AgentSession auto-compaction queue resume", () => {
 
 		const checkCompaction = (
 			session as unknown as {
-				_checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
+				checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<void>;
 			}
-		)._checkCompaction.bind(session);
+		).checkCompaction.bind(session);
 
 		await checkCompaction(errorAssistant);
 

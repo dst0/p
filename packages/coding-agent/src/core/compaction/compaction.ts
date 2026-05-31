@@ -764,10 +764,6 @@ async function summarizeInChunks(
 	thinkingLevel: ThinkingLevel | undefined,
 	streamFn: StreamFn | undefined,
 ): Promise<string> {
-	if (messages.length === 0) {
-		return initialSummary || "No prior history.";
-	}
-
 	const maxOutputTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
@@ -794,6 +790,21 @@ async function summarizeInChunks(
 	}
 	if (currentChunk.length > 0) {
 		chunks.push(currentChunk);
+	}
+
+	if (chunks.length === 0) {
+		return await generateSummary(
+			[],
+			model,
+			reserveTokens,
+			apiKey,
+			headers,
+			signal,
+			customInstructions,
+			initialSummary,
+			thinkingLevel,
+			streamFn,
+		);
 	}
 
 	let currentSummary = initialSummary;
