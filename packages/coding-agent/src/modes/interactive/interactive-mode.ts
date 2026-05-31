@@ -3804,8 +3804,8 @@ export class InteractiveMode {
 		};
 
 		try {
-			if (options?.willRetry) {
-				// When retry is pending, queue messages for the retry turn
+			if (options?.willRetry || this.session.isStreaming) {
+				// When retry is pending or agent is still streaming, queue messages for the current/retry turn
 				for (const message of queuedMessages) {
 					if (this.isExtensionCommand(message.text)) {
 						await this.session.prompt(message.text);
