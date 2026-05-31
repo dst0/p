@@ -748,6 +748,74 @@ Summarize the prefix to provide context for the retained suffix:
 Be concise. Focus on what's needed to understand the kept suffix.`;
 
 /**
+ * Summarize a large array of messages by splitting it into chunks that fit within
+ * the model's context window. Each chunk is summarized sequentially, with the
+ * previous summary passed along to update it.
+ */
+async function summarizeInChunks(
+	messages: AgentMessage[],
+	model: Model<any>,
+	reserveTokens: number,
+	apiKey: string | undefined,
+	headers: Record<string, string> | undefined,
+	signal: AbortSignal | undefined,
+	customInstructions: string | undefined,
+	initialSummary: string | undefined,
+	thinkingLevel: ThinkingLevel | undefined,
+	streamFn: StreamFn | undefined,
+): Promise<string> {
+	if (messages.length === 0) {
+		return initialSummary || "No prior history.";
+	}
+
+	const maxOutputTokens = Math.min(
+		Math.floor(0.8 * reserveTokens),
+		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
+	);
+
+	// Calculate safe chunk tokens based on model context window.
+	// We need space for the system prompt, maxOutputTokens, previous summary (which can be up to maxOutputTokens), and overhead.
+	const safeChunkTokens = Math.max(4000, model.contextWindow - maxOutputTokens * 2 - 2000);
+
+	const chunks: AgentMessage[][] = [];
+	let currentChunk: AgentMessage[] = [];
+	let currentTokens = 0;
+
+	for (const msg of messages) {
+		const msgTokens = estimateTokens(msg);
+		if (currentChunk.length > 0 && currentTokens + msgTokens > safeChunkTokens) {
+			chunks.push(currentChunk);
+			currentChunk = [msg];
+			currentTokens = msgTokens;
+		} else {
+			currentChunk.push(msg);
+			currentTokens += msgTokens;
+		}
+	}
+	if (currentChunk.length > 0) {
+		chunks.push(currentChunk);
+	}
+
+	let currentSummary = initialSummary;
+	for (const chunk of chunks) {
+		currentSummary = await generateSummary(
+			chunk,
+			model,
+			reserveTokens,
+			apiKey,
+			headers,
+			signal,
+			customInstructions,
+			currentSummary,
+			thinkingLevel,
+			streamFn,
+		);
+	}
+
+	return currentSummary || "No prior history.";
+}
+
+/**
  * Generate summaries for compaction using prepared data.
  * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
  *
@@ -782,7 +850,7 @@ export async function compact(
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
 			messagesToSummarize.length > 0
-				? generateSummary(
+				? summarizeInChunks(
 						messagesToSummarize,
 						model,
 						settings.reserveTokens,
@@ -794,7 +862,7 @@ export async function compact(
 						thinkingLevel,
 						streamFn,
 					)
-				: Promise.resolve("No prior history."),
+				: Promise.resolve(previousSummary || "No prior history."),
 			generateTurnPrefixSummary(
 				turnPrefixMessages,
 				model,
@@ -810,7 +878,7 @@ export async function compact(
 		summary = `${historyResult}\n\n---\n\n**Turn Context (split turn):**\n\n${turnPrefixResult}`;
 	} else {
 		// Just generate history summary
-		summary = await generateSummary(
+		summary = await summarizeInChunks(
 			messagesToSummarize,
 			model,
 			settings.reserveTokens,
