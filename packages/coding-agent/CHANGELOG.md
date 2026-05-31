@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed context percent displaying `?/NNk` after compaction even when a post-compaction LLM response was available. The footer re-renders on `message_end` before `sessionManager.appendMessage` runs; `getContextUsage` now checks `agent.state.messages` (which is current at that point) instead of `getBranch()` to detect post-compaction responses.
+
 ## [0.78.0] - 2026-05-29
 
 ### New Features

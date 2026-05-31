@@ -10,6 +10,9 @@ import { createTestResourceLoader } from "./utilities.ts";
 
 const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
+// Base time well in the past so pre-compaction messages have timestamps < appendCompaction's Date.now()
+const BASE_TIME = Date.now() - 60_000;
+
 function createUsage(totalTokens: number): Usage {
 	return {
 		input: totalTokens,
@@ -27,7 +30,7 @@ function createUsage(totalTokens: number): Usage {
 	};
 }
 
-function createAssistantMessage(text: string, totalTokens: number, timestamp: number): AssistantMessage {
+function createAssistantMessage(text: string, totalTokens: number, offsetMs: number): AssistantMessage {
 	return {
 		role: "assistant",
 		content: [{ type: "text", text }],
@@ -36,15 +39,15 @@ function createAssistantMessage(text: string, totalTokens: number, timestamp: nu
 		model: model.id,
 		usage: createUsage(totalTokens),
 		stopReason: "stop",
-		timestamp,
+		timestamp: BASE_TIME + offsetMs,
 	};
 }
 
-function createUserMessage(text: string, timestamp: number) {
+function createUserMessage(text: string, offsetMs: number) {
 	return {
 		role: "user" as const,
 		content: text,
-		timestamp,
+		timestamp: BASE_TIME + offsetMs,
 	};
 }
 
@@ -82,8 +85,8 @@ describe("AgentSession.getSessionStats", () => {
 		const { session, sessionManager } = createSession();
 
 		try {
-			sessionManager.appendMessage(createUserMessage("hello", 1));
-			sessionManager.appendMessage(createAssistantMessage("hi", 200, 2));
+			sessionManager.appendMessage(createUserMessage("hello", 0));
+			sessionManager.appendMessage(createAssistantMessage("hi", 200, 100));
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
@@ -100,12 +103,13 @@ describe("AgentSession.getSessionStats", () => {
 		const { session, sessionManager } = createSession();
 
 		try {
-			sessionManager.appendMessage(createUserMessage("first", 1));
-			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 2));
-			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 3));
-			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 4));
+			sessionManager.appendMessage(createUserMessage("first", 0));
+			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 100));
+			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 200));
+			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 300));
+			// appendCompaction uses Date.now() internally, which is > BASE_TIME + 300
 			sessionManager.appendCompaction("summary", keptUserId, 195_000);
-			sessionManager.appendMessage(createUserMessage("third", 5));
+			sessionManager.appendMessage(createUserMessage("third", 400));
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
@@ -122,13 +126,15 @@ describe("AgentSession.getSessionStats", () => {
 		const { session, sessionManager } = createSession();
 
 		try {
-			sessionManager.appendMessage(createUserMessage("first", 1));
-			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 2));
-			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 3));
-			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 4));
+			sessionManager.appendMessage(createUserMessage("first", 0));
+			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 100));
+			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 200));
+			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 300));
+			// appendCompaction uses Date.now() internally
 			sessionManager.appendCompaction("summary", keptUserId, 195_000);
-			sessionManager.appendMessage(createUserMessage("third", 5));
-			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, 6));
+			sessionManager.appendMessage(createUserMessage("third", 400));
+			// response3 timestamp must be after the compaction entry's Date.now()
+			sessionManager.appendMessage(createAssistantMessage("response3", 25_000, Date.now() - BASE_TIME + 1_000));
 			syncAgentMessages(session, sessionManager);
 
 			const stats = session.getSessionStats();
@@ -136,6 +142,38 @@ describe("AgentSession.getSessionStats", () => {
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBe(25_000);
 			expect(stats.contextUsage?.percent).toBe((25_000 / model.contextWindow) * 100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("shows percent when agent state has post-compaction response before sessionManager persists it", () => {
+		// Reproduces the timing race: getContextUsage is called from a message_end listener
+		// (e.g. footer re-render) before sessionManager.appendMessage runs. agent.state.messages
+		// already has the new assistant message; sessionManager does not.
+		const { session, sessionManager } = createSession();
+
+		try {
+			sessionManager.appendMessage(createUserMessage("first", 0));
+			sessionManager.appendMessage(createAssistantMessage("response1", 180_000, 100));
+			const keptUserId = sessionManager.appendMessage(createUserMessage("second", 200));
+			sessionManager.appendMessage(createAssistantMessage("response2", 195_000, 300));
+			// appendCompaction uses Date.now() internally
+			sessionManager.appendCompaction("summary", keptUserId, 195_000);
+			sessionManager.appendMessage(createUserMessage("third", 400));
+			// Simulate the state at message_end time: agent.state.messages is up-to-date
+			// but sessionManager does NOT yet have the post-compaction assistant entry.
+			// response3 timestamp must be after the compaction entry's Date.now().
+			const postCompactionAssistant = createAssistantMessage("response3", 25_000, Date.now() - BASE_TIME + 1_000);
+			const agentMessages = sessionManager.buildSessionContext().messages;
+			agentMessages.push(postCompactionAssistant);
+			session.agent.state.messages = agentMessages;
+			// sessionManager intentionally does NOT have response3 yet (pre-appendMessage state)
+
+			const usage = session.getContextUsage();
+			expect(usage).toBeDefined();
+			expect(usage?.tokens).toBe(25_000);
+			expect(usage?.percent).toBe((25_000 / model.contextWindow) * 100);
 		} finally {
 			session.dispose();
 		}

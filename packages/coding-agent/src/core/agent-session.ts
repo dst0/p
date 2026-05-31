@@ -2959,21 +2959,33 @@ export class AgentSession {
 		// After compaction, the last assistant usage reflects pre-compaction context size.
 		// We can only trust usage from an assistant that responded after the latest compaction.
 		// If no such assistant exists, context token count is unknown until the next LLM response.
+		//
+		// Note: agent.state.messages is updated before message_end listeners fire, but
+		// sessionManager.appendMessage runs after _emit returns. Checking this.messages
+		// (agent state) avoids the race where the footer re-renders on message_end before
+		// the new entry appears in getBranch(), which would permanently show "?/NNk".
 		const branchEntries = this.sessionManager.getBranch();
 		const latestCompaction = getLatestCompactionEntry(branchEntries);
 
 		if (latestCompaction) {
-			// Check if there's a valid assistant usage after the compaction boundary
-			const compactionIndex = branchEntries.lastIndexOf(latestCompaction);
+			// Check agent state messages for a valid post-compaction assistant response.
+			// this.messages is always current (agent pushes the message before emitting
+			// message_end), so this correctly reflects the latest LLM response even when
+			// the session manager hasn't persisted it yet.
+			//
+			// Use the compaction timestamp as the boundary: any assistant message with a
+			// timestamp after the compaction is a genuine post-compaction response whose
+			// usage reflects the reduced context size.
+			const compactionTime = new Date(latestCompaction.timestamp).getTime();
 			let hasPostCompactionUsage = false;
-			for (let i = branchEntries.length - 1; i > compactionIndex; i--) {
-				const entry = branchEntries[i];
-				if (entry.type === "message" && entry.message.role === "assistant") {
-					const assistant = entry.message;
+			for (let i = this.messages.length - 1; i >= 0; i--) {
+				const msg = this.messages[i];
+				if (msg.role === "assistant") {
+					const assistant = msg as AssistantMessage;
 					if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
 						// Only trust usage when it reports actual input tokens.
 						// Local LLM providers return prompt_tokens: 0 in streaming usage.
-						if (isUsageReliable(assistant.usage)) {
+						if (isUsageReliable(assistant.usage) && assistant.timestamp > compactionTime) {
 							hasPostCompactionUsage = true;
 						}
 						break;
