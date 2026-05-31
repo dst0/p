@@ -808,19 +808,41 @@ async function summarizeInChunks(
 	}
 
 	let currentSummary = initialSummary;
-	for (const chunk of chunks) {
-		currentSummary = await generateSummary(
-			chunk,
-			model,
-			reserveTokens,
-			apiKey,
-			headers,
-			signal,
-			customInstructions,
-			currentSummary,
-			thinkingLevel,
-			streamFn,
-		);
+	let i = 0;
+	while (i < chunks.length) {
+		const chunk = chunks[i];
+		try {
+			currentSummary = await generateSummary(
+				chunk,
+				model,
+				reserveTokens,
+				apiKey,
+				headers,
+				signal,
+				customInstructions,
+				currentSummary,
+				thinkingLevel,
+				streamFn,
+			);
+			i++;
+		} catch (error) {
+			const errorMsg = error instanceof Error ? error.message : String(error);
+			const isOverflow =
+				errorMsg.match(/exceeds the available context size/i) ||
+				errorMsg.match(/context window/i) ||
+				errorMsg.match(/too many tokens/i) ||
+				errorMsg.match(/prompt is too long/i) ||
+				errorMsg.match(/exceeds the limit/i) ||
+				errorMsg.match(/maximum context length/i);
+
+			if (isOverflow && chunk.length > 1) {
+				const mid = Math.floor(chunk.length / 2);
+				chunks.splice(i, 1, chunk.slice(0, mid), chunk.slice(mid));
+				// Loop continues at same 'i' to process the first half
+			} else {
+				throw error;
+			}
+		}
 	}
 
 	return currentSummary || "No prior history.";
