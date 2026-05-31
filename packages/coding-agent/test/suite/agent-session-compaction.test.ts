@@ -163,6 +163,56 @@ describe("AgentSession compaction characterization", () => {
 		expect(getStreamCallCount()).toBe(1);
 	});
 
+	it("chunks a very large history sequentially when context bounds require it", async () => {
+		const smallContextModel = { id: "small-model", contextWindow: 6000, maxTokens: 1000 } as Model<any>;
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 1000 } },
+			models: [smallContextModel],
+		});
+		harnesses.push(harness);
+
+		// Seed a massive message array that exceeds the 6000 context window
+		const now = Date.now();
+		const hugeText = "word ".repeat(3000); // roughly 3000 tokens
+		for (let i = 0; i < 4; i++) {
+			harness.sessionManager.appendMessage({
+				role: "user",
+				content: [{ type: "text", text: hugeText }],
+				timestamp: now - 1000 + i,
+			});
+			harness.sessionManager.appendMessage(
+				createAssistant(harness, { stopReason: "stop", totalTokens: 3000, timestamp: now - 500 + i }),
+			);
+		}
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+
+		// Configure streamFn to return a distinct summary per call to prove it iterates
+		let callCount = 0;
+		harness.session.agent.streamFn = (model) => {
+			callCount++;
+			const stream = createAssistantMessageEventStream();
+			queueMicrotask(() => {
+				const message: AssistantMessage = {
+					...fauxAssistantMessage(`summary chunk ${callCount}`),
+					api: model.api,
+					provider: model.provider,
+					model: model.id,
+					usage: createUsage(10),
+				};
+				stream.push({ type: "done", reason: "stop", message });
+			});
+			return stream;
+		};
+
+		const result = await harness.session.compact();
+
+		// Should have been called multiple times (since 4 * 6000 tokens > 6000 context window)
+		expect(callCount).toBeGreaterThan(1);
+		// The final summary returned should be from the last chunk
+		expect(result.summary).toBe(`summary chunk ${callCount}`);
+	});
+
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
 		const harness = await createHarness({
 			extensionFactories: [
