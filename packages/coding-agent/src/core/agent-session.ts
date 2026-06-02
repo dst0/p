@@ -45,7 +45,6 @@ import {
 	compact,
 	estimateContextTokens,
 	generateBranchSummary,
-	isUsageReliable,
 	prepareCompaction,
 	shouldCompact,
 } from "./compaction/index.ts";
@@ -1841,7 +1840,7 @@ export class AgentSession {
 		// Case 2: Threshold - context is getting large
 		// For error messages (no usage data), estimate from last successful response.
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
-		const messages = this.agent.state.messages;
+		const messages = this._getEffectiveCompactedMessages();
 
 		const estimate = estimateContextTokens(messages);
 
@@ -2954,6 +2953,43 @@ export class AgentSession {
 		};
 	}
 
+	/**
+	 * Get the effective compacted message history, including any uncommitted pending messages
+	 * from the current turn (which haven't been appended to the session manager yet).
+	 */
+	private _getEffectiveCompactedMessages(): AgentMessage[] {
+		const branchEntries = this.sessionManager.getBranch();
+		const compactedMessages = this.sessionManager.buildSessionContext().messages;
+		const stateMessages = this.agent.state.messages;
+
+		let lastMatchIdxInState = -1;
+		for (let i = compactedMessages.length - 1; i >= 0; i--) {
+			lastMatchIdxInState = stateMessages.lastIndexOf(compactedMessages[i]);
+			if (lastMatchIdxInState !== -1) {
+				break;
+			}
+		}
+
+		if (lastMatchIdxInState !== -1) {
+			if (lastMatchIdxInState < stateMessages.length - 1) {
+				compactedMessages.push(...stateMessages.slice(lastMatchIdxInState + 1));
+			}
+		} else {
+			const latestCompaction = getLatestCompactionEntry(branchEntries);
+			if (latestCompaction) {
+				const compactionTime = new Date(latestCompaction.timestamp).getTime();
+				const pending = stateMessages.filter(
+					(m) => typeof m.timestamp === "number" && m.timestamp >= compactionTime,
+				);
+				compactedMessages.push(...pending);
+			} else {
+				compactedMessages.push(...stateMessages);
+			}
+		}
+
+		return compactedMessages;
+	}
+
 	getContextUsage(): ContextUsage | undefined {
 		const model = this.model;
 		if (!model) return undefined;
@@ -2961,50 +2997,8 @@ export class AgentSession {
 		const contextWindow = model.contextWindow ?? 0;
 		if (contextWindow <= 0) return undefined;
 
-		// After compaction, the last assistant usage reflects pre-compaction context size.
-		// We can only trust usage from an assistant that responded after the latest compaction.
-		// If no such assistant exists, context token count is unknown until the next LLM response.
-		//
-		// Note: agent.state.messages is updated before message_end listeners fire, but
-		// sessionManager.appendMessage runs after _emit returns. Checking this.messages
-		// (agent state) avoids the race where the footer re-renders on message_end before
-		// the new entry appears in getBranch(), which would permanently show "?/NNk".
-		const branchEntries = this.sessionManager.getBranch();
-		const latestCompaction = getLatestCompactionEntry(branchEntries);
-
-		if (latestCompaction) {
-			// Check agent state messages for a valid post-compaction assistant response.
-			// this.messages is always current (agent pushes the message before emitting
-			// message_end), so this correctly reflects the latest LLM response even when
-			// the session manager hasn't persisted it yet.
-			//
-			// Use the compaction timestamp as the boundary: any assistant message with a
-			// timestamp after the compaction is a genuine post-compaction response whose
-			// usage reflects the reduced context size.
-			const compactionTime = new Date(latestCompaction.timestamp).getTime();
-			let hasPostCompactionUsage = false;
-			for (let i = this.messages.length - 1; i >= 0; i--) {
-				const msg = this.messages[i];
-				if (msg.role === "assistant") {
-					const assistant = msg as AssistantMessage;
-					if (assistant.stopReason !== "aborted" && assistant.stopReason !== "error") {
-						// Only trust usage when it reports actual input tokens.
-						// Local LLM providers return prompt_tokens: 0 in streaming usage.
-						if (isUsageReliable(assistant.usage) && assistant.timestamp > compactionTime) {
-							hasPostCompactionUsage = true;
-						}
-						break;
-					}
-				}
-			}
-
-			if (!hasPostCompactionUsage) {
-				const estimate = estimateContextTokens(this.messages);
-				return { tokens: estimate.tokens, contextWindow, percent: (estimate.tokens / contextWindow) * 100 };
-			}
-		}
-
-		const estimate = estimateContextTokens(this.messages);
+		const messages = this._getEffectiveCompactedMessages();
+		const estimate = estimateContextTokens(messages);
 		const percent = (estimate.tokens / contextWindow) * 100;
 
 		return {
