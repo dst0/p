@@ -1644,7 +1644,7 @@ export class AgentSession {
 			const { apiKey, headers } = await this._getCompactionRequestAuth(this.model);
 
 			const pathEntries = this.sessionManager.getBranch();
-			const settings = this.settingsManager.getCompactionSettings();
+			const settings = this._getEffectiveCompactionSettings();
 
 			const preparation = prepareCompaction(pathEntries, settings);
 			if (!preparation) {
@@ -1788,7 +1788,7 @@ export class AgentSession {
 	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
 	 */
 	async checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
-		const settings = this.settingsManager.getCompactionSettings();
+		const settings = this._getEffectiveCompactionSettings();
 		if (!settings.enabled) return false;
 
 		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
@@ -1842,6 +1842,7 @@ export class AgentSession {
 		// For error messages (no usage data), estimate from last successful response.
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
 		const messages = this.agent.state.messages;
+
 		const estimate = estimateContextTokens(messages);
 
 		if (assistantMessage.stopReason === "error") {
@@ -1870,7 +1871,7 @@ export class AgentSession {
 	 * Internal: Run auto-compaction with events.
 	 */
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
-		const settings = this.settingsManager.getCompactionSettings();
+		const settings = this._getEffectiveCompactionSettings();
 
 		this._emit({ type: "compaction_start", reason });
 		this._autoCompactionAbortController = new AbortController();
@@ -2057,6 +2058,10 @@ export class AgentSession {
 	/** Whether auto-compaction is enabled */
 	get autoCompactionEnabled(): boolean {
 		return this.settingsManager.getCompactionEnabled();
+	}
+
+	private _getEffectiveCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+		return this.settingsManager.getCompactionSettings();
 	}
 
 	async bindExtensions(bindings: ExtensionBindings): Promise<void> {
@@ -2994,7 +2999,8 @@ export class AgentSession {
 			}
 
 			if (!hasPostCompactionUsage) {
-				return { tokens: null, contextWindow, percent: null };
+				const estimate = estimateContextTokens(this.messages);
+				return { tokens: estimate.tokens, contextWindow, percent: (estimate.tokens / contextWindow) * 100 };
 			}
 		}
 

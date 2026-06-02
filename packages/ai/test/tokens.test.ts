@@ -298,7 +298,7 @@ describe("Token Statistics on Abort", () => {
 			"gpt-4o - should include token stats when aborted mid-stream",
 			{ retry: 3, timeout: 30000 },
 			async () => {
-				const llm = getModel("github-copilot", "gpt-4o");
+				const llm = getModel("github-copilot", "gpt-4o" as any);
 				await testTokensOnAbort(llm, { apiKey: githubCopilotToken });
 			},
 		);

@@ -224,6 +224,72 @@ describe("getLastAssistantUsage", () => {
 	});
 });
 
+describe("estimateContextTokens", () => {
+	it("should ignore assistant messages generated before the latest compaction summary", () => {
+		// An assistant message generated before compaction with old usage (60,000 tokens)
+		const assistantMsgBeforeCompaction: AgentMessage = {
+			role: "assistant" as const,
+			api: "openai-completions",
+			provider: "openai",
+			model: "gpt-4o",
+			stopReason: "stop",
+			content: [{ type: "text" as const, text: "Some output" }],
+			usage: {
+				input: 40000,
+				output: 20000,
+				totalTokens: 60000,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			timestamp: 500,
+		};
+
+		const compactionSummaryMsg: AgentMessage = {
+			role: "compactionSummary" as const,
+			summary: "Goal preserved. Plan preserved.",
+			tokensBefore: 60000,
+			timestamp: 1000,
+		};
+
+		// An assistant message generated after compaction with new usage (2,000 tokens)
+		const assistantMsgAfterCompaction: AgentMessage = {
+			role: "assistant" as const,
+			api: "openai-completions",
+			provider: "openai",
+			model: "gpt-4o",
+			stopReason: "stop",
+			content: [{ type: "text" as const, text: "New output" }],
+			usage: {
+				input: 1500,
+				output: 500,
+				totalTokens: 2000,
+				cacheRead: 0,
+				cacheWrite: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			timestamp: 1500,
+		};
+
+		const messages1 = [compactionSummaryMsg, assistantMsgBeforeCompaction];
+
+		// Case 1: Only pre-compaction assistant message exists after compaction.
+		// Since assistantMsgBeforeCompaction has timestamp 500 <= 1000 (compaction timestamp),
+		// its usage should be IGNORED, and we should fall back to heuristic estimation.
+		const estimate1 = estimateContextTokens(messages1);
+		// Compaction summary length is ~31 chars, assistantMsgBeforeCompaction is ~11 chars.
+		// Total chars = 42. Chars / 4 ~ 11 tokens.
+		// Crucially, it must NOT use the 60,000 tokens from the old usage!
+		expect(estimate1.tokens).toBeLessThan(100);
+
+		// Case 2: Post-compaction assistant message also exists.
+		// Since assistantMsgAfterCompaction has timestamp 1500 > 1000, its usage (2,000 tokens) should be used!
+		const messages2 = [compactionSummaryMsg, assistantMsgBeforeCompaction, assistantMsgAfterCompaction];
+		const estimate2 = estimateContextTokens(messages2);
+		expect(estimate2.tokens).toBe(2000);
+	});
+});
+
 describe("shouldCompact", () => {
 	it("should return true when context exceeds threshold", () => {
 		const settings: CompactionSettings = {

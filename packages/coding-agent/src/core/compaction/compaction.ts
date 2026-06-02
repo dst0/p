@@ -120,8 +120,8 @@ export interface CompactionSettings {
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
-	reserveTokens: 16384,
-	keepRecentTokens: 20000,
+	reserveTokens: 10000,
+	keepRecentTokens: 4000,
 };
 
 // ============================================================================
@@ -182,9 +182,29 @@ export interface ContextUsageEstimate {
 }
 
 function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
+	let latestCompactionTimestamp = 0;
 	for (let i = messages.length - 1; i >= 0; i--) {
-		const usage = getAssistantUsage(messages[i]);
-		if (usage && isUsageReliable(usage)) return { usage, index: i };
+		const msg = messages[i];
+		if (msg.role === "compactionSummary" && "timestamp" in msg && typeof msg.timestamp === "number") {
+			latestCompactionTimestamp = msg.timestamp;
+			break;
+		}
+	}
+
+	for (let i = messages.length - 1; i >= 0; i--) {
+		const msg = messages[i];
+		if (msg.role === "assistant") {
+			if (
+				latestCompactionTimestamp > 0 &&
+				"timestamp" in msg &&
+				typeof msg.timestamp === "number" &&
+				msg.timestamp <= latestCompactionTimestamp
+			) {
+				continue;
+			}
+			const usage = getAssistantUsage(msg);
+			if (usage && isUsageReliable(usage)) return { usage, index: i };
+		}
 	}
 	return undefined;
 }
@@ -466,10 +486,10 @@ const SUMMARIZATION_PROMPT = `The messages above are a conversation to summarize
 Use this EXACT format:
 
 ## Goal
-[What is the user trying to accomplish? Can be multiple items if the session covers different tasks.]
+[State the exact current goal. Preserve unchanged the original prompt or updated goal verbatim, incorporating any subsequent user corrections if they changed the goal.]
 
-## Constraints & Preferences
-- [Any constraints, preferences, or requirements mentioned by user]
+## Plan & Progress
+[Preserve the actual step-by-step plan verbatim. Keep completed and in-progress steps clear, correcting the plan only if new info requires changing it to achieve the goal.]
 - [Or "(none)" if none were mentioned]
 
 ## Progress
@@ -507,10 +527,10 @@ Update the existing structured summary with new information. RULES:
 Use this EXACT format:
 
 ## Goal
-[Preserve existing goals, add new ones if the task expanded]
+[Preserve unchanged the original prompt or updated goal verbatim, adding new ones only if the task expanded]
 
-## Constraints & Preferences
-- [Preserve existing, add new ones discovered]
+## Plan & Progress
+[Preserve the actual plan verbatim. Include previously done items AND newly completed items, updating the plan if new info requires changing it]
 
 ## Progress
 ### Done

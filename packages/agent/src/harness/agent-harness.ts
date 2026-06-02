@@ -222,6 +222,10 @@ export class AgentHarness<
 		this.followUpQueueMode = options.followUpMode ?? "one-at-a-time";
 	}
 
+	private get effectiveCompactionSettings(): typeof DEFAULT_COMPACTION_SETTINGS {
+		return DEFAULT_COMPACTION_SETTINGS;
+	}
+
 	private getHandlers(type: string): Set<AgentHarnessHandler> | undefined {
 		return this.handlers.get(type);
 	}
@@ -716,7 +720,7 @@ export class AgentHarness<
 			const auth = await this.getApiKeyAndHeaders?.(model);
 			if (!auth) throw new AgentHarnessError("auth", "No auth available for compaction");
 			const branchEntries = await this.session.getBranch();
-			const preparationResult = prepareCompaction(branchEntries, DEFAULT_COMPACTION_SETTINGS);
+			const preparationResult = prepareCompaction(branchEntries, this.effectiveCompactionSettings);
 			if (!preparationResult.ok) throw preparationResult.error;
 			const preparation = preparationResult.value;
 			if (!preparation) throw new AgentHarnessError("compaction", "Nothing to compact");
