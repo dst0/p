@@ -47,6 +47,7 @@ import {
 	generateBranchSummary,
 	prepareCompaction,
 	shouldCompact,
+	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
@@ -1717,7 +1718,10 @@ export class AgentSession {
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
+
+			// Post-compaction truncation: truncate oversized kept messages
+			const truncatedMessages = truncateKeptMessages(sessionContext.messages, settings.keepRecentTokens);
+			this.agent.state.messages = truncatedMessages;
 
 			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
@@ -2009,7 +2013,12 @@ export class AgentSession {
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
+
+			// Post-compaction truncation: truncate oversized kept messages to enforce
+			// the keepRecentTokens budget (last 20 lines / max 4K tokens per message).
+			// This is critical for preventing large tool results from surviving compaction.
+			const truncatedMessages = truncateKeptMessages(sessionContext.messages, settings.keepRecentTokens);
+			this.agent.state.messages = truncatedMessages;
 
 			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as

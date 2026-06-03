@@ -51,6 +51,7 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		contextWindow: number,
 		settings: { enabled: boolean; reserveTokens: number },
 	) => settings.enabled && contextTokens > contextWindow - settings.reserveTokens,
+	truncateKeptMessages: (messages: any[]) => messages,
 }));
 
 describe("AgentSession auto-compaction queue resume", () => {
@@ -246,10 +247,10 @@ describe("AgentSession auto-compaction queue resume", () => {
 			model: model.id,
 			usage: {
 				input: 180_000,
-				output: 10_000,
+				output: 17_000,
 				cacheRead: 0,
 				cacheWrite: 0,
-				totalTokens: 190_000,
+				totalTokens: 197_000,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",

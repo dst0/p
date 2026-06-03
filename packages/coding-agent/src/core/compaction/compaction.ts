@@ -120,7 +120,7 @@ export interface CompactionSettings {
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
-	reserveTokens: 10000,
+	reserveTokens: 4000,
 	keepRecentTokens: 4000,
 };
 
@@ -323,6 +323,207 @@ export function estimateTokens(message: AgentMessage): number {
 	return 0;
 }
 
+// ============================================================================
+// Post-compaction message truncation
+// ============================================================================
+
+const MAX_KEPT_LINES = 20;
+const MAX_KEPT_CHARS = 16000; // ~4000 tokens at chars/4
+
+/**
+ * Extract text content from a message as a single string.
+ * Returns undefined if the message has no text content.
+ */
+function getMessageText(message: AgentMessage): string | undefined {
+	switch (message.role) {
+		case "user": {
+			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+			if (typeof content === "string") return content;
+			return content
+				.filter((c) => c.type === "text" && c.text)
+				.map((c) => c.text)
+				.join("\n");
+		}
+		case "toolResult": {
+			const content = message.content;
+			if (typeof content === "string") return content;
+			return content
+				.filter((c: { type: string; text?: string }) => c.type === "text" && c.text)
+				.map((c: { type: string; text?: string }) => c.text)
+				.join("\n");
+		}
+		case "assistant": {
+			const assistant = message as AssistantMessage;
+			return assistant.content
+				.filter((c) => c.type === "text")
+				.map((c) => (c as { type: "text"; text: string }).text)
+				.join("\n");
+		}
+		case "bashExecution": {
+			return message.command + "\n" + message.output;
+		}
+		case "branchSummary":
+		case "compactionSummary": {
+			return message.summary;
+		}
+		default:
+			return undefined;
+	}
+}
+
+/**
+ * Truncate text to its last N lines, with a max character limit.
+ * Returns the truncated text, or the original if it's already within limits.
+ */
+function truncateToLastLines(text: string, maxLines: number, maxChars: number): string {
+	// First check character limit
+	if (text.length <= maxChars && text.split("\n").length <= maxLines) {
+		return text;
+	}
+
+	const lines = text.split("\n");
+	const kept = lines.slice(-maxLines);
+	let result = kept.join("\n");
+
+	// Further truncate if still over character limit
+	if (result.length > maxChars) {
+		result = result.slice(-maxChars);
+		// Clean up to start at a line boundary
+		const firstNewline = result.indexOf("\n");
+		if (firstNewline > 0 && firstNewline < result.length - 1) {
+			result = result.slice(firstNewline + 1);
+		}
+	}
+
+	return `[...truncated, showing last ${kept.length} lines...]\n${result}`;
+}
+
+/**
+ * Set the text content of a message to the given truncated text.
+ * Creates a shallow copy of the message with truncated content.
+ * Only handles user, toolResult, and assistant messages.
+ */
+function setMessageText(message: AgentMessage, truncatedText: string): AgentMessage {
+	switch (message.role) {
+		case "user": {
+			const content = (message as { content: string | Array<{ type: string; text?: string }> }).content;
+			if (typeof content === "string") {
+				return { ...message, content: truncatedText } as any;
+			}
+			let textReplaced = false;
+			const newContent = content
+				.filter((c) => c.type !== "text" || !textReplaced)
+				.map((c) => {
+					if (c.type === "text") {
+						textReplaced = true;
+						return { ...c, text: truncatedText };
+					}
+					return c;
+				});
+			return { ...message, content: newContent } as any;
+		}
+		case "toolResult": {
+			const content = message.content;
+			if (typeof content === "string") {
+				return { ...message, content: truncatedText } as any;
+			}
+			let textReplaced = false;
+			const newContent = content
+				.filter((c: any) => c.type !== "text" || !textReplaced)
+				.map((c: any) => {
+					if (c.type === "text") {
+						textReplaced = true;
+						return { ...c, text: truncatedText };
+					}
+					return c;
+				});
+			return { ...message, content: newContent } as any;
+		}
+		case "assistant": {
+			const assistant = message as AssistantMessage;
+			let textReplaced = false;
+			const newContent = assistant.content
+				.filter((c) => c.type !== "text" || !textReplaced)
+				.map((c) => {
+					if (c.type === "text") {
+						textReplaced = true;
+						return { ...c, text: truncatedText };
+					}
+					return c;
+				});
+			return { ...message, content: newContent } as any;
+		}
+		case "bashExecution": {
+			// Truncate the output, keep the command
+			return { ...message, output: truncatedText } as any;
+		}
+		default:
+			return message;
+	}
+}
+
+/**
+ * Truncate kept messages after compaction to enforce the keepRecentTokens budget.
+ * Each individual message's text is capped to last MAX_KEPT_LINES / MAX_KEPT_CHARS.
+ * If total tokens still exceed the budget, messages are truncated further from oldest to newest.
+ *
+ * Modifies the messages array in place and returns it.
+ * The compaction summary message (first message) is never truncated.
+ */
+export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens: number): AgentMessage[] {
+	if (messages.length === 0) return messages;
+
+	// First pass: truncate any individual oversized messages
+	for (let i = 0; i < messages.length; i++) {
+		const msg = messages[i];
+		// Never truncate the compaction summary itself
+		if (msg.role === "compactionSummary") continue;
+
+		const text = getMessageText(msg);
+		if (!text) continue;
+
+		const msgTokens = estimateTokens(msg);
+		if (msgTokens > keepRecentTokens) {
+			// This single message exceeds the entire budget — truncate aggressively
+			const truncated = truncateToLastLines(text, MAX_KEPT_LINES, MAX_KEPT_CHARS);
+			messages[i] = setMessageText(msg, truncated);
+		}
+	}
+
+	// Second pass: if total still exceeds budget, truncate from oldest non-summary messages
+	let totalTokens = 0;
+	for (const msg of messages) {
+		totalTokens += estimateTokens(msg);
+	}
+
+	if (totalTokens > keepRecentTokens * 1.5) {
+		// Truncate older messages more aggressively
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			if (msg.role === "compactionSummary") continue;
+
+			const text = getMessageText(msg);
+			if (!text) continue;
+
+			const msgTokens = estimateTokens(msg);
+			if (msgTokens > 500) {
+				// Truncate to just last 10 lines for older messages
+				const truncated = truncateToLastLines(text, 10, MAX_KEPT_CHARS / 2);
+				messages[i] = setMessageText(msg, truncated);
+			}
+
+			// Recalculate total
+			totalTokens = 0;
+			for (const m of messages) {
+				totalTokens += estimateTokens(m);
+			}
+			if (totalTokens <= keepRecentTokens * 1.5) break;
+		}
+	}
+
+	return messages;
+}
+
 /**
  * Find valid cut points: indices of user, assistant, custom, or bashExecution messages.
  * Never cut at tool results (they must follow their tool call).
@@ -445,15 +646,13 @@ export function findCutPoint(
 		if (accumulatedTokens >= keepRecentTokens) {
 			let foundCut = -1;
 
-			// If this message pushes us wildly over budget (e.g., keeping it adds 4000+ tokens beyond the budget),
-			// we should try to exclude it by cutting AFTER it, to prevent the context from staying perpetually full.
-			const wildlyOverBudget = accumulatedTokens > keepRecentTokens + 4000;
-			if (wildlyOverBudget) {
-				for (let c = 0; c < cutPoints.length; c++) {
-					if (cutPoints[c] > i) {
-						foundCut = cutPoints[c];
-						break;
-					}
+			// Always try to exclude the message that pushed us over budget
+			// by cutting AFTER it (i.e., finding a cut point > i).
+			// This ensures we keep only what fits within keepRecentTokens.
+			for (let c = 0; c < cutPoints.length; c++) {
+				if (cutPoints[c] > i) {
+					foundCut = cutPoints[c];
+					break;
 				}
 			}
 
@@ -464,6 +663,11 @@ export function findCutPoint(
 						foundCut = cutPoints[c];
 						break;
 					}
+				}
+				// If still no cut point found (e.g. entry is after the last valid cut point),
+				// fallback to the last valid cut point to at least compact something.
+				if (foundCut === -1 && cutPoints.length > 0) {
+					foundCut = cutPoints[cutPoints.length - 1];
 				}
 			}
 
@@ -745,10 +949,10 @@ export function prepareCompaction(
 		}
 	}
 
-	// Abort compaction if we are discarding less than 2000 tokens of history.
-	// Summaries themselves cost ~500-1000 tokens, so compacting less than 2000 tokens saves almost nothing
-	// and will cause an infinite compaction loop if the system prompt is very large.
-	if (tokensToSummarize < 2000) {
+	// Abort compaction if we are discarding less than 500 tokens of history.
+	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
+	// is also truncating oversized kept messages via post-compaction truncation.
+	if (tokensToSummarize < 500) {
 		return undefined;
 	}
 

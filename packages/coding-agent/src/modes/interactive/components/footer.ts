@@ -140,12 +140,12 @@ export class FooterComponent implements Component {
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
 
 		const staticTokensValue = contextUsage?.staticTokens ?? 0;
-		const staticCtxDisplay = staticTokensValue > 0 ? ` static ctx ${(staticTokensValue / 1000).toFixed(1)}k` : "";
+		const staticCtxDisplay = staticTokensValue > 0 ? `${(staticTokensValue / 1000).toFixed(1)}K|` : "";
 
 		const contextPercentDisplay =
 			contextPercent === "?"
-				? `?/${formatTokens(contextWindow)}${staticCtxDisplay}${autoIndicator}`
-				: `${contextPercent}%/${formatTokens(contextWindow)}${staticCtxDisplay}${autoIndicator}`;
+				? `${staticCtxDisplay}?/${formatTokens(contextWindow)}${autoIndicator}`
+				: `${staticCtxDisplay}${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
 		if (contextPercentValue > 90) {
 			contextPercentStr = theme.fg("error", contextPercentDisplay);
 		} else if (contextPercentValue > 70) {
