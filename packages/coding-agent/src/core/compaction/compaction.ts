@@ -853,7 +853,9 @@ async function summarizeInChunks(
 				errorMsg.match(/too many tokens/i) ||
 				errorMsg.match(/prompt is too long/i) ||
 				errorMsg.match(/exceeds the limit/i) ||
-				errorMsg.match(/maximum context length/i);
+				errorMsg.match(/maximum context length/i) ||
+				errorMsg.match(/502 error sending request for url/i) ||
+				errorMsg.match(/502 Bad Gateway/i);
 
 			if (isOverflow && chunk.length > 1) {
 				const mid = Math.floor(chunk.length / 2);

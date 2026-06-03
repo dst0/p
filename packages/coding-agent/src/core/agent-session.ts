@@ -1059,19 +1059,6 @@ export class AgentSession {
 				throw new Error(formatNoApiKeyFoundMessage(this.model.provider));
 			}
 
-			// Check if we need to compact before sending (catches aborted responses)
-			const lastAssistant = this._findLastAssistantMessage();
-			if (lastAssistant && (await this.checkCompaction(lastAssistant, false))) {
-				try {
-					await this.agent.continue();
-					while (await this._handlePostAgentRun()) {
-						await this.agent.continue();
-					}
-				} finally {
-					this._flushPendingBashMessages();
-				}
-			}
-
 			// Build messages array (custom message if any, then user message)
 			messages = [];
 
@@ -1118,6 +1105,19 @@ export class AgentSession {
 			} else {
 				// Ensure we're using the base prompt (in case previous turn had modifications)
 				this.agent.state.systemPrompt = this._baseSystemPrompt;
+			}
+
+			// Check if we need to compact before sending (catches aborted responses and preempts overflow with new messages)
+			const lastAssistant = this._findLastAssistantMessage();
+			if (await this.checkCompaction(lastAssistant, false, messages)) {
+				try {
+					await this.agent.continue();
+					while (await this._handlePostAgentRun()) {
+						await this.agent.continue();
+					}
+				} finally {
+					this._flushPendingBashMessages();
+				}
 			}
 		} catch (error) {
 			preflightResult?.(false);
@@ -1786,12 +1786,16 @@ export class AgentSession {
 	 * @param assistantMessage The assistant message to check
 	 * @param skipAbortedCheck If false, include aborted messages (for pre-prompt check). Default: true
 	 */
-	async checkCompaction(assistantMessage: AssistantMessage, skipAbortedCheck = true): Promise<boolean> {
+	async checkCompaction(
+		assistantMessage: AssistantMessage | undefined,
+		skipAbortedCheck = true,
+		additionalMessages?: AgentMessage[],
+	): Promise<boolean> {
 		const settings = this._getEffectiveCompactionSettings();
 		if (!settings.enabled) return false;
 
 		// Skip if message was aborted (user cancelled) - unless skipAbortedCheck is false
-		if (skipAbortedCheck && assistantMessage.stopReason === "aborted") return false;
+		if (assistantMessage && skipAbortedCheck && assistantMessage.stopReason === "aborted") return false;
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 
@@ -1800,20 +1804,25 @@ export class AgentSession {
 		// to a larger-context model (e.g. codex) - the overflow error from the old model
 		// shouldn't trigger compaction for the new model.
 		const sameModel =
-			this.model && assistantMessage.provider === this.model.provider && assistantMessage.model === this.model.id;
+			assistantMessage &&
+			this.model &&
+			assistantMessage.provider === this.model.provider &&
+			assistantMessage.model === this.model.id;
 
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
 		// from retriggering compaction on the first prompt after compaction.
 		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
 		const assistantIsFromBeforeCompaction =
-			compactionEntry !== null && assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
+			assistantMessage &&
+			compactionEntry !== null &&
+			assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
 		if (assistantIsFromBeforeCompaction) {
 			return false;
 		}
 
 		// Case 1: Overflow - LLM returned context overflow error
-		if (sameModel && isContextOverflow(assistantMessage, contextWindow)) {
+		if (assistantMessage && sameModel && isContextOverflow(assistantMessage, contextWindow)) {
 			if (this._overflowRecoveryAttempted) {
 				this._emit({
 					type: "compaction_end",
@@ -1830,9 +1839,9 @@ export class AgentSession {
 			this._overflowRecoveryAttempted = true;
 			// Remove the error message from agent state (it IS saved to session for history,
 			// but we don't want it in context for the retry)
-			const messages = this.agent.state.messages;
-			if (messages.length > 0 && messages[messages.length - 1].role === "assistant") {
-				this.agent.state.messages = messages.slice(0, -1);
+			const stateMessages = this.agent.state.messages;
+			if (stateMessages.length > 0 && stateMessages[stateMessages.length - 1].role === "assistant") {
+				this.agent.state.messages = stateMessages.slice(0, -1);
 			}
 			return await this._runAutoCompaction("overflow", true);
 		}
@@ -1841,10 +1850,13 @@ export class AgentSession {
 		// For error messages (no usage data), estimate from last successful response.
 		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
 		const messages = this._getEffectiveCompactedMessages();
+		if (additionalMessages) {
+			messages.push(...additionalMessages);
+		}
 
 		const estimate = estimateContextTokens(messages);
 
-		if (assistantMessage.stopReason === "error") {
+		if (assistantMessage && assistantMessage.stopReason === "error") {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
