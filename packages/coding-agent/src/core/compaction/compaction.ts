@@ -179,6 +179,7 @@ export interface ContextUsageEstimate {
 	usageTokens: number;
 	trailingTokens: number;
 	lastUsageIndex: number | null;
+	staticTokens: number;
 }
 
 function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
@@ -214,13 +215,11 @@ function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; in
  * If there are messages after the last usage, estimate their tokens with estimateTokens.
  */
 export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: string): ContextUsageEstimate {
+	const staticTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
-		let estimated = 0;
-		if (systemPrompt) {
-			estimated += Math.ceil(systemPrompt.length / 4);
-		}
+		let estimated = staticTokens;
 		for (const message of messages) {
 			estimated += estimateTokens(message);
 		}
@@ -229,6 +228,7 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
+			staticTokens,
 		};
 	}
 
@@ -243,6 +243,7 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
+		staticTokens,
 	};
 }
 
@@ -442,12 +443,32 @@ export function findCutPoint(
 
 		// Check if we've exceeded the budget
 		if (accumulatedTokens >= keepRecentTokens) {
-			// Find the closest valid cut point at or after this entry
-			for (let c = 0; c < cutPoints.length; c++) {
-				if (cutPoints[c] >= i) {
-					cutIndex = cutPoints[c];
-					break;
+			let foundCut = -1;
+
+			// If this message pushes us wildly over budget (e.g., keeping it adds 4000+ tokens beyond the budget),
+			// we should try to exclude it by cutting AFTER it, to prevent the context from staying perpetually full.
+			const wildlyOverBudget = accumulatedTokens > keepRecentTokens + 4000;
+			if (wildlyOverBudget) {
+				for (let c = 0; c < cutPoints.length; c++) {
+					if (cutPoints[c] > i) {
+						foundCut = cutPoints[c];
+						break;
+					}
 				}
+			}
+
+			// Fallback: Find the closest valid cut point at or after this entry
+			if (foundCut === -1) {
+				for (let c = 0; c < cutPoints.length; c++) {
+					if (cutPoints[c] >= i) {
+						foundCut = cutPoints[c];
+						break;
+					}
+				}
+			}
+
+			if (foundCut !== -1) {
+				cutIndex = foundCut;
 			}
 			break;
 		}
@@ -715,9 +736,20 @@ export function prepareCompaction(
 
 	// Messages to summarize (will be discarded after summary)
 	const messagesToSummarize: AgentMessage[] = [];
+	let tokensToSummarize = 0;
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const msg = getMessageFromEntryForCompaction(pathEntries[i]);
-		if (msg) messagesToSummarize.push(msg);
+		if (msg) {
+			messagesToSummarize.push(msg);
+			tokensToSummarize += estimateTokens(msg);
+		}
+	}
+
+	// Abort compaction if we are discarding less than 2000 tokens of history.
+	// Summaries themselves cost ~500-1000 tokens, so compacting less than 2000 tokens saves almost nothing
+	// and will cause an infinite compaction loop if the system prompt is very large.
+	if (tokensToSummarize < 2000) {
+		return undefined;
 	}
 
 	// Messages for turn prefix summary (if splitting a turn)

@@ -3021,6 +3021,7 @@ export class AgentSession {
 			tokens: estimate.tokens,
 			contextWindow,
 			percent,
+			staticTokens: estimate.staticTokens,
 		};
 	}
 

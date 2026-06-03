@@ -138,10 +138,14 @@ export class FooterComponent implements Component {
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+
+		const staticTokensValue = contextUsage?.staticTokens ?? 0;
+		const staticCtxDisplay = staticTokensValue > 0 ? ` static ctx ${(staticTokensValue / 1000).toFixed(1)}k` : "";
+
 		const contextPercentDisplay =
 			contextPercent === "?"
-				? `?/${formatTokens(contextWindow)}${autoIndicator}`
-				: `${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
+				? `?/${formatTokens(contextWindow)}${staticCtxDisplay}${autoIndicator}`
+				: `${contextPercent}%/${formatTokens(contextWindow)}${staticCtxDisplay}${autoIndicator}`;
 		if (contextPercentValue > 90) {
 			contextPercentStr = theme.fg("error", contextPercentDisplay);
 		} else if (contextPercentValue > 70) {
