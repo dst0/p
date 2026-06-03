@@ -1858,7 +1858,7 @@ export class AgentSession {
 			messages.push(...additionalMessages);
 		}
 
-		const estimate = estimateContextTokens(messages);
+		const estimate = estimateContextTokens(messages, this.systemPrompt);
 
 		if (assistantMessage && assistantMessage.stopReason === "error") {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
@@ -3014,7 +3014,7 @@ export class AgentSession {
 		if (contextWindow <= 0) return undefined;
 
 		const messages = this._getEffectiveCompactedMessages();
-		const estimate = estimateContextTokens(messages);
+		const estimate = estimateContextTokens(messages, this.systemPrompt);
 		const percent = (estimate.tokens / contextWindow) * 100;
 
 		return {

@@ -213,11 +213,14 @@ function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; in
  * Estimate context tokens from messages, using the last assistant usage when available.
  * If there are messages after the last usage, estimate their tokens with estimateTokens.
  */
-export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: string): ContextUsageEstimate {
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
 		let estimated = 0;
+		if (systemPrompt) {
+			estimated += Math.ceil(systemPrompt.length / 4);
+		}
 		for (const message of messages) {
 			estimated += estimateTokens(message);
 		}
