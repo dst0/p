@@ -783,6 +783,7 @@ async function summarizeInChunks(
 	initialSummary: string | undefined,
 	thinkingLevel: ThinkingLevel | undefined,
 	streamFn: StreamFn | undefined,
+	onProgress?: (currentChunk: number, totalChunks: number) => void,
 ): Promise<string> {
 	const maxOutputTokens = Math.min(
 		Math.floor(0.8 * reserveTokens),
@@ -832,6 +833,7 @@ async function summarizeInChunks(
 	while (i < chunks.length) {
 		const chunk = chunks[i];
 		try {
+			onProgress?.(i + 1, chunks.length);
 			currentSummary = await generateSummary(
 				chunk,
 				model,
@@ -886,6 +888,7 @@ export async function compact(
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
+	onProgress?: (currentChunk: number, totalChunks: number) => void,
 ): Promise<CompactionResult> {
 	const {
 		firstKeptEntryId,
@@ -916,6 +919,7 @@ export async function compact(
 						previousSummary,
 						thinkingLevel,
 						streamFn,
+						onProgress,
 					)
 				: Promise.resolve(previousSummary || "No prior history."),
 			generateTurnPrefixSummary(
@@ -944,6 +948,7 @@ export async function compact(
 			previousSummary,
 			thinkingLevel,
 			streamFn,
+			onProgress,
 		);
 	}
 

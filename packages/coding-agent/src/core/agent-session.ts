@@ -132,6 +132,7 @@ export type AgentSessionEvent =
 			followUp: readonly string[];
 	  }
 	| { type: "compaction_start"; reason: "manual" | "threshold" | "overflow" }
+	| { type: "compaction_progress"; currentChunk: number; totalChunks: number }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
 	| {
@@ -1699,6 +1700,9 @@ export class AgentSession {
 					this._compactionAbortController.signal,
 					this.thinkingLevel,
 					this.agent.streamFn,
+					(currentChunk, totalChunks) => {
+						this._emit({ type: "compaction_progress", currentChunk, totalChunks });
+					},
 				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;

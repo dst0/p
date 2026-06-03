@@ -2911,6 +2911,16 @@ export class InteractiveMode {
 				break;
 			}
 
+			case "compaction_progress": {
+				if (this.autoCompactionLoader) {
+					const cancelHint = `(${keyText("app.interrupt")} to cancel)`;
+					this.autoCompactionLoader.setMessage(
+						`Compacting chunk ${event.currentChunk}/${event.totalChunks}... ${cancelHint}`,
+					);
+				}
+				break;
+			}
+
 			case "compaction_end": {
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
