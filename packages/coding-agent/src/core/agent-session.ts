@@ -1647,7 +1647,7 @@ export class AgentSession {
 			const pathEntries = this.sessionManager.getBranch();
 			const settings = this._getEffectiveCompactionSettings();
 
-			const preparation = prepareCompaction(pathEntries, settings);
+			const preparation = prepareCompaction(pathEntries, settings, this.systemPrompt);
 			if (!preparation) {
 				// Check why we can't compact
 				const lastEntry = pathEntries[pathEntries.length - 1];
@@ -1929,7 +1929,7 @@ export class AgentSession {
 
 			const pathEntries = this.sessionManager.getBranch();
 
-			const preparation = prepareCompaction(pathEntries, settings);
+			const preparation = prepareCompaction(pathEntries, settings, this.systemPrompt);
 			if (!preparation) {
 				this._emit({
 					type: "compaction_end",
@@ -2880,7 +2880,8 @@ export class AgentSession {
 
 			// Update agent state
 			const sessionContext = this.sessionManager.buildSessionContext();
-			this.agent.state.messages = sessionContext.messages;
+			const keepRecentTokens = this.settingsManager.getCompactionSettings().keepRecentTokens;
+			this.agent.state.messages = truncateKeptMessages(sessionContext.messages, keepRecentTokens);
 
 			// Emit session_tree event
 			await this._extensionRunner.emit({

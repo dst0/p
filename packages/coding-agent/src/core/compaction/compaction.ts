@@ -239,7 +239,7 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens,
+		tokens: usageTokens + trailingTokens + staticTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
@@ -360,7 +360,7 @@ function getMessageText(message: AgentMessage): string | undefined {
 				.join("\n");
 		}
 		case "bashExecution": {
-			return message.command + "\n" + message.output;
+			return `${message.command}\n${message.output}`;
 		}
 		case "branchSummary":
 		case "compactionSummary": {
@@ -508,7 +508,32 @@ export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens:
 			const msgTokens = estimateTokens(msg);
 			if (msgTokens > 500) {
 				// Truncate to just last 10 lines for older messages
-				const truncated = truncateToLastLines(text, 10, MAX_KEPT_CHARS / 2);
+				const truncated = truncateToLastLines(text, 10, MAX_KEPT_CHARS / 4);
+				messages[i] = setMessageText(msg, truncated);
+			}
+
+			// Recalculate total
+			totalTokens = 0;
+			for (const m of messages) {
+				totalTokens += estimateTokens(m);
+			}
+			if (totalTokens <= keepRecentTokens * 1.5) break;
+		}
+	}
+
+	if (totalTokens > keepRecentTokens * 1.5) {
+		// Third pass: extremely aggressive truncation for very long turns with many tool results
+		for (let i = 0; i < messages.length; i++) {
+			const msg = messages[i];
+			if (msg.role === "compactionSummary") continue;
+
+			const text = getMessageText(msg);
+			if (!text) continue;
+
+			const msgTokens = estimateTokens(msg);
+			if (msgTokens > 50) {
+				// Truncate to 0 lines (just the truncated placeholder)
+				const truncated = truncateToLastLines(text, 0, 100);
 				messages[i] = setMessageText(msg, truncated);
 			}
 
@@ -902,6 +927,7 @@ export interface CompactionPreparation {
 export function prepareCompaction(
 	pathEntries: SessionEntry[],
 	settings: CompactionSettings,
+	systemPrompt?: string,
 ): CompactionPreparation | undefined {
 	if (pathEntries.length > 0 && pathEntries[pathEntries.length - 1].type === "compaction") {
 		return undefined;
@@ -925,7 +951,7 @@ export function prepareCompaction(
 	}
 	const boundaryEnd = pathEntries.length;
 
-	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;
+	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
 
 	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 
@@ -952,7 +978,7 @@ export function prepareCompaction(
 	// Abort compaction if we are discarding less than 500 tokens of history.
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
-	if (tokensToSummarize < 500) {
+	if (tokensToSummarize < 500 && tokensBefore <= settings.keepRecentTokens * 1.25) {
 		return undefined;
 	}
 

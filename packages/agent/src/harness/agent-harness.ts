@@ -719,8 +719,9 @@ export class AgentHarness<
 			if (!model) throw new AgentHarnessError("invalid_state", "No model set for compaction");
 			const auth = await this.getApiKeyAndHeaders?.(model);
 			if (!auth) throw new AgentHarnessError("auth", "No auth available for compaction");
+			const systemPrompt = typeof this.systemPrompt === "string" ? this.systemPrompt : undefined;
 			const branchEntries = await this.session.getBranch();
-			const preparationResult = prepareCompaction(branchEntries, this.effectiveCompactionSettings);
+			const preparationResult = prepareCompaction(branchEntries, this.effectiveCompactionSettings, systemPrompt);
 			if (!preparationResult.ok) throw preparationResult.error;
 			const preparation = preparationResult.value;
 			if (!preparation) throw new AgentHarnessError("compaction", "Nothing to compact");

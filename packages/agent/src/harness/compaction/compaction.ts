@@ -151,6 +151,8 @@ export interface ContextUsageEstimate {
 	trailingTokens: number;
 	/** Index of the message that provided usage, or null when none exists. */
 	lastUsageIndex: number | null;
+	/** Estimated tokens from the system prompt. */
+	staticTokens: number;
 }
 
 function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
@@ -182,11 +184,12 @@ function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; in
 }
 
 /** Estimate context tokens for messages using provider usage when available. */
-export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEstimate {
+export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: string): ContextUsageEstimate {
+	const staticTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
-		let estimated = 0;
+		let estimated = staticTokens;
 		for (const message of messages) {
 			estimated += estimateTokens(message);
 		}
@@ -195,6 +198,7 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
+			staticTokens,
 		};
 	}
 
@@ -205,10 +209,11 @@ export function estimateContextTokens(messages: AgentMessage[]): ContextUsageEst
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens,
+		tokens: usageTokens + trailingTokens + staticTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
+		staticTokens,
 	};
 }
 
@@ -366,11 +371,26 @@ export function findCutPoint(
 		const messageTokens = estimateTokens(entry.message as AgentMessage);
 		accumulatedTokens += messageTokens;
 		if (accumulatedTokens >= keepRecentTokens) {
+			let foundCut = -1;
 			for (let c = 0; c < cutPoints.length; c++) {
-				if (cutPoints[c] >= i) {
-					cutIndex = cutPoints[c];
+				if (cutPoints[c] > i) {
+					foundCut = cutPoints[c];
 					break;
 				}
+			}
+			if (foundCut === -1) {
+				for (let c = 0; c < cutPoints.length; c++) {
+					if (cutPoints[c] >= i) {
+						foundCut = cutPoints[c];
+						break;
+					}
+				}
+				if (foundCut === -1 && cutPoints.length > 0) {
+					foundCut = cutPoints[cutPoints.length - 1];
+				}
+			}
+			if (foundCut !== -1) {
+				cutIndex = foundCut;
 			}
 			break;
 		}
@@ -562,6 +582,7 @@ export interface CompactionPreparation {
 export function prepareCompaction(
 	pathEntries: SessionTreeEntry[],
 	settings: CompactionSettings,
+	systemPrompt?: string,
 ): Result<CompactionPreparation | undefined, CompactionError> {
 	if (pathEntries.length === 0 || pathEntries[pathEntries.length - 1].type === "compaction") {
 		return ok(undefined);
@@ -585,7 +606,7 @@ export function prepareCompaction(
 	}
 	const boundaryEnd = pathEntries.length;
 
-	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages).tokens;
+	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
 
 	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
 	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];

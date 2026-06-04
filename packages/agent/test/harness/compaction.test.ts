@@ -313,6 +313,69 @@ describe("harness compaction", () => {
 		});
 	});
 
+	it("estimates context tokens with systemPrompt staticTokens inclusion", () => {
+		const systemPrompt = "A".repeat(4000); // ~1000 tokens
+		const assistant = createAssistantMessage("reply", createMockUsage(5000, 500));
+		const messages = [createUserMessage("hello"), assistant];
+
+		const estimate = estimateContextTokens(messages, systemPrompt);
+		expect(estimate.staticTokens).toBe(Math.ceil(4000 / 4));
+		expect(estimate.tokens).toBe(estimate.usageTokens + estimate.trailingTokens + estimate.staticTokens);
+	});
+
+	it("includes staticTokens in no-usage fallback path", () => {
+		const systemPrompt = "B".repeat(8000); // ~2000 tokens
+		const messages = [createUserMessage("only user message")];
+
+		const estimate = estimateContextTokens(messages, systemPrompt);
+		expect(estimate.usageTokens).toBe(0);
+		expect(estimate.lastUsageIndex).toBeNull();
+		expect(estimate.staticTokens).toBe(Math.ceil(8000 / 4));
+		// trailingTokens = estimated (user chars / 4) + staticTokens
+		const userTokens = estimateTokens(createUserMessage("only user message"));
+		expect(estimate.trailingTokens).toBe(userTokens + estimate.staticTokens);
+	});
+
+	it("staticTokens is 0 when no systemPrompt", () => {
+		const messages = [createUserMessage("hi"), createAssistantMessage("bye", createMockUsage(100, 10))];
+		const estimate = estimateContextTokens(messages);
+		expect(estimate.staticTokens).toBe(0);
+	});
+
+	it("prepares compaction with systemPrompt in tokensBefore calculation", () => {
+		const systemPrompt = "S".repeat(4000); // ~1000 tokens
+		const u1 = createMessageEntry(createUserMessage("user msg 1"));
+		const a1 = createMessageEntry(createAssistantMessage("assistant msg 1"), u1.id);
+		const u2 = createMessageEntry(createUserMessage("user msg 2"), a1.id);
+		const a2 = createMessageEntry(createAssistantMessage("assistant msg 2", createMockUsage(5000, 1000)), u2.id);
+		const pathEntries = [u1, a1, u2, a2];
+		const preparation = getOrThrow(prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS, systemPrompt));
+		expect(preparation).toBeDefined();
+		// tokensBefore should include staticTokens from systemPrompt
+		const contextWithoutSystemPrompt = estimateContextTokens(buildSessionContext(pathEntries).messages);
+		const staticTokens = Math.ceil(4000 / 4);
+		expect(preparation?.tokensBefore).toBe(contextWithoutSystemPrompt.tokens + staticTokens);
+	});
+
+	it("prepares compaction with systemPrompt does not affect cut point selection", () => {
+		const systemPrompt = "X".repeat(20000); // ~5000 tokens
+		const u1 = createMessageEntry(createUserMessage("user msg 1"));
+		const a1 = createMessageEntry(createAssistantMessage("assistant msg 1", createMockUsage(100, 10)), u1.id);
+		const u2 = createMessageEntry(createUserMessage("user msg 2"), a1.id);
+		const a2 = createMessageEntry(createAssistantMessage("assistant msg 2", createMockUsage(2000, 400)), u2.id);
+		const u3 = createMessageEntry(createUserMessage("user msg 3"), a2.id);
+		const a3 = createMessageEntry(createAssistantMessage("assistant msg 3", createMockUsage(8000, 2000)), u3.id);
+		const pathEntries = [u1, a1, u2, a2, u3, a3];
+
+		const prepWithSystemPrompt = getOrThrow(
+			prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS, systemPrompt),
+		);
+		const prepWithoutSystemPrompt = getOrThrow(prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS));
+
+		// Cut point should be the same regardless of systemPrompt
+		expect(prepWithSystemPrompt?.firstKeptEntryId).toBe(prepWithoutSystemPrompt?.firstKeptEntryId);
+	});
+
 	it("builds session context with a compaction entry", () => {
 		const u1 = createMessageEntry(createUserMessage("1"));
 		const a1 = createMessageEntry(createAssistantMessage("a"), u1.id);
