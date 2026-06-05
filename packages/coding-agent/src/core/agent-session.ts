@@ -1647,15 +1647,11 @@ export class AgentSession {
 			const pathEntries = this.sessionManager.getBranch();
 			const settings = this._getEffectiveCompactionSettings();
 
-			const preparation = prepareCompaction(pathEntries, settings, this.systemPrompt);
-			if (!preparation) {
-				// Check why we can't compact
-				const lastEntry = pathEntries[pathEntries.length - 1];
-				if (lastEntry?.type === "compaction") {
-					throw new Error("Already compacted");
-				}
-				throw new Error("Nothing to compact (session too small)");
+			const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
+			if (!preparationResult.ok) {
+				throw new Error(preparationResult.message);
 			}
+			const { preparation } = preparationResult;
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
@@ -1720,7 +1716,12 @@ export class AgentSession {
 			const sessionContext = this.sessionManager.buildSessionContext();
 
 			// Post-compaction truncation: truncate oversized kept messages
-			const truncatedMessages = truncateKeptMessages(sessionContext.messages, settings.keepRecentTokens);
+			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
+			const truncatedMessages = truncateKeptMessages(sessionContext.messages, {
+				keepRecentTokens: settings.keepRecentTokens,
+				targetContextTokens: settings.targetContextTokens,
+				systemPromptTokens,
+			});
 			this.agent.state.messages = truncatedMessages;
 
 			// Get the saved compaction entry for the extension event
@@ -1929,17 +1930,22 @@ export class AgentSession {
 
 			const pathEntries = this.sessionManager.getBranch();
 
-			const preparation = prepareCompaction(pathEntries, settings, this.systemPrompt);
-			if (!preparation) {
+			const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
+			if (!preparationResult.ok) {
 				this._emit({
 					type: "compaction_end",
 					reason,
 					result: undefined,
 					aborted: false,
 					willRetry: false,
+					errorMessage:
+						reason === "overflow"
+							? `Context overflow recovery failed: ${preparationResult.message}`
+							: `Auto-compaction skipped: ${preparationResult.message}`,
 				});
 				return false;
 			}
+			const { preparation } = preparationResult;
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
@@ -2017,7 +2023,12 @@ export class AgentSession {
 			// Post-compaction truncation: truncate oversized kept messages to enforce
 			// the keepRecentTokens budget (last 20 lines / max 4K tokens per message).
 			// This is critical for preventing large tool results from surviving compaction.
-			const truncatedMessages = truncateKeptMessages(sessionContext.messages, settings.keepRecentTokens);
+			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
+			const truncatedMessages = truncateKeptMessages(sessionContext.messages, {
+				keepRecentTokens: settings.keepRecentTokens,
+				targetContextTokens: settings.targetContextTokens,
+				systemPromptTokens,
+			});
 			this.agent.state.messages = truncatedMessages;
 
 			// Get the saved compaction entry for the extension event
@@ -2084,7 +2095,12 @@ export class AgentSession {
 		return this.settingsManager.getCompactionEnabled();
 	}
 
-	private _getEffectiveCompactionSettings(): { enabled: boolean; reserveTokens: number; keepRecentTokens: number } {
+	private _getEffectiveCompactionSettings(): {
+		enabled: boolean;
+		reserveTokens: number;
+		keepRecentTokens: number;
+		targetContextTokens: number;
+	} {
 		return this.settingsManager.getCompactionSettings();
 	}
 
@@ -2880,8 +2896,13 @@ export class AgentSession {
 
 			// Update agent state
 			const sessionContext = this.sessionManager.buildSessionContext();
-			const keepRecentTokens = this.settingsManager.getCompactionSettings().keepRecentTokens;
-			this.agent.state.messages = truncateKeptMessages(sessionContext.messages, keepRecentTokens);
+			const settings = this.settingsManager.getCompactionSettings();
+			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
+			this.agent.state.messages = truncateKeptMessages(sessionContext.messages, {
+				keepRecentTokens: settings.keepRecentTokens,
+				targetContextTokens: settings.targetContextTokens,
+				systemPromptTokens,
+			});
 
 			// Emit session_tree event
 			await this._extensionRunner.emit({

@@ -116,12 +116,14 @@ export interface CompactionSettings {
 	enabled: boolean;
 	reserveTokens: number;
 	keepRecentTokens: number;
+	targetContextTokens?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	reserveTokens: 4000,
 	keepRecentTokens: 4000,
+	targetContextTokens: 10000,
 };
 
 // ============================================================================
@@ -141,9 +143,10 @@ export function calculateContextTokens(usage: Usage): number {
  * Local LLM providers (llama.cpp, Ollama) return prompt_tokens: 0 in streaming
  * usage chunks, making input === 0 and totalTokens ≈ output only.
  * When input is zero, the usage only reflects the response size, not the full context.
+ * Cache hits (cacheRead) are also reliable indicators of context size.
  */
 export function isUsageReliable(usage: Usage): boolean {
-	return usage.input > 0;
+	return usage.input > 0 || usage.cacheRead > 0;
 }
 
 /**
@@ -239,7 +242,7 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens + staticTokens,
+		tokens: usageTokens + trailingTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
@@ -463,15 +466,25 @@ function setMessageText(message: AgentMessage, truncatedText: string): AgentMess
 }
 
 /**
- * Truncate kept messages after compaction to enforce the keepRecentTokens budget.
+ * Truncate kept messages after compaction to enforce the token budget.
  * Each individual message's text is capped to last MAX_KEPT_LINES / MAX_KEPT_CHARS.
  * If total tokens still exceed the budget, messages are truncated further from oldest to newest.
+ *
+ * budget can be specified as a single number (keepRecentTokens) or as a target for the whole context.
  *
  * Modifies the messages array in place and returns it.
  * The compaction summary message (first message) is never truncated.
  */
-export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens: number): AgentMessage[] {
+export function truncateKeptMessages(
+	messages: AgentMessage[],
+	budget: number | { keepRecentTokens: number; targetContextTokens?: number; systemPromptTokens?: number },
+): AgentMessage[] {
 	if (messages.length === 0) return messages;
+
+	const keepRecentTokens = typeof budget === "number" ? budget : budget.keepRecentTokens;
+	const targetContextTokens =
+		typeof budget === "number" ? keepRecentTokens * 1.5 : (budget.targetContextTokens ?? keepRecentTokens * 1.5);
+	const systemPromptTokens = typeof budget === "number" ? 0 : (budget.systemPromptTokens ?? 0);
 
 	// First pass: truncate any individual oversized messages
 	for (let i = 0; i < messages.length; i++) {
@@ -484,19 +497,19 @@ export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens:
 
 		const msgTokens = estimateTokens(msg);
 		if (msgTokens > keepRecentTokens) {
-			// This single message exceeds the entire budget — truncate aggressively
+			// This single message exceeds the individual budget — truncate aggressively
 			const truncated = truncateToLastLines(text, MAX_KEPT_LINES, MAX_KEPT_CHARS);
 			messages[i] = setMessageText(msg, truncated);
 		}
 	}
 
-	// Second pass: if total still exceeds budget, truncate from oldest non-summary messages
-	let totalTokens = 0;
+	// Second pass: if total still exceeds target, truncate from oldest non-summary messages
+	let totalContextTokens = systemPromptTokens;
 	for (const msg of messages) {
-		totalTokens += estimateTokens(msg);
+		totalContextTokens += estimateTokens(msg);
 	}
 
-	if (totalTokens > keepRecentTokens * 1.5) {
+	if (totalContextTokens > targetContextTokens) {
 		// Truncate older messages more aggressively
 		for (let i = 0; i < messages.length; i++) {
 			const msg = messages[i];
@@ -513,15 +526,15 @@ export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens:
 			}
 
 			// Recalculate total
-			totalTokens = 0;
+			totalContextTokens = systemPromptTokens;
 			for (const m of messages) {
-				totalTokens += estimateTokens(m);
+				totalContextTokens += estimateTokens(m);
 			}
-			if (totalTokens <= keepRecentTokens * 1.5) break;
+			if (totalContextTokens <= targetContextTokens) break;
 		}
 	}
 
-	if (totalTokens > keepRecentTokens * 1.5) {
+	if (totalContextTokens > targetContextTokens) {
 		// Third pass: extremely aggressive truncation for very long turns with many tool results
 		for (let i = 0; i < messages.length; i++) {
 			const msg = messages[i];
@@ -538,11 +551,11 @@ export function truncateKeptMessages(messages: AgentMessage[], keepRecentTokens:
 			}
 
 			// Recalculate total
-			totalTokens = 0;
+			totalContextTokens = systemPromptTokens;
 			for (const m of messages) {
-				totalTokens += estimateTokens(m);
+				totalContextTokens += estimateTokens(m);
 			}
-			if (totalTokens <= keepRecentTokens * 1.5) break;
+			if (totalContextTokens <= targetContextTokens) break;
 		}
 	}
 
@@ -661,11 +674,19 @@ export function findCutPoint(
 
 	for (let i = endIndex - 1; i >= startIndex; i--) {
 		const entry = entries[i];
-		if (entry.type !== "message") continue;
+		if (entry.type !== "message" && entry.type !== "branch_summary" && entry.type !== "custom_message") continue;
 
-		// Estimate this message's size
-		const messageTokens = estimateTokens(entry.message);
-		accumulatedTokens += messageTokens;
+		// Estimate this entry's size
+		let entryTokens = 0;
+		if (entry.type === "message") {
+			entryTokens = estimateTokens(entry.message);
+		} else if (entry.type === "branch_summary") {
+			entryTokens = Math.ceil(entry.summary.length / 4);
+		} else if (entry.type === "custom_message") {
+			const contentStr = typeof entry.content === "string" ? entry.content : JSON.stringify(entry.content);
+			entryTokens = Math.ceil(contentStr.length / 4);
+		}
+		accumulatedTokens += entryTokens;
 
 		// Check if we've exceeded the budget
 		if (accumulatedTokens >= keepRecentTokens) {
@@ -924,13 +945,31 @@ export interface CompactionPreparation {
 	settings: CompactionSettings;
 }
 
+export type CompactionPreparationResult =
+	| { ok: true; preparation: CompactionPreparation }
+	| {
+			ok: false;
+			message: string;
+			reason: string;
+			tokensToSummarize?: number;
+			tokensBefore?: number;
+	  };
+
 export function prepareCompaction(
 	pathEntries: SessionEntry[],
 	settings: CompactionSettings,
 	systemPrompt?: string,
-): CompactionPreparation | undefined {
-	if (pathEntries.length > 0 && pathEntries[pathEntries.length - 1].type === "compaction") {
-		return undefined;
+): CompactionPreparationResult {
+	if (pathEntries.length === 0) {
+		return { ok: false, message: "Nothing to compact (session branch has no entries)", reason: "empty_session" };
+	}
+
+	if (pathEntries[pathEntries.length - 1].type === "compaction") {
+		return {
+			ok: false,
+			message: "Already compacted (latest session entry is a compaction boundary)",
+			reason: "already_compacted",
+		};
 	}
 
 	let prevCompactionIndex = -1;
@@ -958,7 +997,12 @@ export function prepareCompaction(
 	// Get UUID of first kept entry
 	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
 	if (!firstKeptEntry?.id) {
-		return undefined; // Session needs migration
+		return {
+			ok: false,
+			message: "Missing entry ID (session likely needs migration)",
+			reason: "missing_kept_entry_id",
+			tokensBefore,
+		};
 	}
 	const firstKeptEntryId = firstKeptEntry.id;
 
@@ -979,7 +1023,13 @@ export function prepareCompaction(
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
 	if (tokensToSummarize < 500 && tokensBefore <= settings.keepRecentTokens * 1.25) {
-		return undefined;
+		return {
+			ok: false,
+			message: `History to summarize is too small (only ${tokensToSummarize} tokens) and total session size (${tokensBefore}) is not significantly over budget`,
+			reason: "too_little_history",
+			tokensToSummarize,
+			tokensBefore,
+		};
 	}
 
 	// Messages for turn prefix summary (if splitting a turn)
@@ -1002,14 +1052,17 @@ export function prepareCompaction(
 	}
 
 	return {
-		firstKeptEntryId,
-		messagesToSummarize,
-		turnPrefixMessages,
-		isSplitTurn: cutPoint.isSplitTurn,
-		tokensBefore,
-		previousSummary,
-		fileOps,
-		settings,
+		ok: true,
+		preparation: {
+			firstKeptEntryId,
+			messagesToSummarize,
+			turnPrefixMessages,
+			isSplitTurn: cutPoint.isSplitTurn,
+			tokensBefore,
+			previousSummary,
+			fileOps,
+			settings,
+		},
 	};
 }
 
@@ -1142,7 +1195,14 @@ async function summarizeInChunks(
  * Returns CompactionResult - SessionManager adds uuid/parentUuid when saving.
  *
  * @param preparation - Pre-calculated preparation from prepareCompaction()
+ * @param model
+ * @param apiKey
+ * @param headers
  * @param customInstructions - Optional custom focus for the summary
+ * @param signal
+ * @param thinkingLevel
+ * @param streamFn
+ * @param onProgress
  */
 export async function compact(
 	preparation: CompactionPreparation,

@@ -225,8 +225,11 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	// Check if session has existing data to restore
 	const existingSession = sessionManager.buildSessionContext();
 	if (existingSession.messages.length > 0) {
-		const keepRecentTokens = settingsManager.getCompactionSettings().keepRecentTokens;
-		existingSession.messages = truncateKeptMessages(existingSession.messages, keepRecentTokens);
+		const settings = settingsManager.getCompactionSettings();
+		existingSession.messages = truncateKeptMessages(existingSession.messages, {
+			keepRecentTokens: settings.keepRecentTokens,
+			targetContextTokens: settings.targetContextTokens,
+		});
 	}
 	const hasExistingSession = existingSession.messages.length > 0;
 	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");

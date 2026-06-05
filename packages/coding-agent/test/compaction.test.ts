@@ -5,6 +5,8 @@ import { readFileSync } from "fs";
 import { join } from "path";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
+	type CompactionPreparation,
+	type CompactionPreparationResult,
 	type CompactionSettings,
 	calculateContextTokens,
 	compact,
@@ -168,6 +170,14 @@ function extractText(messages: AgentMessage[]): string {
 			}
 		})
 		.join("\n");
+}
+
+function expectPrepared(result: CompactionPreparationResult): CompactionPreparation {
+	if (!result.ok) {
+		throw new Error(result.message);
+	}
+	expect(result.ok).toBe(true);
+	return result.preparation;
 }
 
 // ============================================================================
@@ -472,16 +482,16 @@ describe("prepareCompaction with previous compaction", () => {
 		const compaction1 = createCompactionEntry("First summary", u2.id);
 		const u4 = createMessageEntry(createUserMessage("user msg 4 (new after compaction1)"));
 		const a4 = createMessageEntry(createAssistantMessage("assistant msg 4", createMockUsage(8000, 2000)));
+		a4.message.timestamp = new Date(compaction1.timestamp).getTime() + 1000;
 
 		const pathEntries = [u1, a1, u2, a2, u3, a3, compaction1, u4, a4];
 		const contextBefore = buildSessionContext(pathEntries);
-		const preparation = prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS);
+		const preparation = expectPrepared(prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS));
 
-		expect(preparation).toBeDefined();
-		expect(preparation!.firstKeptEntryId).toBe(u2.id);
-		expect(preparation!.previousSummary).toBe("First summary");
-		expect(extractText(preparation!.messagesToSummarize)).not.toContain("First summary");
-		expect(preparation!.tokensBefore).toBe(estimateContextTokens(contextBefore.messages).tokens);
+		expect(preparation.firstKeptEntryId).toBe(u2.id);
+		expect(preparation.previousSummary).toBe("First summary");
+		expect(extractText(preparation.messagesToSummarize)).not.toContain("First summary");
+		expect(preparation.tokensBefore).toBe(estimateContextTokens(contextBefore.messages).tokens);
 
 		const compaction2: CompactionEntry = {
 			type: "compaction",
@@ -489,8 +499,8 @@ describe("prepareCompaction with previous compaction", () => {
 			parentId: a4.id,
 			timestamp: new Date().toISOString(),
 			summary: "Second summary",
-			firstKeptEntryId: preparation!.firstKeptEntryId,
-			tokensBefore: preparation!.tokensBefore,
+			firstKeptEntryId: preparation.firstKeptEntryId,
+			tokensBefore: preparation.tokensBefore,
 		};
 		const contextAfter = buildSessionContext([...pathEntries, compaction2]);
 		const contextAfterText = extractText(contextAfter.messages);
@@ -514,14 +524,74 @@ describe("prepareCompaction with previous compaction", () => {
 			...DEFAULT_COMPACTION_SETTINGS,
 			keepRecentTokens: 100,
 		};
-		const preparation = prepareCompaction([u1, a1, u2, a2, u3, a3, compaction1, u4, a4], settings);
+		const preparation = expectPrepared(prepareCompaction([u1, a1, u2, a2, u3, a3, compaction1, u4, a4], settings));
 
-		expect(preparation).toBeDefined();
-		const summarizedText = extractText(preparation!.messagesToSummarize);
+		const summarizedText = extractText(preparation.messagesToSummarize);
 		expect(summarizedText).toContain("user msg 2 - kept by compaction1");
 		expect(summarizedText).toContain("user msg 3 - kept by compaction1");
 		expect(summarizedText).not.toContain("First summary");
-		expect(preparation!.previousSummary).toBe("First summary");
+		expect(preparation.previousSummary).toBe("First summary");
+	});
+});
+
+describe("prepareCompaction failure reasons", () => {
+	it("reports when the latest entry is already a compaction", () => {
+		const u1 = createMessageEntry(createUserMessage("user msg"));
+		const compaction = createCompactionEntry("Summary", u1.id);
+
+		const result = prepareCompaction([u1, compaction], DEFAULT_COMPACTION_SETTINGS);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe("already_compacted");
+			expect(result.message).toContain("latest session entry is a compaction boundary");
+		}
+	});
+
+	it("reports when the branch has no entries", () => {
+		const result = prepareCompaction([], DEFAULT_COMPACTION_SETTINGS);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe("empty_session");
+			expect(result.message).toContain("session branch has no entries");
+		}
+	});
+
+	it("reports when too little history would be summarized", () => {
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage("short user message")),
+			createMessageEntry(createAssistantMessage("short assistant message")),
+		];
+
+		const result = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe("too_little_history");
+			expect(result.tokensToSummarize).toBeLessThan(500);
+			expect(result.message).toContain("only");
+		}
+	});
+
+	it("reports when the selected kept entry has no id", () => {
+		const entryWithoutId = {
+			type: "message",
+			parentId: null,
+			timestamp: new Date().toISOString(),
+			message: createUserMessage("message without id"),
+		} as unknown as SessionEntry;
+
+		const result = prepareCompaction([entryWithoutId], {
+			...DEFAULT_COMPACTION_SETTINGS,
+			keepRecentTokens: 1,
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe("missing_kept_entry_id");
+			expect(result.message).toContain("session likely needs migration");
+		}
 	});
 });
 
@@ -566,10 +636,9 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 		const entries = loadLargeSessionEntries();
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
-		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
-		expect(preparation).toBeDefined();
+		const preparation = expectPrepared(prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS));
 
-		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
+		const compactionResult = await compact(preparation, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
 
 		expect(compactionResult.summary.length).toBeGreaterThan(100);
 		expect(compactionResult.firstKeptEntryId).toBeTruthy();
@@ -587,10 +656,9 @@ describe.skipIf(!process.env.ANTHROPIC_OAUTH_TOKEN)("LLM summarization", () => {
 		const loaded = buildSessionContext(entries);
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
-		const preparation = prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS);
-		expect(preparation).toBeDefined();
+		const preparation = expectPrepared(prepareCompaction(entries, DEFAULT_COMPACTION_SETTINGS));
 
-		const compactionResult = await compact(preparation!, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
+		const compactionResult = await compact(preparation, model, process.env.ANTHROPIC_OAUTH_TOKEN!);
 
 		// Simulate appending compaction to entries by creating a proper entry
 		const lastEntry = entries[entries.length - 1];

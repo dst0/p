@@ -45,7 +45,7 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		return { tokens: 0, usageTokens: 0, trailingTokens: 0, lastUsageIndex: null };
 	},
 	generateBranchSummary: async () => ({ summary: "", aborted: false, readFiles: [], modifiedFiles: [] }),
-	prepareCompaction: () => ({ dummy: true }),
+	prepareCompaction: () => ({ ok: true, preparation: { dummy: true } }),
 	shouldCompact: (
 		contextTokens: number,
 		contextWindow: number,
