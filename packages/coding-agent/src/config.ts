@@ -26,7 +26,7 @@ export const isBunRuntime = !!process.versions.bun;
 // Install Method Detection
 // =============================================================================
 
-export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "unknown";
+export type InstallMethod = "bun-binary" | "npm" | "pnpm" | "yarn" | "bun" | "source-checkout" | "unknown";
 
 interface SelfUpdateCommandStep {
 	command: string;
@@ -75,10 +75,33 @@ export function detectInstallMethod(): InstallMethod {
 		return "bun";
 	}
 	if (resolvedPath.includes("/npm/") || resolvedPath.includes("/node_modules/")) {
+		// Check if this is actually a source checkout (git repo) rather than an npm install
+		const packageDir = getPackageDir();
+		const gitRoot = findGitRoot(packageDir);
+		if (gitRoot) {
+			return "source-checkout";
+		}
 		return "npm";
 	}
 
+	// Last resort: check if the package directory is inside a git repo
+	const packageDir = getPackageDir();
+	if (findGitRoot(packageDir)) {
+		return "source-checkout";
+	}
+
 	return "unknown";
+}
+
+function findGitRoot(startDir: string): string | undefined {
+	let dir = startDir;
+	while (dir !== dirname(dir)) {
+		if (existsSync(join(dir, ".git"))) {
+			return dir;
+		}
+		dir = dirname(dir);
+	}
+	return undefined;
 }
 
 function getInferredNpmInstall(): { root: string; prefix: string } | undefined {
@@ -160,6 +183,12 @@ function getSelfUpdateCommandForMethod(
 					: makeSelfUpdateCommandStep(command, [...prefixArgs, "uninstall", "-g", installedPackageName]);
 			return makeSelfUpdateCommand(installStep, uninstallStep);
 		}
+		case "source-checkout": {
+			const packageDir = getPackageDir();
+			const gitRoot = findGitRoot(packageDir);
+			if (!gitRoot) return undefined;
+			return makeSelfUpdateCommandStep("bash", ["-c", `cd ${gitRoot} && git pull && npm run build`]);
+		}
 		case "unknown":
 			return undefined;
 	}
@@ -220,6 +249,7 @@ function getGlobalPackageRoots(method: InstallMethod, _packageName: string, npmC
 			return roots;
 		}
 		case "bun-binary":
+		case "source-checkout":
 		case "unknown":
 			return [];
 	}
@@ -296,7 +326,14 @@ export function getSelfUpdateCommand(
 ): SelfUpdateCommand | undefined {
 	const method = detectInstallMethod();
 	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
-	if (!command || !isManagedByGlobalPackageManager(method, packageName, npmCommand) || !isSelfUpdatePathWritable()) {
+	if (!command) {
+		return undefined;
+	}
+	// Source checkouts are not managed by a global package manager — skip that check.
+	if (method !== "source-checkout" && !isManagedByGlobalPackageManager(method, packageName, npmCommand)) {
+		return undefined;
+	}
+	if (!isSelfUpdatePathWritable()) {
 		return undefined;
 	}
 	return command;
@@ -310,6 +347,9 @@ export function getSelfUpdateUnavailableInstruction(
 	const method = detectInstallMethod();
 	if (method === "bun-binary") {
 		return `Download from: https://github.com/earendil-works/pi-mono/releases/latest`;
+	}
+	if (method === "source-checkout") {
+		return `Run: cd ${findGitRoot(getPackageDir())} && git pull && npm run build`;
 	}
 	const command = getSelfUpdateCommandForMethod(method, packageName, updatePackageName, npmCommand);
 	if (command) {

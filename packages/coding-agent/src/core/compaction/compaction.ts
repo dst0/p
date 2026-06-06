@@ -764,14 +764,17 @@ Use this EXACT format:
 
 ## Plan & Progress
 [Preserve the actual step-by-step plan verbatim. Keep completed and in-progress steps clear, correcting the plan only if new info requires changing it to achieve the goal.]
-- [Or "(none)" if none were mentioned]
+- [ ] [Not started]
+- [.] [In progress]
+- [v] [Done]
+- [-] [Failed]
 
 ## Progress
 ### Done
-- [x] [Completed tasks/changes]
+- [v] [Completed tasks/changes]
 
 ### In Progress
-- [ ] [Current work]
+- [.] [Current work]
 
 ### Blocked
 - [Issues preventing progress, if any]
@@ -794,6 +797,7 @@ Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
 - ADD new progress, decisions, and context from the new messages
 - UPDATE the Progress section: move items from "In Progress" to "Done" when completed
+- UPDATE the Plan & Progress section checkboxes: [] not started, [.] in progress, [v] done, [-] failed
 - UPDATE "Next Steps" based on what was accomplished
 - PRESERVE exact file paths, function names, and error messages
 - If something is no longer relevant, you may remove it
@@ -804,14 +808,14 @@ Use this EXACT format:
 [Preserve unchanged the original prompt or updated goal verbatim, adding new ones only if the task expanded]
 
 ## Plan & Progress
-[Preserve the actual plan verbatim. Include previously done items AND newly completed items, updating the plan if new info requires changing it]
+[Preserve the actual plan verbatim. Include previously done items AND newly completed items, updating the plan if new info requires changing it. Use [] not started, [.] in progress, [v] done, [-] failed]
 
 ## Progress
 ### Done
-- [x] [Include previously done items AND newly completed items]
+- [v] [Include previously done items AND newly completed items]
 
 ### In Progress
-- [ ] [Current work - update based on progress]
+- [.] [Current work - update based on progress]
 
 ### Blocked
 - [Current blockers - remove if resolved]

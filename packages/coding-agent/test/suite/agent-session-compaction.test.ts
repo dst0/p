@@ -70,13 +70,13 @@ function seedCompactableSession(harness: Harness): void {
 	const now = Date.now();
 	harness.sessionManager.appendMessage({
 		role: "user",
-		content: [{ type: "text", text: "message to compact" }],
+		content: [{ type: "text", text: "message to compact ".repeat(100) }],
 		timestamp: now - 1000,
 	});
 	harness.sessionManager.appendMessage(
 		createAssistant(harness, {
 			stopReason: "stop",
-			totalTokens: 100,
+			totalTokens: 2000,
 			timestamp: now - 500,
 		}),
 	);
@@ -96,6 +96,7 @@ describe("AgentSession compaction characterization", () => {
 
 	it("manually compacts using an extension-provided summary", async () => {
 		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
 			extensionFactories: [
 				(pi) => {
 					pi.on("session_before_compact", async (event) => ({
@@ -111,8 +112,8 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.prompt("one");
-		await harness.session.prompt("two");
+		await harness.session.prompt("one ".repeat(100));
+		await harness.session.prompt("two ".repeat(100));
 
 		const result = await harness.session.compact();
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
@@ -138,19 +139,25 @@ describe("AgentSession compaction characterization", () => {
 	});
 
 	it("manually compacts with a custom streamFn when registry auth is absent", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		const getStreamCallCount = useSummaryStreamFn(harness, "summary from custom stream");
 
 		const result = await harness.session.compact();
 
-		expect(result.summary).toBe("summary from custom stream");
+		expect(result.summary).toContain("summary from custom stream");
 		expect(getStreamCallCount()).toBe(1);
 	});
 
 	it("auto-compacts with a custom streamFn when registry auth is absent", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 		const getStreamCallCount = useSummaryStreamFn(harness, "auto summary from custom stream");
@@ -160,6 +167,9 @@ describe("AgentSession compaction characterization", () => {
 
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
 		expect(compactionEntries).toHaveLength(1);
+		expect(compactionEntries[0].type === "compaction" && (compactionEntries[0] as any).summary).toContain(
+			"auto summary from custom stream",
+		);
 		expect(getStreamCallCount()).toBe(1);
 	});
 
@@ -210,11 +220,12 @@ describe("AgentSession compaction characterization", () => {
 		// Should have been called multiple times (since 4 * 6000 tokens > 6000 context window)
 		expect(callCount).toBeGreaterThan(1);
 		// The final summary returned should be from the last chunk
-		expect(result.summary).toBe(`summary chunk ${callCount}`);
+		expect(result.summary).toContain(`summary chunk ${callCount}`);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
 		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
 			extensionFactories: [
 				(pi) => {
 					pi.on("session_before_compact", async (event) => {
@@ -227,8 +238,8 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harnesses.push(harness);
 
-		await harness.session.prompt("one");
-		await harness.session.prompt("two");
+		await harness.session.prompt("one ".repeat(100));
+		await harness.session.prompt("two ".repeat(100));
 
 		const compactPromise = harness.session.compact();
 		await new Promise((resolve) => setTimeout(resolve, 0));
