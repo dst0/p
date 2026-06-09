@@ -135,6 +135,15 @@ export class FooterComponent implements Component {
 			statsParts.push(costStr);
 		}
 
+		// Show prefill or gen progress
+		const prefill = this.footerData.getPrefillProgress();
+		const gen = this.footerData.getGenProgress();
+		if (prefill) {
+			statsParts.push(theme.fg("dim", `prefilling (${(prefill.elapsedMs / 1000).toFixed(1)}s)`));
+		} else if (gen) {
+			statsParts.push(theme.fg("dim", `${gen.tokensPerSecond.toFixed(0)} t/s`));
+		}
+
 		// Colorize context percentage based on usage
 		let contextPercentStr: string;
 		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";

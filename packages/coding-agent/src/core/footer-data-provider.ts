@@ -89,6 +89,8 @@ export class FooterDataProvider {
 	private static readonly WATCH_DEBOUNCE_MS = 500;
 
 	private extensionStatuses = new Map<string, string>();
+	private prefillProgress?: { elapsedMs: number };
+	private genProgress?: { tokensPerSecond: number; tokens: number };
 	private cachedBranch: string | null | undefined = undefined;
 	private gitPaths: GitPaths | null | undefined = undefined;
 	private headWatcher: FSWatcher | null = null;
@@ -96,6 +98,7 @@ export class FooterDataProvider {
 	private reftableTablesListWatcher: FSWatcher | null = null;
 	private reftableTablesListPath: string | null = null;
 	private branchChangeCallbacks = new Set<() => void>();
+	private progressChangeCallbacks = new Set<() => void>();
 	private availableProviderCount = 0;
 	private refreshTimer: ReturnType<typeof setTimeout> | null = null;
 	private gitWatcherRetryTimer: ReturnType<typeof setTimeout> | null = null;
@@ -122,10 +125,24 @@ export class FooterDataProvider {
 		return this.extensionStatuses;
 	}
 
+	getPrefillProgress(): { elapsedMs: number } | undefined {
+		return this.prefillProgress;
+	}
+
+	getGenProgress(): { tokensPerSecond: number; tokens: number } | undefined {
+		return this.genProgress;
+	}
+
 	/** Subscribe to git branch changes. Returns unsubscribe function. */
 	onBranchChange(callback: () => void): () => void {
 		this.branchChangeCallbacks.add(callback);
 		return () => this.branchChangeCallbacks.delete(callback);
+	}
+
+	/** Subscribe to progress changes. Returns unsubscribe function. */
+	onProgressChange(callback: () => void): () => void {
+		this.progressChangeCallbacks.add(callback);
+		return () => this.progressChangeCallbacks.delete(callback);
 	}
 
 	/** Internal: set extension status */
@@ -137,9 +154,32 @@ export class FooterDataProvider {
 		}
 	}
 
+	/** Internal: set prefill progress */
+	setPrefillProgress(progress: { elapsedMs: number } | undefined): void {
+		this.prefillProgress = progress;
+		this.notifyProgressChange();
+	}
+
+	/** Internal: set gen progress */
+	setGenProgress(progress: { tokensPerSecond: number; tokens: number } | undefined): void {
+		this.genProgress = progress;
+		this.notifyProgressChange();
+	}
+
+	/** Internal: clear progress */
+	clearProgress(): void {
+		this.prefillProgress = undefined;
+		this.genProgress = undefined;
+		this.notifyProgressChange();
+	}
+
 	/** Internal: clear extension statuses */
 	clearExtensionStatuses(): void {
 		this.extensionStatuses.clear();
+	}
+
+	private notifyProgressChange(): void {
+		for (const cb of this.progressChangeCallbacks) cb();
 	}
 
 	/** Number of unique providers with available models (for footer display) */
@@ -178,6 +218,7 @@ export class FooterDataProvider {
 		}
 		this.clearGitWatchers();
 		this.branchChangeCallbacks.clear();
+		this.progressChangeCallbacks.clear();
 	}
 
 	private notifyBranchChange(): void {
@@ -350,5 +391,11 @@ export class FooterDataProvider {
 /** Read-only view for extensions - excludes setExtensionStatus, setAvailableProviderCount and dispose */
 export type ReadonlyFooterDataProvider = Pick<
 	FooterDataProvider,
-	"getGitBranch" | "getExtensionStatuses" | "getAvailableProviderCount" | "onBranchChange"
+	| "getGitBranch"
+	| "getExtensionStatuses"
+	| "getAvailableProviderCount"
+	| "getPrefillProgress"
+	| "getGenProgress"
+	| "onBranchChange"
+	| "onProgressChange"
 >;

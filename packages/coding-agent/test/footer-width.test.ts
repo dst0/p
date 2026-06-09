@@ -64,7 +64,13 @@ function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
 		getGitBranch: () => "main",
 		getExtensionStatuses: () => new Map<string, string>(),
 		getAvailableProviderCount: () => providerCount,
+		getPrefillProgress: () => undefined,
+		getGenProgress: () => undefined,
 		onBranchChange: (callback: () => void) => {
+			void callback;
+			return () => {};
+		},
+		onProgressChange: (callback: () => void) => {
 			void callback;
 			return () => {};
 		},

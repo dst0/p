@@ -716,6 +716,11 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		});
 
+		// Set up progress watcher to update footer
+		this.footerDataProvider.onProgressChange(() => {
+			this.ui.requestRender();
+		});
+
 		// Initialize available provider count for footer display
 		await this.updateAvailableProviderCount();
 	}
@@ -2752,6 +2757,17 @@ export class InteractiveMode {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage);
 
+					if (event.assistantMessageEvent?.type === "prefill_progress") {
+						this.footerDataProvider.setPrefillProgress({
+							elapsedMs: event.assistantMessageEvent.elapsedMs,
+						});
+					} else if (event.assistantMessageEvent?.type === "gen_progress") {
+						this.footerDataProvider.setGenProgress({
+							tokensPerSecond: event.assistantMessageEvent.tokensPerSecond,
+							tokens: event.assistantMessageEvent.tokens,
+						});
+					}
+
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
 							if (!this.pendingTools.has(content.id)) {
@@ -2816,6 +2832,7 @@ export class InteractiveMode {
 					}
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
+					this.footerDataProvider.clearProgress();
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -2865,6 +2882,7 @@ export class InteractiveMode {
 			}
 
 			case "agent_end":
+				this.footerDataProvider.clearProgress();
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(false);
 				}
