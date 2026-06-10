@@ -176,6 +176,7 @@ function getAnthropicCompat(
 		sendSessionAffinityHeaders:
 			model.compat?.sendSessionAffinityHeaders ?? !!(isFireworks || isCloudflareAiGatewayAnthropic),
 		supportsCacheControlOnTools: model.compat?.supportsCacheControlOnTools ?? !isFireworks,
+		supportsTemperature: model.compat?.supportsTemperature ?? true,
 		allowEmptySignature: model.compat?.allowEmptySignature ?? false,
 	};
 }
@@ -199,7 +200,7 @@ export interface AnthropicOptions extends StreamOptions {
 	 * Effort level for adaptive thinking models.
 	 * Controls how much thinking Claude allocates:
 	 * - "max": Always thinks with no constraints (Opus 4.6 only)
-	 * - "xhigh": Highest reasoning level (Opus 4.7)
+	 * - "xhigh": Highest reasoning level (Opus 4.7+, Fable 5)
 	 * - "high": Always thinks, deep reasoning
 	 * - "medium": Moderate thinking, may skip for simple queries
 	 * - "low": Minimal thinking, skips for simple tasks
@@ -710,7 +711,7 @@ export const streamAnthropic: StreamFunction<"anthropic-messages", AnthropicOpti
 
 /**
  * Map ThinkingLevel to Anthropic effort levels for adaptive thinking.
- * Note: effort "max" is only valid on Opus 4.6, while Opus 4.7 supports "xhigh".
+ * Note: effort "max" is only valid on Opus 4.6, while Opus 4.7+ and Fable 5 support "xhigh".
  */
 function mapThinkingLevelToEffort(
 	model: Model<"anthropic-messages">,
@@ -896,15 +897,10 @@ function buildParams(
 	options?: AnthropicOptions,
 ): MessageCreateParamsStreaming {
 	const { cacheControl } = getCacheControl(model, options?.cacheRetention);
+	const compat = getAnthropicCompat(model);
 	const params: MessageCreateParamsStreaming = {
 		model: model.id,
-		messages: convertMessages(
-			context.messages,
-			model,
-			isOAuthToken,
-			cacheControl,
-			getAnthropicCompat(model).allowEmptySignature,
-		),
+		messages: convertMessages(context.messages, model, isOAuthToken, cacheControl, compat.allowEmptySignature),
 		max_tokens: options?.maxTokens ?? model.maxTokens,
 		stream: true,
 	};
@@ -936,13 +932,12 @@ function buildParams(
 		];
 	}
 
-	// Temperature is incompatible with extended thinking (adaptive or budget-based).
-	if (options?.temperature !== undefined && !options?.thinkingEnabled) {
+	// Temperature is incompatible with extended thinking and unsupported on Claude Opus 4.7+.
+	if (options?.temperature !== undefined && !options?.thinkingEnabled && compat.supportsTemperature) {
 		params.temperature = options.temperature;
 	}
 
 	if (context.tools && context.tools.length > 0) {
-		const compat = getAnthropicCompat(model);
 		params.tools = convertTools(
 			context.tools,
 			isOAuthToken,
@@ -977,7 +972,7 @@ function buildParams(
 					display,
 				};
 			}
-		} else if (options?.thinkingEnabled === false) {
+		} else if (options?.thinkingEnabled === false && model.thinkingLevelMap?.off !== null) {
 			params.thinking = { type: "disabled" };
 		}
 	}

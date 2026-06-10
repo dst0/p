@@ -18,6 +18,7 @@ import {
 	type SystemContentBlock,
 	type ToolChoice,
 	type ToolConfiguration,
+	type ToolResultContentBlock,
 	ToolResultStatus,
 } from "@aws-sdk/client-bedrock-runtime";
 import { NodeHttpHandler } from "@smithy/node-http-handler";
@@ -28,6 +29,7 @@ import type {
 	AssistantMessage,
 	CacheRetention,
 	Context,
+	ImageContent,
 	Model,
 	SimpleStreamOptions,
 	StopReason,
@@ -86,6 +88,8 @@ export interface BedrockOptions extends StreamOptions {
 
 type Block = (TextContent | ThinkingContent | ToolCall) & { index?: number; partialJson?: string };
 
+const EMPTY_TEXT_PLACEHOLDER = "<empty>";
+
 export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOptions> = (
 	model: Model<"bedrock-converse-stream">,
 	context: Context,
@@ -139,10 +143,13 @@ export const streamBedrock: StreamFunction<"bedrock-converse-stream", BedrockOpt
 
 		// in Node.js/Bun environment only
 		if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-			// Region resolution: explicit option > env vars > SDK default chain.
-			// When AWS_PROFILE is set, we leave region undefined so the SDK can
-			// resovle it from aws profile configs. Otherwise fall back to us-east-1.
-			if (configuredRegion) {
+			// Region resolution: ARN-embedded > explicit option > env vars > SDK default chain.
+			// When the model ID is an inference profile ARN, extract the region from it.
+			// This avoids conflicts with AWS_REGION set for other services.
+			const arnRegionMatch = model.id.match(/^arn:aws(?:-[a-z0-9-]+)?:bedrock:([a-z0-9-]+):/);
+			if (arnRegionMatch) {
+				config.region = arnRegionMatch[1];
+			} else if (configuredRegion) {
 				config.region = configuredRegion;
 			} else if (endpointRegion && useExplicitEndpoint) {
 				config.region = endpointRegion;
@@ -284,6 +291,13 @@ const BEDROCK_ERROR_PREFIXES: Record<string, string> = {
 };
 
 /**
+ * Some models reject the account/profile's configured Bedrock data retention mode
+ * (e.g. "data retention mode 'default' is not available for this model"). Point
+ * users at the AWS docs explaining how to configure a supported mode.
+ */
+const BEDROCK_DATA_RETENTION_DOCS_URL = "https://docs.aws.amazon.com/bedrock/latest/userguide/data-retention.html";
+
+/**
  * Format a Bedrock error with a human-readable prefix.
  * AWS SDK exceptions (both from `client.send()` and from stream event items)
  * extend BedrockRuntimeServiceException. We map the `.name` to a stable
@@ -292,11 +306,14 @@ const BEDROCK_ERROR_PREFIXES: Record<string, string> = {
  */
 function formatBedrockError(error: unknown): string {
 	const message = error instanceof Error ? error.message : JSON.stringify(error);
+	const dataRetentionHint = /data retention mode/i.test(message)
+		? ` See ${BEDROCK_DATA_RETENTION_DOCS_URL} for supported data retention modes.`
+		: "";
 	if (error instanceof BedrockRuntimeServiceException) {
 		const prefix = BEDROCK_ERROR_PREFIXES[error.name] ?? error.name;
-		return `${prefix}: ${message}`;
+		return `${prefix}: ${message}${dataRetentionHint}`;
 	}
-	return message;
+	return `${message}${dataRetentionHint}`;
 }
 
 /**
@@ -521,13 +538,18 @@ function getModelMatchCandidates(modelId: string, modelName?: string): string[] 
 function supportsAdaptiveThinking(modelId: string, modelName?: string): boolean {
 	const candidates = getModelMatchCandidates(modelId, modelName);
 	return candidates.some(
-		(s) => s.includes("opus-4-6") || s.includes("opus-4-7") || s.includes("opus-4-8") || s.includes("sonnet-4-6"),
+		(s) =>
+			s.includes("opus-4-6") ||
+			s.includes("opus-4-7") ||
+			s.includes("opus-4-8") ||
+			s.includes("sonnet-4-6") ||
+			s.includes("fable-5"),
 	);
 }
 
 function supportsNativeXhighEffort(model: Model<"bedrock-converse-stream">): boolean {
 	const candidates = getModelMatchCandidates(model.id, model.name);
-	return candidates.some((s) => s.includes("opus-4-7") || s.includes("opus-4-8"));
+	return candidates.some((s) => s.includes("opus-4-7") || s.includes("opus-4-8") || s.includes("fable-5"));
 }
 
 function mapThinkingLevelToEffort(
@@ -650,6 +672,29 @@ function normalizeToolCallId(id: string): string {
 	return sanitized.length > 64 ? sanitized.slice(0, 64) : sanitized;
 }
 
+function createNonBlankTextBlock(text: string): ContentBlock.TextMember | undefined {
+	const sanitized = sanitizeSurrogates(text);
+	return sanitized.trim().length === 0 ? undefined : { text: sanitized };
+}
+
+function createRequiredTextBlock(text: string): ContentBlock.TextMember {
+	return createNonBlankTextBlock(text) ?? { text: EMPTY_TEXT_PLACEHOLDER };
+}
+
+function convertToolResultContent(content: (TextContent | ImageContent)[]): ToolResultContentBlock[] {
+	const result: ToolResultContentBlock[] = [];
+	for (const c of content) {
+		if (c.type === "image") {
+			result.push({ image: createImageBlock(c.mimeType, c.data) });
+		} else {
+			const textBlock = createNonBlankTextBlock(c.text);
+			if (textBlock) result.push(textBlock);
+		}
+	}
+	if (result.length === 0) result.push({ text: EMPTY_TEXT_PLACEHOLDER });
+	return result;
+}
+
 function convertMessages(
 	context: Context,
 	model: Model<"bedrock-converse-stream">,
@@ -665,13 +710,15 @@ function convertMessages(
 			case "user": {
 				const content: ContentBlock[] = [];
 				if (typeof m.content === "string") {
-					content.push({ text: sanitizeSurrogates(m.content) });
+					content.push(createRequiredTextBlock(m.content));
 				} else {
 					for (const c of m.content) {
 						switch (c.type) {
-							case "text":
-								content.push({ text: sanitizeSurrogates(c.text) });
+							case "text": {
+								const textBlock = createNonBlankTextBlock(c.text);
+								if (textBlock) content.push(textBlock);
 								break;
+							}
 							case "image":
 								content.push({ image: createImageBlock(c.mimeType, c.data) });
 								break;
@@ -679,8 +726,8 @@ function convertMessages(
 								continue;
 						}
 					}
+					if (content.length === 0) content.push({ text: EMPTY_TEXT_PLACEHOLDER });
 				}
-				if (content.length === 0) continue;
 				result.push({
 					role: ConversationRole.USER,
 					content,
@@ -696,19 +743,22 @@ function convertMessages(
 				const contentBlocks: ContentBlock[] = [];
 				for (const c of m.content) {
 					switch (c.type) {
-						case "text":
+						case "text": {
 							// Skip empty text blocks
-							if (c.text.trim().length === 0) continue;
-							contentBlocks.push({ text: sanitizeSurrogates(c.text) });
+							const textBlock = createNonBlankTextBlock(c.text);
+							if (!textBlock) continue;
+							contentBlocks.push(textBlock);
 							break;
+						}
 						case "toolCall":
 							contentBlocks.push({
 								toolUse: { toolUseId: c.id, name: c.name, input: c.arguments },
 							});
 							break;
-						case "thinking":
+						case "thinking": {
 							// Skip empty thinking blocks
-							if (c.thinking.trim().length === 0) continue;
+							const thinking = sanitizeSurrogates(c.thinking);
+							if (thinking.trim().length === 0) continue;
 							// Only Anthropic models support the signature field in reasoningText.
 							// For other models, we omit the signature to avoid errors like:
 							// "This model doesn't support the reasoningContent.reasoningText.signature field"
@@ -717,12 +767,12 @@ function convertMessages(
 								// persisted message lacks a signature, Bedrock rejects the replayed
 								// reasoning block. Fall back to plain text, matching Anthropic.
 								if (!c.thinkingSignature || c.thinkingSignature.trim().length === 0) {
-									contentBlocks.push({ text: sanitizeSurrogates(c.thinking) });
+									contentBlocks.push({ text: thinking });
 								} else {
 									contentBlocks.push({
 										reasoningContent: {
 											reasoningText: {
-												text: sanitizeSurrogates(c.thinking),
+												text: thinking,
 												signature: c.thinkingSignature,
 											},
 										},
@@ -731,11 +781,12 @@ function convertMessages(
 							} else {
 								contentBlocks.push({
 									reasoningContent: {
-										reasoningText: { text: sanitizeSurrogates(c.thinking) },
+										reasoningText: { text: thinking },
 									},
 								});
 							}
 							break;
+						}
 						default:
 							continue;
 					}
@@ -759,11 +810,7 @@ function convertMessages(
 				toolResults.push({
 					toolResult: {
 						toolUseId: m.toolCallId,
-						content: m.content.map((c) =>
-							c.type === "image"
-								? { image: createImageBlock(c.mimeType, c.data) }
-								: { text: sanitizeSurrogates(c.text) },
-						),
+						content: convertToolResultContent(m.content),
 						status: m.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
 					},
 				});
@@ -775,11 +822,7 @@ function convertMessages(
 					toolResults.push({
 						toolResult: {
 							toolUseId: nextMsg.toolCallId,
-							content: nextMsg.content.map((c) =>
-								c.type === "image"
-									? { image: createImageBlock(c.mimeType, c.data) }
-									: { text: sanitizeSurrogates(c.text) },
-							),
+							content: convertToolResultContent(nextMsg.content),
 							status: nextMsg.isError ? ToolResultStatus.ERROR : ToolResultStatus.SUCCESS,
 						},
 					});
