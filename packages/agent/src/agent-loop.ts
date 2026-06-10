@@ -5,6 +5,7 @@
 
 import {
 	type AssistantMessage,
+	type AssistantMessageEvent,
 	type Context,
 	EventStream,
 	streamSimple,
@@ -310,9 +311,17 @@ async function streamAssistantResponse(
 	let partialMessage: AssistantMessage | null = null;
 	let addedPartial = false;
 
+	// Progress tracking: prefill (model processing the prompt) and gen (token generation)
+	let prefillStartMs: number | null = null;
+	let genStartMs: number | null = null;
+	let tokenCount = 0;
+	let lastGenProgressMs: number | null = null;
+	const GEN_PROGRESS_INTERVAL_MS = 1000;
+
 	for await (const event of response) {
 		switch (event.type) {
 			case "start":
+				prefillStartMs = Date.now();
 				partialMessage = event.partial;
 				context.messages.push(partialMessage);
 				addedPartial = true;
@@ -320,26 +329,82 @@ async function streamAssistantResponse(
 				break;
 
 			case "text_start":
-			case "text_delta":
-			case "text_end":
 			case "thinking_start":
-			case "thinking_delta":
-			case "thinking_end":
-			case "toolcall_start":
-			case "toolcall_delta":
-			case "toolcall_end":
-			case "prefill_progress":
-			case "gen_progress":
-				if (partialMessage) {
-					partialMessage = event.partial;
-					context.messages[context.messages.length - 1] = partialMessage;
+			case "toolcall_start": {
+				// First content block start: prefill is done, generation begins
+				if (prefillStartMs && !genStartMs) {
 					await emit({
 						type: "message_update",
-						assistantMessageEvent: event,
-						message: { ...partialMessage },
+						assistantMessageEvent: {
+							type: "prefill_progress",
+							elapsedMs: Date.now() - prefillStartMs,
+							partial: partialMessage,
+						} as AssistantMessageEvent,
+						message: partialMessage!,
 					});
+					genStartMs = Date.now();
+					lastGenProgressMs = genStartMs;
+					tokenCount = 0;
 				}
+				// Also emit the normal message_update for the event itself
+				partialMessage = event.partial;
+				context.messages[context.messages.length - 1] = partialMessage;
+				await emit({
+					type: "message_update",
+					assistantMessageEvent: event,
+					message: partialMessage,
+				});
 				break;
+			}
+
+			case "text_delta":
+			case "thinking_delta":
+			case "toolcall_delta": {
+				if (genStartMs) {
+					tokenCount++;
+					const now = Date.now();
+					if (lastGenProgressMs != null && now - lastGenProgressMs >= GEN_PROGRESS_INTERVAL_MS) {
+						const elapsed = (now - genStartMs) / 1000;
+						if (elapsed > 0) {
+							await emit({
+								type: "message_update",
+								assistantMessageEvent: {
+									type: "gen_progress",
+									tokensPerSecond: Math.round(tokenCount / elapsed),
+									tokens: tokenCount,
+									partial: event.partial,
+								} as AssistantMessageEvent,
+								message: partialMessage!,
+							});
+						}
+						lastGenProgressMs = now;
+					}
+				}
+				// Also emit the normal message_update for the event itself
+				partialMessage = event.partial;
+				context.messages[context.messages.length - 1] = partialMessage;
+				await emit({
+					type: "message_update",
+					assistantMessageEvent: event,
+					message: partialMessage,
+				});
+				break;
+			}
+
+			case "text_end":
+			case "thinking_end":
+			case "toolcall_end":
+			case "prefill_progress":
+			case "gen_progress": {
+				partialMessage = event.partial;
+				context.messages[context.messages.length - 1] = partialMessage;
+				await emit({
+					type: "message_update",
+					assistantMessageEvent: event,
+					message: partialMessage,
+				});
+				break;
+			}
 
 			case "done":
 			case "error": {
