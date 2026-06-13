@@ -33,7 +33,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai";
-import { theme } from "../modes/interactive/theme/theme.ts";
+import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { sleep } from "../utils/sleep.ts";
@@ -1834,12 +1834,13 @@ export class AgentSession {
 			assistantMessage &&
 			compactionEntry !== null &&
 			assistantMessage.timestamp <= new Date(compactionEntry.timestamp).getTime();
-		if (assistantIsFromBeforeCompaction) {
+		if (assistantIsFromBeforeCompaction && !additionalMessages) {
 			return false;
 		}
+		const assistantForCompactionCheck = assistantIsFromBeforeCompaction ? undefined : assistantMessage;
 
 		// Case 1: Overflow - LLM returned context overflow error
-		if (assistantMessage && sameModel && isContextOverflow(assistantMessage, contextWindow)) {
+		if (assistantForCompactionCheck && sameModel && isContextOverflow(assistantForCompactionCheck, contextWindow)) {
 			if (this._overflowRecoveryAttempted) {
 				this._emit({
 					type: "compaction_end",
@@ -1873,7 +1874,7 @@ export class AgentSession {
 
 		const estimate = estimateContextTokens(messages, this.systemPrompt);
 
-		if (assistantMessage && assistantMessage.stopReason === "error") {
+		if (assistantForCompactionCheck && assistantForCompactionCheck.stopReason === "error") {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
@@ -3077,7 +3078,8 @@ export class AgentSession {
 	 * @returns Path to exported file
 	 */
 	async exportToHtml(outputPath?: string): Promise<string> {
-		const themeName = this.settingsManager.getTheme();
+		const configuredThemeName = this.settingsManager.getTheme();
+		const themeName = configuredThemeName && getThemeByName(configuredThemeName) ? configuredThemeName : undefined;
 
 		// Create tool renderer if we have an extension runner (for custom tool HTML rendering)
 		const toolRenderer: ToolHtmlRenderer = createToolHtmlRenderer({

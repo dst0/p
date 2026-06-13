@@ -209,7 +209,7 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens,
+		tokens: staticTokens + usageTokens + trailingTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,

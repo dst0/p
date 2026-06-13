@@ -1,3 +1,4 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 import {
 	type AssistantMessage,
 	createAssistantMessageEventStream,
@@ -8,7 +9,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { createHarness, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
-	checkCompaction: (assistantMessage: AssistantMessage, skipAbortedCheck?: boolean) => Promise<boolean>;
+	checkCompaction: (
+		assistantMessage: AssistantMessage,
+		skipAbortedCheck?: boolean,
+		additionalMessages?: AgentMessage[],
+	) => Promise<boolean>;
 	_runAutoCompaction: (reason: "overflow" | "threshold", willRetry: boolean) => Promise<boolean>;
 };
 
@@ -345,6 +350,42 @@ describe("AgentSession compaction characterization", () => {
 		await sessionInternals.checkCompaction(staleAssistant, false);
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it("checks threshold for new prompt text after compaction when last assistant is stale", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-small", contextWindow: 1000 }],
+			settings: { compaction: { reserveTokens: 100 } },
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const staleTimestamp = Date.now() - 10_000;
+		const staleAssistant = createAssistant(harness, {
+			stopReason: "stop",
+			totalTokens: 900,
+			timestamp: staleTimestamp,
+		});
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "before compaction" }],
+			timestamp: staleTimestamp - 1000,
+		});
+		harness.sessionManager.appendMessage(staleAssistant);
+		const firstKeptEntryId = harness.sessionManager.getEntries()[0]!.id;
+		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, 900, undefined, false);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(staleAssistant, false, [
+			{
+				role: "user",
+				content: "new prompt ".repeat(600),
+				timestamp: Date.now(),
+			},
+		]);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
 	it("triggers threshold compaction for error messages using the last successful usage", async () => {

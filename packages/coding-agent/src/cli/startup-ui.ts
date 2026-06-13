@@ -1,9 +1,34 @@
 import { ProcessTerminal, setKeybindings, TUI } from "@earendil-works/pi-tui";
+import { existsSync } from "fs";
+import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, getSettingsPath, PACKAGE_NAME } from "../config.ts";
+import { areExperimentalFeaturesEnabled } from "../core/experimental.ts";
 import { KeybindingsManager } from "../core/keybindings.ts";
 import type { SettingsManager } from "../core/settings-manager.ts";
 import { ExtensionInputComponent } from "../modes/interactive/components/extension-input.ts";
 import { ExtensionSelectorComponent } from "../modes/interactive/components/extension-selector.ts";
-import { initTheme } from "../modes/interactive/theme/theme.ts";
+import {
+	FirstTimeSetupComponent,
+	type FirstTimeSetupResult,
+} from "../modes/interactive/components/first-time-setup.ts";
+import { detectTerminalBackground, initTheme, setTheme } from "../modes/interactive/theme/theme.ts";
+
+const OFFICIAL_PACKAGE_NAME = "@earendil-works/pi-coding-agent";
+const OFFICIAL_APP_NAME = "pi";
+const OFFICIAL_CONFIG_DIR_NAME = ".pi";
+
+interface DistributionMetadata {
+	packageName: string;
+	appName: string;
+	configDirName: string;
+}
+
+function isOfficialDistribution({ packageName, appName, configDirName }: DistributionMetadata): boolean {
+	return (
+		packageName === OFFICIAL_PACKAGE_NAME &&
+		appName === OFFICIAL_APP_NAME &&
+		configDirName === OFFICIAL_CONFIG_DIR_NAME
+	);
+}
 
 function createStartupTui(settingsManager: SettingsManager): TUI {
 	initTheme(settingsManager.getTheme());
@@ -17,6 +42,32 @@ async function clearStartupTui(ui: TUI): Promise<void> {
 	ui.clear();
 	ui.requestRender();
 	await new Promise((resolve) => setTimeout(resolve, 25));
+}
+
+/**
+ * First-time setup runs when all of these hold:
+ * - this is the official Pi distribution (not a fork/rebrand)
+ * - experimental features are enabled (PI_EXPERIMENTAL=1)
+ * - the default agent directory is used (no custom agent dir override)
+ * - setup was not completed before (settings.json does not exist)
+ */
+export function shouldRunFirstTimeSetup(settingsPath: string = getSettingsPath()): boolean {
+	if (
+		!isOfficialDistribution({
+			packageName: PACKAGE_NAME,
+			appName: APP_NAME,
+			configDirName: CONFIG_DIR_NAME,
+		})
+	) {
+		return false;
+	}
+	if (!areExperimentalFeaturesEnabled()) {
+		return false;
+	}
+	if (process.env[ENV_AGENT_DIR]) {
+		return false;
+	}
+	return !existsSync(settingsPath);
 }
 
 export async function showStartupSelector<T>(
@@ -47,6 +98,43 @@ export async function showStartupSelector<T>(
 		);
 		ui.addChild(selector);
 		ui.setFocus(selector);
+		ui.start();
+	});
+}
+
+/** Show the first-time setup dialog and persist the result */
+export async function showFirstTimeSetup(settingsManager: SettingsManager): Promise<void> {
+	return new Promise((resolve) => {
+		const ui = createStartupTui(settingsManager);
+
+		let settled = false;
+		const finish = async (result: FirstTimeSetupResult | undefined) => {
+			if (settled) {
+				return;
+			}
+			settled = true;
+			if (result) {
+				settingsManager.setTheme(result.theme);
+				settingsManager.setEnableAnalytics(result.shareAnalytics);
+				await settingsManager.flush();
+			}
+			await clearStartupTui(ui);
+			ui.stop();
+			resolve();
+		};
+
+		const component = new FirstTimeSetupComponent({
+			detectedTheme: detectTerminalBackground().theme,
+			onThemePreview: (themeName) => {
+				setTheme(themeName);
+				ui.invalidate();
+				ui.requestRender();
+			},
+			onSubmit: (result) => void finish(result),
+			onCancel: () => void finish(undefined),
+		});
+		ui.addChild(component);
+		ui.setFocus(component);
 		ui.start();
 	});
 }
