@@ -4,6 +4,7 @@ import {
 	EventStream,
 	type Message,
 	type Model,
+	type ToolResultMessage,
 	type UserMessage,
 } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
@@ -78,6 +79,18 @@ function createUserMessage(text: string): UserMessage {
 // Simple identity converter for tests - just passes through standard messages
 function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
+}
+
+function isAssistantMessageEnd(event: AgentEvent): event is Extract<AgentEvent, { type: "message_end" }> & {
+	message: AssistantMessage;
+} {
+	return event.type === "message_end" && event.message.role === "assistant";
+}
+
+function isToolResultMessageEnd(event: AgentEvent): event is Extract<AgentEvent, { type: "message_end" }> & {
+	message: ToolResultMessage;
+} {
+	return event.type === "message_end" && event.message.role === "toolResult";
 }
 
 describe("agentLoop with AgentMessage", () => {
@@ -305,6 +318,312 @@ describe("agentLoop with AgentMessage", () => {
 		if (toolEnd?.type === "tool_execution_end") {
 			expect(toolEnd.isError).toBe(false);
 		}
+	});
+
+	it("should execute a misplaced XML tool call from assistant text", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("echo misplaced")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([
+							{
+								type: "text",
+								text: [
+									"I should call a tool.",
+									"<tool_call>",
+									"<function=echo>",
+									"<parameter=value>",
+									"hello",
+									"</parameter>",
+									"</function>",
+									"</tool_call>",
+								].join("\n"),
+							},
+						]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		expect(executed).toEqual(["hello"]);
+		const assistantEnd = events.find(isAssistantMessageEnd);
+		expect(assistantEnd?.message.content.some((block) => block.type === "toolCall" && block.name === "echo")).toBe(
+			true,
+		);
+		expect(callIndex).toBe(2);
+	});
+
+	it("should convert a malformed misplaced XML tool call into an error tool result and continue", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("echo malformed")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([
+							{
+								type: "text",
+								text: "<tool_call><function=echo></function></tool_call>",
+							},
+						]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "recovered" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const toolResult = events.find(isToolResultMessageEnd);
+		expect(toolResult?.message.isError).toBe(true);
+		expect(callIndex).toBe(2);
+	});
+
+	it("should execute a misplaced JSON tool call from assistant thinking", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		const rawToolCall = JSON.stringify({
+			function: { name: "echo", arguments: JSON.stringify({ value: "from thinking" }) },
+		});
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("echo from thinking")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([
+							{ type: "thinking", thinking: `<tool_call>${rawToolCall}</tool_call>` },
+						]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		for await (const _event of stream) {
+			// Drain stream.
+		}
+
+		expect(executed).toEqual(["from thinking"]);
+		expect(callIndex).toBe(2);
+	});
+
+	it("should ignore misplaced XML tool call examples inside markdown fences", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("show example")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				mockStream.push({
+					type: "done",
+					reason: "stop",
+					message: createAssistantMessage([
+						{
+							type: "text",
+							text: [
+								"Example:",
+								"```xml",
+								"<tool_call><function=echo><parameter=value>nope</parameter></function></tool_call>",
+								"```",
+							].join("\n"),
+						},
+					]),
+				});
+				callIndex++;
+			});
+			return mockStream;
+		});
+		for await (const _event of stream) {
+			// Drain stream.
+		}
+
+		expect(executed).toEqual([]);
+		expect(callIndex).toBe(1);
+	});
+
+	it("should convert an unknown misplaced XML tool call into an error tool result and continue", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			convertToLlm: identityConverter,
+		};
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("call missing")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([
+							{
+								type: "text",
+								text: "<tool_call><function=missing><parameter=value>x</parameter></function></tool_call>",
+							},
+						]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "recovered" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		const toolResult = events.find(isToolResultMessageEnd);
+		expect(toolResult?.message.isError).toBe(true);
+		expect(callIndex).toBe(2);
 	});
 
 	it("should execute mutated beforeToolCall args without revalidation", async () => {

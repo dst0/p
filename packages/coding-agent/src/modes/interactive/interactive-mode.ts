@@ -425,6 +425,7 @@ export class InteractiveMode {
 		this.footerDataProvider = new FooterDataProvider(this.sessionManager.getCwd());
 		this.footer = new FooterComponent(this.session, this.footerDataProvider);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setShowTokenProgress(this.settingsManager.getShowTokenProgress());
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -1618,6 +1619,7 @@ export class InteractiveMode {
 		configureHttpDispatcher(this.settingsManager.getHttpIdleTimeoutMs());
 		this.footer.setSession(this.session);
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
+		this.footer.setShowTokenProgress(this.settingsManager.getShowTokenProgress());
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -2748,6 +2750,8 @@ export class InteractiveMode {
 		switch (event.type) {
 			case "agent_start":
 				this.pendingTools.clear();
+				this.footerDataProvider.clearProgress();
+				this.footerDataProvider.setPrefillProgress({ percent: 0, elapsedMs: 0 });
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2798,6 +2802,8 @@ export class InteractiveMode {
 					this.updatePendingMessagesDisplay();
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
+					this.footerDataProvider.clearProgress();
+					this.footerDataProvider.setPrefillProgress({ percent: 0, elapsedMs: 0 });
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2817,14 +2823,33 @@ export class InteractiveMode {
 					this.streamingComponent.updateContent(this.streamingMessage);
 
 					if (event.assistantMessageEvent?.type === "prefill_progress") {
+						const percent =
+							"percent" in event.assistantMessageEvent && typeof event.assistantMessageEvent.percent === "number"
+								? event.assistantMessageEvent.percent
+								: 100;
+						const tokensPerSecond =
+							"tokensPerSecond" in event.assistantMessageEvent &&
+							typeof event.assistantMessageEvent.tokensPerSecond === "number"
+								? event.assistantMessageEvent.tokensPerSecond
+								: undefined;
 						this.footerDataProvider.setPrefillProgress({
 							elapsedMs: event.assistantMessageEvent.elapsedMs,
+							percent,
+							tokensPerSecond,
 						});
 					} else if (event.assistantMessageEvent?.type === "gen_progress") {
+						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress({
 							tokensPerSecond: event.assistantMessageEvent.tokensPerSecond,
 							tokens: event.assistantMessageEvent.tokens,
 						});
+					} else if (
+						event.assistantMessageEvent?.type === "text_start" ||
+						event.assistantMessageEvent?.type === "thinking_start" ||
+						event.assistantMessageEvent?.type === "toolcall_start"
+					) {
+						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setGenProgress({ tokensPerSecond: 0, tokens: 0 });
 					}
 
 					for (const content of this.streamingMessage.content) {
@@ -3837,7 +3862,9 @@ export class InteractiveMode {
 	private updatePendingMessagesDisplay(): void {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
-		if (steeringMessages.length > 0 || followUpMessages.length > 0) {
+		const queuedMessageCount = steeringMessages.length + followUpMessages.length;
+		this.footerDataProvider.setQueuedProgress(queuedMessageCount > 0 ? { messages: queuedMessageCount } : undefined);
+		if (queuedMessageCount > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
 				const text = theme.fg("dim", `Steering: ${message}`);
@@ -4029,6 +4056,7 @@ export class InteractiveMode {
 					quietStartup: this.settingsManager.getQuietStartup(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
+					showTokenProgress: this.settingsManager.getShowTokenProgress(),
 					warnings: this.settingsManager.getWarnings(),
 				},
 				{
@@ -4150,6 +4178,11 @@ export class InteractiveMode {
 					},
 					onShowTerminalProgressChange: (enabled) => {
 						this.settingsManager.setShowTerminalProgress(enabled);
+					},
+					onShowTokenProgressChange: (enabled) => {
+						this.settingsManager.setShowTokenProgress(enabled);
+						this.footer.setShowTokenProgress(enabled);
+						this.ui.requestRender();
 					},
 					onWarningsChange: (warnings) => {
 						this.settingsManager.setWarnings(warnings);

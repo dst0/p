@@ -114,7 +114,7 @@ Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--off
 |---------|------|---------|-------------|
 | `retry.enabled` | boolean | `true` | Enable automatic agent-level retry on transient errors |
 | `retry.maxRetries` | number | `3` | Maximum agent-level retry attempts |
-| `retry.baseDelayMs` | number | `2000` | Base delay for agent-level exponential backoff (2s, 4s, 8s) |
+| `retry.baseDelayMs` | number | `500` | Base delay for agent-level exponential backoff (0.5s, 1s, 2s) |
 | `retry.provider.timeoutMs` | number | SDK default | Provider/SDK request timeout in milliseconds |
 | `retry.provider.maxRetries` | number | `0` | Provider/SDK retry attempts |
 | `retry.provider.maxRetryDelayMs` | number | `60000` | Max server-requested delay before failing (60s) |
@@ -128,7 +128,7 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
   "retry": {
     "enabled": true,
     "maxRetries": 3,
-    "baseDelayMs": 2000,
+    "baseDelayMs": 500,
     "provider": {
       "timeoutMs": 3600000,
       "maxRetries": 0,
@@ -155,6 +155,7 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 | `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
 | `terminal.imageWidthCells` | number | `60` | Preferred inline image width in terminal cells |
 | `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when content shrinks (can cause flicker) |
+| `terminal.showTokenProgress` | boolean | `true` | Show compact `QUEUED`, `PREFILL`, and `GEN` progress in the footer |
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
 

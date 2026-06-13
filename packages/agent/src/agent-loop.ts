@@ -408,7 +408,7 @@ async function streamAssistantResponse(
 
 			case "done":
 			case "error": {
-				const finalMessage = await response.result();
+				const finalMessage = recoverMisplacedToolCalls(await response.result(), context.tools);
 				if (addedPartial) {
 					context.messages[context.messages.length - 1] = finalMessage;
 				} else {
@@ -423,7 +423,7 @@ async function streamAssistantResponse(
 		}
 	}
 
-	const finalMessage = await response.result();
+	const finalMessage = recoverMisplacedToolCalls(await response.result(), context.tools);
 	if (addedPartial) {
 		context.messages[context.messages.length - 1] = finalMessage;
 	} else {
@@ -432,6 +432,167 @@ async function streamAssistantResponse(
 	}
 	await emit({ type: "message_end", message: finalMessage });
 	return finalMessage;
+}
+
+function recoverMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AssistantMessage {
+	if (message.content.some((block) => block.type === "toolCall")) {
+		return message;
+	}
+	const toolCalls = extractMisplacedToolCalls(message, tools);
+	if (toolCalls.length === 0) {
+		return message;
+	}
+	return {
+		...message,
+		content: [...message.content, ...toolCalls],
+		stopReason: "toolUse",
+	};
+}
+
+function extractMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AgentToolCall[] {
+	const toolNames = new Set(tools?.map((tool) => tool.name) ?? []);
+	const text = message.content
+		.flatMap((block) => {
+			if (block.type === "text") return [block.text];
+			if (block.type === "thinking") return [block.thinking];
+			return [];
+		})
+		.join("\n");
+	const toolCalls: AgentToolCall[] = [];
+	const blockMatches = stripMarkdownCodeFences(text).matchAll(/<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi);
+	let index = 0;
+	for (const blockMatch of blockMatches) {
+		const parsed = parseMisplacedToolCallBlock(blockMatch[1]);
+		if (!parsed) continue;
+		const knownTool = toolNames.size === 0 || toolNames.has(parsed.name);
+		toolCalls.push({
+			type: "toolCall",
+			id: `recovered_${Date.now()}_${index}_${sanitizeToolCallIdSegment(parsed.name)}`,
+			name: parsed.name,
+			arguments: knownTool ? parsed.arguments : {},
+		});
+		index++;
+	}
+	return toolCalls;
+}
+
+function stripMarkdownCodeFences(value: string): string {
+	const lines = value.split(/\r?\n/);
+	let activeFence: string | undefined;
+	return lines
+		.map((line) => {
+			const fenceMatch = line.match(/^\s*(```+|~~~+)/);
+			if (fenceMatch) {
+				const fence = fenceMatch[1][0];
+				if (!activeFence) {
+					activeFence = fence;
+				} else if (activeFence === fence) {
+					activeFence = undefined;
+				}
+				return "";
+			}
+			return activeFence ? "" : line;
+		})
+		.join("\n");
+}
+
+function parseMisplacedToolCallBlock(block: string): { name: string; arguments: Record<string, unknown> } | undefined {
+	const jsonCall = parseMisplacedToolCallJson(block.trim());
+	if (jsonCall) return jsonCall;
+
+	const functionMatch =
+		block.match(/<function=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/function>/i) ??
+		block.match(/<function\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/function>/i);
+	const bareFunctionMatch = block.match(/<function>\s*([A-Za-z0-9_.:-]+)\s*<\/function>/i);
+	const name = functionMatch?.[1]?.trim() ?? bareFunctionMatch?.[1]?.trim();
+	if (!name) return undefined;
+	return {
+		name,
+		arguments: parseMisplacedToolArguments(functionMatch?.[2] ?? block),
+	};
+}
+
+function parseMisplacedToolCallJson(block: string): { name: string; arguments: Record<string, unknown> } | undefined {
+	if (!block.startsWith("{") || !block.endsWith("}")) {
+		return undefined;
+	}
+	try {
+		const parsed = JSON.parse(block) as unknown;
+		if (!isRecord(parsed)) return undefined;
+		const nestedFunction = parsed.function;
+		if (isRecord(nestedFunction)) {
+			const name = typeof nestedFunction.name === "string" ? nestedFunction.name.trim() : "";
+			if (!name) return undefined;
+			return {
+				name,
+				arguments: normalizeMisplacedToolArguments(nestedFunction.arguments ?? parsed.arguments ?? parsed.input),
+			};
+		}
+		const nameValue = parsed.name ?? parsed.tool_name ?? parsed.function;
+		const name = typeof nameValue === "string" ? nameValue.trim() : "";
+		if (!name) return undefined;
+		return {
+			name,
+			arguments: normalizeMisplacedToolArguments(parsed.arguments ?? parsed.input),
+		};
+	} catch {
+		return undefined;
+	}
+}
+
+function parseMisplacedToolArguments(body: string): Record<string, unknown> {
+	const parameters: Record<string, unknown> = {};
+	for (const match of body.matchAll(/<parameter=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/parameter>/gi)) {
+		parameters[match[1]] = decodeXmlText(match[2].trim());
+	}
+	if (Object.keys(parameters).length > 0) {
+		return parameters;
+	}
+	const argumentsMatch = body.match(/<arguments>\s*([\s\S]*?)\s*<\/arguments>/i);
+	const jsonText = argumentsMatch?.[1]?.trim() ?? body.trim();
+	if (jsonText.startsWith("{") && jsonText.endsWith("}")) {
+		return normalizeMisplacedToolArguments(jsonText);
+	}
+	return {};
+}
+
+function normalizeMisplacedToolArguments(value: unknown): Record<string, unknown> {
+	if (isRecord(value)) {
+		return value;
+	}
+	if (typeof value !== "string") {
+		return {};
+	}
+	const text = value.trim();
+	if (!text.startsWith("{") || !text.endsWith("}")) {
+		return {};
+	}
+	try {
+		const parsed = JSON.parse(text) as unknown;
+		if (isRecord(parsed)) return parsed;
+	} catch {
+		return {};
+	}
+	return {};
+}
+
+function decodeXmlText(value: string): string {
+	return value
+		.replaceAll("&lt;", "<")
+		.replaceAll("&gt;", ">")
+		.replaceAll("&quot;", '"')
+		.replaceAll("&#39;", "'")
+		.replace(/&#x([0-9a-f]+);/gi, (_match, codepoint: string) => String.fromCodePoint(Number.parseInt(codepoint, 16)))
+		.replace(/&#([0-9]+);/g, (_match, codepoint: string) => String.fromCodePoint(Number.parseInt(codepoint, 10)))
+		.replaceAll("&amp;", "&");
+}
+
+function sanitizeToolCallIdSegment(value: string): string {
+	return value.replace(/[^A-Za-z0-9_.:-]+/g, "_").slice(0, 48) || "tool";
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 /**

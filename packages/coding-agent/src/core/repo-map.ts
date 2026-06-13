@@ -4,11 +4,54 @@ import { dirname, extname, join, relative } from "node:path";
 
 const REPO_MAP_VERSION = 1;
 const REPO_MAP_FILE = ".pdev/state/repo-map.json";
-const MAX_FILES = 400;
+const MAX_FILES = 1_200;
 const MAX_FILE_BYTES = 200_000;
 const MAX_CONTEXT_TOKENS = 900;
 const INDEX_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".mjs", ".cjs"]);
-const SKIP_DIRS = new Set([".git", ".pdev", "node_modules", "dist", "build", "coverage", ".next", ".cache"]);
+const QUERY_STOP_WORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"are",
+	"as",
+	"available",
+	"based",
+	"be",
+	"by",
+	"exactly",
+	"file",
+	"for",
+	"from",
+	"if",
+	"in",
+	"is",
+	"it",
+	"no",
+	"of",
+	"on",
+	"only",
+	"or",
+	"path",
+	"that",
+	"the",
+	"this",
+	"to",
+	"tools",
+	"with",
+]);
+const SKIP_DIRS = new Set([
+	".antigravitycli",
+	".git",
+	".idea",
+	".junie",
+	".pdev",
+	"node_modules",
+	"dist",
+	"build",
+	"coverage",
+	".next",
+	".cache",
+]);
 
 export interface SymbolRef {
 	name: string;
@@ -122,7 +165,8 @@ function listIndexableFiles(root: string): string[] {
 	const result: string[] = [];
 	const visit = (dir: string): void => {
 		if (result.length >= MAX_FILES) return;
-		for (const entry of readdirSync(dir, { withFileTypes: true })) {
+		const entries = readdirSync(dir, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name));
+		for (const entry of entries) {
 			if (result.length >= MAX_FILES) return;
 			const path = join(dir, entry.name);
 			if (entry.isDirectory()) {
@@ -177,11 +221,13 @@ function extractExports(text: string): SymbolRef[] {
 	];
 	for (const pattern of patterns) {
 		for (const match of text.matchAll(pattern.regex)) {
+			if (isInsideStringLiteralOnLine(text, match.index ?? 0)) continue;
 			const line = findLine(text, match.index ?? 0);
 			result.push({ name: match[1], kind: pattern.kind, signature: line.trim().slice(0, 180) });
 		}
 	}
 	for (const match of text.matchAll(/export\s+\{([^}]+)\}/g)) {
+		if (isInsideStringLiteralOnLine(text, match.index ?? 0)) continue;
 		for (const name of match[1].split(",").map((part) =>
 			part
 				.trim()
@@ -215,12 +261,19 @@ function summarizeFile(text: string, path: string): string {
 }
 
 function scoreFile(file: RepoMapFile, terms: string[]): number {
-	const haystack = `${file.path} ${file.language} ${file.summary} ${file.imports.join(" ")} ${file.exports
-		.map((symbol) => symbol.name)
-		.join(" ")}`.toLowerCase();
+	const path = file.path.toLowerCase();
+	const summary = file.summary.toLowerCase();
+	const imports = file.imports.join(" ").toLowerCase();
+	const exports = file.exports.map((symbol) => symbol.name.toLowerCase());
 	let score = 0;
 	for (const term of terms) {
-		if (haystack.includes(term)) score++;
+		for (const symbol of exports) {
+			if (symbol === term) score += 200;
+			else if (symbol.includes(term)) score += 12;
+		}
+		if (path.includes(term)) score += 6;
+		if (imports.includes(term)) score += 2;
+		if (summary.includes(term)) score += 1;
 	}
 	return score;
 }
@@ -233,7 +286,7 @@ function getGitSha(root: string): string {
 function getWorktreeFingerprint(root: string): string {
 	const result = spawnSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
 	if (result.status === 0) {
-		return result.stdout.trim();
+		return fingerprintGitStatus(root, result.stdout);
 	}
 	return `non-git:${listIndexableFiles(root)
 		.map((path) => {
@@ -241,6 +294,58 @@ function getWorktreeFingerprint(root: string): string {
 			return `${relative(root, path)}:${stat.size}:${stat.mtimeMs}`;
 		})
 		.join("|")}`;
+}
+
+function fingerprintGitStatus(root: string, status: string): string {
+	const lines = status
+		.split("\n")
+		.map((line) => line.trimEnd())
+		.filter((line) => line.length > 0);
+	const dirtyPaths = [
+		...new Set(
+			lines
+				.flatMap(parseGitStatusPaths)
+				.filter((path) => !isSkippedRelativePath(path))
+				.sort(),
+		),
+	];
+	const visibleLines = lines.filter((line) => {
+		const paths = parseGitStatusPaths(line);
+		return paths.length === 0 || paths.some((path) => !isSkippedRelativePath(path));
+	});
+	const stats = dirtyPaths.map((path) => {
+		try {
+			const stat = statSync(join(root, path));
+			return `${path}:${stat.size}:${stat.mtimeMs}`;
+		} catch {
+			return `${path}:missing`;
+		}
+	});
+	return [...visibleLines, ...stats].join("\n");
+}
+
+function parseGitStatusPaths(line: string): string[] {
+	const path = line.slice(3).trim();
+	if (path.length === 0) return [];
+	const renameSeparator = " -> ";
+	const renamedPath = path.includes(renameSeparator) ? (path.split(renameSeparator).at(-1) ?? path) : path;
+	return [normalizeGitStatusPath(renamedPath)];
+}
+
+function normalizeGitStatusPath(path: string): string {
+	if (path.startsWith('"') && path.endsWith('"')) {
+		try {
+			const parsed = JSON.parse(path) as unknown;
+			if (typeof parsed === "string") return parsed;
+		} catch {
+			return path;
+		}
+	}
+	return path;
+}
+
+function isSkippedRelativePath(path: string): boolean {
+	return path.split(/[\\/]/)[0] ? SKIP_DIRS.has(path.split(/[\\/]/)[0]) : false;
 }
 
 function safeRead(path: string): string {
@@ -255,6 +360,29 @@ function findLine(text: string, index: number): string {
 	const start = text.lastIndexOf("\n", index) + 1;
 	const end = text.indexOf("\n", index);
 	return text.slice(start, end === -1 ? text.length : end);
+}
+
+function isInsideStringLiteralOnLine(text: string, index: number): boolean {
+	const lineStart = text.lastIndexOf("\n", index) + 1;
+	const prefix = text.slice(lineStart, index);
+	return hasOddUnescapedQuote(prefix, '"') || hasOddUnescapedQuote(prefix, "'") || hasOddUnescapedQuote(prefix, "`");
+}
+
+function hasOddUnescapedQuote(text: string, quote: string): boolean {
+	let count = 0;
+	let escaped = false;
+	for (const char of text) {
+		if (escaped) {
+			escaped = false;
+			continue;
+		}
+		if (char === "\\") {
+			escaped = true;
+			continue;
+		}
+		if (char === quote) count++;
+	}
+	return count % 2 === 1;
 }
 
 function dedupeSymbols(symbols: SymbolRef[]): SymbolRef[] {
@@ -289,11 +417,12 @@ function languageForExtension(ext: string): string {
 }
 
 function tokenize(value: string): string[] {
-	return value
+	const terms = value
 		.toLowerCase()
 		.split(/[^a-z0-9_.:/-]+/i)
-		.map((term) => term.trim())
-		.filter((term) => term.length > 0);
+		.map((term) => term.trim().replace(/^[._:/-]+|[._:/-]+$/g, ""))
+		.filter((term) => term.length > 1 && !QUERY_STOP_WORDS.has(term));
+	return [...new Set(terms)];
 }
 
 function capText(text: string, maxTokens: number): string {

@@ -73,6 +73,34 @@ describe("AgentSession retry and event characterization", () => {
 		expect(harness.faux.state.callCount).toBe(3);
 	});
 
+	it("retries transport interruptions with exponential delays", async () => {
+		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 4, baseDelayMs: 1 } } });
+		harnesses.push(harness);
+		const retryStarts: Array<{ delayMs: number; errorMessage: string }> = [];
+		harness.session.subscribe((event) => {
+			if (event.type === "auto_retry_start") {
+				retryStarts.push({ delayMs: event.delayMs, errorMessage: event.errorMessage });
+			}
+		});
+
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "read ECONNRESET" }),
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "UND_ERR_SOCKET: other side closed" }),
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "EAI_AGAIN temporary DNS failure" }),
+			fauxAssistantMessage("reconnected"),
+		]);
+
+		await harness.session.prompt("test");
+
+		expect(retryStarts.map((event) => event.delayMs)).toEqual([1, 2, 4]);
+		expect(retryStarts.map((event) => event.errorMessage)).toEqual([
+			"read ECONNRESET",
+			"UND_ERR_SOCKET: other side closed",
+			"EAI_AGAIN temporary DNS failure",
+		]);
+		expect(harness.faux.state.callCount).toBe(4);
+	});
+
 	it("exhausts max retries and emits a failure event", async () => {
 		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } } });
 		harnesses.push(harness);

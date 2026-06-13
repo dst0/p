@@ -47,6 +47,7 @@ export function formatCwdForFooter(cwd: string, home: string | undefined): strin
  */
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
+	private showTokenProgress = true;
 	private session: AgentSession;
 	private footerData: ReadonlyFooterDataProvider;
 
@@ -61,6 +62,10 @@ export class FooterComponent implements Component {
 
 	setAutoCompactEnabled(enabled: boolean): void {
 		this.autoCompactEnabled = enabled;
+	}
+
+	setShowTokenProgress(enabled: boolean): void {
+		this.showTokenProgress = enabled;
 	}
 
 	/**
@@ -144,13 +149,25 @@ export class FooterComponent implements Component {
 			statsParts.push(costStr);
 		}
 
-		// Show prefill or gen progress
-		const prefill = this.footerData.getPrefillProgress();
-		const gen = this.footerData.getGenProgress();
-		if (prefill) {
-			statsParts.push(theme.fg("dim", `prefilling (${(prefill.elapsedMs / 1000).toFixed(1)}s)`));
-		} else if (gen) {
-			statsParts.push(theme.fg("dim", `${gen.tokensPerSecond.toFixed(0)} t/s`));
+		if (this.showTokenProgress) {
+			const queued = this.footerData.getQueuedProgress();
+			const prefill = this.footerData.getPrefillProgress();
+			const gen = this.footerData.getGenProgress();
+			if (queued) {
+				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
+			} else if (prefill) {
+				const percent = Math.max(0, Math.min(100, Math.round(prefill.percent)));
+				const rate =
+					prefill.tokensPerSecond === undefined ? "" : ` ${Math.max(0, Math.round(prefill.tokensPerSecond))} t/s`;
+				statsParts.push(theme.fg("accent", `${theme.bold("PREFILL")} ${percent}%${rate}`));
+			} else if (gen) {
+				statsParts.push(
+					theme.fg(
+						"accent",
+						`${theme.bold("GEN")} ${formatTokens(gen.tokens)} tok ${gen.tokensPerSecond.toFixed(0)} t/s`,
+					),
+				);
+			}
 		}
 
 		// Colorize context percentage based on usage

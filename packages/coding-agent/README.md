@@ -18,6 +18,7 @@
 ---
 
 Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
+Pi also keeps project memory, scoped rules, and repo-map snippets flowing into prompts automatically, so the active context stays grounded without manual bookkeeping.
 
 Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
 
@@ -275,6 +276,12 @@ Long sessions can exhaust context windows. Compaction summarizes older messages 
 **Automatic:** Enabled by default. Triggers on context overflow (recovers and retries) or when approaching the limit (proactive). Configure via `/settings` or `settings.json`.
 
 Compaction is lossy. The full history remains in the JSONL file; use `/tree` to revisit. Customize compaction behavior via [extensions](#extensions). See [docs/compaction.md](docs/compaction.md) for internals.
+
+---
+
+### Automatic Context
+
+Pi layers scoped memory, rules, and repo-map snippets into the prompt automatically. Use `/state` to inspect the current breakdown, and `/rules lint`, `/rules explain`, `/memory search`, `/memory diff`, `/compact --dry-run`, or `/compact --audit` to inspect or audit what is feeding context.
 
 ---
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added compact interactive footer progress for queued messages, prefill percentage, and generation tokens/rate, controlled by `terminal.showTokenProgress`.
+
 ## [0.79.3] - 2026-06-13
 
 ### Fixed

@@ -7,6 +7,8 @@ import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
+export const DEFAULT_AGENT_RETRY_BASE_DELAY_MS = 500;
+
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
 	/** @deprecated Use triggerReserveTokens. */
@@ -38,7 +40,7 @@ export interface ProviderRetrySettings {
 export interface RetrySettings {
 	enabled?: boolean; // default: true
 	maxRetries?: number; // default: 3
-	baseDelayMs?: number; // default: 2000 (exponential backoff: 2s, 4s, 8s)
+	baseDelayMs?: number; // default: 500 (exponential backoff: 0.5s, 1s, 2s)
 	provider?: ProviderRetrySettings;
 }
 
@@ -47,6 +49,7 @@ export interface TerminalSettings {
 	imageWidthCells?: number; // default: 60 (preferred inline image width in terminal cells)
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
+	showTokenProgress?: boolean; // default: true (compact queued/prefill/generation footer progress)
 }
 
 export interface ImageSettings {
@@ -874,7 +877,7 @@ export class SettingsManager {
 		return {
 			enabled: this.getRetryEnabled(),
 			maxRetries: this.settings.retry?.maxRetries ?? 3,
-			baseDelayMs: this.settings.retry?.baseDelayMs ?? 2000,
+			baseDelayMs: this.settings.retry?.baseDelayMs ?? DEFAULT_AGENT_RETRY_BASE_DELAY_MS,
 		};
 	}
 
@@ -1154,6 +1157,19 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTerminalProgress = enabled;
 		this.markModified("terminal", "showTerminalProgress");
+		this.save();
+	}
+
+	getShowTokenProgress(): boolean {
+		return this.settings.terminal?.showTokenProgress ?? true;
+	}
+
+	setShowTokenProgress(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.showTokenProgress = enabled;
+		this.markModified("terminal", "showTokenProgress");
 		this.save();
 	}
 

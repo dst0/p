@@ -1,7 +1,12 @@
 import { visibleWidth } from "@earendil-works/pi-tui";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
-import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
+import type {
+	GenerationProgress,
+	PrefillProgress,
+	QueuedProgress,
+	ReadonlyFooterDataProvider,
+} from "../src/core/footer-data-provider.ts";
 import { FooterComponent, formatCwdForFooter } from "../src/modes/interactive/components/footer.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 import { stripAnsi } from "../src/utils/ansi.ts";
@@ -60,13 +65,21 @@ function createSession(options: {
 	return session as unknown as AgentSession;
 }
 
-function createFooterData(providerCount: number): ReadonlyFooterDataProvider {
+function createFooterData(
+	providerCount: number,
+	progress: {
+		prefill?: PrefillProgress;
+		gen?: GenerationProgress;
+		queued?: QueuedProgress;
+	} = {},
+): ReadonlyFooterDataProvider {
 	const provider = {
 		getGitBranch: () => "main",
 		getExtensionStatuses: () => new Map<string, string>(),
 		getAvailableProviderCount: () => providerCount,
-		getPrefillProgress: () => undefined,
-		getGenProgress: () => undefined,
+		getPrefillProgress: () => progress.prefill,
+		getGenProgress: () => progress.gen,
+		getQueuedProgress: () => progress.queued,
 		onBranchChange: (callback: () => void) => {
 			void callback;
 			return () => {};
@@ -146,5 +159,47 @@ describe("FooterComponent width handling", () => {
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
 		expect(statsLine).toContain("CH25.0%");
+	});
+
+	it("shows compact queued progress before stream progress", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(
+			session,
+			createFooterData(1, {
+				queued: { messages: 2 },
+				prefill: { percent: 42, elapsedMs: 1000 },
+				gen: { tokens: 12, tokensPerSecond: 6 },
+			}),
+		);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("QUEUED 2");
+		expect(statsLine).not.toContain("PREFILL");
+		expect(statsLine).not.toContain("GEN");
+	});
+
+	it("shows compact prefill progress", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(session, createFooterData(1, { prefill: { percent: 42, elapsedMs: 1000 } }));
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("PREFILL 42%");
+	});
+
+	it("shows compact generation progress", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(session, createFooterData(1, { gen: { tokens: 1234, tokensPerSecond: 56 } }));
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("GEN 1.2k tok 56 t/s");
+	});
+
+	it("hides token progress when disabled", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(session, createFooterData(1, { gen: { tokens: 12, tokensPerSecond: 6 } }));
+		footer.setShowTokenProgress(false);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).not.toContain("GEN");
 	});
 });

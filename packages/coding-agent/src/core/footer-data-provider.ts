@@ -9,6 +9,21 @@ type GitPaths = {
 	headPath: string;
 };
 
+export type PrefillProgress = {
+	percent: number;
+	elapsedMs: number;
+	tokensPerSecond?: number;
+};
+
+export type GenerationProgress = {
+	tokensPerSecond: number;
+	tokens: number;
+};
+
+export type QueuedProgress = {
+	messages: number;
+};
+
 /**
  * Find git metadata paths by walking up from cwd.
  * Handles both regular git repos (.git is a directory) and worktrees (.git is a file).
@@ -101,8 +116,9 @@ export class FooterDataProvider {
 	private static readonly WATCH_DEBOUNCE_MS = 500;
 
 	private extensionStatuses = new Map<string, string>();
-	private prefillProgress?: { elapsedMs: number };
-	private genProgress?: { tokensPerSecond: number; tokens: number };
+	private prefillProgress?: PrefillProgress;
+	private genProgress?: GenerationProgress;
+	private queuedProgress?: QueuedProgress;
 	private cachedBranch: string | null | undefined = undefined;
 	private gitPaths: GitPaths | null | undefined = undefined;
 	private headWatcher: FSWatcher | null = null;
@@ -139,12 +155,16 @@ export class FooterDataProvider {
 		return this.extensionStatuses;
 	}
 
-	getPrefillProgress(): { elapsedMs: number } | undefined {
+	getPrefillProgress(): PrefillProgress | undefined {
 		return this.prefillProgress;
 	}
 
-	getGenProgress(): { tokensPerSecond: number; tokens: number } | undefined {
+	getGenProgress(): GenerationProgress | undefined {
 		return this.genProgress;
+	}
+
+	getQueuedProgress(): QueuedProgress | undefined {
+		return this.queuedProgress;
 	}
 
 	/** Subscribe to git branch changes. Returns unsubscribe function. */
@@ -169,18 +189,24 @@ export class FooterDataProvider {
 	}
 
 	/** Internal: set prefill progress */
-	setPrefillProgress(progress: { elapsedMs: number } | undefined): void {
+	setPrefillProgress(progress: PrefillProgress | undefined): void {
 		this.prefillProgress = progress;
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set gen progress */
-	setGenProgress(progress: { tokensPerSecond: number; tokens: number } | undefined): void {
+	setGenProgress(progress: GenerationProgress | undefined): void {
 		this.genProgress = progress;
 		this.notifyProgressChange();
 	}
 
-	/** Internal: clear progress */
+	/** Internal: set queued progress */
+	setQueuedProgress(progress: QueuedProgress | undefined): void {
+		this.queuedProgress = progress;
+		this.notifyProgressChange();
+	}
+
+	/** Internal: clear active stream progress */
 	clearProgress(): void {
 		this.prefillProgress = undefined;
 		this.genProgress = undefined;
@@ -430,6 +456,7 @@ export type ReadonlyFooterDataProvider = Pick<
 	| "getAvailableProviderCount"
 	| "getPrefillProgress"
 	| "getGenProgress"
+	| "getQueuedProgress"
 	| "onBranchChange"
 	| "onProgressChange"
 >;
