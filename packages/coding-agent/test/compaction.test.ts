@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
+import type { AssistantMessage, ToolResultMessage, Usage } from "@earendil-works/pi-ai";
 import { getModel } from "@earendil-works/pi-ai";
 import { readFileSync } from "fs";
 import { join } from "path";
@@ -10,12 +10,18 @@ import {
 	type CompactionSettings,
 	calculateContextTokens,
 	compact,
+	createContextBudgetReport,
+	createInitialStructuredSessionState,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
 	findCutPoint,
 	getLastAssistantUsage,
+	mergeStructuredSessionState,
 	prepareCompaction,
+	renderStructuredSessionCheckpoint,
+	selectKeepRecentTokens,
 	shouldCompact,
+	stubToolResultsForPrompt,
 } from "../src/core/compaction/index.ts";
 import {
 	buildSessionContext,
@@ -65,6 +71,23 @@ function createAssistantMessage(text: string, usage?: Usage): AssistantMessage {
 		api: "anthropic-messages",
 		provider: "anthropic",
 		model: "claude-sonnet-4-5",
+	};
+}
+
+function createToolResultMessage(
+	toolCallId: string,
+	toolName: string,
+	text: string,
+	options?: { isError?: boolean; details?: Record<string, unknown> },
+): ToolResultMessage {
+	return {
+		role: "toolResult",
+		toolCallId,
+		toolName,
+		content: [{ type: "text", text }],
+		details: options?.details,
+		isError: options?.isError ?? false,
+		timestamp: Date.now(),
 	};
 }
 
@@ -196,6 +219,137 @@ describe("Token calculation", () => {
 	});
 });
 
+describe("tool result stubbing", () => {
+	it("stubs old oversized tool results while preserving raw source messages", () => {
+		const hugeOutput = Array.from({ length: 1200 }, (_, index) => `line ${index}: ${"x".repeat(120)}`).join("\n");
+		const oldToolResult = createToolResultMessage("call-old", "bash", hugeOutput, {
+			details: { exitCode: 0 },
+		});
+		const recentToolResult = createToolResultMessage("call-recent", "read", "recent output");
+		const messages: AgentMessage[] = [
+			createUserMessage("run tests"),
+			oldToolResult,
+			createAssistantMessage("next"),
+			recentToolResult,
+		];
+
+		const result = stubToolResultsForPrompt(messages, {
+			...DEFAULT_COMPACTION_SETTINGS,
+			toolResultClearThresholdTokens: 1000,
+			toolResultKeepRecentCount: 1,
+		});
+
+		expect(result.stubs).toHaveLength(1);
+		expect(result.stubs[0].toolCallId).toBe("call-old");
+		expect(result.stubs[0].rawPointer.id).toBe("tool-result:call-old");
+		expect(result.tokenSavingsEstimate).toBeGreaterThan(1000);
+		expect(result.messages).not.toBe(messages);
+		expect(result.messages[1]).not.toBe(oldToolResult);
+		expect(result.messages[3]).toBe(recentToolResult);
+		expect(oldToolResult.content[0]).toEqual({ type: "text", text: hugeOutput });
+		const stubbedText = extractText([result.messages[1]]);
+		expect(stubbedText).toContain("[Tool result stubbed");
+		expect(stubbedText).toContain("session_recall");
+	});
+
+	it("keeps pinned and small failed tool results raw", () => {
+		const pinned = createToolResultMessage("call-pinned", "read", `[pin-context]\n${"x".repeat(5000)}`);
+		const failed = createToolResultMessage("call-failed", "bash", "stderr: failed quickly", {
+			isError: true,
+			details: { exitCode: 1 },
+		});
+		const messages: AgentMessage[] = [pinned, failed, createToolResultMessage("call-recent", "read", "recent")];
+
+		const result = stubToolResultsForPrompt(messages, {
+			...DEFAULT_COMPACTION_SETTINGS,
+			toolResultClearThresholdTokens: 100,
+			toolResultKeepRecentCount: 1,
+		});
+
+		expect(result.stubs).toHaveLength(0);
+		expect(result.messages).toBe(messages);
+	});
+});
+
+describe("structured session state", () => {
+	it("renders a bounded checkpoint from structured state", () => {
+		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-1"), {
+			canonicalRequest: {
+				current: "Fix compaction loop",
+				sourceEntryIds: ["entry-1"],
+			},
+			plan: {
+				add: [
+					{
+						id: "plan-1",
+						text: "Inspect prompt budget",
+						status: "done",
+						evidenceEntryIds: ["entry-2"],
+					},
+				],
+			},
+			progress: {
+				next: ["Run high-64 manual smoke"],
+			},
+			codebase: {
+				touchedFiles: [
+					{
+						path: "packages/coding-agent/src/core/compaction/compaction.ts",
+						status: "modified",
+						summary: "Split compaction budgets.",
+					},
+				],
+				relevantSymbols: [],
+			},
+		});
+
+		const checkpoint = renderStructuredSessionCheckpoint(state, 120);
+
+		expect(checkpoint).toContain("<session_checkpoint>");
+		expect(checkpoint).toContain("Goal: Fix compaction loop");
+		expect(checkpoint).toContain("- [done] Inspect prompt budget");
+		expect(checkpoint.length).toBeLessThanOrEqual(120 * 4 + 120);
+	});
+
+	it("does not supersede active constraints or mark plan done without evidence", () => {
+		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-1"), {
+			constraints: {
+				add: [
+					{
+						id: "constraint-1",
+						text: "Do not force push",
+						source: "user",
+						status: "active",
+						enforceability: "manual",
+					},
+				],
+			},
+			plan: {
+				add: [
+					{
+						id: "plan-1",
+						text: "Verify with tests",
+						status: "in_progress",
+						evidenceEntryIds: [],
+					},
+				],
+			},
+		});
+
+		const next = mergeStructuredSessionState(state, {
+			constraints: {
+				update: [{ id: "constraint-1", patch: { status: "superseded" } }],
+			},
+			plan: {
+				update: [{ id: "plan-1", status: "done", evidenceEntryIds: [] }],
+			},
+		});
+
+		expect(next.constraints[0].status).toBe("active");
+		expect(next.plan[0].status).toBe("in_progress");
+	});
+});
+
 describe("getLastAssistantUsage", () => {
 	it("should find the last non-aborted assistant message usage", () => {
 		const entries: SessionEntry[] = [
@@ -310,6 +464,35 @@ describe("shouldCompact", () => {
 
 		expect(shouldCompact(95000, 100000, settings)).toBe(true);
 		expect(shouldCompact(89000, 100000, settings)).toBe(false);
+	});
+
+	it("should apply ratio trigger and budget report for canonical settings", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			triggerReserveTokens: 12000,
+			triggerRatio: 0.75,
+			targetContextTokens: 12000,
+		};
+
+		const report = createContextBudgetReport(49000, 64000, settings);
+
+		expect(report.triggerThreshold).toBe(48000);
+		expect(report.remainingTokens).toBe(15000);
+		expect(report.shouldCompact).toBe(true);
+		expect(shouldCompact(47000, 64000, settings)).toBe(false);
+	});
+
+	it("should select an adaptive recent suffix budget", () => {
+		const settings: CompactionSettings = {
+			enabled: true,
+			keepRecentMinTokens: 2000,
+			keepRecentMaxTokens: 8000,
+			targetContextTokens: 12000,
+		};
+
+		expect(selectKeepRecentTokens(12000, settings)).toBe(8000);
+		expect(selectKeepRecentTokens(120000, settings)).toBe(2000);
+		expect(selectKeepRecentTokens(72000, settings)).toBe(5000);
 	});
 
 	it("should return false when disabled", () => {
@@ -486,7 +669,9 @@ describe("prepareCompaction with previous compaction", () => {
 
 		const pathEntries = [u1, a1, u2, a2, u3, a3, compaction1, u4, a4];
 		const contextBefore = buildSessionContext(pathEntries);
-		const preparation = expectPrepared(prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS));
+		const preparation = expectPrepared(
+			prepareCompaction(pathEntries, { ...DEFAULT_COMPACTION_SETTINGS, keepRecentTokens: 4000 }),
+		);
 
 		expect(preparation.firstKeptEntryId).toBe(u2.id);
 		expect(preparation.previousSummary).toBe("First summary");
@@ -610,7 +795,7 @@ describe("Large session fixture", () => {
 
 	it("should find cut point in large session", () => {
 		const entries = loadLargeSessionEntries();
-		const result = findCutPoint(entries, 0, entries.length, DEFAULT_COMPACTION_SETTINGS.keepRecentTokens);
+		const result = findCutPoint(entries, 0, entries.length, DEFAULT_COMPACTION_SETTINGS.keepRecentMaxTokens!);
 
 		// Cut point should be at a message entry (user or assistant)
 		expect(entries[result.firstKeptEntryIndex].type).toBe("message");

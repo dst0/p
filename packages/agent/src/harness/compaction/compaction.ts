@@ -102,18 +102,80 @@ export interface CompactionResult<T = unknown> {
 export interface CompactionSettings {
 	/** Enable automatic compaction decisions. */
 	enabled: boolean;
-	/** Tokens reserved for summary prompt and output. */
-	reserveTokens: number;
-	/** Approximate recent-context tokens to keep after compaction. */
-	keepRecentTokens: number;
+	/** @deprecated Use triggerReserveTokens. */
+	reserveTokens?: number;
+	/** @deprecated Use keepRecentMinTokens/keepRecentMaxTokens. */
+	keepRecentTokens?: number;
+	/** Tokens reserved before the model context window is full. */
+	triggerReserveTokens?: number;
+	/** Optional context-window ratio that can trigger compaction before reserve pressure. */
+	triggerRatio?: number;
+	/** Minimum approximate recent-context tokens to keep after compaction. */
+	keepRecentMinTokens?: number;
+	/** Maximum approximate recent-context tokens to keep after compaction. */
+	keepRecentMaxTokens?: number;
+	/** Maximum tokens requested from the summary model. */
+	summaryMaxTokens?: number;
+	/** Maximum rendered checkpoint tokens. */
+	renderedStateMaxTokens?: number;
+	/** Target total prompt context after compaction. */
+	targetContextTokens?: number;
+	/** Tool-result token threshold for future stubbing/clearing. */
+	toolResultClearThresholdTokens?: number;
+	/** Number of latest tool results to keep raw when stubbing is enabled. */
+	toolResultKeepRecentCount?: number;
 }
 
 /** Default compaction settings used by the harness. */
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
-	reserveTokens: 10000,
-	keepRecentTokens: 4000,
+	triggerReserveTokens: 12000,
+	triggerRatio: 0.75,
+	keepRecentMinTokens: 2000,
+	keepRecentMaxTokens: 8000,
+	summaryMaxTokens: 1200,
+	renderedStateMaxTokens: 1500,
+	targetContextTokens: 12000,
+	toolResultClearThresholdTokens: 24000,
+	toolResultKeepRecentCount: 3,
 };
+
+interface ResolvedCompactionSettings {
+	enabled: boolean;
+	triggerReserveTokens: number;
+	triggerRatio?: number;
+	keepRecentMinTokens: number;
+	keepRecentMaxTokens: number;
+	summaryMaxTokens: number;
+	renderedStateMaxTokens: number;
+	targetContextTokens: number;
+	toolResultClearThresholdTokens: number;
+	toolResultKeepRecentCount: number;
+}
+
+function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompactionSettings {
+	return {
+		enabled: settings.enabled,
+		triggerReserveTokens:
+			settings.reserveTokens ?? settings.triggerReserveTokens ?? DEFAULT_COMPACTION_SETTINGS.triggerReserveTokens!,
+		triggerRatio:
+			settings.triggerRatio ??
+			(settings.reserveTokens !== undefined && settings.triggerReserveTokens === undefined
+				? undefined
+				: DEFAULT_COMPACTION_SETTINGS.triggerRatio!),
+		keepRecentMinTokens:
+			settings.keepRecentTokens ?? settings.keepRecentMinTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentMinTokens!,
+		keepRecentMaxTokens:
+			settings.keepRecentTokens ?? settings.keepRecentMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentMaxTokens!,
+		summaryMaxTokens: settings.summaryMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens!,
+		renderedStateMaxTokens: settings.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens!,
+		targetContextTokens: settings.targetContextTokens ?? DEFAULT_COMPACTION_SETTINGS.targetContextTokens!,
+		toolResultClearThresholdTokens:
+			settings.toolResultClearThresholdTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens!,
+		toolResultKeepRecentCount:
+			settings.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount!,
+	};
+}
 
 /** Calculate total context tokens from provider usage. */
 export function calculateContextTokens(usage: Usage): number {
@@ -219,8 +281,30 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 
 /** Return whether context usage exceeds the configured compaction threshold. */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
-	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	const resolved = resolveCompactionSettings(settings);
+	if (!resolved.enabled) return false;
+	if (contextWindow <= 0) return false;
+	const reserveThreshold = Math.max(0, contextWindow - resolved.triggerReserveTokens);
+	const ratioThreshold =
+		resolved.triggerRatio === undefined
+			? Number.POSITIVE_INFINITY
+			: Math.max(0, Math.floor(contextWindow * resolved.triggerRatio));
+	return contextTokens > Math.min(reserveThreshold, ratioThreshold);
+}
+
+export function selectKeepRecentTokens(contextTokens: number, settings: CompactionSettings): number {
+	const resolved = resolveCompactionSettings(settings);
+	const minTokens = Math.max(0, Math.floor(resolved.keepRecentMinTokens));
+	const maxTokens = Math.max(minTokens, Math.floor(resolved.keepRecentMaxTokens));
+	if (maxTokens === minTokens) return minTokens;
+
+	const rampStart = resolved.targetContextTokens * 4;
+	const rampEnd = resolved.targetContextTokens * 8;
+	if (contextTokens <= rampStart) return maxTokens;
+	if (contextTokens >= rampEnd) return minTokens;
+
+	const pressure = (contextTokens - rampStart) / (rampEnd - rampStart);
+	return Math.round(maxTokens - (maxTokens - minTokens) * pressure);
 }
 
 const ESTIMATED_IMAGE_CHARS = 4800;
@@ -496,7 +580,7 @@ Keep each section concise. Preserve exact file paths, function names, and error 
 export async function generateSummary(
 	currentMessages: AgentMessage[],
 	model: Model<any>,
-	reserveTokens: number,
+	summaryMaxTokens: number,
 	apiKey: string,
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
@@ -504,10 +588,7 @@ export async function generateSummary(
 	previousSummary?: string,
 	thinkingLevel?: ThinkingLevel,
 ): Promise<Result<string, CompactionError>> {
-	const maxTokens = Math.min(
-		Math.floor(0.8 * reserveTokens),
-		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
-	);
+	const maxTokens = Math.min(summaryMaxTokens, model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
 	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
 	if (customInstructions) {
 		basePrompt = `${basePrompt}\n\nAdditional focus: ${customInstructions}`;
@@ -576,6 +657,8 @@ export interface CompactionPreparation {
 	fileOps: FileOperations;
 	/** Settings used to prepare compaction. */
 	settings: CompactionSettings;
+	/** Adaptive recent-token budget selected for this run. */
+	keepRecentTokens?: number;
 }
 
 /** Prepare session entries for compaction, or return undefined when compaction is not applicable. */
@@ -607,8 +690,9 @@ export function prepareCompaction(
 	const boundaryEnd = pathEntries.length;
 
 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
+	const keepRecentTokens = selectKeepRecentTokens(tokensBefore, settings);
 
-	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, keepRecentTokens);
 	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
 	if (!firstKeptEntry?.id) {
 		return err(new CompactionError("invalid_session", "First kept entry has no UUID - session may need migration"));
@@ -644,6 +728,7 @@ export function prepareCompaction(
 		previousSummary,
 		fileOps,
 		settings,
+		keepRecentTokens,
 	});
 }
 
@@ -684,6 +769,7 @@ export async function compact(
 		fileOps,
 		settings,
 	} = preparation;
+	const resolvedSettings = resolveCompactionSettings(settings);
 
 	if (!firstKeptEntryId) {
 		return err(new CompactionError("invalid_session", "First kept entry has no UUID - session may need migration"));
@@ -697,7 +783,7 @@ export async function compact(
 				? generateSummary(
 						messagesToSummarize,
 						model,
-						settings.reserveTokens,
+						resolvedSettings.summaryMaxTokens,
 						apiKey,
 						headers,
 						signal,
@@ -709,7 +795,7 @@ export async function compact(
 			generateTurnPrefixSummary(
 				turnPrefixMessages,
 				model,
-				settings.reserveTokens,
+				resolvedSettings.summaryMaxTokens,
 				apiKey,
 				headers,
 				signal,
@@ -723,7 +809,7 @@ export async function compact(
 		const summaryResult = await generateSummary(
 			messagesToSummarize,
 			model,
-			settings.reserveTokens,
+			resolvedSettings.summaryMaxTokens,
 			apiKey,
 			headers,
 			signal,
@@ -748,14 +834,14 @@ export async function compact(
 async function generateTurnPrefixSummary(
 	messages: AgentMessage[],
 	model: Model<any>,
-	reserveTokens: number,
+	summaryMaxTokens: number,
 	apiKey: string,
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
 	thinkingLevel?: ThinkingLevel,
 ): Promise<Result<string, CompactionError>> {
 	const maxTokens = Math.min(
-		Math.floor(0.5 * reserveTokens),
+		Math.floor(0.5 * summaryMaxTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
 	);
 	const llmMessages = convertToLlm(messages);

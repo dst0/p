@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildSystemPrompt } from "../src/core/system-prompt.ts";
+import { buildSystemPrompt, formatContextFileForPrompt } from "../src/core/system-prompt.ts";
 
 describe("buildSystemPrompt", () => {
 	describe("empty tools", () => {
@@ -109,6 +109,31 @@ describe("buildSystemPrompt", () => {
 			});
 
 			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
+		});
+	});
+
+	describe("project context files", () => {
+		test("keeps small context files verbatim", () => {
+			const content = "# Rules\n\nAlways run checks.";
+
+			expect(formatContextFileForPrompt("/tmp/AGENTS.md", content)).toBe(content);
+		});
+
+		test("compacts large context files into a bounded rule index", () => {
+			const content = [
+				"# Rules",
+				"Always run checks.",
+				...Array.from({ length: 700 }, (_, index) => `background detail ${index}`),
+				"Never commit unrelated files.",
+			].join("\n");
+
+			const compacted = formatContextFileForPrompt("/tmp/AGENTS.md", content);
+
+			expect(compacted.length).toBeLessThanOrEqual(6000);
+			expect(compacted).toContain("Large project rules file compacted");
+			expect(compacted).toContain("Always run checks.");
+			expect(compacted).toContain("Never commit unrelated files.");
+			expect(compacted).not.toContain("background detail 699");
 		});
 	});
 });

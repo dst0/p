@@ -125,10 +125,15 @@ describe("generateSummary reasoning options", () => {
 			tokensBefore: 600000,
 			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
 			settings: { enabled: true, reserveTokens: 500000, keepRecentTokens: 20000 },
+			keepRecentTokens: 20000,
+			tokensToSummarize: 1000,
+			recentRawTokens: 1000,
+			droppedEntryIds: ["entry-drop"],
+			systemPromptTokens: 0,
 		};
 
 		await compact(preparation, createModel(false, 128000), "test-key");
 
-		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([128000, 128000]);
+		expect(completeSimpleMock.mock.calls.map((call) => call[2]?.maxTokens)).toEqual([1200, 600]);
 	});
 });

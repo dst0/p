@@ -6,7 +6,15 @@
  */
 
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Context, Model, SimpleStreamOptions, Usage } from "@earendil-works/pi-ai";
+import type {
+	AssistantMessage,
+	Context,
+	Model,
+	SimpleStreamOptions,
+	TextContent,
+	ToolResultMessage,
+	Usage,
+} from "@earendil-works/pi-ai";
 import { completeSimple } from "@earendil-works/pi-ai";
 import {
 	convertToLlm,
@@ -15,6 +23,7 @@ import {
 	createCustomMessage,
 } from "../messages.ts";
 import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
+import type { StructuredSessionState } from "./structured-state.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -29,10 +38,58 @@ import {
 // File Operation Tracking
 // ============================================================================
 
-/** Details stored in CompactionEntry.details for file tracking */
+export interface CompactionAudit {
+	beforeTokens: number;
+	afterTokens: number;
+	savedTokens: number;
+	summaryTokens: number;
+	renderedStateTokens: number;
+	recentRawTokens: number;
+	toolRawTokens: number;
+	toolStubTokens: number;
+	droppedEntries: string[];
+	stubbedToolResults: string[];
+	risks: string[];
+}
+
+export type EvidenceKind = "message" | "tool_result" | "bash" | "file" | "web" | "artifact";
+
+export interface EvidencePointer {
+	id: string;
+	kind: EvidenceKind;
+	entryId?: string;
+	path?: string;
+	summary: string;
+	retrieveWhen: string;
+}
+
+export interface ToolResultStub {
+	toolCallId: string;
+	toolName: string;
+	status: "success" | "error";
+	exitCode?: number;
+	summary: string;
+	keyLines: string[];
+	artifactIds: string[];
+	rawPointer: EvidencePointer;
+	tokenSavingsEstimate: number;
+}
+
+export interface ToolResultStubbingResult {
+	messages: AgentMessage[];
+	stubs: ToolResultStub[];
+	toolRawTokens: number;
+	toolStubTokens: number;
+	tokenSavingsEstimate: number;
+}
+
+/** Details stored in CompactionEntry.details for file tracking and auditability. */
 export interface CompactionDetails {
 	readFiles: string[];
 	modifiedFiles: string[];
+	audit?: CompactionAudit;
+	markdownSummary?: string;
+	structuredState?: StructuredSessionState;
 }
 
 /**
@@ -114,17 +171,70 @@ export interface CompactionResult<T = unknown> {
 
 export interface CompactionSettings {
 	enabled: boolean;
-	reserveTokens: number;
-	keepRecentTokens: number;
+	/** @deprecated Use triggerReserveTokens. */
+	reserveTokens?: number;
+	/** @deprecated Use keepRecentMinTokens/keepRecentMaxTokens. */
+	keepRecentTokens?: number;
+	triggerReserveTokens?: number;
+	triggerRatio?: number;
+	keepRecentMinTokens?: number;
+	keepRecentMaxTokens?: number;
+	summaryMaxTokens?: number;
+	renderedStateMaxTokens?: number;
 	targetContextTokens?: number;
+	toolResultClearThresholdTokens?: number;
+	toolResultKeepRecentCount?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
-	reserveTokens: 4000,
-	keepRecentTokens: 4000,
-	targetContextTokens: 10000,
+	triggerReserveTokens: 12000,
+	triggerRatio: 0.75,
+	keepRecentMinTokens: 2000,
+	keepRecentMaxTokens: 8000,
+	summaryMaxTokens: 1200,
+	renderedStateMaxTokens: 1500,
+	targetContextTokens: 12000,
+	toolResultClearThresholdTokens: 24000,
+	toolResultKeepRecentCount: 3,
 };
+
+interface ResolvedCompactionSettings {
+	enabled: boolean;
+	triggerReserveTokens: number;
+	triggerRatio?: number;
+	keepRecentMinTokens: number;
+	keepRecentMaxTokens: number;
+	summaryMaxTokens: number;
+	renderedStateMaxTokens: number;
+	targetContextTokens: number;
+	toolResultClearThresholdTokens: number;
+	toolResultKeepRecentCount: number;
+}
+
+export function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompactionSettings {
+	return {
+		enabled: settings.enabled,
+		triggerReserveTokens:
+			settings.reserveTokens ?? settings.triggerReserveTokens ?? DEFAULT_COMPACTION_SETTINGS.triggerReserveTokens!,
+		triggerRatio:
+			settings.triggerRatio ??
+			(settings.reserveTokens !== undefined && settings.triggerReserveTokens === undefined
+				? undefined
+				: DEFAULT_COMPACTION_SETTINGS.triggerRatio),
+		keepRecentMinTokens:
+			settings.keepRecentTokens ?? settings.keepRecentMinTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentMinTokens!,
+		keepRecentMaxTokens:
+			settings.keepRecentTokens ?? settings.keepRecentMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.keepRecentMaxTokens!,
+		summaryMaxTokens: settings.summaryMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens!,
+		renderedStateMaxTokens: settings.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens!,
+		targetContextTokens: settings.targetContextTokens ?? DEFAULT_COMPACTION_SETTINGS.targetContextTokens!,
+		toolResultClearThresholdTokens:
+			settings.toolResultClearThresholdTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens!,
+		toolResultKeepRecentCount:
+			settings.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount!,
+	};
+}
 
 // ============================================================================
 // Token calculation
@@ -250,12 +360,69 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	};
 }
 
+export interface ContextBudgetReport {
+	contextTokens: number;
+	contextWindow: number;
+	triggerThreshold: number;
+	triggerReserveTokens: number;
+	triggerRatio?: number;
+	targetContextTokens: number;
+	remainingTokens: number;
+	shouldCompact: boolean;
+}
+
+export function getCompactionTriggerThreshold(contextWindow: number, settings: CompactionSettings): number {
+	if (contextWindow <= 0) return Number.POSITIVE_INFINITY;
+	const resolved = resolveCompactionSettings(settings);
+	const reserveThreshold = Math.max(0, contextWindow - resolved.triggerReserveTokens);
+	const ratioThreshold =
+		resolved.triggerRatio === undefined
+			? Number.POSITIVE_INFINITY
+			: Math.max(0, Math.floor(contextWindow * resolved.triggerRatio));
+	return Math.min(reserveThreshold, ratioThreshold);
+}
+
+export function createContextBudgetReport(
+	contextTokens: number,
+	contextWindow: number,
+	settings: CompactionSettings,
+): ContextBudgetReport {
+	const resolved = resolveCompactionSettings(settings);
+	const triggerThreshold = getCompactionTriggerThreshold(contextWindow, settings);
+	const shouldRunCompaction =
+		resolved.enabled && Number.isFinite(triggerThreshold) && contextTokens > triggerThreshold;
+	return {
+		contextTokens,
+		contextWindow,
+		triggerThreshold,
+		triggerReserveTokens: resolved.triggerReserveTokens,
+		triggerRatio: resolved.triggerRatio,
+		targetContextTokens: resolved.targetContextTokens,
+		remainingTokens: Math.max(0, contextWindow - contextTokens),
+		shouldCompact: shouldRunCompaction,
+	};
+}
+
 /**
  * Check if compaction should trigger based on context usage.
  */
 export function shouldCompact(contextTokens: number, contextWindow: number, settings: CompactionSettings): boolean {
-	if (!settings.enabled) return false;
-	return contextTokens > contextWindow - settings.reserveTokens;
+	return createContextBudgetReport(contextTokens, contextWindow, settings).shouldCompact;
+}
+
+export function selectKeepRecentTokens(contextTokens: number, settings: CompactionSettings): number {
+	const resolved = resolveCompactionSettings(settings);
+	const minTokens = Math.max(0, Math.floor(resolved.keepRecentMinTokens));
+	const maxTokens = Math.max(minTokens, Math.floor(resolved.keepRecentMaxTokens));
+	if (maxTokens === minTokens) return minTokens;
+
+	const rampStart = resolved.targetContextTokens * 4;
+	const rampEnd = resolved.targetContextTokens * 8;
+	if (contextTokens <= rampStart) return maxTokens;
+	if (contextTokens >= rampEnd) return minTokens;
+
+	const pressure = (contextTokens - rampStart) / (rampEnd - rampStart);
+	return Math.round(maxTokens - (maxTokens - minTokens) * pressure);
 }
 
 // ============================================================================
@@ -327,6 +494,224 @@ export function estimateTokens(message: AgentMessage): number {
 }
 
 // ============================================================================
+// Prompt-time tool result stubbing
+
+const FAILED_TOOL_RESULT_KEEP_TOKENS = 2000;
+const TOOL_STUB_KEY_LINE_COUNT = 12;
+const TOOL_STUB_LINE_MAX_CHARS = 240;
+
+function getToolResultText(message: ToolResultMessage): string {
+	return message.content
+		.filter((block): block is TextContent => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+}
+
+function truncateStubLine(line: string): string {
+	const trimmed = line.trim();
+	if (trimmed.length <= TOOL_STUB_LINE_MAX_CHARS) {
+		return trimmed;
+	}
+	return `${trimmed.slice(0, TOOL_STUB_LINE_MAX_CHARS - 15)}... [truncated]`;
+}
+
+function collectKeyLines(text: string): string[] {
+	const nonEmptyLines = text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0);
+	if (nonEmptyLines.length === 0) return [];
+
+	const edgeCount = Math.ceil(TOOL_STUB_KEY_LINE_COUNT / 2);
+	const selected =
+		nonEmptyLines.length <= TOOL_STUB_KEY_LINE_COUNT
+			? nonEmptyLines
+			: [...nonEmptyLines.slice(0, edgeCount), ...nonEmptyLines.slice(-edgeCount)];
+	const seen = new Set<string>();
+	const keyLines: string[] = [];
+	for (const line of selected) {
+		const truncated = truncateStubLine(line);
+		if (!seen.has(truncated)) {
+			seen.add(truncated);
+			keyLines.push(truncated);
+		}
+	}
+	return keyLines;
+}
+
+function getArtifactIds(text: string): string[] {
+	const artifactIds = new Set<string>();
+	const fullOutputPathMatch = text.match(/Full output:\s*([^\]\s]+)/i);
+	if (fullOutputPathMatch) {
+		artifactIds.add(fullOutputPathMatch[1]);
+	}
+	const pathMatches = text.matchAll(/(?:^|\s)((?:\/tmp|\/var\/folders|\/Users)\/[^\s\])]+)/gm);
+	for (const match of pathMatches) {
+		artifactIds.add(match[1]);
+		if (artifactIds.size >= 5) break;
+	}
+	return [...artifactIds];
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function getToolResultExitCode(message: ToolResultMessage): number | undefined {
+	if (!isRecord(message.details)) return undefined;
+	const exitCode = message.details.exitCode;
+	return typeof exitCode === "number" ? exitCode : undefined;
+}
+
+function isPinnedToolResult(message: ToolResultMessage, text: string): boolean {
+	if (isRecord(message.details)) {
+		const pinContext = message.details.pinContext ?? message.details.pinnedContext ?? message.details.keepInContext;
+		if (pinContext === true) return true;
+	}
+	return /\[(?:pin|pinned|pin-context)\]|<pin_context>/i.test(text);
+}
+
+function createToolResultStubText(stub: ToolResultStub, originalTokens: number, stubTokens: number): string {
+	const lines = [
+		"[Tool result stubbed to reduce prompt context]",
+		`Tool: ${stub.toolName}`,
+		`Status: ${stub.status}`,
+		`Raw pointer: ${stub.rawPointer.id}`,
+		`Original estimate: ${originalTokens} tokens`,
+		`Stub estimate: ${stubTokens} tokens`,
+		`Token savings estimate: ${stub.tokenSavingsEstimate} tokens`,
+		`Summary: ${stub.summary}`,
+	];
+	if (stub.exitCode !== undefined) {
+		lines.push(`Exit code: ${stub.exitCode}`);
+	}
+	if (stub.artifactIds.length > 0) {
+		lines.push("Artifacts:");
+		for (const artifactId of stub.artifactIds) {
+			lines.push(`- ${artifactId}`);
+		}
+	}
+	if (stub.keyLines.length > 0) {
+		lines.push("Key lines:");
+		for (const keyLine of stub.keyLines) {
+			lines.push(`- ${keyLine}`);
+		}
+	}
+	lines.push(`Retrieve: session_recall("${stub.rawPointer.id}", { includeRaw: true })`);
+	return lines.join("\n");
+}
+
+function createToolResultStub(
+	message: ToolResultMessage,
+	index: number,
+	originalTokens: number,
+): { message: ToolResultMessage; stub: ToolResultStub; stubTokens: number } {
+	const text = getToolResultText(message);
+	const keyLines = collectKeyLines(text);
+	const status = message.isError ? "error" : "success";
+	const summary = `${message.toolName} ${status} output omitted from prompt context (${text.split("\n").length} lines, ${originalTokens} estimated tokens).`;
+	const pointerId = `tool-result:${message.toolCallId || index}`;
+	const rawPointer: EvidencePointer = {
+		id: pointerId,
+		kind: "tool_result",
+		summary,
+		retrieveWhen: `Need exact raw output for ${message.toolName} tool call ${message.toolCallId}.`,
+	};
+	const stub: ToolResultStub = {
+		toolCallId: message.toolCallId,
+		toolName: message.toolName,
+		status,
+		exitCode: getToolResultExitCode(message),
+		summary,
+		keyLines,
+		artifactIds: getArtifactIds(text),
+		rawPointer,
+		tokenSavingsEstimate: 0,
+	};
+	const initialStubText = createToolResultStubText(stub, originalTokens, 0);
+	const initialStubMessage: ToolResultMessage = {
+		...message,
+		content: [{ type: "text", text: initialStubText }],
+	};
+	const stubTokens = estimateTokens(initialStubMessage);
+	stub.tokenSavingsEstimate = Math.max(0, originalTokens - stubTokens);
+	const finalStubText = createToolResultStubText(stub, originalTokens, stubTokens);
+	return {
+		message: {
+			...message,
+			content: [{ type: "text", text: finalStubText }],
+		},
+		stub,
+		stubTokens,
+	};
+}
+
+function shouldStubToolResult(
+	message: ToolResultMessage,
+	index: number,
+	recentToolResultStartIndex: number,
+	settings: ResolvedCompactionSettings,
+	originalTokens: number,
+): boolean {
+	if (index >= recentToolResultStartIndex) return false;
+	const text = getToolResultText(message);
+	if (isPinnedToolResult(message, text)) return false;
+	if (message.isError && originalTokens <= FAILED_TOOL_RESULT_KEEP_TOKENS) return false;
+	return originalTokens > settings.toolResultClearThresholdTokens;
+}
+
+export function stubToolResultsForPrompt(
+	messages: AgentMessage[],
+	settings: CompactionSettings,
+): ToolResultStubbingResult {
+	const resolved = resolveCompactionSettings(settings);
+	if (messages.length === 0) {
+		return { messages, stubs: [], toolRawTokens: 0, toolStubTokens: 0, tokenSavingsEstimate: 0 };
+	}
+
+	const toolResultIndexes: number[] = [];
+	for (let index = 0; index < messages.length; index++) {
+		if (messages[index].role === "toolResult") {
+			toolResultIndexes.push(index);
+		}
+	}
+	if (toolResultIndexes.length === 0) {
+		return { messages, stubs: [], toolRawTokens: 0, toolStubTokens: 0, tokenSavingsEstimate: 0 };
+	}
+
+	const keepRecentCount = Math.max(0, Math.floor(resolved.toolResultKeepRecentCount));
+	const recentToolResultStartIndex =
+		keepRecentCount === 0
+			? messages.length
+			: (toolResultIndexes[toolResultIndexes.length - keepRecentCount] ?? messages.length);
+	const stubbedMessages = messages.slice();
+	const stubs: ToolResultStub[] = [];
+	let toolRawTokens = 0;
+	let toolStubTokens = 0;
+
+	for (const index of toolResultIndexes) {
+		const message = messages[index] as ToolResultMessage;
+		const originalTokens = estimateTokens(message);
+		toolRawTokens += originalTokens;
+		if (!shouldStubToolResult(message, index, recentToolResultStartIndex, resolved, originalTokens)) {
+			toolStubTokens += originalTokens;
+			continue;
+		}
+		const stubResult = createToolResultStub(message, index, originalTokens);
+		stubbedMessages[index] = stubResult.message as AgentMessage;
+		stubs.push(stubResult.stub);
+		toolStubTokens += stubResult.stubTokens;
+	}
+
+	return {
+		messages: stubs.length > 0 ? stubbedMessages : messages,
+		stubs,
+		toolRawTokens,
+		toolStubTokens,
+		tokenSavingsEstimate: Math.max(0, toolRawTokens - toolStubTokens),
+	};
+}
+
 // Post-compaction message truncation
 // ============================================================================
 
@@ -866,7 +1251,7 @@ async function completeSummarization(
 export async function generateSummary(
 	currentMessages: AgentMessage[],
 	model: Model<any>,
-	reserveTokens: number,
+	summaryMaxTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
@@ -875,10 +1260,7 @@ export async function generateSummary(
 	thinkingLevel?: ThinkingLevel,
 	streamFn?: StreamFn,
 ): Promise<string> {
-	const maxTokens = Math.min(
-		Math.floor(0.8 * reserveTokens),
-		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
-	);
+	const maxTokens = Math.min(summaryMaxTokens, model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
 
 	// Use update prompt if we have a previous summary, otherwise initial prompt
 	let basePrompt = previousSummary ? UPDATE_SUMMARIZATION_PROMPT : SUMMARIZATION_PROMPT;
@@ -947,6 +1329,16 @@ export interface CompactionPreparation {
 	fileOps: FileOperations;
 	/** Compaction settions from settings.jsonl	*/
 	settings: CompactionSettings;
+	/** Adaptive recent-token budget selected for this compaction run. */
+	keepRecentTokens: number;
+	/** Tokens estimated for history that will be summarized. */
+	tokensToSummarize: number;
+	/** Tokens estimated for raw entries kept after the compaction boundary. */
+	recentRawTokens: number;
+	/** Entry ids that are replaced by the summary. */
+	droppedEntryIds: string[];
+	/** Estimated tokens from static prompt context. */
+	systemPromptTokens: number;
 }
 
 export type CompactionPreparationResult =
@@ -994,9 +1386,11 @@ export function prepareCompaction(
 	}
 	const boundaryEnd = pathEntries.length;
 
+	const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
+	const keepRecentTokens = selectKeepRecentTokens(tokensBefore, settings);
 
-	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, settings.keepRecentTokens);
+	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, keepRecentTokens);
 
 	// Get UUID of first kept entry
 	const firstKeptEntry = pathEntries[cutPoint.firstKeptEntryIndex];
@@ -1015,18 +1409,22 @@ export function prepareCompaction(
 	// Messages to summarize (will be discarded after summary)
 	const messagesToSummarize: AgentMessage[] = [];
 	let tokensToSummarize = 0;
+	const droppedEntryIds: string[] = [];
 	for (let i = boundaryStart; i < historyEnd; i++) {
 		const msg = getMessageFromEntryForCompaction(pathEntries[i]);
 		if (msg) {
 			messagesToSummarize.push(msg);
 			tokensToSummarize += estimateTokens(msg);
 		}
+		if (pathEntries[i].id) {
+			droppedEntryIds.push(pathEntries[i].id);
+		}
 	}
 
 	// Abort compaction if we are discarding less than 500 tokens of history.
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
-	if (tokensToSummarize < 500 && tokensBefore <= settings.keepRecentTokens * 1.25) {
+	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25) {
 		return {
 			ok: false,
 			message: `History to summarize is too small (only ${tokensToSummarize} tokens) and total session size (${tokensBefore}) is not significantly over budget`,
@@ -1055,6 +1453,14 @@ export function prepareCompaction(
 		}
 	}
 
+	let recentRawTokens = 0;
+	for (let i = cutPoint.firstKeptEntryIndex; i < boundaryEnd; i++) {
+		const msg = getMessageFromEntry(pathEntries[i]);
+		if (msg) {
+			recentRawTokens += estimateTokens(msg);
+		}
+	}
+
 	return {
 		ok: true,
 		preparation: {
@@ -1066,6 +1472,11 @@ export function prepareCompaction(
 			previousSummary,
 			fileOps,
 			settings,
+			keepRecentTokens,
+			tokensToSummarize,
+			recentRawTokens,
+			droppedEntryIds,
+			systemPromptTokens,
 		},
 	};
 }
@@ -1097,7 +1508,7 @@ Be concise. Focus on what's needed to understand the kept suffix.`;
 async function summarizeInChunks(
 	messages: AgentMessage[],
 	model: Model<any>,
-	reserveTokens: number,
+	summaryMaxTokens: number,
 	apiKey: string | undefined,
 	headers: Record<string, string> | undefined,
 	signal: AbortSignal | undefined,
@@ -1107,10 +1518,7 @@ async function summarizeInChunks(
 	streamFn: StreamFn | undefined,
 	onProgress?: (currentChunk: number, totalChunks: number) => void,
 ): Promise<string> {
-	const maxOutputTokens = Math.min(
-		Math.floor(0.8 * reserveTokens),
-		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
-	);
+	const maxOutputTokens = Math.min(summaryMaxTokens, model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY);
 
 	// Calculate safe chunk tokens based on model context window.
 	// We need space for the system prompt, maxOutputTokens, previous summary (which can be up to maxOutputTokens), and overhead.
@@ -1139,7 +1547,7 @@ async function summarizeInChunks(
 		return await generateSummary(
 			[],
 			model,
-			reserveTokens,
+			summaryMaxTokens,
 			apiKey,
 			headers,
 			signal,
@@ -1159,7 +1567,7 @@ async function summarizeInChunks(
 			currentSummary = await generateSummary(
 				chunk,
 				model,
-				reserveTokens,
+				summaryMaxTokens,
 				apiKey,
 				headers,
 				signal,
@@ -1228,7 +1636,11 @@ export async function compact(
 		previousSummary,
 		fileOps,
 		settings,
+		recentRawTokens,
+		droppedEntryIds,
+		systemPromptTokens,
 	} = preparation;
+	const resolvedSettings = resolveCompactionSettings(settings);
 
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
@@ -1240,7 +1652,7 @@ export async function compact(
 				? summarizeInChunks(
 						messagesToSummarize,
 						model,
-						settings.reserveTokens,
+						resolvedSettings.summaryMaxTokens,
 						apiKey,
 						headers,
 						signal,
@@ -1254,7 +1666,7 @@ export async function compact(
 			generateTurnPrefixSummary(
 				turnPrefixMessages,
 				model,
-				settings.reserveTokens,
+				resolvedSettings.summaryMaxTokens,
 				apiKey,
 				headers,
 				signal,
@@ -1269,7 +1681,7 @@ export async function compact(
 		summary = await summarizeInChunks(
 			messagesToSummarize,
 			model,
-			settings.reserveTokens,
+			resolvedSettings.summaryMaxTokens,
 			apiKey,
 			headers,
 			signal,
@@ -1284,6 +1696,21 @@ export async function compact(
 	// Compute file lists and append to summary
 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
 	summary += formatFileOperations(readFiles, modifiedFiles);
+	const summaryTokens = Math.ceil(summary.length / 4);
+	const afterTokens = systemPromptTokens + summaryTokens + recentRawTokens;
+	const audit: CompactionAudit = {
+		beforeTokens: tokensBefore,
+		afterTokens,
+		savedTokens: Math.max(0, tokensBefore - afterTokens),
+		summaryTokens,
+		renderedStateTokens: Math.min(summaryTokens, resolvedSettings.renderedStateMaxTokens),
+		recentRawTokens,
+		toolRawTokens: 0,
+		toolStubTokens: 0,
+		droppedEntries: droppedEntryIds,
+		stubbedToolResults: [],
+		risks: afterTokens > resolvedSettings.targetContextTokens ? ["post-compaction context exceeds target"] : [],
+	};
 
 	if (!firstKeptEntryId) {
 		throw new Error("First kept entry has no UUID - session may need migration");
@@ -1293,7 +1720,7 @@ export async function compact(
 		summary,
 		firstKeptEntryId,
 		tokensBefore,
-		details: { readFiles, modifiedFiles } as CompactionDetails,
+		details: { readFiles, modifiedFiles, audit } as CompactionDetails,
 	};
 }
 
@@ -1303,7 +1730,7 @@ export async function compact(
 async function generateTurnPrefixSummary(
 	messages: AgentMessage[],
 	model: Model<any>,
-	reserveTokens: number,
+	summaryMaxTokens: number,
 	apiKey: string | undefined,
 	headers?: Record<string, string>,
 	signal?: AbortSignal,
@@ -1311,7 +1738,7 @@ async function generateTurnPrefixSummary(
 	streamFn?: StreamFn,
 ): Promise<string> {
 	const maxTokens = Math.min(
-		Math.floor(0.5 * reserveTokens),
+		Math.floor(0.5 * summaryMaxTokens),
 		model.maxTokens > 0 ? model.maxTokens : Number.POSITIVE_INFINITY,
 	); // Smaller budget for turn prefix
 	const llmMessages = convertToLlm(messages);

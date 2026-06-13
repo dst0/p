@@ -59,7 +59,12 @@ import {
 	getShareViewerUrl,
 	VERSION,
 } from "../../config.ts";
-import { type AgentSession, type AgentSessionEvent, parseSkillBlock } from "../../core/agent-session.ts";
+import {
+	type AgentSession,
+	type AgentSessionEvent,
+	type CompactionDryRunResult,
+	parseSkillBlock,
+} from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
 import type {
 	AutocompleteProviderFactory,
@@ -2618,9 +2623,22 @@ export class InteractiveMode {
 				return;
 			}
 			if (text === "/compact" || text.startsWith("/compact ")) {
-				const customInstructions = text.startsWith("/compact ") ? text.slice(9).trim() : undefined;
+				const rawArgs = text.startsWith("/compact ") ? text.slice(9).trim() : "";
+				const dryRun = rawArgs.split(/\s+/).includes("--dry-run");
+				const audit = rawArgs.split(/\s+/).includes("--audit");
+				const customInstructions = rawArgs.replace(/(?:^|\s)--(?:dry-run|audit)(?=\s|$)/g, " ").trim() || undefined;
 				this.editor.setText("");
-				await this.handleCompactCommand(customInstructions);
+				await this.handleCompactCommand(customInstructions, { dryRun, audit });
+				return;
+			}
+			if (text === "/state") {
+				this.handleStateCommand();
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/memory" || text.startsWith("/memory ")) {
+				this.handleMemoryCommand(text);
+				this.editor.setText("");
 				return;
 			}
 			if (text === "/reload") {
@@ -5410,6 +5428,108 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
+	private handleStateCommand(): void {
+		const snapshot = this.session.getSessionStateSnapshot();
+		const context = snapshot.contextUsage;
+		const audit = snapshot.lastCompaction?.audit;
+		let info = `${theme.bold("Session State")}\n\n`;
+		info += `${theme.fg("dim", "Session:")} ${snapshot.sessionId}\n`;
+		if (context) {
+			const tokens = context.tokens?.toLocaleString() ?? "unknown";
+			const triggerThreshold = context.triggerThreshold?.toLocaleString() ?? "unknown";
+			const targetContextTokens = context.targetContextTokens?.toLocaleString() ?? "unknown";
+			const stubbedToolResults = context.stubbedToolResults?.length ?? 0;
+			const toolStubSavings = context.toolStubSavings ?? 0;
+			info += `${theme.fg("dim", "Context:")} ${tokens}/${context.contextWindow.toLocaleString()} tokens\n`;
+			info += `${theme.fg("dim", "Trigger:")} ${triggerThreshold} tokens\n`;
+			info += `${theme.fg("dim", "Target:")} ${targetContextTokens} tokens\n`;
+			info += `${theme.fg("dim", "Should compact:")} ${context.shouldCompact ? "yes" : "no"}\n`;
+			info += `${theme.fg("dim", "Tool stubs:")} ${stubbedToolResults} (${toolStubSavings.toLocaleString()} tokens saved)\n`;
+		}
+		if (snapshot.lastCompaction) {
+			info += `\n${theme.bold("Last Compaction")}\n`;
+			info += `${theme.fg("dim", "Entry:")} ${snapshot.lastCompaction.id}\n`;
+			info += `${theme.fg("dim", "At:")} ${snapshot.lastCompaction.timestamp}\n`;
+			if (audit) {
+				info += `${theme.fg("dim", "Audit:")} ${audit.beforeTokens} -> ${audit.afterTokens}, saved ${audit.savedTokens}\n`;
+			}
+		}
+		info += `\n${theme.bold("Checkpoint")}\n${snapshot.checkpoint}`;
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private handleMemoryCommand(text: string): void {
+		const args = text.replace(/^\/memory\s*/, "").trim();
+		const spaceIndex = args.indexOf(" ");
+		const command = (spaceIndex === -1 ? args : args.slice(0, spaceIndex)) || "status";
+		const rest = spaceIndex === -1 ? "" : args.slice(spaceIndex + 1).trim();
+
+		try {
+			let info = `${theme.bold("Project Memory")}\n\n`;
+			switch (command) {
+				case "status":
+				case "init": {
+					const result = this.session.initProjectMemory();
+					info += `${theme.fg("dim", "Root:")} ${result.root}\n`;
+					info += `${theme.fg("dim", "Created:")} ${result.created.length}\n`;
+					info += `${theme.fg("dim", "Existing:")} ${result.existing.length}`;
+					break;
+				}
+				case "update":
+				case "sync": {
+					const result = this.session.syncProjectMemory();
+					info += `${theme.fg("dim", "Snapshot:")} ${result.path}\n`;
+					info += `${theme.fg("dim", "Created:")} ${result.created ? "yes" : "no"}\n`;
+					info += `${theme.fg("dim", "Managed files:")} ${result.managedFiles.join(", ") || "(none changed)"}`;
+					break;
+				}
+				case "diff": {
+					const result = this.session.diffProjectMemory();
+					info += `${theme.fg("dim", "Snapshot:")} ${result.path}\n`;
+					info += `${theme.fg("dim", "Status:")} ${result.status}\n`;
+					info += result.lines.map((line) => `- ${line}`).join("\n");
+					break;
+				}
+				case "search": {
+					if (!rest) {
+						info += "Usage: /memory search <query>";
+						break;
+					}
+					const result = this.session.searchProjectMemory(rest);
+					info += `${theme.fg("dim", "Query:")} ${result.query}\n`;
+					info += result.hits.length
+						? result.hits.map((hit) => `- ${hit.path}:${hit.line} ${hit.excerpt}`).join("\n")
+						: "No matches.";
+					break;
+				}
+				case "pin": {
+					const result = this.session.pinProjectMemory(rest);
+					info += `${theme.fg("dim", "Pinned:")} ${result.id}\n`;
+					info += `${theme.fg("dim", "File:")} ${result.path}`;
+					break;
+				}
+				case "forget": {
+					const result = this.session.forgetProjectMemory(rest);
+					info += `${theme.fg("dim", "Forgot:")} ${result.id}\n`;
+					info += `${theme.fg("dim", "Removed:")} ${result.removed}\n`;
+					info += `${theme.fg("dim", "Files:")} ${result.files.join(", ") || "(none)"}`;
+					break;
+				}
+				default:
+					info += "Usage: /memory [status|sync|diff|search <query>|pin <text>|forget <id>]";
+			}
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(info, 1, 0));
+			this.ui.requestRender();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
 	private handleChangelogCommand(): void {
 		const changelogPath = getChangelogPath();
 		const allEntries = parseChangelog(changelogPath);
@@ -5724,7 +5844,18 @@ export class InteractiveMode {
 		this.ui.requestRender();
 	}
 
-	private async handleCompactCommand(customInstructions?: string): Promise<void> {
+	private formatCompactionDryRun(result: CompactionDryRunResult): string {
+		const status = result.ok ? "ready" : `skipped (${result.reason ?? "unknown"})`;
+		const projected = result.projectedAfterTokens !== undefined ? `, projected ${result.projectedAfterTokens}` : "";
+		const summarize = result.tokensToSummarize !== undefined ? `, summarize ${result.tokensToSummarize}` : "";
+		const stubs = result.stubbedToolResults.length > 0 ? `, stubbed tools ${result.stubbedToolResults.length}` : "";
+		return `Compaction dry run: ${status}; context ${result.contextTokens}/${result.contextWindow}, trigger ${result.triggerThreshold}${summarize}${projected}, tool savings ${result.toolStubSavings}${stubs}`;
+	}
+
+	private async handleCompactCommand(
+		customInstructions?: string,
+		options?: { dryRun?: boolean; audit?: boolean },
+	): Promise<void> {
 		const entries = this.sessionManager.getEntries();
 		const messageCount = entries.filter((e) => e.type === "message").length;
 
@@ -5740,7 +5871,21 @@ export class InteractiveMode {
 		this.statusContainer.clear();
 
 		try {
-			await this.session.compact(customInstructions);
+			if (options?.dryRun) {
+				this.showStatus(this.formatCompactionDryRun(this.session.getCompactionDryRun()));
+				return;
+			}
+			const result = await this.session.compact(customInstructions);
+			if (options?.audit && result.details && typeof result.details === "object" && "audit" in result.details) {
+				const audit = (
+					result.details as { audit?: { beforeTokens: number; afterTokens: number; savedTokens: number } }
+				).audit;
+				if (audit) {
+					this.showStatus(
+						`Compaction audit: ${audit.beforeTokens} -> ${audit.afterTokens}, saved ${audit.savedTokens}`,
+					);
+				}
+			}
 		} catch {
 			// Ignore, will be emitted as an event
 		}

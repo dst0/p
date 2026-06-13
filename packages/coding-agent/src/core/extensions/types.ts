@@ -286,6 +286,26 @@ export interface ContextUsage {
 	percent: number | null;
 	/** Estimated tokens of the static system prompt/context. */
 	staticTokens: number;
+	/** Token level that will trigger compaction for the current model/settings. */
+	triggerThreshold?: number;
+	/** Tokens intentionally reserved before compaction should run. */
+	triggerReserveTokens?: number;
+	/** Ratio threshold that may trigger compaction before reserve pressure. */
+	triggerRatio?: number;
+	/** Target prompt size after compaction. */
+	targetContextTokens?: number;
+	/** Remaining tokens before the model context window is full. */
+	remainingTokens?: number;
+	/** Whether the current estimate is past the compaction trigger. */
+	shouldCompact?: boolean;
+	/** Estimated tokens from raw tool results before prompt-time stubbing. */
+	toolRawTokens?: number;
+	/** Estimated tokens from tool results after prompt-time stubbing. */
+	toolStubTokens?: number;
+	/** Estimated token savings from prompt-time tool result stubbing. */
+	toolStubSavings?: number;
+	/** Raw evidence pointers for tool results stubbed out of prompt context. */
+	stubbedToolResults?: string[];
 }
 
 export interface CompactOptions {

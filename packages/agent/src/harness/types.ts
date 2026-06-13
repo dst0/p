@@ -747,8 +747,17 @@ export interface NavigateTreeResult {
 
 export interface CompactionSettings {
 	enabled: boolean;
-	reserveTokens: number;
-	keepRecentTokens: number;
+	reserveTokens?: number;
+	keepRecentTokens?: number;
+	triggerReserveTokens?: number;
+	triggerRatio?: number;
+	keepRecentMinTokens?: number;
+	keepRecentMaxTokens?: number;
+	summaryMaxTokens?: number;
+	renderedStateMaxTokens?: number;
+	targetContextTokens?: number;
+	toolResultClearThresholdTokens?: number;
+	toolResultKeepRecentCount?: number;
 }
 
 export interface CompactionPreparation {
@@ -760,6 +769,7 @@ export interface CompactionPreparation {
 	previousSummary?: string;
 	fileOps: FileOperations;
 	settings: CompactionSettings;
+	keepRecentTokens?: number;
 }
 
 export interface FileOperations {

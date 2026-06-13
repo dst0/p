@@ -33,6 +33,7 @@ import {
 	resetApiProviders,
 	streamSimple,
 } from "@earendil-works/pi-ai";
+import { Type } from "typebox";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -40,13 +41,24 @@ import { sleep } from "../utils/sleep.ts";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth-guidance.ts";
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
+	type CompactionDetails,
 	type CompactionResult,
 	collectEntriesForBranchSummary,
 	compact,
+	createContextBudgetReport,
+	createStructuredSessionState,
+	type EvidenceKind,
+	type EvidencePointer,
 	estimateContextTokens,
 	generateBranchSummary,
+	getLatestStructuredSessionState,
 	prepareCompaction,
+	renderStructuredSessionCheckpoint,
+	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
+	type StructuredSessionState,
+	selectKeepRecentTokens,
 	shouldCompact,
+	stubToolResultsForPrompt,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -81,9 +93,24 @@ import {
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import {
+	createProjectMemoryContext,
+	diffProjectMemorySnapshot,
+	forgetProjectMemory,
+	initProjectMemory,
+	type ProjectMemoryDiffResult,
+	type ProjectMemoryForgetResult,
+	type ProjectMemoryInitResult,
+	type ProjectMemoryPinResult,
+	type ProjectMemorySearchResult,
+	type ProjectMemoryUpdateResult,
+	pinProjectMemory,
+	searchProjectMemory,
+	updateProjectMemorySnapshot,
+} from "./project-memory.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
-import type { BranchSummaryEntry, CompactionEntry, SessionManager } from "./session-manager.ts";
+import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
@@ -238,6 +265,38 @@ export interface SessionStats {
 	contextUsage?: ContextUsage;
 }
 
+export interface CompactionDryRunResult {
+	ok: boolean;
+	reason?: string;
+	message?: string;
+	contextTokens: number;
+	contextWindow: number;
+	triggerThreshold: number;
+	shouldCompact: boolean;
+	keepRecentTokens?: number;
+	firstKeptEntryId?: string;
+	tokensToSummarize?: number;
+	recentRawTokens?: number;
+	projectedAfterTokens?: number;
+	droppedEntries?: string[];
+	toolRawTokens: number;
+	toolStubTokens: number;
+	toolStubSavings: number;
+	stubbedToolResults: string[];
+}
+
+export interface SessionStateSnapshot {
+	sessionId: string;
+	checkpoint: string;
+	state: StructuredSessionState;
+	contextUsage?: ContextUsage;
+	lastCompaction?: {
+		id: string;
+		timestamp: string;
+		audit?: CompactionDetails["audit"];
+	};
+}
+
 interface ToolDefinitionEntry {
 	definition: ToolDefinition;
 	sourceInfo: SourceInfo;
@@ -250,7 +309,144 @@ interface ToolDefinitionEntry {
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function normalizeCompactionDetails(details: unknown): CompactionDetails {
+	if (!isRecord(details)) {
+		return { readFiles: [], modifiedFiles: [] };
+	}
+	const readFiles = Array.isArray(details.readFiles)
+		? details.readFiles.filter((value): value is string => typeof value === "string")
+		: [];
+	const modifiedFiles = Array.isArray(details.modifiedFiles)
+		? details.modifiedFiles.filter((value): value is string => typeof value === "string")
+		: [];
+	return {
+		...details,
+		readFiles,
+		modifiedFiles,
+	} as CompactionDetails;
+}
+
 // ============================================================================
+const SESSION_RECALL_SCHEMA = Type.Object({
+	query: Type.String({ description: "Pointer id or search query for old session evidence" }),
+	kind: Type.Optional(
+		Type.Array(
+			Type.Union([
+				Type.Literal("message"),
+				Type.Literal("tool_result"),
+				Type.Literal("bash"),
+				Type.Literal("file"),
+				Type.Literal("web"),
+				Type.Literal("artifact"),
+			]),
+		),
+	),
+	maxTokens: Type.Optional(Type.Number({ description: "Maximum returned excerpt tokens; default 1200" })),
+	includeRaw: Type.Optional(Type.Boolean({ description: "Include raw excerpts when available" })),
+});
+
+interface SessionRecallInput {
+	query: string;
+	kind?: EvidenceKind[];
+	maxTokens?: number;
+	includeRaw?: boolean;
+}
+
+interface RecallHit {
+	pointer: EvidencePointer;
+	relevance: number;
+	summary: string;
+	excerpt?: string;
+}
+
+interface RecallResult {
+	query: string;
+	hits: RecallHit[];
+}
+
+interface RecallCandidate {
+	pointer: EvidencePointer;
+	searchText: string;
+	rawText?: string;
+}
+
+function getMessageTextForRecall(message: AgentMessage): string {
+	switch (message.role) {
+		case "user":
+			return typeof message.content === "string"
+				? message.content
+				: message.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+		case "assistant":
+			return message.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+		case "toolResult":
+			return message.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+		case "bashExecution":
+			return `${message.command}\n${message.output}`;
+		case "custom":
+			return typeof message.content === "string"
+				? message.content
+				: message.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+		case "branchSummary":
+		case "compactionSummary":
+			return message.summary;
+	}
+}
+
+function capTextByTokens(text: string, maxTokens: number): string {
+	const maxChars = Math.max(0, Math.floor(maxTokens * 4));
+	if (text.length <= maxChars) return text;
+	return `${text.slice(0, maxChars)}\n[...truncated to ${maxTokens} tokens...]`;
+}
+
+function scoreRecallCandidate(query: string, candidate: RecallCandidate): number {
+	const normalizedQuery = query.trim().toLowerCase();
+	if (!normalizedQuery) return 0;
+	const pointerId = candidate.pointer.id.toLowerCase();
+	if (pointerId === normalizedQuery) return 1;
+	if (pointerId.includes(normalizedQuery)) return 0.95;
+
+	const haystack = `${candidate.pointer.summary}\n${candidate.searchText}`.toLowerCase();
+	const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 1);
+	if (terms.length === 0) return haystack.includes(normalizedQuery) ? 0.5 : 0;
+	const matchedTerms = terms.filter((term) => haystack.includes(term)).length;
+	return matchedTerms === 0 ? 0 : matchedTerms / terms.length;
+}
+
+function formatRecallResult(result: RecallResult): string {
+	if (result.hits.length === 0) {
+		return `No session evidence matched query: ${result.query}`;
+	}
+	const sections = [`Session recall results for: ${result.query}`];
+	for (const hit of result.hits) {
+		sections.push(
+			[
+				`- ${hit.pointer.id} (${hit.pointer.kind}, relevance ${hit.relevance.toFixed(2)})`,
+				`  Summary: ${hit.summary}`,
+				hit.excerpt ? `  Excerpt:\n${hit.excerpt}` : undefined,
+			]
+				.filter((line): line is string => line !== undefined)
+				.join("\n"),
+		);
+	}
+	return sections.join("\n\n");
+}
+
 // AgentSession Class
 // ============================================================================
 
@@ -942,6 +1138,7 @@ export class AgentSession {
 			}
 		} finally {
 			this._flushPendingBashMessages();
+			this._syncProjectMemory();
 		}
 	}
 
@@ -1104,13 +1301,11 @@ export class AgentSession {
 					});
 				}
 			}
-			// Apply extension-modified system prompt, or reset to base
-			if (result?.systemPrompt) {
-				this.agent.state.systemPrompt = result.systemPrompt;
-			} else {
-				// Ensure we're using the base prompt (in case previous turn had modifications)
-				this.agent.state.systemPrompt = this._baseSystemPrompt;
-			}
+			const effectiveSystemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
+			const projectMemoryPrompt = this._createProjectMemoryPrompt(expandedText);
+			this.agent.state.systemPrompt = projectMemoryPrompt
+				? `${effectiveSystemPrompt}\n\n${projectMemoryPrompt}`
+				: effectiveSystemPrompt;
 
 			// Check if we need to compact before sending (catches aborted responses and preempts overflow with new messages)
 			const lastAssistant = this._findLastAssistantMessage();
@@ -1634,6 +1829,337 @@ export class AgentSession {
 	// Compaction
 	// =========================================================================
 
+	getSessionStateSnapshot(): SessionStateSnapshot {
+		const branchEntries = this.sessionManager.getBranch();
+		const state =
+			getLatestStructuredSessionState(branchEntries) ?? this._createLiveStructuredSessionState(branchEntries);
+		const settings = this._getEffectiveCompactionSettings();
+		const checkpoint = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
+		const latestCompaction = getLatestCompactionEntry(branchEntries);
+		const details = latestCompaction ? normalizeCompactionDetails(latestCompaction.details) : undefined;
+		return {
+			sessionId: this.sessionManager.getSessionId(),
+			checkpoint,
+			state,
+			contextUsage: this.getContextUsage(),
+			lastCompaction: latestCompaction
+				? {
+						id: latestCompaction.id,
+						timestamp: latestCompaction.timestamp,
+						audit: details?.audit,
+					}
+				: undefined,
+		};
+	}
+
+	private _createLiveStructuredSessionState(branchEntries: SessionEntry[]): StructuredSessionState {
+		const latestUser = this._getLatestUserRequest(branchEntries) ?? this._getLatestUserRequestFromMessages();
+		const summary = latestUser
+			? `## Goal\n${latestUser.text}\n\n## Progress\n### In Progress\n- Continue from the current un-compacted session.\n\n## Next Steps\n1. Continue the user's latest request.`
+			: "## Goal\nContinue the current session.\n\n## Progress\n### In Progress\n- No compacted structured state exists yet.";
+		return createStructuredSessionState({
+			sessionId: this.sessionManager.getSessionId(),
+			summary,
+			entries: branchEntries,
+			timestamp: new Date().toISOString(),
+		});
+	}
+
+	private _getLatestUserRequestFromMessages(): { id: string; text: string } | undefined {
+		for (let index = this.agent.state.messages.length - 1; index >= 0; index--) {
+			const message = this.agent.state.messages[index];
+			if (message.role !== "user") continue;
+			const text = getMessageTextForRecall(message).trim();
+			if (text.length > 0) {
+				return { id: "", text };
+			}
+		}
+		return undefined;
+	}
+
+	private _getLatestUserRequest(branchEntries: SessionEntry[]): { id: string; text: string } | undefined {
+		for (let index = branchEntries.length - 1; index >= 0; index--) {
+			const entry = branchEntries[index];
+			if (entry.type !== "message" || entry.message.role !== "user") continue;
+			const text = getMessageTextForRecall(entry.message).trim();
+			if (text.length > 0) {
+				return { id: entry.id, text };
+			}
+		}
+		return undefined;
+	}
+
+	private _syncProjectMemory(): void {
+		try {
+			const snapshot = this.getSessionStateSnapshot();
+			updateProjectMemorySnapshot({
+				cwd: this._cwd,
+				sessionId: snapshot.sessionId,
+				checkpoint: snapshot.checkpoint,
+				state: snapshot.state,
+				contextUsage: snapshot.contextUsage,
+			});
+		} catch {
+			// Project memory is a durability aid; prompt execution must not fail because the workspace is read-only.
+		}
+	}
+
+	private _createProjectMemoryPrompt(query: string): string | undefined {
+		const context = createProjectMemoryContext(this._cwd, query);
+		return context?.content;
+	}
+
+	initProjectMemory(): ProjectMemoryInitResult {
+		return initProjectMemory(this._cwd);
+	}
+
+	syncProjectMemory(): ProjectMemoryUpdateResult {
+		const snapshot = this.getSessionStateSnapshot();
+		return updateProjectMemorySnapshot({
+			cwd: this._cwd,
+			sessionId: snapshot.sessionId,
+			checkpoint: snapshot.checkpoint,
+			state: snapshot.state,
+			contextUsage: snapshot.contextUsage,
+		});
+	}
+
+	diffProjectMemory(): ProjectMemoryDiffResult {
+		const snapshot = this.getSessionStateSnapshot();
+		return diffProjectMemorySnapshot({
+			cwd: this._cwd,
+			sessionId: snapshot.sessionId,
+			checkpoint: snapshot.checkpoint,
+			state: snapshot.state,
+			contextUsage: snapshot.contextUsage,
+		});
+	}
+
+	searchProjectMemory(query: string): ProjectMemorySearchResult {
+		return searchProjectMemory(this._cwd, query);
+	}
+
+	pinProjectMemory(text: string): ProjectMemoryPinResult {
+		const result = pinProjectMemory(this._cwd, text);
+		this._syncProjectMemory();
+		return result;
+	}
+
+	forgetProjectMemory(id: string): ProjectMemoryForgetResult {
+		return forgetProjectMemory(this._cwd, id);
+	}
+
+	getCompactionDryRun(): CompactionDryRunResult {
+		const settings = this._getEffectiveCompactionSettings();
+		const contextWindow = this.model?.contextWindow ?? 0;
+		const promptContext = stubToolResultsForPrompt(this._getEffectiveCompactedMessages(), settings);
+		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
+		const pathEntries = this.sessionManager.getBranch();
+		const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
+
+		if (!preparationResult.ok) {
+			return {
+				ok: false,
+				reason: preparationResult.reason,
+				message: preparationResult.message,
+				contextTokens: estimate.tokens,
+				contextWindow,
+				triggerThreshold: budget.triggerThreshold,
+				shouldCompact: budget.shouldCompact,
+				tokensToSummarize: preparationResult.tokensToSummarize,
+				toolRawTokens: promptContext.toolRawTokens,
+				toolStubTokens: promptContext.toolStubTokens,
+				toolStubSavings: promptContext.tokenSavingsEstimate,
+				stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			};
+		}
+
+		const preparation = preparationResult.preparation;
+		const projectedAfterTokens =
+			preparation.systemPromptTokens +
+			Math.min(settings.summaryMaxTokens, settings.renderedStateMaxTokens) +
+			preparation.recentRawTokens;
+		return {
+			ok: true,
+			contextTokens: estimate.tokens,
+			contextWindow,
+			triggerThreshold: budget.triggerThreshold,
+			shouldCompact: budget.shouldCompact,
+			keepRecentTokens: preparation.keepRecentTokens,
+			firstKeptEntryId: preparation.firstKeptEntryId,
+			tokensToSummarize: preparation.tokensToSummarize,
+			recentRawTokens: preparation.recentRawTokens,
+			projectedAfterTokens,
+			droppedEntries: preparation.droppedEntryIds,
+			toolRawTokens: promptContext.toolRawTokens,
+			toolStubTokens: promptContext.toolStubTokens,
+			toolStubSavings: promptContext.tokenSavingsEstimate,
+			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+		};
+	}
+
+	private _createSessionRecallToolDefinition(): ToolDefinition<typeof SESSION_RECALL_SCHEMA, RecallResult> {
+		return {
+			name: "session_recall",
+			label: "Session Recall",
+			description:
+				"Retrieve bounded snippets from older session history by pointer id or query. Use this when tool results were stubbed or exact old evidence is needed.",
+			promptSnippet:
+				"session_recall(query, options): retrieve bounded snippets from old session history by pointer id or search query",
+			promptGuidelines: [
+				"When a tool result is stubbed, call session_recall with its raw pointer before relying on omitted raw output.",
+			],
+			parameters: SESSION_RECALL_SCHEMA,
+			executionMode: "parallel",
+			execute: async (_toolCallId, params) => {
+				const result = this._recallSessionEvidence(params as SessionRecallInput);
+				return {
+					content: [{ type: "text", text: formatRecallResult(result) }],
+					details: result,
+				};
+			},
+		};
+	}
+
+	private _recallSessionEvidence(params: SessionRecallInput): RecallResult {
+		const maxTokens = Math.max(1, Math.min(params.maxTokens ?? 1200, 4000));
+		const kindFilter = params.kind ? new Set<EvidenceKind>(params.kind) : undefined;
+		const scored = this._collectRecallCandidates()
+			.filter((candidate) => !kindFilter || kindFilter.has(candidate.pointer.kind))
+			.map((candidate) => ({
+				candidate,
+				relevance: scoreRecallCandidate(params.query, candidate),
+			}))
+			.filter((item) => item.relevance > 0)
+			.sort((a, b) => b.relevance - a.relevance || a.candidate.pointer.id.localeCompare(b.candidate.pointer.id));
+
+		const hits: RecallHit[] = [];
+		let remainingTokens = maxTokens;
+		for (const item of scored.slice(0, 8)) {
+			const rawText = params.includeRaw ? item.candidate.rawText : undefined;
+			const excerpt =
+				rawText && remainingTokens > 0 ? capTextByTokens(rawText, Math.min(remainingTokens, 1500)) : undefined;
+			if (excerpt) {
+				remainingTokens -= Math.ceil(excerpt.length / 4);
+			}
+			hits.push({
+				pointer: item.candidate.pointer,
+				relevance: item.relevance,
+				summary: item.candidate.pointer.summary,
+				excerpt,
+			});
+			if (remainingTokens <= 0) break;
+		}
+		return { query: params.query, hits };
+	}
+
+	private _collectRecallCandidates(): RecallCandidate[] {
+		const candidates: RecallCandidate[] = [];
+		for (const entry of this.sessionManager.getBranch()) {
+			if (entry.type === "message") {
+				const text = getMessageTextForRecall(entry.message);
+				if (entry.message.role === "toolResult") {
+					candidates.push({
+						pointer: {
+							id: `tool-result:${entry.message.toolCallId}`,
+							kind: "tool_result",
+							entryId: entry.id,
+							summary: `${entry.message.toolName} ${entry.message.isError ? "error" : "success"} result`,
+							retrieveWhen: `Need exact raw output from ${entry.message.toolName}.`,
+						},
+						searchText: text,
+						rawText: text,
+					});
+				} else if (entry.message.role === "bashExecution") {
+					candidates.push({
+						pointer: {
+							id: `bash:${entry.id}`,
+							kind: "bash",
+							entryId: entry.id,
+							summary: `Bash command: ${entry.message.command}`,
+							retrieveWhen: "Need exact bash command output.",
+						},
+						searchText: text,
+						rawText: text,
+					});
+				} else {
+					candidates.push({
+						pointer: {
+							id: `message:${entry.id}`,
+							kind: "message",
+							entryId: entry.id,
+							summary: `${entry.message.role} message`,
+							retrieveWhen: "Need exact old conversation message.",
+						},
+						searchText: text,
+						rawText: text,
+					});
+				}
+			} else if (entry.type === "compaction") {
+				candidates.push({
+					pointer: {
+						id: `compaction:${entry.id}`,
+						kind: "message",
+						entryId: entry.id,
+						summary: "Compaction checkpoint",
+						retrieveWhen: "Need the rendered compaction checkpoint.",
+					},
+					searchText: entry.summary,
+					rawText: entry.summary,
+				});
+				const details = normalizeCompactionDetails(entry.details);
+				for (const pointer of details.structuredState?.evidence ?? []) {
+					candidates.push({
+						pointer,
+						searchText: pointer.summary,
+					});
+				}
+				if (details.markdownSummary) {
+					candidates.push({
+						pointer: {
+							id: `compaction-markdown:${entry.id}`,
+							kind: "message",
+							entryId: entry.id,
+							summary: "Raw markdown compaction summary",
+							retrieveWhen: "Need pre-render markdown summary produced by the compaction model.",
+						},
+						searchText: details.markdownSummary,
+						rawText: details.markdownSummary,
+					});
+				}
+			}
+		}
+		return candidates;
+	}
+
+	private _prepareStructuredCompactionSummary(
+		summary: string,
+		details: unknown,
+		pathEntries: SessionEntry[],
+		settings: { renderedStateMaxTokens: number },
+	): { summary: string; details: CompactionDetails; state: unknown } {
+		const compactionDetails = normalizeCompactionDetails(details);
+		const state = createStructuredSessionState({
+			sessionId: this.sessionManager.getSessionId(),
+			previous: getLatestStructuredSessionState(pathEntries),
+			summary,
+			entries: pathEntries,
+			readFiles: compactionDetails.readFiles,
+			modifiedFiles: compactionDetails.modifiedFiles,
+			audit: compactionDetails.audit,
+		});
+		return {
+			summary: renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens),
+			details: {
+				...compactionDetails,
+				markdownSummary: summary,
+				structuredState: state,
+			},
+			state,
+		};
+	}
+
 	/**
 	 * Manually compact the session context.
 	 * Aborts current agent operation first.
@@ -1687,6 +2213,7 @@ export class AgentSession {
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
 			let details: unknown;
+			let structuredState: unknown;
 
 			if (extensionCompaction) {
 				// Extension provided compaction content
@@ -1713,6 +2240,10 @@ export class AgentSession {
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
 				details = result.details;
+				const structured = this._prepareStructuredCompactionSummary(summary, details, pathEntries, settings);
+				summary = structured.summary;
+				details = structured.details;
+				structuredState = structured.state;
 			}
 
 			if (this._compactionAbortController.signal.aborted) {
@@ -1720,13 +2251,17 @@ export class AgentSession {
 			}
 
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			if (!fromExtension && structuredState) {
+				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
+			}
+			this._syncProjectMemory();
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 
 			// Post-compaction truncation: truncate oversized kept messages
 			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
 			const truncatedMessages = truncateKeptMessages(sessionContext.messages, {
-				keepRecentTokens: settings.keepRecentTokens,
+				keepRecentTokens: preparation.keepRecentTokens,
 				targetContextTokens: settings.targetContextTokens,
 				systemPromptTokens,
 			});
@@ -1872,14 +2407,15 @@ export class AgentSession {
 			messages.push(...additionalMessages);
 		}
 
-		const estimate = estimateContextTokens(messages, this.systemPrompt);
+		const promptContext = stubToolResultsForPrompt(messages, settings);
+		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
 
 		if (assistantForCompactionCheck && assistantForCompactionCheck.stopReason === "error") {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
 			// trigger compaction right after one just finished.
-			const usageMsg = messages[estimate.lastUsageIndex];
+			const usageMsg = promptContext.messages[estimate.lastUsageIndex];
 			if (
 				compactionEntry &&
 				usageMsg.role === "assistant" &&
@@ -1989,6 +2525,7 @@ export class AgentSession {
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
 			let details: unknown;
+			let structuredState: unknown;
 
 			if (extensionCompaction) {
 				// Extension provided compaction content
@@ -2012,6 +2549,10 @@ export class AgentSession {
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
 				details = compactResult.details;
+				const structured = this._prepareStructuredCompactionSummary(summary, details, pathEntries, settings);
+				summary = structured.summary;
+				details = structured.details;
+				structuredState = structured.state;
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
@@ -2026,6 +2567,10 @@ export class AgentSession {
 			}
 
 			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			if (!fromExtension && structuredState) {
+				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
+			}
+			this._syncProjectMemory();
 			const newEntries = this.sessionManager.getEntries();
 			const sessionContext = this.sessionManager.buildSessionContext();
 
@@ -2034,7 +2579,7 @@ export class AgentSession {
 			// This is critical for preventing large tool results from surviving compaction.
 			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
 			const truncatedMessages = truncateKeptMessages(sessionContext.messages, {
-				keepRecentTokens: settings.keepRecentTokens,
+				keepRecentTokens: preparation.keepRecentTokens,
 				targetContextTokens: settings.targetContextTokens,
 				systemPromptTokens,
 			});
@@ -2106,9 +2651,15 @@ export class AgentSession {
 
 	private _getEffectiveCompactionSettings(): {
 		enabled: boolean;
-		reserveTokens: number;
-		keepRecentTokens: number;
+		triggerReserveTokens: number;
+		triggerRatio?: number;
+		keepRecentMinTokens: number;
+		keepRecentMaxTokens: number;
+		summaryMaxTokens: number;
+		renderedStateMaxTokens: number;
 		targetContextTokens: number;
+		toolResultClearThresholdTokens: number;
+		toolResultKeepRecentCount: number;
 	} {
 		return this.settingsManager.getCompactionSettings();
 	}
@@ -2442,9 +2993,13 @@ export class AgentSession {
 					read: { autoResizeImages },
 					bash: { commandPrefix: shellCommandPrefix, shellPath },
 				});
+		const builtInToolDefinitions: Record<string, ToolDefinition> = {
+			...baseToolDefinitions,
+			session_recall: this._createSessionRecallToolDefinition() as unknown as ToolDefinition,
+		};
 
 		this._baseToolDefinitions = new Map(
-			Object.entries(baseToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
+			Object.entries(builtInToolDefinitions).map(([name, tool]) => [name, tool as ToolDefinition]),
 		);
 
 		const extensionsResult = this._resourceLoader.getExtensions();
@@ -2914,8 +3469,12 @@ export class AgentSession {
 			const sessionContext = this.sessionManager.buildSessionContext();
 			const settings = this.settingsManager.getCompactionSettings();
 			const systemPromptTokens = this.systemPrompt ? Math.ceil(this.systemPrompt.length / 4) : 0;
+			const keepRecentTokens = selectKeepRecentTokens(
+				estimateContextTokens(sessionContext.messages, this.systemPrompt).tokens,
+				settings,
+			);
 			this.agent.state.messages = truncateKeptMessages(sessionContext.messages, {
-				keepRecentTokens: settings.keepRecentTokens,
+				keepRecentTokens,
 				targetContextTokens: settings.targetContextTokens,
 				systemPromptTokens,
 			});
@@ -3060,8 +3619,10 @@ export class AgentSession {
 		const contextWindow = model.contextWindow ?? 0;
 		if (contextWindow <= 0) return undefined;
 
-		const messages = this._getEffectiveCompactedMessages();
-		const estimate = estimateContextTokens(messages, this.systemPrompt);
+		const settings = this.settingsManager.getCompactionSettings();
+		const promptContext = stubToolResultsForPrompt(this._getEffectiveCompactedMessages(), settings);
+		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
 		const percent = (estimate.tokens / contextWindow) * 100;
 
 		return {
@@ -3069,6 +3630,16 @@ export class AgentSession {
 			contextWindow,
 			percent,
 			staticTokens: estimate.staticTokens,
+			triggerThreshold: budget.triggerThreshold,
+			triggerReserveTokens: budget.triggerReserveTokens,
+			triggerRatio: budget.triggerRatio,
+			targetContextTokens: budget.targetContextTokens,
+			remainingTokens: budget.remainingTokens,
+			shouldCompact: budget.shouldCompact,
+			toolRawTokens: promptContext.toolRawTokens,
+			toolStubTokens: promptContext.toolStubTokens,
+			toolStubSavings: promptContext.tokenSavingsEstimate,
+			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
 		};
 	}
 

@@ -9,9 +9,19 @@ import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dis
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
-	reserveTokens?: number; // default: 16384
-	keepRecentTokens?: number; // default: 20000
-	targetContextTokens?: number; // default: 10000
+	/** @deprecated Use triggerReserveTokens. */
+	reserveTokens?: number;
+	/** @deprecated Use keepRecentMinTokens/keepRecentMaxTokens. */
+	keepRecentTokens?: number;
+	triggerReserveTokens?: number; // default: 12000
+	triggerRatio?: number; // default: 0.75
+	keepRecentMinTokens?: number; // default: 2000
+	keepRecentMaxTokens?: number; // default: 8000
+	summaryMaxTokens?: number; // default: 1200
+	renderedStateMaxTokens?: number; // default: 1500
+	targetContextTokens?: number; // default: 12000
+	toolResultClearThresholdTokens?: number; // default: 24000
+	toolResultKeepRecentCount?: number; // default: 3
 }
 
 export interface BranchSummarySettings {
@@ -758,28 +768,81 @@ export class SettingsManager {
 	}
 
 	getCompactionReserveTokens(): number {
-		return this.settings.compaction?.reserveTokens ?? 4000;
+		return this.getCompactionTriggerReserveTokens();
 	}
 
 	getCompactionKeepRecentTokens(): number {
-		return this.settings.compaction?.keepRecentTokens ?? 4000;
+		return this.getCompactionKeepRecentMaxTokens();
 	}
 
 	getCompactionTargetContextTokens(): number {
-		return this.settings.compaction?.targetContextTokens ?? 10000;
+		return this.settings.compaction?.targetContextTokens ?? 12000;
+	}
+
+	getCompactionTriggerReserveTokens(): number {
+		return this.settings.compaction?.triggerReserveTokens ?? this.settings.compaction?.reserveTokens ?? 12000;
+	}
+
+	getCompactionTriggerRatio(): number | undefined {
+		if (this.settings.compaction?.triggerRatio !== undefined) {
+			return this.settings.compaction.triggerRatio;
+		}
+		if (
+			this.settings.compaction?.triggerReserveTokens === undefined &&
+			this.settings.compaction?.reserveTokens !== undefined
+		) {
+			return undefined;
+		}
+		return 0.75;
+	}
+
+	getCompactionKeepRecentMinTokens(): number {
+		return this.settings.compaction?.keepRecentMinTokens ?? this.settings.compaction?.keepRecentTokens ?? 2000;
+	}
+
+	getCompactionKeepRecentMaxTokens(): number {
+		return this.settings.compaction?.keepRecentMaxTokens ?? this.settings.compaction?.keepRecentTokens ?? 8000;
+	}
+
+	getCompactionSummaryMaxTokens(): number {
+		return this.settings.compaction?.summaryMaxTokens ?? 1200;
+	}
+
+	getCompactionRenderedStateMaxTokens(): number {
+		return this.settings.compaction?.renderedStateMaxTokens ?? 1500;
+	}
+
+	getCompactionToolResultClearThresholdTokens(): number {
+		return this.settings.compaction?.toolResultClearThresholdTokens ?? 24000;
+	}
+
+	getCompactionToolResultKeepRecentCount(): number {
+		return this.settings.compaction?.toolResultKeepRecentCount ?? 3;
 	}
 
 	getCompactionSettings(): {
 		enabled: boolean;
-		reserveTokens: number;
-		keepRecentTokens: number;
+		triggerReserveTokens: number;
+		triggerRatio?: number;
+		keepRecentMinTokens: number;
+		keepRecentMaxTokens: number;
+		summaryMaxTokens: number;
+		renderedStateMaxTokens: number;
 		targetContextTokens: number;
+		toolResultClearThresholdTokens: number;
+		toolResultKeepRecentCount: number;
 	} {
 		return {
 			enabled: this.getCompactionEnabled(),
-			reserveTokens: this.getCompactionReserveTokens(),
-			keepRecentTokens: this.getCompactionKeepRecentTokens(),
+			triggerReserveTokens: this.getCompactionTriggerReserveTokens(),
+			triggerRatio: this.getCompactionTriggerRatio(),
+			keepRecentMinTokens: this.getCompactionKeepRecentMinTokens(),
+			keepRecentMaxTokens: this.getCompactionKeepRecentMaxTokens(),
+			summaryMaxTokens: this.getCompactionSummaryMaxTokens(),
+			renderedStateMaxTokens: this.getCompactionRenderedStateMaxTokens(),
 			targetContextTokens: this.getCompactionTargetContextTokens(),
+			toolResultClearThresholdTokens: this.getCompactionToolResultClearThresholdTokens(),
+			toolResultKeepRecentCount: this.getCompactionToolResultKeepRecentCount(),
 		};
 	}
 

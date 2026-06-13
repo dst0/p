@@ -1,0 +1,673 @@
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { SessionEntry } from "../session-manager.ts";
+import type { CompactionAudit, EvidencePointer } from "./compaction.ts";
+
+export const STRUCTURED_SESSION_STATE_CUSTOM_TYPE = "pi.structured-session-state";
+export const STRUCTURED_SESSION_STATE_VERSION = 1;
+
+export type ConstraintSource = "user" | "system" | "project" | "inferred";
+export type ConstraintStatus = "active" | "superseded" | "rejected";
+export type ConstraintEnforceability = "prompt" | "runtime_check" | "test" | "manual";
+export type PlanStatus = "not_started" | "in_progress" | "done" | "failed" | "blocked";
+export type FileTouchStatus = "read" | "modified" | "created" | "deleted";
+
+export interface Constraint {
+	id: string;
+	text: string;
+	source: ConstraintSource;
+	status: ConstraintStatus;
+	enforceability: ConstraintEnforceability;
+}
+
+export interface PlanItem {
+	id: string;
+	text: string;
+	status: PlanStatus;
+	evidenceEntryIds: string[];
+}
+
+export interface Decision {
+	id: string;
+	decision: string;
+	rationale: string;
+	evidencePointers: EvidencePointer[];
+	status: "active" | "superseded";
+}
+
+export interface TouchedFile {
+	path: string;
+	status: FileTouchStatus;
+	summary: string;
+}
+
+export interface RelevantSymbol {
+	name: string;
+	file: string;
+	reason: string;
+}
+
+export interface StructuredSessionState {
+	version: number;
+	sessionId: string;
+	canonicalRequest: {
+		current: string;
+		sourceEntryIds: string[];
+		superseded: Array<{
+			old: string;
+			replacedBy: string;
+			reason: string;
+			entryId: string;
+		}>;
+	};
+	constraints: Constraint[];
+	plan: PlanItem[];
+	progress: {
+		done: string[];
+		current: string[];
+		next: string[];
+		blocked: string[];
+	};
+	decisions: Decision[];
+	codebase: {
+		touchedFiles: TouchedFile[];
+		relevantSymbols: RelevantSymbol[];
+	};
+	evidence: EvidencePointer[];
+	audit: {
+		lastCompactionAt: string;
+		compactionCount: number;
+		knownRisks: string[];
+	};
+}
+
+export interface StatePatch {
+	canonicalRequest?: Partial<StructuredSessionState["canonicalRequest"]>;
+	constraints?: {
+		add?: Constraint[];
+		update?: Array<{ id: string; patch: Partial<Constraint> }>;
+	};
+	plan?: {
+		add?: PlanItem[];
+		update?: Array<{ id: string; status?: PlanStatus; text?: string; evidenceEntryIds?: string[] }>;
+	};
+	progress?: Partial<StructuredSessionState["progress"]>;
+	decisions?: {
+		add?: Decision[];
+		supersede?: Array<{ id: string; reason: string }>;
+	};
+	codebase?: Partial<StructuredSessionState["codebase"]>;
+	evidence?: {
+		add?: EvidencePointer[];
+	};
+	audit?: Partial<StructuredSessionState["audit"]>;
+}
+
+export interface StructuredStateUpdateInput {
+	sessionId: string;
+	previous?: StructuredSessionState;
+	summary: string;
+	entries: SessionEntry[];
+	readFiles?: string[];
+	modifiedFiles?: string[];
+	audit?: CompactionAudit;
+	timestamp?: string;
+}
+
+export function createInitialStructuredSessionState(sessionId: string): StructuredSessionState {
+	return {
+		version: STRUCTURED_SESSION_STATE_VERSION,
+		sessionId,
+		canonicalRequest: {
+			current: "",
+			sourceEntryIds: [],
+			superseded: [],
+		},
+		constraints: [],
+		plan: [],
+		progress: {
+			done: [],
+			current: [],
+			next: [],
+			blocked: [],
+		},
+		decisions: [],
+		codebase: {
+			touchedFiles: [],
+			relevantSymbols: [],
+		},
+		evidence: [],
+		audit: {
+			lastCompactionAt: "",
+			compactionCount: 0,
+			knownRisks: [],
+		},
+	};
+}
+
+export function isStructuredSessionState(value: unknown): value is StructuredSessionState {
+	if (!isRecord(value)) return false;
+	return (
+		value.version === STRUCTURED_SESSION_STATE_VERSION &&
+		typeof value.sessionId === "string" &&
+		isRecord(value.canonicalRequest) &&
+		Array.isArray(value.constraints) &&
+		Array.isArray(value.plan) &&
+		isRecord(value.progress) &&
+		Array.isArray(value.decisions) &&
+		isRecord(value.codebase) &&
+		Array.isArray(value.evidence) &&
+		isRecord(value.audit)
+	);
+}
+
+export function getLatestStructuredSessionState(entries: SessionEntry[]): StructuredSessionState | undefined {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index];
+		if (entry.type !== "custom" || entry.customType !== STRUCTURED_SESSION_STATE_CUSTOM_TYPE) continue;
+		if (isStructuredSessionState(entry.data)) {
+			return entry.data;
+		}
+	}
+	return undefined;
+}
+
+export function createStructuredSessionState(input: StructuredStateUpdateInput): StructuredSessionState {
+	const previous = input.previous ?? createInitialStructuredSessionState(input.sessionId);
+	const patch = createStatePatchFromSummary(input);
+	return mergeStructuredSessionState(previous, patch);
+}
+
+export function mergeStructuredSessionState(
+	previous: StructuredSessionState,
+	patch: StatePatch,
+): StructuredSessionState {
+	const next: StructuredSessionState = {
+		...previous,
+		canonicalRequest: {
+			current: previous.canonicalRequest.current,
+			sourceEntryIds: [...previous.canonicalRequest.sourceEntryIds],
+			superseded: previous.canonicalRequest.superseded.map((item) => ({ ...item })),
+		},
+		constraints: previous.constraints.map((constraint) => ({ ...constraint })),
+		plan: previous.plan.map((item) => ({ ...item, evidenceEntryIds: [...item.evidenceEntryIds] })),
+		progress: {
+			done: [...previous.progress.done],
+			current: [...previous.progress.current],
+			next: [...previous.progress.next],
+			blocked: [...previous.progress.blocked],
+		},
+		decisions: previous.decisions.map((decision) => ({
+			...decision,
+			evidencePointers: decision.evidencePointers.map((pointer) => ({ ...pointer })),
+		})),
+		codebase: {
+			touchedFiles: previous.codebase.touchedFiles.map((file) => ({ ...file })),
+			relevantSymbols: previous.codebase.relevantSymbols.map((symbol) => ({ ...symbol })),
+		},
+		evidence: previous.evidence.map((pointer) => ({ ...pointer })),
+		audit: {
+			lastCompactionAt: previous.audit.lastCompactionAt,
+			compactionCount: previous.audit.compactionCount,
+			knownRisks: [...previous.audit.knownRisks],
+		},
+	};
+
+	if (patch.canonicalRequest) {
+		mergeCanonicalRequest(next, patch.canonicalRequest);
+	}
+	if (patch.constraints) {
+		mergeConstraints(next, patch.constraints);
+	}
+	if (patch.plan) {
+		mergePlan(next, patch.plan);
+	}
+	if (patch.progress) {
+		next.progress = {
+			done: mergeStringList(next.progress.done, patch.progress.done),
+			current: mergeStringList([], patch.progress.current ?? next.progress.current),
+			next: mergeStringList([], patch.progress.next ?? next.progress.next),
+			blocked: mergeStringList(next.progress.blocked, patch.progress.blocked),
+		};
+	}
+	if (patch.decisions) {
+		mergeDecisions(next, patch.decisions);
+	}
+	if (patch.codebase) {
+		next.codebase = {
+			touchedFiles: mergeTouchedFiles(next.codebase.touchedFiles, patch.codebase.touchedFiles ?? []),
+			relevantSymbols: mergeRelevantSymbols(next.codebase.relevantSymbols, patch.codebase.relevantSymbols ?? []),
+		};
+	}
+	if (patch.evidence?.add) {
+		next.evidence = mergeEvidence(next.evidence, patch.evidence.add);
+	}
+	if (patch.audit) {
+		next.audit = {
+			lastCompactionAt: patch.audit.lastCompactionAt ?? next.audit.lastCompactionAt,
+			compactionCount: patch.audit.compactionCount ?? next.audit.compactionCount,
+			knownRisks: mergeStringList(next.audit.knownRisks, patch.audit.knownRisks),
+		};
+	}
+
+	return next;
+}
+
+export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
+	const lines = [
+		"<session_checkpoint>",
+		`Goal: ${state.canonicalRequest.current || "(unknown)"}`,
+		"Active constraints:",
+		...renderList(
+			state.constraints.filter((constraint) => constraint.status === "active").map((constraint) => constraint.text),
+		),
+		"Current plan:",
+		...state.plan.slice(0, 12).map((item) => `- [${renderPlanStatus(item.status)}] ${item.text}`),
+		"Next action:",
+		...renderList(state.progress.next.length > 0 ? state.progress.next : state.progress.current.slice(0, 3)),
+		"Touched files:",
+		...renderList(
+			state.codebase.touchedFiles.slice(0, 20).map((file) => `${file.status}: ${file.path} - ${file.summary}`),
+		),
+		"Retrieve if needed:",
+		...renderList(state.evidence.slice(0, 20).map((pointer) => `${pointer.id}: ${pointer.summary}`)),
+		"Known risks:",
+		...renderList(state.audit.knownRisks),
+		"</session_checkpoint>",
+	];
+	return capCheckpoint(lines.join("\n"), maxTokens);
+}
+
+function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePatch {
+	const timestamp = input.timestamp ?? new Date().toISOString();
+	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
+	const goal = extractSection(input.summary, "Goal").trim() || createPlainSummaryFallback(input.summary);
+	const planItems = extractPlanItems(input.summary, sourceEntryIds);
+	const progress = extractProgress(input.summary);
+	const decisions = extractDecisions(input.summary);
+	const evidence = createEvidencePointers(input);
+	const touchedFiles = [
+		...(input.readFiles ?? []).map(
+			(path): TouchedFile => ({
+				path,
+				status: "read",
+				summary: "Read during compacted session history.",
+			}),
+		),
+		...(input.modifiedFiles ?? []).map(
+			(path): TouchedFile => ({
+				path,
+				status: "modified",
+				summary: "Modified during compacted session history.",
+			}),
+		),
+	];
+
+	return {
+		canonicalRequest: goal
+			? {
+					current: goal,
+					sourceEntryIds,
+				}
+			: undefined,
+		plan: planItems.length > 0 ? { add: planItems } : undefined,
+		progress,
+		decisions: decisions.length > 0 ? { add: decisions } : undefined,
+		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
+		evidence: evidence.length > 0 ? { add: evidence } : undefined,
+		audit: {
+			lastCompactionAt: timestamp,
+			compactionCount: (input.previous?.audit.compactionCount ?? 0) + 1,
+			knownRisks: input.audit?.risks ?? [],
+		},
+	};
+}
+
+function extractSection(markdown: string, heading: string): string {
+	const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = markdown.match(new RegExp(`^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, "m"));
+	return match?.[1]?.trim() ?? "";
+}
+
+function createPlainSummaryFallback(summary: string): string {
+	return summary
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0)
+		.slice(0, 6)
+		.join(" ")
+		.slice(0, 1000);
+}
+
+function extractSubsection(markdown: string, section: string, subsection: string): string {
+	const sectionText = extractSection(markdown, section);
+	const escapedSubsection = subsection.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+	const match = sectionText.match(
+		new RegExp(`^###\\s+${escapedSubsection}\\s*$([\\s\\S]*?)(?=^###\\s+|(?![\\s\\S]))`, "m"),
+	);
+	return match?.[1]?.trim() ?? "";
+}
+
+function extractPlanItems(markdown: string, sourceEntryIds: string[]): PlanItem[] {
+	const section = extractSection(markdown, "Plan & Progress");
+	const items: PlanItem[] = [];
+	for (const rawLine of section.split("\n")) {
+		const line = rawLine.trim();
+		const match = line.match(/^-\s+\[([ .vx-])\]\s+(.+)$/i);
+		if (!match) continue;
+		const text = match[2].trim();
+		if (!text) continue;
+		items.push({
+			id: createStableId("plan", text),
+			text,
+			status: parsePlanStatus(match[1]),
+			evidenceEntryIds: [...sourceEntryIds],
+		});
+	}
+	return items;
+}
+
+function extractProgress(markdown: string): StatePatch["progress"] {
+	const done = extractBulletLines(extractSubsection(markdown, "Progress", "Done"));
+	const current = extractBulletLines(extractSubsection(markdown, "Progress", "In Progress"));
+	const blocked = extractBulletLines(extractSubsection(markdown, "Progress", "Blocked"));
+	const next = extractNumberedLines(extractSection(markdown, "Next Steps"));
+	return { done, current, blocked, next };
+}
+
+function extractDecisions(markdown: string): Decision[] {
+	return extractBulletLines(extractSection(markdown, "Key Decisions")).map((line) => {
+		const normalized = line.replace(/^\*\*(.*?)\*\*:\s*/, "$1: ");
+		const [decision, ...rationaleParts] = normalized.split(": ");
+		const rationale = rationaleParts.join(": ").trim();
+		return {
+			id: createStableId("decision", normalized),
+			decision: decision.trim() || normalized,
+			rationale,
+			evidencePointers: [],
+			status: "active",
+		};
+	});
+}
+
+function createEvidencePointers(input: StructuredStateUpdateInput): EvidencePointer[] {
+	const pointers: EvidencePointer[] = [];
+	for (const entry of input.entries) {
+		if (entry.type === "message" && entry.message.role === "toolResult") {
+			pointers.push({
+				id: `tool-result:${entry.message.toolCallId}`,
+				kind: "tool_result",
+				entryId: entry.id,
+				summary: `${entry.message.toolName} ${entry.message.isError ? "error" : "success"} result`,
+				retrieveWhen: `Need exact raw output from ${entry.message.toolName}.`,
+			});
+		} else if (entry.type === "message" && entry.message.role === "bashExecution") {
+			pointers.push({
+				id: `bash:${entry.id}`,
+				kind: "bash",
+				entryId: entry.id,
+				summary: `Bash command: ${entry.message.command}`,
+				retrieveWhen: "Need exact bash command output.",
+			});
+		}
+	}
+	for (const file of input.readFiles ?? []) {
+		pointers.push({
+			id: `file:${createStableId("path", file)}`,
+			kind: "file",
+			path: file,
+			summary: `Read file ${file}`,
+			retrieveWhen: "Need exact file content read earlier in the session.",
+		});
+	}
+	return pointers;
+}
+
+function mergeCanonicalRequest(
+	state: StructuredSessionState,
+	patch: Partial<StructuredSessionState["canonicalRequest"]>,
+): void {
+	if (patch.current && patch.current !== state.canonicalRequest.current) {
+		if (state.canonicalRequest.current) {
+			state.canonicalRequest.superseded.push({
+				old: state.canonicalRequest.current,
+				replacedBy: patch.current,
+				reason: "Compaction summary updated canonical goal.",
+				entryId: patch.sourceEntryIds?.at(-1) ?? "",
+			});
+		}
+		state.canonicalRequest.current = patch.current;
+	}
+	state.canonicalRequest.sourceEntryIds = mergeStringList(state.canonicalRequest.sourceEntryIds, patch.sourceEntryIds);
+	state.canonicalRequest.superseded = [...state.canonicalRequest.superseded, ...(patch.superseded ?? [])];
+}
+
+function mergeConstraints(state: StructuredSessionState, patch: NonNullable<StatePatch["constraints"]>): void {
+	const byId = new Map(state.constraints.map((constraint) => [constraint.id, constraint]));
+	for (const constraint of patch.add ?? []) {
+		if (!byId.has(constraint.id)) {
+			state.constraints.push({ ...constraint });
+			byId.set(constraint.id, constraint);
+		}
+	}
+	for (const update of patch.update ?? []) {
+		const current = byId.get(update.id);
+		if (!current) continue;
+		if (current.status === "active" && update.patch.status && update.patch.status !== "active") {
+			continue;
+		}
+		Object.assign(current, update.patch);
+	}
+}
+
+function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch["plan"]>): void {
+	const byId = new Map(state.plan.map((item) => [item.id, item]));
+	for (const item of patch.add ?? []) {
+		const existing = byId.get(item.id);
+		if (!existing) {
+			state.plan.push({ ...item, evidenceEntryIds: [...item.evidenceEntryIds] });
+			byId.set(item.id, item);
+			continue;
+		}
+		if (item.status === "done" && item.evidenceEntryIds.length === 0) continue;
+		existing.status = item.status;
+		existing.text = item.text;
+		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, item.evidenceEntryIds);
+	}
+	for (const update of patch.update ?? []) {
+		const existing = byId.get(update.id);
+		if (!existing) continue;
+		if (update.status === "done" && (update.evidenceEntryIds?.length ?? existing.evidenceEntryIds.length) === 0) {
+			continue;
+		}
+		if (update.text) existing.text = update.text;
+		if (update.status) existing.status = update.status;
+		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);
+	}
+}
+
+function mergeDecisions(state: StructuredSessionState, patch: NonNullable<StatePatch["decisions"]>): void {
+	const byId = new Map(state.decisions.map((decision) => [decision.id, decision]));
+	for (const item of patch.add ?? []) {
+		if (!byId.has(item.id)) {
+			state.decisions.push({
+				...item,
+				evidencePointers: item.evidencePointers.map((pointer) => ({ ...pointer })),
+			});
+		}
+	}
+	for (const supersede of patch.supersede ?? []) {
+		const current = byId.get(supersede.id);
+		if (current) {
+			current.status = "superseded";
+			current.rationale = current.rationale
+				? `${current.rationale} Superseded: ${supersede.reason}`
+				: `Superseded: ${supersede.reason}`;
+		}
+	}
+}
+
+function mergeTouchedFiles(existing: TouchedFile[], incoming: TouchedFile[]): TouchedFile[] {
+	const byPath = new Map(existing.map((file) => [file.path, file]));
+	for (const file of incoming) {
+		const current = byPath.get(file.path);
+		if (!current) {
+			existing.push({ ...file });
+			byPath.set(file.path, file);
+			continue;
+		}
+		if (file.status !== "read" || current.status === "read") {
+			current.status = file.status;
+		}
+		current.summary = file.summary;
+	}
+	return existing;
+}
+
+function mergeRelevantSymbols(existing: RelevantSymbol[], incoming: RelevantSymbol[]): RelevantSymbol[] {
+	const seen = new Set(existing.map((symbol) => `${symbol.file}:${symbol.name}`));
+	for (const symbol of incoming) {
+		const key = `${symbol.file}:${symbol.name}`;
+		if (!seen.has(key)) {
+			existing.push({ ...symbol });
+			seen.add(key);
+		}
+	}
+	return existing;
+}
+
+function mergeEvidence(existing: EvidencePointer[], incoming: EvidencePointer[]): EvidencePointer[] {
+	const seen = new Set(existing.map((pointer) => pointer.id));
+	for (const pointer of incoming) {
+		if (!seen.has(pointer.id)) {
+			existing.push({ ...pointer });
+			seen.add(pointer.id);
+		}
+	}
+	return existing;
+}
+
+function mergeStringList(existing: string[], incoming: string[] | undefined): string[] {
+	if (!incoming) return existing;
+	const seen = new Set(existing);
+	const result = [...existing];
+	for (const item of incoming) {
+		const trimmed = item.trim();
+		if (trimmed && !seen.has(trimmed)) {
+			result.push(trimmed);
+			seen.add(trimmed);
+		}
+	}
+	return result;
+}
+
+function extractBulletLines(text: string): string[] {
+	return text
+		.split("\n")
+		.map((line) => line.trim())
+		.filter((line) => line.startsWith("- "))
+		.map((line) =>
+			line
+				.slice(2)
+				.replace(/^\[[ .vx-]\]\s*/i, "")
+				.trim(),
+		)
+		.filter((line) => line.length > 0 && line !== "(none)");
+}
+
+function extractNumberedLines(text: string): string[] {
+	return text
+		.split("\n")
+		.map((line) => line.trim())
+		.map((line) => line.replace(/^\d+\.\s+/, "").trim())
+		.filter((line) => line.length > 0 && line !== "(none)");
+}
+
+function parsePlanStatus(value: string): PlanStatus {
+	switch (value.toLowerCase()) {
+		case ".":
+			return "in_progress";
+		case "v":
+		case "x":
+			return "done";
+		case "-":
+			return "failed";
+		default:
+			return "not_started";
+	}
+}
+
+function renderPlanStatus(status: PlanStatus): string {
+	switch (status) {
+		case "done":
+			return "done";
+		case "in_progress":
+			return "in_progress";
+		case "failed":
+			return "failed";
+		case "blocked":
+			return "blocked";
+		case "not_started":
+			return "not_started";
+	}
+}
+
+function renderList(items: string[]): string[] {
+	if (items.length === 0) return ["- (none)"];
+	return items.map((item) => `- ${item}`);
+}
+
+function capCheckpoint(checkpoint: string, maxTokens: number): string {
+	const maxChars = Math.max(500, maxTokens * 4);
+	if (checkpoint.length <= maxChars) return checkpoint;
+	const suffix = "\nKnown risks:\n- checkpoint truncated to fit rendered state budget\n</session_checkpoint>";
+	const prefix = checkpoint.slice(0, Math.max(0, maxChars - suffix.length));
+	const lastLineBreak = prefix.lastIndexOf("\n");
+	return `${prefix.slice(0, lastLineBreak > 0 ? lastLineBreak : prefix.length)}${suffix}`;
+}
+
+function createStableId(prefix: string, text: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; index++) {
+		hash ^= text.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return `${prefix}-${(hash >>> 0).toString(16)}`;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export function getMessageTextForState(message: AgentMessage): string {
+	switch (message.role) {
+		case "user":
+			return typeof message.content === "string"
+				? message.content
+				: message.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+		case "assistant":
+			return message.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+		case "toolResult":
+			return message.content
+				.filter((block) => block.type === "text")
+				.map((block) => block.text)
+				.join("\n");
+		case "bashExecution":
+			return `${message.command}\n${message.output}`;
+		case "custom":
+			return typeof message.content === "string"
+				? message.content
+				: message.content
+						.filter((block) => block.type === "text")
+						.map((block) => block.text)
+						.join("\n");
+		case "branchSummary":
+		case "compactionSummary":
+			return message.summary;
+	}
+}

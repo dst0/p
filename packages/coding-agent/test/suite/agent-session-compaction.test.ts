@@ -6,6 +6,7 @@ import {
 	type Model,
 } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
@@ -125,6 +126,11 @@ describe("AgentSession compaction characterization", () => {
 
 		expect(result.summary).toBe("summary from extension");
 		expect(compactionEntries).toHaveLength(1);
+		expect(
+			harness.sessionManager
+				.getEntries()
+				.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
+		).toHaveLength(0);
 		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
 	});
 
@@ -153,8 +159,38 @@ describe("AgentSession compaction characterization", () => {
 		const getStreamCallCount = useSummaryStreamFn(harness, "summary from custom stream");
 
 		const result = await harness.session.compact();
+		const details = result.details as {
+			audit?: {
+				beforeTokens: number;
+				afterTokens: number;
+				savedTokens: number;
+				summaryTokens: number;
+				recentRawTokens: number;
+				droppedEntries: string[];
+			};
+			markdownSummary?: string;
+			structuredState?: unknown;
+		};
 
 		expect(result.summary).toContain("summary from custom stream");
+		expect(details.audit).toMatchObject({
+			beforeTokens: result.tokensBefore,
+			summaryTokens: expect.any(Number),
+			recentRawTokens: expect.any(Number),
+			droppedEntries: expect.any(Array),
+		});
+		expect(details.audit?.afterTokens).toBeGreaterThan(0);
+		expect(details.audit?.savedTokens).toBeGreaterThanOrEqual(0);
+		expect(details.markdownSummary).toContain("summary from custom stream");
+		expect(details.structuredState).toMatchObject({
+			version: 1,
+			canonicalRequest: { current: expect.stringContaining("summary from custom stream") },
+		});
+		expect(result.summary).toContain("<session_checkpoint>");
+		const structuredEntries = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
+		expect(structuredEntries).toHaveLength(1);
 		expect(getStreamCallCount()).toBe(1);
 	});
 
@@ -176,6 +212,52 @@ describe("AgentSession compaction characterization", () => {
 			"auto summary from custom stream",
 		);
 		expect(getStreamCallCount()).toBe(1);
+	});
+
+	it("retrieves old tool output by session_recall pointer", async () => {
+		const harness = await createHarness({ initialActiveToolNames: ["session_recall"] });
+		harnesses.push(harness);
+		harness.sessionManager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-old",
+			toolName: "bash",
+			content: [{ type: "text", text: "secret old failure line\nsecond line" }],
+			isError: true,
+			timestamp: Date.now(),
+		});
+
+		const recallTool = harness.session.agent.state.tools.find((tool) => tool.name === "session_recall");
+		expect(recallTool).toBeDefined();
+		const result = await recallTool!.execute("recall-1", {
+			query: "tool-result:call-old",
+			includeRaw: true,
+			maxTokens: 50,
+		});
+		const text = result.content
+			.filter((block): block is { type: "text"; text: string } => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+
+		expect(text).toContain("tool-result:call-old");
+		expect(text).toContain("secret old failure line");
+	});
+
+	it("previews compaction without mutating session entries", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		const beforeEntries = harness.sessionManager.getEntries();
+
+		const dryRun = harness.session.getCompactionDryRun();
+
+		expect(dryRun.ok).toBe(true);
+		expect(dryRun.firstKeptEntryId).toBeDefined();
+		expect(dryRun.keepRecentTokens).toBeGreaterThan(0);
+		expect(dryRun.projectedAfterTokens).toBeGreaterThan(0);
+		expect(harness.sessionManager.getEntries()).toHaveLength(beforeEntries.length);
+		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "compaction")).toBe(false);
 	});
 
 	it("chunks a very large history sequentially when context bounds require it", async () => {

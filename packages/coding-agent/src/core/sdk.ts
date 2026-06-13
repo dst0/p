@@ -6,7 +6,12 @@ import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
-import { truncateKeptMessages } from "./compaction/index.ts";
+import {
+	estimateContextTokens,
+	selectKeepRecentTokens,
+	stubToolResultsForPrompt,
+	truncateKeptMessages,
+} from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -28,7 +33,6 @@ import {
 	createReadOnlyTools,
 	createReadTool,
 	createWriteTool,
-	type ToolName,
 	withFileMutationQueue,
 } from "./tools/index.ts";
 
@@ -188,8 +192,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const existingSession = sessionManager.buildSessionContext();
 	if (existingSession.messages.length > 0) {
 		const settings = settingsManager.getCompactionSettings();
+		const keepRecentTokens = selectKeepRecentTokens(estimateContextTokens(existingSession.messages).tokens, settings);
 		existingSession.messages = truncateKeptMessages(existingSession.messages, {
-			keepRecentTokens: settings.keepRecentTokens,
+			keepRecentTokens,
 			targetContextTokens: settings.targetContextTokens,
 		});
 	}
@@ -249,7 +254,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
 	}
 
-	const defaultActiveToolNames: ToolName[] = ["read", "bash", "edit", "write"];
+	const defaultActiveToolNames: string[] = ["read", "bash", "edit", "write", "session_recall"];
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
@@ -261,7 +266,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
-		const converted = convertToLlm(messages);
+		const promptMessages = stubToolResultsForPrompt(messages, settingsManager.getCompactionSettings()).messages;
+		const converted = convertToLlm(promptMessages);
 		// Check setting dynamically so mid-session changes take effect
 		if (!settingsManager.getBlockImages()) {
 			return converted;

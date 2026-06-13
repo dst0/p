@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentTool } from "@earendil-works/pi-agent-core";
@@ -38,6 +38,34 @@ describe("AgentSession prompt characterization", () => {
 		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
 		expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
 		expect(harness.getPendingResponseCount()).toBe(0);
+	});
+
+	it("automatically syncs project memory and injects scoped memory into later prompts", async () => {
+		const harness = await createHarness();
+		harnesses.push(harness);
+		let secondSystemPrompt = "";
+		harness.setResponses([
+			fauxAssistantMessage("first done"),
+			(context) => {
+				secondSystemPrompt = context.systemPrompt ?? "";
+				return fauxAssistantMessage("second done");
+			},
+		]);
+
+		await harness.session.prompt("Fix compaction loops");
+		const snapshotPath = join(harness.tempDir, ".pdev/state/session.current.json");
+		expect(existsSync(snapshotPath)).toBe(true);
+		expect(readFileSync(snapshotPath, "utf8")).toContain("Fix compaction loops");
+
+		await harness.session.prompt("continue compaction work");
+
+		expect(secondSystemPrompt).toContain("<project_memory>");
+		expect(secondSystemPrompt).toContain("Fix compaction loops");
+		expect(
+			harness.session.messages.some(
+				(message) => message.role === "custom" && message.customType === "pi.project-memory",
+			),
+		).toBe(false);
 	});
 
 	it("handles a tool call turn and waits for the follow-up LLM response", async () => {

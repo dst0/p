@@ -12,6 +12,7 @@ import { SettingsManager } from "../src/core/settings-manager.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 vi.mock("../src/core/compaction/index.js", () => ({
+	STRUCTURED_SESSION_STATE_CUSTOM_TYPE: "pi.structured-session-state",
 	calculateContextTokens: (usage: {
 		input: number;
 		output: number;
@@ -25,6 +26,27 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		firstKeptEntryId: "entry-1",
 		tokensBefore: 100,
 		details: {},
+	}),
+	createContextBudgetReport: (contextTokens: number, contextWindow: number) => ({
+		contextTokens,
+		contextWindow,
+		triggerThreshold: contextWindow - 4000,
+		triggerReserveTokens: 4000,
+		targetContextTokens: 12000,
+		remainingTokens: Math.max(0, contextWindow - contextTokens),
+		shouldCompact: contextTokens > contextWindow - 4000,
+	}),
+	createStructuredSessionState: () => ({
+		version: 1,
+		sessionId: "test",
+		canonicalRequest: { current: "compacted", sourceEntryIds: [], superseded: [] },
+		constraints: [],
+		plan: [],
+		progress: { done: [], current: [], next: [], blocked: [] },
+		decisions: [],
+		codebase: { touchedFiles: [], relevantSymbols: [] },
+		evidence: [],
+		audit: { lastCompactionAt: "", compactionCount: 1, knownRisks: [] },
 	}),
 	estimateContextTokens: (
 		messages: Array<{
@@ -44,13 +66,25 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		}
 		return { tokens: 0, usageTokens: 0, trailingTokens: 0, lastUsageIndex: null };
 	},
+	getLatestStructuredSessionState: () => undefined,
 	generateBranchSummary: async () => ({ summary: "", aborted: false, readFiles: [], modifiedFiles: [] }),
 	prepareCompaction: () => ({ ok: true, preparation: { dummy: true } }),
+	renderStructuredSessionCheckpoint: () => "compacted",
+	selectKeepRecentTokens: () => 4000,
 	shouldCompact: (
 		contextTokens: number,
 		contextWindow: number,
-		settings: { enabled: boolean; reserveTokens: number },
-	) => settings.enabled && contextTokens > contextWindow - settings.reserveTokens,
+		settings: { enabled: boolean; triggerReserveTokens?: number; reserveTokens?: number },
+	) =>
+		settings.enabled &&
+		contextTokens > contextWindow - (settings.triggerReserveTokens ?? settings.reserveTokens ?? 4000),
+	stubToolResultsForPrompt: (messages: any[]) => ({
+		messages,
+		stubs: [],
+		toolRawTokens: 0,
+		toolStubTokens: 0,
+		tokenSavingsEstimate: 0,
+	}),
 	truncateKeptMessages: (messages: any[]) => messages,
 }));
 
