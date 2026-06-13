@@ -280,7 +280,9 @@ export function renderStructuredSessionCheckpoint(state: StructuredSessionState,
 function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePatch {
 	const timestamp = input.timestamp ?? new Date().toISOString();
 	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
-	const goal = extractSection(input.summary, "Goal").trim() || createPlainSummaryFallback(input.summary);
+	const summaryGoal = extractSection(input.summary, "Goal").trim();
+	const goal =
+		getLatestExplicitUserCorrection(input.entries) ?? (summaryGoal || createPlainSummaryFallback(input.summary));
 	const planItems = extractPlanItems(input.summary, sourceEntryIds);
 	const progress = extractProgress(input.summary);
 	const decisions = extractDecisions(input.summary);
@@ -336,6 +338,49 @@ function createPlainSummaryFallback(summary: string): string {
 		.slice(0, 6)
 		.join(" ")
 		.slice(0, 1000);
+}
+
+function getLatestExplicitUserCorrection(entries: SessionEntry[]): string | undefined {
+	for (let index = entries.length - 1; index >= 0; index--) {
+		const entry = entries[index];
+		if (entry.type !== "message" || entry.message.role !== "user") continue;
+		const text = getAgentMessageText(entry.message).trim();
+		if (!isExplicitGoalCorrection(text)) continue;
+		const cleaned = text
+			.replace(/^(correction|actually|instead|new goal|updated request)\s*[:,-]?\s*/i, "")
+			.replace(/^change (the )?goal\s*[:,-]?\s*/i, "")
+			.replace(/^do this instead\s*[:,-]?\s*/i, "")
+			.trim();
+		return cleaned || text;
+	}
+	return undefined;
+}
+
+function isExplicitGoalCorrection(text: string): boolean {
+	return /\b(correction|actually|instead|new goal|change the goal|change goal|updated request|do this instead)\b/i.test(
+		text,
+	);
+}
+
+function getAgentMessageText(message: AgentMessage): string {
+	if (message.role === "user" || message.role === "custom") {
+		return typeof message.content === "string"
+			? message.content
+			: message.content
+					.filter((block) => block.type === "text")
+					.map((block) => block.text)
+					.join("\n");
+	}
+	if (message.role === "assistant" || message.role === "toolResult") {
+		return message.content
+			.filter((block) => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+	}
+	if (message.role === "bashExecution") {
+		return `${message.command}\n${message.output}`;
+	}
+	return message.summary;
 }
 
 function extractSubsection(markdown: string, section: string, subsection: string): string {

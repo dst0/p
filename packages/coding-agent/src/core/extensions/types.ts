@@ -59,6 +59,7 @@ import type {
 import type { SlashCommandInfo } from "../slash-commands.ts";
 import type { SourceInfo } from "../source-info.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import type { TokenBreakdown } from "../token-accounting.ts";
 import type { BashOperations } from "../tools/bash.ts";
 import type { EditToolDetails } from "../tools/edit.ts";
 import type {
@@ -306,6 +307,8 @@ export interface ContextUsage {
 	toolStubSavings?: number;
 	/** Raw evidence pointers for tool results stubbed out of prompt context. */
 	stubbedToolResults?: string[];
+	/** Prompt token accounting split by prompt subsystem. */
+	tokenBreakdown?: TokenBreakdown;
 }
 
 export interface CompactOptions {

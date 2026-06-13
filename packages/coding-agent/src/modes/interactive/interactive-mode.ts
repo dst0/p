@@ -90,6 +90,7 @@ import { type SessionContext, SessionManager } from "../../core/session-manager.
 import { BUILTIN_SLASH_COMMANDS } from "../../core/slash-commands.ts";
 import type { SourceInfo } from "../../core/source-info.ts";
 import { isInstallTelemetryEnabled } from "../../core/telemetry.ts";
+import { formatTokenBreakdown } from "../../core/token-accounting.ts";
 import type { TruncationResult } from "../../core/tools/truncate.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../core/trust-manager.ts";
 import { getChangelogPath, getNewEntries, normalizeChangelogLinks, parseChangelog } from "../../utils/changelog.ts";
@@ -2638,6 +2639,11 @@ export class InteractiveMode {
 			}
 			if (text === "/memory" || text.startsWith("/memory ")) {
 				this.handleMemoryCommand(text);
+				this.editor.setText("");
+				return;
+			}
+			if (text === "/rules" || text.startsWith("/rules ")) {
+				this.handleRulesCommand(text);
 				this.editor.setText("");
 				return;
 			}
@@ -5445,6 +5451,18 @@ export class InteractiveMode {
 			info += `${theme.fg("dim", "Target:")} ${targetContextTokens} tokens\n`;
 			info += `${theme.fg("dim", "Should compact:")} ${context.shouldCompact ? "yes" : "no"}\n`;
 			info += `${theme.fg("dim", "Tool stubs:")} ${stubbedToolResults} (${toolStubSavings.toLocaleString()} tokens saved)\n`;
+			if (context.tokenBreakdown) {
+				info += `\n${theme.bold("Token Breakdown")}\n${formatTokenBreakdown(context.tokenBreakdown)}\n`;
+			}
+		}
+		const guardrails = this.session.evaluateGuardrails("final");
+		const visibleGuardrails = guardrails.results.filter(
+			(result) => !result.ok || result.id === "dirty-worktree-final",
+		);
+		if (visibleGuardrails.length > 0) {
+			info += `\n${theme.bold("Guardrails")}\n`;
+			info += visibleGuardrails.map((result) => `- [${result.severity}] ${result.message}`).join("\n");
+			info += "\n";
 		}
 		if (snapshot.lastCompaction) {
 			info += `\n${theme.bold("Last Compaction")}\n`;
@@ -5520,6 +5538,54 @@ export class InteractiveMode {
 				}
 				default:
 					info += "Usage: /memory [status|sync|diff|search <query>|pin <text>|forget <id>]";
+			}
+
+			this.chatContainer.addChild(new Spacer(1));
+			this.chatContainer.addChild(new Text(info, 1, 0));
+			this.ui.requestRender();
+		} catch (error) {
+			this.showError(error instanceof Error ? error.message : String(error));
+		}
+	}
+
+	private handleRulesCommand(text: string): void {
+		const args = text.replace(/^\/rules\s*/, "").trim();
+		const spaceIndex = args.indexOf(" ");
+		const command = (spaceIndex === -1 ? args : args.slice(0, spaceIndex)) || "lint";
+		const rest = spaceIndex === -1 ? "" : args.slice(spaceIndex + 1).trim();
+
+		try {
+			let info = `${theme.bold("Project Rules")}\n\n`;
+			switch (command) {
+				case "lint": {
+					const result = this.session.lintProjectRules();
+					info += `${theme.fg("dim", "Files:")} ${result.index.files.length}\n`;
+					info += `${theme.fg("dim", "Snippets:")} ${result.index.snippets.length}\n`;
+					info += `${theme.fg("dim", "Issues:")} ${result.issues.length}\n`;
+					info += result.issues.length
+						? result.issues
+								.map((issue) => {
+									const location = issue.path
+										? `${path.relative(this.sessionManager.getCwd(), issue.path)}${issue.line ? `:${issue.line}` : ""} `
+										: "";
+									return `- [${issue.severity}] ${issue.code}: ${location}${issue.message}`;
+								})
+								.join("\n")
+						: "No rule issues detected.";
+					break;
+				}
+				case "explain": {
+					if (!rest) {
+						info += "Usage: /rules explain <query>";
+						break;
+					}
+					const result = this.session.explainProjectRules(rest);
+					info += `${theme.fg("dim", "Query:")} ${result.query}\n`;
+					info += result.content;
+					break;
+				}
+				default:
+					info += "Usage: /rules [lint|explain <query>]";
 			}
 
 			this.chatContainer.addChild(new Spacer(1));
@@ -5849,7 +5915,8 @@ export class InteractiveMode {
 		const projected = result.projectedAfterTokens !== undefined ? `, projected ${result.projectedAfterTokens}` : "";
 		const summarize = result.tokensToSummarize !== undefined ? `, summarize ${result.tokensToSummarize}` : "";
 		const stubs = result.stubbedToolResults.length > 0 ? `, stubbed tools ${result.stubbedToolResults.length}` : "";
-		return `Compaction dry run: ${status}; context ${result.contextTokens}/${result.contextWindow}, trigger ${result.triggerThreshold}${summarize}${projected}, tool savings ${result.toolStubSavings}${stubs}`;
+		const breakdown = result.tokenBreakdown ? `\n${formatTokenBreakdown(result.tokenBreakdown)}` : "";
+		return `Compaction dry run: ${status}; context ${result.contextTokens}/${result.contextWindow}, trigger ${result.triggerThreshold}${summarize}${projected}, tool savings ${result.toolStubSavings}${stubs}${breakdown}`;
 	}
 
 	private async handleCompactCommand(

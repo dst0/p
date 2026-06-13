@@ -91,6 +91,7 @@ import {
 	wrapRegisteredTools,
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
+import { type ConstraintPhase, evaluateGuardrails, type GuardrailReport } from "./guardrails.ts";
 import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
@@ -108,14 +109,31 @@ import {
 	searchProjectMemory,
 	updateProjectMemorySnapshot,
 } from "./project-memory.ts";
+import {
+	createRulesContext,
+	explainProjectRules,
+	lintProjectRules,
+	type RuleExplainResult,
+	type RuleLintResult,
+} from "./project-rules.ts";
 import { expandPromptTemplate, type PromptTemplate } from "./prompt-templates.ts";
+import { createRepoMapContext, type RepoMap, updateRepoMap } from "./repo-map.ts";
 import type { ResourceExtensionPaths, ResourceLoader } from "./resource-loader.ts";
 import type { BranchSummaryEntry, CompactionEntry, SessionEntry, SessionManager } from "./session-manager.ts";
 import { CURRENT_SESSION_VERSION, getLatestCompactionEntry, type SessionHeader } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
+import {
+	createSubagentDigestContext,
+	createSubagentProfilesPrompt,
+	persistSubagentDigest,
+	readSubagentDigests,
+	type SubagentDigest,
+	type SubagentName,
+} from "./subagents.ts";
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
+import { createTokenBreakdown, type TokenBreakdown } from "./token-accounting.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
@@ -283,6 +301,7 @@ export interface CompactionDryRunResult {
 	toolStubTokens: number;
 	toolStubSavings: number;
 	stubbedToolResults: string[];
+	tokenBreakdown?: TokenBreakdown;
 }
 
 export interface SessionStateSnapshot {
@@ -372,6 +391,15 @@ interface RecallCandidate {
 	pointer: EvidencePointer;
 	searchText: string;
 	rawText?: string;
+}
+
+interface RuntimeContextPrompts {
+	baseSystemPrompt?: string;
+	memoryPrompt?: string;
+	rulesPrompt?: string;
+	repoMapPrompt?: string;
+	subagentPrompt?: string;
+	combinedPrompt?: string;
 }
 
 function getMessageTextForRecall(message: AgentMessage): string {
@@ -483,6 +511,7 @@ export class AgentSession {
 	// Bash execution state
 	private _bashAbortController: AbortController | undefined = undefined;
 	private _pendingBashMessages: BashExecutionMessage[] = [];
+	private _recentBashCommands: string[] = [];
 
 	// Extension system
 	private _extensionRunner!: ExtensionRunner;
@@ -518,6 +547,8 @@ export class AgentSession {
 	// Base system prompt (without extension appends) - used to apply fresh appends each turn
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
+	private _lastRuntimePromptComponents: RuntimeContextPrompts = {};
+	private _lastTokenBreakdown: TokenBreakdown | undefined = undefined;
 
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
@@ -959,6 +990,10 @@ export class AgentSession {
 		return this.agent.state.systemPrompt;
 	}
 
+	getLastTokenBreakdown(): TokenBreakdown | undefined {
+		return this._lastTokenBreakdown;
+	}
+
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;
@@ -1302,10 +1337,12 @@ export class AgentSession {
 				}
 			}
 			const effectiveSystemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
-			const projectMemoryPrompt = this._createProjectMemoryPrompt(expandedText);
-			this.agent.state.systemPrompt = projectMemoryPrompt
-				? `${effectiveSystemPrompt}\n\n${projectMemoryPrompt}`
+			const runtimePrompts = this._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt);
+			this._lastRuntimePromptComponents = runtimePrompts;
+			this.agent.state.systemPrompt = runtimePrompts.combinedPrompt
+				? `${effectiveSystemPrompt}\n\n${runtimePrompts.combinedPrompt}`
 				: effectiveSystemPrompt;
+			this._lastTokenBreakdown = this._createTokenBreakdownForPrompt(messages);
 
 			// Check if we need to compact before sending (catches aborted responses and preempts overflow with new messages)
 			const lastAssistant = this._findLastAssistantMessage();
@@ -1909,6 +1946,63 @@ export class AgentSession {
 		return context?.content;
 	}
 
+	private _createRuntimeContextPrompts(query: string, baseSystemPrompt: string): RuntimeContextPrompts {
+		const memoryPrompt = this._createProjectMemoryPrompt(query);
+		const rulesPrompt = createRulesContext(this._cwd, query);
+		const repoMapPrompt = createRepoMapContext(this._cwd, query)?.content;
+		const subagentDigestPrompt = createSubagentDigestContext(this._cwd, query);
+		const subagentProfilesPrompt = createSubagentProfilesPrompt();
+		const subagentPrompt = subagentDigestPrompt
+			? `${subagentProfilesPrompt}\n\n${subagentDigestPrompt}`
+			: subagentProfilesPrompt;
+		const prompts = [memoryPrompt, rulesPrompt, repoMapPrompt, subagentPrompt].filter(
+			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
+		);
+		return {
+			baseSystemPrompt,
+			memoryPrompt,
+			rulesPrompt,
+			repoMapPrompt,
+			subagentPrompt,
+			combinedPrompt: prompts.length > 0 ? prompts.join("\n\n") : undefined,
+		};
+	}
+
+	private _createToolPromptAccountingText(): string {
+		return this.agent.state.tools
+			.map((tool) => {
+				const definition = this._toolDefinitions.get(tool.name)?.definition;
+				const promptSnippet = this._toolPromptSnippets.get(tool.name);
+				return [tool.name, definition?.description, promptSnippet].filter(Boolean).join(": ");
+			})
+			.join("\n");
+	}
+
+	private _createTokenBreakdownForPrompt(
+		messages: AgentMessage[],
+		options: {
+			totalOverride?: number;
+			source?: "provider_usage" | "estimated";
+			toolRawTokens?: number;
+			toolStubTokens?: number;
+		} = {},
+	): TokenBreakdown {
+		const components = this._lastRuntimePromptComponents;
+		return createTokenBreakdown({
+			source: options.source ?? "estimated",
+			systemPrompt: components.baseSystemPrompt ?? this.systemPrompt,
+			toolsPrompt: this._createToolPromptAccountingText(),
+			memoryPrompt: components.memoryPrompt,
+			rulesPrompt: components.rulesPrompt,
+			repoMapPrompt: components.repoMapPrompt,
+			retrievedPrompt: components.subagentPrompt,
+			recentMessages: messages,
+			toolRawTokens: options.toolRawTokens,
+			toolStubTokens: options.toolStubTokens,
+			totalOverride: options.totalOverride,
+		});
+	}
+
 	initProjectMemory(): ProjectMemoryInitResult {
 		return initProjectMemory(this._cwd);
 	}
@@ -1949,11 +2043,46 @@ export class AgentSession {
 		return forgetProjectMemory(this._cwd, id);
 	}
 
+	lintProjectRules(): RuleLintResult {
+		return lintProjectRules(this._cwd);
+	}
+
+	explainProjectRules(query: string): RuleExplainResult {
+		return explainProjectRules(this._cwd, query);
+	}
+
+	updateRepoMap(): RepoMap {
+		return updateRepoMap(this._cwd);
+	}
+
+	recordSubagentDigest(
+		profile: SubagentName,
+		query: string,
+		summary: string,
+		evidencePointers: string[] = [],
+	): SubagentDigest {
+		return persistSubagentDigest(this._cwd, { profile, query, summary, evidencePointers });
+	}
+
+	evaluateGuardrails(phase: ConstraintPhase = "final"): GuardrailReport {
+		return evaluateGuardrails({
+			cwd: this._cwd,
+			phase,
+			recentCommands: this._recentBashCommands,
+		});
+	}
+
 	getCompactionDryRun(): CompactionDryRunResult {
 		const settings = this._getEffectiveCompactionSettings();
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const promptContext = stubToolResultsForPrompt(this._getEffectiveCompactedMessages(), settings);
 		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
+			source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
+			totalOverride: estimate.tokens,
+			toolRawTokens: promptContext.toolRawTokens,
+			toolStubTokens: promptContext.toolStubTokens,
+		});
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
 		const pathEntries = this.sessionManager.getBranch();
 		const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
@@ -1972,6 +2101,7 @@ export class AgentSession {
 				toolStubTokens: promptContext.toolStubTokens,
 				toolStubSavings: promptContext.tokenSavingsEstimate,
 				stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+				tokenBreakdown,
 			};
 		}
 
@@ -1996,6 +2126,7 @@ export class AgentSession {
 			toolStubTokens: promptContext.toolStubTokens,
 			toolStubSavings: promptContext.tokenSavingsEstimate,
 			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			tokenBreakdown,
 		};
 	}
 
@@ -2056,6 +2187,19 @@ export class AgentSession {
 
 	private _collectRecallCandidates(): RecallCandidate[] {
 		const candidates: RecallCandidate[] = [];
+		for (const digest of readSubagentDigests(this._cwd)) {
+			const rawText = JSON.stringify(digest, undefined, 2);
+			candidates.push({
+				pointer: {
+					id: digest.id,
+					kind: "artifact",
+					summary: `Subagent ${digest.profile}: ${digest.summary}`,
+					retrieveWhen: "Need read-only subagent digest evidence.",
+				},
+				searchText: `${digest.profile}\n${digest.query}\n${digest.summary}\n${digest.evidencePointers.join("\n")}`,
+				rawText,
+			});
+		}
 		for (const entry of this.sessionManager.getBranch()) {
 			if (entry.type === "message") {
 				const text = getMessageTextForRecall(entry.message);
@@ -3182,6 +3326,16 @@ export class AgentSession {
 		onChunk?: (chunk: string) => void,
 		options?: { excludeFromContext?: boolean; operations?: BashOperations },
 	): Promise<BashResult> {
+		const guardrails = evaluateGuardrails({
+			cwd: this._cwd,
+			command,
+			phase: "bash",
+			recentCommands: this._recentBashCommands,
+		});
+		if (!guardrails.ok) {
+			const blocker = guardrails.results.find((item) => !item.ok && item.severity === "critical");
+			throw new Error(blocker?.message ?? "Bash command blocked by executable guardrail.");
+		}
 		this._bashAbortController = new AbortController();
 
 		// Apply command prefix if configured (e.g., "shopt -s expand_aliases" for alias support)
@@ -3207,11 +3361,19 @@ export class AgentSession {
 		}
 	}
 
+	private _rememberBashCommand(command: string): void {
+		this._recentBashCommands.push(command);
+		if (this._recentBashCommands.length > 50) {
+			this._recentBashCommands = this._recentBashCommands.slice(-50);
+		}
+	}
+
 	/**
 	 * Record a bash execution result in session history.
 	 * Used by executeBash and by extensions that handle bash execution themselves.
 	 */
 	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
+		this._rememberBashCommand(command);
 		const bashMessage: BashExecutionMessage = {
 			role: "bashExecution",
 			command,
@@ -3624,6 +3786,13 @@ export class AgentSession {
 		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
 		const percent = (estimate.tokens / contextWindow) * 100;
+		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
+			source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
+			totalOverride: estimate.tokens,
+			toolRawTokens: promptContext.toolRawTokens,
+			toolStubTokens: promptContext.toolStubTokens,
+		});
+		this._lastTokenBreakdown = tokenBreakdown;
 
 		return {
 			tokens: estimate.tokens,
@@ -3640,6 +3809,7 @@ export class AgentSession {
 			toolStubTokens: promptContext.toolStubTokens,
 			toolStubSavings: promptContext.tokenSavingsEstimate,
 			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			tokenBreakdown,
 		};
 	}
 

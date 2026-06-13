@@ -1,0 +1,3 @@
+{"type":"session","id":"golden-contradictory-constraints","timestamp":"2026-01-01T00:00:00.000Z","cwd":"/tmp/pi-golden","provider":"faux","modelId":"faux","thinkingLevel":"off"}
+{"type":"message","timestamp":"2026-01-01T00:00:01.000Z","message":{"role":"user","content":[{"type":"text","text":"Use only mini-pc-orc-0/high-64. Do not use orc1 or orc2."}],"timestamp":1767225601000}}
+{"type":"message","timestamp":"2026-01-01T00:00:02.000Z","message":{"role":"assistant","content":[{"type":"text","text":"Constraint recorded."}],"api":"openai-completions","provider":"faux","model":"faux","usage":{"input":700,"output":40,"cacheRead":0,"cacheWrite":0,"cost":{"input":0,"output":0,"cacheRead":0,"cacheWrite":0,"total":0}},"stopReason":"stop","timestamp":1767225602000}}
