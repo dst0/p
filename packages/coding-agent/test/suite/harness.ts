@@ -5,7 +5,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool, CompletionMode } from "@earendil-works/pi-agent-core";
 import { Agent } from "@earendil-works/pi-agent-core";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@earendil-works/pi-ai";
 import { registerFauxProvider } from "@earendil-works/pi-ai";
@@ -66,6 +66,7 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
 	withConfiguredAuth?: boolean;
+	completionMode?: CompletionMode;
 }
 
 export interface Harness {
@@ -138,6 +139,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 			tools: [],
 		},
 		convertToLlm,
+		completionMode: options.completionMode,
 		onPayload: async (payload) => {
 			const runner = extensionRunnerRef.current;
 			if (!runner?.hasHandlers("before_provider_request")) {
@@ -180,6 +182,7 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
 		allowedToolNames: options.allowedToolNames,
 		excludedToolNames: options.excludedToolNames,
 		extensionRunnerRef,
+		completionMode: options.completionMode,
 	});
 
 	const events: AgentSessionEvent[] = [];

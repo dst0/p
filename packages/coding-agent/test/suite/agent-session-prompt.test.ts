@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
@@ -9,11 +9,13 @@ import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import { createTestResourceLoader } from "../utilities.ts";
-import { createHarness, getMessageText, type Harness } from "./harness.ts";
+import { createHarness as createBaseHarness, getMessageText, type Harness, type HarnessOptions } from "./harness.ts";
 
 describe("AgentSession prompt characterization", () => {
 	const harnesses: Harness[] = [];
 	const tempDirs: string[] = [];
+	const createPromptHarness = (options: HarnessOptions = {}) =>
+		createBaseHarness({ completionMode: "implicit", ...options });
 
 	afterEach(() => {
 		while (harnesses.length > 0) {
@@ -28,7 +30,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("prompts while idle and records a single text response", async () => {
-		const harness = await createHarness();
+		const harness = await createPromptHarness();
 		harnesses.push(harness);
 
 		harness.setResponses([fauxAssistantMessage("hello")]);
@@ -41,7 +43,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("automatically syncs project memory and injects scoped memory into later prompts", async () => {
-		const harness = await createHarness();
+		const harness = await createPromptHarness();
 		harnesses.push(harness);
 		let secondSystemPrompt = "";
 		harness.setResponses([
@@ -68,6 +70,54 @@ describe("AgentSession prompt characterization", () => {
 		).toBe(false);
 	});
 
+	it("sends bounded tool-result context to the provider without mutating raw session history", async () => {
+		const harness = await createPromptHarness({
+			models: [{ id: "small-context", contextWindow: 16_000, maxTokens: 1000 }],
+			settings: {
+				compaction: {
+					enabled: true,
+					triggerReserveTokens: 1000,
+					triggerRatio: 0.9,
+					targetContextTokens: 4000,
+					keepRecentMinTokens: 500,
+					keepRecentMaxTokens: 1000,
+				},
+			},
+		});
+		harnesses.push(harness);
+		const hugeOutput = Array.from(
+			{ length: 3000 },
+			(_, index) => `raw-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+		).join("\n");
+		const rawToolResult: AgentMessage = {
+			role: "toolResult",
+			toolCallId: "call-read-huge",
+			toolName: "read",
+			content: [{ type: "text", text: hugeOutput }],
+			isError: false,
+			timestamp: Date.now() - 1000,
+		};
+		harness.session.agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "inspect a large file" }], timestamp: Date.now() - 3000 },
+			rawToolResult,
+		];
+		let providerPromptText = "";
+		harness.setResponses([
+			(context) => {
+				providerPromptText = context.messages.map(getMessageText).join("\n");
+				return fauxAssistantMessage("bounded");
+			},
+		]);
+
+		await harness.session.prompt("continue");
+
+		expect(providerPromptText.length).toBeLessThan(hugeOutput.length / 2);
+		expect(providerPromptText).toContain("[Tool result stubbed");
+		expect(providerPromptText).toContain('session_recall("tool-result:call-read-huge"');
+		expect(providerPromptText).not.toContain("raw-line-0100");
+		expect(getMessageText(rawToolResult)).toContain("raw-line-0000");
+	});
+
 	it("handles a tool call turn and waits for the follow-up LLM response", async () => {
 		const toolRuns: string[] = [];
 		const echoTool: AgentTool = {
@@ -84,7 +134,7 @@ describe("AgentSession prompt characterization", () => {
 				};
 			},
 		};
-		const harness = await createHarness({ tools: [echoTool] });
+		const harness = await createPromptHarness({ tools: [echoTool] });
 		harnesses.push(harness);
 
 		harness.setResponses([
@@ -123,7 +173,7 @@ describe("AgentSession prompt characterization", () => {
 				};
 			},
 		});
-		const harness = await createHarness({ tools: [makeTool("slow", 25), makeTool("fast", 0)] });
+		const harness = await createPromptHarness({ tools: [makeTool("slow", 25), makeTool("fast", 0)] });
 		harnesses.push(harness);
 
 		harness.setResponses([
@@ -144,7 +194,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("preserves image attachments in the provider context", async () => {
-		const harness = await createHarness();
+		const harness = await createPromptHarness();
 		harnesses.push(harness);
 		let sawImage = false;
 
@@ -200,7 +250,7 @@ describe("AgentSession prompt characterization", () => {
 				diagnostics: [],
 			}),
 		};
-		const harness = await createHarness({ resourceLoader });
+		const harness = await createPromptHarness({ resourceLoader });
 		harnesses.push(harness);
 		let expandedPrompt = "";
 
@@ -235,7 +285,7 @@ describe("AgentSession prompt characterization", () => {
 			...createTestResourceLoader(),
 			getPrompts: () => ({ prompts: [template], diagnostics: [] }),
 		};
-		const harness = await createHarness({ resourceLoader });
+		const harness = await createPromptHarness({ resourceLoader });
 		harnesses.push(harness);
 		let expandedPrompt = "";
 
@@ -254,7 +304,7 @@ describe("AgentSession prompt characterization", () => {
 
 	it("dispatches extension commands without consuming a provider response", async () => {
 		const commandRuns: string[] = [];
-		const harness = await createHarness({
+		const harness = await createPromptHarness({
 			extensionFactories: [
 				(pi) => {
 					pi.registerCommand("testcmd", {
@@ -277,7 +327,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("sendUserMessage while idle triggers a turn", async () => {
-		const harness = await createHarness();
+		const harness = await createPromptHarness();
 		harnesses.push(harness);
 
 		harness.setResponses([fauxAssistantMessage("response")]);
@@ -290,7 +340,7 @@ describe("AgentSession prompt characterization", () => {
 
 	it("does not report streamingBehavior to input handlers while idle", async () => {
 		const inputEvents: InputEvent[] = [];
-		const harness = await createHarness({
+		const harness = await createPromptHarness({
 			extensionFactories: [
 				(pi) => {
 					pi.on("input", (event) => {
@@ -327,7 +377,7 @@ describe("AgentSession prompt characterization", () => {
 				};
 			},
 		};
-		const harness = await createHarness({
+		const harness = await createPromptHarness({
 			tools: [waitTool],
 			extensionFactories: [
 				(pi) => {
@@ -380,7 +430,7 @@ describe("AgentSession prompt characterization", () => {
 				};
 			},
 		};
-		const harness = await createHarness({ tools: [waitTool] });
+		const harness = await createPromptHarness({ tools: [waitTool] });
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
@@ -408,7 +458,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("throws when prompting without a model", async () => {
-		const harness = await createHarness();
+		const harness = await createPromptHarness();
 		harnesses.push(harness);
 		harness.session.agent.state.model = undefined as unknown as Model<any>;
 
@@ -416,7 +466,7 @@ describe("AgentSession prompt characterization", () => {
 	});
 
 	it("throws when prompting without configured auth", async () => {
-		const harness = await createHarness({ withConfiguredAuth: false });
+		const harness = await createPromptHarness({ withConfiguredAuth: false });
 		harnesses.push(harness);
 
 		await expect(harness.session.prompt("hi")).rejects.toThrow(

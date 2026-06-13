@@ -156,6 +156,15 @@ function getMessageFromEntryForCompaction(entry: SessionEntry): AgentMessage | u
 	return getMessageFromEntry(entry);
 }
 
+function hasMeaningfulUserRequest(pathEntries: SessionEntry[]): boolean {
+	return pathEntries.some((entry) => {
+		if (entry.type !== "message" || entry.message.role !== "user") {
+			return false;
+		}
+		return (getMessageText(entry.message)?.trim().length ?? 0) > 0;
+	});
+}
+
 /** Result from compact() - SessionManager adds uuid/parentUuid when saving */
 export interface CompactionResult<T = unknown> {
 	summary: string;
@@ -295,6 +304,10 @@ export interface ContextUsageEstimate {
 	staticTokens: number;
 }
 
+export interface ContextUsageEstimateOptions {
+	useProviderUsage?: boolean;
+}
+
 function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
 	let latestCompactionTimestamp = 0;
 	for (let i = messages.length - 1; i >= 0; i--) {
@@ -327,9 +340,14 @@ function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; in
  * Estimate context tokens from messages, using the last assistant usage when available.
  * If there are messages after the last usage, estimate their tokens with estimateTokens.
  */
-export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: string): ContextUsageEstimate {
+export function estimateContextTokens(
+	messages: AgentMessage[],
+	systemPrompt?: string,
+	options: ContextUsageEstimateOptions = {},
+): ContextUsageEstimate {
 	const staticTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
-	const usageInfo = getLastAssistantUsageInfo(messages);
+	const useProviderUsage = options.useProviderUsage ?? true;
+	const usageInfo = useProviderUsage ? getLastAssistantUsageInfo(messages) : undefined;
 
 	if (!usageInfo) {
 		let estimated = staticTokens;
@@ -1365,6 +1383,14 @@ export function prepareCompaction(
 			ok: false,
 			message: "Already compacted (latest session entry is a compaction boundary)",
 			reason: "already_compacted",
+		};
+	}
+
+	if (!hasMeaningfulUserRequest(pathEntries)) {
+		return {
+			ok: false,
+			message: "Nothing to compact (no user request has been recorded in this session branch)",
+			reason: "no_user_request",
 		};
 	}
 

@@ -45,6 +45,7 @@ import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
 	type CompactionDetails,
 	type CompactionResult,
+	type ContextUsageEstimate,
 	collectEntriesForBranchSummary,
 	compact,
 	createContextBudgetReport,
@@ -409,6 +410,18 @@ interface RuntimeContextPrompts {
 	combinedPrompt?: string;
 }
 
+interface PromptContextPreparation {
+	messages: AgentMessage[];
+	estimate: ContextUsageEstimate;
+	source: "provider_usage" | "estimated";
+	toolRawTokens: number;
+	toolStubTokens: number;
+	toolStubSavings: number;
+	stubbedToolResults: string[];
+}
+
+const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 2_000;
+
 function getMessageTextForRecall(message: AgentMessage): string {
 	switch (message.role) {
 		case "user":
@@ -579,6 +592,7 @@ export class AgentSession {
 		// (session persistence, extensions, auto-compaction, retry logic)
 		this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
 		this._installAgentToolHooks();
+		this._installPromptContextTransform();
 
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
@@ -1996,6 +2010,74 @@ export class AgentSession {
 			.join("\n");
 	}
 
+	private _installPromptContextTransform(): void {
+		const previousTransform = this.agent.transformContext?.bind(this.agent);
+		this.agent.transformContext = async (messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> => {
+			const transformed = previousTransform ? await previousTransform(messages, signal) : messages;
+			return this._preparePromptContext(transformed).messages;
+		};
+	}
+
+	private _preparePromptContext(messages: AgentMessage[], systemPrompt = this.systemPrompt): PromptContextPreparation {
+		const settings = this._getEffectiveCompactionSettings();
+		if (!settings.enabled) {
+			const estimate = estimateContextTokens(messages, systemPrompt);
+			return {
+				messages,
+				estimate,
+				source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
+				toolRawTokens: 0,
+				toolStubTokens: 0,
+				toolStubSavings: 0,
+				stubbedToolResults: [],
+			};
+		}
+
+		const contextWindow = this.model?.contextWindow ?? 0;
+		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
+		let promptContext = stubToolResultsForPrompt(messages, settings);
+		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
+		const budget = createContextBudgetReport(initialEstimate.tokens, contextWindow, settings);
+		const pressureThreshold = Math.max(settings.targetContextTokens * 1.5, budget.triggerThreshold);
+		if (contextWindow > 0 && initialEstimate.tokens > pressureThreshold) {
+			promptContext = stubToolResultsForPrompt(messages, {
+				...settings,
+				toolResultKeepRecentCount: 0,
+				toolResultClearThresholdTokens: Math.min(
+					settings.toolResultClearThresholdTokens,
+					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
+				),
+			});
+		}
+		const pressureEstimate =
+			promptContext.messages === messages
+				? initialEstimate
+				: estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
+		const pressureBudget = createContextBudgetReport(pressureEstimate.tokens, contextWindow, settings);
+		let preparedMessages = promptContext.messages;
+
+		if (contextWindow > 0 && pressureBudget.shouldCompact) {
+			const keepRecentTokens = selectKeepRecentTokens(pressureEstimate.tokens, settings);
+			const targetContextTokens = Math.max(settings.targetContextTokens, systemPromptTokens + keepRecentTokens);
+			preparedMessages = truncateKeptMessages(promptContext.messages.slice(), {
+				keepRecentTokens,
+				targetContextTokens,
+				systemPromptTokens,
+			});
+		}
+
+		const finalEstimate = estimateContextTokens(preparedMessages, systemPrompt, { useProviderUsage: false });
+		return {
+			messages: preparedMessages,
+			estimate: finalEstimate,
+			source: "estimated",
+			toolRawTokens: promptContext.toolRawTokens,
+			toolStubTokens: promptContext.toolStubTokens,
+			toolStubSavings: promptContext.tokenSavingsEstimate,
+			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+		};
+	}
+
 	private _createTokenBreakdownForPrompt(
 		messages: AgentMessage[],
 		options: {
@@ -2093,10 +2175,10 @@ export class AgentSession {
 	getCompactionDryRun(): CompactionDryRunResult {
 		const settings = this._getEffectiveCompactionSettings();
 		const contextWindow = this.model?.contextWindow ?? 0;
-		const promptContext = stubToolResultsForPrompt(this._getEffectiveCompactedMessages(), settings);
-		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const promptContext = this._preparePromptContext(this._getEffectiveCompactedMessages());
+		const estimate = promptContext.estimate;
 		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
-			source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
+			source: promptContext.source,
 			totalOverride: estimate.tokens,
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
@@ -2117,8 +2199,8 @@ export class AgentSession {
 				tokensToSummarize: preparationResult.tokensToSummarize,
 				toolRawTokens: promptContext.toolRawTokens,
 				toolStubTokens: promptContext.toolStubTokens,
-				toolStubSavings: promptContext.tokenSavingsEstimate,
-				stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+				toolStubSavings: promptContext.toolStubSavings,
+				stubbedToolResults: promptContext.stubbedToolResults,
 				tokenBreakdown,
 			};
 		}
@@ -2142,8 +2224,8 @@ export class AgentSession {
 			droppedEntries: preparation.droppedEntryIds,
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
-			toolStubSavings: promptContext.tokenSavingsEstimate,
-			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			toolStubSavings: promptContext.toolStubSavings,
+			stubbedToolResults: promptContext.stubbedToolResults,
 			tokenBreakdown,
 		};
 	}
@@ -2526,7 +2608,8 @@ export class AgentSession {
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
 		// from retriggering compaction on the first prompt after compaction.
-		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+		const branchEntries = this.sessionManager.getBranch();
+		const compactionEntry = getLatestCompactionEntry(branchEntries);
 		const assistantIsFromBeforeCompaction =
 			assistantMessage &&
 			compactionEntry !== null &&
@@ -2569,10 +2652,14 @@ export class AgentSession {
 			messages.push(...additionalMessages);
 		}
 
-		const promptContext = stubToolResultsForPrompt(messages, settings);
-		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const promptContext = this._preparePromptContext(messages);
+		const estimate = promptContext.estimate;
 
-		if (assistantForCompactionCheck && assistantForCompactionCheck.stopReason === "error") {
+		if (
+			assistantForCompactionCheck &&
+			assistantForCompactionCheck.stopReason === "error" &&
+			promptContext.source === "provider_usage"
+		) {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
@@ -3797,12 +3884,12 @@ export class AgentSession {
 		if (contextWindow <= 0) return undefined;
 
 		const settings = this.settingsManager.getCompactionSettings();
-		const promptContext = stubToolResultsForPrompt(this._getEffectiveCompactedMessages(), settings);
-		const estimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
+		const promptContext = this._preparePromptContext(this._getEffectiveCompactedMessages());
+		const estimate = promptContext.estimate;
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
 		const percent = (estimate.tokens / contextWindow) * 100;
 		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
-			source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
+			source: promptContext.source,
 			totalOverride: estimate.tokens,
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
@@ -3822,8 +3909,8 @@ export class AgentSession {
 			shouldCompact: budget.shouldCompact,
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
-			toolStubSavings: promptContext.tokenSavingsEstimate,
-			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			toolStubSavings: promptContext.toolStubSavings,
+			stubbedToolResults: promptContext.stubbedToolResults,
 			tokenBreakdown,
 		};
 	}

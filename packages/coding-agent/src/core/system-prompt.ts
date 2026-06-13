@@ -147,6 +147,11 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
 		addGuideline("Use bash for file operations like ls, rg, find");
 	}
+	if (hasBash || hasGrep || hasFind || hasLs || hasRead) {
+		addGuideline(
+			"If a tool call fails from a recoverable syntax, path, allowlist, or command-choice error, correct the call or use an equivalent available tool and continue.",
+		);
+	}
 
 	for (const guideline of promptGuidelines ?? []) {
 		const normalized = guideline.trim();

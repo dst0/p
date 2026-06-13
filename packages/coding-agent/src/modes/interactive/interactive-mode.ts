@@ -5592,11 +5592,14 @@ export class InteractiveMode {
 			switch (command) {
 				case "lint": {
 					const result = this.session.lintProjectRules();
+					const showAll = rest === "--all";
+					const maxVisibleIssues = showAll ? result.issues.length : 20;
+					const visibleIssues = result.issues.slice(0, maxVisibleIssues);
 					info += `${theme.fg("dim", "Files:")} ${result.index.files.length}\n`;
 					info += `${theme.fg("dim", "Snippets:")} ${result.index.snippets.length}\n`;
 					info += `${theme.fg("dim", "Issues:")} ${result.issues.length}\n`;
-					info += result.issues.length
-						? result.issues
+					info += visibleIssues.length
+						? visibleIssues
 								.map((issue) => {
 									const location = issue.path
 										? `${path.relative(this.sessionManager.getCwd(), issue.path)}${issue.line ? `:${issue.line}` : ""} `
@@ -5605,6 +5608,9 @@ export class InteractiveMode {
 								})
 								.join("\n")
 						: "No rule issues detected.";
+					if (visibleIssues.length < result.issues.length) {
+						info += `\n... ${result.issues.length - visibleIssues.length} more issue(s). Run /rules lint --all for the full list.`;
+					}
 					break;
 				}
 				case "explain": {
@@ -5618,7 +5624,7 @@ export class InteractiveMode {
 					break;
 				}
 				default:
-					info += "Usage: /rules [lint|explain <query>]";
+					info += "Usage: /rules [lint [--all]|explain <query>]";
 			}
 
 			this.chatContainer.addChild(new Spacer(1));

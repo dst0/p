@@ -300,7 +300,12 @@ function normalizeRule(text: string): string {
 }
 
 function isGuardrailCandidate(text: string): boolean {
-	return /\b(never|do not|must|required|run|block|before)\b/i.test(text);
+	const isDirective = /\b(never|do not|must|required|run|block|before)\b/i.test(text);
+	const hasExecutableSurface =
+		/\b(npm|pnpm|bun|node|cargo|go|git|commit|push|stage|checkout|reset|clean|stash|apply_patch|lockfile|generated|build|test|lint|typecheck|format|approval|approve|guardrail)\b/i.test(
+			text,
+		);
+	return isDirective && hasExecutableSurface;
 }
 
 function rulesConflict(a: string, b: string): boolean {

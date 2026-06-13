@@ -743,6 +743,24 @@ describe("prepareCompaction failure reasons", () => {
 		}
 	});
 
+	it("reports when no user request exists in the branch", () => {
+		const entries: SessionEntry[] = [
+			createMessageEntry(createAssistantMessage("assistant-only history ".repeat(200), createMockUsage(5000, 1000))),
+			createMessageEntry(createToolResultMessage("tool-1", "bash", "tool-only output ".repeat(200))),
+		];
+
+		const result = prepareCompaction(entries, {
+			...DEFAULT_COMPACTION_SETTINGS,
+			keepRecentTokens: 10,
+		});
+
+		expect(result.ok).toBe(false);
+		if (!result.ok) {
+			expect(result.reason).toBe("no_user_request");
+			expect(result.message).toContain("no user request");
+		}
+	});
+
 	it("reports when too little history would be summarized", () => {
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage("short user message")),

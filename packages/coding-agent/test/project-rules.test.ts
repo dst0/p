@@ -60,4 +60,13 @@ describe("project rules resolver", () => {
 		expect(codes).toContain("conflicting_rule");
 		expect(codes).toContain("guardrail_candidate");
 	});
+
+	it("does not flag style-only rules as executable guardrail candidates", () => {
+		const cwd = createTempProject();
+		writeFileSync(join(cwd, "AGENTS.md"), "# Style\n- Keep answers short and concise.\n- No cheerful filler text.\n");
+
+		const result = lintProjectRules(cwd);
+
+		expect(result.issues.map((issue) => issue.code)).not.toContain("guardrail_candidate");
+	});
 });

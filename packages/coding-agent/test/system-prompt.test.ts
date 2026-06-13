@@ -87,6 +87,17 @@ describe("buildSystemPrompt", () => {
 	});
 
 	describe("prompt guidelines", () => {
+		test("adds recoverable tool-call failure guidance when tools are available", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "bash"],
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("recoverable syntax, path, allowlist, or command-choice error");
+		});
+
 		test("appends promptGuidelines to default guidelines", () => {
 			const prompt = buildSystemPrompt({
 				selectedTools: ["read", "dynamic_tool"],
