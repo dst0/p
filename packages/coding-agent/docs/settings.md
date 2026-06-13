@@ -138,6 +138,54 @@ Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explic
 }
 ```
 
+### Completion Protocol
+
+| Setting | Type | Default | Description |
+| `completionMode` | string | `"explicit_finish"` | Completion mode: `"explicit_finish"`, `"hybrid"`, or `"implicit"` |
+| `completionLimits.maxTurns` | number | `64` | Maximum model turns before strict/hybrid protocol failure |
+| `completionLimits.maxNoProgressTurns` | number | `5` | Maximum repair/no-progress turns before graceful failure |
+| `completionLimits.maxMalformedToolRetries` | number | `3` | Maximum malformed or truncated tool-call retries |
+| `completionLimits.maxEmptyAssistantRetries` | number | `3` | Maximum empty assistant retries |
+| `completionLimits.maxMissingFinishRetries` | number | `3` in hybrid, bounded by `maxTurns` in strict mode | Missing `finish_work` retries before hybrid fallback |
+
+Pi defaults to `explicit_finish`: the model must call the terminal tool `finish_work` before the run is complete. `finish_reason: "stop"` and assistant text without tool calls are not completion proof in this mode.
+
+Use this strict mode for local or quantized models that may stop after planning text without emitting a tool call:
+
+```json
+{
+  "completionMode": "explicit_finish",
+  "completionLimits": {
+    "maxNoProgressTurns": 5,
+    "maxMalformedToolRetries": 3
+  }
+}
+```
+
+Hosted-model opt-out:
+
+```json
+{
+  "completionMode": "implicit"
+}
+```
+
+Strict CI/testing profile:
+
+```json
+{
+  "completionMode": "explicit_finish",
+  "completionLimits": {
+    "maxTurns": 32,
+    "maxNoProgressTurns": 3,
+    "maxMalformedToolRetries": 2,
+    "maxEmptyAssistantRetries": 2
+  }
+}
+```
+
+`finish_work` is always available in `explicit_finish` and `hybrid`, and is not removed by `--tools`, `--exclude-tools`, or `--no-tools`.
+
 ### Message Delivery
 
 | Setting | Type | Default | Description |

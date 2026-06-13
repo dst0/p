@@ -214,6 +214,46 @@ describe("SettingsManager", () => {
 		});
 	});
 
+	describe("completion protocol settings", () => {
+		it("defaults to explicit_finish", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompletionMode()).toBe("explicit_finish");
+			expect(manager.getCompletionLimits()).toBeUndefined();
+		});
+
+		it("reads completionMode and completionLimits from settings", () => {
+			writeFileSync(
+				join(agentDir, "settings.json"),
+				JSON.stringify({
+					completionMode: "hybrid",
+					completionLimits: {
+						maxTurns: 20,
+						maxNoProgressTurns: 5,
+						maxMalformedToolRetries: 3,
+					},
+				}),
+			);
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompletionMode()).toBe("hybrid");
+			expect(manager.getCompletionLimits()).toEqual({
+				maxTurns: 20,
+				maxNoProgressTurns: 5,
+				maxMalformedToolRetries: 3,
+			});
+		});
+
+		it("falls back to explicit_finish for invalid completionMode", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ completionMode: "strict" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompletionMode()).toBe("explicit_finish");
+		});
+	});
+
 	describe("project trust", () => {
 		it("should skip project settings when project is not trusted", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "global" }));

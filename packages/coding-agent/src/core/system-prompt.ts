@@ -2,6 +2,7 @@
  * System prompt construction and project context loading
  */
 
+import { type CompletionMode, FINISH_WORK_TOOL_NAME } from "@earendil-works/pi-agent-core";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 
@@ -27,6 +28,28 @@ export interface BuildSystemPromptOptions {
 	contextFiles?: Array<{ path: string; content: string }>;
 	/** Pre-loaded skills. */
 	skills?: Skill[];
+	/** Completion protocol to instruct the model about. */
+	completionMode?: CompletionMode;
+}
+
+function formatCompletionProtocolInstructions(mode: CompletionMode | undefined): string {
+	if (mode === "explicit_finish") {
+		return [
+			"You are operating in explicit completion mode.",
+			`You must not end the task with a normal assistant message. When the task is complete, call \`${FINISH_WORK_TOOL_NAME}\`.`,
+			"If more work is needed, call tools.",
+			`If you encounter an unrecoverable problem, call \`${FINISH_WORK_TOOL_NAME}\` with status \`failed\` or \`partial\` and explain the remaining issue.`,
+		].join("\n");
+	}
+	if (mode === "hybrid") {
+		return [
+			"You are operating in hybrid completion mode.",
+			`Prefer calling \`${FINISH_WORK_TOOL_NAME}\` when the task is complete instead of ending with a normal assistant message.`,
+			"If more work is needed, call tools.",
+			`If you encounter an unrecoverable problem, call \`${FINISH_WORK_TOOL_NAME}\` with status \`failed\` or \`partial\` and explain the remaining issue.`,
+		].join("\n");
+	}
+	return "";
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -40,6 +63,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 		cwd,
 		contextFiles: providedContextFiles,
 		skills: providedSkills,
+		completionMode,
 	} = options;
 	const resolvedCwd = cwd;
 	const promptCwd = resolvedCwd.replace(/\\/g, "/");
@@ -51,6 +75,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const date = `${year}-${month}-${day}`;
 
 	const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
+	const completionProtocolSection = formatCompletionProtocolInstructions(completionMode);
+	const completionSection = completionProtocolSection ? `\n\n${completionProtocolSection}` : "";
 
 	const contextFiles = providedContextFiles ?? [];
 	const skills = providedSkills ?? [];
@@ -60,6 +86,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 		if (appendSection) {
 			prompt += appendSection;
+		}
+		if (completionSection) {
+			prompt += completionSection;
 		}
 
 		// Append project context files
@@ -153,6 +182,9 @@ Pi documentation (read only when the user asks about pi itself, its SDK, extensi
 
 	if (appendSection) {
 		prompt += appendSection;
+	}
+	if (completionSection) {
+		prompt += completionSection;
 	}
 
 	// Append project context files

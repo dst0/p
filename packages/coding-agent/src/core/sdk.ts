@@ -1,5 +1,11 @@
 import { join } from "node:path";
-import { Agent, type AgentMessage, type ThinkingLevel } from "@earendil-works/pi-agent-core";
+import {
+	Agent,
+	type AgentMessage,
+	type CompletionMode,
+	type CompletionProtocolLimits,
+	type ThinkingLevel,
+} from "@earendil-works/pi-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
@@ -85,6 +91,10 @@ export interface CreateAgentSessionOptions {
 	settingsManager?: SettingsManager;
 	/** Session start event metadata for extension runtime startup. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Completion protocol. Defaults to settings, then explicit_finish. */
+	completionMode?: CompletionMode;
+	/** Safety limits for explicit and hybrid completion modes. */
+	completionLimits?: CompletionProtocolLimits;
 }
 
 /** Result from createAgentSession */
@@ -181,6 +191,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
+	const completionMode = options.completionMode ?? settingsManager.getCompletionMode();
+	const completionLimits = options.completionLimits ?? settingsManager.getCompletionLimits();
 
 	if (!resourceLoader) {
 		resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
@@ -367,6 +379,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		},
 		steeringMode: settingsManager.getSteeringMode(),
 		followUpMode: settingsManager.getFollowUpMode(),
+		completionMode,
+		completionLimits,
 		transport: settingsManager.getTransport(),
 		thinkingBudgets: settingsManager.getThinkingBudgets(),
 		maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
@@ -400,6 +414,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		excludedToolNames,
 		extensionRunnerRef,
 		sessionStartEvent: options.sessionStartEvent,
+		completionMode,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
 

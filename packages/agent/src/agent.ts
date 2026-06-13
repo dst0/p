@@ -9,6 +9,7 @@ import {
 	type Transport,
 } from "@earendil-works/pi-ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
+import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
 import type {
 	AfterToolCallContext,
 	AfterToolCallResult,
@@ -113,6 +114,8 @@ export interface AgentOptions {
 	transport?: Transport;
 	maxRetryDelayMs?: number;
 	toolExecution?: ToolExecutionMode;
+	completionMode?: CompletionMode;
+	completionLimits?: CompletionProtocolLimits;
 }
 
 class PendingMessageQueue {
@@ -197,6 +200,10 @@ export class Agent {
 	public maxRetryDelayMs?: number;
 	/** Tool execution strategy for assistant messages that contain multiple tool calls. */
 	public toolExecution: ToolExecutionMode;
+	/** Completion protocol used by the loop. */
+	public completionMode: CompletionMode;
+	/** Safety limits for explicit and hybrid completion modes. */
+	public completionLimits?: CompletionProtocolLimits;
 
 	constructor(options: AgentOptions = {}) {
 		this._state = createMutableAgentState(options.initialState);
@@ -216,6 +223,8 @@ export class Agent {
 		this.transport = options.transport ?? "auto";
 		this.maxRetryDelayMs = options.maxRetryDelayMs;
 		this.toolExecution = options.toolExecution ?? "parallel";
+		this.completionMode = options.completionMode ?? "explicit_finish";
+		this.completionLimits = options.completionLimits;
 	}
 
 	/**
@@ -431,6 +440,8 @@ export class Agent {
 			thinkingBudgets: this.thinkingBudgets,
 			maxRetryDelayMs: this.maxRetryDelayMs,
 			toolExecution: this.toolExecution,
+			completionMode: this.completionMode,
+			completionLimits: this.completionLimits,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
 			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,

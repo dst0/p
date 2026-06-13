@@ -1,7 +1,8 @@
-import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AssistantMessage, ImageContent, ToolResultMessage } from "@earendil-works/pi-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionShutdownEvent } from "../src/index.ts";
-import { runPrintMode } from "../src/modes/print-mode.ts";
+import { getTextModeFinalOutput, runPrintMode } from "../src/modes/print-mode.ts";
 
 type EmitEvent = SessionShutdownEvent;
 
@@ -13,7 +14,7 @@ type FakeExtensionRunner = {
 type FakeSession = {
 	sessionManager: { getHeader: () => object | undefined };
 	agent: { waitForIdle: () => Promise<void> };
-	state: { messages: AssistantMessage[] };
+	state: { messages: AgentMessage[] };
 	extensionRunner: FakeExtensionRunner;
 	bindExtensions: ReturnType<typeof vi.fn>;
 	subscribe: ReturnType<typeof vi.fn>;
@@ -86,11 +87,44 @@ function createRuntimeHost(assistantMessage: AssistantMessage): FakeRuntimeHost 
 	};
 }
 
+function createFinishWorkResult(options: {
+	status: "success" | "partial" | "failed";
+	summary: string;
+	result?: string;
+}): ToolResultMessage {
+	return {
+		role: "toolResult",
+		toolCallId: "finish-1",
+		toolName: "finish_work",
+		content: [{ type: "text", text: options.result ?? options.summary }],
+		details: options,
+		isError: false,
+		timestamp: Date.now(),
+	};
+}
+
 afterEach(() => {
 	vi.restoreAllMocks();
 });
 
 describe("runPrintMode", () => {
+	it("uses finish_work result as text-mode final output", () => {
+		const output = getTextModeFinalOutput([
+			createAssistantMessage({ text: "ignored" }),
+			createFinishWorkResult({ status: "success", summary: "summary", result: "result text" }),
+		]);
+
+		expect(output).toEqual({ text: "result text", exitCode: 0 });
+	});
+
+	it("falls back to finish_work summary and returns non-zero for failed status", () => {
+		const output = getTextModeFinalOutput([
+			createFinishWorkResult({ status: "failed", summary: "blocked by missing dependency" }),
+		]);
+
+		expect(output).toEqual({ text: "blocked by missing dependency", exitCode: 1 });
+	});
+
 	it("emits session_shutdown in text mode", async () => {
 		const runtimeHost = createRuntimeHost(createAssistantMessage({ text: "done" }));
 		const { session } = runtimeHost;

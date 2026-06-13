@@ -11,6 +11,7 @@ import type {
 	ToolResultMessage,
 } from "@earendil-works/pi-ai";
 import type { Static, TSchema } from "typebox";
+import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
 
 /**
  * Stream function used by the agent loop.
@@ -134,6 +135,20 @@ export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}
 
 export interface AgentLoopConfig extends SimpleStreamOptions {
 	model: Model<any>;
+
+	/**
+	 * Completion protocol used by the loop.
+	 *
+	 * - "implicit": assistant text without tool calls may end the run
+	 * - "explicit_finish": the run can only complete after `finish_work`
+	 * - "hybrid": request `finish_work`, then fall back to implicit completion after retries
+	 *
+	 * Default: "explicit_finish". Set "implicit" to allow assistant text without tool calls to end the run.
+	 */
+	completionMode?: CompletionMode;
+
+	/** Safety limits for explicit and hybrid completion modes. */
+	completionLimits?: CompletionProtocolLimits;
 
 	/**
 	 * Converts AgentMessage[] to LLM-compatible Message[] before each LLM call.
@@ -417,6 +432,21 @@ export type AgentEvent =
 	// Only emitted for assistant messages during streaming
 	| { type: "message_update"; message: AgentMessage; assistantMessageEvent: AssistantMessageEvent }
 	| { type: "message_end"; message: AgentMessage }
+	// Completion protocol observability
+	| {
+			type: "completion_protocol";
+			completionMode: CompletionMode;
+			event:
+				| "completion_mode"
+				| "finish_work_called"
+				| "missing_finish_work_retry"
+				| "malformed_tool_call_retry"
+				| "max_turns_without_finish_work"
+				| "no_progress_stop";
+			retry?: number;
+			maxRetries?: number;
+			reason?: string;
+	  }
 	// Tool execution lifecycle
 	| { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
 	| { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }

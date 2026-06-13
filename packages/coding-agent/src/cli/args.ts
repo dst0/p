@@ -2,7 +2,7 @@
  * CLI argument parsing and help display
  */
 
-import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { CompletionMode, ThinkingLevel } from "@earendil-works/pi-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
@@ -16,6 +16,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	thinking?: ThinkingLevel;
+	completionMode?: CompletionMode;
 	continue?: boolean;
 	resume?: boolean;
 	help?: boolean;
@@ -55,9 +56,14 @@ export interface Args {
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
+const VALID_COMPLETION_MODES = ["implicit", "explicit_finish", "hybrid"] as const;
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
+}
+
+function isValidCompletionMode(mode: string): mode is CompletionMode {
+	return VALID_COMPLETION_MODES.includes(mode as CompletionMode);
 }
 
 export function parseArgs(args: string[]): Args {
@@ -135,6 +141,16 @@ export function parseArgs(args: string[]): Args {
 				result.diagnostics.push({
 					type: "warning",
 					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
+				});
+			}
+		} else if (arg === "--completion-mode" && i + 1 < args.length) {
+			const mode = args[++i];
+			if (isValidCompletionMode(mode)) {
+				result.completionMode = mode;
+			} else {
+				result.diagnostics.push({
+					type: "warning",
+					message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODES.join(", ")}`,
 				});
 			}
 		} else if (arg === "--print" || arg === "-p") {
@@ -259,6 +275,7 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --completion-mode <mode>       Completion mode: explicit_finish (default), hybrid, implicit
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)
@@ -321,6 +338,9 @@ ${chalk.bold("Examples:")}
 
   # Start with a specific thinking level
   ${APP_NAME} --thinking high "Solve this complex problem"
+
+  # Opt out of mandatory finish_work completion
+  ${APP_NAME} --completion-mode implicit -p "Say exactly: ok"
 
   # Read-only mode (no file modifications possible)
   ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"

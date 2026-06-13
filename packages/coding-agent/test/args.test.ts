@@ -151,6 +151,22 @@ describe("parseArgs", () => {
 			expect(result.thinking).toBe("high");
 		});
 
+		test("parses --completion-mode", () => {
+			const result = parseArgs(["--completion-mode", "implicit"]);
+			expect(result.completionMode).toBe("implicit");
+		});
+
+		test("warns on invalid --completion-mode", () => {
+			const result = parseArgs(["--completion-mode", "strict"]);
+			expect(result.completionMode).toBeUndefined();
+			expect(result.diagnostics).toEqual([
+				{
+					type: "warning",
+					message: 'Invalid completion mode "strict". Valid values: implicit, explicit_finish, hybrid',
+				},
+			]);
+		});
+
 		test("parses --models as comma-separated list", () => {
 			const result = parseArgs(["--models", "gpt-4o,claude-sonnet,gemini-pro"]);
 			expect(result.models).toEqual(["gpt-4o", "claude-sonnet", "gemini-pro"]);

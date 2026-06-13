@@ -53,6 +53,7 @@ I regularly publish my own `pi-mono` work sessions here:
   - [Branching](#branching)
   - [Compaction](#compaction)
 - [Settings](#settings)
+- [Completion Protocol](#completion-protocol)
 - [Context Files](#context-files)
 - [Customization](#customization)
   - [Prompt Templates](#prompt-templates)
@@ -296,6 +297,8 @@ Use `/settings` to modify common options, or edit JSON files directly:
 
 See [docs/settings.md](docs/settings.md) for all options.
 
+---
+
 ### Project Trust
 
 On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.pi/agent/trust.json`. Trusting a project allows pi to load `.pi/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
@@ -318,6 +321,78 @@ Pi has two separate startup features:
 - **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `PI_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
 
 Use `--offline` or `PI_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+
+---
+
+## Completion Protocol
+
+Pi defaults to the Explicit Completion Protocol. The model must call the terminal tool `finish_work` before pi considers the task complete. A normal assistant message such as "I will inspect the file" is treated as incomplete work, even if the provider reports `finish_reason: "stop"`.
+
+The built-in terminal tool accepts:
+
+```text
+finish_work({
+  status: "success" | "partial" | "failed",
+  summary: string,
+  result?: string,
+  files_changed?: string[],
+  tests_run?: string[],
+  remaining_work?: string[],
+  notes?: string
+})
+```
+
+`finish_work` stops the loop cleanly and print mode displays `result` when present, otherwise `summary`. It is always available in `explicit_finish` and `hybrid` modes and is not controlled by `--tools` or `/tools`.
+
+Completion modes:
+
+- `explicit_finish` (default): only `finish_work` completes the task. Plain assistant text, malformed tool-call-looking output, and truncated tool calls trigger a corrective continuation until `finish_work` or safety limits stop the run.
+- `hybrid`: asks for `finish_work`, retries missing completion, then falls back to old implicit completion behavior.
+- `implicit`: old behavior. Assistant text without tool calls may end the run.
+
+This is especially useful for local or quantized models that may stop after planning text without actually calling a tool. Example:
+
+```text
+Without explicit completion:
+assistant says "I will inspect the file"
+agent may stop accidentally.
+
+With explicit completion:
+assistant says "I will inspect the file"
+agent continues because `finish_work` was not called.
+```
+
+Config examples:
+
+```json
+{
+  "completionMode": "explicit_finish",
+  "completionLimits": {
+    "maxNoProgressTurns": 5,
+    "maxMalformedToolRetries": 3
+  }
+}
+```
+
+```json
+{
+  "completionMode": "implicit"
+}
+```
+
+```json
+{
+  "completionMode": "explicit_finish",
+  "completionLimits": {
+    "maxTurns": 32,
+    "maxNoProgressTurns": 3,
+    "maxMalformedToolRetries": 2,
+    "maxEmptyAssistantRetries": 2
+  }
+}
+```
+
+Use `--completion-mode implicit` for a one-off opt-out or `--completion-mode hybrid` for migration.
 
 ---
 
@@ -562,6 +637,7 @@ cat README.md | pi -p "Summarize this text"
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
 | `--list-models [search]` | List available models |
+| `--completion-mode <mode>` | Completion mode: `explicit_finish` (default), `hybrid`, or `implicit` |
 
 ### Session Options
 
@@ -659,6 +735,9 @@ pi --exclude-tools ask_question
 
 # High thinking level
 pi --thinking high "Solve this complex problem"
+
+# Opt out of mandatory finish_work for one run
+pi --completion-mode implicit -p "Say exactly: ok"
 ```
 
 ### Environment Variables

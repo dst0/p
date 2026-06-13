@@ -1,3 +1,4 @@
+import type { CompletionMode, CompletionProtocolLimits } from "@earendil-works/pi-agent-core";
 import type { Transport } from "@earendil-works/pi-ai";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
@@ -8,6 +9,7 @@ import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
 export const DEFAULT_AGENT_RETRY_BASE_DELAY_MS = 500;
+const VALID_COMPLETION_MODES: CompletionMode[] = ["implicit", "explicit_finish", "hybrid"];
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -99,6 +101,8 @@ export interface Settings {
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
+	completionMode?: CompletionMode; // default: "explicit_finish"
+	completionLimits?: CompletionProtocolLimits;
 	theme?: string;
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
@@ -175,6 +179,16 @@ function parseTimeoutSetting(value: unknown, settingName: string): number | unde
 		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
 	}
 	return undefined;
+}
+
+function parsePositiveIntegerSetting(value: unknown, settingName: string): number | undefined {
+	if (value === undefined) {
+		return undefined;
+	}
+	if (typeof value !== "number" || !Number.isFinite(value) || value < 1) {
+		throw new Error(`Invalid ${settingName} setting: ${String(value)}`);
+	}
+	return Math.floor(value);
 }
 
 export type SettingsScope = "global" | "project";
@@ -725,6 +739,42 @@ export class SettingsManager {
 		this.globalSettings.followUpMode = mode;
 		this.markModified("followUpMode");
 		this.save();
+	}
+
+	getCompletionMode(): CompletionMode {
+		const mode = this.settings.completionMode;
+		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "explicit_finish";
+	}
+
+	getCompletionLimits(): CompletionProtocolLimits | undefined {
+		const limits = this.settings.completionLimits;
+		if (!limits) {
+			return undefined;
+		}
+		const parsed: CompletionProtocolLimits = {};
+		const maxTurns = parsePositiveIntegerSetting(limits.maxTurns, "completionLimits.maxTurns");
+		const maxNoProgressTurns = parsePositiveIntegerSetting(
+			limits.maxNoProgressTurns,
+			"completionLimits.maxNoProgressTurns",
+		);
+		const maxMalformedToolRetries = parsePositiveIntegerSetting(
+			limits.maxMalformedToolRetries,
+			"completionLimits.maxMalformedToolRetries",
+		);
+		const maxEmptyAssistantRetries = parsePositiveIntegerSetting(
+			limits.maxEmptyAssistantRetries,
+			"completionLimits.maxEmptyAssistantRetries",
+		);
+		const maxMissingFinishRetries = parsePositiveIntegerSetting(
+			limits.maxMissingFinishRetries,
+			"completionLimits.maxMissingFinishRetries",
+		);
+		if (maxTurns !== undefined) parsed.maxTurns = maxTurns;
+		if (maxNoProgressTurns !== undefined) parsed.maxNoProgressTurns = maxNoProgressTurns;
+		if (maxMalformedToolRetries !== undefined) parsed.maxMalformedToolRetries = maxMalformedToolRetries;
+		if (maxEmptyAssistantRetries !== undefined) parsed.maxEmptyAssistantRetries = maxEmptyAssistantRetries;
+		if (maxMissingFinishRetries !== undefined) parsed.maxMissingFinishRetries = maxMissingFinishRetries;
+		return Object.keys(parsed).length > 0 ? parsed : undefined;
 	}
 
 	getTheme(): string | undefined {

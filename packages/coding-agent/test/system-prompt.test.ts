@@ -112,6 +112,52 @@ describe("buildSystemPrompt", () => {
 		});
 	});
 
+	describe("completion protocol", () => {
+		test("adds explicit_finish instructions and finish_work tool snippet", () => {
+			const prompt = buildSystemPrompt({
+				selectedTools: ["read", "finish_work"],
+				toolSnippets: {
+					finish_work: "Terminate explicitly",
+				},
+				completionMode: "explicit_finish",
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("- finish_work: Terminate explicitly");
+			expect(prompt).toContain("You are operating in explicit completion mode.");
+			expect(prompt).toContain("You must not end the task with a normal assistant message.");
+			expect(prompt).toContain("call `finish_work`");
+		});
+
+		test("adds completion instructions to custom prompts", () => {
+			const prompt = buildSystemPrompt({
+				customPrompt: "Custom base prompt.",
+				completionMode: "explicit_finish",
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("Custom base prompt.");
+			expect(prompt).toContain("You are operating in explicit completion mode.");
+			expect(prompt).toContain("Current working directory:");
+		});
+
+		test("adds hybrid instructions without making normal text preferred", () => {
+			const prompt = buildSystemPrompt({
+				completionMode: "hybrid",
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("You are operating in hybrid completion mode.");
+			expect(prompt).toContain("Prefer calling `finish_work`");
+		});
+	});
+
 	describe("project context files", () => {
 		test("keeps small context files verbatim", () => {
 			const content = "# Rules\n\nAlways run checks.";

@@ -112,6 +112,47 @@ The `beforeToolCall` hook runs after `tool_execution_start` and validated argume
 
 Tools can also return `terminate: true` to hint that the automatic follow-up LLM call should be skipped. The loop only stops early when every finalized tool result in that batch sets `terminate: true`. Mixed batches continue normally.
 
+### Explicit Completion Protocol
+
+The loop supports `completionMode: "implicit" | "explicit_finish" | "hybrid"`.
+
+- `explicit_finish` is the default. The run can only complete after `finish_work`.
+- `explicit_finish` requires the built-in terminal tool `finish_work`. `finish_reason: "stop"` and assistant text without tool calls do not prove completion.
+- `hybrid` asks for `finish_work`, retries missing completion a few times, then falls back to implicit completion.
+
+In `explicit_finish` and `hybrid`, the loop automatically exposes a terminal tool named `finish_work`:
+
+```typescript
+finish_work({
+  status: "success" | "partial" | "failed",
+  summary: string,
+  result?: string,
+  files_changed?: string[],
+  tests_run?: string[],
+  remaining_work?: string[],
+  notes?: string
+})
+```
+
+When `finish_work` succeeds, the loop emits `agent_end` immediately and does not start another LLM turn. In strict mode, malformed or truncated tool-call-looking output is treated as a recoverable protocol error: the loop injects an internal repair message and asks the model to re-emit a valid tool call or call `finish_work`.
+
+Safety limits prevent weak models from looping forever:
+
+```typescript
+const agent = new Agent({
+  completionMode: "explicit_finish",
+  completionLimits: {
+    maxTurns: 64,
+    maxNoProgressTurns: 5,
+    maxMalformedToolRetries: 3,
+    maxEmptyAssistantRetries: 3,
+    maxMissingFinishRetries: 3,
+  },
+});
+```
+
+If `finish_work` is mixed with other tool calls in the same assistant message, the batch is rejected as a protocol error. The model must call non-terminal tools first, then call only `finish_work` when complete.
+
 Low-level loop callers can set `shouldStopAfterTurn` to stop gracefully after the current turn completes:
 
 ```typescript
@@ -125,6 +166,8 @@ const stream = agentLoop(prompts, context, {
 ```
 
 `shouldStopAfterTurn` runs after `turn_end` is emitted and after the assistant response and any tool executions have completed normally. If it returns `true`, the loop emits `agent_end` and exits before polling steering or follow-up queues, and before starting another LLM call. It does not abort the provider stream, does not cancel running tools, and does not alter the assistant message stop reason.
+
+In `explicit_finish`, `shouldStopAfterTurn` cannot complete the run before `finish_work`. In `hybrid`, it can complete the run only after the hybrid fallback path allows implicit completion.
 
 When you use the `Agent` class, assistant `message_end` processing is treated as a barrier before tool preflight begins. That means `beforeToolCall` sees agent state that already includes the assistant message that requested the tool call.
 

@@ -25,6 +25,33 @@ describe("AgentSession dynamic tool registration", () => {
 		}
 	});
 
+	it("defaults coding-agent sessions to explicit_finish with finish_work in the system prompt", async () => {
+		const settingsManager = SettingsManager.create(tempDir, agentDir);
+		const sessionManager = SessionManager.inMemory();
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+		});
+		await resourceLoader.reload();
+
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir,
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager,
+			sessionManager,
+			resourceLoader,
+		});
+
+		expect(session.agent.completionMode).toBe("explicit_finish");
+		expect(session.getActiveToolNames()).not.toContain("finish_work");
+		expect(session.systemPrompt).toContain("- finish_work:");
+		expect(session.systemPrompt).toContain("You are operating in explicit completion mode.");
+
+		session.dispose();
+	});
+
 	it("refreshes tool registry when tools are registered after initialization", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();

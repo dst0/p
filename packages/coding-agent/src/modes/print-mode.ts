@@ -6,6 +6,7 @@
  * - `pi --mode json "prompt"` - JSON event stream
  */
 
+import { type AgentMessage, getFinishWorkPayload } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent } from "@earendil-works/pi-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
@@ -23,6 +24,43 @@ export interface PrintModeOptions {
 	initialMessage?: string;
 	/** Images to attach to the initial message */
 	initialImages?: ImageContent[];
+}
+
+export interface TextModeFinalOutput {
+	text?: string;
+	error?: string;
+	exitCode: number;
+}
+
+export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextModeFinalOutput {
+	const finishPayload = getFinishWorkPayload(messages);
+	if (finishPayload) {
+		return {
+			text: finishPayload.result ?? finishPayload.summary,
+			exitCode: finishPayload.status === "failed" ? 1 : 0,
+		};
+	}
+
+	const lastMessage = messages[messages.length - 1];
+	if (lastMessage?.role !== "assistant") {
+		return { exitCode: 0 };
+	}
+
+	const assistantMsg = lastMessage as AssistantMessage;
+	if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+		return {
+			error: assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`,
+			exitCode: 1,
+		};
+	}
+
+	return {
+		text: assistantMsg.content
+			.filter((content) => content.type === "text")
+			.map((content) => content.text)
+			.join(""),
+		exitCode: 0,
+	};
 }
 
 /**
@@ -127,21 +165,12 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 		}
 
 		if (mode === "text") {
-			const state = session.state;
-			const lastMessage = state.messages[state.messages.length - 1];
-
-			if (lastMessage?.role === "assistant") {
-				const assistantMsg = lastMessage as AssistantMessage;
-				if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
-					console.error(assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`);
-					exitCode = 1;
-				} else {
-					for (const content of assistantMsg.content) {
-						if (content.type === "text") {
-							writeRawStdout(`${content.text}\n`);
-						}
-					}
-				}
+			const finalOutput = getTextModeFinalOutput(session.state.messages);
+			exitCode = finalOutput.exitCode;
+			if (finalOutput.error) {
+				console.error(finalOutput.error);
+			} else if (finalOutput.text) {
+				writeRawStdout(`${finalOutput.text}\n`);
 			}
 		}
 

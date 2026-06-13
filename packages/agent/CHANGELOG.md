@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added Explicit Completion Protocol support with `completionMode`, the built-in terminal `finish_work` tool, retry/watchdog limits, and completion-protocol events.
+
 ## [0.79.3] - 2026-06-13
 
 ## [0.79.2] - 2026-06-12

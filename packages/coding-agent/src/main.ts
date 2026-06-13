@@ -432,6 +432,9 @@ function buildSessionOptions(
 	if (parsed.excludeTools) {
 		options.excludeTools = [...parsed.excludeTools];
 	}
+	if (parsed.completionMode) {
+		options.completionMode = parsed.completionMode;
+	}
 
 	return { options, cliThinkingFromModel, diagnostics };
 }
@@ -696,6 +699,8 @@ export async function main(args: string[], options?: MainOptions) {
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
+			completionMode: sessionOptions.completionMode,
+			completionLimits: sessionOptions.completionLimits,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {

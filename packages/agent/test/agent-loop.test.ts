@@ -1,6 +1,7 @@
 import {
 	type AssistantMessage,
 	type AssistantMessageEvent,
+	type Context,
 	EventStream,
 	type Message,
 	type Model,
@@ -10,7 +11,15 @@ import {
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.ts";
-import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.ts";
+import { FINISH_WORK_TOOL_NAME, type FinishWorkPayload } from "../src/completion-protocol.ts";
+import type {
+	AgentContext,
+	AgentEvent,
+	AgentLoopConfig,
+	AgentMessage,
+	AgentTool,
+	AgentToolCall,
+} from "../src/types.ts";
 
 // Mock stream for testing - mimics MockAssistantStream
 class MockAssistantStream extends EventStream<AssistantMessageEvent, AssistantMessage> {
@@ -81,6 +90,75 @@ function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
 }
 
+type ScriptedResponse = AssistantMessage | ((context: Context, callIndex: number) => AssistantMessage);
+
+function createScriptedStream(
+	responses: ScriptedResponse[],
+	contexts: Context[],
+): NonNullable<Parameters<typeof agentLoop>[4]> {
+	let callIndex = 0;
+	return (_model, context) => {
+		contexts.push(context);
+		const response = responses[callIndex];
+		if (!response) {
+			throw new Error(`Missing scripted response for call ${callIndex}`);
+		}
+		const message = typeof response === "function" ? response(context, callIndex) : response;
+		callIndex++;
+		const stream = new MockAssistantStream();
+		queueMicrotask(() => {
+			const reason =
+				message.stopReason === "toolUse" || message.stopReason === "length" ? message.stopReason : "stop";
+			stream.push({ type: "done", reason, message });
+		});
+		return stream;
+	};
+}
+
+async function runScriptedAgentLoop(
+	responses: ScriptedResponse[],
+	options: {
+		context?: Partial<AgentContext>;
+		config?: Partial<AgentLoopConfig>;
+		prompt?: AgentMessage;
+	} = {},
+): Promise<{ messages: AgentMessage[]; events: AgentEvent[]; contexts: Context[] }> {
+	const context: AgentContext = {
+		systemPrompt: "",
+		messages: [],
+		tools: [],
+		...options.context,
+	};
+	const config: AgentLoopConfig = {
+		model: createModel(),
+		completionMode: "implicit",
+		convertToLlm: identityConverter,
+		...options.config,
+	};
+	const contexts: Context[] = [];
+	const events: AgentEvent[] = [];
+	const stream = agentLoop(
+		[options.prompt ?? createUserMessage("complete the task")],
+		context,
+		config,
+		undefined,
+		createScriptedStream(responses, contexts),
+	);
+	for await (const event of stream) {
+		events.push(event);
+	}
+	return { messages: await stream.result(), events, contexts };
+}
+
+function createFinishWorkCall(args: FinishWorkPayload = { status: "success", summary: "done" }): AgentToolCall {
+	return {
+		type: "toolCall",
+		id: "finish-1",
+		name: FINISH_WORK_TOOL_NAME,
+		arguments: args,
+	};
+}
+
 function isAssistantMessageEnd(event: AgentEvent): event is Extract<AgentEvent, { type: "message_end" }> & {
 	message: AssistantMessage;
 } {
@@ -105,6 +183,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -166,6 +245,7 @@ describe("agentLoop with AgentMessage", () => {
 		let convertedMessages: Message[] = [];
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: (messages) => {
 				// Filter out notifications, convert rest
 				convertedMessages = messages
@@ -215,6 +295,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			transformContext: async (messages) => {
 				// Keep only last 2 messages (prune old ones)
 				transformedMessages = messages.slice(-2);
@@ -276,6 +357,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -343,6 +425,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 		let callIndex = 0;
@@ -414,6 +497,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 		let callIndex = 0;
@@ -475,6 +559,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 		const rawToolCall = JSON.stringify({
@@ -534,6 +619,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 		let callIndex = 0;
@@ -588,6 +674,7 @@ describe("agentLoop with AgentMessage", () => {
 		};
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 		let callIndex = 0;
@@ -653,6 +740,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			beforeToolCall: async ({ args }) => {
 				const mutableArgs = args as { value: string | number };
@@ -731,6 +819,7 @@ describe("agentLoop with AgentMessage", () => {
 		const userPrompt: AgentMessage = createUserMessage("edit something");
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -806,6 +895,7 @@ describe("agentLoop with AgentMessage", () => {
 		const userPrompt: AgentMessage = createUserMessage("echo both");
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			toolExecution: "parallel",
 		};
@@ -895,6 +985,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			toolExecution: "sequential",
 			getSteeringMessages: async () => {
@@ -1009,6 +1100,7 @@ describe("agentLoop with AgentMessage", () => {
 		// config is parallel (default), but tool forces sequential
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -1102,6 +1194,7 @@ describe("agentLoop with AgentMessage", () => {
 		const userPrompt: AgentMessage = createUserMessage("run both");
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			// parallel by default, but slowTool forces sequential
 		};
@@ -1178,6 +1271,7 @@ describe("agentLoop with AgentMessage", () => {
 		const userPrompt: AgentMessage = createUserMessage("echo both");
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -1236,6 +1330,7 @@ describe("agentLoop with AgentMessage", () => {
 		let prepared = false;
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			prepareNextTurn: async ({ context: currentContext }) => {
 				if (prepared) return undefined;
@@ -1315,6 +1410,7 @@ describe("agentLoop with AgentMessage", () => {
 		let callbackContextRoles: string[] = [];
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			getSteeringMessages: async () => {
 				steeringPolls++;
@@ -1407,6 +1503,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -1459,6 +1556,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			toolExecution: "parallel",
 		};
@@ -1523,6 +1621,7 @@ describe("agentLoop with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 			afterToolCall: async () => ({ terminate: true }),
 		};
@@ -1559,6 +1658,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -1576,6 +1676,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: identityConverter,
 		};
 
@@ -1629,6 +1730,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 
 		const config: AgentLoopConfig = {
 			model: createModel(),
+			completionMode: "implicit",
 			convertToLlm: (messages) => {
 				// Convert custom to user message
 				return messages
@@ -1666,5 +1768,272 @@ describe("agentLoopContinue with AgentMessage", () => {
 		const messages = await stream.result();
 		expect(messages.length).toBe(1);
 		expect(messages[0].role).toBe("assistant");
+	});
+});
+
+describe("Explicit Completion Protocol", () => {
+	it("defaults to explicit_finish", async () => {
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [],
+		};
+		const contexts: Context[] = [];
+		const stream = agentLoop(
+			[createUserMessage("complete the task")],
+			context,
+			{
+				model: createModel(),
+				convertToLlm: identityConverter,
+			},
+			undefined,
+			createScriptedStream(
+				[
+					createAssistantMessage([{ type: "text", text: "plain text is not enough" }]),
+					createAssistantMessage([createFinishWorkCall({ status: "success", summary: "finished" })], "toolUse"),
+				],
+				contexts,
+			),
+		);
+
+		for await (const _event of stream) {
+			// Drain stream.
+		}
+
+		const messages = await stream.result();
+		const lastMessage = messages[messages.length - 1];
+		expect(contexts).toHaveLength(2);
+		expect(contexts[0].tools?.map((tool) => tool.name)).toContain(FINISH_WORK_TOOL_NAME);
+		expect(lastMessage?.role).toBe("toolResult");
+		if (lastMessage?.role !== "toolResult") {
+			throw new Error("Expected finish_work tool result");
+		}
+		expect(lastMessage.content).toEqual([{ type: "text", text: "finished" }]);
+	});
+
+	it("preserves implicit text-only completion", async () => {
+		const { messages } = await runScriptedAgentLoop(
+			[createAssistantMessage([{ type: "text", text: "plain final" }])],
+			{ config: { completionMode: "implicit" } },
+		);
+
+		expect(messages).toHaveLength(2);
+		expect(messages[1].role).toBe("assistant");
+	});
+
+	it("stops on finish_work without another model turn", async () => {
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage(
+					[
+						createFinishWorkCall({
+							status: "success",
+							summary: "finished",
+							result: "final result",
+							files_changed: ["src/file.ts"],
+							tests_run: ["npm run check"],
+						}),
+					],
+					"toolUse",
+				),
+			],
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(1);
+		expect(contexts[0].tools?.map((tool) => tool.name)).toContain(FINISH_WORK_TOOL_NAME);
+		expect(messages[messages.length - 1].role).toBe("toolResult");
+		expect(messages[messages.length - 1]).toMatchObject({
+			toolName: FINISH_WORK_TOOL_NAME,
+			details: { status: "success", summary: "finished", result: "final result" },
+		});
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "finish_work_called"),
+		).toHaveLength(1);
+	});
+
+	it("continues on assistant text without tool calls in explicit_finish", async () => {
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "I will now inspect the file" }], "stop"),
+				(context) => {
+					const lastMessage = context.messages[context.messages.length - 1];
+					expect(lastMessage.role).toBe("user");
+					const text =
+						typeof lastMessage.content === "string"
+							? lastMessage.content
+							: lastMessage.content
+									.filter((content) => content.type === "text")
+									.map((content) => content.text)
+									.join("");
+					expect(text).toContain("finish_work");
+					return createAssistantMessage([createFinishWorkCall({ status: "success", summary: "done" })], "toolUse");
+				},
+			],
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(messages[messages.length - 1].role).toBe("toolResult");
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry"),
+		).toHaveLength(1);
+	});
+
+	it("does not treat finish_reason stop as completion in explicit_finish", async () => {
+		const { contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "done as plain text" }], "stop"),
+				createAssistantMessage([createFinishWorkCall({ status: "success", summary: "done" })], "toolUse"),
+			],
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(2);
+	});
+
+	it("recovers from malformed or truncated tool calls", async () => {
+		const { events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "<tool_call>\n<function=read>\n" }], "stop"),
+				createAssistantMessage([createFinishWorkCall({ status: "success", summary: "done" })], "toolUse"),
+			],
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
+		).toHaveLength(1);
+	});
+
+	it("stops clearly when explicit_finish makes no progress", async () => {
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "I will continue" }]),
+				createAssistantMessage([{ type: "text", text: "I will continue" }]),
+			],
+			{
+				config: {
+					completionMode: "explicit_finish",
+					completionLimits: { maxNoProgressTurns: 1, maxTurns: 10 },
+				},
+			},
+		);
+
+		expect(contexts).toHaveLength(2);
+		const finalMessage = messages[messages.length - 1];
+		expect(finalMessage.role).toBe("assistant");
+		expect(finalMessage).toMatchObject({
+			stopReason: "error",
+			errorMessage: expect.stringContaining("did not call `finish_work`"),
+		});
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "no_progress_stop"),
+		).toHaveLength(1);
+	});
+
+	it("hybrid retries missing finish_work and then falls back to implicit completion", async () => {
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "first text" }]),
+				createAssistantMessage([{ type: "text", text: "fallback final" }]),
+			],
+			{
+				config: {
+					completionMode: "hybrid",
+					completionLimits: { maxMissingFinishRetries: 1, maxNoProgressTurns: 10 },
+				},
+			},
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(messages[messages.length - 1]).toMatchObject({
+			role: "assistant",
+			content: [{ type: "text", text: "fallback final" }],
+		});
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry"),
+		).toHaveLength(1);
+	});
+
+	it("executes ordinary tools before finish_work", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const { messages, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage(
+					[{ type: "toolCall", id: "echo-1", name: "echo", arguments: { value: "hello" } }],
+					"toolUse",
+				),
+				createAssistantMessage([createFinishWorkCall({ status: "success", summary: "done" })], "toolUse"),
+			],
+			{
+				context: { tools: [tool] },
+				config: { completionMode: "explicit_finish" },
+			},
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(executed).toEqual(["hello"]);
+		expect(messages.some((message) => message.role === "toolResult" && message.toolName === "echo")).toBe(true);
+		expect(messages[messages.length - 1]).toMatchObject({ role: "toolResult", toolName: FINISH_WORK_TOOL_NAME });
+	});
+
+	it("rejects mixed finish_work and non-terminal tool calls", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+
+		const { events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage(
+					[
+						createFinishWorkCall({ status: "success", summary: "done" }),
+						{ type: "toolCall", id: "echo-1", name: "echo", arguments: { value: "hello" } },
+					],
+					"toolUse",
+				),
+				createAssistantMessage([createFinishWorkCall({ status: "success", summary: "done" })], "toolUse"),
+			],
+			{
+				context: { tools: [tool] },
+				config: { completionMode: "explicit_finish" },
+			},
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(executed).toEqual([]);
+		expect(
+			events.filter(
+				(event) => event.type === "completion_protocol" && event.reason === "mixed_finish_work_tool_call",
+			),
+		).toHaveLength(1);
 	});
 });

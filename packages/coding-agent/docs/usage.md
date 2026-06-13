@@ -68,6 +68,40 @@ On Windows Terminal, Alt+Enter is fullscreen by default. Remap it as described i
 
 Configure delivery in [Settings](settings.md) with `steeringMode` and `followUpMode`.
 
+## Completion Protocol
+
+Pi defaults to `completionMode: "explicit_finish"`. The agent only treats work as complete after the model calls the terminal tool `finish_work`; a plain assistant response with no tool calls does not end the loop in this mode.
+
+This avoids a common local-model failure mode:
+
+```text
+Without explicit completion:
+assistant says "I will inspect the file"
+agent may stop accidentally.
+
+With explicit completion:
+assistant says "I will inspect the file"
+agent continues because `finish_work` was not called.
+```
+
+When the task is done, the model calls:
+
+```text
+finish_work({
+  status: "success" | "partial" | "failed",
+  summary: string,
+  result?: string,
+  files_changed?: string[],
+  tests_run?: string[],
+  remaining_work?: string[],
+  notes?: string
+})
+```
+
+Print mode displays `result` when present, otherwise `summary`. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
+
+Use `--completion-mode implicit` for the old behavior or `--completion-mode hybrid` during migration.
+
 ## Sessions
 
 Sessions are saved automatically to `~/.pi/agent/sessions/`, organized by working directory.
@@ -183,6 +217,7 @@ cat README.md | pi -p "Summarize this text"
 | `--thinking <level>` | `off`, `minimal`, `low`, `medium`, `high`, `xhigh` |
 | `--models <patterns>` | Comma-separated patterns for Ctrl+P cycling |
 | `--list-models [search]` | List available models |
+| `--completion-mode <mode>` | `explicit_finish` (default), `hybrid`, or `implicit` |
 
 ### Session Options
 
@@ -281,6 +316,9 @@ pi --tools read,grep,find,ls -p "Review the code"
 
 # Disable one extension or built-in tool while keeping the rest available
 pi --exclude-tools ask_question
+
+# Opt out of mandatory finish_work for one run
+pi --completion-mode implicit -p "Say exactly: ok"
 ```
 
 ### Environment Variables

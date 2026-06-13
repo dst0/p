@@ -12,6 +12,12 @@ import {
 	type ToolResultMessage,
 	validateToolArguments,
 } from "@earendil-works/pi-ai";
+import {
+	type CompletionMode,
+	createFinishWorkTool,
+	FINISH_WORK_TOOL_NAME,
+	isFinishWorkToolResult,
+} from "./completion-protocol.ts";
 import type {
 	AgentContext,
 	AgentEvent,
@@ -24,6 +30,28 @@ import type {
 } from "./types.ts";
 
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
+
+const DEFAULT_COMPLETION_MODE: CompletionMode = "explicit_finish";
+const DEFAULT_MAX_TURNS = 64;
+const DEFAULT_MAX_NO_PROGRESS_TURNS = 5;
+const DEFAULT_MAX_MALFORMED_TOOL_RETRIES = 3;
+const DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES = 3;
+const DEFAULT_MAX_MISSING_FINISH_RETRIES = 3;
+
+const MISSING_FINISH_WORK_REPAIR_MESSAGE =
+	"The task is not complete because you did not call `finish_work`.\n" +
+	"Continue working by calling the appropriate tools, or call `finish_work` if the task is complete.\n" +
+	"Do not provide a normal assistant final answer in this mode.";
+
+const MALFORMED_TOOL_CALL_REPAIR_MESSAGE =
+	"Your previous tool call appears to be incomplete, malformed, or truncated.\n" +
+	"Re-emit the intended tool call in valid form, or call `finish_work` if the task is complete.\n" +
+	"Do not explain. Call a tool.";
+
+const MIXED_FINISH_WORK_REPAIR_MESSAGE =
+	"Do not mix `finish_work` with other tool calls.\n" +
+	"Call non-terminal tools first, or call only `finish_work` when the task is complete.\n" +
+	"Do not explain. Call a tool.";
 
 /**
  * Start an agent loop with a new prompt message.
@@ -150,6 +178,188 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 	);
 }
 
+type CompletionProtocolState = {
+	turns: number;
+	noProgressTurns: number;
+	malformedToolRetries: number;
+	emptyAssistantRetries: number;
+	missingFinishRetries: number;
+	allowImplicitCompletion: boolean;
+};
+
+type CompletionProtocolLimits = Required<NonNullable<AgentLoopConfig["completionLimits"]>>;
+
+type CompletionProtocolRepair = {
+	reason: "malformed_or_truncated_tool_call" | "missing_finish_work_or_tool_call" | "mixed_finish_work_tool_call";
+	message: string;
+	event: "malformed_tool_call_retry" | "missing_finish_work_retry";
+};
+
+function createCompletionProtocolState(): CompletionProtocolState {
+	return {
+		turns: 0,
+		noProgressTurns: 0,
+		malformedToolRetries: 0,
+		emptyAssistantRetries: 0,
+		missingFinishRetries: 0,
+		allowImplicitCompletion: false,
+	};
+}
+
+function resolveCompletionMode(config: AgentLoopConfig): CompletionMode {
+	return config.completionMode ?? DEFAULT_COMPLETION_MODE;
+}
+
+function isCompletionProtocolEnabled(mode: CompletionMode): boolean {
+	return mode === "explicit_finish" || mode === "hybrid";
+}
+
+function resolveCompletionLimits(config: AgentLoopConfig): CompletionProtocolLimits {
+	return {
+		maxTurns: config.completionLimits?.maxTurns ?? DEFAULT_MAX_TURNS,
+		maxNoProgressTurns: config.completionLimits?.maxNoProgressTurns ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
+		maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
+		maxEmptyAssistantRetries:
+			config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
+		maxMissingFinishRetries: config.completionLimits?.maxMissingFinishRetries ?? DEFAULT_MAX_MISSING_FINISH_RETRIES,
+	};
+}
+
+function withCompletionProtocolTools(context: AgentContext, mode: CompletionMode): AgentContext {
+	if (!isCompletionProtocolEnabled(mode)) {
+		return context;
+	}
+	const tools = context.tools ?? [];
+	return {
+		...context,
+		tools: [...tools.filter((tool) => tool.name !== FINISH_WORK_TOOL_NAME), createFinishWorkTool()],
+	};
+}
+
+function createProtocolRepairMessage(text: string): AgentMessage {
+	return {
+		role: "user",
+		content: [{ type: "text", text }],
+		timestamp: Date.now(),
+	};
+}
+
+function getAssistantText(message: AssistantMessage): string {
+	return message.content
+		.flatMap((block) => {
+			if (block.type === "text") return [block.text];
+			if (block.type === "thinking") return [block.thinking];
+			return [];
+		})
+		.join("\n");
+}
+
+function isEmptyAssistantMessage(message: AssistantMessage, toolCalls: AgentToolCall[]): boolean {
+	return toolCalls.length === 0 && getAssistantText(message).trim().length === 0;
+}
+
+function hasMalformedOrTruncatedToolCall(message: AssistantMessage, toolCalls: AgentToolCall[]): boolean {
+	if (message.stopReason === "length") {
+		return true;
+	}
+	if (toolCalls.length > 0) {
+		return false;
+	}
+	const text = getAssistantText(message);
+	return (
+		/<tool_call\b/i.test(text) ||
+		/<function(?:=|\s)/i.test(text) ||
+		/"tool_calls?"\s*:/i.test(text) ||
+		/"function_call"\s*:/i.test(text)
+	);
+}
+
+function detectCompletionProtocolRepair(
+	message: AssistantMessage,
+	toolCalls: AgentToolCall[],
+	hasMoreToolCalls: boolean,
+): CompletionProtocolRepair | undefined {
+	if (hasMalformedOrTruncatedToolCall(message, toolCalls)) {
+		return {
+			reason: "malformed_or_truncated_tool_call",
+			message: MALFORMED_TOOL_CALL_REPAIR_MESSAGE,
+			event: "malformed_tool_call_retry",
+		};
+	}
+
+	const finishWorkCalls = toolCalls.filter((toolCall) => toolCall.name === FINISH_WORK_TOOL_NAME);
+	if (finishWorkCalls.length > 0 && toolCalls.length !== 1) {
+		return {
+			reason: "mixed_finish_work_tool_call",
+			message: MIXED_FINISH_WORK_REPAIR_MESSAGE,
+			event: "malformed_tool_call_retry",
+		};
+	}
+
+	if (toolCalls.length === 0 || !hasMoreToolCalls) {
+		return {
+			reason: "missing_finish_work_or_tool_call",
+			message: MISSING_FINISH_WORK_REPAIR_MESSAGE,
+			event: "missing_finish_work_retry",
+		};
+	}
+
+	return undefined;
+}
+
+function resetCompletionProgress(state: CompletionProtocolState): void {
+	state.noProgressTurns = 0;
+	state.emptyAssistantRetries = 0;
+	state.malformedToolRetries = 0;
+	state.missingFinishRetries = 0;
+}
+
+const EMPTY_USAGE = {
+	input: 0,
+	output: 0,
+	cacheRead: 0,
+	cacheWrite: 0,
+	totalTokens: 0,
+	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+};
+
+function createProtocolFailureMessage(config: AgentLoopConfig, diagnostic: string): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "text", text: diagnostic }],
+		api: config.model.api,
+		provider: config.model.provider,
+		model: config.model.id,
+		usage: EMPTY_USAGE,
+		stopReason: "error",
+		errorMessage: diagnostic,
+		timestamp: Date.now(),
+	};
+}
+
+async function emitProtocolFailure(
+	currentContext: AgentContext,
+	newMessages: AgentMessage[],
+	config: AgentLoopConfig,
+	emit: AgentEventSink,
+	mode: CompletionMode,
+	event: "max_turns_without_finish_work" | "no_progress_stop",
+	diagnostic: string,
+	turnAlreadyStarted: boolean,
+): Promise<void> {
+	await emit({ type: "completion_protocol", completionMode: mode, event, reason: diagnostic });
+	if (!turnAlreadyStarted) {
+		await emit({ type: "turn_start" });
+	}
+	const message = createProtocolFailureMessage(config, diagnostic);
+	currentContext.messages.push(message);
+	newMessages.push(message);
+	await emit({ type: "message_start", message });
+	await emit({ type: "message_end", message });
+	await emit({ type: "turn_end", message, toolResults: [] });
+	await emit({ type: "agent_end", messages: newMessages });
+}
+
 /**
  * Main loop logic shared by agentLoop and agentLoopContinue.
  */
@@ -161,11 +371,17 @@ async function runLoop(
 	emit: AgentEventSink,
 	streamFn?: StreamFn,
 ): Promise<void> {
-	let currentContext = initialContext;
 	let config = initialConfig;
+	let completionMode = resolveCompletionMode(config);
+	const completionState = createCompletionProtocolState();
+	let currentContext = withCompletionProtocolTools(initialContext, completionMode);
 	let firstTurn = true;
 	// Check for steering messages at start (user may have typed while waiting)
 	let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
+
+	if (isCompletionProtocolEnabled(completionMode)) {
+		await emit({ type: "completion_protocol", completionMode, event: "completion_mode" });
+	}
 
 	// Outer loop: continues when queued follow-up messages arrive after agent would stop
 	while (true) {
@@ -190,6 +406,24 @@ async function runLoop(
 				pendingMessages = [];
 			}
 
+			completionMode = resolveCompletionMode(config);
+			currentContext = withCompletionProtocolTools(currentContext, completionMode);
+			const completionLimits = resolveCompletionLimits(config);
+			if (isCompletionProtocolEnabled(completionMode) && completionState.turns >= completionLimits.maxTurns) {
+				await emitProtocolFailure(
+					currentContext,
+					newMessages,
+					config,
+					emit,
+					completionMode,
+					"max_turns_without_finish_work",
+					`Agent stopped because the model did not call \`finish_work\` within ${completionLimits.maxTurns} turns.`,
+					true,
+				);
+				return;
+			}
+			completionState.turns++;
+
 			// Stream assistant response
 			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
 			newMessages.push(message);
@@ -202,10 +436,13 @@ async function runLoop(
 
 			// Check for tool calls
 			const toolCalls = message.content.filter((c) => c.type === "toolCall");
+			const protocolRepairBeforeExecution = isCompletionProtocolEnabled(completionMode)
+				? detectCompletionProtocolRepair(message, toolCalls, true)
+				: undefined;
 
 			const toolResults: ToolResultMessage[] = [];
 			hasMoreToolCalls = false;
-			if (toolCalls.length > 0) {
+			if (toolCalls.length > 0 && !protocolRepairBeforeExecution) {
 				const executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
 				toolResults.push(...executedToolBatch.messages);
 				hasMoreToolCalls = !executedToolBatch.terminate;
@@ -217,6 +454,78 @@ async function runLoop(
 			}
 
 			await emit({ type: "turn_end", message, toolResults });
+
+			if (isCompletionProtocolEnabled(completionMode) && !completionState.allowImplicitCompletion) {
+				const finishWorkResult = toolResults.find((result) => isFinishWorkToolResult(result) && !result.isError);
+				if (finishWorkResult) {
+					await emit({ type: "completion_protocol", completionMode, event: "finish_work_called" });
+					await emit({ type: "agent_end", messages: newMessages });
+					return;
+				}
+
+				const protocolRepair =
+					protocolRepairBeforeExecution ?? detectCompletionProtocolRepair(message, toolCalls, hasMoreToolCalls);
+				if (protocolRepair) {
+					completionState.noProgressTurns++;
+					if (protocolRepair.event === "malformed_tool_call_retry") {
+						completionState.malformedToolRetries++;
+					}
+					if (protocolRepair.reason === "missing_finish_work_or_tool_call") {
+						completionState.missingFinishRetries++;
+					}
+					if (isEmptyAssistantMessage(message, toolCalls)) {
+						completionState.emptyAssistantRetries++;
+					}
+
+					const malformedExceeded =
+						completionState.malformedToolRetries > completionLimits.maxMalformedToolRetries;
+					const emptyExceeded = completionState.emptyAssistantRetries > completionLimits.maxEmptyAssistantRetries;
+					const noProgressExceeded = completionState.noProgressTurns > completionLimits.maxNoProgressTurns;
+					if (malformedExceeded || emptyExceeded || noProgressExceeded) {
+						await emitProtocolFailure(
+							currentContext,
+							newMessages,
+							config,
+							emit,
+							completionMode,
+							"no_progress_stop",
+							`Agent stopped because the model did not call \`finish_work\` and made no progress for ${completionState.noProgressTurns} turns.`,
+							false,
+						);
+						return;
+					}
+
+					if (
+						completionMode === "hybrid" &&
+						protocolRepair.reason === "missing_finish_work_or_tool_call" &&
+						completionState.missingFinishRetries > completionLimits.maxMissingFinishRetries
+					) {
+						completionState.allowImplicitCompletion = true;
+					} else {
+						await emit({
+							type: "completion_protocol",
+							completionMode,
+							event: protocolRepair.event,
+							retry:
+								protocolRepair.event === "malformed_tool_call_retry"
+									? completionState.malformedToolRetries
+									: completionState.missingFinishRetries,
+							maxRetries:
+								protocolRepair.event === "malformed_tool_call_retry"
+									? completionLimits.maxMalformedToolRetries
+									: completionMode === "hybrid"
+										? completionLimits.maxMissingFinishRetries
+										: completionLimits.maxTurns,
+							reason: protocolRepair.reason,
+						});
+						currentContext.messages.push(createProtocolRepairMessage(protocolRepair.message));
+						hasMoreToolCalls = true;
+						continue;
+					}
+				} else if (toolCalls.length > 0) {
+					resetCompletionProgress(completionState);
+				}
+			}
 
 			const nextTurnContext = {
 				message,
@@ -239,13 +548,16 @@ async function runLoop(
 				};
 			}
 
+			const canStopImplicitly =
+				!isCompletionProtocolEnabled(completionMode) || completionState.allowImplicitCompletion;
 			if (
-				await config.shouldStopAfterTurn?.({
+				canStopImplicitly &&
+				(await config.shouldStopAfterTurn?.({
 					message,
 					toolResults,
 					context: currentContext,
 					newMessages,
-				})
+				}))
 			) {
 				await emit({ type: "agent_end", messages: newMessages });
 				return;

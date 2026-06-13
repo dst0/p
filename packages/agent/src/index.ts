@@ -2,6 +2,7 @@
 export * from "./agent.ts";
 // Loop functions
 export * from "./agent-loop.ts";
+export * from "./completion-protocol.ts";
 export * from "./harness/agent-harness.ts";
 export {
 	type BranchPreparation,

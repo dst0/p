@@ -15,13 +15,15 @@
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
-import type {
-	Agent,
-	AgentEvent,
-	AgentMessage,
-	AgentState,
-	AgentTool,
-	ThinkingLevel,
+import {
+	type Agent,
+	type AgentEvent,
+	type AgentMessage,
+	type AgentState,
+	type AgentTool,
+	type CompletionMode,
+	FINISH_WORK_TOOL_NAME,
+	type ThinkingLevel,
 } from "@earendil-works/pi-agent-core";
 import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
 import {
@@ -233,6 +235,8 @@ export interface AgentSessionConfig {
 	extensionRunnerRef?: { current?: ExtensionRunner };
 	/** Session start event metadata emitted when extensions bind to this runtime. */
 	sessionStartEvent?: SessionStartEvent;
+	/** Completion protocol used by this session. */
+	completionMode?: CompletionMode;
 }
 
 export interface ExtensionBindings {
@@ -537,6 +541,7 @@ export class AgentSession {
 	private _extensionShutdownHandler?: ShutdownHandler;
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
+	private _completionMode: CompletionMode;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -568,6 +573,7 @@ export class AgentSession {
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
 		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._completionMode = config.completionMode ?? this.agent.completionMode;
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -1130,6 +1136,10 @@ export class AgentSession {
 
 	private _rebuildSystemPrompt(toolNames: string[]): string {
 		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
+		const promptToolNames =
+			this._completionMode === "implicit"
+				? validToolNames
+				: [...validToolNames.filter((name) => name !== FINISH_WORK_TOOL_NAME), FINISH_WORK_TOOL_NAME];
 		const toolSnippets: Record<string, string> = {};
 		const promptGuidelines: string[] = [];
 		for (const name of validToolNames) {
@@ -1142,6 +1152,10 @@ export class AgentSession {
 			if (toolGuidelines) {
 				promptGuidelines.push(...toolGuidelines);
 			}
+		}
+		if (this._completionMode !== "implicit") {
+			toolSnippets[FINISH_WORK_TOOL_NAME] =
+				"finish_work({ status, summary, result?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible result";
 		}
 
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
@@ -1157,9 +1171,10 @@ export class AgentSession {
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
 			appendSystemPrompt,
-			selectedTools: validToolNames,
+			selectedTools: promptToolNames,
 			toolSnippets,
 			promptGuidelines,
+			completionMode: this._completionMode,
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
 	}
