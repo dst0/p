@@ -46,6 +46,7 @@ describe("Coding Agent Tools", () => {
 	afterEach(() => {
 		// Clean up test directory
 		rmSync(testDir, { recursive: true, force: true });
+		vi.restoreAllMocks();
 	});
 
 	describe("read tool", () => {

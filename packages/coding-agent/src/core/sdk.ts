@@ -191,7 +191,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
 	const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
-	const completionMode = options.completionMode ?? settingsManager.getCompletionMode();
+	const configuredCompletionMode = options.completionMode ?? settingsManager.getCompletionMode();
 	const completionLimits = options.completionLimits ?? settingsManager.getCompletionLimits();
 
 	if (!resourceLoader) {
@@ -273,6 +273,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const initialActiveToolNames: string[] = (
 		options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
 	).filter((name) => !excludedToolNameSet?.has(name));
+	const explicitlyToolless = (options.tools !== undefined && options.tools.length === 0) || options.noTools === "all";
+	const completionMode =
+		options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
 
 	let agent: Agent;
 

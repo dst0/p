@@ -12,6 +12,7 @@ import {
 	compact,
 	createContextBudgetReport,
 	createInitialStructuredSessionState,
+	createStructuredSessionState,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
 	findCutPoint,
@@ -269,6 +270,48 @@ describe("tool result stubbing", () => {
 		expect(result.stubs).toHaveLength(0);
 		expect(result.messages).toBe(messages);
 	});
+
+	it("stubs older medium tool results when cumulative prompt budget is exceeded", () => {
+		const messages: AgentMessage[] = Array.from({ length: 8 }, (_, index) =>
+			createToolResultMessage(`call-${index}`, "read", `chunk ${index}\n${"x".repeat(5000)}`),
+		);
+
+		const result = stubToolResultsForPrompt(messages, {
+			...DEFAULT_COMPACTION_SETTINGS,
+			toolResultClearThresholdTokens: 10_000,
+			toolResultKeepRecentCount: 0,
+			toolResultPromptBudgetTokens: 2_000,
+		});
+
+		expect(result.stubs.length).toBeGreaterThan(0);
+		expect(result.toolStubTokens).toBeLessThan(result.toolRawTokens);
+		expect(result.tokenSavingsEstimate).toBeGreaterThan(0);
+	});
+
+	it("uses a tool-result context extract when building prompt stubs", () => {
+		const messages: AgentMessage[] = [
+			createToolResultMessage("call-large", "bash", `raw noise\n${"x".repeat(10_000)}`, {
+				details: {
+					contextExtract: {
+						summary: "npm run check failed with one TypeScript error",
+						relevantLines: ["packages/coding-agent/src/core/agent-session.ts:123 error TS2322"],
+					},
+				},
+			}),
+		];
+
+		const result = stubToolResultsForPrompt(messages, {
+			...DEFAULT_COMPACTION_SETTINGS,
+			toolResultClearThresholdTokens: 100,
+			toolResultKeepRecentCount: 0,
+		});
+
+		expect(result.stubs).toHaveLength(1);
+		const stubbedText = extractText(result.messages);
+		expect(stubbedText).toContain("npm run check failed with one TypeScript error");
+		expect(stubbedText).toContain("packages/coding-agent/src/core/agent-session.ts:123 error TS2322");
+		expect(stubbedText).not.toContain("raw noise");
+	});
 });
 
 describe("structured session state", () => {
@@ -347,6 +390,36 @@ describe("structured session state", () => {
 
 		expect(next.constraints[0].status).toBe("active");
 		expect(next.plan[0].status).toBe("in_progress");
+	});
+
+	it("keeps original user requests lossless while rendering a bounded consolidated goal", () => {
+		const hugePlan = [
+			"Implement the structured context and memory subsystem properly.",
+			"",
+			"## Detailed Plan",
+			...Array.from({ length: 200 }, (_, index) => `- Requirement ${index}: preserve this original request detail.`),
+		].join("\n");
+		const correction = "Actually, also make project memory automatic and keep raw requests outside prompt context.";
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage(hugePlan)),
+			createMessageEntry(createAssistantMessage("working", createMockUsage(1000, 100))),
+			createMessageEntry(createUserMessage(correction)),
+		];
+
+		const state = createStructuredSessionState({
+			sessionId: "session-requests",
+			summary: `## Goal\n${hugePlan}\n## Plan & Progress\n- [ ] Continue implementation.`,
+			entries,
+		});
+		const checkpoint = renderStructuredSessionCheckpoint(state, 180);
+
+		expect(state.canonicalRequest.originalRequests).toHaveLength(2);
+		expect(state.canonicalRequest.originalRequests[0].text).toBe(hugePlan);
+		expect(state.canonicalRequest.current.length).toBeLessThan(520);
+		expect(state.canonicalRequest.current).toContain("project memory automatic");
+		expect(checkpoint).toContain("Original requests stored: 2");
+		expect(checkpoint).not.toContain("Requirement 199");
+		expect(checkpoint.length).toBeLessThan(180 * 4 + 120);
 	});
 });
 

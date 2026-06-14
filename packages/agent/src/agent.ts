@@ -223,7 +223,7 @@ export class Agent {
 		this.transport = options.transport ?? "auto";
 		this.maxRetryDelayMs = options.maxRetryDelayMs;
 		this.toolExecution = options.toolExecution ?? "parallel";
-		this.completionMode = options.completionMode ?? "explicit_finish";
+		this.completionMode = options.completionMode ?? "implicit";
 		this.completionLimits = options.completionLimits;
 	}
 

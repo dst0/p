@@ -193,6 +193,7 @@ export interface CompactionSettings {
 	targetContextTokens?: number;
 	toolResultClearThresholdTokens?: number;
 	toolResultKeepRecentCount?: number;
+	toolResultPromptBudgetTokens?: number;
 }
 
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
@@ -206,6 +207,7 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	targetContextTokens: 12000,
 	toolResultClearThresholdTokens: 24000,
 	toolResultKeepRecentCount: 3,
+	toolResultPromptBudgetTokens: 8000,
 };
 
 interface ResolvedCompactionSettings {
@@ -219,6 +221,7 @@ interface ResolvedCompactionSettings {
 	targetContextTokens: number;
 	toolResultClearThresholdTokens: number;
 	toolResultKeepRecentCount: number;
+	toolResultPromptBudgetTokens: number;
 }
 
 export function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompactionSettings {
@@ -242,6 +245,8 @@ export function resolveCompactionSettings(settings: CompactionSettings): Resolve
 			settings.toolResultClearThresholdTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens!,
 		toolResultKeepRecentCount:
 			settings.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount!,
+		toolResultPromptBudgetTokens:
+			settings.toolResultPromptBudgetTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens!,
 	};
 }
 
@@ -581,6 +586,19 @@ function getToolResultExitCode(message: ToolResultMessage): number | undefined {
 	return typeof exitCode === "number" ? exitCode : undefined;
 }
 
+function getToolResultContextExtract(
+	message: ToolResultMessage,
+): { summary: string; relevantLines: string[] } | undefined {
+	if (!isRecord(message.details)) return undefined;
+	const extract = message.details.contextExtract;
+	if (!isRecord(extract)) return undefined;
+	const summary = typeof extract.summary === "string" ? extract.summary.trim() : "";
+	const relevantLines = Array.isArray(extract.relevantLines)
+		? extract.relevantLines.filter((line): line is string => typeof line === "string").slice(0, 12)
+		: [];
+	return summary || relevantLines.length > 0 ? { summary, relevantLines } : undefined;
+}
+
 function isPinnedToolResult(message: ToolResultMessage, text: string): boolean {
 	if (isRecord(message.details)) {
 		const pinContext = message.details.pinContext ?? message.details.pinnedContext ?? message.details.keepInContext;
@@ -625,9 +643,12 @@ function createToolResultStub(
 	originalTokens: number,
 ): { message: ToolResultMessage; stub: ToolResultStub; stubTokens: number } {
 	const text = getToolResultText(message);
-	const keyLines = collectKeyLines(text);
+	const contextExtract = getToolResultContextExtract(message);
+	const keyLines = contextExtract?.relevantLines.length ? contextExtract.relevantLines : collectKeyLines(text);
 	const status = message.isError ? "error" : "success";
-	const summary = `${message.toolName} ${status} output omitted from prompt context (${text.split("\n").length} lines, ${originalTokens} estimated tokens).`;
+	const summary =
+		contextExtract?.summary ||
+		`${message.toolName} ${status} output omitted from prompt context (${text.split("\n").length} lines, ${originalTokens} estimated tokens).`;
 	const pointerId = `tool-result:${message.toolCallId || index}`;
 	const rawPointer: EvidencePointer = {
 		id: pointerId,
@@ -678,6 +699,39 @@ function shouldStubToolResult(
 	return originalTokens > settings.toolResultClearThresholdTokens;
 }
 
+function selectRawToolResultIndexes(
+	messages: AgentMessage[],
+	toolResultIndexes: number[],
+	recentToolResultStartIndex: number,
+	settings: ResolvedCompactionSettings,
+	tokenByIndex: Map<number, number>,
+): Set<number> {
+	const rawIndexes = new Set<number>();
+	let discretionaryTokens = 0;
+	for (let position = toolResultIndexes.length - 1; position >= 0; position--) {
+		const index = toolResultIndexes[position];
+		const message = messages[index] as ToolResultMessage;
+		const originalTokens = tokenByIndex.get(index) ?? estimateTokens(message);
+		const text = getToolResultText(message);
+		const forcedRaw =
+			index >= recentToolResultStartIndex ||
+			isPinnedToolResult(message, text) ||
+			(message.isError && originalTokens <= FAILED_TOOL_RESULT_KEEP_TOKENS);
+		if (forcedRaw) {
+			rawIndexes.add(index);
+			continue;
+		}
+		if (originalTokens > settings.toolResultClearThresholdTokens) {
+			continue;
+		}
+		if (discretionaryTokens + originalTokens <= settings.toolResultPromptBudgetTokens) {
+			rawIndexes.add(index);
+			discretionaryTokens += originalTokens;
+		}
+	}
+	return rawIndexes;
+}
+
 export function stubToolResultsForPrompt(
 	messages: AgentMessage[],
 	settings: CompactionSettings,
@@ -706,12 +760,30 @@ export function stubToolResultsForPrompt(
 	const stubs: ToolResultStub[] = [];
 	let toolRawTokens = 0;
 	let toolStubTokens = 0;
+	const tokenByIndex = new Map<number, number>();
 
 	for (const index of toolResultIndexes) {
 		const message = messages[index] as ToolResultMessage;
 		const originalTokens = estimateTokens(message);
+		tokenByIndex.set(index, originalTokens);
 		toolRawTokens += originalTokens;
-		if (!shouldStubToolResult(message, index, recentToolResultStartIndex, resolved, originalTokens)) {
+	}
+
+	const rawIndexes = selectRawToolResultIndexes(
+		messages,
+		toolResultIndexes,
+		recentToolResultStartIndex,
+		resolved,
+		tokenByIndex,
+	);
+
+	for (const index of toolResultIndexes) {
+		const message = messages[index] as ToolResultMessage;
+		const originalTokens = tokenByIndex.get(index) ?? estimateTokens(message);
+		if (
+			rawIndexes.has(index) &&
+			!shouldStubToolResult(message, index, recentToolResultStartIndex, resolved, originalTokens)
+		) {
 			toolStubTokens += originalTokens;
 			continue;
 		}

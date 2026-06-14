@@ -26,6 +26,7 @@ export interface CompactionSettings {
 	targetContextTokens?: number; // default: 12000
 	toolResultClearThresholdTokens?: number; // default: 24000
 	toolResultKeepRecentCount?: number; // default: 3
+	toolResultPromptBudgetTokens?: number; // default: 8000
 }
 
 export interface BranchSummarySettings {
@@ -97,6 +98,9 @@ export interface Settings {
 	lastChangelogVersion?: string;
 	defaultProvider?: string;
 	defaultModel?: string;
+	serviceProvider?: string; // Optional fast model provider for compaction/memory/tool-output extraction tasks
+	serviceModel?: string; // Optional fast model id; falls back to current model when unavailable
+	serviceThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
@@ -701,6 +705,18 @@ export class SettingsManager {
 		return this.settings.defaultModel;
 	}
 
+	getServiceModelSelection(): {
+		provider?: string;
+		modelId?: string;
+		thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	} {
+		return {
+			provider: this.settings.serviceProvider,
+			modelId: this.settings.serviceModel,
+			thinkingLevel: this.settings.serviceThinkingLevel,
+		};
+	}
+
 	setDefaultProvider(provider: string): void {
 		this.globalSettings.defaultProvider = provider;
 		this.markModified("defaultProvider");
@@ -873,6 +889,10 @@ export class SettingsManager {
 		return this.settings.compaction?.toolResultKeepRecentCount ?? 3;
 	}
 
+	getCompactionToolResultPromptBudgetTokens(): number {
+		return this.settings.compaction?.toolResultPromptBudgetTokens ?? 8000;
+	}
+
 	getCompactionSettings(): {
 		enabled: boolean;
 		triggerReserveTokens: number;
@@ -884,6 +904,7 @@ export class SettingsManager {
 		targetContextTokens: number;
 		toolResultClearThresholdTokens: number;
 		toolResultKeepRecentCount: number;
+		toolResultPromptBudgetTokens: number;
 	} {
 		return {
 			enabled: this.getCompactionEnabled(),
@@ -896,6 +917,7 @@ export class SettingsManager {
 			targetContextTokens: this.getCompactionTargetContextTokens(),
 			toolResultClearThresholdTokens: this.getCompactionToolResultClearThresholdTokens(),
 			toolResultKeepRecentCount: this.getCompactionToolResultKeepRecentCount(),
+			toolResultPromptBudgetTokens: this.getCompactionToolResultPromptBudgetTokens(),
 		};
 	}
 

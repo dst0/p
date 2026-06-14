@@ -153,7 +153,9 @@ async function findLocalSessionByExactId(
 	cwd: string,
 	sessionDir?: string,
 ): Promise<{ type: "local"; path: string } | undefined> {
-	const localSessions = await SessionManager.list(cwd, sessionDir);
+	const localSessions = sessionDir
+		? await SessionManager.listAll(sessionDir)
+		: await SessionManager.list(cwd, sessionDir);
 	const localMatch = localSessions.find((s) => s.id === sessionId);
 	return localMatch ? { type: "local", path: localMatch.path } : undefined;
 }
@@ -820,9 +822,6 @@ export async function main(args: string[], options?: MainOptions) {
 		});
 		stopThemeWatcher();
 		restoreStdout();
-		if (exitCode !== 0) {
-			process.exitCode = exitCode;
-		}
-		return;
+		process.exit(exitCode);
 	}
 }

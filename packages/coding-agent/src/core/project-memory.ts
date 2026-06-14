@@ -338,10 +338,10 @@ function updateManagedMemoryFiles(cwd: string, snapshot: ProjectMemorySnapshot):
 			body: renderManagedBlock("auto-active-context", [
 				`Updated: ${snapshot.updatedAt}`,
 				`Session: ${snapshot.sessionId}`,
-				`Goal: ${snapshot.state?.canonicalRequest.current || "(unknown)"}`,
+				`Goal: ${capLine(snapshot.state?.canonicalRequest.current || "(unknown)", 360)}`,
 				"",
 				"Checkpoint:",
-				snapshot.checkpoint,
+				capText(snapshot.checkpoint, 900),
 			]),
 		},
 		{
@@ -497,6 +497,15 @@ function capText(text: string, maxTokens: number): string {
 	const maxChars = Math.max(200, maxTokens * 4);
 	if (text.length <= maxChars) return text;
 	return `${text.slice(0, maxChars - 14).trimEnd()}\n[truncated]`;
+}
+
+function capLine(text: string, maxChars: number): string {
+	const compacted = text.replace(/\s+/g, " ").trim();
+	if (compacted.length <= maxChars) return compacted;
+	const prefix = compacted.slice(0, Math.max(20, maxChars - 1));
+	const wordBreak = prefix.lastIndexOf(" ");
+	const cutAt = wordBreak > Math.floor(maxChars * 0.4) ? wordBreak : prefix.length;
+	return `${prefix.slice(0, cutAt).trimEnd()}...`;
 }
 
 function isProjectMemorySnapshot(value: unknown): value is ProjectMemorySnapshot {

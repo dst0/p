@@ -108,6 +108,26 @@ describe("project memory", () => {
 		expect(context?.content).toContain("Fix compaction loops");
 	});
 
+	it("keeps auto-managed active context bounded when checkpoint and goal are huge", () => {
+		const cwd = createTempProject();
+		const state = createInitialStructuredSessionState("session-1");
+		state.canonicalRequest.current = `Fix compaction loops ${"and preserve every original request ".repeat(300)}`;
+		const checkpoint = `<session_checkpoint>\nGoal: ${state.canonicalRequest.current}\n${"detail\n".repeat(2000)}</session_checkpoint>`;
+
+		updateProjectMemorySnapshot({
+			cwd,
+			sessionId: "session-1",
+			checkpoint,
+			state,
+			contextUsage: createContextUsage(),
+		});
+
+		const activeContext = readFileSync(join(cwd, ".pdev/memory/active-context.md"), "utf8");
+		expect(activeContext.length).toBeLessThan(5_000);
+		expect(activeContext).toContain("[truncated]");
+		expect(activeContext).not.toContain("detail\ndetail\ndetail\ndetail\ndetail\ndetail");
+	});
+
 	it("diffs snapshots and supports pin/forget controls", () => {
 		const cwd = createTempProject();
 		const state = createInitialStructuredSessionState("session-1");

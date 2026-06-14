@@ -284,6 +284,8 @@ Compaction is lossy. The full history remains in the JSONL file; use `/tree` to 
 
 Pi layers scoped memory, rules, and repo-map snippets into the prompt automatically. Use `/state` to inspect the current breakdown, and `/rules lint`, `/rules explain`, `/memory search`, `/memory diff`, `/compact --dry-run`, or `/compact --audit` to inspect or audit what is feeding context.
 
+Long tool outputs are kept in the session for recall, but prompt context receives a compact extract with the relevant errors, paths, counts, and decisions. Service work such as compaction and tool-output extraction can use `serviceProvider`, `serviceModel`, and `serviceThinkingLevel` from settings; if that model is unavailable or too small, Pi falls back to the active work model.
+
 ---
 
 ## Settings

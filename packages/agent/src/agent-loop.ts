@@ -31,7 +31,7 @@ import type {
 
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 
-const DEFAULT_COMPLETION_MODE: CompletionMode = "explicit_finish";
+const DEFAULT_COMPLETION_MODE: CompletionMode = "implicit";
 const DEFAULT_MAX_TURNS = 64;
 const DEFAULT_MAX_NO_PROGRESS_TURNS = 5;
 const DEFAULT_MAX_MALFORMED_TOOL_RETRIES = 3;
@@ -774,18 +774,112 @@ function extractMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[]
 	const blockMatches = stripMarkdownCodeFences(text).matchAll(/<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi);
 	let index = 0;
 	for (const blockMatch of blockMatches) {
-		const parsed = parseMisplacedToolCallBlock(blockMatch[1]);
-		if (!parsed) continue;
-		const knownTool = toolNames.size === 0 || toolNames.has(parsed.name);
-		toolCalls.push({
-			type: "toolCall",
-			id: `recovered_${Date.now()}_${index}_${sanitizeToolCallIdSegment(parsed.name)}`,
-			name: parsed.name,
-			arguments: knownTool ? parsed.arguments : {},
-		});
+		for (const parsed of parseMisplacedToolCallBlock(blockMatch[1])) {
+			const toolCall = createRecoveredToolCall(parsed, toolNames, index);
+			toolCalls.push(toolCall);
+			index++;
+		}
+	}
+	for (const parsed of extractMisplacedJsonToolCalls(text)) {
+		const key = `${parsed.name}:${JSON.stringify(parsed.arguments)}`;
+		const duplicate = toolCalls.some((toolCall) => `${toolCall.name}:${JSON.stringify(toolCall.arguments)}` === key);
+		if (duplicate) continue;
+		const toolCall = createRecoveredToolCall(parsed, toolNames, index);
+		toolCalls.push(toolCall);
 		index++;
 	}
 	return toolCalls;
+}
+
+function createRecoveredToolCall(
+	parsed: ParsedMisplacedToolCall,
+	toolNames: Set<string>,
+	index: number,
+): AgentToolCall {
+	const knownTool = toolNames.size === 0 || toolNames.has(parsed.name);
+	return {
+		type: "toolCall",
+		id: `recovered_${Date.now()}_${index}_${sanitizeToolCallIdSegment(parsed.name)}`,
+		name: parsed.name,
+		arguments: knownTool ? parsed.arguments : {},
+	};
+}
+
+function extractMisplacedJsonToolCalls(text: string): ParsedMisplacedToolCall[] {
+	const stripped = stripMarkdownCodeFences(text).trim();
+	const calls = parseMisplacedToolCallJson(stripped);
+	for (const block of collectMarkdownCodeFences(text)) {
+		if (!isToolJsonFence(block.language)) continue;
+		calls.push(...parseMisplacedToolCallJson(block.body.trim()));
+	}
+	return calls;
+}
+
+function collectMarkdownCodeFences(value: string): Array<{ language: string; body: string }> {
+	const blocks: Array<{ language: string; body: string }> = [];
+	const lines = value.split(/\r?\n/);
+	let activeFence: { marker: string; language: string; lines: string[] } | undefined;
+	for (const line of lines) {
+		const fenceMatch = line.match(/^\s*(```+|~~~+)\s*([A-Za-z0-9_.:-]*)?.*$/);
+		if (!fenceMatch) {
+			activeFence?.lines.push(line);
+			continue;
+		}
+		const marker = fenceMatch[1];
+		if (!activeFence) {
+			activeFence = { marker, language: fenceMatch[2] ?? "", lines: [] };
+			continue;
+		}
+		if (marker[0] === activeFence.marker[0]) {
+			blocks.push({ language: activeFence.language.toLowerCase(), body: activeFence.lines.join("\n") });
+			activeFence = undefined;
+		} else {
+			activeFence.lines.push(line);
+		}
+	}
+	return blocks;
+}
+
+function isToolJsonFence(language: string): boolean {
+	if (!language) return false;
+	return /^(json|jsonc|tool|tools|tool_call|tool-call|function|functions)$/i.test(language);
+}
+
+interface ParsedMisplacedToolCall {
+	name: string;
+	arguments: Record<string, unknown>;
+}
+
+function parseMisplacedToolCallBlock(block: string): ParsedMisplacedToolCall[] {
+	const jsonCalls = parseMisplacedToolCallJson(block.trim());
+	if (jsonCalls.length > 0) return jsonCalls;
+
+	const calls: ParsedMisplacedToolCall[] = [];
+	for (const functionMatch of block.matchAll(/<function=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/function>/gi)) {
+		const name = functionMatch[1]?.trim();
+		if (!name) continue;
+		calls.push({
+			name,
+			arguments: parseMisplacedToolArguments(functionMatch[2] ?? ""),
+		});
+	}
+	for (const functionMatch of block.matchAll(/<function\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/function>/gi)) {
+		const name = functionMatch[1]?.trim();
+		if (!name) continue;
+		calls.push({
+			name,
+			arguments: parseMisplacedToolArguments(functionMatch[2] ?? ""),
+		});
+	}
+	const bareFunctionMatch = block.match(/<function>\s*([A-Za-z0-9_.:-]+)\s*<\/function>/i);
+	const name = bareFunctionMatch?.[1]?.trim();
+	if (name && calls.length === 0) {
+		calls.push({
+			name,
+			arguments: parseMisplacedToolArguments(block),
+		});
+	}
+	return calls;
 }
 
 function stripMarkdownCodeFences(value: string): string {
@@ -808,48 +902,53 @@ function stripMarkdownCodeFences(value: string): string {
 		.join("\n");
 }
 
-function parseMisplacedToolCallBlock(block: string): { name: string; arguments: Record<string, unknown> } | undefined {
-	const jsonCall = parseMisplacedToolCallJson(block.trim());
-	if (jsonCall) return jsonCall;
-
-	const functionMatch =
-		block.match(/<function=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/function>/i) ??
-		block.match(/<function\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/function>/i);
-	const bareFunctionMatch = block.match(/<function>\s*([A-Za-z0-9_.:-]+)\s*<\/function>/i);
-	const name = functionMatch?.[1]?.trim() ?? bareFunctionMatch?.[1]?.trim();
-	if (!name) return undefined;
-	return {
-		name,
-		arguments: parseMisplacedToolArguments(functionMatch?.[2] ?? block),
-	};
-}
-
-function parseMisplacedToolCallJson(block: string): { name: string; arguments: Record<string, unknown> } | undefined {
-	if (!block.startsWith("{") || !block.endsWith("}")) {
-		return undefined;
+function parseMisplacedToolCallJson(block: string): ParsedMisplacedToolCall[] {
+	if (!block) return [];
+	if (!(block.startsWith("{") && block.endsWith("}")) && !(block.startsWith("[") && block.endsWith("]"))) {
+		return [];
 	}
 	try {
 		const parsed = JSON.parse(block) as unknown;
-		if (!isRecord(parsed)) return undefined;
-		const nestedFunction = parsed.function;
-		if (isRecord(nestedFunction)) {
-			const name = typeof nestedFunction.name === "string" ? nestedFunction.name.trim() : "";
-			if (!name) return undefined;
-			return {
-				name,
-				arguments: normalizeMisplacedToolArguments(nestedFunction.arguments ?? parsed.arguments ?? parsed.input),
-			};
-		}
-		const nameValue = parsed.name ?? parsed.tool_name ?? parsed.function;
-		const name = typeof nameValue === "string" ? nameValue.trim() : "";
-		if (!name) return undefined;
-		return {
-			name,
-			arguments: normalizeMisplacedToolArguments(parsed.arguments ?? parsed.input),
-		};
+		return collectMisplacedToolCallsFromJson(parsed);
 	} catch {
-		return undefined;
+		return [];
 	}
+}
+
+function collectMisplacedToolCallsFromJson(value: unknown): ParsedMisplacedToolCall[] {
+	if (Array.isArray(value)) {
+		return value.flatMap((item) => collectMisplacedToolCallsFromJson(item));
+	}
+	if (!isRecord(value)) return [];
+	const nestedToolCalls = value.tool_calls ?? value.toolCalls ?? value.tools;
+	if (Array.isArray(nestedToolCalls)) {
+		return collectMisplacedToolCallsFromJson(nestedToolCalls);
+	}
+	const nestedFunction = value.function;
+	if (isRecord(nestedFunction)) {
+		const name = getStringValue(nestedFunction.name);
+		if (!name) return [];
+		return [
+			{
+				name,
+				arguments: normalizeMisplacedToolArguments(
+					nestedFunction.arguments ?? nestedFunction.input ?? value.arguments ?? value.input,
+				),
+			},
+		];
+	}
+	const name = getStringValue(value.name ?? value.tool_name ?? value.toolName ?? value.tool ?? value.function);
+	if (!name) return [];
+	return [
+		{
+			name,
+			arguments: normalizeMisplacedToolArguments(value.arguments ?? value.input ?? value.parameters ?? value.params),
+		},
+	];
+}
+
+function getStringValue(value: unknown): string | undefined {
+	return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
 
 function parseMisplacedToolArguments(body: string): Record<string, unknown> {

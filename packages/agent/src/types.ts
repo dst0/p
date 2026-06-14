@@ -143,7 +143,7 @@ export interface AgentLoopConfig extends SimpleStreamOptions {
 	 * - "explicit_finish": the run can only complete after `finish_work`
 	 * - "hybrid": request `finish_work`, then fall back to implicit completion after retries
 	 *
-	 * Default: "explicit_finish". Set "implicit" to allow assistant text without tool calls to end the run.
+	 * Default: "implicit". Higher-level clients can opt into explicit completion.
 	 */
 	completionMode?: CompletionMode;
 

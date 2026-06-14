@@ -84,12 +84,6 @@ export function detectInstallMethod(): InstallMethod {
 		return "npm";
 	}
 
-	// Last resort: check if the package directory is inside a git repo
-	const packageDir = getPackageDir();
-	if (findGitRoot(packageDir)) {
-		return "source-checkout";
-	}
-
 	return "unknown";
 }
 

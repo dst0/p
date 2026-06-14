@@ -16,7 +16,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname } from "node:path";
 import {
-	type Agent,
+	Agent,
 	type AgentEvent,
 	type AgentMessage,
 	type AgentState,
@@ -29,6 +29,7 @@ import type { AssistantMessage, ImageContent, Message, Model, TextContent } from
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
+	completeSimple,
 	getSupportedThinkingLevels,
 	isContextOverflow,
 	modelsAreEqual,
@@ -128,9 +129,14 @@ import type { SettingsManager } from "./settings-manager.ts";
 import type { SlashCommandInfo } from "./slash-commands.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "./source-info.ts";
 import {
+	BUILTIN_SUBAGENT_PROFILES,
 	createSubagentDigestContext,
 	createSubagentProfilesPrompt,
+	getSubagentAllowedTools,
 	persistSubagentDigest,
+	persistSubagentTranscript,
+	type RunSubagentInput,
+	type RunSubagentResult,
 	readSubagentDigests,
 	type SubagentDigest,
 	type SubagentName,
@@ -383,6 +389,11 @@ interface SessionRecallInput {
 	includeRaw?: boolean;
 }
 
+const RUN_SUBAGENT_SCHEMA = Type.Object({
+	profile: Type.Union([Type.Literal("explore"), Type.Literal("scout"), Type.Literal("review")]),
+	task: Type.String({ description: "Task description for the subagent" }),
+});
+
 interface RecallHit {
 	pointer: EvidencePointer;
 	relevance: number;
@@ -421,6 +432,17 @@ interface PromptContextPreparation {
 }
 
 const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 2_000;
+const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
+const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
+const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
+
+interface ToolResultContextExtract {
+	summary: string;
+	relevantLines: string[];
+	source: "service_model" | "deterministic";
+	model?: string;
+	error?: string;
+}
 
 function getMessageTextForRecall(message: AgentMessage): string {
 	switch (message.role) {
@@ -460,6 +482,95 @@ function capTextByTokens(text: string, maxTokens: number): string {
 	const maxChars = Math.max(0, Math.floor(maxTokens * 4));
 	if (text.length <= maxChars) return text;
 	return `${text.slice(0, maxChars)}\n[...truncated to ${maxTokens} tokens...]`;
+}
+
+function estimateTextTokens(text: string): number {
+	return Math.ceil(text.length / 4);
+}
+
+function summarizeSubagentTranscript(messages: AgentMessage[]): string {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "assistant") continue;
+		const text = getMessageTextForRecall(message).replace(/\s+/g, " ").trim();
+		if (text) return capTextByTokens(text, 300);
+	}
+	return "Subagent completed without a textual assistant digest.";
+}
+
+function getTextContentBlocks(content: (TextContent | ImageContent)[]): TextContent[] {
+	return content.filter((block): block is TextContent => block.type === "text");
+}
+
+function getToolResultText(content: (TextContent | ImageContent)[]): string {
+	return getTextContentBlocks(content)
+		.map((block) => block.text)
+		.join("\n");
+}
+
+function normalizeToolExtractLine(line: string): string {
+	return line.replace(/\s+/g, " ").trim();
+}
+
+function createDeterministicToolExtract(
+	toolName: string,
+	text: string,
+	isError: boolean,
+	error?: string,
+): ToolResultContextExtract {
+	const lines = text.split(/\r?\n/).map(normalizeToolExtractLine).filter(Boolean);
+	const importantPatterns =
+		/(error|failed|exception|warning|warn|timeout|denied|not found|cannot|todo|fixme|modified|created|deleted|passed|failed|tests?|file|path|line|\.(ts|tsx|js|jsx|json|md|py|rs|go|css|html)\b)/i;
+	const important = lines.filter((line) => importantPatterns.test(line));
+	const selected: string[] = [];
+	for (const line of [...important.slice(0, 12), ...lines.slice(0, 4), ...lines.slice(-4)]) {
+		if (selected.includes(line)) continue;
+		selected.push(line);
+		if (selected.length >= 12) break;
+	}
+	const firstLine = selected[0] ?? lines[0] ?? "(no textual output)";
+	const summary = capTextByTokens(
+		`${toolName} ${isError ? "failed" : "completed"}; extracted ${selected.length} notable line(s). First notable line: ${firstLine}`,
+		120,
+	);
+	return {
+		summary,
+		relevantLines: selected.map((line) => capTextByTokens(line, 80)),
+		source: "deterministic",
+		error,
+	};
+}
+
+function parseToolExtractResponse(
+	text: string,
+	modelLabel: string,
+	fallback: ToolResultContextExtract,
+): ToolResultContextExtract {
+	const lines = text
+		.split(/\r?\n/)
+		.map((line) => line.replace(/^[-*]\s*/, "").trim())
+		.filter(Boolean);
+	if (lines.length === 0) {
+		return fallback;
+	}
+	const summary = capTextByTokens(lines[0], 140);
+	const relevantLines = lines.slice(1, 13).map((line) => capTextByTokens(line, 90));
+	return {
+		summary,
+		relevantLines: relevantLines.length > 0 ? relevantLines : fallback.relevantLines,
+		source: "service_model",
+		model: modelLabel,
+	};
+}
+
+function getLatestUserText(messages: AgentMessage[]): string {
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role !== "user") continue;
+		const text = getMessageTextForRecall(message).replace(/\s+/g, " ").trim();
+		if (text.length > 0) return capTextByTokens(text, 250);
+	}
+	return "";
 }
 
 function scoreRecallCandidate(query: string, candidate: RecallCandidate): number {
@@ -643,6 +754,145 @@ export class AgentSession {
 		return result.ok ? { apiKey: result.apiKey, headers: result.headers } : {};
 	}
 
+	private _getServiceModelRequest(minContextTokens = 0): { model: Model<any>; thinkingLevel: ThinkingLevel } {
+		const fallbackModel = this.model;
+		if (!fallbackModel) {
+			throw new Error(formatNoModelSelectedMessage());
+		}
+
+		const selection = this.settingsManager.getServiceModelSelection();
+		let selectedModel: Model<any> | undefined;
+		if (selection.provider && selection.modelId) {
+			selectedModel = this._modelRegistry.find(selection.provider, selection.modelId);
+		} else if (selection.modelId) {
+			selectedModel = this._modelRegistry.find(fallbackModel.provider, selection.modelId);
+		}
+
+		if (selectedModel) {
+			const hasEnoughContext =
+				minContextTokens <= 0 ||
+				selectedModel.contextWindow <= 0 ||
+				selectedModel.contextWindow >= minContextTokens;
+			if (hasEnoughContext) {
+				return {
+					model: selectedModel,
+					thinkingLevel: clampThinkingLevel(selectedModel, selection.thinkingLevel ?? "off") as ThinkingLevel,
+				};
+			}
+		}
+
+		return {
+			model: fallbackModel,
+			thinkingLevel: this.thinkingLevel,
+		};
+	}
+
+	private async _getServiceAuthWithCurrentFallback(request: {
+		model: Model<any>;
+		thinkingLevel: ThinkingLevel;
+	}): Promise<{
+		model: Model<any>;
+		thinkingLevel: ThinkingLevel;
+		apiKey?: string;
+		headers?: Record<string, string>;
+	}> {
+		try {
+			const { apiKey, headers } = await this._getCompactionRequestAuth(request.model);
+			return { ...request, apiKey, headers };
+		} catch (err) {
+			if (!this.model || modelsAreEqual(request.model, this.model)) {
+				throw err;
+			}
+			const { apiKey, headers } = await this._getCompactionRequestAuth(this.model);
+			return {
+				model: this.model,
+				thinkingLevel: this.thinkingLevel,
+				apiKey,
+				headers,
+			};
+		}
+	}
+
+	private async _maybeCreateToolResultContextExtract(
+		toolName: string,
+		content: (TextContent | ImageContent)[],
+		details: unknown,
+		isError: boolean,
+		contextMessages: AgentMessage[],
+		signal?: AbortSignal,
+	): Promise<ToolResultContextExtract | undefined> {
+		if (isRecord(details) && isRecord(details.contextExtract)) {
+			return undefined;
+		}
+
+		const text = getToolResultText(content).trim();
+		if (!text) {
+			return undefined;
+		}
+
+		const textTokens = estimateTextTokens(text);
+		if (!isError && textTokens < TOOL_RESULT_EXTRACT_MIN_TOKENS) {
+			return undefined;
+		}
+
+		const fallback = createDeterministicToolExtract(toolName, text, isError);
+		const serviceRequest = this._getServiceModelRequest(
+			TOOL_RESULT_EXTRACT_INPUT_TOKENS + TOOL_RESULT_EXTRACT_OUTPUT_TOKENS,
+		);
+
+		try {
+			const authRequest = await this._getServiceAuthWithCurrentFallback(serviceRequest);
+			const modelLabel = `${authRequest.model.provider}/${authRequest.model.id}`;
+			const latestUserText = getLatestUserText(contextMessages);
+			const output = capTextByTokens(text, TOOL_RESULT_EXTRACT_INPUT_TOKENS);
+			const response = await completeSimple(
+				authRequest.model,
+				{
+					systemPrompt: [
+						"Extract a compact context note from one coding-agent tool result.",
+						"The main agent will see only this note unless it explicitly recalls raw evidence.",
+						"First line: one concise summary sentence.",
+						"Then include up to 12 short evidence lines with exact file paths, commands, errors, counts, or decisions.",
+						"Drop boilerplate, progress logs, duplicate lines, and unimportant long output.",
+						"Do not invent facts and do not mention content that is not visible in the tool output.",
+					].join("\n"),
+					messages: [
+						{
+							role: "user",
+							content: [
+								`Current user task hint: ${latestUserText || "(unknown)"}`,
+								`Tool: ${toolName}`,
+								`Status: ${isError ? "error" : "success"}`,
+								"Tool output:",
+								output,
+							].join("\n\n"),
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{
+					apiKey: authRequest.apiKey,
+					headers: authRequest.headers,
+					signal,
+					reasoning: authRequest.thinkingLevel === "off" ? undefined : authRequest.thinkingLevel,
+					thinkingBudgets: this.agent.thinkingBudgets,
+					maxRetryDelayMs: this.agent.maxRetryDelayMs,
+					timeoutMs: 45_000,
+				},
+			);
+			if (response.stopReason === "error" || response.stopReason === "aborted") {
+				throw new Error(response.errorMessage ?? `tool-result extraction stopped with ${response.stopReason}`);
+			}
+			const responseText = getMessageTextForRecall(response).trim();
+			return parseToolExtractResponse(responseText, modelLabel, fallback);
+		} catch (err) {
+			return {
+				...fallback,
+				error: err instanceof Error ? err.message : String(err),
+			};
+		}
+	}
+
 	/**
 	 * Install tool hooks once on the Agent instance.
 	 *
@@ -673,30 +923,56 @@ export class AgentSession {
 			}
 		};
 
-		this.agent.afterToolCall = async ({ toolCall, args, result, isError }) => {
+		this.agent.afterToolCall = async ({ toolCall, args, result, isError, context }, signal) => {
 			const runner = this._extensionRunner;
-			if (!runner.hasHandlers("tool_result")) {
-				return undefined;
+			let content = result.content;
+			let details: unknown = result.details;
+			let nextIsError = isError;
+			let changed = false;
+
+			if (runner.hasHandlers("tool_result")) {
+				const hookResult = await runner.emitToolResult({
+					type: "tool_result",
+					toolName: toolCall.name,
+					toolCallId: toolCall.id,
+					input: args as Record<string, unknown>,
+					content,
+					details,
+					isError: nextIsError,
+				});
+
+				if (hookResult) {
+					content = hookResult.content ?? content;
+					details = hookResult.details ?? details;
+					nextIsError = hookResult.isError ?? nextIsError;
+					changed = true;
+				}
 			}
 
-			const hookResult = await runner.emitToolResult({
-				type: "tool_result",
-				toolName: toolCall.name,
-				toolCallId: toolCall.id,
-				input: args as Record<string, unknown>,
-				content: result.content,
-				details: result.details,
-				isError,
-			});
+			const extract = await this._maybeCreateToolResultContextExtract(
+				toolCall.name,
+				content,
+				details,
+				nextIsError,
+				context.messages,
+				signal,
+			);
+			if (extract) {
+				details = {
+					...(isRecord(details) ? details : {}),
+					contextExtract: extract,
+				};
+				changed = true;
+			}
 
-			if (!hookResult) {
+			if (!changed) {
 				return undefined;
 			}
 
 			return {
-				content: hookResult.content,
-				details: hookResult.details,
-				isError: hookResult.isError ?? isError,
+				content,
+				details,
+				isError: nextIsError,
 			};
 		};
 	}
@@ -1066,7 +1342,9 @@ export class AgentSession {
 		this.agent.state.tools = tools;
 
 		// Rebuild base system prompt with new tool set
-		this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames);
+		const effectiveCompletionMode = this._getEffectiveCompletionModeForActiveTools(validToolNames.length);
+		this.agent.completionMode = effectiveCompletionMode;
+		this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames, effectiveCompletionMode);
 		this.agent.state.systemPrompt = this._baseSystemPrompt;
 	}
 
@@ -1148,10 +1426,17 @@ export class AgentSession {
 		return Array.from(unique);
 	}
 
-	private _rebuildSystemPrompt(toolNames: string[]): string {
+	private _getEffectiveCompletionModeForActiveTools(activeToolCount: number): CompletionMode {
+		return activeToolCount === 0 && this._completionMode !== "implicit" ? "implicit" : this._completionMode;
+	}
+
+	private _rebuildSystemPrompt(
+		toolNames: string[],
+		completionMode = this._getEffectiveCompletionModeForActiveTools(toolNames.length),
+	): string {
 		const validToolNames = toolNames.filter((name) => this._toolRegistry.has(name));
 		const promptToolNames =
-			this._completionMode === "implicit"
+			completionMode === "implicit"
 				? validToolNames
 				: [...validToolNames.filter((name) => name !== FINISH_WORK_TOOL_NAME), FINISH_WORK_TOOL_NAME];
 		const toolSnippets: Record<string, string> = {};
@@ -1167,7 +1452,7 @@ export class AgentSession {
 				promptGuidelines.push(...toolGuidelines);
 			}
 		}
-		if (this._completionMode !== "implicit") {
+		if (completionMode !== "implicit") {
 			toolSnippets[FINISH_WORK_TOOL_NAME] =
 				"finish_work({ status, summary, result?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible result";
 		}
@@ -1188,7 +1473,7 @@ export class AgentSession {
 			selectedTools: promptToolNames,
 			toolSnippets,
 			promptGuidelines,
-			completionMode: this._completionMode,
+			completionMode,
 		};
 		return buildSystemPrompt(this._baseSystemPromptOptions);
 	}
@@ -2047,6 +2332,7 @@ export class AgentSession {
 					settings.toolResultClearThresholdTokens,
 					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
 				),
+				toolResultPromptBudgetTokens: Math.min(settings.toolResultPromptBudgetTokens ?? 8000, 4000),
 			});
 		}
 		const pressureEstimate =
@@ -2253,6 +2539,127 @@ export class AgentSession {
 		};
 	}
 
+	private _createRunSubagentToolDefinition(): ToolDefinition<typeof RUN_SUBAGENT_SCHEMA, RunSubagentResult> {
+		return {
+			name: "run_subagent",
+			label: "Run Subagent",
+			description:
+				"Run a read-only subagent with restricted permissions for noisy exploration tasks. " +
+				"The parent context receives only a concise digest; the full subagent session is stored separately. " +
+				"Use 'explore' for codebase exploration, 'scout' for web research, 'review' for code review.",
+			promptSnippet:
+				"run_subagent(profile, task): run a read-only subagent (explore, scout, review) with restricted permissions",
+			promptGuidelines: [
+				"Use 'explore' for codebase exploration (read, grep, ls only).",
+				"Use 'scout' for web/dependency research.",
+				"Use 'review' for read-only code review.",
+				"Parent context receives only a digest; raw subagent session is stored separately.",
+			],
+			parameters: RUN_SUBAGENT_SCHEMA,
+			executionMode: "sequential",
+			execute: async (_toolCallId, params) => {
+				const input = params as RunSubagentInput;
+				const result = await this._runSubagent(input);
+				return {
+					content: [{ type: "text", text: this._formatSubagentResult(result) }],
+					details: result,
+				};
+			},
+		};
+	}
+
+	private async _runSubagent(input: RunSubagentInput): Promise<RunSubagentResult> {
+		const profile = BUILTIN_SUBAGENT_PROFILES.find((p) => p.name === input.profile);
+		if (!profile) {
+			throw new Error(`Unknown subagent profile: ${input.profile}`);
+		}
+		const model = this.model;
+		if (!model) {
+			throw new Error(formatNoModelSelectedMessage());
+		}
+
+		const allowedToolNames = getSubagentAllowedTools(input.profile);
+		const tools = this.agent.state.tools.filter((tool) => allowedToolNames.has(tool.name));
+		const systemPrompt = [
+			`You are the ${input.profile} read-only subagent.`,
+			profile.description,
+			"Return a concise digest with findings, evidence pointers, and unresolved risks.",
+			"Do not edit files. Do not run tools outside your allowed tool list.",
+			"Do not continue the parent task; only answer the delegated subtask.",
+		].join("\n");
+		const subagent = new Agent({
+			initialState: {
+				model,
+				systemPrompt,
+				tools,
+			},
+			convertToLlm: this.agent.convertToLlm,
+			transformContext: async (messages, signal) => {
+				const transformed = this.agent.transformContext
+					? await this.agent.transformContext(messages, signal)
+					: messages;
+				return this._preparePromptContext(transformed, systemPrompt).messages;
+			},
+			streamFn: this.agent.streamFn,
+			getApiKey: this.agent.getApiKey,
+			onPayload: this.agent.onPayload,
+			onResponse: this.agent.onResponse,
+			beforeToolCall: this.agent.beforeToolCall,
+			afterToolCall: this.agent.afterToolCall,
+			toolExecution: "parallel",
+			completionMode: "implicit",
+			thinkingBudgets: this.agent.thinkingBudgets,
+			transport: this.agent.transport,
+			maxRetryDelayMs: this.agent.maxRetryDelayMs,
+		});
+		const transcript: AgentMessage[] = [];
+		const unsubscribe = subagent.subscribe((event) => {
+			if (event.type === "message_end") {
+				transcript.push(event.message);
+			}
+		});
+		try {
+			await subagent.prompt(input.task);
+		} finally {
+			unsubscribe();
+		}
+
+		const summary = summarizeSubagentTranscript(transcript);
+		const provisionalId = `subagent:${input.profile}:${Date.now().toString(36)}`;
+		const transcriptPath = persistSubagentTranscript(this._cwd, provisionalId, transcript);
+		const digest = persistSubagentDigest(this._cwd, {
+			profile: input.profile,
+			query: input.task,
+			summary,
+			evidencePointers: [`file:${transcriptPath}`],
+			transcriptPath,
+		});
+
+		return {
+			id: digest.id,
+			profile: input.profile,
+			task: input.task,
+			summary: digest.summary,
+			evidencePointers: digest.evidencePointers,
+			turnCount: transcript.length,
+		};
+	}
+
+	private _formatSubagentResult(result: RunSubagentResult): string {
+		const lines = [
+			`[Subagent ${result.profile} completed]`,
+			`ID: ${result.id}`,
+			`Task: ${result.task}`,
+			`Turns: ${result.turnCount}`,
+			`Summary: ${result.summary}`,
+		];
+		if (result.evidencePointers.length > 0) {
+			lines.push(`Evidence: ${result.evidencePointers.join(", ")}`);
+		}
+		lines.push(`Retrieve: session_recall("${result.id}")`);
+		return lines.join("\n");
+	}
+
 	private _recallSessionEvidence(params: SessionRecallInput): RecallResult {
 		const maxTokens = Math.max(1, Math.min(params.maxTokens ?? 1200, 4000));
 		const kindFilter = params.kind ? new Set<EvidenceKind>(params.kind) : undefined;
@@ -2288,7 +2695,10 @@ export class AgentSession {
 	private _collectRecallCandidates(): RecallCandidate[] {
 		const candidates: RecallCandidate[] = [];
 		for (const digest of readSubagentDigests(this._cwd)) {
-			const rawText = JSON.stringify(digest, undefined, 2);
+			const transcriptPath = digest.transcriptPath ? resolvePath(this._cwd, digest.transcriptPath) : undefined;
+			const transcriptText =
+				transcriptPath && existsSync(transcriptPath) ? readFileSync(transcriptPath, "utf8") : undefined;
+			const rawText = transcriptText ?? JSON.stringify(digest, undefined, 2);
 			candidates.push({
 				pointer: {
 					id: digest.id,
@@ -2296,7 +2706,7 @@ export class AgentSession {
 					summary: `Subagent ${digest.profile}: ${digest.summary}`,
 					retrieveWhen: "Need read-only subagent digest evidence.",
 				},
-				searchText: `${digest.profile}\n${digest.query}\n${digest.summary}\n${digest.evidencePointers.join("\n")}`,
+				searchText: `${digest.profile}\n${digest.query}\n${digest.summary}\n${digest.evidencePointers.join("\n")}\n${digest.transcriptPath ?? ""}`,
 				rawText,
 			});
 		}
@@ -2420,8 +2830,6 @@ export class AgentSession {
 				throw new Error(formatNoModelSelectedMessage());
 			}
 
-			const { apiKey, headers } = await this._getCompactionRequestAuth(this.model);
-
 			const pathEntries = this.sessionManager.getBranch();
 			const settings = this._getEffectiveCompactionSettings();
 
@@ -2467,14 +2875,21 @@ export class AgentSession {
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
+				const serviceRequest = this._getServiceModelRequest(
+					preparation.tokensToSummarize +
+						Math.ceil((this.systemPrompt?.length ?? 0) / 4) +
+						settings.summaryMaxTokens +
+						2_000,
+				);
+				const authRequest = await this._getServiceAuthWithCurrentFallback(serviceRequest);
 				const result = await compact(
 					preparation,
-					this.model,
-					apiKey,
-					headers,
+					authRequest.model,
+					authRequest.apiKey,
+					authRequest.headers,
 					customInstructions,
 					this._compactionAbortController.signal,
-					this.thinkingLevel,
+					authRequest.thinkingLevel,
 					this.agent.streamFn,
 					(currentChunk, totalChunks) => {
 						this._emit({ type: "compaction_progress", currentChunk, totalChunks });
@@ -2653,18 +3068,20 @@ export class AgentSession {
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		const estimate = promptContext.estimate;
+		const providerEstimate = estimateContextTokens(messages, this.systemPrompt);
+		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
+		const estimateSource = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
 
 		if (
 			assistantForCompactionCheck &&
 			assistantForCompactionCheck.stopReason === "error" &&
-			promptContext.source === "provider_usage"
+			estimateSource === "provider_usage"
 		) {
 			if (estimate.lastUsageIndex === null) return false; // No usage data at all
 			// Verify the usage source is post-compaction. Kept pre-compaction messages
 			// have stale usage reflecting the old (larger) context and would falsely
 			// trigger compaction right after one just finished.
-			const usageMsg = promptContext.messages[estimate.lastUsageIndex];
+			const usageMsg = messages[estimate.lastUsageIndex];
 			if (
 				compactionEntry &&
 				usageMsg.role === "assistant" &&
@@ -2700,26 +3117,6 @@ export class AgentSession {
 					willRetry: false,
 				});
 				return false;
-			}
-
-			let apiKey: string | undefined;
-			let headers: Record<string, string> | undefined;
-			if (this.agent.streamFn === streamSimple) {
-				const authResult = await this._modelRegistry.getApiKeyAndHeaders(this.model);
-				if (!authResult.ok || !authResult.apiKey) {
-					this._emit({
-						type: "compaction_end",
-						reason,
-						result: undefined,
-						aborted: false,
-						willRetry: false,
-					});
-					return false;
-				}
-				apiKey = authResult.apiKey;
-				headers = authResult.headers;
-			} else {
-				({ apiKey, headers } = await this._getCompactionRequestAuth(this.model));
 			}
 
 			const pathEntries = this.sessionManager.getBranch();
@@ -2784,14 +3181,38 @@ export class AgentSession {
 				details = extensionCompaction.details;
 			} else {
 				// Generate compaction result
+				let authRequest: {
+					model: Model<any>;
+					thinkingLevel: ThinkingLevel;
+					apiKey?: string;
+					headers?: Record<string, string>;
+				};
+				try {
+					const serviceRequest = this._getServiceModelRequest(
+						preparation.tokensToSummarize +
+							Math.ceil((this.systemPrompt?.length ?? 0) / 4) +
+							settings.summaryMaxTokens +
+							2_000,
+					);
+					authRequest = await this._getServiceAuthWithCurrentFallback(serviceRequest);
+				} catch {
+					this._emit({
+						type: "compaction_end",
+						reason,
+						result: undefined,
+						aborted: false,
+						willRetry: false,
+					});
+					return false;
+				}
 				const compactResult = await compact(
 					preparation,
-					this.model,
-					apiKey,
-					headers,
+					authRequest.model,
+					authRequest.apiKey,
+					authRequest.headers,
 					undefined,
 					this._autoCompactionAbortController.signal,
-					this.thinkingLevel,
+					authRequest.thinkingLevel,
 					this.agent.streamFn,
 				);
 				summary = compactResult.summary;
@@ -2909,6 +3330,7 @@ export class AgentSession {
 		targetContextTokens: number;
 		toolResultClearThresholdTokens: number;
 		toolResultKeepRecentCount: number;
+		toolResultPromptBudgetTokens: number;
 	} {
 		return this.settingsManager.getCompactionSettings();
 	}
@@ -3245,6 +3667,7 @@ export class AgentSession {
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
 			session_recall: this._createSessionRecallToolDefinition() as unknown as ToolDefinition,
+			run_subagent: this._createRunSubagentToolDefinition() as unknown as ToolDefinition,
 		};
 
 		this._baseToolDefinitions = new Map(
@@ -3884,12 +4307,19 @@ export class AgentSession {
 		if (contextWindow <= 0) return undefined;
 
 		const settings = this.settingsManager.getCompactionSettings();
-		const promptContext = this._preparePromptContext(this._getEffectiveCompactedMessages());
-		const estimate = promptContext.estimate;
+		const effectiveMessages = this._getEffectiveCompactedMessages();
+		const promptContext = this._preparePromptContext(effectiveMessages);
+		const providerEstimate = estimateContextTokens(effectiveMessages, this.systemPrompt);
+		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
+		const source = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
-		const percent = (estimate.tokens / contextWindow) * 100;
+		const contextTokens =
+			estimate.lastUsageIndex === null
+				? Math.max(0, estimate.tokens - estimate.staticTokens)
+				: estimate.usageTokens + estimate.trailingTokens;
+		const percent = (contextTokens / contextWindow) * 100;
 		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
-			source: promptContext.source,
+			source,
 			totalOverride: estimate.tokens,
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
@@ -3897,7 +4327,7 @@ export class AgentSession {
 		this._lastTokenBreakdown = tokenBreakdown;
 
 		return {
-			tokens: estimate.tokens,
+			tokens: contextTokens,
 			contextWindow,
 			percent,
 			staticTokens: estimate.staticTokens,

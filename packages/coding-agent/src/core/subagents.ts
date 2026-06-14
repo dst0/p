@@ -1,11 +1,28 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import type { AgentMessage } from "@earendil-works/pi-agent-core";
 
 const SUBAGENT_DIGESTS_FILE = ".pdev/sessions/subagent-digests.jsonl";
+const SUBAGENT_TRANSCRIPTS_DIR = ".pdev/sessions/subagents";
 
 export type SubagentName = "explore" | "scout" | "review" | "compact";
 export type SubagentMode = "subagent" | "system";
 export type SubagentPermission = "allow" | "deny" | "ask";
+
+/** Mapping from permission key to base tool names allowed by that permission */
+const PERMISSION_TO_TOOL: Record<string, string[]> = {
+	read: ["read"],
+	grep: ["grep"],
+	list: ["ls", "find"],
+	edit: ["edit", "write"],
+	bash: ["bash"],
+	web: [],
+	diff: [],
+	test: [],
+};
+
+/** Maximum number of turns for a subagent run */
+export const SUBAGENT_MAX_TURNS = 8;
 
 export interface SubagentProfile {
 	name: SubagentName;
@@ -30,6 +47,7 @@ export interface SubagentDigest {
 	query: string;
 	summary: string;
 	evidencePointers: string[];
+	transcriptPath?: string;
 	createdAt: string;
 }
 
@@ -101,6 +119,16 @@ export function readSubagentDigests(cwd: string): SubagentDigest[] {
 		});
 }
 
+export function persistSubagentTranscript(cwd: string, id: string, messages: AgentMessage[]): string {
+	const safeId = id.replace(/[^A-Za-z0-9_.:-]+/g, "_");
+	const relativePath = join(SUBAGENT_TRANSCRIPTS_DIR, `${safeId}.jsonl`);
+	const path = join(cwd, relativePath);
+	mkdirSync(dirname(path), { recursive: true });
+	const body = messages.map((message) => JSON.stringify({ type: "message", message })).join("\n");
+	appendFileSync(path, body.length > 0 ? `${body}\n` : "");
+	return relativePath;
+}
+
 export function createSubagentDigestContext(cwd: string, query: string): string | undefined {
 	const terms = tokenize(query);
 	if (terms.length === 0) return undefined;
@@ -136,6 +164,45 @@ function tokenize(value: string): string[] {
 		.split(/[^a-z0-9_.:/-]+/i)
 		.map((term) => term.trim())
 		.filter((term) => term.length > 0);
+}
+
+/** Get the set of allowed tool names for a subagent profile */
+export function getSubagentAllowedTools(profile: SubagentName): Set<string> {
+	const subagentProfile = BUILTIN_SUBAGENT_PROFILES.find((p) => p.name === profile);
+	if (!subagentProfile) return new Set();
+
+	const allowed = new Set<string>();
+	for (const [perm, tools] of Object.entries(subagentProfile.permissions)) {
+		if (perm === "web" || perm === "diff" || perm === "test") continue; // no base tool mapping
+		if (tools === undefined) continue;
+		if (
+			perm in subagentProfile.permissions &&
+			subagentProfile.permissions[perm as keyof typeof subagentProfile.permissions] === "allow"
+		) {
+			for (const tool of PERMISSION_TO_TOOL[perm] ?? []) {
+				allowed.add(tool);
+			}
+		}
+	}
+	allowed.add("session_recall");
+	return allowed;
+}
+
+/** Subagent input parameters */
+export interface RunSubagentInput {
+	/** Profile name: explore, scout, review */
+	profile: SubagentName;
+	/** Task description for the subagent */
+	task: string;
+}
+
+export interface RunSubagentResult {
+	id: string;
+	profile: SubagentName;
+	task: string;
+	summary: string;
+	evidencePointers: string[];
+	turnCount: number;
 }
 
 function isSubagentDigest(value: unknown): value is SubagentDigest {

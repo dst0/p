@@ -653,6 +653,128 @@ describe("agentLoop with AgentMessage", () => {
 		expect(callIndex).toBe(1);
 	});
 
+	it("should execute a fenced JSON tool call from assistant text", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			completionMode: "implicit",
+			convertToLlm: identityConverter,
+		};
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("echo fenced json")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([
+							{
+								type: "text",
+								text: [
+									"```json",
+									JSON.stringify({ name: "echo", arguments: { value: "from fence" } }),
+									"```",
+								].join("\n"),
+							},
+						]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		for await (const _event of stream) {
+			// Drain stream.
+		}
+
+		expect(executed).toEqual(["from fence"]);
+		expect(callIndex).toBe(2);
+	});
+
+	it("should execute an OpenAI-style misplaced tool_calls JSON response", async () => {
+		const toolSchema = Type.Object({ value: Type.String() });
+		const executed: string[] = [];
+		const tool: AgentTool<typeof toolSchema, { value: string }> = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo tool",
+			parameters: toolSchema,
+			async execute(_toolCallId, params) {
+				executed.push(params.value);
+				return {
+					content: [{ type: "text", text: `echoed: ${params.value}` }],
+					details: { value: params.value },
+				};
+			},
+		};
+		const context: AgentContext = {
+			systemPrompt: "",
+			messages: [],
+			tools: [tool],
+		};
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			completionMode: "implicit",
+			convertToLlm: identityConverter,
+		};
+		const misplaced = JSON.stringify({
+			tool_calls: [{ function: { name: "echo", arguments: JSON.stringify({ value: "from tool_calls" }) } }],
+		});
+		let callIndex = 0;
+		const stream = agentLoop([createUserMessage("echo tool_calls")], context, config, undefined, () => {
+			const mockStream = new MockAssistantStream();
+			queueMicrotask(() => {
+				if (callIndex === 0) {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: misplaced }]),
+					});
+				} else {
+					mockStream.push({
+						type: "done",
+						reason: "stop",
+						message: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				}
+				callIndex++;
+			});
+			return mockStream;
+		});
+		for await (const _event of stream) {
+			// Drain stream.
+		}
+
+		expect(executed).toEqual(["from tool_calls"]);
+		expect(callIndex).toBe(2);
+	});
+
 	it("should convert an unknown misplaced XML tool call into an error tool result and continue", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const tool: AgentTool<typeof toolSchema, { value: string }> = {
@@ -1772,7 +1894,7 @@ describe("agentLoopContinue with AgentMessage", () => {
 });
 
 describe("Explicit Completion Protocol", () => {
-	it("defaults to explicit_finish", async () => {
+	it("uses explicit_finish when configured", async () => {
 		const context: AgentContext = {
 			systemPrompt: "",
 			messages: [],
@@ -1785,6 +1907,7 @@ describe("Explicit Completion Protocol", () => {
 			{
 				model: createModel(),
 				convertToLlm: identityConverter,
+				completionMode: "explicit_finish",
 			},
 			undefined,
 			createScriptedStream(

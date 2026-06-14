@@ -4,6 +4,8 @@ import type { CompactionAudit, EvidencePointer } from "./compaction.ts";
 
 export const STRUCTURED_SESSION_STATE_CUSTOM_TYPE = "pi.structured-session-state";
 export const STRUCTURED_SESSION_STATE_VERSION = 1;
+const MAX_CANONICAL_REQUEST_CHARS = 480;
+const MAX_REQUEST_SUMMARY_CHARS = 280;
 
 export type ConstraintSource = "user" | "system" | "project" | "inferred";
 export type ConstraintStatus = "active" | "superseded" | "rejected";
@@ -46,12 +48,22 @@ export interface RelevantSymbol {
 	reason: string;
 }
 
+export interface OriginalUserRequest {
+	id: string;
+	entryId: string;
+	timestamp: string;
+	kind: "request" | "correction" | "follow_up";
+	text: string;
+	summary: string;
+}
+
 export interface StructuredSessionState {
 	version: number;
 	sessionId: string;
 	canonicalRequest: {
 		current: string;
 		sourceEntryIds: string[];
+		originalRequests: OriginalUserRequest[];
 		superseded: Array<{
 			old: string;
 			replacedBy: string;
@@ -120,6 +132,7 @@ export function createInitialStructuredSessionState(sessionId: string): Structur
 		canonicalRequest: {
 			current: "",
 			sourceEntryIds: [],
+			originalRequests: [],
 			superseded: [],
 		},
 		constraints: [],
@@ -186,6 +199,7 @@ export function mergeStructuredSessionState(
 		canonicalRequest: {
 			current: previous.canonicalRequest.current,
 			sourceEntryIds: [...previous.canonicalRequest.sourceEntryIds],
+			originalRequests: (previous.canonicalRequest.originalRequests ?? []).map((request) => ({ ...request })),
 			superseded: previous.canonicalRequest.superseded.map((item) => ({ ...item })),
 		},
 		constraints: previous.constraints.map((constraint) => ({ ...constraint })),
@@ -253,25 +267,38 @@ export function mergeStructuredSessionState(
 }
 
 export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
+	const activeConstraints = state.constraints
+		.filter((constraint) => constraint.status === "active")
+		.map((constraint) => capPromptLine(constraint.text, 240));
+	const plan = state.plan
+		.slice(0, 12)
+		.map((item) => `- [${renderPlanStatus(item.status)}] ${capPromptLine(item.text, 220)}`);
+	const nextAction = (state.progress.next.length > 0 ? state.progress.next : state.progress.current.slice(0, 3)).map(
+		(item) => capPromptLine(item, 220),
+	);
+	const touchedFiles = state.codebase.touchedFiles
+		.slice(0, 20)
+		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
+	const evidence = state.evidence
+		.slice(0, 20)
+		.map((pointer) => `${pointer.id}: ${capPromptLine(pointer.summary, 180)}`);
+	const knownRisks = state.audit.knownRisks.map((risk) => capPromptLine(risk, 220));
 	const lines = [
 		"<session_checkpoint>",
-		`Goal: ${state.canonicalRequest.current || "(unknown)"}`,
+		`Goal: ${capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) || "(unknown)"}`,
+		`Original requests stored: ${state.canonicalRequest.originalRequests?.length ?? 0}`,
 		"Active constraints:",
-		...renderList(
-			state.constraints.filter((constraint) => constraint.status === "active").map((constraint) => constraint.text),
-		),
+		...renderList(activeConstraints),
 		"Current plan:",
-		...state.plan.slice(0, 12).map((item) => `- [${renderPlanStatus(item.status)}] ${item.text}`),
+		...(plan.length > 0 ? plan : ["- (none)"]),
 		"Next action:",
-		...renderList(state.progress.next.length > 0 ? state.progress.next : state.progress.current.slice(0, 3)),
+		...renderList(nextAction),
 		"Touched files:",
-		...renderList(
-			state.codebase.touchedFiles.slice(0, 20).map((file) => `${file.status}: ${file.path} - ${file.summary}`),
-		),
+		...renderList(touchedFiles),
 		"Retrieve if needed:",
-		...renderList(state.evidence.slice(0, 20).map((pointer) => `${pointer.id}: ${pointer.summary}`)),
+		...renderList(evidence),
 		"Known risks:",
-		...renderList(state.audit.knownRisks),
+		...renderList(knownRisks),
 		"</session_checkpoint>",
 	];
 	return capCheckpoint(lines.join("\n"), maxTokens);
@@ -281,8 +308,12 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 	const timestamp = input.timestamp ?? new Date().toISOString();
 	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
 	const summaryGoal = extractSection(input.summary, "Goal").trim();
+	const originalRequests = collectOriginalUserRequests(input.entries);
+	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const goal =
-		getLatestExplicitUserCorrection(input.entries) ?? (summaryGoal || createPlainSummaryFallback(input.summary));
+		normalizeCanonicalRequest(latestCorrection?.summary ?? summaryGoal) ||
+		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
+		createPlainSummaryFallback(input.summary);
 	const planItems = extractPlanItems(input.summary, sourceEntryIds);
 	const progress = extractProgress(input.summary);
 	const decisions = extractDecisions(input.summary);
@@ -308,7 +339,11 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 		canonicalRequest: goal
 			? {
 					current: goal,
-					sourceEntryIds,
+					sourceEntryIds: mergeStringList(
+						sourceEntryIds,
+						originalRequests.map((request) => request.entryId),
+					),
+					originalRequests,
 				}
 			: undefined,
 		plan: planItems.length > 0 ? { add: planItems } : undefined,
@@ -331,29 +366,83 @@ function extractSection(markdown: string, heading: string): string {
 }
 
 function createPlainSummaryFallback(summary: string): string {
-	return summary
-		.split("\n")
-		.map((line) => line.trim())
-		.filter((line) => line.length > 0)
-		.slice(0, 6)
-		.join(" ")
-		.slice(0, 1000);
+	return normalizeCanonicalRequest(
+		summary
+			.split("\n")
+			.map((line) => line.trim())
+			.filter((line) => line.length > 0)
+			.slice(0, 6)
+			.join(" "),
+	);
 }
 
-function getLatestExplicitUserCorrection(entries: SessionEntry[]): string | undefined {
-	for (let index = entries.length - 1; index >= 0; index--) {
-		const entry = entries[index];
+function collectOriginalUserRequests(entries: SessionEntry[]): OriginalUserRequest[] {
+	const requests: OriginalUserRequest[] = [];
+	for (const entry of entries) {
 		if (entry.type !== "message" || entry.message.role !== "user") continue;
 		const text = getAgentMessageText(entry.message).trim();
-		if (!isExplicitGoalCorrection(text)) continue;
-		const cleaned = text
-			.replace(/^(correction|actually|instead|new goal|updated request)\s*[:,-]?\s*/i, "")
-			.replace(/^change (the )?goal\s*[:,-]?\s*/i, "")
-			.replace(/^do this instead\s*[:,-]?\s*/i, "")
-			.trim();
-		return cleaned || text;
+		if (!text) continue;
+		const kind = classifyUserRequest(text, requests.length);
+		requests.push({
+			id: `request:${entry.id || createStableId("user", `${requests.length}:${text}`)}`,
+			entryId: entry.id,
+			timestamp: entry.timestamp,
+			kind,
+			text,
+			summary: summarizeUserRequest(text),
+		});
 	}
-	return undefined;
+	return requests;
+}
+
+function classifyUserRequest(text: string, userIndex: number): OriginalUserRequest["kind"] {
+	if (isExplicitGoalCorrection(text)) return "correction";
+	return userIndex === 0 ? "request" : "follow_up";
+}
+
+function summarizeUserRequest(text: string): string {
+	const cleaned = stripCorrectionPrefix(text)
+		.split(/\r?\n/)
+		.map((line) => line.trim())
+		.filter((line) => line.length > 0 && !line.startsWith("```"))
+		.slice(0, 4)
+		.join(" ");
+	return capSentence(compactWhitespace(cleaned || text), MAX_REQUEST_SUMMARY_CHARS);
+}
+
+function normalizeCanonicalRequest(text: string): string {
+	const trimmed = text.trim();
+	if (!trimmed) return "";
+	const withoutPrefix = stripCorrectionPrefix(trimmed);
+	const paragraphs = withoutPrefix
+		.split(/\n\s*\n/)
+		.map((paragraph) => compactWhitespace(paragraph.replace(/^#+\s*/, "")))
+		.filter((paragraph) => paragraph.length > 0 && !paragraph.startsWith("```"));
+	const candidate = paragraphs[0] ?? compactWhitespace(withoutPrefix);
+	return capSentence(candidate, MAX_CANONICAL_REQUEST_CHARS);
+}
+
+function stripCorrectionPrefix(text: string): string {
+	return text
+		.replace(/^(correction|actually|instead|new goal|updated request)\s*[:,-]?\s*/i, "")
+		.replace(/^change (the )?goal\s*[:,-]?\s*/i, "")
+		.replace(/^do this instead\s*[:,-]?\s*/i, "")
+		.trim();
+}
+
+function compactWhitespace(text: string): string {
+	return text.replace(/\s+/g, " ").trim();
+}
+
+function capSentence(text: string, maxChars: number): string {
+	if (text.length <= maxChars) return text;
+	const hardLimit = Math.max(20, maxChars - 1);
+	const prefix = text.slice(0, hardLimit);
+	const sentenceBreak = Math.max(prefix.lastIndexOf(". "), prefix.lastIndexOf("! "), prefix.lastIndexOf("? "));
+	const wordBreak = prefix.lastIndexOf(" ");
+	const cutAt =
+		sentenceBreak > Math.floor(maxChars * 0.35) ? sentenceBreak + 1 : wordBreak > 0 ? wordBreak : hardLimit;
+	return `${prefix.slice(0, cutAt).trimEnd()}...`;
 }
 
 function isExplicitGoalCorrection(text: string): boolean {
@@ -483,7 +572,22 @@ function mergeCanonicalRequest(
 		state.canonicalRequest.current = patch.current;
 	}
 	state.canonicalRequest.sourceEntryIds = mergeStringList(state.canonicalRequest.sourceEntryIds, patch.sourceEntryIds);
+	state.canonicalRequest.originalRequests = mergeOriginalRequests(
+		state.canonicalRequest.originalRequests ?? [],
+		patch.originalRequests ?? [],
+	);
 	state.canonicalRequest.superseded = [...state.canonicalRequest.superseded, ...(patch.superseded ?? [])];
+}
+
+function mergeOriginalRequests(
+	existing: OriginalUserRequest[],
+	incoming: OriginalUserRequest[],
+): OriginalUserRequest[] {
+	const byId = new Map(existing.map((request) => [request.id, { ...request }]));
+	for (const request of incoming) {
+		byId.set(request.id, { ...request });
+	}
+	return [...byId.values()].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 }
 
 function mergeConstraints(state: StructuredSessionState, patch: NonNullable<StatePatch["constraints"]>): void {
@@ -659,6 +763,10 @@ function renderPlanStatus(status: PlanStatus): string {
 function renderList(items: string[]): string[] {
 	if (items.length === 0) return ["- (none)"];
 	return items.map((item) => `- ${item}`);
+}
+
+function capPromptLine(text: string, maxChars: number): string {
+	return capSentence(compactWhitespace(text), maxChars);
 }
 
 function capCheckpoint(checkpoint: string, maxTokens: number): string {
