@@ -1,4 +1,4 @@
-import { Agent } from "@earendil-works/pi-agent-core";
+import { Agent, type AgentMessage } from "@earendil-works/pi-agent-core";
 import { type AssistantMessage, getModel, type Usage } from "@earendil-works/pi-ai";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
@@ -142,6 +142,39 @@ describe("AgentSession.getSessionStats", () => {
 			expect(stats.contextUsage).toBeDefined();
 			expect(stats.contextUsage?.tokens).toBe(25_000);
 			expect(stats.contextUsage?.percent).toBe((25_000 / model.contextWindow) * 100);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("reports prompt-projected tool stubs instead of raw trailing tool output", () => {
+		const { session, sessionManager } = createSession();
+
+		try {
+			const longReadOutput = Array.from(
+				{ length: 800 },
+				(_, index) => `doc-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+			).join("\n");
+			const toolResult: AgentMessage = {
+				role: "toolResult",
+				toolCallId: "call-read-doc",
+				toolName: "read",
+				content: [{ type: "text", text: longReadOutput }],
+				isError: false,
+				timestamp: BASE_TIME + 200,
+			};
+
+			sessionManager.appendMessage(createUserMessage("inspect docs", 0));
+			sessionManager.appendMessage(createAssistantMessage("reading docs", 5_000, 100));
+			sessionManager.appendMessage(toolResult);
+			syncAgentMessages(session, sessionManager);
+
+			const usage = session.getContextUsage();
+			expect(usage).toBeDefined();
+			expect(usage?.stubbedToolResults).toContain("tool-result:call-read-doc");
+			expect(usage?.toolStubSavings).toBeGreaterThan(0);
+			expect(usage?.tokens).toBeLessThan(8_000);
+			expect(usage?.tokens).toBeGreaterThanOrEqual(5_000);
 		} finally {
 			session.dispose();
 		}

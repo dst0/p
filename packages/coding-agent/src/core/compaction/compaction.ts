@@ -633,7 +633,7 @@ function createToolResultStubText(stub: ToolResultStub, originalTokens: number, 
 			lines.push(`- ${keyLine}`);
 		}
 	}
-	lines.push(`Retrieve: session_recall("${stub.rawPointer.id}", { includeRaw: true })`);
+	lines.push(`Retrieve: session_recall("${stub.rawPointer.id}", { includeRaw: true, maxTokens: 4000 })`);
 	return lines.join("\n");
 }
 

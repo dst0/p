@@ -176,7 +176,7 @@ describe("AgentSession compaction characterization", () => {
 			structuredState?: unknown;
 		};
 
-		expect(result.summary).toContain("summary from custom stream");
+		expect(result.summary).toContain("<session_checkpoint>");
 		expect(details.audit).toMatchObject({
 			beforeTokens: result.tokensBefore,
 			summaryTokens: expect.any(Number),
@@ -188,9 +188,8 @@ describe("AgentSession compaction characterization", () => {
 		expect(details.markdownSummary).toContain("summary from custom stream");
 		expect(details.structuredState).toMatchObject({
 			version: 1,
-			canonicalRequest: { current: expect.stringContaining("summary from custom stream") },
+			canonicalRequest: { current: expect.any(String) },
 		});
-		expect(result.summary).toContain("<session_checkpoint>");
 		const structuredEntries = harness.sessionManager
 			.getEntries()
 			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
@@ -213,8 +212,11 @@ describe("AgentSession compaction characterization", () => {
 		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
 		expect(compactionEntries).toHaveLength(1);
 		expect(compactionEntries[0].type === "compaction" && (compactionEntries[0] as any).summary).toContain(
-			"auto summary from custom stream",
+			"<session_checkpoint>",
 		);
+		expect(
+			compactionEntries[0].type === "compaction" && (compactionEntries[0] as any).details?.markdownSummary,
+		).toContain("auto summary from custom stream");
 		expect(getStreamCallCount()).toBe(1);
 	});
 
@@ -243,7 +245,41 @@ describe("AgentSession compaction characterization", () => {
 			.join("\n");
 
 		expect(text).toContain("tool-result:call-old");
+		expect(text).toContain("Coverage: complete");
+		expect(text).toContain("do not call session_recall again for this same pointer");
 		expect(text).toContain("secret old failure line");
+	});
+
+	it("returns a larger default excerpt for raw session_recall", async () => {
+		const harness = await createHarness({ initialActiveToolNames: ["session_recall"] });
+		harnesses.push(harness);
+		const longOutput = Array.from(
+			{ length: 180 },
+			(_, index) => `recall-line-${index.toString().padStart(3, "0")} ${"x".repeat(80)}`,
+		).join("\n");
+		harness.sessionManager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-long",
+			toolName: "read",
+			content: [{ type: "text", text: longOutput }],
+			isError: false,
+			timestamp: Date.now(),
+		});
+
+		const recallTool = harness.session.agent.state.tools.find((tool) => tool.name === "session_recall");
+		expect(recallTool).toBeDefined();
+		const result = await recallTool!.execute("recall-raw", {
+			query: "tool-result:call-long",
+			includeRaw: true,
+		});
+		const text = result.content
+			.filter((block): block is { type: "text"; text: string } => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+
+		expect(text).toContain("recall-line-000");
+		expect(text).toContain("recall-line-160");
+		expect(text).toContain("Coverage: truncated");
 	});
 
 	it("previews compaction without mutating session entries", async () => {
@@ -310,8 +346,8 @@ describe("AgentSession compaction characterization", () => {
 
 		// Should have been called multiple times (since 4 * 6000 tokens > 6000 context window)
 		expect(callCount).toBeGreaterThan(1);
-		// The final summary returned should be from the last chunk
-		expect(result.summary).toContain(`summary chunk ${callCount}`);
+		expect(result.summary).toContain("<session_checkpoint>");
+		expect((result.details as { markdownSummary?: string }).markdownSummary).toContain(`summary chunk ${callCount}`);
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {

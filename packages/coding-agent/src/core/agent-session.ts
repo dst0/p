@@ -378,7 +378,9 @@ const SESSION_RECALL_SCHEMA = Type.Object({
 			]),
 		),
 	),
-	maxTokens: Type.Optional(Type.Number({ description: "Maximum returned excerpt tokens; default 1200" })),
+	maxTokens: Type.Optional(
+		Type.Number({ description: "Maximum returned excerpt tokens; default 1200, or 4000 with includeRaw" }),
+	),
 	includeRaw: Type.Optional(Type.Boolean({ description: "Include raw excerpts when available" })),
 });
 
@@ -399,6 +401,9 @@ interface RecallHit {
 	relevance: number;
 	summary: string;
 	excerpt?: string;
+	rawTokens?: number;
+	excerptTokens?: number;
+	truncated?: boolean;
 }
 
 interface RecallResult {
@@ -432,6 +437,8 @@ interface PromptContextPreparation {
 }
 
 const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 2_000;
+const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 1_200;
+const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 4_000;
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
@@ -593,10 +600,17 @@ function formatRecallResult(result: RecallResult): string {
 	}
 	const sections = [`Session recall results for: ${result.query}`];
 	for (const hit of result.hits) {
+		const coverage =
+			hit.excerpt && hit.rawTokens !== undefined && hit.excerptTokens !== undefined
+				? hit.truncated
+					? `  Coverage: truncated (${hit.excerptTokens}/${hit.rawTokens} estimated tokens shown; narrow the query or increase maxTokens up to 4000 if more raw evidence is required)`
+					: `  Coverage: complete (${hit.rawTokens} estimated tokens; do not call session_recall again for this same pointer unless you need a different query)`
+				: undefined;
 		sections.push(
 			[
 				`- ${hit.pointer.id} (${hit.pointer.kind}, relevance ${hit.relevance.toFixed(2)})`,
 				`  Summary: ${hit.summary}`,
+				coverage,
 				hit.excerpt ? `  Excerpt:\n${hit.excerpt}` : undefined,
 			]
 				.filter((line): line is string => line !== undefined)
@@ -2320,19 +2334,31 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
-		let promptContext = stubToolResultsForPrompt(messages, settings);
+		const livePromptSettings = {
+			...settings,
+			toolResultKeepRecentCount: 0,
+			toolResultClearThresholdTokens: Math.min(
+				settings.toolResultClearThresholdTokens,
+				LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS,
+			),
+			toolResultPromptBudgetTokens: Math.min(
+				settings.toolResultPromptBudgetTokens,
+				LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS,
+			),
+		};
+		let promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
 		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
 		const budget = createContextBudgetReport(initialEstimate.tokens, contextWindow, settings);
 		const pressureThreshold = Math.max(settings.targetContextTokens * 1.5, budget.triggerThreshold);
 		if (contextWindow > 0 && initialEstimate.tokens > pressureThreshold) {
 			promptContext = stubToolResultsForPrompt(messages, {
-				...settings,
+				...livePromptSettings,
 				toolResultKeepRecentCount: 0,
 				toolResultClearThresholdTokens: Math.min(
-					settings.toolResultClearThresholdTokens,
+					livePromptSettings.toolResultClearThresholdTokens,
 					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
 				),
-				toolResultPromptBudgetTokens: Math.min(settings.toolResultPromptBudgetTokens ?? 8000, 4000),
+				toolResultPromptBudgetTokens: Math.min(livePromptSettings.toolResultPromptBudgetTokens, 4000),
 			});
 		}
 		const pressureEstimate =
@@ -2523,9 +2549,9 @@ export class AgentSession {
 			description:
 				"Retrieve bounded snippets from older session history by pointer id or query. Use this when tool results were stubbed or exact old evidence is needed.",
 			promptSnippet:
-				"session_recall(query, options): retrieve bounded snippets from old session history by pointer id or search query",
+				"session_recall(query, options): retrieve bounded snippets from old session history by pointer id or search query. For stubbed tool output, use { includeRaw: true, maxTokens: 4000 }.",
 			promptGuidelines: [
-				"When a tool result is stubbed, call session_recall with its raw pointer before relying on omitted raw output.",
+				"When a tool result is stubbed, call session_recall with its raw pointer and { includeRaw: true, maxTokens: 4000 } before rereading the same file or relying on omitted raw output.",
 			],
 			parameters: SESSION_RECALL_SCHEMA,
 			executionMode: "parallel",
@@ -2661,7 +2687,8 @@ export class AgentSession {
 	}
 
 	private _recallSessionEvidence(params: SessionRecallInput): RecallResult {
-		const maxTokens = Math.max(1, Math.min(params.maxTokens ?? 1200, 4000));
+		const defaultMaxTokens = params.includeRaw ? 4000 : 1200;
+		const maxTokens = Math.max(1, Math.min(params.maxTokens ?? defaultMaxTokens, 4000));
 		const kindFilter = params.kind ? new Set<EvidenceKind>(params.kind) : undefined;
 		const scored = this._collectRecallCandidates()
 			.filter((candidate) => !kindFilter || kindFilter.has(candidate.pointer.kind))
@@ -2676,16 +2703,22 @@ export class AgentSession {
 		let remainingTokens = maxTokens;
 		for (const item of scored.slice(0, 8)) {
 			const rawText = params.includeRaw ? item.candidate.rawText : undefined;
+			const rawTokens = rawText !== undefined ? estimateTextTokens(rawText) : undefined;
 			const excerpt =
-				rawText && remainingTokens > 0 ? capTextByTokens(rawText, Math.min(remainingTokens, 1500)) : undefined;
-			if (excerpt) {
-				remainingTokens -= Math.ceil(excerpt.length / 4);
+				rawText !== undefined && remainingTokens > 0 ? capTextByTokens(rawText, remainingTokens) : undefined;
+			const excerptTokens = excerpt !== undefined ? estimateTextTokens(excerpt) : undefined;
+			const truncated = rawTokens !== undefined ? rawTokens > remainingTokens : undefined;
+			if (rawTokens !== undefined) {
+				remainingTokens -= Math.min(rawTokens, remainingTokens);
 			}
 			hits.push({
 				pointer: item.candidate.pointer,
 				relevance: item.relevance,
 				summary: item.candidate.pointer.summary,
 				excerpt,
+				rawTokens,
+				excerptTokens,
+				truncated,
 			});
 			if (remainingTokens <= 0) break;
 		}
@@ -3068,7 +3101,7 @@ export class AgentSession {
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		const providerEstimate = estimateContextTokens(messages, this.systemPrompt);
+		const providerEstimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
 		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
 		const estimateSource = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
 
@@ -4309,7 +4342,7 @@ export class AgentSession {
 		const settings = this.settingsManager.getCompactionSettings();
 		const effectiveMessages = this._getEffectiveCompactedMessages();
 		const promptContext = this._preparePromptContext(effectiveMessages);
-		const providerEstimate = estimateContextTokens(effectiveMessages, this.systemPrompt);
+		const providerEstimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
 		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
 		const source = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);

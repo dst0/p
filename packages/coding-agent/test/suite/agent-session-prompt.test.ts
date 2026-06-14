@@ -118,6 +118,51 @@ describe("AgentSession prompt characterization", () => {
 		expect(getMessageText(rawToolResult)).toContain("raw-line-0000");
 	});
 
+	it("stubs recent long tool results before prompt pressure", async () => {
+		const harness = await createPromptHarness({
+			models: [{ id: "large-context", contextWindow: 65_536, maxTokens: 1000 }],
+			settings: {
+				compaction: {
+					enabled: true,
+					triggerReserveTokens: 16_384,
+					triggerRatio: 0.75,
+					targetContextTokens: 12_000,
+				},
+			},
+		});
+		harnesses.push(harness);
+		const longOutput = Array.from(
+			{ length: 360 },
+			(_, index) => `doc-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+		).join("\n");
+		const rawToolResult: AgentMessage = {
+			role: "toolResult",
+			toolCallId: "call-read-doc",
+			toolName: "read",
+			content: [{ type: "text", text: longOutput }],
+			isError: false,
+			timestamp: Date.now() - 1000,
+		};
+		harness.session.agent.state.messages = [
+			{ role: "user", content: [{ type: "text", text: "read the architecture doc" }], timestamp: Date.now() - 3000 },
+			rawToolResult,
+		];
+		let providerPromptText = "";
+		harness.setResponses([
+			(context) => {
+				providerPromptText = context.messages.map(getMessageText).join("\n");
+				return fauxAssistantMessage("bounded");
+			},
+		]);
+
+		await harness.session.prompt("continue");
+
+		expect(providerPromptText).toContain("[Tool result stubbed");
+		expect(providerPromptText).toContain('session_recall("tool-result:call-read-doc"');
+		expect(providerPromptText).not.toContain("doc-line-0100");
+		expect(getMessageText(rawToolResult)).toContain("doc-line-0000");
+	});
+
 	it("handles a tool call turn and waits for the follow-up LLM response", async () => {
 		const toolRuns: string[] = [];
 		const echoTool: AgentTool = {

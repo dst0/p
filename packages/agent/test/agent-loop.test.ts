@@ -85,6 +85,15 @@ function createUserMessage(text: string): UserMessage {
 	};
 }
 
+function getAssistantText(message: AssistantMessage | undefined): string {
+	return (
+		message?.content
+			.filter((block): block is { type: "text"; text: string } => block.type === "text")
+			.map((block) => block.text)
+			.join("\n") ?? ""
+	);
+}
+
 // Simple identity converter for tests - just passes through standard messages
 function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
@@ -473,6 +482,11 @@ describe("agentLoop with AgentMessage", () => {
 		expect(assistantEnd?.message.content.some((block) => block.type === "toolCall" && block.name === "echo")).toBe(
 			true,
 		);
+		expect(getAssistantText(assistantEnd?.message)).toContain("I should call a tool.");
+		expect(getAssistantText(assistantEnd?.message)).not.toContain("<tool_call>");
+		expect(getAssistantText(context.messages.find((message) => message.role === "assistant"))).not.toContain(
+			"<tool_call>",
+		);
 		expect(callIndex).toBe(2);
 	});
 
@@ -533,6 +547,8 @@ describe("agentLoop with AgentMessage", () => {
 
 		const toolResult = events.find(isToolResultMessageEnd);
 		expect(toolResult?.message.isError).toBe(true);
+		const assistantEnd = events.find(isAssistantMessageEnd);
+		expect(getAssistantText(assistantEnd?.message)).not.toContain("<tool_call>");
 		expect(callIndex).toBe(2);
 	});
 
