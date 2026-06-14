@@ -7,6 +7,10 @@
 - Added compact interactive footer progress for queued messages, prefill percentage, and generation tokens/rate, controlled by `terminal.showTokenProgress`.
 - Added Explicit Completion Protocol as the default coding-agent completion mode, including the `finish_work` terminal tool, `--completion-mode`, settings support, prompt instructions, and print-mode output from the terminal payload.
 
+### Fixed
+
+- Fixed structured compaction checkpoints to preserve the original user request when the summary model emits a placeholder goal.
+
 ## [0.79.3] - 2026-06-13
 
 ### Fixed

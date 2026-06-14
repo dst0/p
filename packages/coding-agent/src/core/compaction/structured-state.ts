@@ -310,9 +310,13 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 	const summaryGoal = extractSection(input.summary, "Goal").trim();
 	const originalRequests = collectOriginalUserRequests(input.entries);
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
+	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
+	const normalizedSummaryGoal = normalizeCanonicalRequest(summaryGoal);
 	const goal =
-		normalizeCanonicalRequest(latestCorrection?.summary ?? summaryGoal) ||
+		normalizeCanonicalRequest(latestCorrection?.summary ?? "") ||
+		(isPlaceholderGoal(normalizedSummaryGoal) ? "" : normalizedSummaryGoal) ||
 		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
+		normalizeCanonicalRequest(latestRequest?.summary ?? "") ||
 		createPlainSummaryFallback(input.summary);
 	const planItems = extractPlanItems(input.summary, sourceEntryIds);
 	const progress = extractProgress(input.summary);
@@ -373,6 +377,14 @@ function createPlainSummaryFallback(summary: string): string {
 			.filter((line) => line.length > 0)
 			.slice(0, 6)
 			.join(" "),
+	);
+}
+
+function isPlaceholderGoal(goal: string): boolean {
+	if (!goal) return true;
+	return (
+		/^(awaiting|waiting for) (initial )?user (prompt|input|request)\b/i.test(goal) ||
+		/^no conversation provided\b/i.test(goal)
 	);
 }
 

@@ -421,6 +421,33 @@ describe("structured session state", () => {
 		expect(checkpoint).not.toContain("Requirement 199");
 		expect(checkpoint.length).toBeLessThan(180 * 4 + 120);
 	});
+
+	it("falls back to preserved user intent when compaction emits a placeholder goal", () => {
+		const request =
+			"Read the repository context, inspect package.json and packages layout, then identify the repo and verification command.";
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage(request)),
+			createMessageEntry(
+				createAssistantMessage("Completed the repository context probe.", createMockUsage(1000, 100)),
+			),
+		];
+
+		const state = createStructuredSessionState({
+			sessionId: "session-placeholder-goal",
+			summary: [
+				"## Goal",
+				"Awaiting initial user prompt to define the goal.",
+				"## Progress",
+				"### Done",
+				"- Completed the repository context probe.",
+			].join("\n"),
+			entries,
+		});
+
+		expect(state.canonicalRequest.current).toContain("Read the repository context");
+		expect(state.canonicalRequest.current).not.toContain("Awaiting initial user prompt");
+		expect(state.canonicalRequest.originalRequests[0].text).toBe(request);
+	});
 });
 
 describe("getLastAssistantUsage", () => {
