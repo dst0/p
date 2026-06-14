@@ -347,6 +347,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				websocketConnectTimeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+				maxTokens: options?.maxTokens ?? 16384,
 				headers: mergeProviderAttributionHeaders(
 					model,
 					settingsManager,
