@@ -66,6 +66,7 @@ export interface SettingsConfig {
 	autocompleteMaxVisible: number;
 	quietStartup: boolean;
 	defaultProjectTrust: DefaultProjectTrust;
+	enableToolResultContextExtraction: boolean;
 	clearOnShrink: boolean;
 	showTerminalProgress: boolean;
 	showTokenProgress: boolean;
@@ -96,6 +97,7 @@ export interface SettingsCallbacks {
 	onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
 	onQuietStartupChange: (enabled: boolean) => void;
 	onDefaultProjectTrustChange: (defaultProjectTrust: DefaultProjectTrust) => void;
+	onEnableToolResultContextExtractionChange: (enabled: boolean) => void;
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onShowTokenProgressChange: (enabled: boolean) => void;
@@ -297,6 +299,13 @@ export class SettingsSelectorComponent extends Container {
 				description: "Fallback behavior when no extension or saved trust decision decides project trust",
 				currentValue: DEFAULT_PROJECT_TRUST_LABELS[config.defaultProjectTrust],
 				values: Object.values(DEFAULT_PROJECT_TRUST_LABELS),
+			},
+			{
+				id: "tool-result-extraction",
+				label: "Tool result extraction",
+				description: "Extract summaries from large tool results via a fast service model (adds latency)",
+				currentValue: config.enableToolResultContextExtraction ? "true" : "false",
+				values: ["true", "false"],
 			},
 			{
 				id: "double-escape-action",
@@ -548,6 +557,10 @@ export class SettingsSelectorComponent extends Container {
 						if (defaultProjectTrust) {
 							callbacks.onDefaultProjectTrustChange(defaultProjectTrust);
 						}
+						break;
+					}
+					case "tool-result-extraction": {
+						callbacks.onEnableToolResultContextExtractionChange(newValue === "true");
 						break;
 					}
 					case "double-escape-action":

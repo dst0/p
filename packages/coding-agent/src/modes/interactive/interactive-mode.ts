@@ -4054,6 +4054,7 @@ export class InteractiveMode {
 					editorPaddingX: this.settingsManager.getEditorPaddingX(),
 					autocompleteMaxVisible: this.settingsManager.getAutocompleteMaxVisible(),
 					quietStartup: this.settingsManager.getQuietStartup(),
+					enableToolResultContextExtraction: this.settingsManager.isToolResultContextExtractionEnabled(),
 					clearOnShrink: this.settingsManager.getClearOnShrink(),
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					showTokenProgress: this.settingsManager.getShowTokenProgress(),
@@ -4147,6 +4148,9 @@ export class InteractiveMode {
 					},
 					onDefaultProjectTrustChange: (defaultProjectTrust) => {
 						this.settingsManager.setDefaultProjectTrust(defaultProjectTrust);
+					},
+					onEnableToolResultContextExtractionChange: (enabled) => {
+						this.settingsManager.setToolResultContextExtractionEnabled(enabled);
 					},
 					onDoubleEscapeActionChange: (action) => {
 						this.settingsManager.setDoubleEscapeAction(action);

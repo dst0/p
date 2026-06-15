@@ -107,6 +107,7 @@ export interface Settings {
 	followUpMode?: "all" | "one-at-a-time";
 	completionMode?: CompletionMode; // default: "explicit_finish"
 	completionLimits?: CompletionProtocolLimits;
+	enableToolResultContextExtraction?: boolean; // default: false - extract summaries from large tool results via service model
 	theme?: string;
 	compaction?: CompactionSettings;
 	branchSummary?: BranchSummarySettings;
@@ -759,7 +760,7 @@ export class SettingsManager {
 
 	getCompletionMode(): CompletionMode {
 		const mode = this.settings.completionMode;
-		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "explicit_finish";
+		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "implicit";
 	}
 
 	getCompletionLimits(): CompletionProtocolLimits | undefined {
@@ -825,6 +826,15 @@ export class SettingsManager {
 
 	getCompactionEnabled(): boolean {
 		return this.settings.compaction?.enabled ?? true;
+	}
+
+	isToolResultContextExtractionEnabled(): boolean {
+		return this.settings.enableToolResultContextExtraction ?? false;
+	}
+
+	setToolResultContextExtractionEnabled(enabled: boolean): void {
+		this.globalSettings.enableToolResultContextExtraction = enabled;
+		this.markModified("enableToolResultContextExtraction", String(enabled));
 	}
 
 	setCompactionEnabled(enabled: boolean): void {

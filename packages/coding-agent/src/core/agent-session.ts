@@ -835,6 +835,10 @@ export class AgentSession {
 		contextMessages: AgentMessage[],
 		signal?: AbortSignal,
 	): Promise<ToolResultContextExtract | undefined> {
+		if (!this.settingsManager.isToolResultContextExtractionEnabled()) {
+			return undefined;
+		}
+
 		if (isRecord(details) && isRecord(details.contextExtract)) {
 			return undefined;
 		}

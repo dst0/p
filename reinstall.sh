@@ -13,5 +13,5 @@ echo "=== Globally Relinking Pi CLI ==="
 (cd "$SCRIPT_DIR/packages/coding-agent" && npm link --ignore-scripts)
 
 echo "=== Verification ==="
-pi --version
-echo "Reinstallation completed successfully."
+"$SCRIPT_DIR/packages/coding-agent/dist/cli.js" --version
+echo "Done. Use 'mypi' alias (in ~/.zshrc) or the path above."
