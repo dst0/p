@@ -13,6 +13,7 @@ import type {
 import { calculateCost, clampThinkingLevel } from "../models.ts";
 import type {
 	AssistantMessage,
+	AssistantMessageEvent,
 	CacheRetention,
 	Context,
 	ImageContent,
@@ -74,6 +75,40 @@ function isImageContentBlock(block: { type: string }): block is ImageContent {
 	return block.type === "image";
 }
 
+function readFiniteNumber(fields: Record<string, unknown>, ...names: string[]): number | undefined {
+	for (const name of names) {
+		const value = fields[name];
+		if (typeof value === "number" && Number.isFinite(value)) {
+			return value;
+		}
+	}
+	return undefined;
+}
+
+type ProgressChunk = Extract<AssistantMessageEvent, { type: "prefill_progress" | "gen_progress" }>;
+
+function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage): ProgressChunk | undefined {
+	const fields = chunk as ChatCompletionChunk & Record<string, unknown>;
+	if (fields.type === "prefill_progress") {
+		return {
+			type: "prefill_progress",
+			elapsedMs: readFiniteNumber(fields, "elapsedMs", "elapsed_ms") ?? 0,
+			percent: readFiniteNumber(fields, "percent"),
+			tokensPerSecond: readFiniteNumber(fields, "tokensPerSecond", "tokens_per_second"),
+			partial: output,
+		};
+	}
+	if (fields.type === "gen_progress") {
+		return {
+			type: "gen_progress",
+			tokens: readFiniteNumber(fields, "tokens") ?? 0,
+			tokensPerSecond: readFiniteNumber(fields, "tokensPerSecond", "tokens_per_second") ?? 0,
+			partial: output,
+		};
+	}
+	return undefined;
+}
+
 export interface OpenAICompletionsOptions extends StreamOptions {
 	toolChoice?: "auto" | "none" | "required" | { type: "function"; function: { name: string } };
 	reasoningEffort?: "minimal" | "low" | "medium" | "high" | "xhigh";
@@ -96,6 +131,10 @@ type ChatCompletionTextPartWithCacheControl = ChatCompletionContentPartText & {
 
 type ChatCompletionToolWithCacheControl = OpenAI.Chat.Completions.ChatCompletionTool & {
 	cache_control?: OpenAICompatCacheControl;
+};
+
+type OpenAICompletionsProgressParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
+	return_progress: true;
 };
 
 function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
@@ -146,7 +185,10 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 			let params = buildParams(model, context, options, compat, cacheRetention);
 			const nextParams = await options?.onPayload?.(params, model);
 			if (nextParams !== undefined) {
-				params = nextParams as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming;
+				params = {
+					...(nextParams as OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming),
+					return_progress: true,
+				};
 			}
 			const requestOptions = {
 				...(options?.signal ? { signal: options.signal } : {}),
@@ -273,6 +315,13 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				if (typeof chunk.model === "string" && chunk.model.length > 0 && chunk.model !== model.id) {
 					output.responseModel ||= chunk.model;
 				}
+
+				const progressEvent = parseProgressChunk(chunk, output);
+				if (progressEvent) {
+					stream.push(progressEvent);
+					continue;
+				}
+
 				if (chunk.usage) {
 					output.usage = parseChunkUsage(chunk.usage, model);
 				}
@@ -503,10 +552,11 @@ function buildParams(
 	const messages = convertMessages(model, context, compat);
 	const cacheControl = getCompatCacheControl(compat, cacheRetention);
 
-	const params: OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming = {
+	const params: OpenAICompletionsProgressParams = {
 		model: model.id,
 		messages,
 		stream: true,
+		return_progress: true,
 		prompt_cache_key:
 			(model.baseUrl.includes("api.openai.com") && cacheRetention !== "none") ||
 			(cacheRetention === "long" && compat.supportsLongCacheRetention)
