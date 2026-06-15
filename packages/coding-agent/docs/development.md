@@ -19,6 +19,12 @@ Run from source:
 
 The script can be run from any directory. Pi keeps the caller's current working directory.
 
+For a quicker alias during local development, add to `~/.zshrc`:
+
+```bash
+alias mypi='/path/to/pi-mono/packages/coding-agent/dist/cli.js'
+```
+
 ## Forking / Rebranding
 
 Configure via `package.json`:
