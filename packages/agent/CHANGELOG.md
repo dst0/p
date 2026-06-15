@@ -2,17 +2,7 @@
 
 ## [Unreleased]
 
-### Added
-
-- Added Explicit Completion Protocol support with `completionMode`, the built-in terminal `finish_work` tool, retry/watchdog limits, and completion-protocol events.
-
-### Fixed
-
-- Fixed context token estimate to avoid double-counting `staticTokens` in `estimateContextTokens`.
-- Fixed maxTokens to be capped at 16384 to prevent unbounded generation.
-- Fixed structured context runtime recovery and evidence hardening.
-- Fixed goals to be preserved across structured compaction.
-- Fixed compaction context management and live context evidence.
+## [0.79.4] - 2026-06-15
 
 ## [0.79.3] - 2026-06-13
 
