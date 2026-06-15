@@ -27,6 +27,17 @@ function formatTokens(count: number): string {
 	return `${Math.round(count / 1000000)}M`;
 }
 
+/**
+ * Render a compact visual progress bar.
+ * Uses block characters for filled/empty portions.
+ */
+function renderProgressBar(percent: number, barWidth: number): string {
+	const filled = Math.round((percent / 100) * barWidth);
+	const clampedFilled = Math.max(0, Math.min(barWidth, filled));
+	const empty = barWidth - clampedFilled;
+	return "▓".repeat(clampedFilled) + "░".repeat(empty);
+}
+
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
 	if (!home) return cwd;
 
@@ -159,12 +170,13 @@ export class FooterComponent implements Component {
 				const percent = Math.max(0, Math.min(100, Math.round(prefill.percent)));
 				const rate =
 					prefill.tokensPerSecond === undefined ? "" : ` ${Math.max(0, Math.round(prefill.tokensPerSecond))} t/s`;
-				statsParts.push(theme.fg("accent", `${theme.bold("PREFILL")} ${percent}%${rate}`));
+				const bar = renderProgressBar(percent, 10);
+				statsParts.push(theme.fg("accent", `${theme.bold("PREFILL")} ${bar} ${percent}%${rate}`));
 			} else if (gen) {
 				statsParts.push(
 					theme.fg(
 						"accent",
-						`${theme.bold("GEN")} ${formatTokens(gen.tokens)} tok ${gen.tokensPerSecond.toFixed(0)} t/s`,
+						`${theme.bold("GEN")} ▸ ${formatTokens(gen.tokens)} tok ${gen.tokensPerSecond.toFixed(0)} t/s`,
 					),
 				);
 			}

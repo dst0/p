@@ -523,11 +523,12 @@ function buildParams(
 		params.store = false;
 	}
 
-	if (options?.maxTokens) {
+	const effectiveMaxTokens = options?.maxTokens ?? model.maxTokens;
+	if (effectiveMaxTokens) {
 		if (compat.maxTokensField === "max_tokens") {
-			(params as any).max_tokens = options.maxTokens;
+			(params as any).max_tokens = effectiveMaxTokens;
 		} else {
-			params.max_completion_tokens = options.maxTokens;
+			params.max_completion_tokens = effectiveMaxTokens;
 		}
 	}
 
