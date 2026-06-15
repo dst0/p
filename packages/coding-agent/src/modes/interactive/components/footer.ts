@@ -38,6 +38,18 @@ function renderProgressBar(percent: number, barWidth: number): string {
 	return "▓".repeat(clampedFilled) + "░".repeat(empty);
 }
 
+/**
+ * Compute a trend indicator for generation speed.
+ * Returns ↑ if speed increased, ↓ if decreased, → if stable, or ▸ for first reading.
+ */
+function computeGenTrend(currentRate: number, previousRate: number | undefined): string {
+	if (previousRate === undefined) return "▸";
+	const diff = currentRate - previousRate;
+	if (diff > 5) return "↑";
+	if (diff < -5) return "↓";
+	return "→";
+}
+
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
 	if (!home) return cwd;
 
@@ -61,6 +73,7 @@ export class FooterComponent implements Component {
 	private showTokenProgress = true;
 	private session: AgentSession;
 	private footerData: ReadonlyFooterDataProvider;
+	private lastGenRate: number | undefined;
 
 	constructor(session: AgentSession, footerData: ReadonlyFooterDataProvider) {
 		this.session = session;
@@ -166,19 +179,27 @@ export class FooterComponent implements Component {
 			const gen = this.footerData.getGenProgress();
 			if (queued) {
 				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
+				this.lastGenRate = undefined;
 			} else if (prefill) {
 				const percent = Math.max(0, Math.min(100, Math.round(prefill.percent)));
 				const rate =
 					prefill.tokensPerSecond === undefined ? "" : ` ${Math.max(0, Math.round(prefill.tokensPerSecond))} t/s`;
-				const bar = renderProgressBar(percent, 10);
+				// Adaptive bar width: estimate available space from terminal width minus known stats
+				const estimatedUsed = visibleWidth(`${statsParts.join(" ")} PREFILL ▓▓▓▓▓▓▓▓▓▓ 100% 9999 t/s `);
+				const availableBarSpace = Math.max(0, width - estimatedUsed);
+				const barWidth = Math.max(8, Math.min(24, availableBarSpace));
+				const bar = renderProgressBar(percent, barWidth);
 				statsParts.push(theme.fg("accent", `${theme.bold("PREFILL")} ${bar} ${percent}%${rate}`));
+				this.lastGenRate = undefined;
 			} else if (gen) {
+				const trend = computeGenTrend(gen.tokensPerSecond, this.lastGenRate);
 				statsParts.push(
 					theme.fg(
 						"accent",
-						`${theme.bold("GEN")} ▸ ${formatTokens(gen.tokens)} tok ${gen.tokensPerSecond.toFixed(0)} t/s`,
+						`${theme.bold("GEN")} ${trend} ${formatTokens(gen.tokens)} tok ${gen.tokensPerSecond.toFixed(0)} t/s`,
 					),
 				);
+				this.lastGenRate = gen.tokensPerSecond;
 			}
 		}
 
