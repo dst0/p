@@ -4,12 +4,26 @@
 
 ### Added
 
+- Added visual progress bar (block characters `▓░`) to prefill footer stats, gated by `terminal.showTokenProgress`.
+- Added streaming indicator (`▸`) to generation stats in footer.
 - Added compact interactive footer progress for queued messages, prefill percentage, and generation tokens/rate, controlled by `terminal.showTokenProgress`.
 - Added Explicit Completion Protocol as the default coding-agent completion mode, including the `finish_work` terminal tool, `--completion-mode`, settings support, prompt instructions, and print-mode output from the terminal payload.
 
 ### Fixed
 
 - Fixed structured compaction checkpoints to preserve the original user request when the summary model emits a placeholder goal.
+- Fixed chunk-split compaction to preserve goal/plan state and use `[]`/`[.]`/`[v]`/`[-]` checkbox markers.
+- Fixed context usage token estimates to account for system prompt and compacted messages accurately.
+- Fixed context compaction to ignore pre-compaction assistant usage in token estimation.
+- Fixed UI context usage displaying `?` after compaction.
+- Fixed mid-turn context overflow detection using `prepareNextTurn` hook.
+- Fixed context overflow to proactively include trailing tool results in estimation.
+- Fixed chunk compaction to dynamically halve and retry on upstream context overflow.
+- Fixed 502 proxy responses to be treated as context overflow and trigger preemptive compaction.
+- Fixed interactive message queue to handle concurrent auto-compaction correctly.
+- Fixed compaction context management and runtime recovery.
+- Fixed live context evidence in structured context runtime.
+- Fixed compaction stubs to apply correctly to provider prompt.
 
 ## [0.79.3] - 2026-06-13
 

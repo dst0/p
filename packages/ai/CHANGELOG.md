@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added default `maxTokens` fallback to `model.maxTokens` in `openai-completions` when caller doesn't specify one.
+
+### Fixed
+
+- Fixed `maxTokens` to default to `model.maxTokens` in `openai-completions` when caller doesn't specify one.
+
 ## [0.79.3] - 2026-06-13
 
 ### Fixed
