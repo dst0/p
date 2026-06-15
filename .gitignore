@@ -40,3 +40,4 @@ plans/
 .pi/hf-sessions-backup/
 collect.sh
 .antigravitycli/
+.pdev/
