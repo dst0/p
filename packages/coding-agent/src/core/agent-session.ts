@@ -384,6 +384,19 @@ const SESSION_RECALL_SCHEMA = Type.Object({
 	includeRaw: Type.Optional(Type.Boolean({ description: "Include raw excerpts when available" })),
 });
 
+const KEEP_CONTEXT_SCHEMA = Type.Object({
+	toolCallId: Type.String({ description: "The ID of the tool call whose result you want to keep or summarize." }),
+	summary: Type.Optional(Type.String({ description: "A concise summary of the relevant parts of the output." })),
+	relevantLines: Type.Optional(
+		Type.Array(Type.String(), { description: "Key lines from the output that should be preserved verbatim." }),
+	),
+	pin: Type.Optional(
+		Type.Boolean({
+			description: "If true, keep the entire raw output in context for as long as possible (use sparingly).",
+		}),
+	),
+});
+
 interface SessionRecallInput {
 	query: string;
 	kind?: EvidenceKind[];
@@ -436,9 +449,9 @@ interface PromptContextPreparation {
 	stubbedToolResults: string[];
 }
 
-const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 2_000;
-const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 1_200;
-const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 4_000;
+const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 8_000;
+const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 32_000;
+const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 64_000;
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
@@ -2340,7 +2353,7 @@ export class AgentSession {
 		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 		const livePromptSettings = {
 			...settings,
-			toolResultKeepRecentCount: 0,
+			toolResultKeepRecentCount: 1,
 			toolResultClearThresholdTokens: Math.min(
 				settings.toolResultClearThresholdTokens,
 				LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS,
@@ -2357,7 +2370,7 @@ export class AgentSession {
 		if (contextWindow > 0 && initialEstimate.tokens > pressureThreshold) {
 			promptContext = stubToolResultsForPrompt(messages, {
 				...livePromptSettings,
-				toolResultKeepRecentCount: 0,
+				toolResultKeepRecentCount: 1,
 				toolResultClearThresholdTokens: Math.min(
 					livePromptSettings.toolResultClearThresholdTokens,
 					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
@@ -2564,6 +2577,54 @@ export class AgentSession {
 				return {
 					content: [{ type: "text", text: formatRecallResult(result) }],
 					details: result,
+				};
+			},
+		};
+	}
+
+	private _createKeepContextToolDefinition(): ToolDefinition<typeof KEEP_CONTEXT_SCHEMA, any> {
+		return {
+			name: "keep_context",
+			label: "Keep Context",
+			description:
+				"Control how a large tool result is preserved in future context. " +
+				"Use this to summarize long outputs or pin important evidence before it gets automatically stubbed.",
+			parameters: KEEP_CONTEXT_SCHEMA,
+			execute: async (_toolCallId, params) => {
+				const input = params as {
+					toolCallId: string;
+					summary?: string;
+					relevantLines?: string[];
+					pin?: boolean;
+				};
+				const message = this.agent.state.messages.find(
+					(m) => m.role === "toolResult" && (m as any).toolCallId === input.toolCallId,
+				) as any | undefined;
+
+				if (!message) {
+					return {
+						content: [{ type: "text", text: `Error: Tool result with ID ${input.toolCallId} not found.` }],
+						details: { error: "not_found" },
+						isError: true,
+					};
+				}
+
+				message.details = {
+					...(isRecord(message.details) ? message.details : {}),
+					contextExtract:
+						input.summary || input.relevantLines
+							? {
+									summary: input.summary || "",
+									relevantLines: input.relevantLines || [],
+									source: "service_model" as const,
+								}
+							: message.details?.contextExtract,
+					keepInContext: input.pin ?? message.details?.keepInContext,
+				};
+
+				return {
+					content: [{ type: "text", text: `Context settings updated for tool result ${input.toolCallId}.` }],
+					details: { status: "updated" },
 				};
 			},
 		};
@@ -3704,6 +3765,7 @@ export class AgentSession {
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
 			session_recall: this._createSessionRecallToolDefinition() as unknown as ToolDefinition,
+			keep_context: this._createKeepContextToolDefinition() as unknown as ToolDefinition,
 			run_subagent: this._createRunSubagentToolDefinition() as unknown as ToolDefinition,
 		};
 
