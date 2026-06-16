@@ -1413,24 +1413,24 @@ export interface ProviderConfig {
 export interface ProviderModelConfig {
 	/** Model ID (e.g., "claude-sonnet-4-20250514"). */
 	id: string;
-	/** Display name (e.g., "Claude 4 Sonnet"). */
-	name: string;
+	/** Display name (defaults to the model ID). */
+	name?: string;
 	/** API type override for this model. */
 	api?: Api;
 	/** API endpoint URL override for this model. */
 	baseUrl?: string;
-	/** Whether the model supports extended thinking. */
-	reasoning: boolean;
+	/** Whether the model supports extended thinking (defaults to false). */
+	reasoning?: boolean;
 	/** Maps pi thinking levels to provider/model-specific values; null marks a level unsupported. */
 	thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
-	/** Supported input types. */
-	input: ("text" | "image")[];
-	/** Cost per token (for tracking, can be 0). */
-	cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
-	/** Maximum context window size in tokens. */
-	contextWindow: number;
-	/** Maximum output tokens. */
-	maxTokens: number;
+	/** Supported input types (defaults to text only). */
+	input?: ("text" | "image")[];
+	/** Cost per token (for tracking, defaults to zero). */
+	cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+	/** Maximum context window size in tokens (defaults to 128000). */
+	contextWindow?: number;
+	/** Maximum output tokens (defaults to 16384). */
+	maxTokens?: number;
 	/** Custom headers for this model. */
 	headers?: Record<string, string>;
 	/** OpenAI compatibility settings. */

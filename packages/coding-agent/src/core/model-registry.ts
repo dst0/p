@@ -209,6 +209,35 @@ const ModelsConfigSchema = Type.Object({
 const validateModelsConfig = Compile(ModelsConfigSchema);
 
 type ModelsConfig = Static<typeof ModelsConfigSchema>;
+type ModelDefinition = Static<typeof ModelDefinitionSchema>;
+
+function getDefaultModelCost(): Model<Api>["cost"] {
+	return { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
+}
+
+function createModelFromDefinition(
+	providerName: string,
+	modelDef: ModelDefinition,
+	api: Api,
+	baseUrl: string,
+	compat: Model<Api>["compat"],
+): Model<Api> {
+	return {
+		id: modelDef.id,
+		name: modelDef.name ?? modelDef.id,
+		api,
+		provider: providerName,
+		baseUrl,
+		reasoning: modelDef.reasoning ?? false,
+		thinkingLevelMap: modelDef.thinkingLevelMap,
+		input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
+		cost: modelDef.cost ?? getDefaultModelCost(),
+		contextWindow: modelDef.contextWindow ?? 128000,
+		maxTokens: modelDef.maxTokens ?? 16384,
+		headers: undefined,
+		compat,
+	} as Model<Api>;
+}
 
 function formatValidationPath(error: TLocalizedValidationError): string {
 	if (error.keyword === "required") {
@@ -592,22 +621,7 @@ export class ModelRegistry {
 				const compat = mergeCompat(providerConfig.compat, modelDef.compat);
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
-				const defaultCost = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 };
-				models.push({
-					id: modelDef.id,
-					name: modelDef.name ?? modelDef.id,
-					api: api as Api,
-					provider: providerName,
-					baseUrl,
-					reasoning: modelDef.reasoning ?? false,
-					thinkingLevelMap: modelDef.thinkingLevelMap,
-					input: (modelDef.input ?? ["text"]) as ("text" | "image")[],
-					cost: modelDef.cost ?? defaultCost,
-					contextWindow: modelDef.contextWindow ?? 128000,
-					maxTokens: modelDef.maxTokens ?? 16384,
-					headers: undefined,
-					compat,
-				} as Model<Api>);
+				models.push(createModelFromDefinition(providerName, modelDef, api as Api, baseUrl, compat));
 			}
 		}
 
@@ -895,21 +909,15 @@ export class ModelRegistry {
 				const api = modelDef.api || config.api;
 				this.storeModelHeaders(providerName, modelDef.id, modelDef.headers);
 
-				this.models.push({
-					id: modelDef.id,
-					name: modelDef.name,
-					api: api as Api,
-					provider: providerName,
-					baseUrl: modelDef.baseUrl ?? config.baseUrl!,
-					reasoning: modelDef.reasoning,
-					thinkingLevelMap: modelDef.thinkingLevelMap,
-					input: modelDef.input as ("text" | "image")[],
-					cost: modelDef.cost,
-					contextWindow: modelDef.contextWindow,
-					maxTokens: modelDef.maxTokens,
-					headers: undefined,
-					compat: modelDef.compat,
-				} as Model<Api>);
+				this.models.push(
+					createModelFromDefinition(
+						providerName,
+						modelDef,
+						api as Api,
+						modelDef.baseUrl ?? config.baseUrl!,
+						modelDef.compat,
+					),
+				);
 			}
 
 			// Apply OAuth modifyModels if credentials exist (e.g., to update baseUrl)
@@ -947,15 +955,15 @@ export interface ProviderConfigInput {
 	oauth?: Omit<OAuthProviderInterface, "id">;
 	models?: Array<{
 		id: string;
-		name: string;
+		name?: string;
 		api?: Api;
 		baseUrl?: string;
-		reasoning: boolean;
+		reasoning?: boolean;
 		thinkingLevelMap?: Model<Api>["thinkingLevelMap"];
-		input: ("text" | "image")[];
-		cost: { input: number; output: number; cacheRead: number; cacheWrite: number };
-		contextWindow: number;
-		maxTokens: number;
+		input?: ("text" | "image")[];
+		cost?: { input: number; output: number; cacheRead: number; cacheWrite: number };
+		contextWindow?: number;
+		maxTokens?: number;
 		headers?: Record<string, string>;
 		compat?: Model<Api>["compat"];
 	}>;
