@@ -177,10 +177,7 @@ export class FooterComponent implements Component {
 			const queued = this.footerData.getQueuedProgress();
 			const prefill = this.footerData.getPrefillProgress();
 			const gen = this.footerData.getGenProgress();
-			if (queued) {
-				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
-				this.lastGenRate = undefined;
-			} else if (prefill) {
+			if (prefill) {
 				const percent = Math.max(0, Math.min(100, Math.round(prefill.percent)));
 				const rate =
 					prefill.tokensPerSecond === undefined ? "" : ` ${Math.max(0, Math.round(prefill.tokensPerSecond))} t/s`;
@@ -200,6 +197,8 @@ export class FooterComponent implements Component {
 					),
 				);
 				this.lastGenRate = gen.tokensPerSecond;
+			} else if (queued) {
+				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
 			}
 		}
 
