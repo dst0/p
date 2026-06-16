@@ -657,7 +657,7 @@ async function* parseSSE(response: Response, signal?: AbortSignal): AsyncGenerat
 					.map((l) => l.slice(5).trim());
 				if (dataLines.length > 0) {
 					const data = dataLines.join("\n").trim();
-					if (data && data !== "[DONE]") {
+					if (data && data !== "[DONE]" && !data.startsWith(":")) {
 						try {
 							yield JSON.parse(data) as Record<string, unknown>;
 						} catch (cause) {
