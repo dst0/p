@@ -628,6 +628,7 @@ async function streamAssistantResponse(
 	let genStartMs: number | null = null;
 	let tokenCount = 0;
 	let lastGenProgressMs: number | null = null;
+	let intervalTokenCount = 0;
 	const GEN_PROGRESS_INTERVAL_MS = 1000;
 
 	for await (const event of response) {
@@ -657,6 +658,7 @@ async function streamAssistantResponse(
 					genStartMs = Date.now();
 					lastGenProgressMs = genStartMs;
 					tokenCount = 0;
+					intervalTokenCount = 0;
 				}
 				// Also emit the normal message_update for the event itself
 				partialMessage = event.partial;
@@ -674,15 +676,16 @@ async function streamAssistantResponse(
 			case "toolcall_delta": {
 				if (genStartMs) {
 					tokenCount++;
+					intervalTokenCount++;
 					const now = Date.now();
 					if (lastGenProgressMs != null && now - lastGenProgressMs >= GEN_PROGRESS_INTERVAL_MS) {
-						const elapsed = (now - genStartMs) / 1000;
-						if (elapsed > 0) {
+						const intervalElapsed = (now - lastGenProgressMs) / 1000;
+						if (intervalElapsed > 0) {
 							await emit({
 								type: "message_update",
 								assistantMessageEvent: {
 									type: "gen_progress",
-									tokensPerSecond: Math.round(tokenCount / elapsed),
+									tokensPerSecond: Math.round(intervalTokenCount / intervalElapsed),
 									tokens: tokenCount,
 									partial: event.partial,
 								} as AssistantMessageEvent,
@@ -690,6 +693,7 @@ async function streamAssistantResponse(
 							});
 						}
 						lastGenProgressMs = now;
+						intervalTokenCount = 0;
 					}
 				}
 				// Also emit the normal message_update for the event itself
