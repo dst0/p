@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
-import { fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
+import { type AssistantMessage, fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
@@ -67,6 +67,24 @@ describe("AgentSession prompt characterization", () => {
 				(message) => message.role === "custom" && message.customType === "pi.project-memory",
 			),
 		).toBe(false);
+	});
+
+	it("reuses provider prompt cache across sequential user prompts", async () => {
+		const harness = await createPromptHarness();
+		harnesses.push(harness);
+		harness.setResponses([fauxAssistantMessage("first done"), fauxAssistantMessage("second done")]);
+
+		await harness.session.prompt("Fix prompt cache reuse");
+		await harness.session.prompt("continue");
+
+		const assistantMessages = harness.session.messages.filter(
+			(message): message is AssistantMessage => message.role === "assistant",
+		);
+		expect(harness.session.agent.sessionId).toBe(harness.session.sessionId);
+		expect(assistantMessages).toHaveLength(2);
+		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+		expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
 	});
 
 	it("sends bounded tool-result context to the provider without mutating raw session history", async () => {
