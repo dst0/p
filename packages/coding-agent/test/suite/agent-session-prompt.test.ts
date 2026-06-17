@@ -61,8 +61,7 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("continue compaction work");
 
-		expect(secondSystemPrompt).toContain("<project_memory>");
-		expect(secondSystemPrompt).toContain("Fix compaction loops");
+		expect(secondSystemPrompt).not.toContain("<project_memory>");
 		expect(
 			harness.session.messages.some(
 				(message) => message.role === "custom" && message.customType === "pi.project-memory",
@@ -100,6 +99,14 @@ describe("AgentSession prompt characterization", () => {
 		harness.session.agent.state.messages = [
 			{ role: "user", content: [{ type: "text", text: "inspect a large file" }], timestamp: Date.now() - 3000 },
 			rawToolResult,
+			{
+				role: "toolResult",
+				toolCallId: "call-read-small",
+				toolName: "read",
+				content: [{ type: "text", text: "small output" }],
+				isError: false,
+				timestamp: Date.now() - 500,
+			},
 		];
 		let providerPromptText = "";
 		harness.setResponses([
@@ -146,6 +153,14 @@ describe("AgentSession prompt characterization", () => {
 		harness.session.agent.state.messages = [
 			{ role: "user", content: [{ type: "text", text: "read the architecture doc" }], timestamp: Date.now() - 3000 },
 			rawToolResult,
+			{
+				role: "toolResult",
+				toolCallId: "call-read-small",
+				toolName: "read",
+				content: [{ type: "text", text: "small output" }],
+				isError: false,
+				timestamp: Date.now() - 500,
+			},
 		];
 		let providerPromptText = "";
 		harness.setResponses([

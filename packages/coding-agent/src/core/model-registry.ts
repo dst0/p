@@ -377,7 +377,7 @@ export class ModelRegistry {
 	}
 
 	static create(authStorage: AuthStorage, modelsJsonPath: string = join(getAgentDir(), "models.json")): ModelRegistry {
-		return new ModelRegistry(authStorage, modelsJsonPath, true);
+		return new ModelRegistry(authStorage, modelsJsonPath);
 	}
 
 	static inMemory(authStorage: AuthStorage): ModelRegistry {

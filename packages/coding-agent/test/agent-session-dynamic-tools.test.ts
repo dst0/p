@@ -43,11 +43,11 @@ describe("AgentSession dynamic tool registration", () => {
 			sessionManager,
 			resourceLoader,
 		});
+		await session.bindExtensions({});
 
-		expect(session.agent.completionMode).toBe("explicit_finish");
+		expect(session.agent.completionMode).toBe("implicit");
 		expect(session.getActiveToolNames()).not.toContain("finish_work");
-		expect(session.systemPrompt).toContain("- finish_work:");
-		expect(session.systemPrompt).toContain("You are operating in explicit completion mode.");
+		expect(session.systemPrompt).not.toContain("- finish_work:");
 
 		session.dispose();
 	});

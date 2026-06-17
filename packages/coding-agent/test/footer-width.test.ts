@@ -173,8 +173,9 @@ describe("FooterComponent width handling", () => {
 		);
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("QUEUED 2");
-		expect(statsLine).not.toContain("PREFILL");
+		expect(statsLine).toContain("PREFILL");
+		expect(statsLine).toContain("42%");
+		expect(statsLine).not.toContain("QUEUED 2");
 		expect(statsLine).not.toContain("GEN");
 	});
 
@@ -183,7 +184,8 @@ describe("FooterComponent width handling", () => {
 		const footer = new FooterComponent(session, createFooterData(1, { prefill: { percent: 42, elapsedMs: 1000 } }));
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("PREFILL 42%");
+		expect(statsLine).toContain("PREFILL");
+		expect(statsLine).toContain("42%");
 	});
 
 	it("shows compact generation progress", () => {
@@ -191,7 +193,8 @@ describe("FooterComponent width handling", () => {
 		const footer = new FooterComponent(session, createFooterData(1, { gen: { tokens: 1234, tokensPerSecond: 56 } }));
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("GEN 1.2k tok 56 t/s");
+		expect(statsLine).toContain("GEN");
+		expect(statsLine).toContain("1.2k tok 56 t/s");
 	});
 
 	it("hides token progress when disabled", () => {

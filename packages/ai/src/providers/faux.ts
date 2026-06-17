@@ -34,6 +34,24 @@ const DEFAULT_USAGE: Usage = {
 	cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 };
 
+function isFauxHiddenRuntimeContextMessage(message: Message): boolean {
+	if (message.role !== "user" || !Array.isArray(message.content)) {
+		return false;
+	}
+	const firstText = message.content.find((part): part is TextContent => part.type === "text");
+	return firstText?.text.startsWith('<pi.runtime_context ephemeral="true">') === true;
+}
+
+function hideFauxRuntimeContext(context: Context): Context {
+	if (!context.messages.some(isFauxHiddenRuntimeContextMessage)) {
+		return context;
+	}
+	return {
+		...context,
+		messages: context.messages.filter((message) => !isFauxHiddenRuntimeContextMessage(message)),
+	};
+}
+
 export interface FauxModelDefinition {
 	id: string;
 	name?: string;
@@ -449,10 +467,11 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
 					return;
 				}
 
+				const fauxContext = hideFauxRuntimeContext(context);
 				const resolved =
-					typeof step === "function" ? await step(context, streamOptions, state, requestModel) : step;
+					typeof step === "function" ? await step(fauxContext, streamOptions, state, requestModel) : step;
 				let message = cloneMessage(resolved, api, provider, requestModel.id);
-				message = withUsageEstimate(message, context, streamOptions, promptCache);
+				message = withUsageEstimate(message, fauxContext, streamOptions, promptCache);
 				await streamWithDeltas(outer, message, minTokenSize, maxTokenSize, tokensPerSecond, streamOptions?.signal);
 			} catch (error) {
 				const message = createErrorMessage(error, api, provider, requestModel.id);

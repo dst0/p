@@ -167,6 +167,14 @@ describe("AgentSession.getSessionStats", () => {
 			sessionManager.appendMessage(createUserMessage("inspect docs", 0));
 			sessionManager.appendMessage(createAssistantMessage("reading docs", 5_000, 100));
 			sessionManager.appendMessage(toolResult);
+			sessionManager.appendMessage({
+				role: "toolResult",
+				toolCallId: "call-latest",
+				toolName: "read",
+				content: [{ type: "text", text: "latest small output" }],
+				isError: false,
+				timestamp: BASE_TIME + 300,
+			});
 			syncAgentMessages(session, sessionManager);
 
 			const usage = session.getContextUsage();

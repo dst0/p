@@ -84,6 +84,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"edit",
 			"find",
 			"grep",
+			"keep_context",
 			"ls",
 			"read",
 			"run_subagent",
