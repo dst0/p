@@ -4,6 +4,7 @@ import { type AutocompleteProvider, CombinedAutocompleteProvider } from "@earend
 import { beforeAll, describe, expect, test, vi } from "vitest";
 import { type Component, Container, type Focusable, TUI } from "../../tui/src/tui.ts";
 import { VirtualTerminal } from "../../tui/test/virtual-terminal.ts";
+import { createInitialStructuredSessionState } from "../src/core/compaction/index.ts";
 import type { AutocompleteProviderFactory } from "../src/core/extensions/types.ts";
 import type { SourceInfo } from "../src/core/source-info.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
@@ -113,6 +114,64 @@ describe("InteractiveMode.showStatus", () => {
 		// adds spacer + text
 		expect(fakeThis.chatContainer.children).toHaveLength(5);
 		expect(renderLastLine(fakeThis.chatContainer)).toContain("STATUS_TWO");
+	});
+});
+
+describe("InteractiveMode.handleStateCommand", () => {
+	beforeAll(() => {
+		initTheme("dark");
+	});
+
+	test("shows prompt total separately from dynamic context tokens", () => {
+		const state = createInitialStructuredSessionState("session-state");
+		state.canonicalRequest.current = "Improve durable session state.";
+		state.progress.next.push("Run targeted tests.");
+		const fakeThis: any = {
+			chatContainer: new Container(),
+			ui: { requestRender: vi.fn() },
+			session: {
+				getSessionStateSnapshot: () => ({
+					sessionId: "session-state",
+					checkpoint: "<session_checkpoint>\nGoal: Improve durable session state.\n</session_checkpoint>",
+					state,
+					contextUsage: {
+						tokens: 0,
+						contextWindow: 65_536,
+						percent: 0,
+						staticTokens: 4_960,
+						triggerThreshold: 49_152,
+						targetContextTokens: 12_000,
+						shouldCompact: false,
+						toolStubSavings: 0,
+						stubbedToolResults: [],
+						tokenBreakdown: {
+							source: "estimated",
+							total: 4_960,
+							systemPrompt: 140,
+							tools: 4_820,
+							rules: 0,
+							memory: 0,
+							repoMap: 0,
+							checkpoint: 0,
+							recentMessages: 0,
+							retrieved: 0,
+							toolRaw: 0,
+							toolStubs: 0,
+						},
+					},
+				}),
+				evaluateGuardrails: () => ({ results: [] }),
+			},
+		};
+
+		(InteractiveMode as any).prototype.handleStateCommand.call(fakeThis);
+
+		const output = normalizeRenderedOutput(fakeThis.chatContainer);
+		expect(output).toContain("Prompt: 4,960/65,536 tokens");
+		expect(output).toContain("Dynamic: 0 tokens");
+		expect(output).toContain("Next:");
+		expect(output).toContain("Run targeted tests.");
+		expect(output).not.toContain("Context: 0/65,536 tokens");
 	});
 });
 

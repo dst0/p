@@ -12,6 +12,7 @@ import {
 	compact,
 	createContextBudgetReport,
 	createInitialStructuredSessionState,
+	createLiveStructuredSessionState,
 	createStructuredSessionState,
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
@@ -447,6 +448,65 @@ describe("structured session state", () => {
 		expect(state.canonicalRequest.current).toContain("Read the repository context");
 		expect(state.canonicalRequest.current).not.toContain("Awaiting initial user prompt");
 		expect(state.canonicalRequest.originalRequests[0].text).toBe(request);
+	});
+
+	it("builds live state from current conversation plan and next steps before compaction", () => {
+		const request = "Review and improve the durable session state command.";
+		const entries: SessionEntry[] = [
+			createMessageEntry(createUserMessage(request)),
+			createMessageEntry(
+				createAssistantMessage(
+					[
+						"I found the issue.",
+						"",
+						"Plan:",
+						"1. Reproduce /state manually.",
+						"2. Patch live structured state.",
+						"3. Verify with tests.",
+						"",
+						"Next Steps:",
+						"1. Run targeted regression tests.",
+						"2. Re-run the tmux smoke.",
+					].join("\n"),
+					createMockUsage(1000, 100),
+				),
+			),
+		];
+
+		const state = createLiveStructuredSessionState({
+			sessionId: "session-live",
+			entries,
+		});
+		const checkpoint = renderStructuredSessionCheckpoint(state, 220);
+
+		expect(state.canonicalRequest.current).toBe(request);
+		expect(state.plan.map((item) => item.text)).toEqual([
+			"Reproduce /state manually.",
+			"Patch live structured state.",
+			"Verify with tests.",
+		]);
+		expect(state.progress.next).toEqual(["Run targeted regression tests.", "Re-run the tmux smoke."]);
+		expect(checkpoint).toContain("Run targeted regression tests.");
+	});
+
+	it("preserves live progress when a later summary omits progress sections", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-progress"), {
+			progress: {
+				current: ["Patch live structured state."],
+				next: ["Run targeted regression tests."],
+			},
+		});
+
+		const state = createStructuredSessionState({
+			sessionId: "session-progress",
+			previous,
+			summary:
+				"## Goal\nImprove durable session state.\n\n## Key Decisions\n- Keep structured state outside prompt context.",
+			entries: [createMessageEntry(createUserMessage("Improve durable session state."))],
+		});
+
+		expect(state.progress.current).toEqual(["Patch live structured state."]);
+		expect(state.progress.next).toEqual(["Run targeted regression tests."]);
 	});
 });
 

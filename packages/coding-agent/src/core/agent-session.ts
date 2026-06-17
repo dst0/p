@@ -50,6 +50,7 @@ import {
 	collectEntriesForBranchSummary,
 	compact,
 	createContextBudgetReport,
+	createLiveStructuredSessionState,
 	createStructuredSessionState,
 	type EvidenceKind,
 	type EvidencePointer,
@@ -2217,8 +2218,10 @@ export class AgentSession {
 
 	getSessionStateSnapshot(): SessionStateSnapshot {
 		const branchEntries = this.sessionManager.getBranch();
-		const state =
-			getLatestStructuredSessionState(branchEntries) ?? this._createLiveStructuredSessionState(branchEntries);
+		const state = this._createLiveStructuredSessionState(
+			branchEntries,
+			getLatestStructuredSessionState(branchEntries),
+		);
 		const settings = this._getEffectiveCompactionSettings();
 		const checkpoint = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
 		const latestCompaction = getLatestCompactionEntry(branchEntries);
@@ -2238,41 +2241,16 @@ export class AgentSession {
 		};
 	}
 
-	private _createLiveStructuredSessionState(branchEntries: SessionEntry[]): StructuredSessionState {
-		const latestUser = this._getLatestUserRequest(branchEntries) ?? this._getLatestUserRequestFromMessages();
-		const summary = latestUser
-			? `## Goal\n${latestUser.text}\n\n## Progress\n### In Progress\n- Continue from the current un-compacted session.\n\n## Next Steps\n1. Continue the user's latest request.`
-			: "## Goal\nContinue the current session.\n\n## Progress\n### In Progress\n- No compacted structured state exists yet.";
-		return createStructuredSessionState({
+	private _createLiveStructuredSessionState(
+		branchEntries: SessionEntry[],
+		previous?: StructuredSessionState,
+	): StructuredSessionState {
+		return createLiveStructuredSessionState({
 			sessionId: this.sessionManager.getSessionId(),
-			summary,
+			previous,
 			entries: branchEntries,
 			timestamp: new Date().toISOString(),
 		});
-	}
-
-	private _getLatestUserRequestFromMessages(): { id: string; text: string } | undefined {
-		for (let index = this.agent.state.messages.length - 1; index >= 0; index--) {
-			const message = this.agent.state.messages[index];
-			if (message.role !== "user") continue;
-			const text = getMessageTextForRecall(message).trim();
-			if (text.length > 0) {
-				return { id: "", text };
-			}
-		}
-		return undefined;
-	}
-
-	private _getLatestUserRequest(branchEntries: SessionEntry[]): { id: string; text: string } | undefined {
-		for (let index = branchEntries.length - 1; index >= 0; index--) {
-			const entry = branchEntries[index];
-			if (entry.type !== "message" || entry.message.role !== "user") continue;
-			const text = getMessageTextForRecall(entry.message).trim();
-			if (text.length > 0) {
-				return { id: entry.id, text };
-			}
-		}
-		return undefined;
 	}
 
 	private _syncProjectMemory(): void {

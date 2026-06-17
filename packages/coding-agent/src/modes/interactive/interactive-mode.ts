@@ -5515,15 +5515,39 @@ export class InteractiveMode {
 		const snapshot = this.session.getSessionStateSnapshot();
 		const context = snapshot.contextUsage;
 		const audit = snapshot.lastCompaction?.audit;
+		const state = snapshot.state;
+		const formatTokens = (value: number | null | undefined) => value?.toLocaleString() ?? "unknown";
+		const formatList = (items: string[], limit = 8) => {
+			if (items.length === 0) return "- (none)";
+			const visible = items.slice(0, limit).map((item) => `- ${item}`);
+			const remaining = items.length - visible.length;
+			return remaining > 0 ? [...visible, `- ... ${remaining} more`].join("\n") : visible.join("\n");
+		};
+		const formatPlan = () => {
+			if (state.plan.length === 0) return "- (none)";
+			const visible = state.plan
+				.slice(0, 10)
+				.map((item) => `- [${item.status}] ${item.text}`)
+				.join("\n");
+			const remaining = state.plan.length - Math.min(state.plan.length, 10);
+			return remaining > 0 ? `${visible}\n- ... ${remaining} more` : visible;
+		};
 		let info = `${theme.bold("Session State")}\n\n`;
 		info += `${theme.fg("dim", "Session:")} ${snapshot.sessionId}\n`;
 		if (context) {
-			const tokens = context.tokens?.toLocaleString() ?? "unknown";
+			const promptTokens = context.tokenBreakdown?.total ?? context.tokens;
+			const promptPercent =
+				typeof promptTokens === "number" && context.contextWindow > 0
+					? ` (${((promptTokens / context.contextWindow) * 100).toFixed(1)}%)`
+					: "";
+			const dynamicPercent = context.percent === null ? "" : ` (${context.percent.toFixed(1)}%)`;
 			const triggerThreshold = context.triggerThreshold?.toLocaleString() ?? "unknown";
 			const targetContextTokens = context.targetContextTokens?.toLocaleString() ?? "unknown";
 			const stubbedToolResults = context.stubbedToolResults?.length ?? 0;
 			const toolStubSavings = context.toolStubSavings ?? 0;
-			info += `${theme.fg("dim", "Context:")} ${tokens}/${context.contextWindow.toLocaleString()} tokens\n`;
+			info += `${theme.fg("dim", "Prompt:")} ${formatTokens(promptTokens)}/${context.contextWindow.toLocaleString()} tokens${promptPercent}\n`;
+			info += `${theme.fg("dim", "Dynamic:")} ${formatTokens(context.tokens)} tokens${dynamicPercent}\n`;
+			info += `${theme.fg("dim", "Static:")} ${context.staticTokens.toLocaleString()} tokens\n`;
 			info += `${theme.fg("dim", "Trigger:")} ${triggerThreshold} tokens\n`;
 			info += `${theme.fg("dim", "Target:")} ${targetContextTokens} tokens\n`;
 			info += `${theme.fg("dim", "Should compact:")} ${context.shouldCompact ? "yes" : "no"}\n`;
@@ -5532,6 +5556,34 @@ export class InteractiveMode {
 				info += `\n${theme.bold("Token Breakdown")}\n${formatTokenBreakdown(context.tokenBreakdown)}\n`;
 			}
 		}
+		info += `\n${theme.bold("Goal")}\n${state.canonicalRequest.current || "(no user request recorded yet)"}\n`;
+		info += `\n${theme.bold("Progress")}\n`;
+		info += `${theme.fg("dim", "Done:")}\n${formatList(state.progress.done, 6)}\n`;
+		info += `${theme.fg("dim", "Current:")}\n${formatList(state.progress.current, 4)}\n`;
+		info += `${theme.fg("dim", "Next:")}\n${formatList(state.progress.next, 6)}\n`;
+		info += `${theme.fg("dim", "Blocked:")}\n${formatList(state.progress.blocked, 4)}\n`;
+		info += `\n${theme.bold("Plan")}\n${formatPlan()}\n`;
+		const activeConstraints = state.constraints.filter((constraint) => constraint.status === "active");
+		if (activeConstraints.length > 0) {
+			info += `\n${theme.bold("Active Constraints")}\n${formatList(
+				activeConstraints.map((constraint) => constraint.text),
+				6,
+			)}\n`;
+		}
+		const activeDecisions = state.decisions.filter((decision) => decision.status === "active");
+		if (activeDecisions.length > 0) {
+			info += `\n${theme.bold("Decisions")}\n${formatList(
+				activeDecisions.map((decision) =>
+					decision.rationale ? `${decision.decision} - ${decision.rationale}` : decision.decision,
+				),
+				6,
+			)}\n`;
+		}
+		info += `\n${theme.bold("Stored Metadata")}\n`;
+		info += `${theme.fg("dim", "Original requests:")} ${state.canonicalRequest.originalRequests.length}\n`;
+		info += `${theme.fg("dim", "Touched files:")} ${state.codebase.touchedFiles.length}\n`;
+		info += `${theme.fg("dim", "Evidence pointers:")} ${state.evidence.length}\n`;
+		info += `${theme.fg("dim", "Compactions:")} ${state.audit.compactionCount}\n`;
 		const guardrails = this.session.evaluateGuardrails("final");
 		const visibleGuardrails = guardrails.results.filter(
 			(result) => !result.ok || result.id === "dirty-worktree-final",

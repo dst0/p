@@ -125,6 +125,13 @@ export interface StructuredStateUpdateInput {
 	timestamp?: string;
 }
 
+export interface LiveStructuredStateInput {
+	sessionId: string;
+	previous?: StructuredSessionState;
+	entries: SessionEntry[];
+	timestamp?: string;
+}
+
 export function createInitialStructuredSessionState(sessionId: string): StructuredSessionState {
 	return {
 		version: STRUCTURED_SESSION_STATE_VERSION,
@@ -187,6 +194,12 @@ export function getLatestStructuredSessionState(entries: SessionEntry[]): Struct
 export function createStructuredSessionState(input: StructuredStateUpdateInput): StructuredSessionState {
 	const previous = input.previous ?? createInitialStructuredSessionState(input.sessionId);
 	const patch = createStatePatchFromSummary(input);
+	return mergeStructuredSessionState(previous, patch);
+}
+
+export function createLiveStructuredSessionState(input: LiveStructuredStateInput): StructuredSessionState {
+	const previous = input.previous ?? createInitialStructuredSessionState(input.sessionId);
+	const patch = createStatePatchFromLiveSession(input);
 	return mergeStructuredSessionState(previous, patch);
 }
 
@@ -285,7 +298,7 @@ export function renderStructuredSessionCheckpoint(state: StructuredSessionState,
 	const knownRisks = state.audit.knownRisks.map((risk) => capPromptLine(risk, 220));
 	const lines = [
 		"<session_checkpoint>",
-		`Goal: ${capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) || "(unknown)"}`,
+		`Goal: ${capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) || "(no user request recorded yet)"}`,
 		`Original requests stored: ${state.canonicalRequest.originalRequests?.length ?? 0}`,
 		"Active constraints:",
 		...renderList(activeConstraints),
@@ -363,10 +376,53 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 	};
 }
 
+function createStatePatchFromLiveSession(input: LiveStructuredStateInput): StatePatch {
+	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
+	const originalRequests = collectOriginalUserRequests(input.entries);
+	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
+	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
+	const goal =
+		normalizeCanonicalRequest(latestCorrection?.summary ?? "") ||
+		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
+		normalizeCanonicalRequest(latestRequest?.summary ?? "");
+	const liveMarkdown = createLiveConversationMarkdown(input.entries);
+	const planItems = extractPlanItems(liveMarkdown, sourceEntryIds);
+	const progress = withLiveProgressFallbacks(extractProgress(liveMarkdown), planItems);
+	const decisions = extractDecisions(liveMarkdown);
+	const evidence = createEvidencePointers({
+		sessionId: input.sessionId,
+		entries: input.entries,
+		summary: liveMarkdown,
+	});
+
+	return {
+		canonicalRequest: goal
+			? {
+					current: goal,
+					sourceEntryIds: mergeStringList(
+						sourceEntryIds,
+						originalRequests.map((request) => request.entryId),
+					),
+					originalRequests,
+				}
+			: originalRequests.length > 0
+				? { sourceEntryIds, originalRequests }
+				: undefined,
+		plan: planItems.length > 0 ? { add: planItems } : undefined,
+		progress,
+		decisions: decisions.length > 0 ? { add: decisions } : undefined,
+		evidence: evidence.length > 0 ? { add: evidence } : undefined,
+	};
+}
+
 function extractSection(markdown: string, heading: string): string {
+	return extractOptionalSection(markdown, heading) ?? "";
+}
+
+function extractOptionalSection(markdown: string, heading: string): string | undefined {
 	const escapedHeading = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = markdown.match(new RegExp(`^##\\s+${escapedHeading}\\s*$([\\s\\S]*?)(?=^##\\s+|(?![\\s\\S]))`, "m"));
-	return match?.[1]?.trim() ?? "";
+	return match?.[1]?.trim();
 }
 
 function createPlainSummaryFallback(summary: string): string {
@@ -484,28 +540,41 @@ function getAgentMessageText(message: AgentMessage): string {
 	return message.summary;
 }
 
-function extractSubsection(markdown: string, section: string, subsection: string): string {
+function extractOptionalSubsection(markdown: string, section: string, subsection: string): string | undefined {
 	const sectionText = extractSection(markdown, section);
 	const escapedSubsection = subsection.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 	const match = sectionText.match(
 		new RegExp(`^###\\s+${escapedSubsection}\\s*$([\\s\\S]*?)(?=^###\\s+|(?![\\s\\S]))`, "m"),
 	);
-	return match?.[1]?.trim() ?? "";
+	return match?.[1]?.trim();
 }
 
 function extractPlanItems(markdown: string, sourceEntryIds: string[]): PlanItem[] {
-	const section = extractSection(markdown, "Plan & Progress");
+	const section = [
+		extractOptionalSection(markdown, "Plan & Progress"),
+		extractOptionalSection(markdown, "Plan"),
+		extractOptionalSection(markdown, "Current Plan"),
+		...extractLooseSections(markdown, ["Plan & Progress", "Plan", "Current Plan"]),
+	]
+		.filter((value): value is string => value !== undefined && value.trim().length > 0)
+		.join("\n");
 	const items: PlanItem[] = [];
+	const seen = new Set<string>();
 	for (const rawLine of section.split("\n")) {
 		const line = rawLine.trim();
-		const match = line.match(/^-\s+\[([ .vx-])\]\s+(.+)$/i);
-		if (!match) continue;
-		const text = match[2].trim();
+		const checkboxMatch = line.match(/^-\s+\[([ .vx-])\]\s+(.+)$/i);
+		const numberedMatch = line.match(/^\d+[.)]\s+(.+)$/);
+		const bulletMatch = line.match(/^-\s+(.+)$/);
+		const text = (checkboxMatch?.[2] ?? numberedMatch?.[1] ?? bulletMatch?.[1] ?? "").trim();
 		if (!text) continue;
+		if (text === "(none)") continue;
+		const id = createStableId("plan", text);
+		if (seen.has(id)) continue;
+		seen.add(id);
 		items.push({
-			id: createStableId("plan", text),
+			id,
 			text,
-			status: parsePlanStatus(match[1]),
+			status: checkboxMatch ? parsePlanStatus(checkboxMatch[1]) : "not_started",
 			evidenceEntryIds: [...sourceEntryIds],
 		});
 	}
@@ -513,26 +582,132 @@ function extractPlanItems(markdown: string, sourceEntryIds: string[]): PlanItem[
 }
 
 function extractProgress(markdown: string): StatePatch["progress"] {
-	const done = extractBulletLines(extractSubsection(markdown, "Progress", "Done"));
-	const current = extractBulletLines(extractSubsection(markdown, "Progress", "In Progress"));
-	const blocked = extractBulletLines(extractSubsection(markdown, "Progress", "Blocked"));
-	const next = extractNumberedLines(extractSection(markdown, "Next Steps"));
-	return { done, current, blocked, next };
+	const done = extractOptionalBulletLines(findProgressBlock(markdown, "Done", ["Done", "Completed"]));
+	const current = extractOptionalBulletLines(findProgressBlock(markdown, "In Progress", ["In Progress", "Current"]));
+	const blocked = extractOptionalBulletLines(findProgressBlock(markdown, "Blocked", ["Blocked", "Blockers"]));
+	const next = extractOptionalNumberedLines(
+		extractOptionalSection(markdown, "Next Steps") ??
+			extractOptionalSection(markdown, "Next Actions") ??
+			joinLooseSections(markdown, ["Next Steps", "Next Actions", "Remaining Work"]),
+	);
+	const progress: NonNullable<StatePatch["progress"]> = {};
+	if (done !== undefined) progress.done = done;
+	if (current !== undefined) progress.current = current;
+	if (blocked !== undefined) progress.blocked = blocked;
+	if (next !== undefined) progress.next = next;
+	return Object.keys(progress).length > 0 ? progress : undefined;
+}
+
+function createLiveConversationMarkdown(entries: SessionEntry[]): string {
+	const messages: string[] = [];
+	for (const entry of entries) {
+		if (entry.type !== "message") continue;
+		if (entry.message.role !== "assistant" && entry.message.role !== "custom") continue;
+		const text = getAgentMessageText(entry.message).trim();
+		if (text) {
+			messages.push(text);
+		}
+	}
+	return messages.slice(-12).join("\n\n");
+}
+
+function withLiveProgressFallbacks(progress: StatePatch["progress"], planItems: PlanItem[]): StatePatch["progress"] {
+	const nextPlanItems = planItems
+		.filter((item) => item.status === "not_started" || item.status === "in_progress")
+		.slice(0, 3)
+		.map((item) => item.text);
+	if (nextPlanItems.length === 0) {
+		return progress;
+	}
+	return {
+		...progress,
+		next: progress?.next !== undefined ? progress.next : nextPlanItems,
+	};
+}
+
+function findProgressBlock(markdown: string, subsection: string, looseHeadings: string[]): string | undefined {
+	return extractOptionalSubsection(markdown, "Progress", subsection) ?? joinLooseSections(markdown, looseHeadings);
+}
+
+function joinLooseSections(markdown: string, headings: string[]): string | undefined {
+	const loose = extractLooseSections(markdown, headings).join("\n").trim();
+	return loose.length > 0 ? loose : undefined;
+}
+
+function extractLooseSections(markdown: string, headings: string[]): string[] {
+	const wanted = new Set(headings.map(normalizeHeadingLabel));
+	const sections: string[] = [];
+	const current: string[] = [];
+	let collecting = false;
+
+	for (const rawLine of markdown.split("\n")) {
+		const heading = parseLooseHeading(rawLine);
+		if (heading) {
+			if (collecting && current.length > 0) {
+				sections.push(current.join("\n").trim());
+			}
+			current.length = 0;
+			collecting = wanted.has(normalizeHeadingLabel(heading));
+			continue;
+		}
+		if (collecting) {
+			current.push(rawLine);
+		}
+	}
+
+	if (collecting && current.length > 0) {
+		sections.push(current.join("\n").trim());
+	}
+
+	return sections.filter((section) => section.length > 0);
+}
+
+function parseLooseHeading(line: string): string | undefined {
+	const trimmed = line.trim();
+	if (!trimmed) return undefined;
+	const markdownMatch = trimmed.match(/^#{1,6}\s+(.+?)\s*$/);
+	if (markdownMatch) return cleanupHeadingLabel(markdownMatch[1]);
+	const boldMatch = trimmed.match(/^\*\*(.+?)\*\*:?\s*$/);
+	if (boldMatch) return cleanupHeadingLabel(boldMatch[1]);
+	const colonMatch = trimmed.match(/^([A-Za-z][A-Za-z0-9 &/_-]{1,80}):\s*$/);
+	if (colonMatch) return cleanupHeadingLabel(colonMatch[1]);
+	return undefined;
+}
+
+function cleanupHeadingLabel(label: string): string {
+	return label.replace(/[*:]+$/g, "").trim();
+}
+
+function normalizeHeadingLabel(label: string): string {
+	return cleanupHeadingLabel(label).toLowerCase().replace(/\s+/g, " ");
 }
 
 function extractDecisions(markdown: string): Decision[] {
-	return extractBulletLines(extractSection(markdown, "Key Decisions")).map((line) => {
+	const decisionText = [
+		extractOptionalSection(markdown, "Key Decisions"),
+		extractOptionalSection(markdown, "Decisions"),
+		...extractLooseSections(markdown, ["Key Decisions", "Decisions"]),
+	]
+		.filter((value): value is string => value !== undefined && value.trim().length > 0)
+		.join("\n");
+	const seen = new Set<string>();
+	const decisions: Decision[] = [];
+	for (const line of extractBulletLines(decisionText)) {
 		const normalized = line.replace(/^\*\*(.*?)\*\*:\s*/, "$1: ");
 		const [decision, ...rationaleParts] = normalized.split(": ");
 		const rationale = rationaleParts.join(": ").trim();
-		return {
-			id: createStableId("decision", normalized),
+		const id = createStableId("decision", normalized);
+		if (seen.has(id)) continue;
+		seen.add(id);
+		decisions.push({
+			id,
 			decision: decision.trim() || normalized,
 			rationale,
 			evidencePointers: [],
 			status: "active",
-		};
-	});
+		});
+	}
+	return decisions;
 }
 
 function createEvidencePointers(input: StructuredStateUpdateInput): EvidencePointer[] {
@@ -630,7 +805,9 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
 			continue;
 		}
 		if (item.status === "done" && item.evidenceEntryIds.length === 0) continue;
-		existing.status = item.status;
+		if (shouldReplacePlanStatus(existing.status, item.status)) {
+			existing.status = item.status;
+		}
 		existing.text = item.text;
 		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, item.evidenceEntryIds);
 	}
@@ -641,9 +818,16 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
 			continue;
 		}
 		if (update.text) existing.text = update.text;
-		if (update.status) existing.status = update.status;
+		if (update.status && shouldReplacePlanStatus(existing.status, update.status)) existing.status = update.status;
 		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);
 	}
+}
+
+function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boolean {
+	if (current === incoming) return true;
+	if (current === "done" && incoming !== "done") return false;
+	if ((current === "blocked" || current === "failed") && incoming === "not_started") return false;
+	return true;
 }
 
 function mergeDecisions(state: StructuredSessionState, patch: NonNullable<StatePatch["decisions"]>): void {
@@ -721,6 +905,10 @@ function mergeStringList(existing: string[], incoming: string[] | undefined): st
 	return result;
 }
 
+function extractOptionalBulletLines(text: string | undefined): string[] | undefined {
+	return text === undefined ? undefined : extractBulletLines(text);
+}
+
 function extractBulletLines(text: string): string[] {
 	return text
 		.split("\n")
@@ -735,11 +923,21 @@ function extractBulletLines(text: string): string[] {
 		.filter((line) => line.length > 0 && line !== "(none)");
 }
 
+function extractOptionalNumberedLines(text: string | undefined): string[] | undefined {
+	return text === undefined ? undefined : extractNumberedLines(text);
+}
+
 function extractNumberedLines(text: string): string[] {
 	return text
 		.split("\n")
 		.map((line) => line.trim())
-		.map((line) => line.replace(/^\d+\.\s+/, "").trim())
+		.map((line) => {
+			const numbered = line.match(/^\d+[.)]\s+(.+)$/);
+			if (numbered) return numbered[1].trim();
+			const bullet = line.match(/^-\s+(.+)$/);
+			if (bullet) return bullet[1].trim();
+			return line;
+		})
 		.filter((line) => line.length > 0 && line !== "(none)");
 }
 
