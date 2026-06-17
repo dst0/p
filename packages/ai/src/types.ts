@@ -66,6 +66,8 @@ export type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 export type ModelThinkingLevel = "off" | ThinkingLevel;
 export type ThinkingLevelMap = Partial<Record<ModelThinkingLevel, string | null>>;
 
+export type ModelSwitchPhase = "starting" | "unloading" | "loading" | "complete";
+
 /** Token budgets for each thinking level (token-based providers only) */
 export interface ThinkingBudgets {
 	minimal?: number;
@@ -376,6 +378,14 @@ export type AssistantMessageEvent =
 			partial: AssistantMessage;
 	  }
 	| { type: "gen_progress"; tokensPerSecond: number; tokens: number; partial: AssistantMessage }
+	| {
+			type: "model_switch_progress";
+			phase: ModelSwitchPhase;
+			fromModel: string;
+			toModel: string;
+			partial: AssistantMessage;
+	  }
+	| { type: "loading_progress"; model: string; partial: AssistantMessage }
 	| { type: "done"; reason: Extract<StopReason, "stop" | "length" | "toolUse">; message: AssistantMessage }
 	| { type: "error"; reason: Extract<StopReason, "aborted" | "error">; error: AssistantMessage };
 

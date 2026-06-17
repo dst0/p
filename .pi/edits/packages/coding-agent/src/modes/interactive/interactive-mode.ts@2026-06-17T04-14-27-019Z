@@ -2879,15 +2879,13 @@ export class InteractiveMode {
 						this.footerDataProvider.setLoadingProgress({
 							model: event.assistantMessageEvent.model,
 						});
-					} else if (
+					}} else if (
 						event.assistantMessageEvent?.type === "text_start" ||
 						event.assistantMessageEvent?.type === "thinking_start" ||
 						event.assistantMessageEvent?.type === "toolcall_start"
 					) {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress({ tokensPerSecond: 0, tokens: 0 });
-						this.footerDataProvider.setModelSwitchProgress(undefined);
-						this.footerDataProvider.setLoadingProgress(undefined);
 					}
 
 					for (const content of this.streamingMessage.content) {

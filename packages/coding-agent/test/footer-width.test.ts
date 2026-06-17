@@ -80,6 +80,8 @@ function createFooterData(
 		getPrefillProgress: () => progress.prefill,
 		getGenProgress: () => progress.gen,
 		getQueuedProgress: () => progress.queued,
+		getModelSwitchProgress: () => undefined,
+		getLoadingProgress: () => undefined,
 		onBranchChange: (callback: () => void) => {
 			void callback;
 			return () => {};

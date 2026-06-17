@@ -197,8 +197,19 @@ export class FooterComponent implements Component {
 					),
 				);
 				this.lastGenRate = gen.tokensPerSecond;
-			} else if (queued) {
+			}
+			if (queued) {
 				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
+			}
+			const modelSwitch = this.footerData.getModelSwitchProgress();
+			if (modelSwitch) {
+				statsParts.push(
+					theme.fg("warning", `${theme.bold("SWITCHING")} ${modelSwitch.fromModel} → ${modelSwitch.toModel}`),
+				);
+			}
+			const loading = this.footerData.getLoadingProgress();
+			if (loading) {
+				statsParts.push(theme.fg("warning", `${theme.bold("LOADING")} ${loading.model}`));
 			}
 		}
 

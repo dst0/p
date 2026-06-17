@@ -17,19 +17,19 @@ function matchesHost(baseUrl: string, expectedHost: string): boolean {
 }
 
 function isOpenRouterModel(model: Model<Api>): boolean {
-	return model.provider === "openrouter" || model.baseUrl.includes(OPENROUTER_HOST);
+	return model.provider === "openrouter" || (model.baseUrl?.includes(OPENROUTER_HOST) ?? false);
 }
 
 function isNvidiaNimModel(model: Model<Api>): boolean {
-	return model.provider === "nvidia" || matchesHost(model.baseUrl, NVIDIA_NIM_HOST);
+	return model.provider === "nvidia" || (model.baseUrl ? matchesHost(model.baseUrl, NVIDIA_NIM_HOST) : false);
 }
 
 function isCloudflareModel(model: Model<Api>): boolean {
 	return (
 		model.provider === "cloudflare-workers-ai" ||
 		model.provider === "cloudflare-ai-gateway" ||
-		matchesHost(model.baseUrl, CLOUDFLARE_API_HOST) ||
-		matchesHost(model.baseUrl, CLOUDFLARE_AI_GATEWAY_HOST)
+		(model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_API_HOST) : false) ||
+		(model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_AI_GATEWAY_HOST) : false)
 	);
 }
 
@@ -69,7 +69,7 @@ function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Re
 	if (
 		model.provider !== "opencode" &&
 		model.provider !== "opencode-go" &&
-		!matchesHost(model.baseUrl, OPENCODE_HOST)
+		!(model.baseUrl ? matchesHost(model.baseUrl, OPENCODE_HOST) : false)
 	) {
 		return undefined;
 	}

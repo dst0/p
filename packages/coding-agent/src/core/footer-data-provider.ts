@@ -24,6 +24,15 @@ export type QueuedProgress = {
 	messages: number;
 };
 
+export type ModelSwitchProgress = {
+	fromModel: string;
+	toModel: string;
+};
+
+export type LoadingProgress = {
+	model: string;
+};
+
 /**
  * Find git metadata paths by walking up from cwd.
  * Handles both regular git repos (.git is a directory) and worktrees (.git is a file).
@@ -119,6 +128,8 @@ export class FooterDataProvider {
 	private prefillProgress?: PrefillProgress;
 	private genProgress?: GenerationProgress;
 	private queuedProgress?: QueuedProgress;
+	private modelSwitchProgress?: ModelSwitchProgress;
+	private loadingProgress?: LoadingProgress;
 	private cachedBranch: string | null | undefined = undefined;
 	private gitPaths: GitPaths | null | undefined = undefined;
 	private headWatcher: FSWatcher | null = null;
@@ -167,6 +178,14 @@ export class FooterDataProvider {
 		return this.queuedProgress;
 	}
 
+	getModelSwitchProgress(): ModelSwitchProgress | undefined {
+		return this.modelSwitchProgress;
+	}
+
+	getLoadingProgress(): LoadingProgress | undefined {
+		return this.loadingProgress;
+	}
+
 	/** Subscribe to git branch changes. Returns unsubscribe function. */
 	onBranchChange(callback: () => void): () => void {
 		this.branchChangeCallbacks.add(callback);
@@ -206,10 +225,24 @@ export class FooterDataProvider {
 		this.notifyProgressChange();
 	}
 
+	/** Internal: set model switch progress */
+	setModelSwitchProgress(progress: ModelSwitchProgress | undefined): void {
+		this.modelSwitchProgress = progress;
+		this.notifyProgressChange();
+	}
+
+	/** Internal: set loading progress */
+	setLoadingProgress(progress: LoadingProgress | undefined): void {
+		this.loadingProgress = progress;
+		this.notifyProgressChange();
+	}
+
 	/** Internal: clear active stream progress */
 	clearProgress(): void {
 		this.prefillProgress = undefined;
 		this.genProgress = undefined;
+		this.modelSwitchProgress = undefined;
+		this.loadingProgress = undefined;
 		this.notifyProgressChange();
 	}
 
@@ -457,6 +490,8 @@ export type ReadonlyFooterDataProvider = Pick<
 	| "getPrefillProgress"
 	| "getGenProgress"
 	| "getQueuedProgress"
+	| "getModelSwitchProgress"
+	| "getLoadingProgress"
 	| "onBranchChange"
 	| "onProgressChange"
 >;

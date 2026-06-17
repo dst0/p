@@ -131,7 +131,7 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	const matches = availableModels.filter(
 		(m) =>
 			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-			m.name?.toLowerCase().includes(modelPattern.toLowerCase()),
+			m.name?.toLowerCase()?.includes(modelPattern.toLowerCase()),
 	);
 
 	if (matches.length === 0) {

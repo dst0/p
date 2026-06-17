@@ -19,6 +19,7 @@ import type {
 	ImageContent,
 	Message,
 	Model,
+	ModelSwitchPhase,
 	OpenAICompletionsCompat,
 	SimpleStreamOptions,
 	StopReason,
@@ -85,7 +86,10 @@ function readFiniteNumber(fields: Record<string, unknown>, ...names: string[]): 
 	return undefined;
 }
 
-type ProgressChunk = Extract<AssistantMessageEvent, { type: "prefill_progress" | "gen_progress" }>;
+type ProgressChunk = Extract<
+	AssistantMessageEvent,
+	{ type: "prefill_progress" | "gen_progress" | "model_switch_progress" | "loading_progress" }
+>;
 
 function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage): ProgressChunk | undefined {
 	const fields = chunk as ChatCompletionChunk & Record<string, unknown>;
@@ -103,6 +107,26 @@ function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage
 			type: "gen_progress",
 			tokens: readFiniteNumber(fields, "tokens") ?? 0,
 			tokensPerSecond: readFiniteNumber(fields, "tokensPerSecond", "tokens_per_second") ?? 0,
+			partial: output,
+		};
+	}
+	if (fields.type === "model_switch_progress") {
+		const fromModel = typeof fields.from_model === "string" ? fields.from_model : "";
+		const toModel = typeof fields.to_model === "string" ? fields.to_model : "";
+		const phase = (typeof fields.phase === "string" ? fields.phase : "loading") as ModelSwitchPhase;
+		return {
+			type: "model_switch_progress",
+			phase,
+			fromModel,
+			toModel,
+			partial: output,
+		};
+	}
+	if (fields.type === "loading_progress") {
+		const model = typeof fields.model === "string" ? fields.model : "";
+		return {
+			type: "loading_progress",
+			model,
 			partial: output,
 		};
 	}

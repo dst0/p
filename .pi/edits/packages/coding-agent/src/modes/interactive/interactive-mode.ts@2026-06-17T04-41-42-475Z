@@ -2886,9 +2886,8 @@ export class InteractiveMode {
 					) {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress({ tokensPerSecond: 0, tokens: 0 });
-						this.footerDataProvider.setModelSwitchProgress(undefined);
-						this.footerDataProvider.setLoadingProgress(undefined);
-					}
+					this.footerDataProvider.setModelSwitchProgress(undefined);
+						this.footerDataProvider.setLoadingProgress(undefined);					}
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {
