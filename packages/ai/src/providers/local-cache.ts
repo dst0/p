@@ -26,13 +26,14 @@ export function withLocalPromptCache(
 ): OpenAICompletionsOptions {
 	const enabled = cacheOptions.enabled ?? true;
 	const idSlot = cacheOptions.idSlot;
+	const cacheRetention = options.cacheRetention ?? (enabled ? "short" : "none");
 	if (idSlot !== undefined && (!Number.isInteger(idSlot) || idSlot < 0)) {
 		throw new TypeError("idSlot must be a non-negative integer");
 	}
 
 	return {
-		cacheRetention: options.cacheRetention ?? (enabled ? "short" : "none"),
 		...options,
+		cacheRetention,
 		onPayload: async (payload: unknown, model: Model<Api>) => {
 			const transformedPayload = await options.onPayload?.(payload, model);
 			const nextPayload = transformedPayload === undefined ? payload : transformedPayload;
@@ -42,7 +43,7 @@ export function withLocalPromptCache(
 
 			return {
 				...nextPayload,
-				cache_prompt: enabled && (options.cacheRetention ?? "short") !== "none",
+				cache_prompt: enabled && cacheRetention !== "none",
 				...(idSlot !== undefined ? { id_slot: idSlot } : {}),
 			};
 		},
