@@ -22,7 +22,7 @@ The script can be run from any directory. Pi keeps the caller's current working 
 For a quicker alias during local development, add to `~/.zshrc`:
 
 ```bash
-alias mypi='/path/to/pi-mono/packages/coding-agent/dist/cli.js'
+alias p='/path/to/pi-mono/packages/coding-agent/dist/cli.js'
 ```
 
 ## Forking / Rebranding
