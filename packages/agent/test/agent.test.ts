@@ -1,4 +1,10 @@
-import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@earendil-works/pi-ai";
+import {
+	type AssistantMessage,
+	type AssistantMessageEvent,
+	EventStream,
+	getModel,
+	type SimpleStreamOptions,
+} from "@earendil-works/pi-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { Agent, type AgentEvent, type AgentTool, type AgentToolUpdateCallback } from "../src/index.ts";
@@ -654,5 +660,32 @@ describe("Agent", () => {
 
 		await agent.prompt("hello again");
 		expect(receivedSessionId).toBe("session-def");
+	});
+
+	it("uses long cache retention across separate prompts in the same session", async () => {
+		const receivedOptions: Array<Pick<SimpleStreamOptions, "cacheRetention" | "sessionId">> = [];
+		const agent = new Agent({
+			sessionId: "session-cache",
+			streamFn: (_model, _context, options) => {
+				receivedOptions.push({
+					cacheRetention: options?.cacheRetention,
+					sessionId: options?.sessionId,
+				});
+				const stream = new MockAssistantStream();
+				queueMicrotask(() => {
+					const message = createAssistantMessage("ok");
+					stream.push({ type: "done", reason: "stop", message });
+				});
+				return stream;
+			},
+		});
+
+		await agent.prompt("first");
+		await agent.prompt("second");
+
+		expect(receivedOptions).toEqual([
+			{ cacheRetention: "long", sessionId: "session-cache" },
+			{ cacheRetention: "long", sessionId: "session-cache" },
+		]);
 	});
 });

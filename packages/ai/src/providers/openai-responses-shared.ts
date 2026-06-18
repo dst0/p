@@ -84,6 +84,10 @@ export interface ConvertResponsesToolsOptions {
 }
 
 // =============================================================================
+export function buildResponsesInstructions(context: Context): string | undefined {
+	return context.systemPrompt ? sanitizeSurrogates(context.systemPrompt) : undefined;
+}
+
 // Message conversion
 // =============================================================================
 

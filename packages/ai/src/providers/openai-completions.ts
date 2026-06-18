@@ -143,8 +143,9 @@ interface OpenAICompatCacheControl {
 	ttl?: string;
 }
 
-type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat"> & {
+type ResolvedOpenAICompletionsCompat = Omit<Required<OpenAICompletionsCompat>, "cacheControlFormat" | "cachePrompt"> & {
 	cacheControlFormat?: OpenAICompletionsCompat["cacheControlFormat"];
+	cachePrompt: boolean;
 };
 
 type ChatCompletionInstructionMessageParam = ChatCompletionDeveloperMessageParam | ChatCompletionSystemMessageParam;
@@ -159,6 +160,7 @@ type ChatCompletionToolWithCacheControl = OpenAI.Chat.Completions.ChatCompletion
 
 type OpenAICompletionsProgressParams = OpenAI.Chat.Completions.ChatCompletionCreateParamsStreaming & {
 	return_progress: true;
+	cache_prompt?: boolean;
 };
 
 function resolveCacheRetention(cacheRetention?: CacheRetention): CacheRetention {
@@ -587,6 +589,7 @@ function buildParams(
 				? clampOpenAIPromptCacheKey(options?.sessionId)
 				: undefined,
 		prompt_cache_retention: cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined,
+		cache_prompt: compat.cachePrompt && cacheRetention !== "none" ? true : undefined,
 	};
 
 	if (compat.supportsUsageInStreaming !== false) {
@@ -1168,6 +1171,14 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 	const isCloudflareAiGateway = provider === "cloudflare-ai-gateway" || baseUrl.includes("gateway.ai.cloudflare.com");
 	const isNvidia = provider === "nvidia" || baseUrl.includes("integrate.api.nvidia.com");
 	const isAntLing = provider === "ant-ling" || baseUrl.includes("api.ant-ling.com");
+	const isOfficialOpenAI = baseUrl.includes("api.openai.com");
+	const isLlamaCpp =
+		provider.includes("llama") ||
+		provider.includes("llm") ||
+		provider.includes("orchestrator") ||
+		baseUrl.includes("llama") ||
+		baseUrl.includes("llm.org") ||
+		baseUrl.includes("orchestrator");
 
 	const isNonStandard =
 		isNvidia ||
@@ -1222,14 +1233,11 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		zaiToolStream: false,
 		supportsStrictMode: !isMoonshot && !isTogether && !isCloudflareAiGateway && !isNvidia,
 		cacheControlFormat,
-		sendSessionAffinityHeaders: false,
-		supportsLongCacheRetention: !(
-			isTogether ||
-			isCloudflareWorkersAI ||
-			isCloudflareAiGateway ||
-			isNvidia ||
-			isAntLing
-		),
+		sendSessionAffinityHeaders: !isOfficialOpenAI,
+		supportsLongCacheRetention:
+			isOfficialOpenAI ||
+			!(isTogether || isCloudflareWorkersAI || isCloudflareAiGateway || isNvidia || isAntLing || !isNonStandard),
+		cachePrompt: isLlamaCpp,
 	};
 }
 
@@ -1262,5 +1270,6 @@ function getCompat(model: Model<"openai-completions">): ResolvedOpenAICompletion
 		cacheControlFormat: model.compat.cacheControlFormat ?? detected.cacheControlFormat,
 		sendSessionAffinityHeaders: model.compat.sendSessionAffinityHeaders ?? detected.sendSessionAffinityHeaders,
 		supportsLongCacheRetention: model.compat.supportsLongCacheRetention ?? detected.supportsLongCacheRetention,
+		cachePrompt: model.compat.cachePrompt ?? detected.cachePrompt,
 	};
 }

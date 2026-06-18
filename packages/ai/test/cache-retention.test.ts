@@ -412,7 +412,7 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			};
 		}
 
-		it("should set prompt_cache_retention for non-api.openai.com baseUrl by default", async () => {
+		it("should omit OpenAI long-retention fields for non-api.openai.com baseUrl by default", async () => {
 			let capturedPayload: any = null;
 
 			try {
@@ -433,8 +433,8 @@ describe("Cache Retention (PI_CACHE_RETENTION)", () => {
 			}
 
 			expect(capturedPayload).not.toBeNull();
-			expect(capturedPayload.prompt_cache_key).toBe("session-completions");
-			expect(capturedPayload.prompt_cache_retention).toBe("24h");
+			expect(capturedPayload.prompt_cache_key).toBeUndefined();
+			expect(capturedPayload.prompt_cache_retention).toBeUndefined();
 		});
 
 		it("should omit prompt_cache_retention when supportsLongCacheRetention is false", async () => {

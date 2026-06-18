@@ -4,7 +4,7 @@ import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@earendil-works/pi-agent-core";
 import { type AssistantMessage, fauxAssistantMessage, fauxToolCall, type Model } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
@@ -85,6 +85,60 @@ describe("AgentSession prompt characterization", () => {
 		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
 		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
 		expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
+	});
+
+	it("reuses provider prompt cache after a completed tool loop and ten idle seconds", async () => {
+		const toolRuns: string[] = [];
+		const echoTool: AgentTool = {
+			name: "echo",
+			label: "Echo",
+			description: "Echo text back",
+			parameters: Type.Object({ text: Type.String() }),
+			execute: async (_toolCallId, params) => {
+				const text = typeof params === "object" && params !== null && "text" in params ? String(params.text) : "";
+				toolRuns.push(text);
+				return {
+					content: [{ type: "text", text: `echo:${text}` }],
+					details: { text },
+				};
+			},
+		};
+		const harness = await createPromptHarness({ tools: [echoTool] });
+		harnesses.push(harness);
+		harness.setResponses([
+			fauxAssistantMessage(fauxToolCall("echo", { text: "warm-cache" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage("first tool loop complete"),
+			fauxAssistantMessage("second prompt complete"),
+		]);
+
+		await harness.session.prompt("Start a multi-turn tool loop");
+		expect(toolRuns).toEqual(["warm-cache"]);
+		expect(harness.session.state.isStreaming).toBe(false);
+		expect(harness.session.messages.map((message) => message.role)).toEqual([
+			"user",
+			"assistant",
+			"toolResult",
+			"assistant",
+		]);
+
+		vi.useFakeTimers();
+		try {
+			const idleGap = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
+			await vi.advanceTimersByTimeAsync(10_000);
+			await idleGap;
+		} finally {
+			vi.useRealTimers();
+		}
+
+		await harness.session.prompt("Continue after idle");
+
+		const assistantMessages = harness.session.messages.filter(
+			(message): message is AssistantMessage => message.role === "assistant",
+		);
+		expect(assistantMessages).toHaveLength(3);
+		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+		expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(0);
+		expect(assistantMessages[2]?.usage.input).toBeLessThan(assistantMessages[2]?.usage.totalTokens ?? 0);
 	});
 
 	it("sends bounded tool-result context to the provider without mutating raw session history", async () => {

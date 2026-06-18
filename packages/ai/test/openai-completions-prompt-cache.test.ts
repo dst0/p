@@ -13,6 +13,7 @@ interface FakeOpenAIClientOptions {
 interface CapturedCompletionsPayload {
 	prompt_cache_key?: string;
 	prompt_cache_retention?: "24h" | "in-memory" | null;
+	cache_prompt?: boolean;
 }
 
 const mockState = vi.hoisted(() => ({
@@ -168,6 +169,47 @@ describe("openai-completions prompt caching", () => {
 		expect(headers.session_id).toBe("session-affinity");
 		expect(headers["x-client-request-id"]).toBe("session-affinity");
 		expect(headers["x-session-affinity"]).toBe("session-affinity");
+	});
+
+	it("sends session-affinity headers by default for non-OpenAI base URLs", async () => {
+		const model = createModel({
+			baseUrl: "https://llm.org/v1",
+			provider: "llm-orchestrator",
+		});
+		const { headers } = await captureRequest({ sessionId: "session-affinity" }, model);
+
+		expect(headers.session_id).toBe("session-affinity");
+		expect(headers["x-client-request-id"]).toBe("session-affinity");
+		expect(headers["x-session-affinity"]).toBe("session-affinity");
+	});
+
+	it("sends llama.cpp cache_prompt without OpenAI long-retention fields for llama-compatible backends", async () => {
+		const model = createModel({
+			baseUrl: "https://llm.org/v1",
+			provider: "llm-orchestrator",
+		});
+		const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-llama" }, model);
+
+		expect(payload?.cache_prompt).toBe(true);
+		expect(payload?.prompt_cache_key).toBeUndefined();
+		expect(payload?.prompt_cache_retention).toBeUndefined();
+	});
+
+	it("treats an openai provider baseUrl override as a proxy for cache compatibility", async () => {
+		const model = createModel({
+			baseUrl: "https://llm.org/v1",
+		});
+		const { payload, headers } = await captureRequest(
+			{ cacheRetention: "long", sessionId: "session-override" },
+			model,
+		);
+
+		expect(headers.session_id).toBe("session-override");
+		expect(headers["x-client-request-id"]).toBe("session-override");
+		expect(headers["x-session-affinity"]).toBe("session-override");
+		expect(payload?.cache_prompt).toBe(true);
+		expect(payload?.prompt_cache_key).toBeUndefined();
+		expect(payload?.prompt_cache_retention).toBeUndefined();
 	});
 
 	it("omits session-affinity headers when cacheRetention is none", async () => {
