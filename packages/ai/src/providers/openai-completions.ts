@@ -111,8 +111,18 @@ function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage
 		};
 	}
 	if (fields.type === "model_switch_progress") {
-		const fromModel = typeof fields.from_model === "string" ? fields.from_model : "";
-		const toModel = typeof fields.to_model === "string" ? fields.to_model : "";
+		const fromModel =
+			typeof fields.fromModel === "string"
+				? fields.fromModel
+				: typeof fields.from_model === "string"
+					? fields.from_model
+					: "";
+		const toModel =
+			typeof fields.toModel === "string"
+				? fields.toModel
+				: typeof fields.to_model === "string"
+					? fields.to_model
+					: "";
 		const phase = (typeof fields.phase === "string" ? fields.phase : "loading") as ModelSwitchPhase;
 		return {
 			type: "model_switch_progress",
