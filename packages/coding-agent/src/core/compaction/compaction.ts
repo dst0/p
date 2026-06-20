@@ -199,7 +199,7 @@ export interface CompactionSettings {
 export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	enabled: true,
 	triggerReserveTokens: 12000,
-	triggerRatio: 0.75,
+	triggerRatio: 1.0,
 	keepRecentMinTokens: 2000,
 	keepRecentMaxTokens: 8000,
 	summaryMaxTokens: 1200,

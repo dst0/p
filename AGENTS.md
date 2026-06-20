@@ -33,6 +33,7 @@
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Never commit unless the user asks.
+- After successful code changes, update and reinstall pi locally and on the mini-PC, then test pi works correctly.
 
 ## Dependency and Install Security
 
