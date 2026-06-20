@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ImageContent, ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@dst0/p-agent-core";
+import type { AssistantMessage, ImageContent, ToolResultMessage } from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SessionShutdownEvent } from "../src/index.ts";
 import { getTextModeFinalOutput, runPrintMode } from "../src/modes/print-mode.ts";

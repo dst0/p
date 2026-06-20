@@ -7,7 +7,7 @@ import {
 	type Model,
 	type ToolResultMessage,
 	type UserMessage,
-} from "@earendil-works/pi-ai";
+} from "@dst0/p-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { agentLoop, agentLoopContinue } from "../src/agent-loop.ts";

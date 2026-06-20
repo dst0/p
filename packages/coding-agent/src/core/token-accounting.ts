@@ -1,4 +1,4 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@dst0/p-agent-core";
 
 export type TokenCountSource = "provider_usage" | "estimated";
 

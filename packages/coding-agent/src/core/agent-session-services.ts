@@ -1,6 +1,6 @@
 import { join } from "node:path";
-import type { CompletionMode, CompletionProtocolLimits, ThinkingLevel } from "@earendil-works/pi-agent-core";
-import type { Model } from "@earendil-works/pi-ai";
+import type { CompletionMode, CompletionProtocolLimits, ThinkingLevel } from "@dst0/p-agent-core";
+import type { Model } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AuthStorage } from "./auth-storage.ts";

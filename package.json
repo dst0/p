@@ -1,5 +1,5 @@
 {
-  "name": "pi-monorepo",
+  "name": "p-monorepo",
   "private": true,
   "type": "module",
   "workspaces": [

@@ -1,5 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@dst0/p-agent-core";
+import type { ToolResultMessage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { stubToolResultsForPrompt } from "../src/core/compaction/compaction.ts";
 

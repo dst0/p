@@ -1,4 +1,4 @@
-import type { ToolResultMessage } from "@earendil-works/pi-ai";
+import type { ToolResultMessage } from "@dst0/p-ai";
 import { type Static, Type } from "typebox";
 import type { AgentMessage, AgentTool } from "./types.ts";
 

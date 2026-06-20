@@ -5,7 +5,7 @@
  * and after compaction the session is reloaded.
  */
 
-import type { AgentMessage, StreamFn, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { AgentMessage, StreamFn, ThinkingLevel } from "@dst0/p-agent-core";
 import type {
 	AssistantMessage,
 	Context,
@@ -14,8 +14,8 @@ import type {
 	TextContent,
 	ToolResultMessage,
 	Usage,
-} from "@earendil-works/pi-ai";
-import { completeSimple } from "@earendil-works/pi-ai";
+} from "@dst0/p-ai";
+import { completeSimple } from "@dst0/p-ai";
 import {
 	convertToLlm,
 	createBranchSummaryMessage,

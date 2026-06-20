@@ -2,7 +2,7 @@
  * System prompt construction and project context loading
  */
 
-import { type CompletionMode, FINISH_WORK_TOOL_NAME } from "@earendil-works/pi-agent-core";
+import { type CompletionMode, FINISH_WORK_TOOL_NAME } from "@dst0/p-agent-core";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 

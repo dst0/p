@@ -7,7 +7,7 @@ import {
 	type TextContent,
 	type ThinkingBudgets,
 	type Transport,
-} from "@earendil-works/pi-ai";
+} from "@dst0/p-ai";
 import { runAgentLoop, runAgentLoopContinue } from "./agent-loop.ts";
 import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
 import type {

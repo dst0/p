@@ -5,8 +5,8 @@ import {
 	type CompletionMode,
 	type CompletionProtocolLimits,
 	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@earendil-works/pi-ai";
+} from "@dst0/p-agent-core";
+import { clampThinkingLevel, type Message, type Model, streamSimple } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
@@ -152,7 +152,7 @@ function getDefaultAgentDir(): string {
  * const { session } = await createAgentSession();
  *
  * // With explicit model
- * import { getModel } from '@earendil-works/pi-ai';
+ * import { getModel } from '@dst0/p-ai';
  * const { session } = await createAgentSession({
  *   model: getModel('anthropic', 'claude-opus-4-5'),
  *   thinkingLevel: 'high',

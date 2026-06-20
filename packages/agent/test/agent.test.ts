@@ -4,7 +4,7 @@ import {
 	EventStream,
 	getModel,
 	type SimpleStreamOptions,
-} from "@earendil-works/pi-ai";
+} from "@dst0/p-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { Agent, type AgentEvent, type AgentTool, type AgentToolUpdateCallback } from "../src/index.ts";

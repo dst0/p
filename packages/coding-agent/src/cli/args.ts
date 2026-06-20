@@ -2,7 +2,7 @@
  * CLI argument parsing and help display
  */
 
-import type { CompletionMode, ThinkingLevel } from "@earendil-works/pi-agent-core";
+import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";

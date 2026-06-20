@@ -4,8 +4,8 @@
  * systemPrompt wiring.
  */
 
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, Usage } from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@dst0/p-agent-core";
+import type { AssistantMessage, Usage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import {
 	estimateContextTokens,

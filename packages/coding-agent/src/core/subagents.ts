@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@dst0/p-agent-core";
 
 const SUBAGENT_DIGESTS_FILE = ".pdev/sessions/subagent-digests.jsonl";
 const SUBAGENT_TRANSCRIPTS_DIR = ".pdev/sessions/subagents";

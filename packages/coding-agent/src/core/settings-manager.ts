@@ -1,5 +1,5 @@
-import type { CompletionMode, CompletionProtocolLimits } from "@earendil-works/pi-agent-core";
-import type { Transport } from "@earendil-works/pi-ai";
+import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
+import type { Transport } from "@dst0/p-ai";
 import { randomUUID } from "crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";

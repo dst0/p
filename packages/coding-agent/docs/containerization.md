@@ -18,7 +18,7 @@ Extensions run wherever the `pi` process runs. If you run host `pi` with a tool-
 
 ## Gondolin
 
-[Gondolin](https://github.com/earendil-works/gondolin) is a local Linux micro-VM.
+[Gondolin](https://github.com/dst0/gondolin) is a local Linux micro-VM.
 Use the [example extension](../examples/extensions/gondolin) when you want `pi` on the host but all built-in tools routed into the VM.
 
 Setup:
@@ -40,7 +40,7 @@ The extension mounts the host cwd at `/workspace` in the VM and overrides `read`
 User `!` commands are routed into the VM, as well.
 File changes under `/workspace` write through to the host.
 
-Requirements: Node.js >= 23.6.0 for `@earendil-works/gondolin`, plus QEMU (requires installation through your package manager).
+Requirements: Node.js >= 23.6.0 for `@dst0/gondolin`, plus QEMU (requires installation through your package manager).
 
 ## Plain Docker
 
@@ -54,7 +54,7 @@ FROM node:24-bookworm-slim
 RUN apt-get update \
   && apt-get install -y --no-install-recommends bash ca-certificates git ripgrep \
   && rm -rf /var/lib/apt/lists/*
-RUN npm install -g --ignore-scripts @earendil-works/pi-coding-agent
+RUN npm install -g --ignore-scripts @dst0/p-coding-agent
 
 WORKDIR /workspace
 ENTRYPOINT ["pi"]

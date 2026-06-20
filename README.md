@@ -20,9 +20,9 @@
 
 This is the home of the pi agent harness project including our self extensible coding agent.
 
-* **[@earendil-works/pi-coding-agent](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
-* **[@earendil-works/pi-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@earendil-works/pi-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+* **[@dst0/p-coding-agent](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
+* **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
+* **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
 
 To learn more about pi:
 
@@ -49,12 +49,12 @@ I regularly publish my own `pi-mono` work sessions here:
 
 | Package | Description |
 |---------|-------------|
-| **[@earendil-works/pi-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@earendil-works/pi-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@earendil-works/pi-coding-agent](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
-| **[@earendil-works/pi-tui](packages/tui)** | Terminal UI library with differential rendering |
+| **[@dst0/p-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
+| **[@dst0/p-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
+| **[@dst0/p-coding-agent](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
+| **[@dst0/p-tui](packages/tui)** | Terminal UI library with differential rendering |
 
-For Slack/chat automation and workflows see [earendil-works/pi-chat](https://github.com/earendil-works/pi-chat).
+For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst0/p-chat).
 
 ## Permissions & Containerization
 
@@ -77,7 +77,7 @@ npm install --ignore-scripts  # Install all dependencies without running lifecyc
 npm run build        # Build all packages
 npm run check        # Lint, format, and type check
 ./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./pi-test.sh         # Run pi from sources (can be run from any directory)
+./p-test.sh         # Run pi from sources (can be run from any directory)
 ```
 
 ## Supply-chain hardening

@@ -24,8 +24,8 @@ import {
 	type CompletionMode,
 	FINISH_WORK_TOOL_NAME,
 	type ThinkingLevel,
-} from "@earendil-works/pi-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@earendil-works/pi-ai";
+} from "@dst0/p-agent-core";
+import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@dst0/p-ai";
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
@@ -35,7 +35,7 @@ import {
 	modelsAreEqual,
 	resetApiProviders,
 	streamSimple,
-} from "@earendil-works/pi-ai";
+} from "@dst0/p-ai";
 import { Type } from "typebox";
 import { getThemeByName, theme } from "../modes/interactive/theme/theme.ts";
 import { stripFrontmatter } from "../utils/frontmatter.ts";

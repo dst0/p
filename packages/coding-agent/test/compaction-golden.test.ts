@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
+import type { AgentMessage } from "@dst0/p-agent-core";
 import { describe, expect, it } from "vitest";
 import {
 	createInitialStructuredSessionState,

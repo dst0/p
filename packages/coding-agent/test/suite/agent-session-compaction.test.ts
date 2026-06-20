@@ -1,10 +1,5 @@
-import type { AgentMessage } from "@earendil-works/pi-agent-core";
-import {
-	type AssistantMessage,
-	createAssistantMessageEventStream,
-	fauxAssistantMessage,
-	type Model,
-} from "@earendil-works/pi-ai";
+import type { AgentMessage } from "@dst0/p-agent-core";
+import { type AssistantMessage, createAssistantMessageEventStream, fauxAssistantMessage, type Model } from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";

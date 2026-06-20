@@ -1,5 +1,5 @@
 {
-  "name": "pi-extension-custom-provider-anthropic",
+  "name": "p-extension-custom-provider-anthropic",
   "private": true,
   "version": "0.79.4",
   "type": "module",
