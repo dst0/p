@@ -30,7 +30,7 @@ function createContextUsage(): ContextUsage {
 		percent: 18.75,
 		staticTokens: 1_000,
 		triggerThreshold: 52_000,
-		triggerReserveTokens: 12_000,
+		triggerReserveTokens: 2_000,
 		triggerRatio: 1.0,
 		targetContextTokens: 12_000,
 		remainingTokens: 52_000,
