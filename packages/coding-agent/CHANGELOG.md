@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `startupNotices` setting (default `false`) to gate startup changelog, version-check, and package-update notifications. Set `"startupNotices": true` in `settings.json` to re-enable.
+
 ### Fixed
 
 - Fixed default compaction settings to use the centralized 100% context-window trigger ratio instead of a stale 75% SettingsManager default.

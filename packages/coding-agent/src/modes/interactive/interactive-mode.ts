@@ -600,6 +600,9 @@ export class InteractiveMode {
 	}
 
 	private showStartupNoticesIfNeeded(): void {
+		if (!this.settingsManager.getStartupNotices()) {
+			return;
+		}
 		if (this.startupNoticesShown) {
 			return;
 		}
@@ -788,19 +791,23 @@ export class InteractiveMode {
 	async run(): Promise<void> {
 		await this.init();
 
-		// Start version check asynchronously
-		checkForNewPiVersion(this.version).then((newRelease) => {
-			if (newRelease) {
-				this.showNewVersionNotification(newRelease);
-			}
-		});
+		// Start version check asynchronously (disabled by default after rebrand)
+		if (this.settingsManager.getStartupNotices()) {
+			checkForNewPiVersion(this.version).then((newRelease) => {
+				if (newRelease) {
+					this.showNewVersionNotification(newRelease);
+				}
+			});
+		}
 
-		// Start package update check asynchronously
-		this.checkForPackageUpdates().then((updates) => {
-			if (updates.length > 0) {
-				this.showPackageUpdateNotification(updates);
-			}
-		});
+		// Start package update check asynchronously (disabled by default after rebrand)
+		if (this.settingsManager.getStartupNotices()) {
+			this.checkForPackageUpdates().then((updates) => {
+				if (updates.length > 0) {
+					this.showPackageUpdateNotification(updates);
+				}
+			});
+		}
 
 		// Check tmux keyboard setup asynchronously
 		this.checkTmuxKeyboardSetup().then((warning) => {

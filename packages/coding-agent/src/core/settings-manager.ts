@@ -121,6 +121,7 @@ export interface Settings {
 	shellCommandPrefix?: string; // Prefix prepended to every bash command (e.g., "shopt -s expand_aliases" for alias support)
 	npmCommand?: string[]; // Command used for npm package lookup/install operations, argv-style (e.g., ["mise", "exec", "node@20", "--", "npm"])
 	collapseChangelog?: boolean; // Show condensed changelog after update (use /changelog for full)
+	startupNotices?: boolean; // Show startup notices (changelog, version check, package updates) — disabled by default after rebrand
 	enableInstallTelemetry?: boolean; // default: true - anonymous version/update ping after changelog-detected updates
 	enableAnalytics?: boolean; // default: false - opt-in analytics data sharing
 	trackingId?: string; // analytics tracking identifier, generated when analytics is enabled
@@ -1078,6 +1079,16 @@ export class SettingsManager {
 	setCollapseChangelog(collapse: boolean): void {
 		this.globalSettings.collapseChangelog = collapse;
 		this.markModified("collapseChangelog");
+		this.save();
+	}
+
+	getStartupNotices(): boolean {
+		return this.settings.startupNotices ?? false;
+	}
+
+	setStartupNotices(enabled: boolean): void {
+		this.globalSettings.startupNotices = enabled;
+		this.markModified("startupNotices");
 		this.save();
 	}
 

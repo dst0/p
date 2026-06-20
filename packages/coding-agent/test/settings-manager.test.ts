@@ -482,4 +482,42 @@ describe("SettingsManager", () => {
 			expect(manager.getSessionDir()).toBe(join(homedir(), "sessions"));
 		});
 	});
+
+	describe("startupNotices", () => {
+		it("defaults to false when not set", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getStartupNotices()).toBe(false);
+		});
+
+		it("reads true from settings file", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ startupNotices: true }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getStartupNotices()).toBe(true);
+		});
+
+		it("reads false from settings file", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ startupNotices: false }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getStartupNotices()).toBe(false);
+		});
+
+		it("setStartupNotices writes to global settings and saves", async () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "dark" }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			manager.setStartupNotices(true);
+			await manager.flush();
+			expect(manager.getStartupNotices()).toBe(true);
+			const saved = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(saved.startupNotices).toBe(true);
+		});
+
+		it("can toggle from true to false", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ startupNotices: true }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getStartupNotices()).toBe(true);
+			manager.setStartupNotices(false);
+			expect(manager.getStartupNotices()).toBe(false);
+		});
+	});
 });
