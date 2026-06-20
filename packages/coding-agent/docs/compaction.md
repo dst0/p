@@ -30,9 +30,14 @@ Auto-compaction triggers when:
 
 ```
 contextTokens > contextWindow - reserveTokens
+contextTokens > contextWindow * triggerRatio
 ```
 
-By default, `reserveTokens` is 16384 tokens (configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`). This leaves room for the LLM's response.
+Both limits are evaluated when present, and the lower threshold wins. By default, `triggerRatio` is `1.0` and `triggerReserveTokens` is `12000`, so compaction starts only when the loaded model's context window is effectively full or within 12k tokens of full, whichever comes first. For example, a 64k-token local model compacts near 53,536 tokens by the reserve rule, not at the older 75% mark.
+
+The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`.
+
+Provider prompt-cache reuse is separate from compaction. Runtime-only project/session context is sent after the user turn so the provider-visible prefix remains stable across idle follow-up prompts and tool-loop continuations. Large prompts are still bounded by the loaded model's actual context window; if the conversation exceeds that window, compaction or trimming may still occur before a request is sent.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 

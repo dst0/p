@@ -6,6 +6,7 @@ import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
+import { DEFAULT_COMPACTION_SETTINGS } from "./compaction/default-settings.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
 export const DEFAULT_AGENT_RETRY_BASE_DELAY_MS = 500;
@@ -17,16 +18,16 @@ export interface CompactionSettings {
 	reserveTokens?: number;
 	/** @deprecated Use keepRecentMinTokens/keepRecentMaxTokens. */
 	keepRecentTokens?: number;
-	triggerReserveTokens?: number; // default: 12000
-	triggerRatio?: number; // default: 0.75
-	keepRecentMinTokens?: number; // default: 2000
-	keepRecentMaxTokens?: number; // default: 8000
-	summaryMaxTokens?: number; // default: 1200
-	renderedStateMaxTokens?: number; // default: 1500
-	targetContextTokens?: number; // default: 12000
-	toolResultClearThresholdTokens?: number; // default: 24000
-	toolResultKeepRecentCount?: number; // default: 3
-	toolResultPromptBudgetTokens?: number; // default: 8000
+	triggerReserveTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.triggerReserveTokens
+	triggerRatio?: number; // default: DEFAULT_COMPACTION_SETTINGS.triggerRatio
+	keepRecentMinTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.keepRecentMinTokens
+	keepRecentMaxTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.keepRecentMaxTokens
+	summaryMaxTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens
+	renderedStateMaxTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens
+	targetContextTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.targetContextTokens
+	toolResultClearThresholdTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens
+	toolResultKeepRecentCount?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount
+	toolResultPromptBudgetTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens
 }
 
 export interface BranchSummarySettings {
@@ -825,7 +826,7 @@ export class SettingsManager {
 	}
 
 	getCompactionEnabled(): boolean {
-		return this.settings.compaction?.enabled ?? true;
+		return this.settings.compaction?.enabled ?? DEFAULT_COMPACTION_SETTINGS.enabled;
 	}
 
 	isToolResultContextExtractionEnabled(): boolean {
@@ -855,11 +856,15 @@ export class SettingsManager {
 	}
 
 	getCompactionTargetContextTokens(): number {
-		return this.settings.compaction?.targetContextTokens ?? 12000;
+		return this.settings.compaction?.targetContextTokens ?? DEFAULT_COMPACTION_SETTINGS.targetContextTokens;
 	}
 
 	getCompactionTriggerReserveTokens(): number {
-		return this.settings.compaction?.triggerReserveTokens ?? this.settings.compaction?.reserveTokens ?? 12000;
+		return (
+			this.settings.compaction?.triggerReserveTokens ??
+			this.settings.compaction?.reserveTokens ??
+			DEFAULT_COMPACTION_SETTINGS.triggerReserveTokens
+		);
 	}
 
 	getCompactionTriggerRatio(): number | undefined {
@@ -872,35 +877,51 @@ export class SettingsManager {
 		) {
 			return undefined;
 		}
-		return 0.75;
+		return DEFAULT_COMPACTION_SETTINGS.triggerRatio;
 	}
 
 	getCompactionKeepRecentMinTokens(): number {
-		return this.settings.compaction?.keepRecentMinTokens ?? this.settings.compaction?.keepRecentTokens ?? 2000;
+		return (
+			this.settings.compaction?.keepRecentMinTokens ??
+			this.settings.compaction?.keepRecentTokens ??
+			DEFAULT_COMPACTION_SETTINGS.keepRecentMinTokens
+		);
 	}
 
 	getCompactionKeepRecentMaxTokens(): number {
-		return this.settings.compaction?.keepRecentMaxTokens ?? this.settings.compaction?.keepRecentTokens ?? 8000;
+		return (
+			this.settings.compaction?.keepRecentMaxTokens ??
+			this.settings.compaction?.keepRecentTokens ??
+			DEFAULT_COMPACTION_SETTINGS.keepRecentMaxTokens
+		);
 	}
 
 	getCompactionSummaryMaxTokens(): number {
-		return this.settings.compaction?.summaryMaxTokens ?? 1200;
+		return this.settings.compaction?.summaryMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens;
 	}
 
 	getCompactionRenderedStateMaxTokens(): number {
-		return this.settings.compaction?.renderedStateMaxTokens ?? 1500;
+		return this.settings.compaction?.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens;
 	}
 
 	getCompactionToolResultClearThresholdTokens(): number {
-		return this.settings.compaction?.toolResultClearThresholdTokens ?? 24000;
+		return (
+			this.settings.compaction?.toolResultClearThresholdTokens ??
+			DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens
+		);
 	}
 
 	getCompactionToolResultKeepRecentCount(): number {
-		return this.settings.compaction?.toolResultKeepRecentCount ?? 3;
+		return (
+			this.settings.compaction?.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount
+		);
 	}
 
 	getCompactionToolResultPromptBudgetTokens(): number {
-		return this.settings.compaction?.toolResultPromptBudgetTokens ?? 8000;
+		return (
+			this.settings.compaction?.toolResultPromptBudgetTokens ??
+			DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens
+		);
 	}
 
 	getCompactionSettings(): {

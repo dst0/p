@@ -137,6 +137,8 @@ describe("AgentSession prompt characterization", () => {
 		);
 		expect(assistantMessages).toHaveLength(3);
 		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+		expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
 		expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(0);
 		expect(assistantMessages[2]?.usage.input).toBeLessThan(assistantMessages[2]?.usage.totalTokens ?? 0);
 	});

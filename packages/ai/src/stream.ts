@@ -147,13 +147,13 @@ function replayRuntimeContextInsertions(messages: Message[], insertions: Runtime
 
 	const result: Message[] = [];
 	for (const message of messages) {
+		result.push(message);
 		if (message.role === "user") {
 			const insertion = insertionsByAnchor.get(runtimeAnchorKey(message));
 			if (insertion) {
 				result.push(createRuntimeContextMessage(insertion.runtimeContext));
 			}
 		}
-		result.push(message);
 	}
 	return result;
 }
@@ -170,7 +170,7 @@ function injectRuntimeContext(messages: Message[], runtimeContext: string): Mess
 	if (lastUserIndex === -1) {
 		return [...messages, runtimeMessage];
 	}
-	return [...messages.slice(0, lastUserIndex), runtimeMessage, ...messages.slice(lastUserIndex)];
+	return [...messages.slice(0, lastUserIndex + 1), runtimeMessage, ...messages.slice(lastUserIndex + 1)];
 }
 
 function normalizeRuntimeContext(context: Context, sessionId: string | undefined): Context {

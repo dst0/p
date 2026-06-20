@@ -379,14 +379,18 @@ For providers with partial OpenAI compatibility, use the `compat` field.
       "baseUrl": "http://localhost:8080/v1",
       "api": "openai-completions",
       "compat": {
+        "cachePrompt": true,
         "supportsUsageInStreaming": false,
-        "maxTokensField": "max_tokens"
+        "maxTokensField": "max_tokens",
+        "supportsLongCacheRetention": true
       },
       "models": [...]
     }
   }
 }
 ```
+
+For llama.cpp-compatible proxies, set `compat.cachePrompt` to `true` so pi sends `cache_prompt`, `prompt_cache_key`, and `prompt_cache_retention` on OpenAI-compatible chat completion requests. The session id is also sent as affinity headers when caching is enabled, which lets intermediaries such as LLM Orchestrator route follow-up prompts to the same worker and preserve prompt-cache reuse.
 
 | Field | Description |
 |-------|-------------|

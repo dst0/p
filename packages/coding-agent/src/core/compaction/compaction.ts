@@ -34,6 +34,10 @@ import {
 	serializeConversation,
 } from "./utils.ts";
 
+export { DEFAULT_COMPACTION_SETTINGS } from "./default-settings.ts";
+
+import { DEFAULT_COMPACTION_SETTINGS } from "./default-settings.ts";
+
 // ============================================================================
 // File Operation Tracking
 // ============================================================================
@@ -195,20 +199,6 @@ export interface CompactionSettings {
 	toolResultKeepRecentCount?: number;
 	toolResultPromptBudgetTokens?: number;
 }
-
-export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
-	enabled: true,
-	triggerReserveTokens: 12000,
-	triggerRatio: 1.0,
-	keepRecentMinTokens: 2000,
-	keepRecentMaxTokens: 8000,
-	summaryMaxTokens: 1200,
-	renderedStateMaxTokens: 1500,
-	targetContextTokens: 12000,
-	toolResultClearThresholdTokens: 24000,
-	toolResultKeepRecentCount: 3,
-	toolResultPromptBudgetTokens: 8000,
-};
 
 interface ResolvedCompactionSettings {
 	enabled: boolean;

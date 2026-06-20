@@ -1,8 +1,10 @@
 import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+	closeOpenAICodexWebSocketSessions,
 	getOpenAICodexWebSocketDebugStats,
 	resetOpenAICodexWebSocketDebugStats,
 	streamOpenAICodexResponses,
@@ -13,6 +15,7 @@ import type { Context, Model } from "../src/types.ts";
 const originalAgentDir = process.env.PI_CODING_AGENT_DIR;
 
 afterEach(() => {
+	closeOpenAICodexWebSocketSessions();
 	vi.unstubAllGlobals();
 	if (originalAgentDir === undefined) {
 		delete process.env.PI_CODING_AGENT_DIR;
@@ -1580,6 +1583,248 @@ describe("openai-codex streaming", () => {
 			deltaRequests: 1,
 			lastDeltaInputItems: 1,
 			lastPreviousResponseId: "resp_1",
+		});
+	});
+
+	it("sends only tool-result and idle prompt deltas after websocket-cached tool loops", async () => {
+		const token = mockToken();
+		const sentBodies: unknown[] = [];
+		type MockResponse =
+			| { kind: "tool"; responseId: string; itemId: string; callId: string; name: string; argumentsJson: string }
+			| { kind: "text"; responseId: string; messageId: string; text: string };
+		const responses: MockResponse[] = [
+			{
+				kind: "tool",
+				responseId: "resp_tool",
+				itemId: "fc_1",
+				callId: "call_1",
+				name: "deterministic_probe",
+				argumentsJson: '{"turn":1}',
+			},
+			{ kind: "text", responseId: "resp_done", messageId: "msg_done", text: "TURN 1 OK" },
+			{ kind: "text", responseId: "resp_idle", messageId: "msg_idle", text: "TURN 2 OK" },
+		];
+
+		class MockWebSocket {
+			static OPEN = 1;
+			readyState = MockWebSocket.OPEN;
+			private listeners = new Map<string, Set<(event: unknown) => void>>();
+
+			constructor(_url: string, _protocols?: string | string[] | { headers?: Record<string, string> }) {
+				queueMicrotask(() => this.dispatch("open", {}));
+			}
+
+			addEventListener(type: string, listener: (event: unknown) => void): void {
+				let listeners = this.listeners.get(type);
+				if (!listeners) {
+					listeners = new Set();
+					this.listeners.set(type, listeners);
+				}
+				listeners.add(listener);
+			}
+
+			removeEventListener(type: string, listener: (event: unknown) => void): void {
+				this.listeners.get(type)?.delete(listener);
+			}
+
+			send(data: string): void {
+				sentBodies.push(JSON.parse(data));
+				const response = responses.shift();
+				if (!response) throw new Error("unexpected websocket request");
+				const events =
+					response.kind === "tool"
+						? [
+								{ type: "response.created", response: { id: response.responseId } },
+								{
+									type: "response.output_item.added",
+									item: {
+										type: "function_call",
+										id: response.itemId,
+										call_id: response.callId,
+										name: response.name,
+										arguments: "",
+									},
+								},
+								{
+									type: "response.function_call_arguments.done",
+									item_id: response.itemId,
+									arguments: response.argumentsJson,
+								},
+								{
+									type: "response.output_item.done",
+									item: {
+										type: "function_call",
+										id: response.itemId,
+										call_id: response.callId,
+										name: response.name,
+										arguments: response.argumentsJson,
+									},
+								},
+								{
+									type: "response.completed",
+									response: {
+										id: response.responseId,
+										status: "completed",
+										usage: {
+											input_tokens: 5,
+											output_tokens: 3,
+											total_tokens: 8,
+											input_tokens_details: { cached_tokens: 0 },
+										},
+									},
+								},
+							]
+						: [
+								{ type: "response.created", response: { id: response.responseId } },
+								{
+									type: "response.output_item.added",
+									item: {
+										type: "message",
+										id: response.messageId,
+										role: "assistant",
+										status: "in_progress",
+										content: [],
+									},
+								},
+								{ type: "response.content_part.added", part: { type: "output_text", text: "" } },
+								{ type: "response.output_text.delta", delta: response.text },
+								{
+									type: "response.output_item.done",
+									item: {
+										type: "message",
+										id: response.messageId,
+										role: "assistant",
+										status: "completed",
+										content: [{ type: "output_text", text: response.text }],
+									},
+								},
+								{
+									type: "response.completed",
+									response: {
+										id: response.responseId,
+										status: "completed",
+										usage: {
+											input_tokens: 5,
+											output_tokens: 3,
+											total_tokens: 8,
+											input_tokens_details: { cached_tokens: 0 },
+										},
+									},
+								},
+							];
+				queueMicrotask(() => {
+					for (const event of events) {
+						this.dispatch("message", { data: JSON.stringify(event) });
+					}
+				});
+			}
+
+			close(): void {
+				this.readyState = 3;
+			}
+
+			private dispatch(type: string, event: unknown): void {
+				for (const listener of this.listeners.get(type) ?? []) {
+					listener(event);
+				}
+			}
+		}
+
+		vi.stubGlobal("WebSocket", MockWebSocket);
+
+		const model: Model<"openai-codex-responses"> = {
+			id: "gpt-5.1-codex",
+			name: "GPT-5.1 Codex",
+			api: "openai-codex-responses",
+			provider: "openai-codex",
+			baseUrl: "https://chatgpt.com/backend-api",
+			reasoning: true,
+			input: ["text"],
+			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+			contextWindow: 400000,
+			maxTokens: 128000,
+		};
+		const firstContext: Context = {
+			systemPrompt: "You are a helpful assistant.",
+			messages: [{ role: "user", content: "Run the deterministic probe", timestamp: 1 }],
+			tools: [
+				{
+					name: "deterministic_probe",
+					description: "Deterministic probe",
+					parameters: Type.Object({ turn: Type.Number() }),
+				},
+			],
+		};
+
+		const first = await streamOpenAICodexResponses(model, firstContext, {
+			apiKey: token,
+			sessionId: "session-tool-loop",
+			transport: "websocket-cached",
+		}).result();
+		const toolCall = first.content.find(
+			(block): block is Extract<(typeof first.content)[number], { type: "toolCall" }> => block.type === "toolCall",
+		);
+		expect(toolCall).toBeDefined();
+
+		const secondContext: Context = {
+			...firstContext,
+			messages: [
+				...firstContext.messages,
+				first,
+				{
+					role: "toolResult",
+					toolCallId: toolCall!.id,
+					toolName: toolCall!.name,
+					content: [{ type: "text", text: "ok" }],
+					details: {},
+					isError: false,
+					timestamp: 2,
+				},
+			],
+		};
+		const second = await streamOpenAICodexResponses(model, secondContext, {
+			apiKey: token,
+			sessionId: "session-tool-loop",
+			transport: "websocket-cached",
+		}).result();
+
+		const thirdContext: Context = {
+			...firstContext,
+			messages: [...secondContext.messages, second, { role: "user", content: "Continue after idle", timestamp: 3 }],
+		};
+		await streamOpenAICodexResponses(model, thirdContext, {
+			apiKey: token,
+			sessionId: "session-tool-loop",
+			transport: "websocket-cached",
+		}).result();
+
+		expect(sentBodies).toHaveLength(3);
+		const firstBody = sentBodies[0] as { input: unknown[]; previous_response_id?: string; store?: boolean };
+		const secondBody = sentBodies[1] as { input: unknown[]; previous_response_id?: string; store?: boolean };
+		const thirdBody = sentBodies[2] as { input: unknown[]; previous_response_id?: string; store?: boolean };
+		expect(firstBody.store).toBe(false);
+		expect(firstBody.previous_response_id).toBeUndefined();
+		expect(firstBody.input).toEqual([
+			{ role: "user", content: [{ type: "input_text", text: "Run the deterministic probe" }] },
+		]);
+		expect(secondBody.store).toBe(false);
+		expect(secondBody.previous_response_id).toBe("resp_tool");
+		expect(secondBody.input).toEqual([{ type: "function_call_output", call_id: "call_1", output: "ok" }]);
+		expect(thirdBody.store).toBe(false);
+		expect(thirdBody.previous_response_id).toBe("resp_done");
+		expect(thirdBody.input).toEqual([
+			{ role: "user", content: [{ type: "input_text", text: "Continue after idle" }] },
+		]);
+		expect(getOpenAICodexWebSocketDebugStats("session-tool-loop")).toMatchObject({
+			requests: 3,
+			connectionsCreated: 1,
+			connectionsReused: 2,
+			cachedContextRequests: 3,
+			storeTrueRequests: 0,
+			fullContextRequests: 1,
+			deltaRequests: 2,
+			lastDeltaInputItems: 1,
+			lastPreviousResponseId: "resp_done",
 		});
 	});
 

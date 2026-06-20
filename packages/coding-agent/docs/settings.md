@@ -88,18 +88,26 @@ Set `PI_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--off
 | Setting | Type | Default | Description |
 |---------|------|---------|-------------|
 | `compaction.enabled` | boolean | `true` | Enable auto-compaction |
-| `compaction.reserveTokens` | number | `16384` | Tokens reserved for LLM response |
-| `compaction.keepRecentTokens` | number | `20000` | Recent tokens to keep (not summarized) |
+| `compaction.triggerReserveTokens` | number | `12000` | Trigger compaction when fewer than this many tokens remain in the loaded model context window |
+| `compaction.triggerRatio` | number | `1.0` | Trigger compaction when context reaches this fraction of the loaded model context window |
+| `compaction.keepRecentMinTokens` | number | `2000` | Minimum recent tokens to keep after compaction |
+| `compaction.keepRecentMaxTokens` | number | `8000` | Maximum recent tokens to keep after compaction |
+| `compaction.targetContextTokens` | number | `12000` | Preferred post-compaction target size |
 
 ```json
 {
   "compaction": {
     "enabled": true,
-    "reserveTokens": 16384,
-    "keepRecentTokens": 20000
+    "triggerReserveTokens": 12000,
+    "triggerRatio": 1.0,
+    "keepRecentMinTokens": 2000,
+    "keepRecentMaxTokens": 8000,
+    "targetContextTokens": 12000
   }
 }
 ```
+
+Legacy `reserveTokens` and `keepRecentTokens` are still accepted. If only legacy `reserveTokens` is configured, the ratio trigger is disabled so older configs keep their previous reserve-only behavior.
 
 ### Branch Summary
 

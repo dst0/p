@@ -10,18 +10,29 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { Type } from "typebox";
 import { AuthStorage } from "../../coding-agent/src/core/auth-storage.ts";
-import { getModel } from "../src/models.ts";
+import { ModelRegistry } from "../../coding-agent/src/core/model-registry.ts";
 import {
 	closeOpenAICodexWebSocketSessions,
 	getOpenAICodexWebSocketDebugStats,
 	resetOpenAICodexWebSocketDebugStats,
 	streamOpenAICodexResponses,
 } from "../src/providers/openai-codex-responses.ts";
-import type { AssistantMessage, Context, Message, Model, Tool, ToolResultMessage, Transport } from "../src/types.ts";
+import type {
+	Api,
+	AssistantMessage,
+	Context,
+	Message,
+	Model,
+	Tool,
+	ToolResultMessage,
+	Transport,
+} from "../src/types.ts";
 
 type ThinkingLevel = "minimal" | "low" | "medium" | "high" | "xhigh";
 
 interface Args {
+	provider: string;
+	modelId: string;
 	turns: number;
 	transport: Transport;
 	maxTokens: number;
@@ -29,10 +40,14 @@ interface Args {
 	sessionId: string;
 }
 
+const DEFAULT_PROVIDER = "openai-codex";
+const DEFAULT_MODEL_ID = "gpt-5.5";
 const DEFAULT_TURNS = 20;
 const DEFAULT_MAX_TOKENS = 64;
 
 function parseArgs(argv: string[]): Args {
+	let provider = DEFAULT_PROVIDER;
+	let modelId = DEFAULT_MODEL_ID;
 	let turns = DEFAULT_TURNS;
 	let transport: Transport = "websocket-cached";
 	let maxTokens = DEFAULT_MAX_TOKENS;
@@ -42,6 +57,12 @@ function parseArgs(argv: string[]): Args {
 	for (let i = 0; i < argv.length; i++) {
 		const arg = argv[i];
 		switch (arg) {
+			case "--provider":
+				provider = required(argv[++i], arg);
+				break;
+			case "--model":
+				modelId = required(argv[++i], arg);
+				break;
 			case "--turns":
 				turns = Number.parseInt(required(argv[++i], arg), 10);
 				break;
@@ -76,7 +97,7 @@ function parseArgs(argv: string[]): Args {
 		}
 	}
 
-	return { turns, transport, maxTokens, reasoning, sessionId };
+	return { provider, modelId, turns, transport, maxTokens, reasoning, sessionId };
 }
 
 function required(value: string | undefined, flag: string): string {
@@ -88,12 +109,30 @@ function printHelp(): void {
 	console.log(`Usage: node test/codex-websocket-cached-probe.ts [options]
 
 Options:
+  --provider <name>    Model provider. Default: ${DEFAULT_PROVIDER}
+  --model <id>         Model id. Default: ${DEFAULT_MODEL_ID}
   --turns <n>          Number of user turns. Default: ${DEFAULT_TURNS}
   --transport <mode>   sse | websocket | websocket-cached | auto. Default: websocket-cached
   --reasoning <level>  minimal | low | medium | high | xhigh. Default: low
   --max-tokens <n>     Max output tokens per model request. Default: ${DEFAULT_MAX_TOKENS}
   --session-id <id>    Session id for websocket/cache state
 `);
+}
+
+function requireCodexResponsesModel(
+	model: Model<Api> | undefined,
+	provider: string,
+	modelId: string,
+): Model<"openai-codex-responses"> {
+	if (!model) {
+		throw new Error(`Model ${provider}/${modelId} not found`);
+	}
+	if (model.api !== "openai-codex-responses") {
+		throw new Error(
+			`Model ${provider}/${modelId} uses ${model.api}; this probe only supports openai-codex-responses models.`,
+		);
+	}
+	return model as Model<"openai-codex-responses">;
 }
 
 function buildPrompt(turn: number): string {
@@ -156,13 +195,20 @@ function percentile(values: number[], p: number): number {
 
 async function main(): Promise<void> {
 	const args = parseArgs(process.argv.slice(2));
-	const model = getModel("openai-codex", "gpt-5.5") as Model<"openai-codex-responses"> | undefined;
-	if (!model) throw new Error("Model openai-codex/gpt-5.5 not found");
-	const modelWithMaxTokens = { ...model, maxTokens: args.maxTokens };
 	const authStorage = AuthStorage.create();
-	const apiKey = (await authStorage.getApiKey("openai-codex")) ?? (await authStorage.getApiKey("openai"));
-	if (!apiKey) {
-		throw new Error("No OpenAI Codex API key found in coding-agent auth storage.");
+	const modelRegistry = ModelRegistry.create(authStorage);
+	const model = requireCodexResponsesModel(
+		modelRegistry.find(args.provider, args.modelId),
+		args.provider,
+		args.modelId,
+	);
+	const modelWithMaxTokens: Model<"openai-codex-responses"> = { ...model, maxTokens: args.maxTokens };
+	const auth = await modelRegistry.getApiKeyAndHeaders(model);
+	if (!auth.ok) {
+		throw new Error(`No request auth for ${model.provider}/${model.id}: ${auth.error}`);
+	}
+	if (!auth.apiKey) {
+		throw new Error(`No Codex auth token found for ${model.provider}/${model.id}.`);
 	}
 	const context: Context = {
 		systemPrompt:
@@ -171,9 +217,10 @@ async function main(): Promise<void> {
 		tools: [deterministicProbeTool()],
 	};
 	const elapsed: number[] = [];
+	closeOpenAICodexWebSocketSessions(args.sessionId);
 	resetOpenAICodexWebSocketDebugStats(args.sessionId);
 
-	console.log(`provider openai-codex, model gpt-5.5`);
+	console.log(`provider ${model.provider}, model ${model.id}`);
 	console.log(`sessionId ${args.sessionId}`);
 	console.log(
 		`turns ${args.turns}, transport ${args.transport}, reasoning ${args.reasoning}, maxTokens ${args.maxTokens}`,
@@ -197,7 +244,8 @@ async function main(): Promise<void> {
 		while (true) {
 			requests++;
 			const message = await streamOpenAICodexResponses(modelWithMaxTokens, context, {
-				apiKey,
+				apiKey: auth.apiKey,
+				headers: auth.headers,
 				sessionId: args.sessionId,
 				transport: args.transport,
 				reasoningEffort: args.reasoning,

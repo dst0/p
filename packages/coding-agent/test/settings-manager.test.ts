@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { DEFAULT_COMPACTION_SETTINGS } from "../src/core/compaction/index.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS } from "../src/core/http-dispatcher.ts";
 import { DEFAULT_AGENT_RETRY_BASE_DELAY_MS, SettingsManager } from "../src/core/settings-manager.ts";
 
@@ -23,6 +24,24 @@ describe("SettingsManager", () => {
 		if (existsSync(testDir)) {
 			rmSync(testDir, { recursive: true });
 		}
+	});
+
+	describe("compaction settings", () => {
+		it("uses centralized defaults", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompactionSettings()).toEqual(DEFAULT_COMPACTION_SETTINGS);
+		});
+
+		it("keeps legacy reserveTokens ratio behavior", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ compaction: { reserveTokens: 5000 } }));
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompactionSettings()).toMatchObject({
+				triggerReserveTokens: 5000,
+				triggerRatio: undefined,
+			});
+		});
 	});
 
 	describe("preserves externally added settings", () => {

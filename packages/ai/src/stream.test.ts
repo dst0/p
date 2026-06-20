@@ -56,12 +56,12 @@ describe("stream runtime context normalization", () => {
 		expect(result).toBe(assistant);
 		expect(capturedContext?.systemPrompt).toBe("stable");
 		expect(capturedContext?.messages).toHaveLength(2);
-		expect(capturedContext?.messages[1]).toEqual({ role: "user", content: "continue", timestamp: 1 });
-		expect(JSON.stringify(capturedContext?.messages[0])).toContain("<project_memory>");
-		expect(JSON.stringify(capturedContext?.messages[0])).toContain("next step: edit stream.ts");
+		expect(capturedContext?.messages[0]).toEqual({ role: "user", content: "continue", timestamp: 1 });
+		expect(JSON.stringify(capturedContext?.messages[1])).toContain("<project_memory>");
+		expect(JSON.stringify(capturedContext?.messages[1])).toContain("next step: edit stream.ts");
 	});
 
-	it("replays session runtime context insertions before their original user anchors", async () => {
+	it("replays session runtime context insertions after their original user anchors", async () => {
 		const capturedContexts: Context[] = [];
 		const assistant: AssistantMessage = {
 			role: "assistant",
@@ -119,10 +119,10 @@ describe("stream runtime context normalization", () => {
 		expect(capturedContexts).toHaveLength(2);
 		expect(capturedContexts[1].systemPrompt).toBe("stable");
 		expect(capturedContexts[1].messages).toHaveLength(5);
-		expect(JSON.stringify(capturedContexts[1].messages[0])).toContain("turn one memory");
-		expect(capturedContexts[1].messages[1]).toEqual(firstUser);
+		expect(capturedContexts[1].messages[0]).toEqual(firstUser);
+		expect(JSON.stringify(capturedContexts[1].messages[1])).toContain("turn one memory");
 		expect(capturedContexts[1].messages[2]).toEqual(priorAssistant);
-		expect(JSON.stringify(capturedContexts[1].messages[3])).toContain("turn two memory");
-		expect(capturedContexts[1].messages[4]).toEqual(secondUser);
+		expect(capturedContexts[1].messages[3]).toEqual(secondUser);
+		expect(JSON.stringify(capturedContexts[1].messages[4])).toContain("turn two memory");
 	});
 });
