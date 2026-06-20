@@ -19,10 +19,13 @@ import {
 	findCutPoint,
 	getLastAssistantUsage,
 	mergeStructuredSessionState,
+	parseSessionStateUpdateBlock,
 	prepareCompaction,
 	renderStructuredSessionCheckpoint,
+	renderWorkingSessionState,
 	selectKeepRecentTokens,
 	shouldCompact,
+	stripSessionStateUpdateBlocks,
 	stubToolResultsForPrompt,
 } from "../src/core/compaction/index.ts";
 import {
@@ -207,6 +210,99 @@ function expectPrepared(result: CompactionPreparationResult): CompactionPreparat
 
 // ============================================================================
 // Unit tests
+
+describe("session state update protocol", () => {
+	it("parses valid patches and merges them into structured state", () => {
+		const parsed = parseSessionStateUpdateBlock(
+			`Visible answer.\n<session_state_update>{"type":"patch","goal":"Ship deterministic state compaction","plan":[{"text":"Write parser tests","status":"done"},{"text":"Run manual walkthrough","status":"in_progress"}],"progress":{"done":["Parser implemented"],"next":["Run regression tests"]},"risks":["Prompt budget may grow"],"touchedFiles":[{"path":"packages/coding-agent/src/core/agent-session.ts","status":"modified","summary":"Wired state updates"}]}</session_state_update>`,
+			["assistant-entry"],
+		);
+		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), parsed.patch!);
+
+		expect(parsed.malformed).toBe(false);
+		expect(parsed.strippedText).toBe("Visible answer.");
+		expect(state.canonicalRequest.current).toBe("Ship deterministic state compaction");
+		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
+			["Write parser tests", "done"],
+			["Run manual walkthrough", "in_progress"],
+		]);
+		expect(state.progress.done).toEqual(["Parser implemented"]);
+		expect(state.progress.next).toEqual(["Run regression tests"]);
+		expect(state.audit.knownRisks).toEqual(["Prompt budget may grow"]);
+		expect(state.codebase.touchedFiles[0]).toMatchObject({
+			path: "packages/coding-agent/src/core/agent-session.ts",
+			status: "modified",
+		});
+	});
+
+	it("accepts no-op updates", () => {
+		const parsed = parseSessionStateUpdateBlock(`<session_state_update>{"type":"none"}</session_state_update>`, [
+			"assistant-entry",
+		]);
+
+		expect(parsed).toMatchObject({
+			strippedText: "",
+			malformed: false,
+			patch: undefined,
+		});
+	});
+
+	it("rejects malformed patches safely while stripping protocol text", () => {
+		const parsed = parseSessionStateUpdateBlock(
+			`Visible answer.\n<session_state_update>{"type":"unexpected"}</session_state_update>`,
+			["assistant-entry"],
+		);
+
+		expect(parsed.malformed).toBe(true);
+		expect(parsed.patch).toBeUndefined();
+		expect(parsed.strippedText).toBe("Visible answer.");
+	});
+
+	it("marks invalid JSON as malformed and hides it from visible output", () => {
+		const parsed = parseSessionStateUpdateBlock("A\n<session_state_update>{bad-json}</session_state_update>\nB");
+
+		expect(parsed.malformed).toBe(true);
+		expect(parsed.patch).toBeUndefined();
+		expect(parsed.strippedText).toBe("A\n\nB");
+	});
+
+	it("strips protocol blocks and renders modern state markers", () => {
+		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			canonicalRequest: { current: "Track session state" },
+			plan: {
+				add: [
+					{
+						id: "plan-1",
+						text: "Finished item",
+						status: "done",
+						evidenceEntryIds: [],
+					},
+					{
+						id: "plan-2",
+						text: "Current item",
+						status: "in_progress",
+						evidenceEntryIds: [],
+					},
+					{
+						id: "plan-3",
+						text: "Queued item",
+						status: "not_started",
+						evidenceEntryIds: [],
+					},
+				],
+			},
+			progress: { next: ["Polish UI output"] },
+		});
+		const workingState = renderWorkingSessionState(state, 1000);
+
+		expect(stripSessionStateUpdateBlocks("Hi<session_state_update>{}</session_state_update>")).toBe("Hi");
+		expect(workingState).toContain("🚩 Goal: Track session state");
+		expect(workingState).toContain("✅ Finished item");
+		expect(workingState).toContain("⏳ Current item");
+		expect(workingState).toContain("➖ Queued item");
+		expect(workingState).toContain("📌 Polish UI output");
+	});
+});
 // ============================================================================
 
 describe("Token calculation", () => {
@@ -248,7 +344,10 @@ describe("tool result stubbing", () => {
 		expect(result.messages).not.toBe(messages);
 		expect(result.messages[1]).not.toBe(oldToolResult);
 		expect(result.messages[3]).toBe(recentToolResult);
-		expect(oldToolResult.content[0]).toEqual({ type: "text", text: hugeOutput });
+		expect(oldToolResult.content[0]).toEqual({
+			type: "text",
+			text: hugeOutput,
+		});
 		const stubbedText = extractText([result.messages[1]]);
 		expect(stubbedText).toContain("[Tool result stubbed");
 		expect(stubbedText).toContain("session_recall");
@@ -740,7 +839,10 @@ describe("buildSessionContext", () => {
 		const loaded = buildSessionContext(entries);
 		expect(loaded.messages.length).toBe(4);
 		expect(loaded.thinkingLevel).toBe("off");
-		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
+		expect(loaded.model).toEqual({
+			provider: "anthropic",
+			modelId: "claude-sonnet-4-5",
+		});
 	});
 
 	it("should handle single compaction", () => {
@@ -809,7 +911,10 @@ describe("buildSessionContext", () => {
 
 		const loaded = buildSessionContext(entries);
 		// model_change is later overwritten by assistant message's model info
-		expect(loaded.model).toEqual({ provider: "anthropic", modelId: "claude-sonnet-4-5" });
+		expect(loaded.model).toEqual({
+			provider: "anthropic",
+			modelId: "claude-sonnet-4-5",
+		});
 		expect(loaded.thinkingLevel).toBe("high");
 	});
 });
@@ -830,7 +935,10 @@ describe("prepareCompaction with previous compaction", () => {
 		const pathEntries = [u1, a1, u2, a2, u3, a3, compaction1, u4, a4];
 		const contextBefore = buildSessionContext(pathEntries);
 		const preparation = expectPrepared(
-			prepareCompaction(pathEntries, { ...DEFAULT_COMPACTION_SETTINGS, keepRecentTokens: 4000 }),
+			prepareCompaction(pathEntries, {
+				...DEFAULT_COMPACTION_SETTINGS,
+				keepRecentTokens: 4000,
+			}),
 		);
 
 		expect(preparation.firstKeptEntryId).toBe(u2.id);

@@ -5,6 +5,7 @@ import type { AgentMessage, AgentTool } from "@dst0/p-agent-core";
 import { type AssistantMessage, fauxAssistantMessage, fauxToolCall, type Model } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
@@ -69,6 +70,43 @@ describe("AgentSession prompt characterization", () => {
 		).toBe(false);
 	});
 
+	it("stores hidden state updates and injects working state into the next prompt", async () => {
+		const harness = await createPromptHarness();
+		harnesses.push(harness);
+		let firstSystemPrompt = "";
+		let secondSystemPrompt = "";
+		harness.setResponses([
+			(context) => {
+				firstSystemPrompt = context.systemPrompt ?? "";
+				return fauxAssistantMessage(
+					`Recorded.\n<session_state_update>{"type":"patch","goal":"Fix durable state tracking","plan":[{"text":"Add state protocol parser","status":"done"}],"progress":{"next":["Run deterministic compaction tests"]},"risks":["Prompt state may grow"]}</session_state_update>`,
+				);
+			},
+			(context) => {
+				secondSystemPrompt = context.systemPrompt ?? "";
+				return fauxAssistantMessage("continued");
+			},
+		]);
+
+		await harness.session.prompt("Fix durable state tracking");
+
+		expect(firstSystemPrompt).toContain("<session_state_protocol>");
+		expect(getMessageText(harness.session.messages[1]!)).toBe("Recorded.");
+		expect(
+			harness.sessionManager
+				.getEntries()
+				.some((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
+		).toBe(true);
+
+		await harness.session.prompt("continue");
+
+		expect(secondSystemPrompt).toContain("<working_state>");
+		expect(secondSystemPrompt).toContain("🚩 Goal: Fix durable state tracking");
+		expect(secondSystemPrompt).toContain("✅ Add state protocol parser");
+		expect(secondSystemPrompt).toContain("📌 Run deterministic compaction tests");
+		expect(secondSystemPrompt).not.toContain("<project_memory>");
+	});
+
 	it("reuses provider prompt cache across sequential user prompts", async () => {
 		const harness = await createPromptHarness();
 		harnesses.push(harness);
@@ -106,7 +144,9 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createPromptHarness({ tools: [echoTool] });
 		harnesses.push(harness);
 		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("echo", { text: "warm-cache" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("echo", { text: "warm-cache" }), {
+				stopReason: "toolUse",
+			}),
 			fauxAssistantMessage("first tool loop complete"),
 			fauxAssistantMessage("second prompt complete"),
 		]);
@@ -171,7 +211,11 @@ describe("AgentSession prompt characterization", () => {
 			timestamp: Date.now() - 1000,
 		};
 		harness.session.agent.state.messages = [
-			{ role: "user", content: [{ type: "text", text: "inspect a large file" }], timestamp: Date.now() - 3000 },
+			{
+				role: "user",
+				content: [{ type: "text", text: "inspect a large file" }],
+				timestamp: Date.now() - 3000,
+			},
 			rawToolResult,
 			{
 				role: "toolResult",
@@ -225,7 +269,11 @@ describe("AgentSession prompt characterization", () => {
 			timestamp: Date.now() - 1000,
 		};
 		harness.session.agent.state.messages = [
-			{ role: "user", content: [{ type: "text", text: "read the architecture doc" }], timestamp: Date.now() - 3000 },
+			{
+				role: "user",
+				content: [{ type: "text", text: "read the architecture doc" }],
+				timestamp: Date.now() - 3000,
+			},
 			rawToolResult,
 			{
 				role: "toolResult",
@@ -272,7 +320,9 @@ describe("AgentSession prompt characterization", () => {
 		harnesses.push(harness);
 
 		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), { stopReason: "toolUse" }),
+			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), {
+				stopReason: "toolUse",
+			}),
 			fauxAssistantMessage("done"),
 		]);
 
@@ -307,7 +357,9 @@ describe("AgentSession prompt characterization", () => {
 				};
 			},
 		});
-		const harness = await createPromptHarness({ tools: [makeTool("slow", 25), makeTool("fast", 0)] });
+		const harness = await createPromptHarness({
+			tools: [makeTool("slow", 25), makeTool("fast", 0)],
+		});
 		harnesses.push(harness);
 
 		harness.setResponses([

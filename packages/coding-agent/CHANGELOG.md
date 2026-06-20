@@ -9,10 +9,13 @@
 ### Fixed
 
 - Fixed default compaction settings to use the centralized 100% context-window trigger ratio instead of a stale 75% SettingsManager default.
+- Fixed auto-compaction to ignore stale provider usage on the first small turn after an auto-compaction boundary, preventing immediate re-compaction loops.
 - Fixed provider prompt-cache reuse for large idle follow-up prompts by preserving provider-visible user-turn prefixes before runtime context.
 - Fixed `/state` to report prompt totals separately from dynamic context usage and show live structured goal, plan, progress, and next-step metadata before compaction.
+- Fixed session state tracking to store hidden assistant state patches, inject bounded working state on later prompts, and compact deterministically without model summarization.
 - Fixed agent sessions to propagate the session id into provider requests so prompt-cache reuse works across sequential user prompts.
 - Fixed inherited Moonshot AI China model metadata to include Kimi K2.7 Code, and omitted unsupported thinking-off payloads for Kimi K2.7 Code models ([#5760](https://github.com/dst0/p/issues/5760)).
+- Fixed auto-retry to keep waiting through transient provider body parse failures and `Loading model` responses instead of failing after the short retry window.
 
 ## [0.79.4] - 2026-06-15
 

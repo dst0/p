@@ -45,24 +45,30 @@ import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "./auth
 import { type BashResult, executeBashWithOperations } from "./bash-executor.ts";
 import {
 	type CompactionDetails,
+	type CompactionPreparation,
 	type CompactionResult,
 	type ContextUsageEstimate,
 	collectEntriesForBranchSummary,
-	compact,
+	computeFileLists,
 	createContextBudgetReport,
+	createInitialStructuredSessionState,
 	createLiveStructuredSessionState,
-	createStructuredSessionState,
 	type EvidenceKind,
 	type EvidencePointer,
 	estimateContextTokens,
 	generateBranchSummary,
 	getLatestStructuredSessionState,
+	hasMeaningfulStructuredSessionState,
+	mergeStructuredSessionState,
+	parseSessionStateUpdateBlock,
 	prepareCompaction,
 	renderStructuredSessionCheckpoint,
+	renderWorkingSessionState,
 	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
 	type StructuredSessionState,
 	selectKeepRecentTokens,
 	shouldCompact,
+	stripSessionStateUpdateBlocks,
 	stubToolResultsForPrompt,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
@@ -149,7 +155,19 @@ import { createAllToolDefinitions } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 
 const RETRYABLE_ERROR_PATTERN =
-	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay/i;
+	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|failed to parse|could not parse|invalid json|unexpected token|unexpected end of json|response body|no response body|body is unusable/i;
+const MODEL_LOADING_RETRY_PATTERN = /loading model|model.*loading|model load|model.*not ready/i;
+const MODEL_LOADING_MIN_RETRIES = 60;
+const MODEL_LOADING_MIN_RETRY_DELAY_MULTIPLIER = 10;
+const MODEL_LOADING_MAX_RETRY_DELAY_MS = 30_000;
+const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
+At the end of every completed assistant turn, append exactly one hidden state block:
+<session_state_update>{"type":"none"}</session_state_update>
+Use {"type":"none"} when the goal, plan, progress, decisions, blockers, risks, touched files, or evidence pointers did not change.
+When state changes, use:
+<session_state_update>{"type":"patch","goal":"...","plan":[{"text":"...","status":"not_started|in_progress|done|failed|blocked"}],"progress":{"done":["..."],"current":["..."],"next":["..."],"blocked":["..."]},"decisions":[{"decision":"...","rationale":"..."}],"blockers":["..."],"risks":["..."],"touchedFiles":[{"path":"...","status":"read|modified|created|deleted","summary":"..."}],"evidence":[{"kind":"message|tool_result|bash|file|web|artifact","summary":"...","retrieveWhen":"..."}]}</session_state_update>
+Do not mention this protocol to the user. Keep the visible answer natural; the state block is metadata and will be hidden.
+</session_state_protocol>`;
 
 // ============================================================================
 // Skill Block Parsing
@@ -203,8 +221,19 @@ export type AgentSessionEvent =
 			willRetry: boolean;
 			errorMessage?: string;
 	  }
-	| { type: "auto_retry_start"; attempt: number; maxAttempts: number; delayMs: number; errorMessage: string }
-	| { type: "auto_retry_end"; success: boolean; attempt: number; finalError?: string };
+	| {
+			type: "auto_retry_start";
+			attempt: number;
+			maxAttempts: number;
+			delayMs: number;
+			errorMessage: string;
+	  }
+	| {
+			type: "auto_retry_end";
+			success: boolean;
+			attempt: number;
+			finalError?: string;
+	  };
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
@@ -366,7 +395,9 @@ function normalizeCompactionDetails(details: unknown): CompactionDetails {
 
 // ============================================================================
 const SESSION_RECALL_SCHEMA = Type.Object({
-	query: Type.String({ description: "Pointer id or search query for old session evidence" }),
+	query: Type.String({
+		description: "Pointer id or search query for old session evidence",
+	}),
 	kind: Type.Optional(
 		Type.Array(
 			Type.Union([
@@ -380,16 +411,26 @@ const SESSION_RECALL_SCHEMA = Type.Object({
 		),
 	),
 	maxTokens: Type.Optional(
-		Type.Number({ description: "Maximum returned excerpt tokens; default 1200, or 4000 with includeRaw" }),
+		Type.Number({
+			description: "Maximum returned excerpt tokens; default 1200, or 4000 with includeRaw",
+		}),
 	),
 	includeRaw: Type.Optional(Type.Boolean({ description: "Include raw excerpts when available" })),
 });
 
 const KEEP_CONTEXT_SCHEMA = Type.Object({
-	toolCallId: Type.String({ description: "The ID of the tool call whose result you want to keep or summarize." }),
-	summary: Type.Optional(Type.String({ description: "A concise summary of the relevant parts of the output." })),
+	toolCallId: Type.String({
+		description: "The ID of the tool call whose result you want to keep or summarize.",
+	}),
+	summary: Type.Optional(
+		Type.String({
+			description: "A concise summary of the relevant parts of the output.",
+		}),
+	),
 	relevantLines: Type.Optional(
-		Type.Array(Type.String(), { description: "Key lines from the output that should be preserved verbatim." }),
+		Type.Array(Type.String(), {
+			description: "Key lines from the output that should be preserved verbatim.",
+		}),
 	),
 	pin: Type.Optional(
 		Type.Boolean({
@@ -433,6 +474,8 @@ interface RecallCandidate {
 
 interface RuntimeContextPrompts {
 	baseSystemPrompt?: string;
+	stateProtocolPrompt?: string;
+	workingStatePrompt?: string;
 	memoryPrompt?: string;
 	rulesPrompt?: string;
 	repoMapPrompt?: string;
@@ -443,6 +486,7 @@ interface RuntimeContextPrompts {
 interface PromptContextPreparation {
 	messages: AgentMessage[];
 	estimate: ContextUsageEstimate;
+	budgetEstimate: ContextUsageEstimate;
 	source: "provider_usage" | "estimated";
 	toolRawTokens: number;
 	toolStubTokens: number;
@@ -642,7 +686,10 @@ export class AgentSession {
 	readonly sessionManager: SessionManager;
 	readonly settingsManager: SettingsManager;
 
-	private _scopedModels: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
+	private _scopedModels: Array<{
+		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+	}>;
 
 	// Event subscription state
 	private _unsubscribeAgent?: () => void;
@@ -725,7 +772,10 @@ export class AgentSession {
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
-		this._sessionStartEvent = config.sessionStartEvent ?? { type: "session_start", reason: "startup" };
+		this._sessionStartEvent = config.sessionStartEvent ?? {
+			type: "session_start",
+			reason: "startup",
+		};
 		this._completionMode = config.completionMode ?? this.agent.completionMode;
 
 		// Always subscribe to agent events for internal handling
@@ -783,7 +833,10 @@ export class AgentSession {
 		return result.ok ? { apiKey: result.apiKey, headers: result.headers } : {};
 	}
 
-	private _getServiceModelRequest(minContextTokens = 0): { model: Model<any>; thinkingLevel: ThinkingLevel } {
+	private _getServiceModelRequest(minContextTokens = 0): {
+		model: Model<any>;
+		thinkingLevel: ThinkingLevel;
+	} {
 		const fallbackModel = this.model;
 		if (!fallbackModel) {
 			throw new Error(formatNoModelSelectedMessage());
@@ -1059,15 +1112,25 @@ export class AgentSession {
 		// Emit to extensions first
 		await this._emitExtensionEvent(event);
 
+		let assistantStateUpdateText: string | undefined;
+		if (event.type === "message_end" && event.message.role === "assistant") {
+			assistantStateUpdateText = this._getAssistantMessageText(event.message);
+			const strippedText = stripSessionStateUpdateBlocks(assistantStateUpdateText);
+			if (strippedText !== assistantStateUpdateText) {
+				this._replaceMessageInPlace(event.message, this._replaceAssistantMessageText(event.message, strippedText));
+			}
+		}
+
 		// Notify all listeners
 		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
 
 		// Handle session persistence
 		if (event.type === "message_end") {
+			let persistedEntryId: string | undefined;
 			// Check if this is a custom message from extensions
 			if (event.message.role === "custom") {
 				// Persist as CustomMessageEntry
-				this.sessionManager.appendCustomMessageEntry(
+				persistedEntryId = this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
 					event.message.content,
 					event.message.display,
@@ -1079,13 +1142,16 @@ export class AgentSession {
 				event.message.role === "toolResult"
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
-				this.sessionManager.appendMessage(event.message);
+				persistedEntryId = this.sessionManager.appendMessage(event.message);
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
 			// Track assistant message for auto-compaction (checked on agent_end)
 			if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
+				if (assistantStateUpdateText && persistedEntryId) {
+					this._applyAssistantSessionStateUpdate(assistantStateUpdateText, persistedEntryId);
+				}
 
 				const assistantMsg = event.message as AssistantMessage;
 				if (assistantMsg.stopReason !== "error") {
@@ -1108,14 +1174,16 @@ export class AgentSession {
 
 	private _willRetryAfterAgentEnd(event: Extract<AgentEvent, { type: "agent_end" }>): boolean {
 		const settings = this.settingsManager.getRetrySettings();
-		if (!settings.enabled || this._retryAttempt >= settings.maxRetries) {
+		if (!settings.enabled) {
 			return false;
 		}
 
 		for (let i = event.messages.length - 1; i >= 0; i--) {
 			const message = event.messages[i];
 			if (message.role === "assistant") {
-				return this._isRetryableError(message as AssistantMessage);
+				const assistantMessage = message as AssistantMessage;
+				const maxRetries = this._getEffectiveRetryMaxAttempts(assistantMessage, settings.maxRetries);
+				return this._retryAttempt < maxRetries && this._isRetryableError(assistantMessage);
 			}
 		}
 		return false;
@@ -1158,13 +1226,56 @@ export class AgentSession {
 		Object.assign(targetRecord, replacement);
 	}
 
+	private _getAssistantMessageText(message: AssistantMessage): string {
+		return message.content
+			.filter((block): block is TextContent => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+	}
+
+	private _replaceAssistantMessageText(message: AssistantMessage, text: string): AssistantMessage {
+		let replacedFirstTextBlock = false;
+		const content = message.content
+			.map((block) => {
+				if (block.type !== "text") {
+					return block;
+				}
+				if (!replacedFirstTextBlock) {
+					replacedFirstTextBlock = true;
+					return { ...block, text };
+				}
+				return { ...block, text: "" };
+			})
+			.filter((block) => block.type !== "text" || block.text.length > 0);
+		return {
+			...message,
+			content: replacedFirstTextBlock ? content : message.content,
+		};
+	}
+
+	private _applyAssistantSessionStateUpdate(rawAssistantText: string, sourceEntryId: string): void {
+		const parsed = parseSessionStateUpdateBlock(rawAssistantText, [sourceEntryId]);
+		if (!parsed.patch) {
+			return;
+		}
+		const branchEntries = this.sessionManager.getBranch();
+		const previous =
+			getLatestStructuredSessionState(branchEntries) ??
+			createInitialStructuredSessionState(this.sessionManager.getSessionId());
+		const state = mergeStructuredSessionState(previous, parsed.patch);
+		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+	}
+
 	/** Emit extension events based on agent events */
 	private async _emitExtensionEvent(event: AgentEvent): Promise<void> {
 		if (event.type === "agent_start") {
 			this._turnIndex = 0;
 			await this._extensionRunner.emit({ type: "agent_start" });
 		} else if (event.type === "agent_end") {
-			await this._extensionRunner.emit({ type: "agent_end", messages: event.messages });
+			await this._extensionRunner.emit({
+				type: "agent_end",
+				messages: event.messages,
+			});
 		} else if (event.type === "turn_start") {
 			const extensionEvent: TurnStartEvent = {
 				type: "turn_start",
@@ -1421,7 +1532,10 @@ export class AgentSession {
 	}
 
 	/** Scoped models for cycling (from --models flag) */
-	get scopedModels(): ReadonlyArray<{ model: Model<any>; thinkingLevel?: ThinkingLevel }> {
+	get scopedModels(): ReadonlyArray<{
+		model: Model<any>;
+		thinkingLevel?: ThinkingLevel;
+	}> {
 		return this._scopedModels;
 	}
 
@@ -1883,7 +1997,10 @@ export class AgentSession {
 	 */
 	async sendCustomMessage<T = unknown>(
 		message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
-		options?: { triggerTurn?: boolean; deliverAs?: "steer" | "followUp" | "nextTurn" },
+		options?: {
+			triggerTurn?: boolean;
+			deliverAs?: "steer" | "followUp" | "nextTurn";
+		},
 	): Promise<void> {
 		const appMessage = {
 			role: "custom" as const,
@@ -2078,7 +2195,11 @@ export class AgentSession {
 
 		await this._emitModelSelect(next.model, currentModel, "cycle");
 
-		return { model: next.model, thinkingLevel: this.thinkingLevel, isScoped: true };
+		return {
+			model: next.model,
+			thinkingLevel: this.thinkingLevel,
+			isScoped: true,
+		};
 	}
 
 	private async _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined> {
@@ -2103,7 +2224,11 @@ export class AgentSession {
 
 		await this._emitModelSelect(nextModel, currentModel, "cycle");
 
-		return { model: nextModel, thinkingLevel: this.thinkingLevel, isScoped: false };
+		return {
+			model: nextModel,
+			thinkingLevel: this.thinkingLevel,
+			isScoped: false,
+		};
 	}
 
 	// =========================================================================
@@ -2218,10 +2343,7 @@ export class AgentSession {
 
 	getSessionStateSnapshot(): SessionStateSnapshot {
 		const branchEntries = this.sessionManager.getBranch();
-		const state = this._createLiveStructuredSessionState(
-			branchEntries,
-			getLatestStructuredSessionState(branchEntries),
-		);
+		const state = this._getCurrentStructuredSessionState(branchEntries);
 		const settings = this._getEffectiveCompactionSettings();
 		const checkpoint = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
 		const latestCompaction = getLatestCompactionEntry(branchEntries);
@@ -2239,6 +2361,28 @@ export class AgentSession {
 					}
 				: undefined,
 		};
+	}
+
+	private _getCurrentStructuredSessionState(branchEntries = this.sessionManager.getBranch()): StructuredSessionState {
+		const previous = getLatestStructuredSessionState(branchEntries);
+		const fallbackEntries = this._getLiveStateFallbackEntries(branchEntries);
+		if (previous && fallbackEntries.length === 0) {
+			return previous;
+		}
+		return this._createLiveStructuredSessionState(
+			fallbackEntries.length > 0 ? fallbackEntries : branchEntries,
+			previous,
+		);
+	}
+
+	private _getLiveStateFallbackEntries(branchEntries: SessionEntry[]): SessionEntry[] {
+		for (let index = branchEntries.length - 1; index >= 0; index--) {
+			const entry = branchEntries[index];
+			if (entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE) {
+				return branchEntries.slice(index + 1);
+			}
+		}
+		return branchEntries;
 	}
 
 	private _createLiveStructuredSessionState(
@@ -2274,6 +2418,11 @@ export class AgentSession {
 	}
 
 	private _createRuntimeContextPrompts(query: string, baseSystemPrompt: string): RuntimeContextPrompts {
+		const settings = this._getEffectiveCompactionSettings();
+		const workingStatePrompt = renderWorkingSessionState(
+			this._getCurrentStructuredSessionState(),
+			settings.renderedStateMaxTokens,
+		);
 		const memoryPrompt = this._createProjectMemoryPrompt(query);
 		const rulesPrompt = createRulesContext(this._cwd, query);
 		const repoMapPrompt = createRepoMapContext(this._cwd, query)?.content;
@@ -2282,11 +2431,18 @@ export class AgentSession {
 		const subagentPrompt = subagentDigestPrompt
 			? `${subagentProfilesPrompt}\n\n${subagentDigestPrompt}`
 			: subagentProfilesPrompt;
-		const prompts = [memoryPrompt, rulesPrompt, repoMapPrompt, subagentPrompt].filter(
-			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
-		);
+		const prompts = [
+			SESSION_STATE_PROTOCOL_PROMPT,
+			workingStatePrompt,
+			memoryPrompt,
+			rulesPrompt,
+			repoMapPrompt,
+			subagentPrompt,
+		].filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0);
 		return {
 			baseSystemPrompt,
+			stateProtocolPrompt: SESSION_STATE_PROTOCOL_PROMPT,
+			workingStatePrompt,
 			memoryPrompt,
 			rulesPrompt,
 			repoMapPrompt,
@@ -2320,6 +2476,7 @@ export class AgentSession {
 			return {
 				messages,
 				estimate,
+				budgetEstimate: estimate,
 				source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
 				toolRawTokens: 0,
 				toolStubTokens: 0,
@@ -2360,7 +2517,9 @@ export class AgentSession {
 		const pressureEstimate =
 			promptContext.messages === messages
 				? initialEstimate
-				: estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
+				: estimateContextTokens(promptContext.messages, systemPrompt, {
+						useProviderUsage: false,
+					});
 		const pressureBudget = createContextBudgetReport(pressureEstimate.tokens, contextWindow, settings);
 		let preparedMessages = promptContext.messages;
 
@@ -2378,6 +2537,7 @@ export class AgentSession {
 		return {
 			messages: preparedMessages,
 			estimate: finalEstimate,
+			budgetEstimate: pressureEstimate,
 			source: "estimated",
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
@@ -2403,6 +2563,9 @@ export class AgentSession {
 			memoryPrompt: components.memoryPrompt,
 			rulesPrompt: components.rulesPrompt,
 			repoMapPrompt: components.repoMapPrompt,
+			checkpoint: [components.stateProtocolPrompt, components.workingStatePrompt]
+				.filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0)
+				.join("\n\n"),
 			retrievedPrompt: components.subagentPrompt,
 			recentMessages: messages,
 			toolRawTokens: options.toolRawTokens,
@@ -2469,7 +2632,12 @@ export class AgentSession {
 		summary: string,
 		evidencePointers: string[] = [],
 	): SubagentDigest {
-		return persistSubagentDigest(this._cwd, { profile, query, summary, evidencePointers });
+		return persistSubagentDigest(this._cwd, {
+			profile,
+			query,
+			summary,
+			evidencePointers,
+		});
 	}
 
 	evaluateGuardrails(phase: ConstraintPhase = "final"): GuardrailReport {
@@ -2582,7 +2750,12 @@ export class AgentSession {
 
 				if (!message) {
 					return {
-						content: [{ type: "text", text: `Error: Tool result with ID ${input.toolCallId} not found.` }],
+						content: [
+							{
+								type: "text",
+								text: `Error: Tool result with ID ${input.toolCallId} not found.`,
+							},
+						],
 						details: { error: "not_found" },
 						isError: true,
 					};
@@ -2602,7 +2775,12 @@ export class AgentSession {
 				};
 
 				return {
-					content: [{ type: "text", text: `Context settings updated for tool result ${input.toolCallId}.` }],
+					content: [
+						{
+							type: "text",
+							text: `Context settings updated for tool result ${input.toolCallId}.`,
+						},
+					],
 					details: { status: "updated" },
 				};
 			},
@@ -2864,27 +3042,68 @@ export class AgentSession {
 		return candidates;
 	}
 
-	private _prepareStructuredCompactionSummary(
-		summary: string,
-		details: unknown,
+	private _prepareDeterministicCompaction(
+		preparation: CompactionPreparation,
 		pathEntries: SessionEntry[],
 		settings: { renderedStateMaxTokens: number },
-	): { summary: string; details: CompactionDetails; state: unknown } {
-		const compactionDetails = normalizeCompactionDetails(details);
-		const state = createStructuredSessionState({
-			sessionId: this.sessionManager.getSessionId(),
-			previous: getLatestStructuredSessionState(pathEntries),
-			summary,
-			entries: pathEntries,
-			readFiles: compactionDetails.readFiles,
-			modifiedFiles: compactionDetails.modifiedFiles,
-			audit: compactionDetails.audit,
+	): CompactionResult<CompactionDetails> & { state: StructuredSessionState } {
+		const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
+		const baseState = this._getCurrentStructuredSessionState(pathEntries);
+		const risks = hasMeaningfulStructuredSessionState(baseState)
+			? []
+			: [
+					"No structured state was available before deterministic compaction; recent raw messages carry remaining context.",
+				];
+		const state = mergeStructuredSessionState(baseState, {
+			codebase:
+				readFiles.length > 0 || modifiedFiles.length > 0
+					? {
+							touchedFiles: [
+								...readFiles.map((path) => ({
+									path,
+									status: "read" as const,
+									summary: "Read during compacted session history.",
+								})),
+								...modifiedFiles.map((path) => ({
+									path,
+									status: "modified" as const,
+									summary: "Modified during compacted session history.",
+								})),
+							],
+							relevantSymbols: [],
+						}
+					: undefined,
+			audit: {
+				lastCompactionAt: new Date().toISOString(),
+				compactionCount: baseState.audit.compactionCount + 1,
+				knownRisks: risks,
+			},
 		});
+		const summary = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
+		const summaryTokens = Math.ceil(summary.length / 4);
+		const afterTokens = preparation.systemPromptTokens + summaryTokens + preparation.recentRawTokens;
+		const audit = {
+			beforeTokens: preparation.tokensBefore,
+			afterTokens,
+			savedTokens: Math.max(0, preparation.tokensBefore - afterTokens),
+			summaryTokens,
+			renderedStateTokens: summaryTokens,
+			recentRawTokens: preparation.recentRawTokens,
+			toolRawTokens: 0,
+			toolStubTokens: 0,
+			droppedEntries: preparation.droppedEntryIds,
+			stubbedToolResults: [],
+			risks,
+		};
 		return {
-			summary: renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens),
+			summary,
+			firstKeptEntryId: preparation.firstKeptEntryId,
+			tokensBefore: preparation.tokensBefore,
+			tokensAfter: afterTokens,
 			details: {
-				...compactionDetails,
-				markdownSummary: summary,
+				readFiles,
+				modifiedFiles,
+				audit,
 				structuredState: state,
 			},
 			state,
@@ -2903,10 +3122,6 @@ export class AgentSession {
 		this._emit({ type: "compaction_start", reason: "manual" });
 
 		try {
-			if (!this.model) {
-				throw new Error(formatNoModelSelectedMessage());
-			}
-
 			const pathEntries = this.sessionManager.getBranch();
 			const settings = this._getEffectiveCompactionSettings();
 
@@ -2951,35 +3166,12 @@ export class AgentSession {
 				tokensBefore = extensionCompaction.tokensBefore;
 				details = extensionCompaction.details;
 			} else {
-				// Generate compaction result
-				const serviceRequest = this._getServiceModelRequest(
-					preparation.tokensToSummarize +
-						Math.ceil((this.systemPrompt?.length ?? 0) / 4) +
-						settings.summaryMaxTokens +
-						2_000,
-				);
-				const authRequest = await this._getServiceAuthWithCurrentFallback(serviceRequest);
-				const result = await compact(
-					preparation,
-					authRequest.model,
-					authRequest.apiKey,
-					authRequest.headers,
-					customInstructions,
-					this._compactionAbortController.signal,
-					authRequest.thinkingLevel,
-					this.agent.streamFn,
-					(currentChunk, totalChunks) => {
-						this._emit({ type: "compaction_progress", currentChunk, totalChunks });
-					},
-				);
+				const result = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
 				details = result.details;
-				const structured = this._prepareStructuredCompactionSummary(summary, details, pathEntries, settings);
-				summary = structured.summary;
-				details = structured.details;
-				structuredState = structured.state;
+				structuredState = result.state;
 			}
 
 			if (this._compactionAbortController.signal.aborted) {
@@ -3140,37 +3332,16 @@ export class AgentSession {
 			return await this._runAutoCompaction("overflow", true);
 		}
 
-		// Case 2: Threshold - context is getting large
-		// For error messages (no usage data), estimate from last successful response.
-		// This ensures sessions that hit persistent API errors (e.g. 529) can still compact.
-		const messages = this._getEffectiveCompactedMessages();
+		// Case 2: Threshold - context is getting large. This must be based on
+		// the current prompt state, not historical provider usage persisted on
+		// assistant messages that may have survived a compaction boundary.
+		const messages = this._getEffectiveCompactedMessages().slice();
 		if (additionalMessages) {
 			messages.push(...additionalMessages);
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		const providerEstimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
-		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
-		const estimateSource = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
-
-		if (
-			assistantForCompactionCheck &&
-			assistantForCompactionCheck.stopReason === "error" &&
-			estimateSource === "provider_usage"
-		) {
-			if (estimate.lastUsageIndex === null) return false; // No usage data at all
-			// Verify the usage source is post-compaction. Kept pre-compaction messages
-			// have stale usage reflecting the old (larger) context and would falsely
-			// trigger compaction right after one just finished.
-			const usageMsg = messages[estimate.lastUsageIndex];
-			if (
-				compactionEntry &&
-				usageMsg.role === "assistant" &&
-				(usageMsg as AssistantMessage).timestamp <= new Date(compactionEntry.timestamp).getTime()
-			) {
-				return false;
-			}
-		}
+		const estimate = promptContext.budgetEstimate;
 
 		const contextTokens = estimate.tokens;
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
@@ -3189,17 +3360,6 @@ export class AgentSession {
 		this._autoCompactionAbortController = new AbortController();
 
 		try {
-			if (!this.model) {
-				this._emit({
-					type: "compaction_end",
-					reason,
-					result: undefined,
-					aborted: false,
-					willRetry: false,
-				});
-				return false;
-			}
-
 			const pathEntries = this.sessionManager.getBranch();
 
 			const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
@@ -3261,49 +3421,12 @@ export class AgentSession {
 				tokensBefore = extensionCompaction.tokensBefore;
 				details = extensionCompaction.details;
 			} else {
-				// Generate compaction result
-				let authRequest: {
-					model: Model<any>;
-					thinkingLevel: ThinkingLevel;
-					apiKey?: string;
-					headers?: Record<string, string>;
-				};
-				try {
-					const serviceRequest = this._getServiceModelRequest(
-						preparation.tokensToSummarize +
-							Math.ceil((this.systemPrompt?.length ?? 0) / 4) +
-							settings.summaryMaxTokens +
-							2_000,
-					);
-					authRequest = await this._getServiceAuthWithCurrentFallback(serviceRequest);
-				} catch {
-					this._emit({
-						type: "compaction_end",
-						reason,
-						result: undefined,
-						aborted: false,
-						willRetry: false,
-					});
-					return false;
-				}
-				const compactResult = await compact(
-					preparation,
-					authRequest.model,
-					authRequest.apiKey,
-					authRequest.headers,
-					undefined,
-					this._autoCompactionAbortController.signal,
-					authRequest.thinkingLevel,
-					this.agent.streamFn,
-				);
+				const compactResult = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
 				details = compactResult.details;
-				const structured = this._prepareStructuredCompactionSummary(summary, details, pathEntries, settings);
-				summary = structured.summary;
-				details = structured.details;
-				structuredState = structured.state;
+				structuredState = compactResult.state;
 			}
 
 			if (this._autoCompactionAbortController.signal.aborted) {
@@ -3359,7 +3482,13 @@ export class AgentSession {
 				tokensAfter: tokensAfterAuto,
 				details,
 			};
-			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
+			this._emit({
+				type: "compaction_end",
+				reason,
+				result,
+				aborted: false,
+				willRetry,
+			});
 
 			if (willRetry) {
 				const messages = this.agent.state.messages;
@@ -3472,7 +3601,12 @@ export class AgentSession {
 
 	private buildExtensionResourcePaths(entries: Array<{ path: string; extensionPath: string }>): Array<{
 		path: string;
-		metadata: { source: string; scope: "temporary"; origin: "top-level"; baseDir?: string };
+		metadata: {
+			source: string;
+			scope: "temporary";
+			origin: "top-level";
+			baseDir?: string;
+		};
 	}> {
 		return entries.map((entry) => {
 			const source = this.getExtensionSourceLabel(entry.extensionPath);
@@ -3650,7 +3784,9 @@ export class AgentSession {
 			...registeredTools,
 			...this._customTools.map((definition) => ({
 				definition,
-				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, { source: "sdk" }),
+				sourceInfo: createSyntheticSourceInfo(`<sdk:${definition.name}>`, {
+					source: "sdk",
+				}),
 			})),
 		].filter((tool) => isAllowedTool(tool.definition.name));
 		const definitionRegistry = new Map<string, ToolDefinitionEntry>(
@@ -3660,7 +3796,9 @@ export class AgentSession {
 					name,
 					{
 						definition,
-						sourceInfo: createSyntheticSourceInfo(`<builtin:${name}>`, { source: "builtin" }),
+						sourceInfo: createSyntheticSourceInfo(`<builtin:${name}>`, {
+							source: "builtin",
+						}),
 					},
 				]),
 		);
@@ -3792,7 +3930,10 @@ export class AgentSession {
 
 	async reload(): Promise<void> {
 		const previousFlagValues = this._extensionRunner.getFlagValues();
-		await emitSessionShutdownEvent(this._extensionRunner, { type: "session_shutdown", reason: "reload" });
+		await emitSessionShutdownEvent(this._extensionRunner, {
+			type: "session_shutdown",
+			reason: "reload",
+		});
 		await this.settingsManager.reload();
 		this.syncQueueModesFromSettings();
 		resetApiProviders();
@@ -3809,7 +3950,10 @@ export class AgentSession {
 			this._extensionShutdownHandler ||
 			this._extensionErrorListener;
 		if (hasBindings) {
-			await this._extensionRunner.emit({ type: "session_start", reason: "reload" });
+			await this._extensionRunner.emit({
+				type: "session_start",
+				reason: "reload",
+			});
 			await this.extendResourcesFromExtensions("reload");
 		}
 	}
@@ -3849,21 +3993,23 @@ export class AgentSession {
 		if (!settings.enabled) {
 			return false;
 		}
+		const maxRetries = this._getEffectiveRetryMaxAttempts(message, settings.maxRetries);
 
 		this._retryAttempt++;
 
-		if (this._retryAttempt > settings.maxRetries) {
+		if (this._retryAttempt > maxRetries) {
 			// Preserve the completed attempt count so post-run handling can emit the final failure.
 			this._retryAttempt--;
 			return false;
 		}
 
-		const delayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const exponentialDelayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
+		const delayMs = this._getRetryDelayMs(message, exponentialDelayMs, settings.baseDelayMs);
 
 		this._emit({
 			type: "auto_retry_start",
 			attempt: this._retryAttempt,
-			maxAttempts: settings.maxRetries,
+			maxAttempts: maxRetries,
 			delayMs,
 			errorMessage: message.errorMessage || "Unknown error",
 		});
@@ -3894,6 +4040,21 @@ export class AgentSession {
 		}
 
 		return true;
+	}
+
+	private _getEffectiveRetryMaxAttempts(message: AssistantMessage, configuredMaxRetries: number): number {
+		if (MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+			return Math.max(configuredMaxRetries, MODEL_LOADING_MIN_RETRIES);
+		}
+		return configuredMaxRetries;
+	}
+
+	private _getRetryDelayMs(message: AssistantMessage, exponentialDelayMs: number, baseDelayMs: number): number {
+		if (!MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+			return exponentialDelayMs;
+		}
+		const modelLoadingDelayMs = Math.max(exponentialDelayMs, baseDelayMs * MODEL_LOADING_MIN_RETRY_DELAY_MULTIPLIER);
+		return Math.min(modelLoadingDelayMs, MODEL_LOADING_MAX_RETRY_DELAY_MS);
 	}
 
 	/**
@@ -4054,7 +4215,10 @@ export class AgentSession {
 	 */
 	setSessionName(name: string): void {
 		this.sessionManager.appendSessionInfo(name);
-		this._emit({ type: "session_info_changed", name: this.sessionManager.getSessionName() });
+		this._emit({
+			type: "session_info_changed",
+			name: this.sessionManager.getSessionName(),
+		});
 	}
 
 	// =========================================================================
@@ -4074,8 +4238,18 @@ export class AgentSession {
 	 */
 	async navigateTree(
 		targetId: string,
-		options: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string } = {},
-	): Promise<{ editorText?: string; cancelled: boolean; aborted?: boolean; summaryEntry?: BranchSummaryEntry }> {
+		options: {
+			summarize?: boolean;
+			customInstructions?: string;
+			replaceInstructions?: boolean;
+			label?: string;
+		} = {},
+	): Promise<{
+		editorText?: string;
+		cancelled: boolean;
+		aborted?: boolean;
+		summaryEntry?: BranchSummaryEntry;
+	}> {
 		const oldLeafId = this.sessionManager.getLeafId();
 
 		// No-op if already at target
@@ -4366,9 +4540,8 @@ export class AgentSession {
 		const settings = this.settingsManager.getCompactionSettings();
 		const effectiveMessages = this._getEffectiveCompactedMessages();
 		const promptContext = this._preparePromptContext(effectiveMessages);
-		const providerEstimate = estimateContextTokens(promptContext.messages, this.systemPrompt);
-		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.estimate : providerEstimate;
-		const source = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
+		const estimate = promptContext.budgetEstimate;
+		const source = promptContext.source;
 		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
 		const contextTokens =
 			estimate.lastUsageIndex === null
