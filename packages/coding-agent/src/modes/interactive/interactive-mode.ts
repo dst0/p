@@ -66,6 +66,7 @@ import {
 	parseSkillBlock,
 } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
+import { renderPlanStatusMarker, STATE_RENDER_MARKERS } from "../../core/compaction/index.ts";
 import type {
 	AutocompleteProviderFactory,
 	EditorFactory,
@@ -442,7 +443,10 @@ export class InteractiveMode {
 			return;
 		}
 
-		const detection = await detectTerminalBackgroundTheme({ ui: this.ui, timeoutMs: 100 });
+		const detection = await detectTerminalBackgroundTheme({
+			ui: this.ui,
+			timeoutMs: 100,
+		});
 		const result = setTheme(detection.theme, true);
 		if (!result.success) {
 			return;
@@ -1188,7 +1192,11 @@ export class InteractiveMode {
 		}
 
 		if (source === "cli") {
-			return { label: "path", scopeLabel: scope === "temporary" ? "temp" : undefined, color: "muted" };
+			return {
+				label: "path",
+				scopeLabel: scope === "temporary" ? "temp" : undefined,
+				color: "muted",
+			};
 		}
 
 		const scopeLabel =
@@ -1442,7 +1450,10 @@ export class InteractiveMode {
 			const skills = skillsResult.skills;
 			if (skills.length > 0) {
 				const groups = this.buildScopeGroups(
-					skills.map((skill) => ({ path: skill.filePath, sourceInfo: skill.sourceInfo })),
+					skills.map((skill) => ({
+						path: skill.filePath,
+						sourceInfo: skill.sourceInfo,
+					})),
 				);
 				const skillList = this.formatScopeGroups(groups, {
 					formatPath: (item) => this.formatDisplayPath(item.path),
@@ -1455,7 +1466,10 @@ export class InteractiveMode {
 			const templates = this.session.promptTemplates;
 			if (templates.length > 0) {
 				const groups = this.buildScopeGroups(
-					templates.map((template) => ({ path: template.filePath, sourceInfo: template.sourceInfo })),
+					templates.map((template) => ({
+						path: template.filePath,
+						sourceInfo: template.sourceInfo,
+					})),
 				);
 				const templateByPath = new Map(templates.map((t) => [t.filePath, t]));
 				const templateList = this.formatScopeGroups(groups, {
@@ -1528,7 +1542,11 @@ export class InteractiveMode {
 			const extensionErrors = this.session.resourceLoader.getExtensions().errors;
 			if (extensionErrors.length > 0) {
 				for (const error of extensionErrors) {
-					extensionDiagnostics.push({ type: "error", message: error.error, path: error.path });
+					extensionDiagnostics.push({
+						type: "error",
+						message: error.error,
+						path: error.path,
+					});
 				}
 			}
 
@@ -2150,7 +2168,11 @@ export class InteractiveMode {
 					this.hideExtensionSelector();
 					resolve(undefined);
 				},
-				{ tui: this.ui, timeout: opts?.timeout, onToggleToolsExpanded: () => this.toggleToolOutputExpansion() },
+				{
+					tui: this.ui,
+					timeout: opts?.timeout,
+					onToggleToolsExpanded: () => this.toggleToolOutputExpansion(),
+				},
 			);
 
 			this.editorContainer.clear();
@@ -2783,7 +2805,10 @@ export class InteractiveMode {
 			case "agent_start":
 				this.pendingTools.clear();
 				this.footerDataProvider.clearProgress();
-				this.footerDataProvider.setPrefillProgress({ percent: 0, elapsedMs: 0 });
+				this.footerDataProvider.setPrefillProgress({
+					percent: 0,
+					elapsedMs: 0,
+				});
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2835,7 +2860,10 @@ export class InteractiveMode {
 					this.ui.requestRender();
 				} else if (event.message.role === "assistant") {
 					this.footerDataProvider.clearProgress();
-					this.footerDataProvider.setPrefillProgress({ percent: 0, elapsedMs: 0 });
+					this.footerDataProvider.setPrefillProgress({
+						percent: 0,
+						elapsedMs: 0,
+					});
 					this.streamingComponent = new AssistantMessageComponent(
 						undefined,
 						this.hideThinkingBlock,
@@ -2894,7 +2922,10 @@ export class InteractiveMode {
 						event.assistantMessageEvent?.type === "toolcall_start"
 					) {
 						this.footerDataProvider.setPrefillProgress(undefined);
-						this.footerDataProvider.setGenProgress({ tokensPerSecond: 0, tokens: 0 });
+						this.footerDataProvider.setGenProgress({
+							tokensPerSecond: 0,
+							tokens: 0,
+						});
 						this.footerDataProvider.setModelSwitchProgress(undefined);
 						this.footerDataProvider.setLoadingProgress(undefined);
 					}
@@ -3123,8 +3154,9 @@ export class InteractiveMode {
 				// Show retry indicator
 				this.statusContainer.clear();
 				this.retryCountdown?.dispose();
+				const retryPrefix = /loading model/i.test(event.errorMessage) ? "Model is loading; retrying" : "Retrying";
 				const retryMessage = (seconds: number) =>
-					`Retrying (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
+					`${retryPrefix} (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
 				this.retryLoader = new Loader(
 					this.ui,
 					(spinner) => theme.fg("warning", spinner),
@@ -3352,7 +3384,10 @@ export class InteractiveMode {
 							} else {
 								errorMessage = message.errorMessage || "Error";
 							}
-							component.updateResult({ content: [{ type: "text", text: errorMessage }], isError: true });
+							component.updateResult({
+								content: [{ type: "text", text: errorMessage }],
+								isError: true,
+							});
 						} else {
 							renderedPendingTools.set(content.id, component);
 						}
@@ -5037,7 +5072,10 @@ export class InteractiveMode {
 				throw new Error("API key cannot be empty.");
 			}
 
-			this.session.modelRegistry.authStorage.set(providerId, { type: "api_key", key: apiKey });
+			this.session.modelRegistry.authStorage.set(providerId, {
+				type: "api_key",
+				key: apiKey,
+			});
 
 			restoreEditor();
 			await this.completeProviderAuthentication(providerId, providerName, "api_key", previousModel);
@@ -5364,7 +5402,9 @@ export class InteractiveMode {
 	private async handleShareCommand(): Promise<void> {
 		// Check if gh is available and logged in
 		try {
-			const authResult = spawnSync("gh", ["auth", "status"], { encoding: "utf-8" });
+			const authResult = spawnSync("gh", ["auth", "status"], {
+				encoding: "utf-8",
+			});
 			if (authResult.status !== 0) {
 				this.showError("GitHub CLI is not logged in. Run 'gh auth login' first.");
 				return;
@@ -5412,7 +5452,11 @@ export class InteractiveMode {
 		};
 
 		try {
-			const result = await new Promise<{ stdout: string; stderr: string; code: number | null }>((resolve) => {
+			const result = await new Promise<{
+				stdout: string;
+				stderr: string;
+				code: number | null;
+			}>((resolve) => {
 				proc = spawn("gh", ["gist", "create", "--public=false", tmpFile]);
 				let stdout = "";
 				let stderr = "";
@@ -5531,15 +5575,19 @@ export class InteractiveMode {
 		const snapshot = this.session.getSessionStateSnapshot();
 		const context = snapshot.contextUsage;
 		const audit = snapshot.lastCompaction?.audit;
+		const state = snapshot.state;
 		let info = `${theme.bold("Session State")}\n\n`;
 		info += `${theme.fg("dim", "Session:")} ${snapshot.sessionId}\n`;
 		if (context) {
-			const tokens = context.tokens?.toLocaleString() ?? "unknown";
+			const promptTokens = (context.tokenBreakdown?.total ?? context.tokens)?.toLocaleString() ?? "unknown";
+			const dynamicTokens = context.tokens?.toLocaleString() ?? "unknown";
 			const triggerThreshold = context.triggerThreshold?.toLocaleString() ?? "unknown";
 			const targetContextTokens = context.targetContextTokens?.toLocaleString() ?? "unknown";
 			const stubbedToolResults = context.stubbedToolResults?.length ?? 0;
 			const toolStubSavings = context.toolStubSavings ?? 0;
-			info += `${theme.fg("dim", "Context:")} ${tokens}/${context.contextWindow.toLocaleString()} tokens\n`;
+			info += `${theme.fg("dim", "Prompt:")} ${promptTokens}/${context.contextWindow.toLocaleString()} tokens\n`;
+			info += `${theme.fg("dim", "Dynamic:")} ${dynamicTokens} tokens\n`;
+			info += `${theme.fg("dim", "Static:")} ${context.staticTokens.toLocaleString()} tokens\n`;
 			info += `${theme.fg("dim", "Trigger:")} ${triggerThreshold} tokens\n`;
 			info += `${theme.fg("dim", "Target:")} ${targetContextTokens} tokens\n`;
 			info += `${theme.fg("dim", "Should compact:")} ${context.shouldCompact ? "yes" : "no"}\n`;
@@ -5548,6 +5596,46 @@ export class InteractiveMode {
 				info += `\n${theme.bold("Token Breakdown")}\n${formatTokenBreakdown(context.tokenBreakdown)}\n`;
 			}
 		}
+		const appendSection = (title: string, lines: string[]): void => {
+			if (lines.length === 0) return;
+			info += `\n${theme.bold(`${title}:`)}\n${lines.join("\n")}\n`;
+		};
+		info += `\n${theme.bold("Canonical State:")}\n`;
+		info += `${STATE_RENDER_MARKERS.goal} Goal: ${state.canonicalRequest.current || "(no user request recorded yet)"}\n`;
+		info += `${theme.fg("dim", "Original requests:")} ${state.canonicalRequest.originalRequests.length}\n`;
+		appendSection("Progress", [
+			...state.progress.done.map((item) => `${STATE_RENDER_MARKERS.done} ${item}`),
+			...state.progress.current.map((item) => `${STATE_RENDER_MARKERS.inProgress} ${item}`),
+			...state.progress.blocked.map((item) => `${STATE_RENDER_MARKERS.blocked} ${item}`),
+		]);
+		appendSection(
+			"Plan",
+			state.plan.map((item) => `${renderPlanStatusMarker(item.status)} ${item.text}`),
+		);
+		appendSection(
+			"Next",
+			(state.progress.next.length > 0 ? state.progress.next : state.progress.current).map(
+				(item) => `${STATE_RENDER_MARKERS.nextAction} ${item}`,
+			),
+		);
+		appendSection(
+			"Decisions",
+			state.decisions
+				.filter((decision) => decision.status === "active")
+				.map((decision) => `- ${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`),
+		);
+		appendSection(
+			"Files",
+			state.codebase.touchedFiles.map((file) => `- ${file.status}: ${file.path} - ${file.summary}`),
+		);
+		appendSection(
+			"Evidence",
+			state.evidence.map((pointer) => `- ${pointer.id}: ${pointer.summary}`),
+		);
+		appendSection(
+			"Risks",
+			state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${risk}`),
+		);
 		const guardrails = this.session.evaluateGuardrails("final");
 		const visibleGuardrails = guardrails.results.filter(
 			(result) => !result.ok || result.id === "dirty-worktree-final",
@@ -5565,7 +5653,6 @@ export class InteractiveMode {
 				info += `${theme.fg("dim", "Audit:")} ${audit.beforeTokens} -> ${audit.afterTokens}, saved ${audit.savedTokens}\n`;
 			}
 		}
-		info += `\n${theme.bold("Checkpoint")}\n${snapshot.checkpoint}`;
 
 		this.chatContainer.addChild(new Spacer(1));
 		this.chatContainer.addChild(new Text(info, 1, 0));
@@ -6044,7 +6131,13 @@ export class InteractiveMode {
 			const result = await this.session.compact(customInstructions);
 			if (options?.audit && result.details && typeof result.details === "object" && "audit" in result.details) {
 				const audit = (
-					result.details as { audit?: { beforeTokens: number; afterTokens: number; savedTokens: number } }
+					result.details as {
+						audit?: {
+							beforeTokens: number;
+							afterTokens: number;
+							savedTokens: number;
+						};
+					}
 				).audit;
 				if (audit) {
 					this.showStatus(

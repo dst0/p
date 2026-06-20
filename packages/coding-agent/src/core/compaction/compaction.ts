@@ -23,7 +23,7 @@ import {
 	createCustomMessage,
 } from "../messages.ts";
 import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
-import type { StructuredSessionState } from "./structured-state.ts";
+import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE, type StructuredSessionState } from "./structured-state.ts";
 import {
 	computeFileLists,
 	createFileOps,
@@ -472,7 +472,11 @@ export function estimateTokens(message: AgentMessage): number {
 	switch (message.role) {
 		case "user": {
 			chars = estimateTextAndImageContentChars(
-				(message as { content: string | Array<{ type: string; text?: string }> }).content,
+				(
+					message as {
+						content: string | Array<{ type: string; text?: string }>;
+					}
+				).content,
 			);
 			return Math.ceil(chars / 4);
 		}
@@ -730,7 +734,13 @@ export function stubToolResultsForPrompt(
 ): ToolResultStubbingResult {
 	const resolved = resolveCompactionSettings(settings);
 	if (messages.length === 0) {
-		return { messages, stubs: [], toolRawTokens: 0, toolStubTokens: 0, tokenSavingsEstimate: 0 };
+		return {
+			messages,
+			stubs: [],
+			toolRawTokens: 0,
+			toolStubTokens: 0,
+			tokenSavingsEstimate: 0,
+		};
 	}
 
 	const toolResultIndexes: number[] = [];
@@ -740,7 +750,13 @@ export function stubToolResultsForPrompt(
 		}
 	}
 	if (toolResultIndexes.length === 0) {
-		return { messages, stubs: [], toolRawTokens: 0, toolStubTokens: 0, tokenSavingsEstimate: 0 };
+		return {
+			messages,
+			stubs: [],
+			toolRawTokens: 0,
+			toolStubTokens: 0,
+			tokenSavingsEstimate: 0,
+		};
 	}
 
 	const keepRecentCount = Math.max(0, Math.floor(resolved.toolResultKeepRecentCount));
@@ -944,7 +960,13 @@ function setMessageText(message: AgentMessage, truncatedText: string): AgentMess
  */
 export function truncateKeptMessages(
 	messages: AgentMessage[],
-	budget: number | { keepRecentTokens: number; targetContextTokens?: number; systemPromptTokens?: number },
+	budget:
+		| number
+		| {
+				keepRecentTokens: number;
+				targetContextTokens?: number;
+				systemPromptTokens?: number;
+		  },
 ): AgentMessage[] {
 	if (messages.length === 0) return messages;
 
@@ -1132,7 +1154,11 @@ export function findCutPoint(
 	const cutPoints = findValidCutPoints(entries, startIndex, endIndex);
 
 	if (cutPoints.length === 0) {
-		return { firstKeptEntryIndex: startIndex, turnStartIndex: -1, isSplitTurn: false };
+		return {
+			firstKeptEntryIndex: startIndex,
+			turnStartIndex: -1,
+			isSplitTurn: false,
+		};
 	}
 
 	// Walk backwards from newest, accumulating estimated message sizes
@@ -1374,7 +1400,10 @@ export async function generateSummary(
 
 	const response = await completeSummarization(
 		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{
+			systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+			messages: summarizationMessages,
+		},
 		completionOptions,
 		streamFn,
 	);
@@ -1433,16 +1462,29 @@ export type CompactionPreparationResult =
 			tokensBefore?: number;
 	  };
 
+function isAlreadyCompactedBoundary(pathEntries: SessionEntry[]): boolean {
+	const lastEntry = pathEntries[pathEntries.length - 1];
+	if (!lastEntry) return false;
+	if (lastEntry.type === "compaction") return true;
+	if (lastEntry.type !== "custom" || lastEntry.customType !== STRUCTURED_SESSION_STATE_CUSTOM_TYPE) return false;
+	const previousEntry = pathEntries[pathEntries.length - 2];
+	return previousEntry?.type === "compaction";
+}
+
 export function prepareCompaction(
 	pathEntries: SessionEntry[],
 	settings: CompactionSettings,
 	systemPrompt?: string,
 ): CompactionPreparationResult {
 	if (pathEntries.length === 0) {
-		return { ok: false, message: "Nothing to compact (session branch has no entries)", reason: "empty_session" };
+		return {
+			ok: false,
+			message: "Nothing to compact (session branch has no entries)",
+			reason: "empty_session",
+		};
 	}
 
-	if (pathEntries[pathEntries.length - 1].type === "compaction") {
+	if (isAlreadyCompactedBoundary(pathEntries)) {
 		return {
 			ok: false,
 			message: "Already compacted (latest session entry is a compaction boundary)",
@@ -1844,7 +1886,10 @@ async function generateTurnPrefixSummary(
 
 	const response = await completeSummarization(
 		model,
-		{ systemPrompt: SUMMARIZATION_SYSTEM_PROMPT, messages: summarizationMessages },
+		{
+			systemPrompt: SUMMARIZATION_SYSTEM_PROMPT,
+			messages: summarizationMessages,
+		},
 		createSummarizationOptions(model, maxTokens, apiKey, headers, signal, thinkingLevel),
 		streamFn,
 	);

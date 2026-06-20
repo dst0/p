@@ -107,7 +107,10 @@ describe("InteractiveMode.showStatus", () => {
 		expect(fakeThis.chatContainer.children).toHaveLength(2);
 
 		// Something else gets added to the chat in between status updates
-		fakeThis.chatContainer.addChild({ render: () => ["OTHER"], invalidate: () => {} });
+		fakeThis.chatContainer.addChild({
+			render: () => ["OTHER"],
+			invalidate: () => {},
+		});
 		expect(fakeThis.chatContainer.children).toHaveLength(3);
 
 		(InteractiveMode as any).prototype.showStatus.call(fakeThis, "STATUS_TWO");
@@ -125,6 +128,12 @@ describe("InteractiveMode.handleStateCommand", () => {
 	test("shows prompt total separately from dynamic context tokens", () => {
 		const state = createInitialStructuredSessionState("session-state");
 		state.canonicalRequest.current = "Improve durable session state.";
+		state.plan.push({
+			id: "plan-one",
+			text: "Render canonical state.",
+			status: "done",
+			evidenceEntryIds: [],
+		});
 		state.progress.next.push("Run targeted tests.");
 		const fakeThis: any = {
 			chatContainer: new Container(),
@@ -169,9 +178,14 @@ describe("InteractiveMode.handleStateCommand", () => {
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
 		expect(output).toContain("Prompt: 4,960/65,536 tokens");
 		expect(output).toContain("Dynamic: 0 tokens");
+		expect(output).toContain("🚩 Goal: Improve durable session state.");
+		expect(output).toContain("✅ Render canonical state.");
 		expect(output).toContain("Next:");
-		expect(output).toContain("Run targeted tests.");
+		expect(output).toContain("📌 Run targeted tests.");
 		expect(output).not.toContain("Context: 0/65,536 tokens");
+		expect(output).not.toContain("<session_checkpoint>");
+		expect((output.match(/Goal:/g) ?? []).length).toBe(1);
+		expect((output.match(/Plan/g) ?? []).length).toBe(1);
 	});
 });
 
@@ -406,7 +420,9 @@ describe("InteractiveMode.setupAutocompleteProvider", () => {
 
 		(
 			InteractiveMode as unknown as {
-				prototype: { setupAutocompleteProvider: (this: typeof fakeThis) => void };
+				prototype: {
+					setupAutocompleteProvider: (this: typeof fakeThis) => void;
+				};
 			}
 		).prototype.setupAutocompleteProvider.call(fakeThis);
 
@@ -428,7 +444,10 @@ describe("InteractiveMode.showLoadedResources", () => {
 		contextFiles?: Array<{ path: string; content?: string }>;
 		extensions?: ExtensionFixture[];
 		skills?: Array<{ filePath: string; name: string }>;
-		skillDiagnostics?: Array<{ type: "warning" | "error" | "collision"; message: string }>;
+		skillDiagnostics?: Array<{
+			type: "warning" | "error" | "collision";
+			message: string;
+		}>;
 		useRealScopeGroups?: boolean;
 	}) {
 		const fakeThis: any = {
@@ -455,7 +474,11 @@ describe("InteractiveMode.showLoadedResources", () => {
 						diagnostics: options.skillDiagnostics ?? [],
 					}),
 					getPrompts: () => ({ prompts: [], diagnostics: [] }),
-					getExtensions: () => ({ extensions: options.extensions ?? [], errors: [], runtime: {} }),
+					getExtensions: () => ({
+						extensions: options.extensions ?? [],
+						errors: [],
+						runtime: {},
+					}),
 					getThemes: () => ({ themes: [], diagnostics: [] }),
 				},
 			},
