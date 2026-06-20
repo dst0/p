@@ -3002,6 +3002,9 @@ export class AgentSession {
 				systemPromptTokens,
 			});
 			this.agent.state.messages = truncatedMessages;
+			const tokensAfterManual = estimateContextTokens(truncatedMessages, this.systemPrompt, {
+				useProviderUsage: false,
+			}).tokens;
 
 			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
@@ -3020,6 +3023,7 @@ export class AgentSession {
 				summary,
 				firstKeptEntryId,
 				tokensBefore,
+				tokensAfter: tokensAfterManual,
 				details,
 			};
 			this._emit({
@@ -3331,6 +3335,9 @@ export class AgentSession {
 				systemPromptTokens,
 			});
 			this.agent.state.messages = truncatedMessages;
+			const tokensAfterAuto = estimateContextTokens(truncatedMessages, this.systemPrompt, {
+				useProviderUsage: false,
+			}).tokens;
 
 			// Get the saved compaction entry for the extension event
 			const savedCompactionEntry = newEntries.find((e) => e.type === "compaction" && e.summary === summary) as
@@ -3349,6 +3356,7 @@ export class AgentSession {
 				summary,
 				firstKeptEntryId,
 				tokensBefore,
+				tokensAfter: tokensAfterAuto,
 				details,
 			};
 			this._emit({ type: "compaction_end", reason, result, aborted: false, willRetry });
@@ -4345,36 +4353,7 @@ export class AgentSession {
 	 * from the current turn (which haven't been appended to the session manager yet).
 	 */
 	private _getEffectiveCompactedMessages(): AgentMessage[] {
-		const branchEntries = this.sessionManager.getBranch();
-		const compactedMessages = this.sessionManager.buildSessionContext().messages;
-		const stateMessages = this.agent.state.messages;
-
-		let lastMatchIdxInState = -1;
-		for (let i = compactedMessages.length - 1; i >= 0; i--) {
-			lastMatchIdxInState = stateMessages.lastIndexOf(compactedMessages[i]);
-			if (lastMatchIdxInState !== -1) {
-				break;
-			}
-		}
-
-		if (lastMatchIdxInState !== -1) {
-			if (lastMatchIdxInState < stateMessages.length - 1) {
-				compactedMessages.push(...stateMessages.slice(lastMatchIdxInState + 1));
-			}
-		} else {
-			const latestCompaction = getLatestCompactionEntry(branchEntries);
-			if (latestCompaction) {
-				const compactionTime = new Date(latestCompaction.timestamp).getTime();
-				const pending = stateMessages.filter(
-					(m) => typeof m.timestamp === "number" && m.timestamp >= compactionTime,
-				);
-				compactedMessages.push(...pending);
-			} else {
-				compactedMessages.push(...stateMessages);
-			}
-		}
-
-		return compactedMessages;
+		return this.agent.state.messages;
 	}
 
 	getContextUsage(): ContextUsage | undefined {

@@ -48,6 +48,7 @@ export interface CompactionSummaryMessage {
 	role: "compactionSummary";
 	summary: string;
 	tokensBefore: number;
+	tokensAfter?: number;
 	timestamp: number;
 }
 
