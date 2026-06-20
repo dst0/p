@@ -54,6 +54,7 @@ export interface TerminalSettings {
 	clearOnShrink?: boolean; // default: false (clear empty rows when content shrinks)
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
 	showTokenProgress?: boolean; // default: true (compact queued/prefill/generation footer progress)
+	showTokenStats?: boolean; // default: true (cumulative ↑↓R W CH token counts in footer)
 }
 
 export interface ImageSettings {
@@ -1273,6 +1274,19 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTokenProgress = enabled;
 		this.markModified("terminal", "showTokenProgress");
+		this.save();
+	}
+
+	getShowTokenStats(): boolean {
+		return this.settings.terminal?.showTokenStats ?? true;
+	}
+
+	setShowTokenStats(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.showTokenStats = enabled;
+		this.markModified("terminal", "showTokenStats");
 		this.save();
 	}
 

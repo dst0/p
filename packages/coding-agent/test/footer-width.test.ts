@@ -207,4 +207,44 @@ describe("FooterComponent width handling", () => {
 		const statsLine = stripAnsi(footer.render(120)[1]);
 		expect(statsLine).not.toContain("GEN");
 	});
+
+	it("shows token stats by default", () => {
+		const session = createSession({
+			sessionName: "",
+			usage: {
+				input: 1000,
+				output: 500,
+				cacheRead: 200,
+				cacheWrite: 100,
+				cost: { total: 0.01 },
+			},
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("↑");
+		expect(statsLine).toContain("↓");
+		expect(statsLine).toContain("R");
+		expect(statsLine).toContain("CH");
+	});
+
+	it("hides token stats when disabled", () => {
+		const session = createSession({
+			sessionName: "",
+			usage: {
+				input: 1000,
+				output: 500,
+				cacheRead: 200,
+				cacheWrite: 100,
+				cost: { total: 0.01 },
+			},
+		});
+		const footer = new FooterComponent(session, createFooterData(1));
+		footer.setShowTokenStats(false);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).not.toContain("↑");
+		expect(statsLine).not.toContain("↓");
+		expect(statsLine).not.toContain("CH");
+	});
 });

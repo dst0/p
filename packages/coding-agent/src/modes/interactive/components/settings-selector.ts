@@ -70,6 +70,7 @@ export interface SettingsConfig {
 	clearOnShrink: boolean;
 	showTerminalProgress: boolean;
 	showTokenProgress: boolean;
+	showTokenStats: boolean;
 	warnings: WarningSettings;
 }
 
@@ -101,6 +102,7 @@ export interface SettingsCallbacks {
 	onClearOnShrinkChange: (enabled: boolean) => void;
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onShowTokenProgressChange: (enabled: boolean) => void;
+	onShowTokenStatsChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onCancel: () => void;
 }
@@ -497,6 +499,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Token stats toggle (insert after token-progress)
+		const tokenProgressIndex = items.findIndex((item) => item.id === "token-progress");
+		items.splice(tokenProgressIndex + 1, 0, {
+			id: "token-stats",
+			label: "Token stats",
+			description: "Show cumulative \u2191\u2193R W CH token counts in the footer",
+			currentValue: config.showTokenStats ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -588,6 +600,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "token-progress":
 						callbacks.onShowTokenProgressChange(newValue === "true");
+						break;
+					case "token-stats":
+						callbacks.onShowTokenStatsChange(newValue === "true");
 						break;
 				}
 			},

@@ -71,6 +71,7 @@ export function formatCwdForFooter(cwd: string, home: string | undefined): strin
 export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private showTokenProgress = true;
+	private showTokenStats = true;
 	private session: AgentSession;
 	private footerData: ReadonlyFooterDataProvider;
 	private lastGenRate: number | undefined;
@@ -90,6 +91,10 @@ export class FooterComponent implements Component {
 
 	setShowTokenProgress(enabled: boolean): void {
 		this.showTokenProgress = enabled;
+	}
+
+	setShowTokenStats(enabled: boolean): void {
+		this.showTokenStats = enabled;
 	}
 
 	/**
@@ -158,12 +163,14 @@ export class FooterComponent implements Component {
 
 		// Build stats line
 		const statsParts = [];
-		if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
-		if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
-		if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
-		if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
-		if ((totalCacheRead > 0 || totalCacheWrite > 0) && latestCacheHitRate !== undefined) {
-			statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+		if (this.showTokenStats) {
+			if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
+			if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);
+			if (totalCacheRead) statsParts.push(`R${formatTokens(totalCacheRead)}`);
+			if (totalCacheWrite) statsParts.push(`W${formatTokens(totalCacheWrite)}`);
+			if ((totalCacheRead > 0 || totalCacheWrite > 0) && latestCacheHitRate !== undefined) {
+				statsParts.push(`CH${latestCacheHitRate.toFixed(1)}%`);
+			}
 		}
 
 		// Show cost with "(sub)" indicator if using OAuth subscription
