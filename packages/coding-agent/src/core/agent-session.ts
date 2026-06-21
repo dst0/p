@@ -2476,8 +2476,9 @@ export class AgentSession {
 
 	private _preparePromptContext(messages: AgentMessage[], systemPrompt = this.systemPrompt): PromptContextPreparation {
 		const settings = this._getEffectiveCompactionSettings();
+		const latestCompactionTimestamp = this._getLatestCompactionTimestamp();
 		if (!settings.enabled) {
-			const estimate = estimateContextTokens(messages, systemPrompt);
+			const estimate = estimateContextTokens(messages, systemPrompt, { sinceTimestamp: latestCompactionTimestamp });
 			return {
 				messages,
 				estimate,
@@ -2664,7 +2665,7 @@ export class AgentSession {
 			toolRawTokens: promptContext.toolRawTokens,
 			toolStubTokens: promptContext.toolStubTokens,
 		});
-		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
+		const budget = createContextBudgetReport(promptContext.budgetEstimate.tokens, contextWindow, settings);
 		const pathEntries = this.sessionManager.getBranch();
 		const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
 
@@ -3346,10 +3347,20 @@ export class AgentSession {
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		const estimate = promptContext.budgetEstimate;
-
-		const contextTokens = estimate.tokens;
+		let contextTokens = promptContext.budgetEstimate.tokens;
+		if (assistantForCompactionCheck?.stopReason === "error") {
+			const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
+				sinceTimestamp: compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined,
+			});
+			contextTokens = Math.max(contextTokens, providerEstimate.tokens);
+		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
+			const hasRecordedUserRequest = branchEntries.some(
+				(entry) => entry.type === "message" && entry.message.role === "user",
+			);
+			if (!hasRecordedUserRequest) {
+				return false;
+			}
 			return await this._runAutoCompaction("threshold", false);
 		}
 		return false;
@@ -3361,14 +3372,16 @@ export class AgentSession {
 	private async _runAutoCompaction(reason: "overflow" | "threshold", willRetry: boolean): Promise<boolean> {
 		const settings = this._getEffectiveCompactionSettings();
 
-		this._emit({ type: "compaction_start", reason });
-		this._autoCompactionAbortController = new AbortController();
-
 		try {
+			const hadQueuedMessages = this.agent.hasQueuedMessages();
 			const pathEntries = this.sessionManager.getBranch();
 
 			const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
 			if (!preparationResult.ok) {
+				if (reason === "threshold") {
+					return false;
+				}
+				this._emit({ type: "compaction_start", reason });
 				this._emit({
 					type: "compaction_end",
 					reason,
@@ -3383,6 +3396,8 @@ export class AgentSession {
 				return false;
 			}
 			const { preparation } = preparationResult;
+			this._emit({ type: "compaction_start", reason });
+			this._autoCompactionAbortController = new AbortController();
 
 			let extensionCompaction: CompactionResult | undefined;
 			let fromExtension = false;
@@ -3506,7 +3521,7 @@ export class AgentSession {
 
 			// Auto-compaction can complete while follow-up/steering/custom messages are waiting.
 			// Continue once so queued messages are delivered.
-			return this.agent.hasQueuedMessages();
+			return hadQueuedMessages || this.agent.hasQueuedMessages();
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : "compaction failed";
 			this._emit({
@@ -4540,6 +4555,11 @@ export class AgentSession {
 		return this.agent.state.messages;
 	}
 
+	private _getLatestCompactionTimestamp(): number | undefined {
+		const compactionEntry = getLatestCompactionEntry(this.sessionManager.getBranch());
+		return compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined;
+	}
+
 	getContextUsage(): ContextUsage | undefined {
 		const model = this.model;
 		if (!model) return undefined;
@@ -4550,9 +4570,12 @@ export class AgentSession {
 		const settings = this.settingsManager.getCompactionSettings();
 		const effectiveMessages = this._getEffectiveCompactedMessages();
 		const promptContext = this._preparePromptContext(effectiveMessages);
-		const estimate = promptContext.budgetEstimate;
-		const source = promptContext.source;
-		const budget = createContextBudgetReport(estimate.tokens, contextWindow, settings);
+		const providerEstimate = estimateContextTokens(promptContext.messages, this.systemPrompt, {
+			sinceTimestamp: this._getLatestCompactionTimestamp(),
+		});
+		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.budgetEstimate : providerEstimate;
+		const source = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
+		const budget = createContextBudgetReport(promptContext.budgetEstimate.tokens, contextWindow, settings);
 		const contextTokens =
 			estimate.lastUsageIndex === null
 				? Math.max(0, estimate.tokens - estimate.staticTokens)

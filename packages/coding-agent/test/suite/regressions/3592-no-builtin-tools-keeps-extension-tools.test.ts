@@ -89,6 +89,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"read",
 			"run_subagent",
 			"session_recall",
+			"sleep",
 			"write",
 		]);
 		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);

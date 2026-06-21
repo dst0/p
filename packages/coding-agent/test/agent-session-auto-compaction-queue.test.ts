@@ -21,6 +21,7 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		totalTokens?: number;
 	}) => usage.totalTokens ?? usage.input + usage.output + usage.cacheRead + usage.cacheWrite,
 	collectEntriesForBranchSummary: () => ({ entries: [], commonAncestorId: null }),
+	computeFileLists: () => ({ readFiles: [], modifiedFiles: [] }),
 	compact: async () => ({
 		summary: "compacted",
 		firstKeptEntryId: "entry-1",
@@ -35,6 +36,18 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		targetContextTokens: 12000,
 		remainingTokens: Math.max(0, contextWindow - contextTokens),
 		shouldCompact: contextTokens > contextWindow - 4000,
+	}),
+	createLiveStructuredSessionState: () => ({
+		version: 1,
+		sessionId: "test",
+		canonicalRequest: { current: "", sourceEntryIds: [], superseded: [] },
+		constraints: [],
+		plan: [],
+		progress: { done: [], current: [], next: [], blocked: [] },
+		decisions: [],
+		codebase: { touchedFiles: [], relevantSymbols: [] },
+		evidence: [],
+		audit: { lastCompactionAt: "", compactionCount: 0, knownRisks: [] },
 	}),
 	createStructuredSessionState: () => ({
 		version: 1,
@@ -68,7 +81,28 @@ vi.mock("../src/core/compaction/index.js", () => ({
 	},
 	getLatestStructuredSessionState: () => undefined,
 	generateBranchSummary: async () => ({ summary: "", aborted: false, readFiles: [], modifiedFiles: [] }),
-	prepareCompaction: () => ({ ok: true, preparation: { dummy: true } }),
+	hasMeaningfulStructuredSessionState: () => false,
+	mergeStructuredSessionState: (baseState: unknown, patch: unknown) => ({
+		...(baseState as object),
+		...(patch as object),
+	}),
+	prepareCompaction: (pathEntries: Array<{ id: string }>) => ({
+		ok: true,
+		preparation: {
+			firstKeptEntryId: pathEntries[0]?.id ?? "entry-1",
+			messagesToSummarize: [],
+			turnPrefixMessages: [],
+			isSplitTurn: false,
+			tokensBefore: 100,
+			fileOps: { read: new Set(), written: new Set(), edited: new Set() },
+			settings: {},
+			keepRecentTokens: 4000,
+			tokensToSummarize: 100,
+			recentRawTokens: 0,
+			droppedEntryIds: [],
+			systemPromptTokens: 0,
+		},
+	}),
 	renderStructuredSessionCheckpoint: () => "compacted",
 	selectKeepRecentTokens: () => 4000,
 	shouldCompact: (
@@ -133,6 +167,12 @@ describe("AgentSession auto-compaction queue resume", () => {
 	});
 
 	it("should resume after threshold compaction when only agent-level queued messages exist", async () => {
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "existing prompt" }],
+			timestamp: Date.now(),
+		});
+
 		session.agent.followUp({
 			role: "custom",
 			customType: "test",
@@ -272,6 +312,8 @@ describe("AgentSession auto-compaction queue resume", () => {
 	it("should trigger threshold compaction for error messages using last successful usage", async () => {
 		const model = session.model!;
 
+		const nearContextLimitTokens = model.contextWindow - 1000;
+
 		// A successful assistant message with high token usage (near context limit)
 		const successfulAssistant: AssistantMessage = {
 			role: "assistant",
@@ -280,11 +322,11 @@ describe("AgentSession auto-compaction queue resume", () => {
 			provider: model.provider,
 			model: model.id,
 			usage: {
-				input: 180_000,
-				output: 17_000,
+				input: nearContextLimitTokens,
+				output: 0,
 				cacheRead: 0,
 				cacheWrite: 0,
-				totalTokens: 197_000,
+				totalTokens: nearContextLimitTokens,
 				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
 			},
 			stopReason: "stop",
@@ -312,6 +354,11 @@ describe("AgentSession auto-compaction queue resume", () => {
 		};
 
 		// Put both messages into agent state so estimateContextTokens can find the successful one
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "hello" }],
+			timestamp: Date.now() - 1000,
+		});
 		session.agent.state.messages = [
 			{ role: "user", content: [{ type: "text", text: "hello" }], timestamp: Date.now() - 1000 },
 			successfulAssistant,

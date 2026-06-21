@@ -303,14 +303,18 @@ export interface ContextUsageEstimate {
 
 export interface ContextUsageEstimateOptions {
 	useProviderUsage?: boolean;
+	sinceTimestamp?: number;
 }
 
-function getLastAssistantUsageInfo(messages: AgentMessage[]): { usage: Usage; index: number } | undefined {
-	let latestCompactionTimestamp = 0;
+function getLastAssistantUsageInfo(
+	messages: AgentMessage[],
+	options: { sinceTimestamp?: number } = {},
+): { usage: Usage; index: number } | undefined {
+	let latestCompactionTimestamp = options.sinceTimestamp ?? 0;
 	for (let i = messages.length - 1; i >= 0; i--) {
 		const msg = messages[i];
 		if (msg.role === "compactionSummary" && "timestamp" in msg && typeof msg.timestamp === "number") {
-			latestCompactionTimestamp = msg.timestamp;
+			latestCompactionTimestamp = Math.max(latestCompactionTimestamp, msg.timestamp);
 			break;
 		}
 	}
@@ -344,7 +348,7 @@ export function estimateContextTokens(
 ): ContextUsageEstimate {
 	const staticTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const useProviderUsage = options.useProviderUsage ?? true;
-	const usageInfo = useProviderUsage ? getLastAssistantUsageInfo(messages) : undefined;
+	const usageInfo = useProviderUsage ? getLastAssistantUsageInfo(messages, options) : undefined;
 
 	if (!usageInfo) {
 		let estimated = staticTokens;

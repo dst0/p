@@ -6,7 +6,7 @@ import { createHarness, type Harness } from "./harness.ts";
 
 type SessionWithCompactionInternals = {
 	checkCompaction: (
-		assistantMessage: AssistantMessage,
+		assistantMessage: AssistantMessage | undefined,
 		skipAbortedCheck?: boolean,
 		additionalMessages?: AgentMessage[],
 	) => Promise<boolean>;
@@ -242,6 +242,24 @@ describe("AgentSession compaction characterization", () => {
 		expect(getStreamCallCount()).toBe(0);
 	});
 
+	it("silently skips threshold auto-compaction when there is nothing useful to compact", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const compactionEvents: string[] = [];
+		harness.session.subscribe((event) => {
+			if (event.type === "compaction_start" || event.type === "compaction_end") {
+				compactionEvents.push(event.type);
+			}
+		});
+
+		await expect(sessionInternals._runAutoCompaction("threshold", false)).resolves.toBe(false);
+
+		expect(compactionEvents).toEqual([]);
+	});
+
 	it("does not immediately recompact after auto-compaction plus one small turn with stale provider usage", async () => {
 		const harness = await createHarness({
 			models: [{ id: "faux-small", contextWindow: 100_000 }],
@@ -314,7 +332,7 @@ describe("AgentSession compaction characterization", () => {
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 		const contextUsageAfterCheck = harness.session.getContextUsage();
-		expect(contextUsageAfterCheck?.tokens).toBe(calculatedEstimate.tokens - calculatedEstimate.staticTokens);
+		expect(contextUsageAfterCheck?.tokens).toBe(90_000);
 		expect(contextUsageAfterCheck?.shouldCompact).toBe(false);
 	});
 
@@ -621,6 +639,26 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
+	it("does not threshold compact before the first user request is recorded", async () => {
+		const harness = await createHarness({
+			models: [{ id: "faux-small", contextWindow: 1000 }],
+			settings: { compaction: { reserveTokens: 100 } },
+		});
+		harnesses.push(harness);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: "initial prompt ".repeat(1200),
+				timestamp: Date.now(),
+			},
+		]);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
 	it("triggers threshold compaction for error messages using the current prompt estimate", async () => {
 		const harness = await createHarness({
 			models: [{ id: "small-context", contextWindow: 4_000, maxTokens: 1_000 }],
@@ -636,6 +674,11 @@ describe("AgentSession compaction characterization", () => {
 			stopReason: "error",
 			errorMessage: "529 overloaded",
 			timestamp: Date.now() + 1000,
+		});
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "hello" }],
+			timestamp: Date.now() - 1000,
 		});
 		harness.session.agent.state.messages = [
 			{

@@ -44,6 +44,10 @@ type WorktreeFixture = {
 	reftableDir: string;
 };
 
+type FooterDataProviderInternals = {
+	scheduleRefresh: () => void;
+};
+
 function createPlainReftableRepo(tempDir: string): string {
 	const repoDir = join(tempDir, "repo");
 	mkdirSync(join(repoDir, ".git", "reftable"), { recursive: true });
@@ -198,10 +202,14 @@ describe("FooterDataProvider reftable branch detection", () => {
 		try {
 			expect(provider.getGitBranch()).toBe("main");
 			vi.mocked(execFile).mockClear();
+			const providerInternals = provider as unknown as FooterDataProviderInternals;
 
 			writeFileSync(join(reftableDir, "tables.list"), "1\n");
+			providerInternals.scheduleRefresh();
 			writeFileSync(join(reftableDir, "tables.list"), "2\n");
+			providerInternals.scheduleRefresh();
 			writeFileSync(join(reftableDir, "tables.list"), "3\n");
+			providerInternals.scheduleRefresh();
 			await waitFor(() => vi.mocked(execFile).mock.calls.length === 1);
 			await new Promise((resolve) => setTimeout(resolve, 650));
 

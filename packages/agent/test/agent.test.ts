@@ -147,6 +147,7 @@ describe("Agent", () => {
 			"turn_start",
 			"message_start",
 			"message_end",
+			"request_start",
 			"message_start",
 			"message_end",
 			"turn_end",
