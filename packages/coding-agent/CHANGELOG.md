@@ -5,6 +5,7 @@
 ### Added
 
 - Added `startupNotices` setting (default `false`) to gate startup changelog, version-check, and package-update notifications. Set `"startupNotices": true` in `settings.json` to re-enable.
+- Added interactive footer display for LLM orchestrator queue position progress.
 
 ### Fixed
 

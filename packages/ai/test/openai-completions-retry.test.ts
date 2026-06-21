@@ -120,6 +120,15 @@ describe("openai-completions provider retries", () => {
 			},
 			{
 				id: "chatcmpl-test",
+				type: "queue_progress",
+				queue: "worker",
+				position: 2,
+				queued_ahead: 1,
+				worker_id: "mini-pc",
+				choices: [],
+			},
+			{
+				id: "chatcmpl-test",
 				choices: [{ index: 0, delta: { content: "ok" } }],
 			},
 			{
@@ -142,6 +151,13 @@ describe("openai-completions provider retries", () => {
 					type: "gen_progress",
 					tokens: 3,
 					tokensPerSecond: 12,
+				}),
+				expect.objectContaining({
+					type: "queue_progress",
+					queue: "worker",
+					position: 2,
+					queuedAhead: 1,
+					workerId: "mini-pc",
 				}),
 			]),
 		);

@@ -86,9 +86,19 @@ function readFiniteNumber(fields: Record<string, unknown>, ...names: string[]): 
 	return undefined;
 }
 
+function readString(fields: Record<string, unknown>, ...names: string[]): string | undefined {
+	for (const name of names) {
+		const value = fields[name];
+		if (typeof value === "string" && value.length > 0) {
+			return value;
+		}
+	}
+	return undefined;
+}
+
 type ProgressChunk = Extract<
 	AssistantMessageEvent,
-	{ type: "prefill_progress" | "gen_progress" | "model_switch_progress" | "loading_progress" }
+	{ type: "prefill_progress" | "gen_progress" | "queue_progress" | "model_switch_progress" | "loading_progress" }
 >;
 
 function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage): ProgressChunk | undefined {
@@ -107,6 +117,21 @@ function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage
 			type: "gen_progress",
 			tokens: readFiniteNumber(fields, "tokens") ?? 0,
 			tokensPerSecond: readFiniteNumber(fields, "tokensPerSecond", "tokens_per_second") ?? 0,
+			partial: output,
+		};
+	}
+	if (fields.type === "queue_progress") {
+		const position = Math.max(1, Math.floor(readFiniteNumber(fields, "position") ?? 1));
+		const queuedAhead = Math.max(
+			0,
+			Math.floor(readFiniteNumber(fields, "queuedAhead", "queued_ahead") ?? position - 1),
+		);
+		return {
+			type: "queue_progress",
+			queue: readString(fields, "queue") ?? "orchestrator",
+			position,
+			queuedAhead,
+			workerId: readString(fields, "workerId", "worker_id"),
 			partial: output,
 		};
 	}

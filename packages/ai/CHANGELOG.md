@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Fixed OpenAI-compatible streaming to surface orchestrator queue-position progress events.
 - Fixed runtime context message placement so provider prompt caches can reuse the user-turn prefix across follow-up prompts.
 - Fixed Moonshot AI China model metadata to include Kimi K2.7 Code, and omitted unsupported thinking-off payloads for Kimi K2.7 Code models ([#5760](https://github.com/dst0/p/issues/5760)).
 

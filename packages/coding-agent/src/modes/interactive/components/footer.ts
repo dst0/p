@@ -50,6 +50,13 @@ function computeGenTrend(currentRate: number, previousRate: number | undefined):
 	return "→";
 }
 
+function formatQueuedProgress(queued: { messages: number; position?: number }): string {
+	if (queued.position !== undefined) {
+		return queued.position <= 1 ? "next" : `#${queued.position}`;
+	}
+	return queued.messages.toString();
+}
+
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
 	if (!home) return cwd;
 
@@ -206,7 +213,7 @@ export class FooterComponent implements Component {
 				this.lastGenRate = gen.tokensPerSecond;
 			}
 			if (!prefill && !gen && queued) {
-				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${queued.messages}`));
+				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${formatQueuedProgress(queued)}`));
 			}
 			const modelSwitch = this.footerData.getModelSwitchProgress();
 			if (modelSwitch) {

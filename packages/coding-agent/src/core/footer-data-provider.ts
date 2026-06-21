@@ -22,6 +22,11 @@ export type GenerationProgress = {
 
 export type QueuedProgress = {
 	messages: number;
+	position?: number;
+	queuedAhead?: number;
+	queue?: string;
+	workerId?: string;
+	source?: "messages" | "llm-orchestrator";
 };
 
 export type ModelSwitchProgress = {
@@ -243,6 +248,9 @@ export class FooterDataProvider {
 		this.genProgress = undefined;
 		this.modelSwitchProgress = undefined;
 		this.loadingProgress = undefined;
+		if (this.queuedProgress?.source === "llm-orchestrator") {
+			this.queuedProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 

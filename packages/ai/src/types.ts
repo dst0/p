@@ -379,6 +379,14 @@ export type AssistantMessageEvent =
 	  }
 	| { type: "gen_progress"; tokensPerSecond: number; tokens: number; partial: AssistantMessage }
 	| {
+			type: "queue_progress";
+			queue: string;
+			position: number;
+			queuedAhead: number;
+			workerId?: string;
+			partial: AssistantMessage;
+	  }
+	| {
 			type: "model_switch_progress";
 			phase: ModelSwitchPhase;
 			fromModel: string;

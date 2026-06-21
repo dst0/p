@@ -181,6 +181,20 @@ describe("FooterComponent width handling", () => {
 		expect(statsLine).not.toContain("GEN");
 	});
 
+	it("shows orchestrator queue position", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(
+			session,
+			createFooterData(1, {
+				queued: { messages: 2, position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
+			}),
+		);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("QUEUED #2");
+		expect(statsLine).not.toContain("QUEUED 2");
+	});
+
 	it("shows compact prefill progress", () => {
 		const session = createSession({ sessionName: "" });
 		const footer = new FooterComponent(session, createFooterData(1, { prefill: { percent: 42, elapsedMs: 1000 } }));

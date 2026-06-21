@@ -711,7 +711,8 @@ async function streamAssistantResponse(
 			case "thinking_end":
 			case "toolcall_end":
 			case "prefill_progress":
-			case "gen_progress": {
+			case "gen_progress":
+			case "queue_progress": {
 				partialMessage = event.partial;
 				context.messages[context.messages.length - 1] = partialMessage;
 				await emit({

@@ -2882,7 +2882,20 @@ export class InteractiveMode {
 					this.streamingMessage = event.message;
 					this.streamingComponent.updateContent(this.streamingMessage);
 
-					if (event.assistantMessageEvent?.type === "prefill_progress") {
+					if (event.assistantMessageEvent?.type === "queue_progress") {
+						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setModelSwitchProgress(undefined);
+						this.footerDataProvider.setLoadingProgress(undefined);
+						this.footerDataProvider.setQueuedProgress({
+							messages: event.assistantMessageEvent.position,
+							position: event.assistantMessageEvent.position,
+							queuedAhead: event.assistantMessageEvent.queuedAhead,
+							queue: event.assistantMessageEvent.queue,
+							workerId: event.assistantMessageEvent.workerId,
+							source: "llm-orchestrator",
+						});
+					} else if (event.assistantMessageEvent?.type === "prefill_progress") {
 						const percent =
 							"percent" in event.assistantMessageEvent && typeof event.assistantMessageEvent.percent === "number"
 								? event.assistantMessageEvent.percent
@@ -3948,7 +3961,9 @@ export class InteractiveMode {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
 		const queuedMessageCount = steeringMessages.length + followUpMessages.length;
-		this.footerDataProvider.setQueuedProgress(queuedMessageCount > 0 ? { messages: queuedMessageCount } : undefined);
+		this.footerDataProvider.setQueuedProgress(
+			queuedMessageCount > 0 ? { messages: queuedMessageCount, source: "messages" } : undefined,
+		);
 		if (queuedMessageCount > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {
