@@ -107,6 +107,54 @@ describe("AgentSession prompt characterization", () => {
 		expect(secondSystemPrompt).not.toContain("<project_memory>");
 	});
 
+	it("backfills omitted hidden state update goals from the live user request", async () => {
+		const harness = await createPromptHarness();
+		harnesses.push(harness);
+		let secondSystemPrompt = "";
+		harness.setResponses([
+			fauxAssistantMessage(
+				[
+					"Working.",
+					`<session_state_update>{"type":"patch","plan":[{"text":"Reproduce the smart-state overwrite","status":"done"},{"text":"Patch state persistence","status":"in_progress"}],"progress":{"current":["Patch state persistence"],"next":["Run unit, integration, and e2e tests"]}}</session_state_update>`,
+				].join("\n"),
+			),
+			(context) => {
+				secondSystemPrompt = context.systemPrompt ?? "";
+				return fauxAssistantMessage("continued");
+			},
+		]);
+
+		await harness.session.prompt("Fix smart state so an omitted metadata goal cannot erase the real objective");
+
+		const snapshot = harness.session.getSessionStateSnapshot();
+		const stateEntries = harness.sessionManager
+			.getEntries()
+			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
+
+		expect(getMessageText(harness.session.messages[1]!)).toBe("Working.");
+		expect(snapshot.state.canonicalRequest.current).toBe(
+			"Fix smart state so an omitted metadata goal cannot erase the real objective",
+		);
+		expect(snapshot.state.plan.map((item) => [item.text, item.status])).toEqual([
+			["Reproduce the smart-state overwrite", "done"],
+			["Patch state persistence", "in_progress"],
+		]);
+		expect(snapshot.state.progress.current).toEqual(["Patch state persistence"]);
+		expect(snapshot.state.progress.next).toEqual(["Run unit, integration, and e2e tests"]);
+		expect(stateEntries).toHaveLength(1);
+
+		await harness.session.prompt("continue");
+
+		expect(secondSystemPrompt).toContain("<working_state>");
+		expect(secondSystemPrompt).toContain(
+			"🚩 Goal: Fix smart state so an omitted metadata goal cannot erase the real objective",
+		);
+		expect(secondSystemPrompt).toContain("✅ Reproduce the smart-state overwrite");
+		expect(secondSystemPrompt).toContain("⏳ Patch state persistence");
+		expect(secondSystemPrompt).toContain("📌 Run unit, integration, and e2e tests");
+		expect(secondSystemPrompt).not.toContain("🚩 Goal: continue");
+	});
+
 	it("reuses provider prompt cache across sequential user prompts", async () => {
 		const harness = await createPromptHarness();
 		harnesses.push(harness);

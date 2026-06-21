@@ -247,6 +247,24 @@ describe("session state update protocol", () => {
 		});
 	});
 
+	it("ignores placeholder goals in hidden state patches while keeping useful metadata", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			canonicalRequest: { current: "Fix smart state persistence" },
+		});
+		const parsed = parseSessionStateUpdateBlock(
+			`<session_state_update>{"type":"patch","goal":"none","progress":{"current":["Patch the state merge"]},"plan":[{"text":"Run smart-state regression tests","status":"in_progress"}]}</session_state_update>`,
+			["assistant-entry"],
+		);
+		const state = mergeStructuredSessionState(previous, parsed.patch!);
+
+		expect(parsed.malformed).toBe(false);
+		expect(state.canonicalRequest.current).toBe("Fix smart state persistence");
+		expect(state.progress.current).toEqual(["Patch the state merge"]);
+		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
+			["Run smart-state regression tests", "in_progress"],
+		]);
+	});
+
 	it("rejects malformed patches safely while stripping protocol text", () => {
 		const parsed = parseSessionStateUpdateBlock(
 			`Visible answer.\n<session_state_update>{"type":"unexpected"}</session_state_update>`,

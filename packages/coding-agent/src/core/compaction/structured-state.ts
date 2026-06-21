@@ -492,7 +492,7 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 		throw new Error("session_state_update type must be none or patch");
 	}
 
-	const goal = getStringField(value, ["goal", "canonicalGoal", "canonicalRequest"]);
+	const goal = normalizePatchGoal(getStringField(value, ["goal", "canonicalGoal", "canonicalRequest"]));
 	const constraints = parseConstraints(value.constraints);
 	const planItems = parsePlanItemsFromUpdate(value.plan ?? value.planItems, sourceEntryIds);
 	const progress = parseProgressUpdate(value.progress, value);
@@ -955,10 +955,17 @@ function createPlainSummaryFallback(summary: string): string {
 
 function isPlaceholderGoal(goal: string): boolean {
 	if (!goal) return true;
+	const normalized = compactWhitespace(goal).toLowerCase();
 	return (
-		/^(awaiting|waiting for) (initial )?user (prompt|input|request)\b/i.test(goal) ||
-		/^no conversation provided\b/i.test(goal)
+		/^(awaiting|waiting for) (initial )?user (prompt|input|request)\b/i.test(normalized) ||
+		/^no conversation provided\b/i.test(normalized) ||
+		/^(no goal|none|n\/a|unknown|not set|unchanged|same as before)\.?$/i.test(normalized)
 	);
+}
+
+function normalizePatchGoal(goal: string): string {
+	const normalized = normalizeCanonicalRequest(goal);
+	return isPlaceholderGoal(normalized) ? "" : normalized;
 }
 
 function collectOriginalUserRequests(entries: SessionEntry[]): OriginalUserRequest[] {
@@ -1271,16 +1278,17 @@ function mergeCanonicalRequest(
 	state: StructuredSessionState,
 	patch: Partial<StructuredSessionState["canonicalRequest"]>,
 ): void {
-	if (patch.current && patch.current !== state.canonicalRequest.current) {
+	const current = normalizePatchGoal(patch.current ?? "");
+	if (current && current !== state.canonicalRequest.current) {
 		if (state.canonicalRequest.current) {
 			state.canonicalRequest.superseded.push({
 				old: state.canonicalRequest.current,
-				replacedBy: patch.current,
+				replacedBy: current,
 				reason: "Compaction summary updated canonical goal.",
 				entryId: patch.sourceEntryIds?.at(-1) ?? "",
 			});
 		}
-		state.canonicalRequest.current = patch.current;
+		state.canonicalRequest.current = current;
 	}
 	state.canonicalRequest.sourceEntryIds = mergeStringList(state.canonicalRequest.sourceEntryIds, patch.sourceEntryIds);
 	state.canonicalRequest.originalRequests = mergeOriginalRequests(

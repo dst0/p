@@ -51,7 +51,6 @@ import {
 	collectEntriesForBranchSummary,
 	computeFileLists,
 	createContextBudgetReport,
-	createInitialStructuredSessionState,
 	createLiveStructuredSessionState,
 	type EvidenceKind,
 	type EvidencePointer,
@@ -1258,9 +1257,7 @@ export class AgentSession {
 			return;
 		}
 		const branchEntries = this.sessionManager.getBranch();
-		const previous =
-			getLatestStructuredSessionState(branchEntries) ??
-			createInitialStructuredSessionState(this.sessionManager.getSessionId());
+		const previous = this._getCurrentStructuredSessionState(branchEntries);
 		const state = mergeStructuredSessionState(previous, parsed.patch);
 		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
 	}
