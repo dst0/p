@@ -68,10 +68,18 @@ describe("AgentSession retry", () => {
 		}
 	});
 
-	function createSession(options?: { failCount?: number; maxRetries?: number; delayAssistantMessageEndMs?: number }) {
+	function createSession(options?: {
+		failCount?: number;
+		maxRetries?: number;
+		baseDelayMs?: number;
+		delayAssistantMessageEndMs?: number;
+		errorMessage?: string;
+	}) {
 		const failCount = options?.failCount ?? 1;
 		const maxRetries = options?.maxRetries ?? 3;
+		const baseDelayMs = options?.baseDelayMs ?? 1;
 		const delayAssistantMessageEndMs = options?.delayAssistantMessageEndMs ?? 0;
+		const errorMessage = options?.errorMessage ?? "overloaded_error";
 		let callCount = 0;
 
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
@@ -85,7 +93,7 @@ describe("AgentSession retry", () => {
 					if (callCount <= failCount) {
 						const msg = createAssistantMessage("", {
 							stopReason: "error",
-							errorMessage: "overloaded_error",
+							errorMessage,
 						});
 						stream.push({ type: "start", partial: msg });
 						stream.push({ type: "error", reason: "error", error: msg });
@@ -104,7 +112,7 @@ describe("AgentSession retry", () => {
 		const authStorage = AuthStorage.create(join(tempDir, "auth.json"));
 		const modelRegistry = ModelRegistry.create(authStorage, tempDir);
 		authStorage.setRuntimeApiKey("anthropic", "test-key");
-		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries, baseDelayMs: 1 } });
+		settingsManager.applyOverrides({ retry: { enabled: true, maxRetries, baseDelayMs } });
 
 		session = new AgentSession({
 			agent,
@@ -226,6 +234,39 @@ describe("AgentSession retry", () => {
 
 		expect(callCount).toBe(2);
 		expect(events).toEqual(["start:1", "end:success=true"]);
+	});
+
+	it("retries transient provider response body parse failures", async () => {
+		const created = createSession({
+			failCount: 1,
+			errorMessage: "Failed to parse response body: Unexpected token L in JSON at position 0",
+		});
+
+		await created.session.prompt("Test");
+
+		expect(created.getCallCount()).toBe(2);
+	});
+
+	it("uses extended retry budget and longer delay while a model is loading", async () => {
+		const created = createSession({
+			failCount: 4,
+			maxRetries: 3,
+			baseDelayMs: 1,
+			errorMessage: "503 Loading model",
+		});
+		const retryStarts: Array<{ attempt: number; maxAttempts: number; delayMs: number }> = [];
+		created.session.subscribe((event) => {
+			if (event.type === "auto_retry_start") {
+				retryStarts.push({ attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs });
+			}
+		});
+
+		await created.session.prompt("Test");
+
+		expect(created.getCallCount()).toBe(5);
+		expect(retryStarts).toHaveLength(4);
+		expect(retryStarts[0]).toEqual({ attempt: 1, maxAttempts: 60, delayMs: 10 });
+		expect(retryStarts[3]).toEqual({ attempt: 4, maxAttempts: 60, delayMs: 10 });
 	});
 
 	it("prompt waits for full agent loop when retry produces tool calls", async () => {

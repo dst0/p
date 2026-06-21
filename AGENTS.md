@@ -3,8 +3,7 @@
 ## Conversational Style
 
 - Keep answers short and concise
-- No emojis in commits, issues, PR comments, or code
-- No fluff or cheerful filler text (e.g., "Thanks @user" not "Thanks so much @user!")
+- No emojis in code
 - Technical prose only, be direct
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
@@ -32,8 +31,8 @@
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
-- Never commit unless the user asks.
-- After successful code changes, update and reinstall pi locally and on the mini-PC, then test pi works correctly.
+- Always commit and push changes unless the user asks not to.
+- After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
 
 ## Dependency and Install Security
 

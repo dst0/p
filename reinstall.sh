@@ -4,11 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-echo "=== Syncing with main branch ==="
-git stash --include-untracked
-git checkout main
-git pull origin main || { echo "Failed to pull from origin"; exit 1; }
-git stash pop 2>/dev/null || true
+echo "=== Using current checkout (no git pull) ==="
 
 echo "=== Reinstalling Monorepo Dependencies ==="
 npm install --ignore-scripts

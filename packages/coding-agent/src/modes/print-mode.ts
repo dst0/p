@@ -2,8 +2,8 @@
  * Print mode (single-shot): Send prompts, output result, exit.
  *
  * Used for:
- * - `pi -p "prompt"` - text output
- * - `pi --mode json "prompt"` - JSON event stream
+ * - `p -p "prompt"` - text output
+ * - `p --mode json "prompt"` - JSON event stream
  */
 
 import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
