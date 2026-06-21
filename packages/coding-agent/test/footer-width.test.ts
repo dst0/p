@@ -6,6 +6,7 @@ import type {
 	PrefillProgress,
 	QueuedProgress,
 	ReadonlyFooterDataProvider,
+	SendingProgress,
 } from "../src/core/footer-data-provider.ts";
 import { FooterComponent, formatCwdForFooter } from "../src/modes/interactive/components/footer.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -71,6 +72,7 @@ function createFooterData(
 		prefill?: PrefillProgress;
 		gen?: GenerationProgress;
 		queued?: QueuedProgress;
+		sending?: SendingProgress;
 	} = {},
 ): ReadonlyFooterDataProvider {
 	const provider = {
@@ -80,6 +82,7 @@ function createFooterData(
 		getPrefillProgress: () => progress.prefill,
 		getGenProgress: () => progress.gen,
 		getQueuedProgress: () => progress.queued,
+		getSendingProgress: () => progress.sending,
 		getModelSwitchProgress: () => undefined,
 		getLoadingProgress: () => undefined,
 		onBranchChange: (callback: () => void) => {
@@ -193,6 +196,34 @@ describe("FooterComponent width handling", () => {
 		const statsLine = stripAnsi(footer.render(120)[1]);
 		expect(statsLine).toContain("QUEUED #2");
 		expect(statsLine).not.toContain("QUEUED 2");
+	});
+
+	it("shows sending progress until provider progress arrives", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(
+			session,
+			createFooterData(1, {
+				sending: { model: "local/model-a" },
+			}),
+		);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("SENDING local/model-a");
+	});
+
+	it("shows orchestrator queue progress before sending progress", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(
+			session,
+			createFooterData(1, {
+				queued: { messages: 3, position: 3, queuedAhead: 2, queue: "worker", source: "llm-orchestrator" },
+				sending: { model: "local/model-a" },
+			}),
+		);
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine).toContain("QUEUED #3");
+		expect(statsLine).not.toContain("SENDING");
 	});
 
 	it("shows compact prefill progress", () => {

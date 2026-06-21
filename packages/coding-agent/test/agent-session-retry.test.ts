@@ -254,10 +254,15 @@ describe("AgentSession retry", () => {
 			baseDelayMs: 1,
 			errorMessage: "503 Loading model",
 		});
-		const retryStarts: Array<{ attempt: number; maxAttempts: number; delayMs: number }> = [];
+		const retryStarts: Array<{ attempt: number; maxAttempts: number; delayMs: number; reason: string }> = [];
 		created.session.subscribe((event) => {
 			if (event.type === "auto_retry_start") {
-				retryStarts.push({ attempt: event.attempt, maxAttempts: event.maxAttempts, delayMs: event.delayMs });
+				retryStarts.push({
+					attempt: event.attempt,
+					maxAttempts: event.maxAttempts,
+					delayMs: event.delayMs,
+					reason: event.reason,
+				});
 			}
 		});
 
@@ -265,8 +270,8 @@ describe("AgentSession retry", () => {
 
 		expect(created.getCallCount()).toBe(5);
 		expect(retryStarts).toHaveLength(4);
-		expect(retryStarts[0]).toEqual({ attempt: 1, maxAttempts: 60, delayMs: 10 });
-		expect(retryStarts[3]).toEqual({ attempt: 4, maxAttempts: 60, delayMs: 10 });
+		expect(retryStarts[0]).toEqual({ attempt: 1, maxAttempts: 60, delayMs: 10, reason: "model_loading" });
+		expect(retryStarts[3]).toEqual({ attempt: 4, maxAttempts: 60, delayMs: 10, reason: "model_loading" });
 	});
 
 	it("prompt waits for full agent loop when retry produces tool calls", async () => {

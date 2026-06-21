@@ -427,6 +427,8 @@ export type AgentEvent =
 	// Turn lifecycle - a turn is one assistant response + any tool calls/results
 	| { type: "turn_start" }
 	| { type: "turn_end"; message: AgentMessage; toolResults: ToolResultMessage[] }
+	// Provider request lifecycle - emitted after the prompt is converted and just before the request is sent.
+	| { type: "request_start"; model: Model<any> }
 	// Message lifecycle - emitted for user, assistant, and toolResult messages
 	| { type: "message_start"; message: AgentMessage }
 	// Only emitted for assistant messages during streaming

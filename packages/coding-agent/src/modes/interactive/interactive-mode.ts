@@ -197,6 +197,7 @@ function isDeadTerminalError(error: unknown): boolean {
 
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
 	"Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
+const RECENT_MODEL_SWITCH_MS = 10 * 60 * 1000;
 
 function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
 	return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
@@ -298,6 +299,13 @@ export class InteractiveMode {
 	private readonly defaultWorkingMessage = "Working...";
 	private readonly defaultHiddenThinkingLabel = "Thinking...";
 	private hiddenThinkingLabel = this.defaultHiddenThinkingLabel;
+	private lastModelSwitch:
+		| {
+				fromModel: string;
+				toModel: string;
+				timestamp: number;
+		  }
+		| undefined;
 
 	private lastSigintTime = 0;
 	private lastEscapeTime = 0;
@@ -2805,10 +2813,6 @@ export class InteractiveMode {
 			case "agent_start":
 				this.pendingTools.clear();
 				this.footerDataProvider.clearProgress();
-				this.footerDataProvider.setPrefillProgress({
-					percent: 0,
-					elapsedMs: 0,
-				});
 				if (this.settingsManager.getShowTerminalProgress()) {
 					this.ui.terminal.setProgress(true);
 				}
@@ -2850,6 +2854,17 @@ export class InteractiveMode {
 				this.updateEditorBorderColor();
 				break;
 
+			case "request_start": {
+				const recentSwitch = this.getRecentModelSwitch();
+				this.footerDataProvider.clearProgress();
+				if (recentSwitch) {
+					this.footerDataProvider.setModelSwitchProgress(recentSwitch);
+				}
+				this.footerDataProvider.setSendingProgress({ model: this.getModelStatusLabel(event.model) });
+				this.ui.requestRender();
+				break;
+			}
+
 			case "message_start":
 				if (event.message.role === "custom") {
 					this.addMessageToChat(event.message);
@@ -2885,6 +2900,7 @@ export class InteractiveMode {
 					if (event.assistantMessageEvent?.type === "queue_progress") {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setSendingProgress(undefined);
 						this.footerDataProvider.setModelSwitchProgress(undefined);
 						this.footerDataProvider.setLoadingProgress(undefined);
 						this.footerDataProvider.setQueuedProgress({
@@ -2896,6 +2912,8 @@ export class InteractiveMode {
 							source: "llm-orchestrator",
 						});
 					} else if (event.assistantMessageEvent?.type === "prefill_progress") {
+						this.footerDataProvider.setSendingProgress(undefined);
+						this.clearLlmOrchestratorQueueProgress();
 						const percent =
 							"percent" in event.assistantMessageEvent && typeof event.assistantMessageEvent.percent === "number"
 								? event.assistantMessageEvent.percent
@@ -2912,6 +2930,8 @@ export class InteractiveMode {
 						});
 					} else if (event.assistantMessageEvent?.type === "gen_progress") {
 						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setSendingProgress(undefined);
+						this.clearLlmOrchestratorQueueProgress();
 						this.footerDataProvider.setGenProgress({
 							tokensPerSecond: event.assistantMessageEvent.tokensPerSecond,
 							tokens: event.assistantMessageEvent.tokens,
@@ -2919,6 +2939,8 @@ export class InteractiveMode {
 					} else if (event.assistantMessageEvent?.type === "model_switch_progress") {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setSendingProgress(undefined);
+						this.clearLlmOrchestratorQueueProgress();
 						this.footerDataProvider.setModelSwitchProgress({
 							fromModel: event.assistantMessageEvent.fromModel,
 							toModel: event.assistantMessageEvent.toModel,
@@ -2926,6 +2948,8 @@ export class InteractiveMode {
 					} else if (event.assistantMessageEvent?.type === "loading_progress") {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setSendingProgress(undefined);
+						this.clearLlmOrchestratorQueueProgress();
 						this.footerDataProvider.setLoadingProgress({
 							model: event.assistantMessageEvent.model,
 						});
@@ -2935,6 +2959,8 @@ export class InteractiveMode {
 						event.assistantMessageEvent?.type === "toolcall_start"
 					) {
 						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setSendingProgress(undefined);
+						this.clearLlmOrchestratorQueueProgress();
 						this.footerDataProvider.setGenProgress({
 							tokensPerSecond: 0,
 							tokens: 0,
@@ -2985,6 +3011,16 @@ export class InteractiveMode {
 								? `Aborted after ${retryAttempt} retry attempt${retryAttempt > 1 ? "s" : ""}`
 								: "Operation aborted";
 						this.streamingMessage.errorMessage = errorMessage;
+					}
+					if (
+						this.streamingMessage.stopReason === "error" &&
+						this.session.willRetryMessage(this.streamingMessage)
+					) {
+						this.removeTransientStreamingUi();
+						this.footerDataProvider.clearProgress();
+						this.footer.invalidate();
+						this.ui.requestRender();
+						break;
 					}
 					this.streamingComponent.updateContent(this.streamingMessage);
 
@@ -3159,6 +3195,7 @@ export class InteractiveMode {
 			}
 
 			case "auto_retry_start": {
+				this.showRetryProgressInFooter(event);
 				// Set up escape to abort retry
 				this.retryEscapeHandler = this.defaultEditor.onEscape;
 				this.defaultEditor.onEscape = () => {
@@ -3167,7 +3204,10 @@ export class InteractiveMode {
 				// Show retry indicator
 				this.statusContainer.clear();
 				this.retryCountdown?.dispose();
-				const retryPrefix = /loading model/i.test(event.errorMessage) ? "Model is loading; retrying" : "Retrying";
+				const retryPrefix =
+					event.reason === "model_loading" || this.getRecentModelSwitch()
+						? "Model switching; retrying"
+						: "Retrying";
 				const retryMessage = (seconds: number) =>
 					`${retryPrefix} (${event.attempt}/${event.maxAttempts}) in ${seconds}s... (${keyText("app.interrupt")} to cancel)`;
 				this.retryLoader = new Loader(
@@ -3743,11 +3783,13 @@ export class InteractiveMode {
 
 	private async cycleModel(direction: "forward" | "backward"): Promise<void> {
 		try {
+			const previousModel = this.session.model;
 			const result = await this.session.cycleModel(direction);
 			if (result === undefined) {
 				const msg = this.session.scopedModels.length > 0 ? "Only one model in scope" : "Only one model available";
 				this.showStatus(msg);
 			} else {
+				this.noteModelSwitch(previousModel, result.model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				const thinkingStr =
@@ -3776,6 +3818,76 @@ export class InteractiveMode {
 			}
 		}
 		this.ui.requestRender();
+	}
+
+	private getModelStatusLabel(model: Model<any>): string {
+		return `${model.provider}/${model.id}`;
+	}
+
+	private noteModelSwitch(previousModel: Model<any> | undefined, nextModel: Model<any>): void {
+		if (previousModel && previousModel.provider === nextModel.provider && previousModel.id === nextModel.id) {
+			return;
+		}
+		const switchProgress = {
+			fromModel: previousModel ? this.getModelStatusLabel(previousModel) : "",
+			toModel: this.getModelStatusLabel(nextModel),
+			timestamp: Date.now(),
+		};
+		this.lastModelSwitch = switchProgress;
+		this.footerDataProvider.setModelSwitchProgress({
+			fromModel: switchProgress.fromModel,
+			toModel: switchProgress.toModel,
+		});
+	}
+
+	private getRecentModelSwitch(): { fromModel: string; toModel: string } | undefined {
+		if (!this.lastModelSwitch) {
+			return undefined;
+		}
+		if (Date.now() - this.lastModelSwitch.timestamp > RECENT_MODEL_SWITCH_MS) {
+			this.lastModelSwitch = undefined;
+			return undefined;
+		}
+		return {
+			fromModel: this.lastModelSwitch.fromModel,
+			toModel: this.lastModelSwitch.toModel,
+		};
+	}
+
+	private clearLlmOrchestratorQueueProgress(): void {
+		if (this.footerDataProvider.getQueuedProgress()?.source === "llm-orchestrator") {
+			this.footerDataProvider.setQueuedProgress(undefined);
+		}
+	}
+
+	private removeTransientStreamingUi(): void {
+		if (this.streamingComponent) {
+			this.chatContainer.removeChild(this.streamingComponent);
+			this.streamingComponent = undefined;
+			this.streamingMessage = undefined;
+		}
+		for (const [, component] of this.pendingTools.entries()) {
+			this.chatContainer.removeChild(component);
+		}
+		this.pendingTools.clear();
+	}
+
+	private showRetryProgressInFooter(event: Extract<AgentSessionEvent, { type: "auto_retry_start" }>): void {
+		const recentSwitch = this.getRecentModelSwitch();
+		this.footerDataProvider.setPrefillProgress(undefined);
+		this.footerDataProvider.setGenProgress(undefined);
+		this.footerDataProvider.setSendingProgress(undefined);
+		this.clearLlmOrchestratorQueueProgress();
+		if (recentSwitch) {
+			this.footerDataProvider.setModelSwitchProgress(recentSwitch);
+		}
+		if (event.reason === "model_loading" || recentSwitch) {
+			this.footerDataProvider.setLoadingProgress({
+				model:
+					recentSwitch?.toModel ??
+					(this.session.model ? this.getModelStatusLabel(this.session.model) : "current model"),
+			});
+		}
 	}
 
 	private toggleThinkingBlockVisibility(): void {
@@ -4316,7 +4428,9 @@ export class InteractiveMode {
 		const model = await this.findExactModelMatch(searchTerm);
 		if (model) {
 			try {
+				const previousModel = this.session.model;
 				await this.session.setModel(model);
+				this.noteModelSwitch(previousModel, model);
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
 				this.showStatus(`Model: ${model.id}`);
@@ -4449,7 +4563,9 @@ export class InteractiveMode {
 				this.session.scopedModels,
 				async (model) => {
 					try {
+						const previousModel = this.session.model;
 						await this.session.setModel(model);
+						this.noteModelSwitch(previousModel, model);
 						this.footer.invalidate();
 						this.updateEditorBorderColor();
 						done();
@@ -5003,6 +5119,7 @@ export class InteractiveMode {
 				} else {
 					try {
 						await this.session.setModel(selectedModel);
+						this.noteModelSwitch(previousModel, selectedModel);
 					} catch (error: unknown) {
 						selectedModel = undefined;
 						const errorMessage = error instanceof Error ? error.message : String(error);

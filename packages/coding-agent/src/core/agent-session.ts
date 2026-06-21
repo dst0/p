@@ -227,6 +227,7 @@ export type AgentSessionEvent =
 			maxAttempts: number;
 			delayMs: number;
 			errorMessage: string;
+			reason: "model_loading" | "transient";
 	  }
 	| {
 			type: "auto_retry_end";
@@ -1181,9 +1182,7 @@ export class AgentSession {
 		for (let i = event.messages.length - 1; i >= 0; i--) {
 			const message = event.messages[i];
 			if (message.role === "assistant") {
-				const assistantMessage = message as AssistantMessage;
-				const maxRetries = this._getEffectiveRetryMaxAttempts(assistantMessage, settings.maxRetries);
-				return this._retryAttempt < maxRetries && this._isRetryableError(assistantMessage);
+				return this.willRetryMessage(message as AssistantMessage);
 			}
 		}
 		return false;
@@ -1440,6 +1439,15 @@ export class AgentSession {
 	/** Current retry attempt (0 if not retrying) */
 	get retryAttempt(): number {
 		return this._retryAttempt;
+	}
+
+	willRetryMessage(message: AssistantMessage): boolean {
+		const settings = this.settingsManager.getRetrySettings();
+		if (!settings.enabled) {
+			return false;
+		}
+		const maxRetries = this._getEffectiveRetryMaxAttempts(message, settings.maxRetries);
+		return this._retryAttempt < maxRetries && this._isRetryableError(message);
 	}
 
 	/**
@@ -4012,6 +4020,7 @@ export class AgentSession {
 			maxAttempts: maxRetries,
 			delayMs,
 			errorMessage: message.errorMessage || "Unknown error",
+			reason: this._getRetryReason(message),
 		});
 
 		// Remove error message from agent state (keep in session for history)
@@ -4047,6 +4056,10 @@ export class AgentSession {
 			return Math.max(configuredMaxRetries, MODEL_LOADING_MIN_RETRIES);
 		}
 		return configuredMaxRetries;
+	}
+
+	private _getRetryReason(message: AssistantMessage): "model_loading" | "transient" {
+		return MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "") ? "model_loading" : "transient";
 	}
 
 	private _getRetryDelayMs(message: AssistantMessage, exponentialDelayMs: number, baseDelayMs: number): number {

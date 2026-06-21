@@ -29,6 +29,10 @@ export type QueuedProgress = {
 	source?: "messages" | "llm-orchestrator";
 };
 
+export type SendingProgress = {
+	model: string;
+};
+
 export type ModelSwitchProgress = {
 	fromModel: string;
 	toModel: string;
@@ -133,6 +137,7 @@ export class FooterDataProvider {
 	private prefillProgress?: PrefillProgress;
 	private genProgress?: GenerationProgress;
 	private queuedProgress?: QueuedProgress;
+	private sendingProgress?: SendingProgress;
 	private modelSwitchProgress?: ModelSwitchProgress;
 	private loadingProgress?: LoadingProgress;
 	private cachedBranch: string | null | undefined = undefined;
@@ -183,6 +188,10 @@ export class FooterDataProvider {
 		return this.queuedProgress;
 	}
 
+	getSendingProgress(): SendingProgress | undefined {
+		return this.sendingProgress;
+	}
+
 	getModelSwitchProgress(): ModelSwitchProgress | undefined {
 		return this.modelSwitchProgress;
 	}
@@ -230,6 +239,12 @@ export class FooterDataProvider {
 		this.notifyProgressChange();
 	}
 
+	/** Internal: set request sending progress */
+	setSendingProgress(progress: SendingProgress | undefined): void {
+		this.sendingProgress = progress;
+		this.notifyProgressChange();
+	}
+
 	/** Internal: set model switch progress */
 	setModelSwitchProgress(progress: ModelSwitchProgress | undefined): void {
 		this.modelSwitchProgress = progress;
@@ -246,6 +261,7 @@ export class FooterDataProvider {
 	clearProgress(): void {
 		this.prefillProgress = undefined;
 		this.genProgress = undefined;
+		this.sendingProgress = undefined;
 		this.modelSwitchProgress = undefined;
 		this.loadingProgress = undefined;
 		if (this.queuedProgress?.source === "llm-orchestrator") {
@@ -498,6 +514,7 @@ export type ReadonlyFooterDataProvider = Pick<
 	| "getPrefillProgress"
 	| "getGenProgress"
 	| "getQueuedProgress"
+	| "getSendingProgress"
 	| "getModelSwitchProgress"
 	| "getLoadingProgress"
 	| "onBranchChange"

@@ -189,6 +189,7 @@ export class FooterComponent implements Component {
 
 		if (this.showTokenProgress) {
 			const queued = this.footerData.getQueuedProgress();
+			const sending = this.footerData.getSendingProgress();
 			const prefill = this.footerData.getPrefillProgress();
 			const gen = this.footerData.getGenProgress();
 			if (prefill) {
@@ -214,6 +215,9 @@ export class FooterComponent implements Component {
 			}
 			if (!prefill && !gen && queued) {
 				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${formatQueuedProgress(queued)}`));
+			}
+			if (!prefill && !gen && !queued && sending) {
+				statsParts.push(theme.fg("accent", `${theme.bold("SENDING")} ${sending.model}`));
 			}
 			const modelSwitch = this.footerData.getModelSwitchProgress();
 			if (modelSwitch) {

@@ -225,6 +225,7 @@ describe("agentLoop with AgentMessage", () => {
 		expect(eventTypes).toContain("turn_start");
 		expect(eventTypes).toContain("message_start");
 		expect(eventTypes).toContain("message_end");
+		expect(eventTypes).toContain("request_start");
 		expect(eventTypes).toContain("turn_end");
 		expect(eventTypes).toContain("agent_end");
 	});
@@ -1606,6 +1607,7 @@ describe("agentLoop with AgentMessage", () => {
 			"turn_start",
 			"message_start",
 			"message_end",
+			"request_start",
 			"message_start",
 			"message_end",
 			"tool_execution_start",
