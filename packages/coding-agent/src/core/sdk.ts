@@ -434,17 +434,28 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	agent.prepareNextTurn = async () => {
 		const msgs = agent.state.messages;
-		if (msgs.length === 0) return;
+		if (msgs.length === 0) {
+			return {
+				model: agent.state.model,
+				thinkingLevel: agent.state.thinkingLevel,
+			};
+		}
 
 		const lastAssistantMsg = msgs
 			.slice()
 			.reverse()
 			.find((msg) => msg.role === "assistant") as Extract<AgentMessage, { role: "assistant" }> | undefined;
 
+		const turnUpdate = {
+			model: agent.state.model,
+			thinkingLevel: agent.state.thinkingLevel,
+		};
+
 		if (lastAssistantMsg) {
 			const compacted = await session.checkCompaction(lastAssistantMsg, false);
 			if (compacted) {
 				return {
+					...turnUpdate,
 					context: {
 						systemPrompt: agent.state.systemPrompt,
 						messages: agent.state.messages.slice(),
@@ -453,6 +464,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				};
 			}
 		}
+
+		return turnUpdate;
 	};
 
 	return {
