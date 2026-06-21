@@ -662,7 +662,7 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools by default |
 
-Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
+Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`
 
 ### Resource Options
 

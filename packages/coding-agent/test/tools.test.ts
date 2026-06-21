@@ -12,6 +12,7 @@ import {
 	createGrepTool,
 	createLsTool,
 	createReadTool,
+	createSleepTool,
 	createWriteTool,
 } from "../src/index.ts";
 import * as shellModule from "../src/utils/shell.ts";
@@ -23,6 +24,7 @@ const bashTool = createBashTool(process.cwd());
 const grepTool = createGrepTool(process.cwd());
 const findTool = createFindTool(process.cwd());
 const lsTool = createLsTool(process.cwd());
+const sleepTool = createSleepTool();
 
 // Helper to extract text from content blocks
 function getTextOutput(result: any): string {
@@ -803,6 +805,17 @@ describe("Coding Agent Tools", () => {
 
 			expect(output).toContain(".hidden-file");
 			expect(output).toContain(".hidden-dir/");
+		});
+	});
+
+	describe("sleep tool", () => {
+		it("should wait and return a result", async () => {
+			const startedAt = Date.now();
+			const result = await sleepTool.execute("test-call-sleep", { seconds: 0.01 });
+
+			expect(Date.now() - startedAt).toBeGreaterThanOrEqual(5);
+			expect(getTextOutput(result)).toContain("Slept for 0.01 seconds.");
+			expect(result.details).toEqual({ seconds: 0.01 });
 		});
 	});
 });
