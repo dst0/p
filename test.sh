@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -e
 
-AUTH_FILE="$HOME/.pi/agent/auth.json"
-AUTH_BACKUP="$HOME/.pi/agent/auth.json.bak"
+AUTH_FILE="$HOME/.p/agent/auth.json"
+AUTH_BACKUP="$HOME/.p/agent/auth.json.bak"
 
 # Restore auth.json on exit (success or failure)
 cleanup() {

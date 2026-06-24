@@ -17,7 +17,7 @@ describe("SettingsManager", () => {
 			rmSync(testDir, { recursive: true });
 		}
 		mkdirSync(agentDir, { recursive: true });
-		mkdirSync(join(projectDir, ".pi"), { recursive: true });
+		mkdirSync(join(projectDir, ".p"), { recursive: true });
 	});
 
 	afterEach(() => {
@@ -220,7 +220,7 @@ describe("SettingsManager", () => {
 	describe("error tracking", () => {
 		it("should collect and clear load errors via drainErrors", () => {
 			const globalSettingsPath = join(agentDir, "settings.json");
-			const projectSettingsPath = join(projectDir, ".pi", "settings.json");
+			const projectSettingsPath = join(projectDir, ".p", "settings.json");
 			writeFileSync(globalSettingsPath, "{ invalid global json");
 			writeFileSync(projectSettingsPath, "{ invalid project json");
 
@@ -276,7 +276,7 @@ describe("SettingsManager", () => {
 	describe("project trust", () => {
 		it("should skip project settings when project is not trusted", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "global" }));
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ theme: "project" }));
+			writeFileSync(join(projectDir, ".p", "settings.json"), JSON.stringify({ theme: "project" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
 
@@ -287,7 +287,7 @@ describe("SettingsManager", () => {
 
 		it("should reload project settings after trust changes to true", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ theme: "global" }));
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ theme: "project" }));
+			writeFileSync(join(projectDir, ".p", "settings.json"), JSON.stringify({ theme: "project" }));
 			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
 
 			manager.setProjectTrusted(true);
@@ -297,7 +297,7 @@ describe("SettingsManager", () => {
 		});
 
 		it("should fail project settings writes when project is not trusted", async () => {
-			const projectSettingsPath = join(projectDir, ".pi", "settings.json");
+			const projectSettingsPath = join(projectDir, ".p", "settings.json");
 			writeFileSync(projectSettingsPath, JSON.stringify({ packages: ["npm:existing"] }));
 			const manager = SettingsManager.create(projectDir, agentDir, { projectTrusted: false });
 
@@ -312,7 +312,7 @@ describe("SettingsManager", () => {
 
 		it("should read default project trust from global settings only", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ defaultProjectTrust: "always" }));
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ defaultProjectTrust: "never" }));
+			writeFileSync(join(projectDir, ".p", "settings.json"), JSON.stringify({ defaultProjectTrust: "never" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
@@ -329,46 +329,46 @@ describe("SettingsManager", () => {
 	});
 
 	describe("project settings directory creation", () => {
-		it("should not create .pi folder when only reading project settings", () => {
-			// Create agent dir with global settings, but NO .pi folder in project
+		it("should not create .p folder when only reading project settings", () => {
+			// Create agent dir with global settings, but NO .p folder in project
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
 
-			// Delete the .pi folder that beforeEach created
-			rmSync(join(projectDir, ".pi"), { recursive: true });
+			// Delete the .p folder that beforeEach created
+			rmSync(join(projectDir, ".p"), { recursive: true });
 
 			// Create SettingsManager (reads both global and project settings)
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			// .pi folder should NOT have been created just from reading
-			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+			// .p folder should NOT have been created just from reading
+			expect(existsSync(join(projectDir, ".p"))).toBe(false);
 
 			// Settings should still be loaded from global
 			expect(manager.getTheme()).toBe("dark");
 		});
 
-		it("should create .pi folder when writing project settings", async () => {
-			// Create agent dir with global settings, but NO .pi folder in project
+		it("should create .p folder when writing project settings", async () => {
+			// Create agent dir with global settings, but NO .p folder in project
 			const settingsPath = join(agentDir, "settings.json");
 			writeFileSync(settingsPath, JSON.stringify({ theme: "dark" }));
 
-			// Delete the .pi folder that beforeEach created
-			rmSync(join(projectDir, ".pi"), { recursive: true });
+			// Delete the .p folder that beforeEach created
+			rmSync(join(projectDir, ".p"), { recursive: true });
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			// .pi folder should NOT exist yet
-			expect(existsSync(join(projectDir, ".pi"))).toBe(false);
+			// .p folder should NOT exist yet
+			expect(existsSync(join(projectDir, ".p"))).toBe(false);
 
 			// Write a project-specific setting
 			manager.setProjectPackages([{ source: "npm:test-pkg" }]);
 			await manager.flush();
 
-			// Now .pi folder should exist
-			expect(existsSync(join(projectDir, ".pi"))).toBe(true);
+			// Now .p folder should exist
+			expect(existsSync(join(projectDir, ".p"))).toBe(true);
 
 			// And settings file should be created
-			expect(existsSync(join(projectDir, ".pi", "settings.json"))).toBe(true);
+			expect(existsSync(join(projectDir, ".p", "settings.json"))).toBe(true);
 		});
 	});
 
@@ -380,7 +380,7 @@ describe("SettingsManager", () => {
 
 		it("should use merged global and project settings", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ httpIdleTimeoutMs: 300000 }));
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ httpIdleTimeoutMs: 0 }));
+			writeFileSync(join(projectDir, ".p", "settings.json"), JSON.stringify({ httpIdleTimeoutMs: 0 }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
@@ -471,7 +471,7 @@ describe("SettingsManager", () => {
 
 		it("should return project sessionDir, overriding global", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ sessionDir: "/global/sessions" }));
-			writeFileSync(join(projectDir, ".pi", "settings.json"), JSON.stringify({ sessionDir: "./sessions" }));
+			writeFileSync(join(projectDir, ".p", "settings.json"), JSON.stringify({ sessionDir: "./sessions" }));
 			const manager = SettingsManager.create(projectDir, agentDir);
 			expect(manager.getSessionDir()).toBe("./sessions");
 		});

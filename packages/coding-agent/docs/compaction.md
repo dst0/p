@@ -35,7 +35,7 @@ contextTokens > contextWindow * triggerRatio
 
 Both limits are evaluated when present, and the lower threshold wins. By default, `triggerRatio` is `1.0` and `triggerReserveTokens` is `12000`, so compaction starts only when the loaded model's context window is effectively full or within 12k tokens of full, whichever comes first. For example, a 64k-token local model compacts near 53,536 tokens by the reserve rule, not at the older 75% mark.
 
-The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`.
+The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`.
 
 Provider prompt-cache reuse is separate from compaction. Runtime-only project/session context is sent after the user turn so the provider-visible prefix remains stable across idle follow-up prompts and tool-loop continuations. Large prompts are still bounded by the loaded model's actual context window; if the conversation exceeds that window, compaction or trimming may still occur before a request is sent.
 
@@ -43,7 +43,7 @@ You can also trigger manually with `/compact [instructions]`, where optional ins
 
 ### How It Works
 
-1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`) is reached
+1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`) is reached
 2. **Extract messages**: Collect messages from the previous kept boundary (or session start) up to the cut point
 3. **Generate summary**: Call LLM to summarize with structured format, passing the previous summary as iterative context when present
 4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
@@ -378,7 +378,7 @@ See `SessionBeforeTreeEvent` and `TreePreparation` in the types file.
 
 ## Settings
 
-Configure compaction in `~/.pi/agent/settings.json` or `<project-dir>/.pi/settings.json`:
+Configure compaction in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`:
 
 ```json
 {

@@ -458,8 +458,8 @@ function readPiManifest(packageJsonPath: string): PiManifest | null {
 	try {
 		const content = fs.readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content);
-		if (pkg.pi && typeof pkg.pi === "object") {
-			return pkg.pi as PiManifest;
+		if (pkg.p && typeof pkg.p === "object") {
+			return pkg.p as PiManifest;
 		}
 		return null;
 	} catch {

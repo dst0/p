@@ -5,7 +5,7 @@
   "type": "module",
   "piConfig": {
     "name": "p",
-    "configDir": ".pi"
+    "configDir": ".p"
   },
   "bin": {
     "p": "dist/cli.js"
