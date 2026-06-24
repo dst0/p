@@ -373,7 +373,7 @@ export function estimateContextTokens(
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens,
+		tokens: usageTokens + trailingTokens + staticTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
