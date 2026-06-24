@@ -162,6 +162,8 @@ function getMessageFromEntryForCompaction(entry: SessionEntry): AgentMessage | u
 
 function hasMeaningfulUserRequest(pathEntries: SessionEntry[]): boolean {
 	return pathEntries.some((entry) => {
+		if (entry.type === "custom_message") return true;
+		if (entry.type === "message" && entry.message.role === "bashExecution") return true;
 		if (entry.type !== "message" || entry.message.role !== "user") {
 			return false;
 		}
@@ -371,7 +373,7 @@ export function estimateContextTokens(
 	}
 
 	return {
-		tokens: staticTokens + usageTokens + trailingTokens,
+		tokens: usageTokens + trailingTokens,
 		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
@@ -503,12 +505,18 @@ export function estimateTokens(message: AgentMessage): number {
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length;
+			// Include overhead from bashExecutionToText: "Ran ``\n", "```\n", "\n```", etc.
+			chars = message.command.length + message.output.length + 15;
 			return Math.ceil(chars / 4);
 		}
-		case "branchSummary":
+		case "branchSummary": {
+			// Include BRANCH_SUMMARY_PREFIX and BRANCH_SUMMARY_SUFFIX (97 chars)
+			chars = message.summary.length + 97;
+			return Math.ceil(chars / 4);
+		}
 		case "compactionSummary": {
-			chars = message.summary.length;
+			// Include COMPACTION_SUMMARY_PREFIX and COMPACTION_SUMMARY_SUFFIX (101 chars)
+			chars = message.summary.length + 101;
 			return Math.ceil(chars / 4);
 		}
 	}
@@ -1560,7 +1568,14 @@ export function prepareCompaction(
 	// Abort compaction if we are discarding less than 500 tokens of history.
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
-	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25) {
+	// However, if we are extremely close to the context limit, we MUST compact.
+	const lastUsage = getLastAssistantUsage(pathEntries);
+	const contextWindow = lastUsage ? calculateContextTokens(lastUsage) : 0; // Approximate
+	const isNearOverflow =
+		contextWindow > 0 &&
+		(tokensBefore > contextWindow * 0.9 || tokensBefore > resolvedSettings.targetContextTokens * 2);
+
+	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25 && !isNearOverflow) {
 		return {
 			ok: false,
 			message: `History to summarize is too small (only ${tokensToSummarize} tokens) and total session size (${tokensBefore}) is not significantly over budget`,
