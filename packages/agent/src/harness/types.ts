@@ -838,6 +838,7 @@ export interface AgentHarnessOptions<
 	activeToolNames?: string[];
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
+	completionMode?: CompletionMode;
 }
 
 export type { AgentHarness } from "./agent-harness.ts";

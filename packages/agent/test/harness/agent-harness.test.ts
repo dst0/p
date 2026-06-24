@@ -55,7 +55,7 @@ describe("AgentHarness", () => {
 		const session = new Session(new InMemorySessionStorage());
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const initialModel = getModel("anthropic", "claude-sonnet-4-5");
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env,
 			session,
 			model: initialModel,
@@ -93,7 +93,7 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("third");
 			},
 		]);
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -112,7 +112,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		expect(userCounts).toEqual([1, 2, 3]);
 		expect(steerQueueLengths).toEqual([1, 2, 1, 0]);
@@ -129,7 +129,7 @@ describe("AgentHarness", () => {
 			},
 		]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -138,7 +138,7 @@ describe("AgentHarness", () => {
 			messages: [{ role: "user", content: [{ type: "text", text: "hook" }], timestamp: Date.now() }],
 		}));
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		const persistedText = (await session.getEntries()).flatMap((entry) => {
 			if (entry.type !== "message" || entry.message.role !== "user") return [];
@@ -170,7 +170,7 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("second");
 			},
 		]);
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -186,7 +186,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		const firstPrompt = harness.prompt("first");
+		const firstPrompt = harness.prompt("first", { completionMode: "implicit" });
 		await new Promise((resolve) => setTimeout(resolve, 0));
 		harness.steer("steer");
 		harness.followUp("follow");
@@ -197,7 +197,7 @@ describe("AgentHarness", () => {
 		releaseFirstResponse?.();
 		const abortResult = await abortResultPromise;
 		await firstPrompt;
-		await harness.prompt("second");
+		await harness.prompt("second", { completionMode: "implicit" });
 
 		expect(abortResult.clearedSteer).toHaveLength(1);
 		expect(abortResult.clearedFollowUp).toHaveLength(1);
@@ -223,7 +223,7 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("third");
 			},
 		]);
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -242,7 +242,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		expect(userCounts).toEqual([1, 2, 3]);
 		expect(followUpQueueLengths).toEqual([1, 2, 1, 0]);
@@ -253,7 +253,7 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("should not be used")]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -266,8 +266,8 @@ describe("AgentHarness", () => {
 			throw new Error("context exploded");
 		});
 
-		const response = await harness.prompt("hello");
-		await expect(harness.prompt("after failure")).resolves.toMatchObject({ role: "assistant" });
+		const response = await harness.prompt("hello", { completionMode: "implicit" });
+		await expect(harness.prompt("after failure", { completionMode: "implicit" })).resolves.toMatchObject({ role: "assistant" });
 
 		const entries = await session.getEntries();
 		const messages = entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
@@ -312,7 +312,7 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("done");
 			},
 		]);
-		const harness = new AgentHarness<Skill, PromptTemplate, AgentTool>({
+		const harness = new AgentHarness<Skill, PromptTemplate, AgentTool>({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -336,7 +336,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		expect(captured).toEqual([
 			{ modelId: "first", reasoning: undefined, systemPrompt: "first prompt", tools: ["calculate"] },
@@ -349,7 +349,7 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("ok")]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -368,7 +368,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		const entries = await session.getEntries();
 		const roles = entries.flatMap((entry) => (entry.type === "message" ? [entry.message.role] : []));
@@ -380,7 +380,7 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("ok")]);
 		const barrier = deferred();
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -393,7 +393,7 @@ describe("AgentHarness", () => {
 			}
 		});
 
-		const promptPromise = harness.prompt("hello");
+		const promptPromise = harness.prompt("hello", { completionMode: "implicit" });
 		let idleResolved = false;
 		const idlePromise = harness.waitForIdle().then(() => {
 			idleResolved = true;
@@ -417,7 +417,7 @@ describe("AgentHarness", () => {
 				}),
 		]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({
+		const harness = new AgentHarness({ completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -438,7 +438,7 @@ describe("AgentHarness", () => {
 			};
 		});
 
-		await harness.prompt("hello");
+		await harness.prompt("hello", { completionMode: "implicit" });
 
 		const toolResult = (await session.getEntries()).find(
 			(entry) => entry.type === "message" && entry.message.role === "toolResult",
@@ -461,7 +461,7 @@ describe("AgentHarness", () => {
 		type AppTool = AgentTool<typeof calculateTool.parameters, undefined> & { source: "builtin" | "extension" };
 		const inspectTool: AppTool = { ...calculateTool, name: "inspect", source: "builtin" };
 		const searchTool: AppTool = { ...calculateTool, name: "search", source: "extension" };
-		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AppTool>({
+		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AppTool>({ completionMode: "implicit",
 			env,
 			session,
 			model,
@@ -530,11 +530,11 @@ describe("AgentHarness", () => {
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const model = getModel("anthropic", "claude-sonnet-4-5");
 		expect(
-			() => new AgentHarness({ env, session, model, tools: [calculateTool], activeToolNames: ["missing"] }),
+			() => new AgentHarness({ completionMode: "implicit", env, session, model, tools: [calculateTool], activeToolNames: ["missing"] }),
 		).toThrow(/Unknown tool/);
 		expect(
 			() =>
-				new AgentHarness({
+				new AgentHarness({ completionMode: "implicit",
 					env,
 					session,
 					model,
@@ -544,7 +544,7 @@ describe("AgentHarness", () => {
 		).toThrow(/Duplicate tool/);
 		expect(
 			() =>
-				new AgentHarness({
+				new AgentHarness({ completionMode: "implicit",
 					env,
 					session,
 					model,
@@ -558,7 +558,7 @@ describe("AgentHarness", () => {
 		const session = new Session(new InMemorySessionStorage());
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const model = getModel("anthropic", "claude-sonnet-4-5");
-		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AgentTool>({ env, session, model });
+		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AgentTool>({ completionMode: "implicit", env, session, model });
 		const skill: AppSkill = {
 			name: "inspect",
 			description: "Inspect things",

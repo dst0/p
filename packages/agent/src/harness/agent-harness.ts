@@ -214,6 +214,7 @@ export class AgentHarness<
 		this.validateToolNames(this.activeToolNames);
 		this.steeringQueueMode = options.steeringMode ?? "one-at-a-time";
 		this.followUpQueueMode = options.followUpMode ?? "one-at-a-time";
+		this.completionMode = options.completionMode;
 	}
 
 	private get effectiveCompactionSettings(): typeof DEFAULT_COMPACTION_SETTINGS {
