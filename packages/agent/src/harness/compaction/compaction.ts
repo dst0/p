@@ -355,12 +355,15 @@ export function estimateTokens(message: AgentMessage): number {
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length;
+			chars = message.command.length + message.output.length + 15;
 			return Math.ceil(chars / 4);
 		}
-		case "branchSummary":
+		case "branchSummary": {
+			chars = message.summary.length + 99;
+			return Math.ceil(chars / 4);
+		}
 		case "compactionSummary": {
-			chars = message.summary.length;
+			chars = message.summary.length + 107;
 			return Math.ceil(chars / 4);
 		}
 	}

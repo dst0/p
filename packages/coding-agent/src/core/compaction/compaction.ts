@@ -510,13 +510,13 @@ export function estimateTokens(message: AgentMessage): number {
 			return Math.ceil(chars / 4);
 		}
 		case "branchSummary": {
-			// Include BRANCH_SUMMARY_PREFIX and BRANCH_SUMMARY_SUFFIX (97 chars)
-			chars = message.summary.length + 97;
+			// Include BRANCH_SUMMARY_PREFIX and BRANCH_SUMMARY_SUFFIX (99 chars)
+			chars = message.summary.length + 99;
 			return Math.ceil(chars / 4);
 		}
 		case "compactionSummary": {
-			// Include COMPACTION_SUMMARY_PREFIX and COMPACTION_SUMMARY_SUFFIX (101 chars)
-			chars = message.summary.length + 101;
+			// Include COMPACTION_SUMMARY_PREFIX and COMPACTION_SUMMARY_SUFFIX (107 chars)
+			chars = message.summary.length + 107;
 			return Math.ceil(chars / 4);
 		}
 	}
@@ -1569,6 +1569,7 @@ export function prepareCompaction(
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
 	// However, if we are extremely close to the context limit, we MUST compact.
+	const resolvedSettings = resolveCompactionSettings(settings);
 	const lastUsage = getLastAssistantUsage(pathEntries);
 	const contextWindow = lastUsage ? calculateContextTokens(lastUsage) : 0; // Approximate
 	const isNearOverflow =
