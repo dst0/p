@@ -2177,4 +2177,34 @@ describe("Explicit Completion Protocol", () => {
 			),
 		).toHaveLength(1);
 	});
+
+	it("continues indefinitely in explicit_finish mode even without progress", async () => {
+		// Mock 7 turns of no progress (default limit is 5)
+		const responses: ScriptedResponse[] = Array(7).fill(
+			createAssistantMessage([{ type: "text", text: "I am still working..." }], "stop"),
+		);
+		// Finally finish
+		responses.push(
+			createAssistantMessage([createFinishWorkCall({ status: "success", summary: "finally done" })], "toolUse"),
+		);
+
+		const { messages, events, contexts } = await runScriptedAgentLoop(responses, {
+			config: {
+				completionMode: "explicit_finish",
+				// Use defaults for limits, which we expect to be overridden to POSITIVE_INFINITY
+			},
+		});
+
+		expect(contexts).toHaveLength(8);
+		expect(messages[messages.length - 1].role).toBe("toolResult");
+		expect(messages[messages.length - 1]).toMatchObject({
+			toolName: FINISH_WORK_TOOL_NAME,
+			details: { summary: "finally done" },
+		});
+
+		const retryEvents = events.filter(
+			(event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry",
+		);
+		expect(retryEvents.length).toBe(7);
+	});
 });
