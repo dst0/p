@@ -1,11 +1,13 @@
 import { type AssistantMessage, type ImageContent, type Model, streamSimple, type UserMessage } from "@dst0/p-ai";
 import { runAgentLoop } from "../agent-loop.ts";
+import type { CompletionMode } from "../completion-protocol.ts";
 import type {
 	AgentContext,
 	AgentEvent,
 	AgentLoopConfig,
 	AgentMessage,
 	AgentTool,
+
 	QueueMode,
 	StreamFn,
 	ThinkingLevel,
@@ -188,6 +190,7 @@ export class AgentHarness<
 	private steeringQueueMode: QueueMode;
 	private followUpQueue: UserMessage[] = [];
 	private followUpQueueMode: QueueMode;
+	private completionMode?: CompletionMode;
 	private nextTurnQueue: AgentMessage[] = [];
 	private handlers = new Map<string, Set<AgentHarnessHandler>>();
 
