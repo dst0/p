@@ -251,12 +251,16 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
-		let estimated = staticTokens;
-		for (const message of messages) {
-			estimated += estimateTokens(message);
+		let estimated = 0;
+		for (let i = 0; i < messages.length; i++) {
+			const m = messages[i];
+			if (i === 0 && m.role === "system" && m.content === systemPrompt) {
+				continue;
+			}
+			estimated += estimateTokens(m);
 		}
 		return {
-			tokens: estimated,
+			tokens: staticTokens + estimated,
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
@@ -271,8 +275,8 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens + staticTokens,
-		usageTokens,
+		tokens: usageTokens + trailingTokens,
+		usageTokens: usageTokens - staticTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
 		staticTokens,
@@ -692,6 +696,7 @@ export function prepareCompaction(
 	}
 	const boundaryEnd = pathEntries.length;
 
+	const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
 	const keepRecentTokens = selectKeepRecentTokens(tokensBefore, settings);
 
@@ -732,6 +737,7 @@ export function prepareCompaction(
 		fileOps,
 		settings,
 		keepRecentTokens,
+		systemPromptTokens,
 	});
 }
 

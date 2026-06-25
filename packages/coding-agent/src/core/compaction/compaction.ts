@@ -353,12 +353,16 @@ export function estimateContextTokens(
 	const usageInfo = useProviderUsage ? getLastAssistantUsageInfo(messages, options) : undefined;
 
 	if (!usageInfo) {
-		let estimated = staticTokens;
-		for (const message of messages) {
-			estimated += estimateTokens(message);
+		let estimated = 0;
+		for (let i = 0; i < messages.length; i++) {
+			const m = messages[i];
+			if (i === 0 && m.role === "system" && m.content === systemPrompt) {
+				continue;
+			}
+			estimated += estimateTokens(m);
 		}
 		return {
-			tokens: estimated,
+			tokens: staticTokens + estimated,
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
@@ -373,8 +377,8 @@ export function estimateContextTokens(
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens + staticTokens,
-		usageTokens,
+		tokens: usageTokens + trailingTokens,
+		usageTokens: usageTokens - staticTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
 		staticTokens,
@@ -1570,11 +1574,7 @@ export function prepareCompaction(
 	// is also truncating oversized kept messages via post-compaction truncation.
 	// However, if we are extremely close to the context limit, we MUST compact.
 	const resolvedSettings = resolveCompactionSettings(settings);
-	const lastUsage = getLastAssistantUsage(pathEntries);
-	const contextWindow = lastUsage ? calculateContextTokens(lastUsage) : 0; // Approximate
-	const isNearOverflow =
-		contextWindow > 0 &&
-		(tokensBefore > contextWindow * 0.9 || tokensBefore > resolvedSettings.targetContextTokens * 2);
+	const isNearOverflow = tokensBefore > resolvedSettings.targetContextTokens * 2;
 
 	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25 && !isNearOverflow) {
 		return {

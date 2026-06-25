@@ -115,8 +115,8 @@ describe("AgentSession.getSessionStats", () => {
 			const stats = session.getSessionStats();
 			expect(stats.tokens.input).toBe(195_000);
 			expect(stats.contextUsage).toBeDefined();
-			expect(stats.contextUsage?.tokens).toBe(698);
-			expect(stats.contextUsage?.percent).toBe((698 / model.contextWindow) * 100);
+			expect(stats.contextUsage?.tokens).toBe(676);
+			expect(stats.contextUsage?.percent).toBe((676 / model.contextWindow) * 100);
 		} finally {
 			session.dispose();
 		}
