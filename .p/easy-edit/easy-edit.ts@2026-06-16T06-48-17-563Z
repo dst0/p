@@ -43,7 +43,7 @@ interface Position {
 // ──────────────────────────────────────────────
 
 function getEditsDir(cwd: string): string {
-  const editsDir = join(cwd, ".p", "edits");
+  const editsDir = join(cwd, ".pi", "edits");
   mkdirSync(editsDir, { recursive: true });
   return editsDir;
 }

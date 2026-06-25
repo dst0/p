@@ -282,7 +282,7 @@ describe("CombinedAutocompleteProvider", () => {
 
 		test("includes hidden paths but excludes .git", async () => {
 			setupFolder(baseDir, {
-				dirs: [".p", ".github", ".git"],
+				dirs: [".pi", ".github", ".git"],
 				files: {
 					".p/config.json": "{}",
 					".github/workflows/ci.yml": "name: ci",

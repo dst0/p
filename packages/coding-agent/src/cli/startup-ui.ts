@@ -14,7 +14,7 @@ import { detectTerminalBackgroundTheme, initTheme, setTheme } from "../modes/int
 
 const OFFICIAL_PACKAGE_NAME = "@dst0/p-coding-agent";
 const OFFICIAL_APP_NAME = "p";
-const OFFICIAL_CONFIG_DIR_NAME = ".p";
+const OFFICIAL_CONFIG_DIR_NAME = ".pi";
 
 interface DistributionMetadata {
 	packageName: string;
