@@ -770,6 +770,7 @@ export interface CompactionPreparation {
 	fileOps: FileOperations;
 	settings: CompactionSettings;
 	keepRecentTokens?: number;
+	systemPromptTokens?: number;
 }
 
 export interface FileOperations {

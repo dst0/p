@@ -321,6 +321,7 @@ describe("harness compaction", () => {
 		const estimate = estimateContextTokens(messages, systemPrompt);
 		expect(estimate.staticTokens).toBe(Math.ceil(4000 / 4));
 		expect(estimate.tokens).toBe(estimate.usageTokens + estimate.trailingTokens + estimate.staticTokens);
+		expect(estimate.tokens).toBe(5500);
 	});
 
 	it("includes staticTokens in no-usage fallback path", () => {
@@ -331,9 +332,10 @@ describe("harness compaction", () => {
 		expect(estimate.usageTokens).toBe(0);
 		expect(estimate.lastUsageIndex).toBeNull();
 		expect(estimate.staticTokens).toBe(Math.ceil(8000 / 4));
-		// trailingTokens = estimated (user chars / 4) + staticTokens
+		// trailingTokens = estimated (user chars / 4)
 		const userTokens = estimateTokens(createUserMessage("only user message"));
-		expect(estimate.trailingTokens).toBe(userTokens + estimate.staticTokens);
+		expect(estimate.trailingTokens).toBe(userTokens);
+		expect(estimate.tokens).toBe(estimate.trailingTokens + estimate.staticTokens);
 	});
 
 	it("staticTokens is 0 when no systemPrompt", () => {
@@ -351,10 +353,10 @@ describe("harness compaction", () => {
 		const pathEntries = [u1, a1, u2, a2];
 		const preparation = getOrThrow(prepareCompaction(pathEntries, DEFAULT_COMPACTION_SETTINGS, systemPrompt));
 		expect(preparation).toBeDefined();
-		// tokensBefore should include staticTokens from systemPrompt
-		const contextWithoutSystemPrompt = estimateContextTokens(buildSessionContext(pathEntries).messages);
+		// tokensBefore should NOT double-count staticTokens from systemPrompt if usage is present
 		const staticTokens = Math.ceil(4000 / 4);
-		expect(preparation?.tokensBefore).toBe(contextWithoutSystemPrompt.tokens + staticTokens);
+		expect(preparation?.tokensBefore).toBe(6000);
+		expect(preparation?.systemPromptTokens).toBe(staticTokens);
 	});
 
 	it("prepares compaction with systemPrompt does not affect cut point selection", () => {

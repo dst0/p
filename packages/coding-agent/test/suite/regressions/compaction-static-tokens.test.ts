@@ -73,6 +73,7 @@ describe("estimateContextTokens with staticTokens", () => {
 		const estimate = estimateContextTokens(messages, systemPrompt);
 		expect(estimate.staticTokens).toBe(Math.ceil(4000 / 4));
 		expect(estimate.tokens).toBe(estimate.usageTokens + estimate.trailingTokens + estimate.staticTokens);
+		expect(estimate.tokens).toBe(5500 + 0); // usageInfo.totalTokens + trailing
 	});
 
 	it("includes staticTokens in no-usage fallback path", () => {
@@ -83,9 +84,10 @@ describe("estimateContextTokens with staticTokens", () => {
 		expect(estimate.usageTokens).toBe(0);
 		expect(estimate.lastUsageIndex).toBeNull();
 		expect(estimate.staticTokens).toBe(Math.ceil(8000 / 4));
-		// trailingTokens = estimated (user chars / 4) + staticTokens
+		// trailingTokens = estimated (user chars / 4)
 		const userTokens = estimateTokens(createUser("only user message"));
-		expect(estimate.trailingTokens).toBe(userTokens + estimate.staticTokens);
+		expect(estimate.trailingTokens).toBe(userTokens);
+		expect(estimate.tokens).toBe(estimate.trailingTokens + estimate.staticTokens);
 	});
 
 	it("staticTokens is 0 when no systemPrompt", () => {
