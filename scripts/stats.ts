@@ -115,7 +115,7 @@ function parseArgs(): Args {
 	const args = process.argv.slice(2);
 	let days = 7;
 	let cwd = process.cwd();
-	let sessionsBase = join(homedir(), ".pi", "agent", "sessions");
+	let sessionsBase = join(homedir(), ".p", "agent", "sessions");
 
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];

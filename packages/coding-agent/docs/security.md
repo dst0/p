@@ -13,14 +13,14 @@ Pi considers a project to have resources that require trust when it finds any of
 - `.p/SYSTEM.md` or `.p/APPEND_SYSTEM.md`
 - project `.agents/skills` in the current directory or an ancestor directory
 
-A bare `.pi` directory does not count as a project resource that requires trust.
+A bare `.p` directory does not count as a project resource that requires trust.
 
 When an interactive session starts in a project with resources that require trust and no saved decision for the current directory or a parent directory, pi follows `defaultProjectTrust` from global settings. The default value is `"ask"`, which asks whether to trust the project when UI is available. Saved decisions are stored by canonical directory in `~/.p/agent/trust.json`, and the closest saved decision on the current or parent path applies before the global default.
 
 Trusting a project allows pi to load project resources that require trust, including:
 
 - `.p/settings.json`
-- `.pi` resources such as extensions, skills, prompt templates, themes, and system prompt files
+- `.p` resources such as extensions, skills, prompt templates, themes, and system prompt files
 - missing project packages configured through project settings
 - project-local extensions and project package-managed extensions
 

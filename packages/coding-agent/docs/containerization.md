@@ -46,7 +46,7 @@ Requirements: Node.js >= 23.6.0 for `@dst0/gondolin`, plus QEMU (requires instal
 
 Run the whole `pi` process in Docker when you want the simplest local container boundary.
 
-`Dockerfile.pi`:
+`Dockerfile.p`:
 
 ```dockerfile
 FROM node:24-bookworm-slim
@@ -63,7 +63,7 @@ ENTRYPOINT ["pi"]
 Build and run:
 
 ```bash
-docker build -t pi-sandbox -f Dockerfile.pi .
+docker build -t pi-sandbox -f Dockerfile.p .
 
 docker run --rm -it \
   -e ANTHROPIC_API_KEY \

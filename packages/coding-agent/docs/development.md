@@ -31,9 +31,9 @@ Configure via `package.json`:
 
 ```json
 {
-  "pConfig": {
+  "piConfig": {
     "name": "pi",
-    "configDir": ".pi"
+    "configDir": ".p"
   }
 }
 ```
