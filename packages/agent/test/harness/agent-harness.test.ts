@@ -55,7 +55,8 @@ describe("AgentHarness", () => {
 		const session = new Session(new InMemorySessionStorage());
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const initialModel = getModel("anthropic", "claude-sonnet-4-5");
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env,
 			session,
 			model: initialModel,
@@ -93,7 +94,8 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("third");
 			},
 		]);
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -129,7 +131,8 @@ describe("AgentHarness", () => {
 			},
 		]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -170,7 +173,8 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("second");
 			},
 		]);
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -223,7 +227,8 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("third");
 			},
 		]);
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -253,7 +258,8 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("should not be used")]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -267,7 +273,9 @@ describe("AgentHarness", () => {
 		});
 
 		const response = await harness.prompt("hello", { completionMode: "implicit" });
-		await expect(harness.prompt("after failure", { completionMode: "implicit" })).resolves.toMatchObject({ role: "assistant" });
+		await expect(harness.prompt("after failure", { completionMode: "implicit" })).resolves.toMatchObject({
+			role: "assistant",
+		});
 
 		const entries = await session.getEntries();
 		const messages = entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
@@ -312,7 +320,8 @@ describe("AgentHarness", () => {
 				return fauxAssistantMessage("done");
 			},
 		]);
-		const harness = new AgentHarness<Skill, PromptTemplate, AgentTool>({ completionMode: "implicit",
+		const harness = new AgentHarness<Skill, PromptTemplate, AgentTool>({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -349,7 +358,8 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("ok")]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -380,7 +390,8 @@ describe("AgentHarness", () => {
 		registrations.push(registration);
 		registration.setResponses([() => fauxAssistantMessage("ok")]);
 		const barrier = deferred();
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session: new Session(new InMemorySessionStorage()),
 			model: registration.getModel(),
@@ -417,7 +428,8 @@ describe("AgentHarness", () => {
 				}),
 		]);
 		const session = new Session(new InMemorySessionStorage());
-		const harness = new AgentHarness({ completionMode: "implicit",
+		const harness = new AgentHarness({
+			completionMode: "implicit",
 			env: new NodeExecutionEnv({ cwd: process.cwd() }),
 			session,
 			model: registration.getModel(),
@@ -461,7 +473,8 @@ describe("AgentHarness", () => {
 		type AppTool = AgentTool<typeof calculateTool.parameters, undefined> & { source: "builtin" | "extension" };
 		const inspectTool: AppTool = { ...calculateTool, name: "inspect", source: "builtin" };
 		const searchTool: AppTool = { ...calculateTool, name: "search", source: "extension" };
-		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AppTool>({ completionMode: "implicit",
+		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AppTool>({
+			completionMode: "implicit",
 			env,
 			session,
 			model,
@@ -530,11 +543,20 @@ describe("AgentHarness", () => {
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const model = getModel("anthropic", "claude-sonnet-4-5");
 		expect(
-			() => new AgentHarness({ completionMode: "implicit", env, session, model, tools: [calculateTool], activeToolNames: ["missing"] }),
+			() =>
+				new AgentHarness({
+					completionMode: "implicit",
+					env,
+					session,
+					model,
+					tools: [calculateTool],
+					activeToolNames: ["missing"],
+				}),
 		).toThrow(/Unknown tool/);
 		expect(
 			() =>
-				new AgentHarness({ completionMode: "implicit",
+				new AgentHarness({
+					completionMode: "implicit",
 					env,
 					session,
 					model,
@@ -544,7 +566,8 @@ describe("AgentHarness", () => {
 		).toThrow(/Duplicate tool/);
 		expect(
 			() =>
-				new AgentHarness({ completionMode: "implicit",
+				new AgentHarness({
+					completionMode: "implicit",
 					env,
 					session,
 					model,
@@ -558,7 +581,12 @@ describe("AgentHarness", () => {
 		const session = new Session(new InMemorySessionStorage());
 		const env = new NodeExecutionEnv({ cwd: process.cwd() });
 		const model = getModel("anthropic", "claude-sonnet-4-5");
-		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AgentTool>({ completionMode: "implicit", env, session, model });
+		const harness = new AgentHarness<AppSkill, AppPromptTemplate, AgentTool>({
+			completionMode: "implicit",
+			env,
+			session,
+			model,
+		});
 		const skill: AppSkill = {
 			name: "inspect",
 			description: "Inspect things",

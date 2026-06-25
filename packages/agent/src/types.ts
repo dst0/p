@@ -133,8 +133,38 @@ export interface AgentLoopTurnUpdate {
 
 export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}
 
-export interface AgentLoopConfig extends SimpleStreamOptions {
+export interface AgentLoopConfig extends Omit<SimpleStreamOptions, "reasoning" | "onPayload" | "onResponse"> {
 	model: Model<any>;
+
+	/** Dynamic session identifier forwarded to the stream function. */
+	sessionId?: string;
+
+	/** Requested reasoning level for the turn. */
+	reasoning?: ThinkingLevel;
+
+	/** Static API key for LLM calls. Used when `getApiKey` is not provided or fails. */
+	apiKey?: string;
+
+	/** Provider cache retention hint. */
+	cacheRetention?: SimpleStreamOptions["cacheRetention"];
+
+	/** Optional callback for each request payload before it is sent. */
+	onPayload?: (payload: unknown, model: Model<any>) => Promise<unknown> | unknown;
+
+	/** Optional callback for each request response after it is received. */
+	onResponse?: (
+		response: { status: number; headers: Record<string, string> },
+		model: Model<any>,
+	) => Promise<void> | void;
+
+	/** Preferred transport forwarded to the stream function. */
+	transport?: SimpleStreamOptions["transport"];
+
+	/** Thinking budgets for models that support it. */
+	thinkingBudgets?: SimpleStreamOptions["thinkingBudgets"];
+
+	/** Optional cap for provider-requested retry delays. */
+	maxRetryDelayMs?: number;
 
 	/**
 	 * Completion protocol used by the loop.

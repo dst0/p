@@ -725,6 +725,7 @@ export type AgentHarnessEventResultMap = {
 
 export interface AgentHarnessPromptOptions {
 	images?: ImageContent[];
+	completionMode?: CompletionMode;
 }
 
 export interface AbortResult {
@@ -770,7 +771,6 @@ export interface CompactionPreparation {
 	fileOps: FileOperations;
 	settings: CompactionSettings;
 	keepRecentTokens?: number;
-	systemPromptTokens?: number;
 }
 
 export interface FileOperations {

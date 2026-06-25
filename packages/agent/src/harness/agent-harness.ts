@@ -7,7 +7,6 @@ import type {
 	AgentLoopConfig,
 	AgentMessage,
 	AgentTool,
-
 	QueueMode,
 	StreamFn,
 	ThinkingLevel,
@@ -428,6 +427,7 @@ export class AgentHarness<
 		return {
 			model: turnState.model,
 			reasoning: turnState.thinkingLevel === "off" ? undefined : turnState.thinkingLevel,
+			completionMode: this.completionMode,
 			convertToLlm,
 			transformContext: async (messages) => {
 				const result = await this.emitHook({ type: "context", messages: [...messages] });
@@ -464,6 +464,8 @@ export class AgentHarness<
 					context: this.createContext(nextTurnState),
 					model: nextTurnState.model,
 					thinkingLevel: nextTurnState.thinkingLevel,
+					reasoning: nextTurnState.thinkingLevel === "off" ? undefined : nextTurnState.thinkingLevel,
+					completionMode: this.completionMode,
 				};
 			},
 			getSteeringMessages: async () => this.drainQueuedMessages(this.steerQueue, this.steeringQueueMode),
@@ -555,7 +557,7 @@ export class AgentHarness<
 	private async executeTurn(
 		turnState: AgentHarnessTurnState<TSkill, TPromptTemplate, TTool>,
 		text: string,
-		options?: { images?: ImageContent[] },
+		options?: { images?: ImageContent[]; completionMode?: CompletionMode },
 	): Promise<AssistantMessage> {
 		let activeTurnState = turnState;
 		let messages: AgentMessage[] = [createUserMessage(text, options?.images)];
@@ -629,10 +631,17 @@ export class AgentHarness<
 		}
 	}
 
-	async prompt(text: string, options?: { images?: ImageContent[] }): Promise<AssistantMessage> {
+	async prompt(
+		text: string,
+		options?: { images?: ImageContent[]; completionMode?: CompletionMode },
+	): Promise<AssistantMessage> {
 		if (this.phase !== "idle") throw new AgentHarnessError("busy", "AgentHarness is busy");
 		this.phase = "turn";
 		const finishRunPromise = this.startRunPromise();
+		const originalCompletionMode = this.completionMode;
+		if (options?.completionMode) {
+			this.completionMode = options.completionMode;
+		}
 		try {
 			const turnState = await this.createTurnState();
 			return await this.executeTurn(turnState, text, options);
@@ -640,40 +649,59 @@ export class AgentHarness<
 			this.phase = "idle";
 			throw normalizeHarnessError(error, "unknown");
 		} finally {
+			this.completionMode = originalCompletionMode;
 			finishRunPromise();
 		}
 	}
 
-	async skill(name: string, additionalInstructions?: string): Promise<AssistantMessage> {
+	async skill(
+		name: string,
+		additionalInstructions?: string,
+		options?: { images?: ImageContent[]; completionMode?: CompletionMode },
+	): Promise<AssistantMessage> {
 		if (this.phase !== "idle") throw new AgentHarnessError("busy", "AgentHarness is busy");
 		this.phase = "turn";
 		const finishRunPromise = this.startRunPromise();
+		const originalCompletionMode = this.completionMode;
+		if (options?.completionMode) {
+			this.completionMode = options.completionMode;
+		}
 		try {
 			const turnState = await this.createTurnState();
 			const skill = (turnState.resources.skills ?? []).find((candidate) => candidate.name === name);
 			if (!skill) throw new AgentHarnessError("invalid_argument", `Unknown skill: ${name}`);
-			return await this.executeTurn(turnState, formatSkillInvocation(skill, additionalInstructions));
+			return await this.executeTurn(turnState, formatSkillInvocation(skill, additionalInstructions), options);
 		} catch (error) {
 			this.phase = "idle";
 			throw normalizeHarnessError(error, "unknown");
 		} finally {
+			this.completionMode = originalCompletionMode;
 			finishRunPromise();
 		}
 	}
 
-	async promptFromTemplate(name: string, args: string[] = []): Promise<AssistantMessage> {
+	async promptFromTemplate(
+		name: string,
+		args: string[] = [],
+		options?: { images?: ImageContent[]; completionMode?: CompletionMode },
+	): Promise<AssistantMessage> {
 		if (this.phase !== "idle") throw new AgentHarnessError("busy", "AgentHarness is busy");
 		this.phase = "turn";
 		const finishRunPromise = this.startRunPromise();
+		const originalCompletionMode = this.completionMode;
+		if (options?.completionMode) {
+			this.completionMode = options.completionMode;
+		}
 		try {
 			const turnState = await this.createTurnState();
 			const template = (turnState.resources.promptTemplates ?? []).find((candidate) => candidate.name === name);
 			if (!template) throw new AgentHarnessError("invalid_argument", `Unknown prompt template: ${name}`);
-			return await this.executeTurn(turnState, formatPromptTemplateInvocation(template, args));
+			return await this.executeTurn(turnState, formatPromptTemplateInvocation(template, args), options);
 		} catch (error) {
 			this.phase = "idle";
 			throw normalizeHarnessError(error, "unknown");
 		} finally {
+			this.completionMode = originalCompletionMode;
 			finishRunPromise();
 		}
 	}

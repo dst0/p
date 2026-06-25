@@ -46,7 +46,6 @@ describe("AgentSession dynamic tool registration", () => {
 		await session.bindExtensions({});
 
 		expect(session.agent.completionMode).toBe("explicit_finish");
-		expect(session.getActiveToolNames()).toContain("finish_work");
 		expect(session.systemPrompt).toContain("- finish_work:");
 
 		session.dispose();

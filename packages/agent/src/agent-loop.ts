@@ -628,6 +628,7 @@ async function streamAssistantResponse(
 
 	const response = await streamFunction(config.model, llmContext, {
 		...config,
+		reasoning: config.reasoning === "off" ? undefined : config.reasoning,
 		apiKey: resolvedApiKey,
 		signal,
 	});
