@@ -162,6 +162,8 @@ function getMessageFromEntryForCompaction(entry: SessionEntry): AgentMessage | u
 
 function hasMeaningfulUserRequest(pathEntries: SessionEntry[]): boolean {
 	return pathEntries.some((entry) => {
+		if (entry.type === "custom_message") return true;
+		if (entry.type === "message" && entry.message.role === "bashExecution") return true;
 		if (entry.type !== "message" || entry.message.role !== "user") {
 			return false;
 		}
@@ -351,12 +353,16 @@ export function estimateContextTokens(
 	const usageInfo = useProviderUsage ? getLastAssistantUsageInfo(messages, options) : undefined;
 
 	if (!usageInfo) {
-		let estimated = staticTokens;
-		for (const message of messages) {
-			estimated += estimateTokens(message);
+		let estimated = 0;
+		for (let i = 0; i < messages.length; i++) {
+			const m = messages[i];
+			if (i === 0 && m.role === "system" && m.content === systemPrompt) {
+				continue;
+			}
+			estimated += estimateTokens(m);
 		}
 		return {
-			tokens: estimated,
+			tokens: staticTokens + estimated,
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
@@ -371,8 +377,8 @@ export function estimateContextTokens(
 	}
 
 	return {
-		tokens: staticTokens + usageTokens + trailingTokens,
-		usageTokens,
+		tokens: usageTokens + trailingTokens,
+		usageTokens: usageTokens - staticTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
 		staticTokens,
@@ -503,12 +509,18 @@ export function estimateTokens(message: AgentMessage): number {
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length;
+			// Include overhead from bashExecutionToText: "Ran ``\n", "```\n", "\n```", etc.
+			chars = message.command.length + message.output.length + 15;
 			return Math.ceil(chars / 4);
 		}
-		case "branchSummary":
+		case "branchSummary": {
+			// Include BRANCH_SUMMARY_PREFIX and BRANCH_SUMMARY_SUFFIX (99 chars)
+			chars = message.summary.length + 99;
+			return Math.ceil(chars / 4);
+		}
 		case "compactionSummary": {
-			chars = message.summary.length;
+			// Include COMPACTION_SUMMARY_PREFIX and COMPACTION_SUMMARY_SUFFIX (107 chars)
+			chars = message.summary.length + 107;
 			return Math.ceil(chars / 4);
 		}
 	}
@@ -1560,7 +1572,11 @@ export function prepareCompaction(
 	// Abort compaction if we are discarding less than 500 tokens of history.
 	// Summaries themselves cost ~500-1000 tokens, but the main benefit of compaction
 	// is also truncating oversized kept messages via post-compaction truncation.
-	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25) {
+	// However, if we are extremely close to the context limit, we MUST compact.
+	const resolvedSettings = resolveCompactionSettings(settings);
+	const isNearOverflow = tokensBefore > resolvedSettings.targetContextTokens * 2;
+
+	if (tokensToSummarize < 500 && tokensBefore <= keepRecentTokens * 1.25 && !isNearOverflow) {
 		return {
 			ok: false,
 			message: `History to summarize is too small (only ${tokensToSummarize} tokens) and total session size (${tokensBefore}) is not significantly over budget`,
