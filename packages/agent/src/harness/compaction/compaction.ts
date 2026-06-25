@@ -251,16 +251,12 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	const usageInfo = getLastAssistantUsageInfo(messages);
 
 	if (!usageInfo) {
-		let estimated = 0;
-		for (let i = 0; i < messages.length; i++) {
-			const m = messages[i];
-			if (i === 0 && m.role === "system" && m.content === systemPrompt) {
-				continue;
-			}
-			estimated += estimateTokens(m);
+		let estimated = staticTokens;
+		for (const message of messages) {
+			estimated += estimateTokens(message);
 		}
 		return {
-			tokens: staticTokens + estimated,
+			tokens: estimated,
 			usageTokens: 0,
 			trailingTokens: estimated,
 			lastUsageIndex: null,
@@ -275,8 +271,8 @@ export function estimateContextTokens(messages: AgentMessage[], systemPrompt?: s
 	}
 
 	return {
-		tokens: usageTokens + trailingTokens,
-		usageTokens: usageTokens - staticTokens,
+		tokens: staticTokens + usageTokens + trailingTokens,
+		usageTokens,
 		trailingTokens,
 		lastUsageIndex: usageInfo.index,
 		staticTokens,
@@ -359,15 +355,12 @@ export function estimateTokens(message: AgentMessage): number {
 			return Math.ceil(chars / 4);
 		}
 		case "bashExecution": {
-			chars = message.command.length + message.output.length + 15;
+			chars = message.command.length + message.output.length;
 			return Math.ceil(chars / 4);
 		}
-		case "branchSummary": {
-			chars = message.summary.length + 99;
-			return Math.ceil(chars / 4);
-		}
+		case "branchSummary":
 		case "compactionSummary": {
-			chars = message.summary.length + 107;
+			chars = message.summary.length;
 			return Math.ceil(chars / 4);
 		}
 	}
@@ -696,7 +689,6 @@ export function prepareCompaction(
 	}
 	const boundaryEnd = pathEntries.length;
 
-	const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
 	const keepRecentTokens = selectKeepRecentTokens(tokensBefore, settings);
 
@@ -737,7 +729,6 @@ export function prepareCompaction(
 		fileOps,
 		settings,
 		keepRecentTokens,
-		systemPromptTokens,
 	});
 }
 

@@ -14,7 +14,6 @@ import {
 	type ImageContent,
 	type Message,
 	type Model,
-	modelsAreEqual,
 	type OAuthProviderId,
 	type OAuthSelectPrompt,
 } from "@dst0/p-ai";
@@ -3826,7 +3825,7 @@ export class InteractiveMode {
 	}
 
 	private noteModelSwitch(previousModel: Model<any> | undefined, nextModel: Model<any>): void {
-		if (modelsAreEqual(previousModel, nextModel)) {
+		if (previousModel && previousModel.provider === nextModel.provider && previousModel.id === nextModel.id) {
 			return;
 		}
 		const switchProgress = {

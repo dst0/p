@@ -31,7 +31,7 @@ import type {
 
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 
-const DEFAULT_COMPLETION_MODE: CompletionMode = "implicit";
+const DEFAULT_COMPLETION_MODE: CompletionMode = "explicit_finish";
 const DEFAULT_MAX_TURNS = 64;
 const DEFAULT_MAX_NO_PROGRESS_TURNS = 5;
 const DEFAULT_MAX_MALFORMED_TOOL_RETRIES = 3;
@@ -40,7 +40,7 @@ const DEFAULT_MAX_MISSING_FINISH_RETRIES = 3;
 
 const MISSING_FINISH_WORK_REPAIR_MESSAGE =
 	"The task is not complete because you did not call `finish_work`.\n" +
-	"Continue working by calling the appropriate tools, or call `finish_work` if the task is complete.\n" +
+	"Continue working by calling the appropriate tools, or call `finish_work` if you believe the work is genuinely done.\n" +
 	"Do not provide a normal assistant final answer in this mode.";
 
 const MALFORMED_TOOL_CALL_REPAIR_MESSAGE =
@@ -214,8 +214,8 @@ function isCompletionProtocolEnabled(mode: CompletionMode): boolean {
 	return mode === "explicit_finish" || mode === "hybrid";
 }
 
-function resolveCompletionLimits(config: AgentLoopConfig): CompletionProtocolLimits {
-	return {
+function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode): CompletionProtocolLimits {
+	const limits = {
 		maxTurns: config.completionLimits?.maxTurns ?? DEFAULT_MAX_TURNS,
 		maxNoProgressTurns: config.completionLimits?.maxNoProgressTurns ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
 		maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
@@ -223,6 +223,16 @@ function resolveCompletionLimits(config: AgentLoopConfig): CompletionProtocolLim
 			config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
 		maxMissingFinishRetries: config.completionLimits?.maxMissingFinishRetries ?? DEFAULT_MAX_MISSING_FINISH_RETRIES,
 	};
+
+	if (mode === "explicit_finish") {
+		limits.maxTurns = Number.POSITIVE_INFINITY;
+		limits.maxNoProgressTurns = Number.POSITIVE_INFINITY;
+		limits.maxMalformedToolRetries = Number.POSITIVE_INFINITY;
+		limits.maxEmptyAssistantRetries = Number.POSITIVE_INFINITY;
+		limits.maxMissingFinishRetries = Number.POSITIVE_INFINITY;
+	}
+
+	return limits;
 }
 
 function withCompletionProtocolTools(context: AgentContext, mode: CompletionMode): AgentContext {
@@ -408,7 +418,7 @@ async function runLoop(
 
 			completionMode = resolveCompletionMode(config);
 			currentContext = withCompletionProtocolTools(currentContext, completionMode);
-			const completionLimits = resolveCompletionLimits(config);
+			const completionLimits = resolveCompletionLimits(config, completionMode);
 			if (isCompletionProtocolEnabled(completionMode) && completionState.turns >= completionLimits.maxTurns) {
 				await emitProtocolFailure(
 					currentContext,
@@ -618,6 +628,7 @@ async function streamAssistantResponse(
 
 	const response = await streamFunction(config.model, llmContext, {
 		...config,
+		reasoning: config.reasoning === "off" ? undefined : config.reasoning,
 		apiKey: resolvedApiKey,
 		signal,
 	});

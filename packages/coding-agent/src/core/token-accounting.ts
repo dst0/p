@@ -97,23 +97,19 @@ function messageText(message: AgentMessage): string {
 			return typeof message.content === "string"
 				? message.content
 				: message.content
-						.map((part) => (part.type === "text" ? part.text : part.type === "image" ? " ".repeat(4800) : ""))
+						.filter((part) => part.type === "text")
+						.map((part) => part.text)
 						.join("\n");
 		case "assistant":
 			return message.content
-				.map((part) => {
-					if (part.type === "text") return part.text;
-					if (part.type === "thinking") return part.thinking;
-					if (part.type === "toolCall") return part.name + JSON.stringify(part.arguments);
-					return "";
-				})
+				.filter((part) => part.type === "text")
+				.map((part) => part.text)
 				.join("\n");
 		case "toolResult":
-			return typeof message.content === "string"
-				? message.content
-				: message.content
-						.map((part: any) => (part.type === "text" ? part.text : ""))
-						.join("\n");
+			return message.content
+				.filter((part) => part.type === "text")
+				.map((part) => part.text)
+				.join("\n");
 		case "bashExecution":
 			return `${message.command}\n${message.output}`;
 		case "branchSummary":

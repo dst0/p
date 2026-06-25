@@ -4576,7 +4576,10 @@ export class AgentSession {
 		const estimate = providerEstimate.lastUsageIndex === null ? promptContext.budgetEstimate : providerEstimate;
 		const source = providerEstimate.lastUsageIndex === null ? promptContext.source : "provider_usage";
 		const budget = createContextBudgetReport(promptContext.budgetEstimate.tokens, contextWindow, settings);
-		const contextTokens = estimate.tokens;
+		const contextTokens =
+			estimate.lastUsageIndex === null
+				? Math.max(0, estimate.tokens - estimate.staticTokens)
+				: estimate.usageTokens + estimate.trailingTokens;
 		const percent = (contextTokens / contextWindow) * 100;
 		const tokenBreakdown = this._createTokenBreakdownForPrompt(promptContext.messages, {
 			source,
