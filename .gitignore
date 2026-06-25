@@ -25,7 +25,7 @@ packages/*/dist-firefox/
 .npm/
 coverage/
 .nyc_output/
-.p_config/
+.pi_config/
 tui-debug.log
 compaction-results/
 .opencode/
