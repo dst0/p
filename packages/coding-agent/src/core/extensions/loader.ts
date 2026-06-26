@@ -447,7 +447,7 @@ export async function loadExtensions(
 	};
 }
 
-interface PiManifest {
+interface PManifest {
 	extensions?: string[];
 	themes?: string[];
 	skills?: string[];
@@ -459,7 +459,7 @@ function readPiManifest(packageJsonPath: string): PiManifest | null {
 		const content = fs.readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content);
 		if (pkg.p && typeof pkg.p === "object") {
-			return pkg.p as PiManifest;
+			return pkg.p as PManifest;
 		}
 		return null;
 	} catch {

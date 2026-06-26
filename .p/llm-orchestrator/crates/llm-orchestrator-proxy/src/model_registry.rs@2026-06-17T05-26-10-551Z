@@ -1,0 +1,135 @@
+use std::collections::HashMap;
+
+use llm_orchestrator_core::config_orchestrator::OrchestratorConfig;
+use llm_orchestrator_core::config_orchestrator::WorkerEntry;
+use llm_orchestrator_core::openai::ModelInfo;
+use llm_orchestrator_core::openai::ModelsResponse;
+
+// Re-exports for backward compatibility
+pub use crate::model_entry::ModelEntry;
+
+/// Central registry of all known models and their locations.
+#[derive(Debug, Clone)]
+pub struct ModelRegistry {
+    /// `name` -> `Vec<ModelEntry>`
+    pub models: HashMap<String, Vec<ModelEntry>>,
+    /// `group_name` -> `Vec<model_name>`
+    pub groups: HashMap<String, Vec<String>>,
+    /// `server_name` -> `WorkerEntry`
+    pub workers: HashMap<String, WorkerEntry>,
+}
+
+impl ModelRegistry {
+    /// Build a `ModelRegistry` from an orchestrator config.
+    ///
+    /// # Panics
+    /// Panics if a model references an unknown worker.
+    #[must_use]
+    pub fn from_config(config: &OrchestratorConfig) -> Self {
+        let mut models: HashMap<String, Vec<ModelEntry>> = HashMap::new();
+        let mut groups = config.groups.clone();
+
+        // Build worker lookup
+        let mut workers: HashMap<String, WorkerEntry> = HashMap::new();
+        for w in &config.workers {
+            workers.insert(w.id.clone(), w.clone());
+        }
+
+        // Map each model to its worker
+        for model in &config.models {
+            let worker = config
+                .workers
+                .iter()
+                .find(|w| w.id == model.server_name)
+                .expect("model references unknown worker");
+
+            let entry = ModelEntry {
+                name: model.name.clone(),
+                server_name: model.server_name.clone(),
+                group: model.group.clone(),
+                host: worker.host.clone(),
+                port: worker.port,
+                parallel: model.parallel.unwrap_or(1),
+                ctx_size: model.ctx_size.unwrap_or(65536),
+                server_type: worker.server_type.clone(),
+            };
+            models.entry(model.name.clone()).or_default().push(entry);
+
+            // Register in group
+            if let Some(ref group) = model.group {
+                let members = groups.entry(group.clone()).or_default();
+                if !members.iter().any(|name| name == &model.name) {
+                    members.push(model.name.clone());
+                }
+            }
+        }
+
+        Self {
+            models,
+            groups,
+            workers,
+        }
+    }
+
+    /// Look up a model by name or alias (returns the first registered entry).
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&ModelEntry> {
+        self.models.get(name).and_then(|v| v.first())
+    }
+
+    /// Look up all workers serving a model by name.
+    #[must_use]
+    pub fn get_all(&self, name: &str) -> Option<&Vec<ModelEntry>> {
+        self.models.get(name)
+    }
+
+    /// Get all models in a group.
+    #[must_use]
+    pub fn group_models(&self, group: &str) -> Option<&Vec<String>> {
+        self.groups.get(group)
+    }
+
+    /// Aggregate all models across all workers for /v1/models.
+    #[must_use]
+    pub fn list_models(&self) -> ModelsResponse {
+        let now = time::OffsetDateTime::now_utc().unix_timestamp();
+        let mut data: Vec<ModelInfo> = self
+            .models
+            .values()
+            .flatten()
+            .map(|e| ModelInfo {
+                id: e.name.clone(),
+                object: "model".to_string(),
+                created: now,
+                owned_by: e.server_name.clone(),
+                context_window: Some(e.ctx_size),
+            })
+            .collect();
+
+        // Also expose group names as valid models
+        let mut group_names: Vec<String> = self.groups.keys().cloned().collect();
+        // Sort for deterministic order
+        group_names.sort();
+        for group in group_names {
+            data.push(ModelInfo {
+                id: group,
+                object: "model".to_string(),
+                created: now,
+                owned_by: "orchestrator".to_string(),
+                context_window: None,
+            });
+        }
+
+        ModelsResponse {
+            object: "list".to_string(),
+            data,
+        }
+    }
+
+    /// Get worker info for a model.
+    #[must_use]
+    pub fn worker_for_model(&self, model_name: &str) -> Option<&WorkerEntry> {
+        let entry = self.models.get(model_name)?.first()?;
+        self.workers.get(&entry.server_name)
+    }
+}

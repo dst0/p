@@ -5,6 +5,7 @@
 import chalk from "chalk";
 import { existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
+import { homedir } from "os";
 import { CONFIG_DIR_NAME, getAgentDir, getBinDir } from "./config.ts";
 import { migrateKeybindingsConfig } from "./core/keybindings.ts";
 
@@ -303,6 +304,7 @@ export async function showDeprecationWarnings(warnings: string[]): Promise<void>
  */
 export function runMigrations(cwd: string): {
 	migratedAuthProviders: string[];
+	migrateDotPiToDotP();
 	deprecationWarnings: string[];
 } {
 	const migratedAuthProviders = migrateAuthToAuthJson();
