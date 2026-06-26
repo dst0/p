@@ -32,11 +32,11 @@ import type {
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 
 const DEFAULT_COMPLETION_MODE: CompletionMode = "explicit_finish";
-const DEFAULT_MAX_TURNS = 64;
+const DEFAULT_MAX_TURNS = Number.POSITIVE_INFINITY;
 const DEFAULT_MAX_NO_PROGRESS_TURNS = 5;
 const DEFAULT_MAX_MALFORMED_TOOL_RETRIES = 3;
 const DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES = 3;
-const DEFAULT_MAX_MISSING_FINISH_RETRIES = 3;
+const DEFAULT_MAX_MISSING_FINISH_RETRIES = 15;
 
 const MISSING_FINISH_WORK_REPAIR_MESSAGE =
 	"The task is not complete because you did not call `finish_work`.\n" +

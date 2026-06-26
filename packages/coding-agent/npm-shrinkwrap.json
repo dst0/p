@@ -32,7 +32,8 @@
 				"@mariozechner/clipboard": "0.3.9"
 			},
 			"bin": {
-				"p": "dist/cli.js"
+				"p": "dist/cli.js",
+				"p-voice": "dist/voice-server-cli.js"
 			},
 			"engines": {
 				"node": ">=22.19.0"

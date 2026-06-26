@@ -364,6 +364,7 @@ export function buildSessionContext(
 	// Extract settings and find compaction
 	let thinkingLevel = "off";
 	let model: { provider: string; modelId: string } | null = null;
+	let hasExplicitModelChange = false;
 	let compaction: CompactionEntry | null = null;
 
 	for (const entry of path) {
@@ -371,7 +372,8 @@ export function buildSessionContext(
 			thinkingLevel = entry.thinkingLevel;
 		} else if (entry.type === "model_change") {
 			model = { provider: entry.provider, modelId: entry.modelId };
-		} else if (entry.type === "message" && entry.message.role === "assistant") {
+			hasExplicitModelChange = true;
+		} else if (entry.type === "message" && entry.message.role === "assistant" && !hasExplicitModelChange) {
 			model = { provider: entry.message.provider, modelId: entry.message.model };
 		} else if (entry.type === "compaction") {
 			compaction = entry;

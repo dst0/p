@@ -678,6 +678,8 @@ function formatRecallResult(result: RecallResult): string {
 	return sections.join("\n\n");
 }
 
+const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 3;
+
 // AgentSession Class
 // ============================================================================
 
@@ -705,7 +707,7 @@ export class AgentSession {
 	// Compaction state
 	private _compactionAbortController: AbortController | undefined = undefined;
 	private _autoCompactionAbortController: AbortController | undefined = undefined;
-	private _overflowRecoveryAttempted = false;
+	private _overflowRecoveryAttempts = 0;
 
 	// Branch summarization state
 	private _branchSummaryAbortController: AbortController | undefined = undefined;
@@ -1090,7 +1092,7 @@ export class AgentSession {
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
-			this._overflowRecoveryAttempted = false;
+			this._overflowRecoveryAttempts = 0;
 			const messageText = this._getUserMessageText(event.message);
 			if (messageText) {
 				// Check steering queue first
@@ -1121,8 +1123,15 @@ export class AgentSession {
 			}
 		}
 
+		const hideContextOverflowMessage =
+			event.type === "message_end" &&
+			event.message.role === "assistant" &&
+			this._shouldHideContextOverflowMessage(event.message as AssistantMessage);
+
 		// Notify all listeners
-		this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+		if (!hideContextOverflowMessage) {
+			this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+		}
 
 		// Handle session persistence
 		if (event.type === "message_end") {
@@ -1155,7 +1164,7 @@ export class AgentSession {
 
 				const assistantMsg = event.message as AssistantMessage;
 				if (assistantMsg.stopReason !== "error") {
-					this._overflowRecoveryAttempted = false;
+					this._overflowRecoveryAttempts = 0;
 				}
 
 				// Reset retry counter immediately on successful assistant response
@@ -1185,6 +1194,16 @@ export class AgentSession {
 			}
 		}
 		return false;
+	}
+
+	private _isContextOverflowForCurrentModel(message: AssistantMessage): boolean {
+		if (!this.model) return false;
+		const sameModel = message.provider === this.model.provider && message.model === this.model.id;
+		return sameModel && isContextOverflow(message, this.model.contextWindow ?? 0);
+	}
+
+	private _shouldHideContextOverflowMessage(message: AssistantMessage): boolean {
+		return this._getEffectiveCompactionSettings().enabled && this._isContextOverflowForCurrentModel(message);
 	}
 
 	/** Extract text content from a message */
@@ -2145,6 +2164,10 @@ export class AgentSession {
 	 * @throws Error if no auth is configured for the model
 	 */
 	async setModel(model: Model<any>): Promise<void> {
+		if (modelsAreEqual(this.model, model)) {
+			return;
+		}
+
 		if (!this._modelRegistry.hasConfiguredAuth(model)) {
 			throw new Error(`No API key for ${model.provider}/${model.id}`);
 		}
@@ -3289,16 +3312,6 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 
-		// Skip overflow check if the message came from a different model.
-		// This handles the case where user switched from a smaller-context model (e.g. opus)
-		// to a larger-context model (e.g. codex) - the overflow error from the old model
-		// shouldn't trigger compaction for the new model.
-		const sameModel =
-			assistantMessage &&
-			this.model &&
-			assistantMessage.provider === this.model.provider &&
-			assistantMessage.model === this.model.id;
-
 		// Skip compaction checks if this assistant message is older than the latest
 		// compaction boundary. This prevents a stale pre-compaction usage/error
 		// from retriggering compaction on the first prompt after compaction.
@@ -3314,21 +3327,20 @@ export class AgentSession {
 		const assistantForCompactionCheck = assistantIsFromBeforeCompaction ? undefined : assistantMessage;
 
 		// Case 1: Overflow - LLM returned context overflow error
-		if (assistantForCompactionCheck && sameModel && isContextOverflow(assistantForCompactionCheck, contextWindow)) {
-			if (this._overflowRecoveryAttempted) {
+		if (assistantForCompactionCheck && this._isContextOverflowForCurrentModel(assistantForCompactionCheck)) {
+			if (this._overflowRecoveryAttempts >= MAX_OVERFLOW_RECOVERY_COMPACTIONS) {
 				this._emit({
 					type: "compaction_end",
 					reason: "overflow",
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage:
-						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+					errorMessage: `Context overflow recovery failed after ${MAX_OVERFLOW_RECOVERY_COMPACTIONS} compact-and-retry attempts. Try reducing context or switching to a larger-context model.`,
 				});
 				return false;
 			}
 
-			this._overflowRecoveryAttempted = true;
+			this._overflowRecoveryAttempts += 1;
 			// Remove the error message from agent state (it IS saved to session for history,
 			// but we don't want it in context for the retry)
 			const stateMessages = this.agent.state.messages;
@@ -3375,6 +3387,9 @@ export class AgentSession {
 		try {
 			const hadQueuedMessages = this.agent.hasQueuedMessages();
 			const pathEntries = this.sessionManager.getBranch();
+			const retryContinuationMessage = willRetry
+				? [...this.agent.state.messages].reverse().find((message) => message.role === "user")
+				: undefined;
 
 			const preparationResult = prepareCompaction(pathEntries, settings, this.systemPrompt);
 			if (!preparationResult.ok) {
@@ -3515,6 +3530,11 @@ export class AgentSession {
 				const lastMsg = messages[messages.length - 1];
 				if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
 					this.agent.state.messages = messages.slice(0, -1);
+				}
+				const retryMessages = this.agent.state.messages;
+				const retryLastMsg = retryMessages[retryMessages.length - 1];
+				if (retryContinuationMessage && retryLastMsg?.role !== "user") {
+					this.agent.state.messages = [...retryMessages, retryContinuationMessage];
 				}
 				return true;
 			}
