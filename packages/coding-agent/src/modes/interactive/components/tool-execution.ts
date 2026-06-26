@@ -54,7 +54,9 @@ export class ToolExecutionComponent extends Container {
 		this.toolCallId = toolCallId;
 		this.args = args;
 		this.toolDefinition = toolDefinition;
-		this.builtInToolDefinition = createAllToolDefinitions(cwd)[toolName as ToolName];
+		const defs = createAllToolDefinitions(cwd);
+		this.builtInToolDefinition =
+			defs[toolName as ToolName] ?? (toolName === "finish_work" ? defs.finish_work : undefined);
 		this.showImages = options.showImages ?? true;
 		this.imageWidthCells = options.imageWidthCells ?? 60;
 		this.ui = ui;
