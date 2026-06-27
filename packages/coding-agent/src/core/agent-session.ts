@@ -2459,14 +2459,13 @@ export class AgentSession {
 		const subagentPrompt = subagentDigestPrompt
 			? `${subagentProfilesPrompt}\n\n${subagentDigestPrompt}`
 			: subagentProfilesPrompt;
-		const prompts = [
-			SESSION_STATE_PROTOCOL_PROMPT,
-			workingStatePrompt,
-			memoryPrompt,
-			rulesPrompt,
-			repoMapPrompt,
-			subagentPrompt,
-		].filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0);
+		// NOTE: workingStatePrompt is NOT included in the system prompt.
+		// It is injected as a custom message via _preparePromptContext so the
+		// system prompt stays stable across turns, enabling prefix-based KV cache
+		// reuse (e.g. llama.cpp cache_prompt) for the large, unchanging prefix.
+		const prompts = [SESSION_STATE_PROTOCOL_PROMPT, memoryPrompt, rulesPrompt, repoMapPrompt, subagentPrompt].filter(
+			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
+		);
 		return {
 			baseSystemPrompt,
 			stateProtocolPrompt: SESSION_STATE_PROTOCOL_PROMPT,
@@ -2559,6 +2558,20 @@ export class AgentSession {
 				keepRecentTokens,
 				targetContextTokens,
 				systemPromptTokens,
+			});
+		}
+
+		// Inject working state as a custom message so the system prompt stays
+		// stable across turns (enables prefix-based KV cache reuse for providers
+		// like llama.cpp that use prefix-based KV caching).
+		const workingStatePrompt = this._lastRuntimePromptComponents.workingStatePrompt;
+		if (workingStatePrompt) {
+			preparedMessages.push({
+				role: "custom",
+				customType: "working_state",
+				content: workingStatePrompt,
+				display: false,
+				timestamp: Date.now(),
 			});
 		}
 
