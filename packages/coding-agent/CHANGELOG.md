@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed working-state prompt replay so consecutive turns preserve the previous provider-visible prompt prefix for full prompt-cache reuse.
+
 ## [0.1.25] - 2026-06-26
 
 ### Added

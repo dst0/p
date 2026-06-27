@@ -494,6 +494,17 @@ interface PromptContextPreparation {
 	stubbedToolResults: string[];
 }
 
+interface WorkingStatePromptInsertion {
+	anchorKey: string;
+	content: string;
+	timestamp: number;
+}
+
+interface WorkingStatePromptInsertionOptions {
+	recordWorkingState?: boolean;
+	minimumAnchorTimestamp?: number;
+}
+
 const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 8_000;
 const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 32_000;
 const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 64_000;
@@ -541,6 +552,21 @@ function getMessageTextForRecall(message: AgentMessage): string {
 		case "compactionSummary":
 			return message.summary;
 	}
+}
+
+function hashAnchorText(text: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; index++) {
+		hash ^= text.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(36);
+}
+
+function getUserMessageAnchorKey(message: AgentMessage): string | undefined {
+	if (message.role !== "user") return undefined;
+	const text = getMessageTextForRecall(message);
+	return `${message.timestamp}:${text.length}:${hashAnchorText(text)}`;
 }
 
 function capTextByTokens(text: string, maxTokens: number): string {
@@ -757,6 +783,7 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _lastRuntimePromptComponents: RuntimeContextPrompts = {};
+	private _workingStatePromptInsertions: WorkingStatePromptInsertion[] = [];
 	private _lastTokenBreakdown: TokenBreakdown | undefined = undefined;
 
 	constructor(config: AgentSessionConfig) {
@@ -2492,11 +2519,80 @@ export class AgentSession {
 		const previousTransform = this.agent.transformContext?.bind(this.agent);
 		this.agent.transformContext = async (messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> => {
 			const transformed = previousTransform ? await previousTransform(messages, signal) : messages;
-			return this._preparePromptContext(transformed).messages;
+			return this._preparePromptContext(transformed, this.systemPrompt, { recordWorkingState: true }).messages;
 		};
 	}
 
-	private _preparePromptContext(messages: AgentMessage[], systemPrompt = this.systemPrompt): PromptContextPreparation {
+	private _createWorkingStatePromptMessage(content: string, timestamp: number): CustomMessage {
+		return {
+			role: "custom",
+			customType: "working_state",
+			content,
+			display: false,
+			timestamp,
+		};
+	}
+
+	private _withWorkingStatePromptInsertions(
+		messages: AgentMessage[],
+		workingStatePrompt: string | undefined,
+		options: WorkingStatePromptInsertionOptions = {},
+	): AgentMessage[] {
+		const validAnchorKeys = new Set<string>();
+		let latestUserAnchorKey: string | undefined;
+		for (const message of messages) {
+			if (options.minimumAnchorTimestamp !== undefined && message.timestamp < options.minimumAnchorTimestamp) {
+				continue;
+			}
+			const anchorKey = getUserMessageAnchorKey(message);
+			if (!anchorKey) continue;
+			validAnchorKeys.add(anchorKey);
+			latestUserAnchorKey = anchorKey;
+		}
+
+		const sourceInsertions = options.recordWorkingState
+			? this._workingStatePromptInsertions.filter((insertion) => validAnchorKeys.has(insertion.anchorKey))
+			: this._workingStatePromptInsertions;
+		if (options.recordWorkingState) {
+			this._workingStatePromptInsertions = sourceInsertions;
+		}
+
+		const insertionsByAnchor = new Map(
+			sourceInsertions.map((insertion) => [insertion.anchorKey, insertion] as const),
+		);
+		if (latestUserAnchorKey && workingStatePrompt && !insertionsByAnchor.has(latestUserAnchorKey)) {
+			const insertion = {
+				anchorKey: latestUserAnchorKey,
+				content: workingStatePrompt,
+				timestamp: Date.now(),
+			};
+			insertionsByAnchor.set(latestUserAnchorKey, insertion);
+			if (options.recordWorkingState) {
+				this._workingStatePromptInsertions.push(insertion);
+			}
+		}
+
+		if (insertionsByAnchor.size === 0) {
+			return messages;
+		}
+
+		const withInsertions: AgentMessage[] = [];
+		for (const message of messages) {
+			withInsertions.push(message);
+			const anchorKey = getUserMessageAnchorKey(message);
+			const insertion = anchorKey ? insertionsByAnchor.get(anchorKey) : undefined;
+			if (insertion) {
+				withInsertions.push(this._createWorkingStatePromptMessage(insertion.content, insertion.timestamp));
+			}
+		}
+		return withInsertions;
+	}
+
+	private _preparePromptContext(
+		messages: AgentMessage[],
+		systemPrompt = this.systemPrompt,
+		options: { recordWorkingState?: boolean } = {},
+	): PromptContextPreparation {
 		const settings = this._getEffectiveCompactionSettings();
 		const latestCompactionTimestamp = this._getLatestCompactionTimestamp();
 		if (!settings.enabled) {
@@ -2561,19 +2657,11 @@ export class AgentSession {
 			});
 		}
 
-		// Inject working state as a custom message so the system prompt stays
-		// stable across turns (enables prefix-based KV cache reuse for providers
-		// like llama.cpp that use prefix-based KV caching).
-		const workingStatePrompt = this._lastRuntimePromptComponents.workingStatePrompt;
-		if (workingStatePrompt) {
-			preparedMessages.push({
-				role: "custom",
-				customType: "working_state",
-				content: workingStatePrompt,
-				display: false,
-				timestamp: Date.now(),
-			});
-		}
+		preparedMessages = this._withWorkingStatePromptInsertions(
+			preparedMessages,
+			this._lastRuntimePromptComponents.workingStatePrompt,
+			{ ...options, minimumAnchorTimestamp: latestCompactionTimestamp },
+		);
 
 		const finalEstimate = estimateContextTokens(preparedMessages, systemPrompt, { useProviderUsage: false });
 		return {
