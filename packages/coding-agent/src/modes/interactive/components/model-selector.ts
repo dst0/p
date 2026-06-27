@@ -228,26 +228,32 @@ export class ModelSelectorComponent extends Container implements Focusable {
 		);
 		const endIndex = Math.min(startIndex + maxVisible, this.filteredModels.length);
 
-		// Show visible slice of filtered models
+		// Render grouped by provider
+		let currentProvider: string | undefined;
+
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredModels[i];
 			if (!item) continue;
+
+			// Render provider header when provider changes
+			if (item.provider !== currentProvider) {
+				currentProvider = item.provider;
+				this.listContainer.addChild(new Text(theme.fg("accent", `  ${item.provider}`), 0, 0));
+			}
 
 			const isSelected = i === this.selectedIndex;
 			const isCurrent = modelsAreEqual(this.currentModel, item.model);
 
 			let line = "";
 			if (isSelected) {
-				const prefix = theme.fg("accent", "→ ");
-				const modelText = `${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const prefix = theme.fg("accent", "→  ");
+				const modelText = theme.fg("accent", item.id);
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${prefix + theme.fg("accent", modelText)} ${providerBadge}${checkmark}`;
+				line = `${prefix}${modelText}${checkmark}`;
 			} else {
-				const modelText = `  ${item.id}`;
-				const providerBadge = theme.fg("muted", `[${item.provider}]`);
+				const modelText = `    ${item.id}`;
 				const checkmark = isCurrent ? theme.fg("success", " ✓") : "";
-				line = `${modelText} ${providerBadge}${checkmark}`;
+				line = `${modelText}${checkmark}`;
 			}
 
 			this.listContainer.addChild(new Text(line, 0, 0));
