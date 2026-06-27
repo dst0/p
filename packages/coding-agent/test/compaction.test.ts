@@ -876,10 +876,12 @@ describe("buildSessionContext", () => {
 		const entries: SessionEntry[] = [u1, a1, u2, a2, compaction, u3, a3];
 
 		const loaded = buildSessionContext(entries);
-		// summary + kept (u2, a2) + after (u3, a3) = 5
+		// kept (u2, a2) + summary + after (u3, a3) = 5
 		expect(loaded.messages.length).toBe(5);
-		expect(loaded.messages[0].role).toBe("compactionSummary");
-		expect((loaded.messages[0] as any).summary).toContain("Summary of 1,a,2,b");
+		expect(loaded.messages[0].role).toBe("user");
+		expect((loaded.messages[0] as any).content).toBe("2");
+		expect(loaded.messages[2].role).toBe("compactionSummary");
+		expect((loaded.messages[2] as any).summary).toContain("Summary of 1,a,2,b");
 	});
 
 	it("should handle multiple compactions (only latest matters)", () => {
@@ -900,9 +902,12 @@ describe("buildSessionContext", () => {
 		const entries: SessionEntry[] = [u1, a1, compact1, u2, b, u3, c, compact2, u4, d];
 
 		const loaded = buildSessionContext(entries);
-		// summary + kept from u3 (u3, c) + after (u4, d) = 5
+		// kept from u3 (u3, c) + summary + after (u4, d) = 5
 		expect(loaded.messages.length).toBe(5);
-		expect((loaded.messages[0] as any).summary).toContain("Second summary");
+		expect(loaded.messages[0].role).toBe("user");
+		expect((loaded.messages[0] as any).content).toBe("3");
+		expect(loaded.messages[2].role).toBe("compactionSummary");
+		expect((loaded.messages[2] as any).summary).toContain("Second summary");
 	});
 
 	it("should keep all messages when firstKeptEntryId is first entry", () => {

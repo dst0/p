@@ -381,10 +381,13 @@ export function buildSessionContext(
 	}
 
 	// Build messages and collect corresponding entries
-	// When there's a compaction, we need to:
-	// 1. Emit summary first (entry = compaction)
-	// 2. Emit kept messages (from firstKeptEntryId up to compaction)
-	// 3. Emit messages after compaction
+	// When there's a compaction, we emit in this order:
+	// 1. Kept messages (from firstKeptEntryId up to compaction)
+	// 2. Compaction summary
+	// 3. Messages after compaction
+	// This ensures the compaction summary (user role) comes after the kept messages,
+	// preventing "Cannot continue from message role: assistant" when the last kept
+	// message is an assistant response.
 	const messages: AgentMessage[] = [];
 
 	const appendMessage = (entry: SessionEntry) => {
@@ -400,9 +403,6 @@ export function buildSessionContext(
 	};
 
 	if (compaction) {
-		// Emit summary first
-		messages.push(createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp));
-
 		// Find compaction index in path
 		const compactionIdx = path.findIndex((e) => e.type === "compaction" && e.id === compaction.id);
 
@@ -417,6 +417,9 @@ export function buildSessionContext(
 				appendMessage(entry);
 			}
 		}
+
+		// Emit compaction summary after kept messages so it's the last user message
+		messages.push(createCompactionSummaryMessage(compaction.summary, compaction.tokensBefore, compaction.timestamp));
 
 		// Emit messages after compaction
 		for (let i = compactionIdx + 1; i < path.length; i++) {
