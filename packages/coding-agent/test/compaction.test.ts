@@ -928,10 +928,9 @@ describe("buildSessionContext", () => {
 		];
 
 		const loaded = buildSessionContext(entries);
-		// model_change is later overwritten by assistant message's model info
 		expect(loaded.model).toEqual({
-			provider: "anthropic",
-			modelId: "claude-sonnet-4-5",
+			provider: "openai",
+			modelId: "gpt-4",
 		});
 		expect(loaded.thinkingLevel).toBe("high");
 	});

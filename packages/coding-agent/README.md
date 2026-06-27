@@ -22,7 +22,7 @@ Pi also keeps project memory, scoped rules, and repo-map snippets flowing into p
 
 Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
 
-Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
+Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. It also ships a local `p-voice` browser bridge for speech recognition and spoken answers on top of RPC mode. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
 
 ## Share your OSS coding agent sessions
 
@@ -62,6 +62,7 @@ I regularly publish my own `pi-mono` work sessions here:
   - [Themes](#themes)
   - [Pi Packages](#pi-packages)
 - [Programmatic Usage](#programmatic-usage)
+  - [Voice Browser](#voice-browser)
 - [Philosophy](#philosophy)
 - [CLI Reference](#cli-reference)
 
@@ -556,6 +557,25 @@ For advanced multi-session runtime replacement, use `createAgentSessionRuntime()
 
 See [docs/sdk.md](docs/sdk.md) and [examples/sdk/](examples/sdk/).
 
+### Voice Browser
+
+`p-voice` serves a local HTML page that uses the browser's speech recognition and speech synthesis APIs while a persistent P RPC process performs the work.
+
+```bash
+p-voice
+```
+
+Open the printed `http://127.0.0.1:8787/` URL in a browser. The microphone button uses browser speech recognition, the send button forwards typed or spoken prompts into P, and the speak toggle reads the final answer aloud. Use `--open` to open the browser automatically.
+
+Pass normal P startup options after `--`:
+
+```bash
+p-voice --open -- --approve --model anthropic/claude-sonnet-4-5
+p-voice --cwd ~/dev/my-project -- --continue
+```
+
+The server binds to `127.0.0.1` by default and has no authentication. Keep it local unless you add your own network access control.
+
 ### RPC Mode
 
 For non-Node.js integrations, use RPC mode over stdin/stdout:
@@ -621,6 +641,7 @@ pi config                    # Enable/disable package resources
 | `-p`, `--print` | Print response and exit |
 | `--mode json` | Output all events as JSON lines (see [docs/json.md](docs/json.md)) |
 | `--mode rpc` | RPC mode for process integration (see [docs/rpc.md](docs/rpc.md)) |
+| `p-voice` | Local browser voice bridge backed by RPC mode |
 | `--export <in> [out]` | Export session to HTML |
 
 In print mode, pi also reads piped stdin and merges it into the initial prompt:
@@ -731,6 +752,9 @@ pi --models "claude-*,gpt-4o"
 
 # Read-only mode
 pi --tools read,grep,find,ls -p "Review the code"
+
+# Browser voice bridge
+p-voice --open -- --approve
 
 # Disable one extension or built-in tool while keeping the rest available
 pi --exclude-tools ask_question

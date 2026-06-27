@@ -1,5 +1,10 @@
 # Development Rules
 
+## User Updates
+
+- While actively working, reread `user-updates.md` for new instructions at least once per minute and incorporate any new guidance before continuing.
+- After reading and incorporating `user-updates.md`, clear its contents but do not delete the file.
+
 ## Conversational Style
 
 - Keep answers short and concise

@@ -2,8 +2,11 @@
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-06-26
+
 ### Added
 
+- Added `p-voice`, a local browser voice interface that drives a persistent P RPC session with speech recognition and spoken responses.
 - Added `startupNotices` setting (default `false`) to gate startup changelog, version-check, and package-update notifications. Set `"startupNotices": true` in `settings.json` to re-enable.
 - Added interactive footer display for LLM orchestrator queue position progress.
 - Added a built-in `sleep` tool so LLM orchestrator queue retry tool calls wait cleanly instead of surfacing as missing tools.

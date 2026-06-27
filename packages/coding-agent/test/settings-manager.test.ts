@@ -234,10 +234,10 @@ describe("SettingsManager", () => {
 	});
 
 	describe("completion protocol settings", () => {
-		it("defaults to implicit", () => {
+		it("defaults to explicit_finish", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getCompletionMode()).toBe("implicit");
+			expect(manager.getCompletionMode()).toBe("explicit_finish");
 			expect(manager.getCompletionLimits()).toBeUndefined();
 		});
 
@@ -264,12 +264,12 @@ describe("SettingsManager", () => {
 			});
 		});
 
-		it("falls back to implicit for invalid completionMode", () => {
+		it("falls back to explicit_finish for invalid completionMode", () => {
 			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ completionMode: "strict" }));
 
 			const manager = SettingsManager.create(projectDir, agentDir);
 
-			expect(manager.getCompletionMode()).toBe("implicit");
+			expect(manager.getCompletionMode()).toBe("explicit_finish");
 		});
 	});
 

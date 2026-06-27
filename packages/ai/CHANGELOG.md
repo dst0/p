@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-06-26
+
 ### Fixed
 
 - Fixed OpenAI-compatible streaming to surface orchestrator queue-position progress events.

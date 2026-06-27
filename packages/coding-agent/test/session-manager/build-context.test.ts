@@ -112,8 +112,22 @@ describe("buildSessionContext", () => {
 				msg("3", "2", "assistant", "hi"),
 			];
 			const ctx = buildSessionContext(entries);
-			// Assistant message overwrites model change
-			expect(ctx.model).toEqual({ provider: "anthropic", modelId: "claude-test" });
+			expect(ctx.model).toEqual({ provider: "openai", modelId: "gpt-4" });
+		});
+
+		it("does not let routed assistant model ids override explicit model changes", () => {
+			const assistant = msg("3", "2", "assistant", "hi");
+			if (assistant.message.role === "assistant") {
+				assistant.message.provider = "mini-pc";
+				assistant.message.model = "mini-pc-11451/qwen3.6-27b-iq4xs-q4kv";
+			}
+			const entries: SessionEntry[] = [
+				msg("1", null, "user", "hello"),
+				modelChange("2", "1", "mini-pc", "qwen3.6-27b-iq4xs-q4kv"),
+				assistant,
+			];
+			const ctx = buildSessionContext(entries);
+			expect(ctx.model).toEqual({ provider: "mini-pc", modelId: "qwen3.6-27b-iq4xs-q4kv" });
 		});
 	});
 

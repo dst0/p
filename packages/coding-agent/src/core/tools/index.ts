@@ -26,6 +26,7 @@ export {
 	type FindToolInput,
 	type FindToolOptions,
 } from "./find.ts";
+export { createFinishWorkToolDefinition, type FinishWorkPayload } from "./finish-work.ts";
 export {
 	createGrepTool,
 	createGrepToolDefinition,
@@ -74,6 +75,7 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
+import { createFinishWorkToolDefinition } from "./finish-work.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
@@ -159,7 +161,10 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 	];
 }
 
-export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
+export function createAllToolDefinitions(
+	cwd: string,
+	options?: ToolsOptions,
+): Record<ToolName, ToolDef> & { finish_work: ToolDef } {
 	return {
 		read: createReadToolDefinition(cwd, options?.read),
 		bash: createBashToolDefinition(cwd, options?.bash),
@@ -169,6 +174,7 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		sleep: createSleepToolDefinition(),
+		finish_work: createFinishWorkToolDefinition(),
 	};
 }
 

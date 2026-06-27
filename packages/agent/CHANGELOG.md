@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.1.25] - 2026-06-26
+
 ### Fixed
 
 - Fixed agent message updates to forward provider queue-position progress events.

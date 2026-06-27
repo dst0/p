@@ -1,5 +1,5 @@
 import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@dst0/p-ai";
-import type { AgentEvent, AgentMessage, AgentTool, QueueMode, ThinkingLevel } from "../index.ts";
+import type { AgentEvent, AgentMessage, AgentTool, CompletionMode, QueueMode, ThinkingLevel } from "../index.ts";
 import type { Session } from "./session/session.ts";
 
 /** Result of a fallible operation. Expected failures are returned as `ok: false` instead of thrown. */
@@ -725,6 +725,7 @@ export type AgentHarnessEventResultMap = {
 
 export interface AgentHarnessPromptOptions {
 	images?: ImageContent[];
+	completionMode?: CompletionMode;
 }
 
 export interface AbortResult {
@@ -838,6 +839,7 @@ export interface AgentHarnessOptions<
 	activeToolNames?: string[];
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
+	completionMode?: CompletionMode;
 }
 
 export type { AgentHarness } from "./agent-harness.ts";

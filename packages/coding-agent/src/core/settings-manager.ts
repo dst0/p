@@ -763,7 +763,7 @@ export class SettingsManager {
 
 	getCompletionMode(): CompletionMode {
 		const mode = this.settings.completionMode;
-		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "implicit";
+		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "explicit_finish";
 	}
 
 	getCompletionLimits(): CompletionProtocolLimits | undefined {
