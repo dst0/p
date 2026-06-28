@@ -91,6 +91,8 @@ export interface CreateAgentSessionOptions {
 	completionMode?: CompletionMode;
 	/** Safety limits for explicit and hybrid completion modes. */
 	completionLimits?: CompletionProtocolLimits;
+	/** Default provider output token limit for each model request. */
+	maxTokens?: number;
 }
 
 /** Result from createAgentSession */
@@ -281,6 +283,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const explicitlyToolless = (options.tools !== undefined && options.tools.length === 0) || options.noTools === "all";
 	const completionMode =
 		options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
+	const defaultMaxTokens = options.maxTokens;
 
 	let agent: Agent;
 
@@ -351,7 +354,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				websocketConnectTimeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-				maxTokens: options?.maxTokens ?? 16384,
+				maxTokens: options?.maxTokens ?? defaultMaxTokens ?? 16384,
 				headers: mergeProviderAttributionHeaders(
 					model,
 					settingsManager,

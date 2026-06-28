@@ -151,6 +151,29 @@ describe("parseArgs", () => {
 			expect(result.thinking).toBe("high");
 		});
 
+		test("parses --max-tokens", () => {
+			const result = parseArgs(["--max-tokens", "8"]);
+			expect(result.maxTokens).toBe(8);
+			expect(result.diagnostics).toEqual([]);
+		});
+
+		test("errors on invalid --max-tokens", () => {
+			const result = parseArgs(["--max-tokens", "0"]);
+			expect(result.maxTokens).toBeUndefined();
+			expect(result.diagnostics).toEqual([
+				{
+					type: "error",
+					message: '--max-tokens requires a positive integer, got "0"',
+				},
+			]);
+		});
+
+		test("errors on missing --max-tokens value", () => {
+			const result = parseArgs(["--max-tokens"]);
+			expect(result.maxTokens).toBeUndefined();
+			expect(result.diagnostics).toEqual([{ type: "error", message: "--max-tokens requires a value" }]);
+		});
+
 		test("parses --completion-mode", () => {
 			const result = parseArgs(["--completion-mode", "implicit"]);
 			expect(result.completionMode).toBe("implicit");

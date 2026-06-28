@@ -65,6 +65,7 @@ export interface CreateAgentSessionFromServicesOptions {
 	customTools?: ToolDefinition[];
 	completionMode?: CompletionMode;
 	completionLimits?: CompletionProtocolLimits;
+	maxTokens?: CreateAgentSessionOptions["maxTokens"];
 }
 
 /**
@@ -207,5 +208,6 @@ export async function createAgentSessionFromServices(
 		sessionStartEvent: options.sessionStartEvent,
 		completionMode: options.completionMode,
 		completionLimits: options.completionLimits,
+		maxTokens: options.maxTokens,
 	});
 }

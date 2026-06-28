@@ -437,6 +437,9 @@ function buildSessionOptions(
 	if (parsed.completionMode) {
 		options.completionMode = parsed.completionMode;
 	}
+	if (parsed.maxTokens !== undefined) {
+		options.maxTokens = parsed.maxTokens;
+	}
 
 	return { options, cliThinkingFromModel, diagnostics };
 }
@@ -704,6 +707,7 @@ export async function main(args: string[], options?: MainOptions) {
 			customTools: sessionOptions.customTools,
 			completionMode: sessionOptions.completionMode,
 			completionLimits: sessionOptions.completionLimits,
+			maxTokens: sessionOptions.maxTokens,
 		});
 		const cliThinkingOverride = parsed.thinking !== undefined || cliThinkingFromModel;
 		if (created.session.model && cliThinkingOverride) {

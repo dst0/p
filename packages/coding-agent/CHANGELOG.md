@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `--max-tokens` to bound provider output tokens for deterministic short CLI runs.
+
 ### Fixed
 
 - Fixed explicit completion repair prompts to persist in session history so reloaded `p -p` turns preserve llama.cpp prompt-cache reuse.

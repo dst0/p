@@ -76,6 +76,7 @@ describe("createAgentSession stream options", () => {
 		api: Api,
 		settings: { httpIdleTimeoutMs?: number; websocketConnectTimeoutMs?: number },
 		requestOptions: SimpleStreamOptions = {},
+		sessionOptions: { maxTokens?: number } = {},
 	): Promise<SimpleStreamOptions | undefined> {
 		const model = createModel(api);
 		const settingsManager = SettingsManager.inMemory(settings);
@@ -102,6 +103,7 @@ describe("createAgentSession stream options", () => {
 			modelRegistry,
 			settingsManager,
 			sessionManager,
+			maxTokens: sessionOptions.maxTokens,
 		});
 
 		try {
@@ -139,6 +141,18 @@ describe("createAgentSession stream options", () => {
 		const options = await captureStreamOptions("openai-codex-responses", { websocketConnectTimeoutMs: 1234 });
 
 		expect(options?.websocketConnectTimeoutMs).toBe(1234);
+	});
+
+	it("uses session maxTokens when the request does not override it", async () => {
+		const options = await captureStreamOptions("openai-completions", {}, {}, { maxTokens: 8 });
+
+		expect(options?.maxTokens).toBe(8);
+	});
+
+	it("lets request maxTokens override the session default", async () => {
+		const options = await captureStreamOptions("openai-completions", {}, { maxTokens: 12 }, { maxTokens: 8 });
+
+		expect(options?.maxTokens).toBe(12);
 	});
 
 	it("lets request websocketConnectTimeoutMs override settings", async () => {

@@ -16,6 +16,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	thinking?: ThinkingLevel;
+	maxTokens?: number;
 	completionMode?: CompletionMode;
 	continue?: boolean;
 	resume?: boolean;
@@ -64,6 +65,14 @@ export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 
 function isValidCompletionMode(mode: string): mode is CompletionMode {
 	return VALID_COMPLETION_MODES.includes(mode as CompletionMode);
+}
+
+function parsePositiveIntegerFlag(value: string): number | undefined {
+	if (!/^[1-9]\d*$/.test(value)) {
+		return undefined;
+	}
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 export function parseArgs(args: string[]): Args {
@@ -142,6 +151,21 @@ export function parseArgs(args: string[]): Args {
 					type: "warning",
 					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
 				});
+			}
+		} else if (arg === "--max-tokens") {
+			if (i + 1 >= args.length) {
+				result.diagnostics.push({ type: "error", message: "--max-tokens requires a value" });
+			} else {
+				const value = args[++i];
+				const maxTokens = parsePositiveIntegerFlag(value);
+				if (maxTokens === undefined) {
+					result.diagnostics.push({
+						type: "error",
+						message: `--max-tokens requires a positive integer, got "${value}"`,
+					});
+				} else {
+					result.maxTokens = maxTokens;
+				}
 			}
 		} else if (arg === "--completion-mode" && i + 1 < args.length) {
 			const mode = args[++i];
@@ -275,6 +299,7 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
+  --max-tokens <n>               Limit provider output tokens for each model request
   --completion-mode <mode>       Completion mode: explicit_finish (default), hybrid, implicit
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
