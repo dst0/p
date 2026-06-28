@@ -280,7 +280,7 @@ describe("working state cache isolation", () => {
 			...fauxAssistantMessage("pre-compaction answer"),
 			timestamp: baseTimestamp + 1,
 		});
-		session.sessionManager.appendCompaction("compacted summary", firstKeptEntryId, 2048, undefined, false);
+		session.sessionManager.appendCompaction("compacted summary", firstKeptEntryId, 2048, undefined, undefined, false);
 		session.agent.state.messages = session.sessionManager.buildSessionContext().messages;
 
 		const prompts: Array<ReturnType<typeof captureProviderPrompt>> = [];

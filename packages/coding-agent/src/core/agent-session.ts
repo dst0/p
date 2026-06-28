@@ -3286,6 +3286,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let tokensAfter: number | undefined;
 			let details: unknown;
 			let structuredState: unknown;
 
@@ -3294,12 +3295,14 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
 				const result = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
+				tokensAfter = result.tokensAfter;
 				details = result.details;
 				structuredState = result.state;
 			}
@@ -3308,7 +3311,14 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				tokensAfter,
+				details,
+				fromExtension,
+			);
 			if (!fromExtension && structuredState) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
 			}
@@ -3547,6 +3557,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let tokensAfter: number | undefined;
 			let details: unknown;
 			let structuredState: unknown;
 
@@ -3555,12 +3566,14 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
 				const compactResult = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
+				tokensAfter = compactResult.tokensAfter;
 				details = compactResult.details;
 				structuredState = compactResult.state;
 			}
@@ -3576,7 +3589,14 @@ export class AgentSession {
 				return false;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				tokensAfter,
+				details,
+				fromExtension,
+			);
 			if (!fromExtension && structuredState) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
 			}

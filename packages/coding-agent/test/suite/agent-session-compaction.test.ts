@@ -623,7 +623,7 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harness.sessionManager.appendMessage(staleAssistant);
 		const firstKeptEntryId = harness.sessionManager.getEntries()[0]!.id;
-		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, 900, undefined, false);
+		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, 900, undefined, undefined, false);
 		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
