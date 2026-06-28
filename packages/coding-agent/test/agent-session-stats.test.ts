@@ -147,7 +147,7 @@ describe("AgentSession.getSessionStats", () => {
 		}
 	});
 
-	it("reports prompt-projected tool stubs instead of raw trailing tool output", () => {
+	it("reports raw trailing tool output before compaction", () => {
 		const { session, sessionManager } = createSession();
 
 		try {
@@ -179,10 +179,11 @@ describe("AgentSession.getSessionStats", () => {
 
 			const usage = session.getContextUsage();
 			expect(usage).toBeDefined();
-			expect(usage?.stubbedToolResults).toContain("tool-result:call-read-doc");
-			expect(usage?.toolStubSavings).toBeGreaterThan(0);
-			expect(usage?.tokens).toBeLessThan(8_000);
-			expect(usage?.tokens).toBeGreaterThanOrEqual(5_000);
+			expect(usage?.stubbedToolResults).toEqual([]);
+			expect(usage?.toolStubSavings).toBe(0);
+			expect(usage?.toolRawTokens).toBeGreaterThan(8_000);
+			expect(usage?.toolStubTokens).toBe(0);
+			expect(usage?.tokens).toBeGreaterThan(8_000);
 		} finally {
 			session.dispose();
 		}

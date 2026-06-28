@@ -650,10 +650,11 @@ function createToolResultStub(
 		contextExtract?.summary ||
 		`${message.toolName} ${status} output omitted from prompt context (${text.split("\n").length} lines, ${originalTokens} estimated tokens).`;
 	const pointerId = `tool-result:${message.toolCallId || index}`;
+	const pointerSummary = keyLines.length > 0 ? `${summary} Evidence: ${keyLines.slice(0, 3).join(" | ")}` : summary;
 	const rawPointer: EvidencePointer = {
 		id: pointerId,
 		kind: "tool_result",
-		summary,
+		summary: pointerSummary,
 		retrieveWhen: `Need exact raw output for ${message.toolName} tool call ${message.toolCallId}.`,
 	};
 	const stub: ToolResultStub = {
@@ -812,6 +813,18 @@ export function stubToolResultsForPrompt(
 		toolStubTokens,
 		tokenSavingsEstimate: Math.max(0, toolRawTokens - toolStubTokens),
 	};
+}
+
+export function stubToolResultsForCompactionSummary(
+	messages: AgentMessage[],
+	settings: CompactionSettings,
+): ToolResultStubbingResult {
+	return stubToolResultsForPrompt(messages, {
+		...settings,
+		toolResultClearThresholdTokens: 0,
+		toolResultKeepRecentCount: 0,
+		toolResultPromptBudgetTokens: 0,
+	});
 }
 
 // Post-compaction message truncation
@@ -1777,16 +1790,26 @@ export async function compact(
 		systemPromptTokens,
 	} = preparation;
 	const resolvedSettings = resolveCompactionSettings(settings);
+	const historyPromptContext = stubToolResultsForCompactionSummary(messagesToSummarize, resolvedSettings);
+	const turnPrefixPromptContext = stubToolResultsForCompactionSummary(turnPrefixMessages, resolvedSettings);
+	const stubbedToolResults = [
+		...new Set([
+			...historyPromptContext.stubs.map((stub) => stub.rawPointer.id),
+			...turnPrefixPromptContext.stubs.map((stub) => stub.rawPointer.id),
+		]),
+	];
+	const toolRawTokens = historyPromptContext.toolRawTokens + turnPrefixPromptContext.toolRawTokens;
+	const toolStubTokens = historyPromptContext.toolStubTokens + turnPrefixPromptContext.toolStubTokens;
 
 	// Generate summaries (can be parallel if both needed) and merge into one
 	let summary: string;
 
-	if (isSplitTurn && turnPrefixMessages.length > 0) {
+	if (isSplitTurn && turnPrefixPromptContext.messages.length > 0) {
 		// Generate both summaries in parallel
 		const [historyResult, turnPrefixResult] = await Promise.all([
-			messagesToSummarize.length > 0
+			historyPromptContext.messages.length > 0
 				? summarizeInChunks(
-						messagesToSummarize,
+						historyPromptContext.messages,
 						model,
 						resolvedSettings.summaryMaxTokens,
 						apiKey,
@@ -1800,7 +1823,7 @@ export async function compact(
 					)
 				: Promise.resolve(previousSummary || "No prior history."),
 			generateTurnPrefixSummary(
-				turnPrefixMessages,
+				turnPrefixPromptContext.messages,
 				model,
 				resolvedSettings.summaryMaxTokens,
 				apiKey,
@@ -1815,7 +1838,7 @@ export async function compact(
 	} else {
 		// Just generate history summary
 		summary = await summarizeInChunks(
-			messagesToSummarize,
+			historyPromptContext.messages,
 			model,
 			resolvedSettings.summaryMaxTokens,
 			apiKey,
@@ -1841,10 +1864,10 @@ export async function compact(
 		summaryTokens,
 		renderedStateTokens: Math.min(summaryTokens, resolvedSettings.renderedStateMaxTokens),
 		recentRawTokens,
-		toolRawTokens: 0,
-		toolStubTokens: 0,
+		toolRawTokens,
+		toolStubTokens,
 		droppedEntries: droppedEntryIds,
-		stubbedToolResults: [],
+		stubbedToolResults,
 		risks: afterTokens > resolvedSettings.targetContextTokens ? ["post-compaction context exceeds target"] : [],
 	};
 

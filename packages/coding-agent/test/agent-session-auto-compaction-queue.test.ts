@@ -119,6 +119,13 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		toolStubTokens: 0,
 		tokenSavingsEstimate: 0,
 	}),
+	stubToolResultsForCompactionSummary: (messages: any[]) => ({
+		messages,
+		stubs: [],
+		toolRawTokens: 0,
+		toolStubTokens: 0,
+		tokenSavingsEstimate: 0,
+	}),
 	truncateKeptMessages: (messages: any[]) => messages,
 }));
 

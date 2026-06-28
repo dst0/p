@@ -1,5 +1,11 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
-import { type AssistantMessage, createAssistantMessageEventStream, fauxAssistantMessage, type Model } from "@dst0/p-ai";
+import {
+	type AssistantMessage,
+	createAssistantMessageEventStream,
+	fauxAssistantMessage,
+	fauxToolCall,
+	type Model,
+} from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateContextTokens, STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
@@ -366,6 +372,97 @@ describe("AgentSession compaction characterization", () => {
 		expect(text).toContain("Coverage: complete");
 		expect(text).toContain("do not call session_recall again for this same pointer");
 		expect(text).toContain("secret old failure line");
+	});
+
+	it("records discarded tool results as compaction-time stubs with evidence pointers", async () => {
+		const harness = await createHarness({
+			settings: {
+				compaction: {
+					keepRecentTokens: 50,
+					toolResultClearThresholdTokens: 10,
+					toolResultPromptBudgetTokens: 0,
+				},
+			},
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const relevantLine = "src/core/client.ts:42: const apiClient = createClient();";
+		const longOutput = [
+			relevantLine,
+			...Array.from(
+				{ length: 260 },
+				(_, index) => `noise-line-${index.toString().padStart(3, "0")} ${"x".repeat(80)}`,
+			),
+		].join("\n");
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "Use rg to find apiClient usage" }],
+			timestamp: now - 5000,
+		});
+		harness.sessionManager.appendMessage({
+			...createAssistant(harness, {
+				stopReason: "toolUse",
+				totalTokens: 1000,
+				timestamp: now - 4000,
+			}),
+			content: [fauxToolCall("rg", { pattern: "apiClient" })],
+		});
+		harness.sessionManager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-rg-api-client",
+			toolName: "rg",
+			content: [{ type: "text", text: longOutput }],
+			details: {
+				contextExtract: {
+					summary: "rg found apiClient usage in src/core/client.ts:42.",
+					relevantLines: [relevantLine],
+					source: "deterministic",
+				},
+			},
+			isError: false,
+			timestamp: now - 3000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 1000,
+				timestamp: now - 2000,
+			}),
+		);
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "Keep this recent suffix" }],
+			timestamp: now - 1000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 100,
+				timestamp: now - 500,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+
+		const result = await harness.session.compact();
+
+		expect(result.summary).toContain("tool-result:call-rg-api-client");
+		expect(result.summary).toContain("rg found apiClient usage in src/core/client.ts:42.");
+		expect(result.summary).toContain(relevantLine);
+		expect(result.summary).not.toContain("noise-line-050");
+		const audit = (
+			result.details as {
+				audit?: { stubbedToolResults: string[]; toolRawTokens: number; toolStubTokens: number };
+			}
+		).audit;
+		expect(audit?.stubbedToolResults).toContain("tool-result:call-rg-api-client");
+		expect(audit?.toolRawTokens).toBeGreaterThan(audit?.toolStubTokens ?? Number.POSITIVE_INFINITY);
+		const details = result.details as {
+			structuredState?: { evidence: Array<{ id: string; summary: string; retrieveWhen: string }> };
+		};
+		const pointer = details.structuredState?.evidence.find((item) => item.id === "tool-result:call-rg-api-client");
+		expect(pointer?.summary).toContain("rg found apiClient usage in src/core/client.ts:42.");
+		expect(pointer?.summary).toContain(relevantLine);
+		expect(pointer?.retrieveWhen).toContain("rg");
 	});
 
 	it("returns a larger default excerpt for raw session_recall", async () => {

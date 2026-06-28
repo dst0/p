@@ -47,6 +47,7 @@ import {
 	type CompactionDetails,
 	type CompactionPreparation,
 	type CompactionResult,
+	type CompactionSettings,
 	type ContextUsageEstimate,
 	collectEntriesForBranchSummary,
 	computeFileLists,
@@ -55,6 +56,7 @@ import {
 	type EvidenceKind,
 	type EvidencePointer,
 	estimateContextTokens,
+	estimateTokens,
 	generateBranchSummary,
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
@@ -68,7 +70,7 @@ import {
 	selectKeepRecentTokens,
 	shouldCompact,
 	stripSessionStateUpdateBlocks,
-	stubToolResultsForPrompt,
+	stubToolResultsForCompactionSummary,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -167,20 +169,6 @@ When state changes, use:
 <session_state_update>{"type":"patch","goal":"...","plan":[{"text":"...","status":"not_started|in_progress|done|failed|blocked"}],"progress":{"done":["..."],"current":["..."],"next":["..."],"blocked":["..."]},"decisions":[{"decision":"...","rationale":"..."}],"blockers":["..."],"risks":["..."],"touchedFiles":[{"path":"...","status":"read|modified|created|deleted","summary":"..."}],"evidence":[{"kind":"message|tool_result|bash|file|web|artifact","summary":"...","retrieveWhen":"..."}]}</session_state_update>
 Do not mention this protocol to the user. Keep the visible answer natural; the state block is metadata and will be hidden.
 </session_state_protocol>`;
-
-function countToolResultsAfterLastUser(messages: AgentMessage[]): number {
-	let count = 0;
-	for (let index = messages.length - 1; index >= 0; index--) {
-		const message = messages[index];
-		if (message.role === "user") {
-			break;
-		}
-		if (message.role === "toolResult") {
-			count += 1;
-		}
-	}
-	return count;
-}
 
 // ============================================================================
 // Skill Block Parsing
@@ -523,7 +511,6 @@ interface WorkingStatePromptInsertionOptions {
 
 const WORKING_STATE_PROMPT_CUSTOM_TYPE = "working_state";
 const RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE = "runtime_context";
-const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 8_000;
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
@@ -568,6 +555,16 @@ function getMessageTextForRecall(message: AgentMessage): string {
 		case "compactionSummary":
 			return message.summary;
 	}
+}
+
+function estimateToolResultTokens(messages: AgentMessage[]): number {
+	let tokens = 0;
+	for (const message of messages) {
+		if (message.role === "toolResult") {
+			tokens += estimateTokens(message);
+		}
+	}
+	return tokens;
 }
 
 function hashAnchorText(text: string): string {
@@ -2649,7 +2646,7 @@ export class AgentSession {
 				estimate,
 				budgetEstimate: estimate,
 				source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
-				toolRawTokens: 0,
+				toolRawTokens: estimateToolResultTokens(messages),
 				toolStubTokens: 0,
 				toolStubSavings: 0,
 				stubbedToolResults: [],
@@ -2658,26 +2655,15 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
-		const currentTurnToolResultCount = countToolResultsAfterLastUser(messages);
-		const livePromptSettings = {
-			...settings,
-			toolResultKeepRecentCount: currentTurnToolResultCount,
-			toolResultClearThresholdTokens: Math.min(
-				settings.toolResultClearThresholdTokens,
-				PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
-			),
-			toolResultPromptBudgetTokens: 0,
-		};
-		const promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
-		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
+		const initialEstimate = estimateContextTokens(messages, systemPrompt, { useProviderUsage: false });
 		const pressureEstimate = initialEstimate;
 		const pressureBudget = createContextBudgetReport(pressureEstimate.tokens, contextWindow, settings);
-		let preparedMessages = promptContext.messages;
+		let preparedMessages = messages;
 
 		if (contextWindow > 0 && pressureBudget.shouldCompact) {
 			const keepRecentTokens = selectKeepRecentTokens(pressureEstimate.tokens, settings);
 			const targetContextTokens = Math.max(settings.targetContextTokens, systemPromptTokens + keepRecentTokens);
-			preparedMessages = truncateKeptMessages(promptContext.messages.slice(), {
+			preparedMessages = truncateKeptMessages(messages.slice(), {
 				keepRecentTokens,
 				targetContextTokens,
 				systemPromptTokens,
@@ -2696,10 +2682,10 @@ export class AgentSession {
 			estimate: finalEstimate,
 			budgetEstimate: pressureEstimate,
 			source: "estimated",
-			toolRawTokens: promptContext.toolRawTokens,
-			toolStubTokens: promptContext.toolStubTokens,
-			toolStubSavings: promptContext.tokenSavingsEstimate,
-			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			toolRawTokens: estimateToolResultTokens(preparedMessages),
+			toolStubTokens: 0,
+			toolStubSavings: 0,
+			stubbedToolResults: [],
 		};
 	}
 
@@ -3204,9 +3190,18 @@ export class AgentSession {
 	private _prepareDeterministicCompaction(
 		preparation: CompactionPreparation,
 		pathEntries: SessionEntry[],
-		settings: { renderedStateMaxTokens: number },
+		settings: CompactionSettings & { renderedStateMaxTokens: number },
 	): CompactionResult<CompactionDetails> & { state: StructuredSessionState } {
 		const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
+		const historyStubContext = stubToolResultsForCompactionSummary(preparation.messagesToSummarize, settings);
+		const turnPrefixStubContext = stubToolResultsForCompactionSummary(preparation.turnPrefixMessages, settings);
+		const stubbedToolResultPointers = [
+			...historyStubContext.stubs.map((stub) => stub.rawPointer),
+			...turnPrefixStubContext.stubs.map((stub) => stub.rawPointer),
+		];
+		const stubbedToolResults = [...new Set(stubbedToolResultPointers.map((pointer) => pointer.id))];
+		const toolRawTokens = historyStubContext.toolRawTokens + turnPrefixStubContext.toolRawTokens;
+		const toolStubTokens = historyStubContext.toolStubTokens + turnPrefixStubContext.toolStubTokens;
 		const baseState = this._getCurrentStructuredSessionState(pathEntries);
 		const risks = hasMeaningfulStructuredSessionState(baseState)
 			? []
@@ -3232,6 +3227,7 @@ export class AgentSession {
 							relevantSymbols: [],
 						}
 					: undefined,
+			evidence: stubbedToolResultPointers.length > 0 ? { add: stubbedToolResultPointers } : undefined,
 			audit: {
 				lastCompactionAt: new Date().toISOString(),
 				compactionCount: baseState.audit.compactionCount + 1,
@@ -3248,10 +3244,10 @@ export class AgentSession {
 			summaryTokens,
 			renderedStateTokens: summaryTokens,
 			recentRawTokens: preparation.recentRawTokens,
-			toolRawTokens: 0,
-			toolStubTokens: 0,
+			toolRawTokens,
+			toolStubTokens,
 			droppedEntries: preparation.droppedEntryIds,
-			stubbedToolResults: [],
+			stubbedToolResults,
 			risks,
 		};
 		return {

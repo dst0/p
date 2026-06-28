@@ -443,16 +443,18 @@ describe("AgentSession prompt characterization", () => {
 		for (let index = 1; index < firstRequestPrompts.length; index++) {
 			expect(firstRequestPrompts[index]?.startsWith(firstRequestPrompts[index - 1] ?? "")).toBe(true);
 		}
+		expect(firstRequestPrompts.some((prompt) => prompt.includes("[Tool result stubbed"))).toBe(false);
+		expect(firstRequestPrompts[17]).toContain("turn 17 line 047");
 	});
 
-	it("sends bounded tool-result context to the provider without mutating raw session history", async () => {
+	it("sends raw tool-result context to the provider before compaction without mutating session history", async () => {
 		const harness = await createPromptHarness({
-			models: [{ id: "small-context", contextWindow: 16_000, maxTokens: 1000 }],
+			models: [{ id: "large-context", contextWindow: 100_000, maxTokens: 1000 }],
 			settings: {
 				compaction: {
 					enabled: true,
-					triggerReserveTokens: 1000,
-					triggerRatio: 0.9,
+					triggerReserveTokens: 20_000,
+					triggerRatio: 0.95,
 					targetContextTokens: 4000,
 					keepRecentMinTokens: 500,
 					keepRecentMaxTokens: 1000,
@@ -498,14 +500,13 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("continue");
 
-		expect(providerPromptText.length).toBeLessThan(hugeOutput.length / 2);
-		expect(providerPromptText).toContain("[Tool result stubbed");
-		expect(providerPromptText).toContain('session_recall("tool-result:call-read-huge"');
-		expect(providerPromptText).not.toContain("raw-line-0100");
+		expect(providerPromptText).not.toContain("[Tool result stubbed");
+		expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-huge"');
+		expect(providerPromptText).toContain("raw-line-0100");
 		expect(getMessageText(rawToolResult)).toContain("raw-line-0000");
 	});
 
-	it("stubs recent long tool results before prompt pressure", async () => {
+	it("does not stub completed long tool results before compaction", async () => {
 		const harness = await createPromptHarness({
 			models: [{ id: "large-context", contextWindow: 65_536, maxTokens: 1000 }],
 			settings: {
@@ -556,9 +557,9 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("continue");
 
-		expect(providerPromptText).toContain("[Tool result stubbed");
-		expect(providerPromptText).toContain('session_recall("tool-result:call-read-doc"');
-		expect(providerPromptText).not.toContain("doc-line-0100");
+		expect(providerPromptText).not.toContain("[Tool result stubbed");
+		expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-doc"');
+		expect(providerPromptText).toContain("doc-line-0100");
 		expect(getMessageText(rawToolResult)).toContain("doc-line-0000");
 	});
 

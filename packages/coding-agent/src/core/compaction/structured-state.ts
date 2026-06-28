@@ -1418,11 +1418,20 @@ function mergeRelevantSymbols(existing: RelevantSymbol[], incoming: RelevantSymb
 }
 
 function mergeEvidence(existing: EvidencePointer[], incoming: EvidencePointer[]): EvidencePointer[] {
-	const seen = new Set(existing.map((pointer) => pointer.id));
+	const indexById = new Map(existing.map((pointer, index) => [pointer.id, index]));
 	for (const pointer of incoming) {
-		if (!seen.has(pointer.id)) {
+		const existingIndex = indexById.get(pointer.id);
+		if (existingIndex === undefined) {
 			existing.push({ ...pointer });
-			seen.add(pointer.id);
+			indexById.set(pointer.id, existing.length - 1);
+			continue;
+		}
+		const current = existing[existingIndex];
+		if (
+			pointer.summary.length > current.summary.length ||
+			pointer.retrieveWhen.length > current.retrieveWhen.length
+		) {
+			existing[existingIndex] = { ...current, ...pointer };
 		}
 	}
 	return existing;
