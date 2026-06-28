@@ -2,7 +2,14 @@ import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@dst0/p-agent-core";
-import { type AssistantMessage, fauxAssistantMessage, fauxToolCall, type Model } from "@dst0/p-ai";
+import {
+	type AssistantMessage,
+	fauxAssistantMessage,
+	fauxToolCall,
+	type Message,
+	type Model,
+	type TextContent,
+} from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
@@ -17,6 +24,12 @@ describe("AgentSession prompt characterization", () => {
 	const tempDirs: string[] = [];
 	const createPromptHarness = (options: HarnessOptions = {}) =>
 		createBaseHarness({ completionMode: "implicit", ...options });
+	const getUserTexts = (messages: Message[]): string[] =>
+		messages.flatMap((message) => {
+			if (message.role !== "user") return [];
+			if (typeof message.content === "string") return [message.content];
+			return message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text);
+		});
 
 	afterEach(() => {
 		while (harnesses.length > 0) {
@@ -75,6 +88,7 @@ describe("AgentSession prompt characterization", () => {
 		harnesses.push(harness);
 		let firstSystemPrompt = "";
 		let secondSystemPrompt = "";
+		let secondUserTexts: string[] = [];
 		harness.setResponses([
 			(context) => {
 				firstSystemPrompt = context.systemPrompt ?? "";
@@ -84,6 +98,7 @@ describe("AgentSession prompt characterization", () => {
 			},
 			(context) => {
 				secondSystemPrompt = context.systemPrompt ?? "";
+				secondUserTexts = getUserTexts(context.messages);
 				return fauxAssistantMessage("continued");
 			},
 		]);
@@ -100,10 +115,11 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("continue");
 
-		expect(secondSystemPrompt).toContain("<working_state>");
-		expect(secondSystemPrompt).toContain("🚩 Goal: Fix durable state tracking");
-		expect(secondSystemPrompt).toContain("✅ Add state protocol parser");
-		expect(secondSystemPrompt).toContain("📌 Run deterministic compaction tests");
+		const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
+		expect(secondSystemPrompt).not.toContain("<working_state>");
+		expect(workingState).toContain("🚩 Goal: Fix durable state tracking");
+		expect(workingState).toContain("✅ Add state protocol parser");
+		expect(workingState).toContain("📌 Run deterministic compaction tests");
 		expect(secondSystemPrompt).not.toContain("<project_memory>");
 	});
 
@@ -111,6 +127,7 @@ describe("AgentSession prompt characterization", () => {
 		const harness = await createPromptHarness();
 		harnesses.push(harness);
 		let secondSystemPrompt = "";
+		let secondUserTexts: string[] = [];
 		harness.setResponses([
 			fauxAssistantMessage(
 				[
@@ -120,6 +137,7 @@ describe("AgentSession prompt characterization", () => {
 			),
 			(context) => {
 				secondSystemPrompt = context.systemPrompt ?? "";
+				secondUserTexts = getUserTexts(context.messages);
 				return fauxAssistantMessage("continued");
 			},
 		]);
@@ -145,14 +163,15 @@ describe("AgentSession prompt characterization", () => {
 
 		await harness.session.prompt("continue");
 
-		expect(secondSystemPrompt).toContain("<working_state>");
-		expect(secondSystemPrompt).toContain(
+		const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
+		expect(secondSystemPrompt).not.toContain("<working_state>");
+		expect(workingState).toContain(
 			"🚩 Goal: Fix smart state so an omitted metadata goal cannot erase the real objective",
 		);
-		expect(secondSystemPrompt).toContain("✅ Reproduce the smart-state overwrite");
-		expect(secondSystemPrompt).toContain("⏳ Patch state persistence");
-		expect(secondSystemPrompt).toContain("📌 Run unit, integration, and e2e tests");
-		expect(secondSystemPrompt).not.toContain("🚩 Goal: continue");
+		expect(workingState).toContain("✅ Reproduce the smart-state overwrite");
+		expect(workingState).toContain("⏳ Patch state persistence");
+		expect(workingState).toContain("📌 Run unit, integration, and e2e tests");
+		expect(workingState).not.toContain("🚩 Goal: continue");
 	});
 
 	it("reuses provider prompt cache across sequential user prompts", async () => {
