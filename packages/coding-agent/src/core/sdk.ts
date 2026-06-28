@@ -12,12 +12,7 @@ import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
-import {
-	estimateContextTokens,
-	selectKeepRecentTokens,
-	stubToolResultsForPrompt,
-	truncateKeptMessages,
-} from "./compaction/index.ts";
+import { estimateContextTokens, selectKeepRecentTokens, truncateKeptMessages } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -291,8 +286,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
-		const promptMessages = stubToolResultsForPrompt(messages, settingsManager.getCompactionSettings()).messages;
-		const converted = convertToLlm(promptMessages);
+		const converted = convertToLlm(messages);
 		// Check setting dynamically so mid-session changes take effect
 		if (!settingsManager.getBlockImages()) {
 			return converted;
