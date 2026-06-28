@@ -176,7 +176,7 @@ describe("working state cache isolation", () => {
 			}
 		});
 
-		return { runtime, session: runtime.session, faux };
+		return { runtime, session: runtime.session, faux, createRuntime, tempDir };
 	}
 
 	it("excludes working state from system prompt", async () => {
@@ -265,6 +265,69 @@ describe("working state cache isolation", () => {
 		expect(assistants[0]?.usage.cacheWrite).toBeGreaterThan(0);
 		expect(assistants[1]?.usage.cacheRead).toBe(assistants[0]?.usage.cacheWrite);
 		const workingStateMessages = session.messages.filter(
+			(message): message is Extract<AgentMessage, { role: "custom" }> =>
+				message.role === "custom" && message.customType === "working_state",
+		);
+		expect(workingStateMessages).toHaveLength(2);
+		expect(workingStateMessages.every((message) => message.display === false)).toBe(true);
+	}, 30000);
+
+	it("replays prior working state after reopening a persisted session", async () => {
+		const { session, faux, createRuntime, tempDir } = await createRuntimeForTest([]);
+		const prompts: Array<ReturnType<typeof captureProviderPrompt>> = [];
+		faux.setResponses([
+			(context) => {
+				prompts.push(captureProviderPrompt(context));
+				return fauxAssistantMessage("r1");
+			},
+		]);
+
+		await session.prompt("hello");
+		await session.agent.waitForIdle();
+
+		const sessionFile = session.sessionManager.getSessionFile();
+		expect(sessionFile).toBeDefined();
+		if (!sessionFile) throw new Error("Expected persisted session file");
+
+		const reopenedRuntime = await createAgentSessionRuntime(createRuntime, {
+			cwd: tempDir,
+			agentDir: tempDir,
+			sessionManager: SessionManager.open(sessionFile, undefined, tempDir),
+		});
+		reopenedRuntime.session.setActiveToolsByName([]);
+		reopenedRuntime.session.settingsManager.applyOverrides({ compaction: { enabled: true } });
+		cleanups.push(async () => {
+			await reopenedRuntime.dispose();
+		});
+
+		faux.setResponses([
+			(context) => {
+				prompts.push(captureProviderPrompt(context));
+				return fauxAssistantMessage("r2");
+			},
+		]);
+
+		await reopenedRuntime.session.prompt("world");
+		await reopenedRuntime.session.agent.waitForIdle();
+
+		expect(prompts).toHaveLength(2);
+		const firstPrompt = prompts[0];
+		const secondPrompt = prompts[1];
+		expect(firstPrompt?.roles).toEqual(["user", "user"]);
+		expect(firstPrompt?.texts[0]).toBe("hello");
+		expect(firstPrompt?.texts[1]).toContain("<working_state>");
+		expect(secondPrompt?.systemPrompt).toBe(firstPrompt?.systemPrompt);
+		expect(secondPrompt?.roles).toEqual(["user", "user", "assistant", "user", "user"]);
+		expect(secondPrompt?.texts.slice(0, 2)).toEqual(firstPrompt?.texts);
+		expect(secondPrompt?.texts[2]).toBe("r1");
+		expect(secondPrompt?.texts[3]).toBe("world");
+		expect(secondPrompt?.texts[4]).toContain("<working_state>");
+		expect(
+			firstPrompt && secondPrompt
+				? serializeCapturedPrompt(secondPrompt).startsWith(serializeCapturedPrompt(firstPrompt))
+				: false,
+		).toBe(true);
+		const workingStateMessages = reopenedRuntime.session.messages.filter(
 			(message): message is Extract<AgentMessage, { role: "custom" }> =>
 				message.role === "custom" && message.customType === "working_state",
 		);
