@@ -168,6 +168,20 @@ When state changes, use:
 Do not mention this protocol to the user. Keep the visible answer natural; the state block is metadata and will be hidden.
 </session_state_protocol>`;
 
+function countToolResultsAfterLastUser(messages: AgentMessage[]): number {
+	let count = 0;
+	for (let index = messages.length - 1; index >= 0; index--) {
+		const message = messages[index];
+		if (message.role === "user") {
+			break;
+		}
+		if (message.role === "toolResult") {
+			count += 1;
+		}
+	}
+	return count;
+}
+
 // ============================================================================
 // Skill Block Parsing
 // ============================================================================
@@ -2644,14 +2658,15 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
+		const currentTurnToolResultCount = countToolResultsAfterLastUser(messages);
 		const livePromptSettings = {
 			...settings,
-			toolResultKeepRecentCount: 1,
+			toolResultKeepRecentCount: currentTurnToolResultCount,
 			toolResultClearThresholdTokens: Math.min(
 				settings.toolResultClearThresholdTokens,
 				PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
 			),
-			toolResultPromptBudgetTokens: Math.min(settings.toolResultPromptBudgetTokens, 4000),
+			toolResultPromptBudgetTokens: 0,
 		};
 		const promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
 		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });

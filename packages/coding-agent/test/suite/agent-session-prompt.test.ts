@@ -390,6 +390,61 @@ describe("AgentSession prompt characterization", () => {
 		}
 	});
 
+	it("keeps completed-turn tool result representation stable after cumulative prompt budget pressure", async () => {
+		const readSmallChunkTool: AgentTool = {
+			name: "read_small_chunk",
+			label: "Read small chunk",
+			description: "Return deterministic small chunk text",
+			parameters: Type.Object({ turn: Type.Number() }),
+			execute: async (_toolCallId, params) => {
+				const turn = typeof params === "object" && params !== null && "turn" in params ? Number(params.turn) : 0;
+				const lines = Array.from(
+					{ length: 48 },
+					(_, index) => `turn ${turn} line ${index.toString().padStart(3, "0")} ${"x".repeat(36)}`,
+				).join("\n");
+				return {
+					content: [{ type: "text", text: lines }],
+					details: { turn },
+				};
+			},
+		};
+		const harness = await createPromptHarness({ tools: [readSmallChunkTool] });
+		harnesses.push(harness);
+		const firstRequestPrompts: string[] = [];
+		const responses = Array.from({ length: 18 }).flatMap((_, index) => {
+			const turn = index + 1;
+			return [
+				(context: { systemPrompt?: string; messages: Message[] }) => {
+					firstRequestPrompts.push(serializePrompt(context.systemPrompt, context.messages));
+					return fauxAssistantMessage(fauxToolCall("read_small_chunk", { turn }), { stopReason: "toolUse" });
+				},
+				fauxAssistantMessage(`turn ${turn} complete`),
+			];
+		});
+		harness.setResponses(responses);
+
+		for (let turn = 1; turn <= 18; turn++) {
+			const previousAssistantCount = harness.session.messages.filter(
+				(message) => message.role === "assistant",
+			).length;
+			await harness.session.prompt(`request turn ${turn}`);
+			const newAssistantMessages = harness.session.messages
+				.filter((message): message is AssistantMessage => message.role === "assistant")
+				.slice(previousAssistantCount);
+			expect(newAssistantMessages).toHaveLength(2);
+			if (turn === 1) {
+				expect(newAssistantMessages[0]?.usage.cacheRead).toBe(0);
+			} else {
+				expect(newAssistantMessages[0]?.usage.cacheRead).toBeGreaterThan(0);
+			}
+			expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+		}
+
+		for (let index = 1; index < firstRequestPrompts.length; index++) {
+			expect(firstRequestPrompts[index]?.startsWith(firstRequestPrompts[index - 1] ?? "")).toBe(true);
+		}
+	});
+
 	it("sends bounded tool-result context to the provider without mutating raw session history", async () => {
 		const harness = await createPromptHarness({
 			models: [{ id: "small-context", contextWindow: 16_000, maxTokens: 1000 }],
