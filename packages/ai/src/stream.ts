@@ -17,13 +17,7 @@ import type {
 
 export { getEnvApiKey } from "./env-api-keys.ts";
 
-const RUNTIME_CONTEXT_MARKERS = [
-	"<project_memory>",
-	"<project_rules>",
-	"<repo_map>",
-	"<subagent_profiles>",
-	"<subagent_digests>",
-] as const;
+const RUNTIME_CONTEXT_MARKERS = ["<project_memory>", "<project_rules>", "<repo_map>", "<subagent_digests>"] as const;
 
 interface RuntimeContextInsertion {
 	anchorKey: string;

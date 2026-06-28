@@ -50,9 +50,14 @@ function computeGenTrend(currentRate: number, previousRate: number | undefined):
 	return "→";
 }
 
-function formatQueuedProgress(queued: { messages: number; position?: number }): string {
+function formatQueuedProgress(queued: { messages: number; position?: number; queuedAhead?: number }): string {
 	if (queued.position !== undefined) {
-		return queued.position <= 1 ? "next" : `#${queued.position}`;
+		if (queued.position <= 1) {
+			return "next";
+		}
+		const queuedAhead = queued.queuedAhead ?? queued.position - 1;
+		const aheadText = queuedAhead === 1 ? "1 ahead" : `${queuedAhead} ahead`;
+		return `#${queued.position}, ${aheadText}`;
 	}
 	return queued.messages.toString();
 }

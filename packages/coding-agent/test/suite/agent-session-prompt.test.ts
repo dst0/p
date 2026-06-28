@@ -15,7 +15,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
-import type { CustomMessageEntry } from "../../src/core/session-manager.ts";
+import type { CustomMessageEntry, SessionMessageEntry } from "../../src/core/session-manager.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness as createBaseHarness, getMessageText, type Harness, type HarnessOptions } from "./harness.ts";
@@ -332,6 +332,67 @@ describe("AgentSession prompt characterization", () => {
 		);
 		expect(runtimeContextMessages).toHaveLength(3);
 		expect(runtimeContextMessages.every((message) => message.display === false)).toBe(true);
+	});
+
+	it("persists explicit-finish repair prompts for cache-stable follow-up prompts", async () => {
+		const noopTool: AgentTool = {
+			name: "noop",
+			label: "No-op",
+			description: "Unused test tool to keep explicit completion active",
+			parameters: Type.Object({}),
+			execute: async () => ({ content: [{ type: "text", text: "noop" }], details: undefined }),
+		};
+		const harness = await createPromptHarness({
+			completionMode: "explicit_finish",
+			tools: [noopTool],
+			initialActiveToolNames: ["noop"],
+		});
+		harnesses.push(harness);
+		harness.session.settingsManager.applyOverrides({ compaction: { enabled: false } });
+		const prompts: string[] = [];
+		harness.setResponses([
+			(context) => {
+				prompts.push(serializePrompt(context.systemPrompt, context.messages));
+				return fauxAssistantMessage("plain answer without finish_work");
+			},
+			(context) => {
+				prompts.push(serializePrompt(context.systemPrompt, context.messages));
+				return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "done" }), {
+					stopReason: "toolUse",
+				});
+			},
+			(context) => {
+				prompts.push(serializePrompt(context.systemPrompt, context.messages));
+				return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "second done" }), {
+					stopReason: "toolUse",
+				});
+			},
+		]);
+
+		await harness.session.prompt("first task");
+		await harness.session.prompt("second task");
+
+		expect(prompts).toHaveLength(3);
+		expect(prompts[1]).toContain("The task is not complete because you did not call `finish_work`.");
+		expect(prompts[2].startsWith(prompts[1])).toBe(true);
+		expect(harness.session.messages.filter((message) => message.role === "user").map(getMessageText)).toEqual([
+			"first task",
+			"second task",
+		]);
+		const persistedRepairEntries = harness.sessionManager
+			.getEntries()
+			.filter((entry): entry is SessionMessageEntry => {
+				if (entry.type !== "message" || entry.message.role !== "user") return false;
+				return getMessageText(entry.message).includes(
+					"The task is not complete because you did not call `finish_work`.",
+				);
+			});
+		expect(persistedRepairEntries).toHaveLength(1);
+		expect(
+			persistedRepairEntries[0]?.message.role === "user"
+				? persistedRepairEntries[0].message.metadata?.pInternal
+				: undefined,
+		).toBe("completion_protocol_repair");
 	});
 
 	it("keeps cache reads nonzero across a long same-session tool loop", async () => {

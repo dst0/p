@@ -378,6 +378,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
+	return (
+		message.role === "user" &&
+		isRecord(message.metadata) &&
+		message.metadata.pInternal === "completion_protocol_repair"
+	);
+}
+
 function normalizeCompactionDetails(details: unknown): CompactionDetails {
 	if (!isRecord(details)) {
 		return { readFiles: [], modifiedFiles: [] };
@@ -1129,6 +1137,9 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		const isInternalRepairEvent =
+			(event.type === "message_start" || event.type === "message_end") &&
+			isInternalCompletionProtocolRepairMessage(event.message);
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
@@ -1152,7 +1163,9 @@ export class AgentSession {
 		}
 
 		// Emit to extensions first
-		await this._emitExtensionEvent(event);
+		if (!isInternalRepairEvent) {
+			await this._emitExtensionEvent(event);
+		}
 
 		let assistantStateUpdateText: string | undefined;
 		if (event.type === "message_end" && event.message.role === "assistant") {
@@ -1169,8 +1182,16 @@ export class AgentSession {
 			this._shouldHideContextOverflowMessage(event.message as AssistantMessage);
 
 		// Notify all listeners
-		if (!hideContextOverflowMessage) {
-			this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+		if (!hideContextOverflowMessage && !isInternalRepairEvent) {
+			this._emit(
+				event.type === "agent_end"
+					? {
+							...event,
+							messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
+							willRetry: this._willRetryAfterAgentEnd(event),
+						}
+					: event,
+			);
 		}
 
 		// Handle session persistence
@@ -1329,7 +1350,7 @@ export class AgentSession {
 		} else if (event.type === "agent_end") {
 			await this._extensionRunner.emit({
 				type: "agent_end",
-				messages: event.messages,
+				messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
 			});
 		} else if (event.type === "turn_start") {
 			const extensionEvent: TurnStartEvent = {
@@ -1567,7 +1588,7 @@ export class AgentSession {
 
 	/** All messages including custom types like BashExecutionMessage */
 	get messages(): AgentMessage[] {
-		return this.agent.state.messages;
+		return this.agent.state.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message));
 	}
 
 	/** Current steering mode */
@@ -4847,7 +4868,7 @@ export class AgentSession {
 	 * @returns Text content, or undefined if no assistant message exists
 	 */
 	getLastAssistantText(): string | undefined {
-		const lastAssistant = this.messages
+		const lastAssistant = this.agent.state.messages
 			.slice()
 			.reverse()
 			.find((m) => {

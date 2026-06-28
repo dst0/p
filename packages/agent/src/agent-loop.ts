@@ -250,6 +250,7 @@ function createProtocolRepairMessage(text: string): AgentMessage {
 	return {
 		role: "user",
 		content: [{ type: "text", text }],
+		metadata: { pInternal: "completion_protocol_repair" },
 		timestamp: Date.now(),
 	};
 }
@@ -528,7 +529,11 @@ async function runLoop(
 										: completionLimits.maxTurns,
 							reason: protocolRepair.reason,
 						});
-						currentContext.messages.push(createProtocolRepairMessage(protocolRepair.message));
+						const repairMessage = createProtocolRepairMessage(protocolRepair.message);
+						await emit({ type: "message_start", message: repairMessage });
+						await emit({ type: "message_end", message: repairMessage });
+						currentContext.messages.push(repairMessage);
+						newMessages.push(repairMessage);
 						hasMoreToolCalls = true;
 						continue;
 					}

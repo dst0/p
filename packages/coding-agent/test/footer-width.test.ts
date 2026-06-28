@@ -194,7 +194,7 @@ describe("FooterComponent width handling", () => {
 		);
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("QUEUED #2");
+		expect(statsLine).toContain("QUEUED #2, 1 ahead");
 		expect(statsLine).not.toContain("QUEUED 2");
 	});
 
@@ -222,7 +222,7 @@ describe("FooterComponent width handling", () => {
 		);
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("QUEUED #3");
+		expect(statsLine).toContain("QUEUED #3, 2 ahead");
 		expect(statsLine).not.toContain("SENDING");
 	});
 

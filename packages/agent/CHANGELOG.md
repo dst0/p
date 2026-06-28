@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed explicit completion repair prompts to be returned as transcript messages so follow-up turns can continue from the exact provider-visible context.
+
 ## [0.2.0] - 2026-06-28
 
 ### Fixed
