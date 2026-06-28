@@ -850,6 +850,37 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
+	it("does not run local llama cache-stability compaction mid-turn after assistant tool calls", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "large-128-cache", contextWindow: 131_072 }],
+			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const assistant = {
+			...createAssistant(harness, {
+				stopReason: "toolUse",
+				totalTokens: 1000,
+				timestamp: now - 1000,
+			}),
+			usage: createCachedUsage(320, 17_100, 80),
+		};
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "small local llama history" }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(assistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(assistant);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
 	it("keeps ordinary large models below their normal threshold on the existing path", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,

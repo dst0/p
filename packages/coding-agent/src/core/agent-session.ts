@@ -373,7 +373,7 @@ interface ToolDefinitionEntry {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
-const LOCAL_LLAMA_CACHE_STABILITY_TOKENS = 16_000;
+const LOCAL_LLAMA_CACHE_STABILITY_TOKENS = 17_000;
 const LOCAL_LLAMA_MODEL_PREFIXES = ["mini-pc/", "misha-pc/", "yevhe-pc/", "lms-micro/"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -3506,7 +3506,9 @@ export class AgentSession {
 		const promptContext = this._preparePromptContext(messages);
 		let contextTokens = promptContext.budgetEstimate.tokens;
 		const isLocalLlamaCacheSensitiveModel = isLocalLlamaPromptCacheSensitiveModel(this.model);
-		if (assistantForCompactionCheck?.stopReason === "error" || isLocalLlamaCacheSensitiveModel) {
+		const hasAdditionalUserMessage = additionalMessages?.some((message) => message.role === "user") ?? false;
+		const isLocalLlamaCacheStabilityCheck = isLocalLlamaCacheSensitiveModel && hasAdditionalUserMessage;
+		if (assistantForCompactionCheck?.stopReason === "error" || isLocalLlamaCacheStabilityCheck) {
 			const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
 				sinceTimestamp: compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined,
 			});
@@ -3516,7 +3518,7 @@ export class AgentSession {
 			(entry) => entry.type === "message" && entry.message.role === "user",
 		);
 		if (
-			isLocalLlamaCacheSensitiveModel &&
+			isLocalLlamaCacheStabilityCheck &&
 			contextTokens > LOCAL_LLAMA_CACHE_STABILITY_TOKENS &&
 			hasRecordedUserRequest
 		) {
