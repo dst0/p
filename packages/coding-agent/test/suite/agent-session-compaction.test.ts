@@ -30,18 +30,6 @@ function createUsage(totalTokens: number) {
 	};
 }
 
-function createCachedUsage(input: number, cacheRead: number, output: number) {
-	const totalTokens = input + cacheRead + output;
-	return {
-		input,
-		output,
-		cacheRead,
-		cacheWrite: 0,
-		totalTokens,
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-	};
-}
-
 function createAssistant(
 	harness: Harness,
 	options: {
@@ -768,119 +756,6 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
 
-	it("auto-compacts local llama cache-sensitive models before the unstable cache range", async () => {
-		const harness = await createHarness({
-			withConfiguredAuth: false,
-			models: [{ id: "mini-pc/large-128-cache", contextWindow: 131_072 }],
-			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
-		});
-		harnesses.push(harness);
-		const now = Date.now();
-		harness.sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: "large local llama history ".repeat(4000) }],
-			timestamp: now - 3000,
-		});
-		harness.sessionManager.appendMessage(
-			createAssistant(harness, {
-				stopReason: "stop",
-				totalTokens: 20_000,
-				timestamp: now - 2000,
-			}),
-		);
-		harness.sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: "continue with this session" }],
-			timestamp: now - 1000,
-		});
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-
-		await sessionInternals.checkCompaction(undefined, false, [
-			{
-				role: "user",
-				content: [{ type: "text", text: "next turn should compact before dispatch" }],
-				timestamp: now,
-			},
-		]);
-
-		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
-		expect(compactionEntries).toHaveLength(1);
-		const compactionEntry = compactionEntries[0];
-		expect(compactionEntry?.type).toBe("compaction");
-		if (!compactionEntry || compactionEntry.type !== "compaction") {
-			throw new Error("Expected compaction entry");
-		}
-		expect(compactionEntry.summary).toContain("<session_checkpoint>");
-	});
-
-	it("uses reliable local llama cache-read usage for cache-stability compaction checks", async () => {
-		const harness = await createHarness({
-			withConfiguredAuth: false,
-			models: [{ id: "large-128-cache", contextWindow: 131_072 }],
-			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
-		});
-		harnesses.push(harness);
-		const now = Date.now();
-		harness.sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: "small local llama history" }],
-			timestamp: now - 2000,
-		});
-		harness.sessionManager.appendMessage({
-			...createAssistant(harness, {
-				stopReason: "stop",
-				totalTokens: 1000,
-				timestamp: now - 1000,
-			}),
-			usage: createCachedUsage(320, 17_100, 80),
-		});
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
-
-		await sessionInternals.checkCompaction(undefined, false, [
-			{
-				role: "user",
-				content: [{ type: "text", text: "next turn should compact from provider cache usage" }],
-				timestamp: now,
-			},
-		]);
-
-		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
-	});
-
-	it("does not run local llama cache-stability compaction mid-turn after assistant tool calls", async () => {
-		const harness = await createHarness({
-			withConfiguredAuth: false,
-			models: [{ id: "large-128-cache", contextWindow: 131_072 }],
-			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
-		});
-		harnesses.push(harness);
-		const now = Date.now();
-		const assistant = {
-			...createAssistant(harness, {
-				stopReason: "toolUse",
-				totalTokens: 1000,
-				timestamp: now - 1000,
-			}),
-			usage: createCachedUsage(320, 17_100, 80),
-		};
-		harness.sessionManager.appendMessage({
-			role: "user",
-			content: [{ type: "text", text: "small local llama history" }],
-			timestamp: now - 2000,
-		});
-		harness.sessionManager.appendMessage(assistant);
-		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
-		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
-		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
-
-		await sessionInternals.checkCompaction(assistant);
-
-		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
-	});
-
 	it("keeps ordinary large models below their normal threshold on the existing path", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
@@ -915,17 +790,17 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
 	});
 
-	it("does not use the local llama cache-stability threshold when compaction is disabled", async () => {
+	it("does not threshold compact when compaction is disabled", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
-			models: [{ id: "mini-pc/large-128-cache", contextWindow: 131_072 }],
+			models: [{ id: "faux-large", contextWindow: 131_072 }],
 			settings: { compaction: { enabled: false, keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
 		});
 		harnesses.push(harness);
 		const now = Date.now();
 		harness.sessionManager.appendMessage({
 			role: "user",
-			content: [{ type: "text", text: "large disabled-compaction local history ".repeat(4000) }],
+			content: [{ type: "text", text: "large disabled-compaction history ".repeat(4000) }],
 			timestamp: now - 2000,
 		});
 		harness.sessionManager.appendMessage(
