@@ -1,6 +1,12 @@
 # Changelog
 
-## [Unreleased]
+## [0.2.0] - 2026-06-28
+
+### Fixed
+- Added optional `tokensAfter` to compaction entries for accurate context budget ([#e8af80e6](https://github.com/dst0/p/commit/e8af80e6))
+
+### Changed
+- Bumped all packages to 0.2.0
 
 ### Fixed
 
