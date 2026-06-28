@@ -28,6 +28,7 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 
 	it("keeps persisted assistant/toolResult message order when extension message_end handlers yield", async () => {
 		const harness = await createHarness({
+			completionMode: "implicit",
 			tools: [createEchoTool()],
 			extensionFactories: [
 				(pi) => {
@@ -68,6 +69,7 @@ describe("regressions #1717/#2113: agent session event settlement", () => {
 		let harness: Harness;
 		const branchRolesAtToolCall: string[][] = [];
 		harness = await createHarness({
+			completionMode: "implicit",
 			tools: [createEchoTool()],
 			extensionFactories: [
 				(pi) => {

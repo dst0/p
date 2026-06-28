@@ -479,8 +479,10 @@ interface RuntimeContextPrompts {
 	memoryPrompt?: string;
 	rulesPrompt?: string;
 	repoMapPrompt?: string;
-	subagentPrompt?: string;
+	subagentProfilesPrompt?: string;
+	subagentDigestPrompt?: string;
 	combinedPrompt?: string;
+	turnContextPrompt?: string;
 }
 
 interface PromptContextPreparation {
@@ -505,9 +507,9 @@ interface WorkingStatePromptInsertionOptions {
 	minimumAnchorTimestamp?: number;
 }
 
+const WORKING_STATE_PROMPT_CUSTOM_TYPE = "working_state";
+const RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE = "runtime_context";
 const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 8_000;
-const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 32_000;
-const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 64_000;
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
@@ -704,7 +706,7 @@ function formatRecallResult(result: RecallResult): string {
 	return sections.join("\n\n");
 }
 
-const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 3;
+const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 1;
 
 // AgentSession Class
 // ============================================================================
@@ -1857,6 +1859,12 @@ export class AgentSession {
 			this.agent.state.systemPrompt = runtimePrompts.combinedPrompt
 				? `${effectiveSystemPrompt}\n\n${runtimePrompts.combinedPrompt}`
 				: effectiveSystemPrompt;
+			if (runtimePrompts.turnContextPrompt) {
+				messages.push(this._createRuntimeContextPromptMessage(runtimePrompts.turnContextPrompt, Date.now()));
+			}
+			if (runtimePrompts.workingStatePrompt) {
+				messages.push(this._createWorkingStatePromptMessage(runtimePrompts.workingStatePrompt, Date.now()));
+			}
 			this._lastTokenBreakdown = this._createTokenBreakdownForPrompt(messages);
 
 			// Check if we need to compact before sending (catches aborted responses and preempts overflow with new messages)
@@ -2474,23 +2482,23 @@ export class AgentSession {
 
 	private _createRuntimeContextPrompts(query: string, baseSystemPrompt: string): RuntimeContextPrompts {
 		const settings = this._getEffectiveCompactionSettings();
-		const workingStatePrompt = renderWorkingSessionState(
-			this._getCurrentStructuredSessionState(),
-			settings.renderedStateMaxTokens,
-		);
+		const structuredState = getLatestStructuredSessionState(this.sessionManager.getBranch());
+		const workingStatePrompt =
+			structuredState && hasMeaningfulStructuredSessionState(structuredState)
+				? renderWorkingSessionState(structuredState, settings.renderedStateMaxTokens)
+				: undefined;
 		const memoryPrompt = this._createProjectMemoryPrompt(query);
 		const rulesPrompt = createRulesContext(this._cwd, query);
 		const repoMapPrompt = createRepoMapContext(this._cwd, query)?.content;
 		const subagentDigestPrompt = createSubagentDigestContext(this._cwd, query);
 		const subagentProfilesPrompt = createSubagentProfilesPrompt();
-		const subagentPrompt = subagentDigestPrompt
-			? `${subagentProfilesPrompt}\n\n${subagentDigestPrompt}`
-			: subagentProfilesPrompt;
-		// NOTE: workingStatePrompt is NOT included in the system prompt.
-		// It is injected as a custom message via _preparePromptContext so the
-		// system prompt stays stable across turns, enabling prefix-based KV cache
-		// reuse (e.g. llama.cpp cache_prompt) for the large, unchanging prefix.
-		const prompts = [SESSION_STATE_PROTOCOL_PROMPT, memoryPrompt, rulesPrompt, repoMapPrompt, subagentPrompt].filter(
+		// NOTE: volatile per-turn context is NOT included in the system prompt.
+		// It is persisted as hidden custom messages next to the user message that
+		// selected it, so later turns replay the exact same prefix for KV cache reuse.
+		const prompts = [SESSION_STATE_PROTOCOL_PROMPT, subagentProfilesPrompt].filter(
+			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
+		);
+		const turnContextPrompts = [memoryPrompt, rulesPrompt, repoMapPrompt, subagentDigestPrompt].filter(
 			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
 		);
 		return {
@@ -2500,8 +2508,10 @@ export class AgentSession {
 			memoryPrompt,
 			rulesPrompt,
 			repoMapPrompt,
-			subagentPrompt,
+			subagentProfilesPrompt,
+			subagentDigestPrompt,
 			combinedPrompt: prompts.length > 0 ? prompts.join("\n\n") : undefined,
+			turnContextPrompt: turnContextPrompts.length > 0 ? turnContextPrompts.join("\n\n") : undefined,
 		};
 	}
 
@@ -2526,7 +2536,17 @@ export class AgentSession {
 	private _createWorkingStatePromptMessage(content: string, timestamp: number): CustomMessage {
 		return {
 			role: "custom",
-			customType: "working_state",
+			customType: WORKING_STATE_PROMPT_CUSTOM_TYPE,
+			content,
+			display: false,
+			timestamp,
+		};
+	}
+
+	private _createRuntimeContextPromptMessage(content: string, timestamp: number): CustomMessage {
+		return {
+			role: "custom",
+			customType: RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE,
 			content,
 			display: false,
 			timestamp,
@@ -2539,15 +2559,23 @@ export class AgentSession {
 		options: WorkingStatePromptInsertionOptions = {},
 	): AgentMessage[] {
 		const validAnchorKeys = new Set<string>();
+		const persistedInsertionAnchorKeys = new Set<string>();
+		let currentAnchorKey: string | undefined;
 		let latestUserAnchorKey: string | undefined;
 		for (const message of messages) {
 			if (options.minimumAnchorTimestamp !== undefined && message.timestamp < options.minimumAnchorTimestamp) {
 				continue;
 			}
 			const anchorKey = getUserMessageAnchorKey(message);
-			if (!anchorKey) continue;
-			validAnchorKeys.add(anchorKey);
-			latestUserAnchorKey = anchorKey;
+			if (anchorKey) {
+				validAnchorKeys.add(anchorKey);
+				latestUserAnchorKey = anchorKey;
+				currentAnchorKey = anchorKey;
+				continue;
+			}
+			if (currentAnchorKey && message.role === "custom" && message.customType === WORKING_STATE_PROMPT_CUSTOM_TYPE) {
+				persistedInsertionAnchorKeys.add(currentAnchorKey);
+			}
 		}
 
 		const sourceInsertions = options.recordWorkingState
@@ -2560,7 +2588,12 @@ export class AgentSession {
 		const insertionsByAnchor = new Map(
 			sourceInsertions.map((insertion) => [insertion.anchorKey, insertion] as const),
 		);
-		if (latestUserAnchorKey && workingStatePrompt && !insertionsByAnchor.has(latestUserAnchorKey)) {
+		if (
+			latestUserAnchorKey &&
+			workingStatePrompt &&
+			!insertionsByAnchor.has(latestUserAnchorKey) &&
+			!persistedInsertionAnchorKeys.has(latestUserAnchorKey)
+		) {
 			const insertion = {
 				anchorKey: latestUserAnchorKey,
 				content: workingStatePrompt,
@@ -2616,34 +2649,13 @@ export class AgentSession {
 			toolResultKeepRecentCount: 1,
 			toolResultClearThresholdTokens: Math.min(
 				settings.toolResultClearThresholdTokens,
-				LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS,
+				PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
 			),
-			toolResultPromptBudgetTokens: Math.min(
-				settings.toolResultPromptBudgetTokens,
-				LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS,
-			),
+			toolResultPromptBudgetTokens: Math.min(settings.toolResultPromptBudgetTokens, 4000),
 		};
-		let promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
+		const promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
 		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
-		const budget = createContextBudgetReport(initialEstimate.tokens, contextWindow, settings);
-		const pressureThreshold = Math.max(settings.targetContextTokens * 1.5, budget.triggerThreshold);
-		if (contextWindow > 0 && initialEstimate.tokens > pressureThreshold) {
-			promptContext = stubToolResultsForPrompt(messages, {
-				...livePromptSettings,
-				toolResultKeepRecentCount: 1,
-				toolResultClearThresholdTokens: Math.min(
-					livePromptSettings.toolResultClearThresholdTokens,
-					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
-				),
-				toolResultPromptBudgetTokens: Math.min(livePromptSettings.toolResultPromptBudgetTokens, 4000),
-			});
-		}
-		const pressureEstimate =
-			promptContext.messages === messages
-				? initialEstimate
-				: estimateContextTokens(promptContext.messages, systemPrompt, {
-						useProviderUsage: false,
-					});
+		const pressureEstimate = initialEstimate;
 		const pressureBudget = createContextBudgetReport(pressureEstimate.tokens, contextWindow, settings);
 		let preparedMessages = promptContext.messages;
 
@@ -2696,7 +2708,9 @@ export class AgentSession {
 			checkpoint: [components.stateProtocolPrompt, components.workingStatePrompt]
 				.filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0)
 				.join("\n\n"),
-			retrievedPrompt: components.subagentPrompt,
+			retrievedPrompt: [components.subagentProfilesPrompt, components.subagentDigestPrompt]
+				.filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0)
+				.join("\n\n"),
 			recentMessages: messages,
 			toolRawTokens: options.toolRawTokens,
 			toolStubTokens: options.toolStubTokens,
@@ -3446,7 +3460,8 @@ export class AgentSession {
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage: `Context overflow recovery failed after ${MAX_OVERFLOW_RECOVERY_COMPACTIONS} compact-and-retry attempts. Try reducing context or switching to a larger-context model.`,
+					errorMessage:
+						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 				});
 				return false;
 			}

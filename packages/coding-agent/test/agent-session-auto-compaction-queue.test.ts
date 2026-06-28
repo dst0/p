@@ -245,12 +245,12 @@ describe("AgentSession auto-compaction queue resume", () => {
 		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 2 });
 		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 3 });
 
-		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(3);
+		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(events).toContainEqual({
 			type: "compaction_end",
 			reason: "overflow",
 			errorMessage:
-				"Context overflow recovery failed after 3 compact-and-retry attempts. Try reducing context or switching to a larger-context model.",
+				"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 		});
 	});
 

@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { AgentMessage } from "@dst0/p-agent-core";
 import {
 	type AssistantMessage,
 	type Context,
@@ -263,9 +264,12 @@ describe("working state cache isolation", () => {
 		expect(assistants).toHaveLength(2);
 		expect(assistants[0]?.usage.cacheWrite).toBeGreaterThan(0);
 		expect(assistants[1]?.usage.cacheRead).toBe(assistants[0]?.usage.cacheWrite);
-		expect(
-			session.messages.some((message) => message.role === "custom" && message.customType === "working_state"),
-		).toBe(false);
+		const workingStateMessages = session.messages.filter(
+			(message): message is Extract<AgentMessage, { role: "custom" }> =>
+				message.role === "custom" && message.customType === "working_state",
+		);
+		expect(workingStateMessages).toHaveLength(2);
+		expect(workingStateMessages.every((message) => message.display === false)).toBe(true);
 	}, 30000);
 
 	it("keeps post-compaction provider prompts user-continuable", async () => {

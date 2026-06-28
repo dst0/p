@@ -108,6 +108,7 @@ function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number
 			systemPrompt: "Test",
 			tools: [],
 		},
+		completionMode: "implicit",
 		streamFn: (_model, _context, _options) => {
 			const stream = new MockAssistantStream();
 			queueMicrotask(() => {
@@ -135,6 +136,7 @@ function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number
 		cwd: tempDir,
 		modelRegistry,
 		resourceLoader: createTestResourceLoader(),
+		completionMode: "implicit",
 	});
 
 	const runtimeHost = {

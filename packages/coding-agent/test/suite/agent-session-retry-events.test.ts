@@ -2,7 +2,11 @@ import type { AgentTool } from "@dst0/p-agent-core";
 import { fauxAssistantMessage, fauxThinking, fauxToolCall } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
-import { createHarness, type Harness } from "./harness.ts";
+import { createHarness, type Harness, type HarnessOptions } from "./harness.ts";
+
+function createImplicitHarness(options: HarnessOptions = {}): Promise<Harness> {
+	return createHarness({ ...options, completionMode: options.completionMode ?? "implicit" });
+}
 
 function normalizeEventOrder(events: Harness["events"]): string[] {
 	const normalized: string[] = [];
@@ -31,7 +35,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("retries after a transient error and succeeds", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
+		});
 		harnesses.push(harness);
 		const retryEvents: string[] = [];
 		harness.session.subscribe((event) => {
@@ -53,7 +59,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("retries multiple transient failures and succeeds on the final attempt", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
+		});
 		harnesses.push(harness);
 		const retryEvents: string[] = [];
 		harness.session.subscribe((event) => {
@@ -74,7 +82,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("retries transport interruptions with exponential delays", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 4, baseDelayMs: 1 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 4, baseDelayMs: 1 } },
+		});
 		harnesses.push(harness);
 		const retryStarts: Array<{ delayMs: number; errorMessage: string }> = [];
 		harness.session.subscribe((event) => {
@@ -102,7 +112,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("exhausts max retries and emits a failure event", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 2, baseDelayMs: 1 } },
+		});
 		harnesses.push(harness);
 		const retryEvents: string[] = [];
 		harness.session.subscribe((event) => {
@@ -125,7 +137,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("prompt waits for retry completion even when assistant message_end handling is delayed", async () => {
-		const harness = await createHarness({
+		const harness = await createImplicitHarness({
 			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
 			extensionFactories: [
 				(pi) => {
@@ -150,7 +162,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("does not retry when retry is disabled", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: false } } });
+		const harness = await createImplicitHarness({ settings: { retry: { enabled: false } } });
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" })]);
 
@@ -161,7 +173,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("does not retry non-retryable errors", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
+		});
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid_api_key" })]);
 
@@ -172,7 +186,9 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("cancels retry sleep when abortRetry is called", async () => {
-		const harness = await createHarness({ settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 100 } } });
+		const harness = await createImplicitHarness({
+			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 100 } },
+		});
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "overloaded_error" })]);
 
@@ -208,7 +224,7 @@ describe("AgentSession retry and event characterization", () => {
 				return { content: [{ type: "text", text: `echo:${text}` }], details: { text } };
 			},
 		};
-		const harness = await createHarness({
+		const harness = await createImplicitHarness({
 			tools: [echoTool],
 			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
 		});
@@ -230,7 +246,7 @@ describe("AgentSession retry and event characterization", () => {
 
 	it("emits extension events before public event subscribers", async () => {
 		const order: string[] = [];
-		const harness = await createHarness({
+		const harness = await createImplicitHarness({
 			extensionFactories: [
 				(pi) => {
 					pi.on("message_start", async (event) => {
@@ -265,7 +281,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("emits the expected event order for a single prompt", async () => {
-		const harness = await createHarness();
+		const harness = await createImplicitHarness();
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("hello")]);
 
@@ -298,7 +314,7 @@ describe("AgentSession retry and event characterization", () => {
 				return { content: [{ type: "text", text: `echo:${text}` }], details: { text } };
 			},
 		};
-		const harness = await createHarness({ tools: [echoTool] });
+		const harness = await createImplicitHarness({ tools: [echoTool] });
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage([fauxToolCall("echo", { text: "hello" })], { stopReason: "toolUse" }),
@@ -333,7 +349,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("emits streaming deltas for text, thinking, and tool calls in message_update events", async () => {
-		const harness = await createHarness();
+		const harness = await createImplicitHarness();
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage(
@@ -353,7 +369,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("emits agent_end for error responses", async () => {
-		const harness = await createHarness();
+		const harness = await createImplicitHarness();
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "broken" })]);
 
@@ -363,7 +379,7 @@ describe("AgentSession retry and event characterization", () => {
 	});
 
 	it("emits agent_end for aborted runs and persists the aborted assistant message", async () => {
-		const harness = await createHarness();
+		const harness = await createImplicitHarness();
 		harnesses.push(harness);
 		harness.setResponses([fauxAssistantMessage("x".repeat(20_000))]);
 

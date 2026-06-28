@@ -26,6 +26,12 @@ function getText(message: AgentSession["messages"][number]): string {
 				.join("");
 }
 
+function visibleUserAssistantMessages(messages: AgentSession["messages"]): string[] {
+	return messages
+		.filter((message) => message.role === "user" || message.role === "assistant")
+		.map((message) => `${message.role}:${getText(message)}`);
+}
+
 describe("regression #2860: replaced session callbacks", () => {
 	const cleanups: Array<() => Promise<void> | void> = [];
 
@@ -197,7 +203,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		expect(replacementSessionFile).not.toBe(oldSessionFile);
 		expect(staleCtxThrows).toBe(true);
 		expect(stalePiThrows).toBe(true);
-		expect(runtime.session.messages.map((message) => `${message.role}:${getText(message)}`)).toEqual([
+		expect(visibleUserAssistantMessages(runtime.session.messages)).toEqual([
 			"user:Hello from the new session!",
 			"assistant:hello reply",
 		]);
@@ -228,7 +234,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		await runtime.session.prompt("seed");
 		await runtime.session.prompt("/fork-it");
 
-		expect(runtime.session.messages.map((message) => `${message.role}:${getText(message)}`)).toEqual([
+		expect(visibleUserAssistantMessages(runtime.session.messages)).toEqual([
 			"user:seed",
 			"assistant:seed reply",
 			"user:fork callback message",
@@ -265,7 +271,7 @@ describe("regression #2860: replaced session callbacks", () => {
 		await runtime.session.prompt("/switch-it");
 
 		expect(runtime.session.sessionFile).toBe(targetSessionPath);
-		expect(runtime.session.messages.map((message) => `${message.role}:${getText(message)}`)).toEqual([
+		expect(visibleUserAssistantMessages(runtime.session.messages)).toEqual([
 			"user:target",
 			"assistant:target reply",
 			"user:switch callback message",

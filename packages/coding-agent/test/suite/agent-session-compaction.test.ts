@@ -126,7 +126,7 @@ describe("AgentSession compaction characterization", () => {
 				.getEntries()
 				.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
 		).toHaveLength(0);
-		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
 	});
 
 	it("manually compacts without a selected model", async () => {
@@ -198,7 +198,7 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "message")).toHaveLength(
 			visibleMessagesBefore,
 		);
-		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
 		const structuredEntries = harness.sessionManager
 			.getEntries()
 			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);

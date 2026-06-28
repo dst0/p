@@ -13,6 +13,7 @@ describe("issue #3317 network connection lost retry", () => {
 
 	it('retries transient "Network connection lost." failures', async () => {
 		const harness = await createHarness({
+			completionMode: "implicit",
 			settings: { retry: { enabled: true, maxRetries: 3, baseDelayMs: 1 } },
 		});
 		harnesses.push(harness);

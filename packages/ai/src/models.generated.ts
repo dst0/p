@@ -5832,6 +5832,24 @@ export const MODELS = {
 			contextWindow: 262144,
 			maxTokens: 262144,
 		} satisfies Model<"openai-completions">,
+		"openai/gpt-oss-120b": {
+			id: "openai/gpt-oss-120b",
+			name: "GPT OSS 120B",
+			api: "openai-completions",
+			provider: "huggingface",
+			baseUrl: "https://router.huggingface.co/v1",
+			compat: {"supportsDeveloperRole":false},
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0.25,
+				output: 0.69,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 131072,
+			maxTokens: 32768,
+		} satisfies Model<"openai-completions">,
 		"stepfun-ai/Step-3.5-Flash": {
 			id: "stepfun-ai/Step-3.5-Flash",
 			name: "Step 3.5 Flash",
@@ -16948,7 +16966,7 @@ export const MODELS = {
 		} satisfies Model<"anthropic-messages">,
 		"zai/glm-4.5": {
 			id: "zai/glm-4.5",
-			name: "GLM-4.5",
+			name: "GLM 4.5",
 			api: "anthropic-messages",
 			provider: "vercel-ai-gateway",
 			baseUrl: "https://ai-gateway.vercel.sh",

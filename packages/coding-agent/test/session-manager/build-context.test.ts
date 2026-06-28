@@ -132,7 +132,7 @@ describe("buildSessionContext", () => {
 	});
 
 	describe("with compaction", () => {
-		it("includes summary before kept messages", () => {
+		it("keeps messages before the summary so continuation does not start from assistant", () => {
 			const entries: SessionEntry[] = [
 				msg("1", null, "user", "first"),
 				msg("2", "1", "assistant", "response1"),
@@ -144,11 +144,11 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Should have: summary + kept (3,4) + after (6,7) = 5 messages
+			// Should have: kept (3,4) + summary + after (6,7) = 5 messages
 			expect(ctx.messages).toHaveLength(5);
-			expect((ctx.messages[0] as any).summary).toContain("Summary of first two turns");
-			expect((ctx.messages[1] as any).content).toBe("second");
-			expect((ctx.messages[2] as any).content[0].text).toBe("response2");
+			expect((ctx.messages[0] as any).content).toBe("second");
+			expect((ctx.messages[1] as any).content[0].text).toBe("response2");
+			expect((ctx.messages[2] as any).summary).toContain("Summary of first two turns");
 			expect((ctx.messages[3] as any).content).toBe("third");
 			expect((ctx.messages[4] as any).content[0].text).toBe("response3");
 		});
@@ -162,9 +162,12 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Summary + all messages (1,2,4)
+			// All kept messages (1,2), then summary, then after (4)
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).summary).toContain("Empty summary");
+			expect((ctx.messages[0] as any).content).toBe("first");
+			expect((ctx.messages[1] as any).content[0].text).toBe("response");
+			expect((ctx.messages[2] as any).summary).toContain("Empty summary");
+			expect((ctx.messages[3] as any).content).toBe("second");
 		});
 
 		it("multiple compactions uses latest", () => {
@@ -179,9 +182,12 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Should use second summary, keep from 4
+			// Should use second summary, keep from 4 before the summary
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).summary).toContain("Second summary");
+			expect((ctx.messages[0] as any).content).toBe("c");
+			expect((ctx.messages[1] as any).content[0].text).toBe("d");
+			expect((ctx.messages[2] as any).summary).toContain("Second summary");
+			expect((ctx.messages[3] as any).content).toBe("e");
 		});
 	});
 
@@ -242,12 +248,12 @@ describe("buildSessionContext", () => {
 				msg("11", "10", "user", "better approach"),
 			];
 
-			// Main path to 7: summary + kept(3,4) + after(6,7)
+			// Main path to 7: kept(3,4) + summary + after(6,7)
 			const ctxMain = buildSessionContext(entries, "7");
 			expect(ctxMain.messages).toHaveLength(5);
-			expect((ctxMain.messages[0] as any).summary).toContain("Compacted history");
-			expect((ctxMain.messages[1] as any).content).toBe("q2");
-			expect((ctxMain.messages[2] as any).content[0].text).toBe("r2");
+			expect((ctxMain.messages[0] as any).content).toBe("q2");
+			expect((ctxMain.messages[1] as any).content[0].text).toBe("r2");
+			expect((ctxMain.messages[2] as any).summary).toContain("Compacted history");
 			expect((ctxMain.messages[3] as any).content).toBe("q3");
 			expect((ctxMain.messages[4] as any).content[0].text).toBe("r3");
 
