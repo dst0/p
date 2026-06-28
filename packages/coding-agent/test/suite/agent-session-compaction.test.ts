@@ -30,6 +30,18 @@ function createUsage(totalTokens: number) {
 	};
 }
 
+function createCachedUsage(input: number, cacheRead: number, output: number) {
+	const totalTokens = input + cacheRead + output;
+	return {
+		input,
+		output,
+		cacheRead,
+		cacheWrite: 0,
+		totalTokens,
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+	};
+}
+
 function createAssistant(
 	harness: Harness,
 	options: {
@@ -800,6 +812,42 @@ describe("AgentSession compaction characterization", () => {
 			throw new Error("Expected compaction entry");
 		}
 		expect(compactionEntry.summary).toContain("<session_checkpoint>");
+	});
+
+	it("uses reliable local llama cache-read usage for cache-stability compaction checks", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "large-128-cache", contextWindow: 131_072 }],
+			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "small local llama history" }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage({
+			...createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 1000,
+				timestamp: now - 1000,
+			}),
+			usage: createCachedUsage(320, 17_100, 80),
+		});
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should compact from provider cache usage" }],
+				timestamp: now,
+			},
+		]);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
 	it("keeps ordinary large models below their normal threshold on the existing path", async () => {

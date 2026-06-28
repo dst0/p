@@ -3505,7 +3505,8 @@ export class AgentSession {
 
 		const promptContext = this._preparePromptContext(messages);
 		let contextTokens = promptContext.budgetEstimate.tokens;
-		if (assistantForCompactionCheck?.stopReason === "error") {
+		const isLocalLlamaCacheSensitiveModel = isLocalLlamaPromptCacheSensitiveModel(this.model);
+		if (assistantForCompactionCheck?.stopReason === "error" || isLocalLlamaCacheSensitiveModel) {
 			const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
 				sinceTimestamp: compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined,
 			});
@@ -3515,8 +3516,7 @@ export class AgentSession {
 			(entry) => entry.type === "message" && entry.message.role === "user",
 		);
 		if (
-			settings.enabled &&
-			isLocalLlamaPromptCacheSensitiveModel(this.model) &&
+			isLocalLlamaCacheSensitiveModel &&
 			contextTokens > LOCAL_LLAMA_CACHE_STABILITY_TOKENS &&
 			hasRecordedUserRequest
 		) {
