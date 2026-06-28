@@ -25,7 +25,7 @@ import {
 	FINISH_WORK_TOOL_NAME,
 	type ThinkingLevel,
 } from "@dst0/p-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@dst0/p-ai";
+import type { Api, AssistantMessage, ImageContent, Message, Model, TextContent } from "@dst0/p-ai";
 import {
 	clampThinkingLevel,
 	cleanupSessionResources,
@@ -373,9 +373,17 @@ interface ToolDefinitionEntry {
 
 /** Standard thinking levels */
 const THINKING_LEVELS: ThinkingLevel[] = ["off", "minimal", "low", "medium", "high"];
+const LOCAL_LLAMA_CACHE_STABILITY_TOKENS = 16_000;
+const LOCAL_LLAMA_MODEL_PREFIXES = ["mini-pc/", "misha-pc/", "yevhe-pc/", "lms-micro/"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isLocalLlamaPromptCacheSensitiveModel(model: Model<Api> | undefined): boolean {
+	if (!model) return false;
+	const modelId = model.id.toLowerCase();
+	return modelId.includes("-cache") || LOCAL_LLAMA_MODEL_PREFIXES.some((prefix) => modelId.startsWith(prefix));
 }
 
 function normalizeCompactionDetails(details: unknown): CompactionDetails {
@@ -3503,10 +3511,18 @@ export class AgentSession {
 			});
 			contextTokens = Math.max(contextTokens, providerEstimate.tokens);
 		}
+		const hasRecordedUserRequest = branchEntries.some(
+			(entry) => entry.type === "message" && entry.message.role === "user",
+		);
+		if (
+			settings.enabled &&
+			isLocalLlamaPromptCacheSensitiveModel(this.model) &&
+			contextTokens > LOCAL_LLAMA_CACHE_STABILITY_TOKENS &&
+			hasRecordedUserRequest
+		) {
+			return await this._runAutoCompaction("threshold", false);
+		}
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
-			const hasRecordedUserRequest = branchEntries.some(
-				(entry) => entry.type === "message" && entry.message.role === "user",
-			);
 			if (!hasRecordedUserRequest) {
 				return false;
 			}

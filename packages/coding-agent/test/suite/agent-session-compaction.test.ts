@@ -756,6 +756,120 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
 	});
 
+	it("auto-compacts local llama cache-sensitive models before the unstable cache range", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "mini-pc/large-128-cache", contextWindow: 131_072 }],
+			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "large local llama history ".repeat(4000) }],
+			timestamp: now - 3000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 20_000,
+				timestamp: now - 2000,
+			}),
+		);
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "continue with this session" }],
+			timestamp: now - 1000,
+		});
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should compact before dispatch" }],
+				timestamp: now,
+			},
+		]);
+
+		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		expect(compactionEntries).toHaveLength(1);
+		const compactionEntry = compactionEntries[0];
+		expect(compactionEntry?.type).toBe("compaction");
+		if (!compactionEntry || compactionEntry.type !== "compaction") {
+			throw new Error("Expected compaction entry");
+		}
+		expect(compactionEntry.summary).toContain("<session_checkpoint>");
+	});
+
+	it("keeps ordinary large models below their normal threshold on the existing path", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-large", contextWindow: 131_072 }],
+			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "large ordinary model history ".repeat(4000) }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 20_000,
+				timestamp: now - 1000,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should stay below the standard threshold" }],
+				timestamp: now,
+			},
+		]);
+
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
+	});
+
+	it("does not use the local llama cache-stability threshold when compaction is disabled", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "mini-pc/large-128-cache", contextWindow: 131_072 }],
+			settings: { compaction: { enabled: false, keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "large disabled-compaction local history ".repeat(4000) }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 20_000,
+				timestamp: now - 1000,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should not compact while disabled" }],
+				timestamp: now,
+			},
+		]);
+
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
+	});
+
 	it("triggers threshold compaction for error messages using the current prompt estimate", async () => {
 		const harness = await createHarness({
 			models: [{ id: "small-context", contextWindow: 4_000, maxTokens: 1_000 }],
