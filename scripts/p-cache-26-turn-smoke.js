@@ -627,10 +627,11 @@ async function runInterruptionProbe() {
 
 async function runQueueProbe() {
 	console.log("queue probe start");
+	const queuePadding = "queue prefill padding keeps the first queued request active. ".repeat(1200);
 	const queueA = startP(
 		basePArgs(
 			QUEUE_A_MAX_TOKENS,
-			"Queue probe A. Reply with exactly QUEUE_A_DONE, then call finish_work.",
+			`Queue probe A. Read this padding, reply with exactly QUEUE_A_DONE, then call finish_work.\n\n${queuePadding}`,
 			"p-cache-queue-a",
 		),
 		join(LOG_DIR, "queue-a.out"),
@@ -646,20 +647,32 @@ async function runQueueProbe() {
 		join(LOG_DIR, "queue-b.out"),
 		join(LOG_DIR, "queue-b.err"),
 	);
-	await sleep(3000);
-	const status = await fetchStatus();
-	const queueStatus = {
-		total_active_requests: status.total_active_requests,
-		total_queue_depth: status.total_queue_depth,
-		workers: status.workers
-			.filter((worker) => worker.id === "mini-pc")
-			.map((worker) => ({
-				id: worker.id,
-				status: worker.status,
-				active_requests: worker.active_requests,
-				queue_depth: worker.queue_depth,
-			})),
-	};
+	let queueStatus = null;
+	const startedAt = Date.now();
+	while (Date.now() - startedAt < 30_000) {
+		const status = await fetchStatus();
+		const candidate = {
+			total_active_requests: status.total_active_requests,
+			total_queue_depth: status.total_queue_depth,
+			workers: status.workers
+				.filter((worker) => worker.id === "mini-pc")
+				.map((worker) => ({
+					id: worker.id,
+					status: worker.status,
+					active_requests: worker.active_requests,
+					queue_depth: worker.queue_depth,
+				})),
+		};
+		const queued = candidate.total_queue_depth > 0 || candidate.workers.some((worker) => worker.queue_depth > 0);
+		if (queued) {
+			queueStatus = candidate;
+			break;
+		}
+		await sleep(250);
+	}
+	if (!queueStatus) {
+		throw Object.assign(new Error("queue probe did not observe queued work in /api/status"), { code: 100 });
+	}
 	await writeFile(join(LOG_DIR, "queue-status.json"), `${JSON.stringify(queueStatus, null, 2)}\n`);
 	console.log(JSON.stringify(queueStatus, null, 2));
 	const [queueAResult, queueBResult] = await Promise.all([queueA.promise, queueB.promise]);
