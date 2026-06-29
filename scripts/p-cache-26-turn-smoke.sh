@@ -315,7 +315,7 @@ compaction_event_count() {
     printf '0\n'
     return
   fi
-  grep -Rci '"type":"compaction"' "$SESSION_DIR" 2>/dev/null | awk -F: '{sum += $2} END {print sum + 0}'
+  { grep -Rci '"type":"compaction"' "$SESSION_DIR" 2>/dev/null || true; } | awk -F: '{sum += $2} END {print sum + 0}'
 }
 
 max_prompt_eval_tokens() {
