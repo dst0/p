@@ -106,13 +106,18 @@ class ProxyHandler(BaseHTTPRequestHandler):
                 }:
                     continue
                 self.send_header(key, value)
+            self.send_header("Connection", "close")
             self.end_headers()
             while True:
-                chunk = resp.read(65536)
+                chunk = resp.read(1)
                 if not chunk:
                     break
-                self.wfile.write(chunk)
-                self.wfile.flush()
+                try:
+                    self.wfile.write(chunk)
+                    self.wfile.flush()
+                except (BrokenPipeError, ConnectionResetError):
+                    break
+            self.close_connection = True
         finally:
             conn.close()
 
