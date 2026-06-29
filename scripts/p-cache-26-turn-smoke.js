@@ -17,12 +17,19 @@ const SSH_HOST = process.env.SSH_HOST ?? "dst@192.168.8.167";
 const SSH_KEY = process.env.SSH_KEY ?? join(process.env.HOME ?? "", ".ssh/id_ed25519_ssh_mini_pc_760u");
 const ORCHESTRATOR_HOST = process.env.ORCHESTRATOR_HOST ?? "192.168.8.167";
 const ORCHESTRATOR_PORT = Number(process.env.ORCHESTRATOR_PORT ?? "11450");
+const LLAMA_SERVER_HOST = process.env.LLAMA_SERVER_HOST ?? ORCHESTRATOR_HOST;
+const LLAMA_SERVER_PORT = Number(process.env.LLAMA_SERVER_PORT ?? "11435");
+const LLAMA_SLOT_ID = Number(process.env.LLAMA_SLOT_ID ?? "0");
 const LLAMA_LOG_PATH = process.env.LLAMA_LOG_PATH ?? "/opt/llama/logs/llama-server-main-stderr.log";
 const MODEL_ID = process.env.MODEL_ID ?? "mini-pc/large-32-kvq4-cache";
 const CONTEXT_WINDOW = Number(process.env.CONTEXT_WINDOW ?? "32768");
 const SESSION_ID = process.env.SESSION_ID ?? "p-cache-26-turn-smoke";
 const TURNS = Number(process.env.TURNS ?? "26");
 const MAX_PROMPT_EVAL_POST_FIRST = Number(process.env.MAX_PROMPT_EVAL_POST_FIRST ?? "6000");
+const TURN_TIMEOUT_MS = Number(process.env.TURN_TIMEOUT_MS ?? "240000");
+const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? "10000");
+const SSH_TIMEOUT_MS = Number(process.env.SSH_TIMEOUT_MS ?? "15000");
+const CLEANUP_SLOT_ON_FAILURE = process.env.CLEANUP_SLOT_ON_FAILURE !== "0";
 const ROOT = process.argv[2] ?? join(tmpdir(), `p-cache-26-turn-smoke-${Math.floor(Date.now() / 1000)}`);
 
 const CFG = join(ROOT, "config");
@@ -54,6 +61,24 @@ function runProcess(command, args, options = {}) {
 		});
 		let stdout = "";
 		let stderr = "";
+		let timedOut = false;
+		let sigtermTimer;
+		let sigkillTimer;
+		let timeoutTimer;
+		const clearTimers = () => {
+			if (timeoutTimer) clearTimeout(timeoutTimer);
+			if (sigtermTimer) clearTimeout(sigtermTimer);
+			if (sigkillTimer) clearTimeout(sigkillTimer);
+		};
+		if (options.timeoutMs && options.timeoutMs > 0) {
+			timeoutTimer = setTimeout(() => {
+				timedOut = true;
+				stderr += `\nProcess timed out after ${options.timeoutMs}ms`;
+				child.kill("SIGINT");
+				sigtermTimer = setTimeout(() => child.kill("SIGTERM"), 2000);
+				sigkillTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
+			}, options.timeoutMs);
+		}
 		child.stdout.on("data", (chunk) => {
 			stdout += chunk.toString("utf8");
 			options.stdoutStream?.write(chunk);
@@ -63,10 +88,12 @@ function runProcess(command, args, options = {}) {
 			options.stderrStream?.write(chunk);
 		});
 		child.on("error", (error) => {
-			resolve({ code: 1, signal: null, stdout, stderr: `${stderr}${error.message}` });
+			clearTimers();
+			resolve({ code: 1, signal: null, stdout, stderr: `${stderr}${error.message}`, timedOut });
 		});
 		child.on("close", (code, signal) => {
-			resolve({ code: code ?? 0, signal, stdout, stderr });
+			clearTimers();
+			resolve({ code: timedOut ? 124 : (code ?? 0), signal, stdout, stderr, timedOut });
 		});
 		if (options.childRef) {
 			options.childRef.current = child;
@@ -75,7 +102,22 @@ function runProcess(command, args, options = {}) {
 }
 
 async function ssh(command) {
-	const result = await runProcess("ssh", ["-i", SSH_KEY, SSH_HOST, command]);
+	const result = await runProcess(
+		"ssh",
+		[
+			"-o",
+			"ConnectTimeout=8",
+			"-o",
+			"ServerAliveInterval=5",
+			"-o",
+			"ServerAliveCountMax=1",
+			"-i",
+			SSH_KEY,
+			SSH_HOST,
+			command,
+		],
+		{ timeoutMs: SSH_TIMEOUT_MS },
+	);
 	if (result.code !== 0) {
 		throw new Error(`ssh failed (${result.code}): ${result.stderr || result.stdout}`);
 	}
@@ -440,6 +482,7 @@ function startP(args, stdoutPath, stderrPath) {
 		stdoutStream,
 		stderrStream,
 		childRef,
+		timeoutMs: TURN_TIMEOUT_MS,
 	}).finally(() => {
 		stdoutStream.end();
 		stderrStream.end();
@@ -489,7 +532,9 @@ async function runTurn(turn) {
 		const stderr = await readFile(stderrPath, "utf8").catch(() => "");
 		console.error(`turn ${n} failed with exit ${result.code}`);
 		console.error(stderr.split("\n").slice(-80).join("\n"));
-		throw Object.assign(new Error(`turn ${n} failed`), { code: result.code || 1 });
+		throw Object.assign(new Error(result.timedOut ? `turn ${n} timed out` : `turn ${n} failed`), {
+			code: result.code || 1,
+		});
 	}
 
 	const reqAfter = await requestCount();
@@ -586,11 +631,28 @@ async function runQueueProbe() {
 }
 
 async function fetchStatus() {
-	const response = await fetch(`http://${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT}/api/status`);
+	const response = await fetch(`http://${ORCHESTRATOR_HOST}:${ORCHESTRATOR_PORT}/api/status`, {
+		signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+	});
 	if (!response.ok) {
 		throw new Error(`status failed: ${response.status}`);
 	}
 	return response.json();
+}
+
+async function cleanupSlot(reason) {
+	if (!CLEANUP_SLOT_ON_FAILURE) return;
+	const url = `http://${LLAMA_SERVER_HOST}:${LLAMA_SERVER_PORT}/slots/${LLAMA_SLOT_ID}?action=erase`;
+	try {
+		const response = await fetch(url, {
+			method: "POST",
+			signal: AbortSignal.timeout(HTTP_TIMEOUT_MS),
+		});
+		const text = await response.text();
+		console.error(`cleanup slot after ${reason}: ${response.status} ${text}`);
+	} catch (error) {
+		console.error(`cleanup slot after ${reason} failed: ${error.message ?? String(error)}`);
+	}
 }
 
 function statusSubset(status, includeSwitching = false) {
@@ -664,7 +726,8 @@ async function main() {
 	}
 }
 
-main().catch((error) => {
+main().catch(async (error) => {
 	console.error(error.message ?? String(error));
+	await cleanupSlot("smoke failure");
 	process.exit(typeof error.code === "number" ? error.code : 1);
 });
