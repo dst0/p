@@ -12,7 +12,6 @@ import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
-import { estimateContextTokens, selectKeepRecentTokens, truncateKeptMessages } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -199,16 +198,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		time("resourceLoader.reload");
 	}
 
-	// Check if session has existing data to restore
+	// Check if session has existing data to restore. Do not truncate restored
+	// messages here: changing provider-visible history outside a recorded
+	// compaction boundary breaks prefix cache reuse for reopened sessions.
 	const existingSession = sessionManager.buildSessionContext();
-	if (existingSession.messages.length > 0) {
-		const settings = settingsManager.getCompactionSettings();
-		const keepRecentTokens = selectKeepRecentTokens(estimateContextTokens(existingSession.messages).tokens, settings);
-		existingSession.messages = truncateKeptMessages(existingSession.messages, {
-			keepRecentTokens,
-			targetContextTokens: settings.targetContextTokens,
-		});
-	}
 	const hasExistingSession = existingSession.messages.length > 0;
 	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 

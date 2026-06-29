@@ -21,7 +21,9 @@ import {
 	createInitialStructuredSessionState,
 	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
 } from "../../../src/core/compaction/index.ts";
+import { createAgentSession } from "../../../src/core/sdk.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
+import { SettingsManager } from "../../../src/core/settings-manager.ts";
 import type { ExtensionAPI } from "../../../src/index.ts";
 
 interface CapturedPrompt {
@@ -391,6 +393,69 @@ describe("working state cache isolation", () => {
 			expect(promptStrings[index]?.startsWith(promptStrings[index - 1] ?? "")).toBe(true);
 			expect(usageByTurn[index]?.cacheRead ?? 0).toBeGreaterThanOrEqual(promptTokenUsage(usageByTurn[index - 1]!));
 		}
+	}, 30000);
+
+	it("does not truncate restored session messages before compaction", async () => {
+		const tempDir = join(tmpdir(), `pi-cache-reload-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+		mkdirSync(tempDir, { recursive: true });
+
+		const faux = registerFauxProvider({
+			models: [{ id: "faux-reload", reasoning: false, contextWindow: 32768 }],
+		});
+		const authStorage = AuthStorage.inMemory();
+		authStorage.setRuntimeApiKey(faux.getModel().provider, "faux-key");
+		const settingsManager = SettingsManager.create(tempDir, tempDir);
+		settingsManager.applyOverrides({
+			compaction: {
+				enabled: true,
+				keepRecentMinTokens: 500,
+				keepRecentMaxTokens: 1000,
+				targetContextTokens: 2000,
+			},
+		});
+
+		const firstUserText = [
+			"Turn 01 of 26. Use the read tool to read in/file-01.txt.",
+			"Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines.",
+			"Use the write tool to write exactly the transformed text to out/file-01.txt.",
+			"Do not use bash for this turn. Then call finish_work.",
+			"x".repeat(16_000),
+		].join("\n");
+		const sessionManager = SessionManager.create(tempDir);
+		sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: firstUserText }],
+			timestamp: Date.now(),
+		});
+		sessionManager.appendMessage(fauxAssistantMessage("turn 1 complete"));
+		const sessionFile = sessionManager.getSessionFile();
+		expect(sessionFile).toBeDefined();
+		if (!sessionFile) throw new Error("Expected persisted session file");
+
+		const reopened = await createAgentSession({
+			cwd: tempDir,
+			agentDir: tempDir,
+			authStorage,
+			settingsManager,
+			model: faux.getModel(),
+			sessionManager: SessionManager.open(sessionFile, undefined, tempDir),
+			completionMode: "implicit",
+			noTools: "all",
+		});
+		cleanups.push(async () => {
+			await reopened.session.dispose();
+			faux.unregister();
+			if (existsSync(tempDir)) {
+				rmSync(tempDir, { recursive: true, force: true });
+			}
+		});
+
+		const firstMessage = reopened.session.messages[0];
+		expect(firstMessage?.role).toBe("user");
+		if (firstMessage?.role !== "user") throw new Error("Expected first restored message to be a user message");
+		const restoredText = messageText(firstMessage);
+		expect(restoredText).toBe(firstUserText);
+		expect(restoredText).not.toContain("[...truncated");
 	}, 30000);
 
 	it("keeps post-compaction provider prompts user-continuable", async () => {
