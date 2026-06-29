@@ -12,7 +12,10 @@ import {
 } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
+import {
+	createInitialStructuredSessionState,
+	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
+} from "../../src/core/compaction/index.ts";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import type { CustomMessageEntry, SessionMessageEntry } from "../../src/core/session-manager.ts";
@@ -199,6 +202,32 @@ describe("AgentSession prompt characterization", () => {
 		expect(workingState).toContain("⏳ Patch state persistence");
 		expect(workingState).toContain("📌 Run unit, integration, and e2e tests");
 		expect(workingState).not.toContain("🚩 Goal: continue");
+	});
+
+	it("renders concrete current turns over stale structured state goals", async () => {
+		const harness = await createPromptHarness();
+		harnesses.push(harness);
+		const staleState = createInitialStructuredSessionState(harness.session.sessionId);
+		staleState.canonicalRequest.current =
+			"Turn 16 of 26. Use the read tool to read in/file-16.txt. Convert every alphabetic letter in that file to uppercase.";
+		harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, staleState);
+		let userTexts: string[] = [];
+		harness.setResponses([
+			(context) => {
+				userTexts = getUserTexts(context.messages);
+				return fauxAssistantMessage("turn 23 complete");
+			},
+		]);
+
+		await harness.session.prompt(
+			"Turn 23 of 26. Use the read tool to read in/file-23.txt. Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines.",
+		);
+
+		const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
+		expect(workingState).toContain("🚩 Goal: Turn 23 of 26");
+		expect(workingState).toContain("in/file-23.txt");
+		expect(workingState).not.toContain("🚩 Goal: Turn 16 of 26");
+		expect(workingState).not.toContain("in/file-16.txt");
 	});
 
 	it("reuses provider prompt cache across sequential user prompts", async () => {

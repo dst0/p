@@ -841,9 +841,11 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 	const originalRequests = collectOriginalUserRequests(input.entries);
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
+	const latestActionableRequest = findLatestActionableRequest(originalRequests);
 	const normalizedSummaryGoal = normalizeCanonicalRequest(summaryGoal);
 	const goal =
 		normalizeCanonicalRequest(latestCorrection?.summary ?? "") ||
+		normalizeCanonicalRequest(latestActionableRequest?.summary ?? "") ||
 		(isPlaceholderGoal(normalizedSummaryGoal) ? "" : normalizedSummaryGoal) ||
 		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
 		normalizeCanonicalRequest(latestRequest?.summary ?? "") ||
@@ -898,8 +900,10 @@ function createStatePatchFromLiveSession(input: LiveStructuredStateInput): State
 	const originalRequests = collectOriginalUserRequests(input.entries);
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
+	const latestActionableRequest = findLatestActionableRequest(originalRequests);
 	const goal =
 		normalizeCanonicalRequest(latestCorrection?.summary ?? "") ||
+		normalizeCanonicalRequest(latestActionableRequest?.summary ?? "") ||
 		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
 		normalizeCanonicalRequest(latestRequest?.summary ?? "");
 	const liveMarkdown = createLiveConversationMarkdown(input.entries);
@@ -1000,6 +1004,29 @@ function summarizeUserRequest(text: string): string {
 		.slice(0, 4)
 		.join(" ");
 	return capSentence(compactWhitespace(cleaned || text), MAX_REQUEST_SUMMARY_CHARS);
+}
+
+function findLatestActionableRequest(requests: OriginalUserRequest[]): OriginalUserRequest | undefined {
+	return [...requests]
+		.reverse()
+		.find((request) => request.kind !== "correction" && isActionableUserRequestSummary(request.summary));
+}
+
+function isActionableUserRequestSummary(summary: string): boolean {
+	const normalized = compactWhitespace(summary).toLowerCase();
+	if (!normalized) return false;
+	if (/^turn\s+\d+\s+of\s+\d+\b/.test(normalized)) return true;
+	if (normalized.length < 24) return false;
+	if (
+		/^(continue|continue again|keep going|go on|next|proceed|resume|retry|again|ok|okay|yes|good|world|hello|hi|do it)\.?$/i.test(
+			normalized,
+		)
+	) {
+		return false;
+	}
+	return /\b(add|analy[sz]e|build|change|check|commit|convert|create|deploy|finish|fix|implement|install|investigate|make|read|remove|rename|report|run|test|update|use|verify|write)\b/i.test(
+		normalized,
+	);
 }
 
 function normalizeCanonicalRequest(text: string): string {

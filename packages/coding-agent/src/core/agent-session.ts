@@ -1892,7 +1892,7 @@ export class AgentSession {
 				}
 			}
 			const effectiveSystemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
-			const runtimePrompts = this._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt);
+			const runtimePrompts = this._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt, messages);
 			this._lastRuntimePromptComponents = runtimePrompts;
 			this.agent.state.systemPrompt = runtimePrompts.combinedPrompt
 				? `${effectiveSystemPrompt}\n\n${runtimePrompts.combinedPrompt}`
@@ -2518,9 +2518,17 @@ export class AgentSession {
 		return context?.content;
 	}
 
-	private _createRuntimeContextPrompts(query: string, baseSystemPrompt: string): RuntimeContextPrompts {
+	private _createRuntimeContextPrompts(
+		query: string,
+		baseSystemPrompt: string,
+		pendingMessages: AgentMessage[] = [],
+	): RuntimeContextPrompts {
 		const settings = this._getEffectiveCompactionSettings();
-		const structuredState = getLatestStructuredSessionState(this.sessionManager.getBranch());
+		const branchEntries = this.sessionManager.getBranch();
+		const previousStructuredState = getLatestStructuredSessionState(branchEntries);
+		const structuredState = previousStructuredState
+			? this._getCurrentStructuredSessionState(this._withPendingMessageEntries(branchEntries, pendingMessages))
+			: undefined;
 		const workingStatePrompt =
 			structuredState && hasMeaningfulStructuredSessionState(structuredState)
 				? renderWorkingSessionState(structuredState, settings.renderedStateMaxTokens)
@@ -2551,6 +2559,20 @@ export class AgentSession {
 			combinedPrompt: prompts.length > 0 ? prompts.join("\n\n") : undefined,
 			turnContextPrompt: turnContextPrompts.length > 0 ? turnContextPrompts.join("\n\n") : undefined,
 		};
+	}
+
+	private _withPendingMessageEntries(branchEntries: SessionEntry[], pendingMessages: AgentMessage[]): SessionEntry[] {
+		if (pendingMessages.length === 0) {
+			return branchEntries;
+		}
+		const pendingEntries: SessionEntry[] = pendingMessages.map((message, index) => ({
+			type: "message",
+			id: `pending:${message.timestamp}:${index}`,
+			parentId: null,
+			timestamp: new Date(message.timestamp).toISOString(),
+			message,
+		}));
+		return [...branchEntries, ...pendingEntries];
 	}
 
 	private _createToolPromptAccountingText(): string {
