@@ -26,6 +26,10 @@ const CONTEXT_WINDOW = Number(process.env.CONTEXT_WINDOW ?? "32768");
 const SESSION_ID = process.env.SESSION_ID ?? "p-cache-26-turn-smoke";
 const TURNS = Number(process.env.TURNS ?? "26");
 const MAX_PROMPT_EVAL_POST_FIRST = Number(process.env.MAX_PROMPT_EVAL_POST_FIRST ?? "6000");
+const TURN_MAX_TOKENS = Number(process.env.TURN_MAX_TOKENS ?? "1024");
+const INTERRUPTION_MAX_TOKENS = Number(process.env.INTERRUPTION_MAX_TOKENS ?? "4096");
+const QUEUE_A_MAX_TOKENS = Number(process.env.QUEUE_A_MAX_TOKENS ?? "2048");
+const QUEUE_B_MAX_TOKENS = Number(process.env.QUEUE_B_MAX_TOKENS ?? "512");
 const TURN_TIMEOUT_MS = Number(process.env.TURN_TIMEOUT_MS ?? "240000");
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? "10000");
 const SSH_TIMEOUT_MS = Number(process.env.SSH_TIMEOUT_MS ?? "15000");
@@ -537,7 +541,7 @@ async function runTurn(turn) {
 
 	console.log(`turn ${n} start`);
 	const prompt = `Turn ${n} of ${TURNS}. Use the read tool to read in/file-${n}.txt. Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines. Use the write tool to write exactly the transformed text to out/file-${n}.txt. Do not use bash for this turn. Then call finish_work.`;
-	const { promise } = startP(basePArgs(1024, prompt), stdoutPath, stderrPath);
+	const { promise } = startP(basePArgs(TURN_MAX_TOKENS, prompt), stdoutPath, stderrPath);
 	const result = await promise;
 	await fetchLogSince(before, afterLog);
 
@@ -591,7 +595,7 @@ async function runInterruptionProbe() {
 	console.log("interruption probe start");
 	const { child, promise } = startP(
 		basePArgs(
-			4096,
+			INTERRUPTION_MAX_TOKENS,
 			"Interruption probe. Before using any tool or finish_work, write a long numbered list from 1 to 1000 with a short cache-stability sentence for each number. After the list, call finish_work.",
 		),
 		stdoutPath,
@@ -614,13 +618,17 @@ async function runInterruptionProbe() {
 async function runQueueProbe() {
 	console.log("queue probe start");
 	const queueA = startP(
-		basePArgs(2048, "Queue probe A. Write a numbered list from 1 to 500, then call finish_work.", "p-cache-queue-a"),
+		basePArgs(
+			QUEUE_A_MAX_TOKENS,
+			"Queue probe A. Write a numbered list from 1 to 500, then call finish_work.",
+			"p-cache-queue-a",
+		),
 		join(LOG_DIR, "queue-a.out"),
 		join(LOG_DIR, "queue-a.err"),
 	);
 	await sleep(1000);
 	const queueB = startP(
-		basePArgs(512, "Queue probe B. Reply with exactly QUEUE_B_DONE, then call finish_work.", "p-cache-queue-b"),
+		basePArgs(QUEUE_B_MAX_TOKENS, "Queue probe B. Reply with exactly QUEUE_B_DONE, then call finish_work.", "p-cache-queue-b"),
 		join(LOG_DIR, "queue-b.out"),
 		join(LOG_DIR, "queue-b.err"),
 	);
