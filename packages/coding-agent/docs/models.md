@@ -390,7 +390,9 @@ For providers with partial OpenAI compatibility, use the `compat` field.
 }
 ```
 
-For llama.cpp-compatible proxies, set `compat.cachePrompt` to `true` so pi sends `cache_prompt`, `prompt_cache_key`, and `prompt_cache_retention` on OpenAI-compatible chat completion requests. The session id is also sent as affinity headers when caching is enabled, which lets intermediaries such as LLM Orchestrator route follow-up prompts to the same worker and preserve prompt-cache reuse.
+For llama.cpp-compatible proxies, set `compat.cachePrompt` to `true` so p sends `cache_prompt`, `prompt_cache_key`, and `prompt_cache_retention` on OpenAI-compatible chat completion requests. The session id is also sent as affinity headers when caching is enabled, which lets intermediaries such as LLM Orchestrator route follow-up prompts to the same worker and preserve prompt-cache reuse.
+
+Provider streams are not resumable. If the p process, terminal, SSH session, or TCP/SSE connection drops during generation, a later p run with the same session id sends a new request; it does not continue reading the old response stream. Cache-capable intermediaries should release any active worker slot for the interrupted request immediately, preserve saved disk-backed checkpoints, and restore the last saved checkpoint on the next same-session request when available.
 
 | Field | Description |
 |-------|-------------|
