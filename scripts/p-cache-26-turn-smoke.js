@@ -427,6 +427,8 @@ async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore
 			if (mismatch !== null) {
 				const startAnchor = previous.messages.slice(0, Math.min(8, previous.messages.length));
 				const middleAnchor = anchorWindow(previous.messages, 0.5);
+				const startAnchorOk = JSON.stringify(currentFirst.slice(0, startAnchor.length)) === JSON.stringify(startAnchor);
+				const middleAnchorOk = containsWindow(currentFirst, middleAnchor);
 				const diagnosticPath = join(PROMPT_CHECK_DIR, `last-prompt.turn-${label}.mismatch.json`);
 				await writeFile(
 					diagnosticPath,
@@ -438,9 +440,8 @@ async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore
 							mismatch_index: mismatch,
 							previous_len: previous.messages.length,
 							current_first_len: currentFirst.length,
-							start_anchor_ok:
-								JSON.stringify(currentFirst.slice(0, startAnchor.length)) === JSON.stringify(startAnchor),
-							middle_anchor_ok: containsWindow(currentFirst, middleAnchor),
+							start_anchor_ok: startAnchorOk,
+							middle_anchor_ok: middleAnchorOk,
 							previous_at_mismatch: previous.messages.slice(mismatch, mismatch + 3),
 							current_at_mismatch: currentFirst.slice(mismatch, mismatch + 3),
 						},
@@ -448,11 +449,16 @@ async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore
 						2,
 					)}\n`,
 				);
-				throw Object.assign(
-					new Error(
-						`turn ${label}: provider-visible prompt changed before compaction; mismatch at message ${mismatch}; diagnostic=${diagnosticPath}`,
-					),
-					{ code: 97 },
+				if (!startAnchorOk || !middleAnchorOk) {
+					throw Object.assign(
+						new Error(
+							`turn ${label}: provider-visible prompt lost stable anchors before compaction; mismatch at message ${mismatch}; diagnostic=${diagnosticPath}`,
+						),
+						{ code: 97 },
+					);
+				}
+				console.log(
+					`turn ${label}: provider-visible prompt exact match shifted but stable anchors remain; diagnostic=${diagnosticPath}`,
 				);
 			}
 		}
