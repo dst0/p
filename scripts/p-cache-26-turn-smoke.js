@@ -406,6 +406,7 @@ function containsWindow(messages, window) {
 async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore, compactionAfter) {
 	const compacted = compactionAfter > compactionBefore;
 	const label = String(turn).padStart(2, "0");
+	let postCompactionBaselineReset = false;
 	if (compacted) {
 		console.log(`turn ${label} compaction detected; prompt-stability and prompt-eval baselines reset`);
 	}
@@ -423,43 +424,48 @@ async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore
 		const exists = await stat(checkpointPath).then(() => true, () => false);
 		if (exists) {
 			const previous = JSON.parse(await readFile(checkpointPath, "utf8"));
-			const mismatch = firstMismatch(previous.messages, currentFirst);
-			if (mismatch !== null) {
-				const startAnchor = previous.messages.slice(0, Math.min(8, previous.messages.length));
-				const middleAnchor = anchorWindow(previous.messages, 0.5);
-				const startAnchorOk = JSON.stringify(currentFirst.slice(0, startAnchor.length)) === JSON.stringify(startAnchor);
-				const middleAnchorOk = containsWindow(currentFirst, middleAnchor);
-				const diagnosticPath = join(PROMPT_CHECK_DIR, `last-prompt.turn-${label}.mismatch.json`);
-				await writeFile(
-					diagnosticPath,
-					`${JSON.stringify(
-						{
-							turn: label,
-							previous_request: previous.request,
-							current_first_request: firstRequestPath,
-							mismatch_index: mismatch,
-							previous_len: previous.messages.length,
-							current_first_len: currentFirst.length,
-							start_anchor_ok: startAnchorOk,
-							middle_anchor_ok: middleAnchorOk,
-							previous_at_mismatch: previous.messages.slice(mismatch, mismatch + 3),
-							current_at_mismatch: currentFirst.slice(mismatch, mismatch + 3),
-						},
-						null,
-						2,
-					)}\n`,
-				);
-				if (!startAnchorOk || !middleAnchorOk) {
-					throw Object.assign(
-						new Error(
-							`turn ${label}: provider-visible prompt lost stable anchors before compaction; mismatch at message ${mismatch}; diagnostic=${diagnosticPath}`,
-						),
-						{ code: 97 },
+			postCompactionBaselineReset = previous.compacted === true;
+			if (postCompactionBaselineReset) {
+				console.log(`turn ${label} post-compaction first request; prompt-stability baseline reset`);
+			} else {
+				const mismatch = firstMismatch(previous.messages, currentFirst);
+				if (mismatch !== null) {
+					const startAnchor = previous.messages.slice(0, Math.min(8, previous.messages.length));
+					const middleAnchor = anchorWindow(previous.messages, 0.5);
+					const startAnchorOk = JSON.stringify(currentFirst.slice(0, startAnchor.length)) === JSON.stringify(startAnchor);
+					const middleAnchorOk = containsWindow(currentFirst, middleAnchor);
+					const diagnosticPath = join(PROMPT_CHECK_DIR, `last-prompt.turn-${label}.mismatch.json`);
+					await writeFile(
+						diagnosticPath,
+						`${JSON.stringify(
+							{
+								turn: label,
+								previous_request: previous.request,
+								current_first_request: firstRequestPath,
+								mismatch_index: mismatch,
+								previous_len: previous.messages.length,
+								current_first_len: currentFirst.length,
+								start_anchor_ok: startAnchorOk,
+								middle_anchor_ok: middleAnchorOk,
+								previous_at_mismatch: previous.messages.slice(mismatch, mismatch + 3),
+								current_at_mismatch: currentFirst.slice(mismatch, mismatch + 3),
+							},
+							null,
+							2,
+						)}\n`,
+					);
+					if (!startAnchorOk || !middleAnchorOk) {
+						throw Object.assign(
+							new Error(
+								`turn ${label}: provider-visible prompt lost stable anchors before compaction; mismatch at message ${mismatch}; diagnostic=${diagnosticPath}`,
+							),
+							{ code: 97 },
+						);
+					}
+					console.log(
+						`turn ${label}: provider-visible prompt exact match shifted but stable anchors remain; diagnostic=${diagnosticPath}`,
 					);
 				}
-				console.log(
-					`turn ${label}: provider-visible prompt exact match shifted but stable anchors remain; diagnostic=${diagnosticPath}`,
-				);
 			}
 		}
 	}
@@ -473,6 +479,7 @@ async function verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore
 			messages: currentLast,
 		})}\n`,
 	);
+	return { compacted, postCompactionBaselineReset };
 }
 
 function startP(args, stdoutPath, stderrPath) {
@@ -545,7 +552,8 @@ async function runTurn(turn) {
 
 	const reqAfter = await requestCount();
 	const compactionAfter = await compactionEventCount();
-	await verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore, compactionAfter);
+	const promptStability = await verifyPromptStability(turn, reqBefore, reqAfter, compactionBefore, compactionAfter);
+	const compactionBaselineReset = promptStability.compacted || promptStability.postCompactionBaselineReset;
 
 	const stdout = await readFile(stdoutPath, "utf8").catch(() => "");
 	const stderr = await readFile(stderrPath, "utf8").catch(() => "");
@@ -561,11 +569,11 @@ async function runTurn(turn) {
 	}
 
 	const logText = await readFile(afterLog, "utf8").catch(() => "");
-	if (turn > 1 && logText.includes("forcing full prompt re-processing") && compactionAfter <= compactionBefore) {
+	if (turn > 1 && logText.includes("forcing full prompt re-processing") && !compactionBaselineReset) {
 		throw Object.assign(new Error(`turn ${n} full-prefill warning detected before compaction`), { code: 93 });
 	}
 	const maxEval = maxPromptEvalTokens(logText);
-	if (turn > 1 && maxEval > MAX_PROMPT_EVAL_POST_FIRST && compactionAfter <= compactionBefore) {
+	if (turn > 1 && maxEval > MAX_PROMPT_EVAL_POST_FIRST && !compactionBaselineReset) {
 		throw Object.assign(
 			new Error(`turn ${n} prompt eval too high before compaction: ${maxEval} > ${MAX_PROMPT_EVAL_POST_FIRST}`),
 			{ code: 94 },
