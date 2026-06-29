@@ -28,8 +28,8 @@ const TURNS = Number(process.env.TURNS ?? "26");
 const MAX_PROMPT_EVAL_POST_FIRST = Number(process.env.MAX_PROMPT_EVAL_POST_FIRST ?? "6000");
 const TURN_MAX_TOKENS = Number(process.env.TURN_MAX_TOKENS ?? "1024");
 const INTERRUPTION_MAX_TOKENS = Number(process.env.INTERRUPTION_MAX_TOKENS ?? "4096");
-const QUEUE_A_MAX_TOKENS = Number(process.env.QUEUE_A_MAX_TOKENS ?? "2048");
-const QUEUE_B_MAX_TOKENS = Number(process.env.QUEUE_B_MAX_TOKENS ?? "512");
+const QUEUE_A_MAX_TOKENS = Number(process.env.QUEUE_A_MAX_TOKENS ?? "256");
+const QUEUE_B_MAX_TOKENS = Number(process.env.QUEUE_B_MAX_TOKENS ?? "256");
 const TURN_TIMEOUT_MS = Number(process.env.TURN_TIMEOUT_MS ?? "240000");
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS ?? "10000");
 const SSH_TIMEOUT_MS = Number(process.env.SSH_TIMEOUT_MS ?? "15000");
@@ -240,6 +240,16 @@ async function writeInputs() {
 
 function normalizeText(text) {
 	return text.replace(/\n?$/u, "\n");
+}
+
+async function sessionTextContains(sessionId, marker) {
+	const files = await readdir(SESSION_DIR).catch(() => []);
+	for (const file of files) {
+		if (!file.endsWith(`_${sessionId}.jsonl`)) continue;
+		const text = await readFile(join(SESSION_DIR, file), "utf8").catch(() => "");
+		if (text.includes(marker)) return true;
+	}
+	return false;
 }
 
 function startProxy() {
@@ -620,7 +630,7 @@ async function runQueueProbe() {
 	const queueA = startP(
 		basePArgs(
 			QUEUE_A_MAX_TOKENS,
-			"Queue probe A. Write a numbered list from 1 to 500, then call finish_work.",
+			"Queue probe A. Reply with exactly QUEUE_A_DONE, then call finish_work.",
 			"p-cache-queue-a",
 		),
 		join(LOG_DIR, "queue-a.out"),
@@ -628,7 +638,11 @@ async function runQueueProbe() {
 	);
 	await sleep(1000);
 	const queueB = startP(
-		basePArgs(QUEUE_B_MAX_TOKENS, "Queue probe B. Reply with exactly QUEUE_B_DONE, then call finish_work.", "p-cache-queue-b"),
+		basePArgs(
+			QUEUE_B_MAX_TOKENS,
+			"Queue probe B. Reply with exactly QUEUE_B_DONE, then call finish_work.",
+			"p-cache-queue-b",
+		),
 		join(LOG_DIR, "queue-b.out"),
 		join(LOG_DIR, "queue-b.err"),
 	);
@@ -648,7 +662,19 @@ async function runQueueProbe() {
 	};
 	await writeFile(join(LOG_DIR, "queue-status.json"), `${JSON.stringify(queueStatus, null, 2)}\n`);
 	console.log(JSON.stringify(queueStatus, null, 2));
-	await Promise.all([queueA.promise.catch(() => undefined), queueB.promise.catch(() => undefined)]);
+	const [queueAResult, queueBResult] = await Promise.all([queueA.promise, queueB.promise]);
+	if (queueAResult.code !== 0) {
+		throw Object.assign(new Error(`queue probe A failed with exit ${queueAResult.code}`), { code: queueAResult.code || 1 });
+	}
+	if (queueBResult.code !== 0) {
+		throw Object.assign(new Error(`queue probe B failed with exit ${queueBResult.code}`), { code: queueBResult.code || 1 });
+	}
+	if (!(await sessionTextContains("p-cache-queue-a", "QUEUE_A_DONE"))) {
+		throw Object.assign(new Error("queue probe A did not complete with QUEUE_A_DONE"), { code: 98 });
+	}
+	if (!(await sessionTextContains("p-cache-queue-b", "QUEUE_B_DONE"))) {
+		throw Object.assign(new Error("queue probe B did not complete with QUEUE_B_DONE"), { code: 99 });
+	}
 	console.log("queue probe done");
 }
 
