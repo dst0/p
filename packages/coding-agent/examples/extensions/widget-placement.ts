@@ -1,4 +1,4 @@
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 
 export default function widgetPlacementExtension(pi: ExtensionAPI) {
 	pi.on("session_start", (_event, ctx) => {

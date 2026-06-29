@@ -1215,7 +1215,7 @@ Content`,
 			expect(settings.packages?.[0]).toBe(expected);
 		});
 
-		it("should store project local packages relative to .pi settings base", () => {
+		it("should store project local packages relative to .p settings base", () => {
 			const projectPkgDir = join(tempDir, "project-local-pkg");
 			mkdirSync(join(projectPkgDir, "extensions"), { recursive: true });
 			writeFileSync(join(projectPkgDir, "extensions", "index.ts"), "export default function() {}");

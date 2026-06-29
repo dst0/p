@@ -234,7 +234,7 @@ describe("SettingsManager", () => {
 	});
 
 	describe("completion protocol settings", () => {
-		it("defaults to explicit_finish", () => {
+		it("defaults to explicit completion mode", () => {
 			const manager = SettingsManager.create(projectDir, agentDir);
 
 			expect(manager.getCompletionMode()).toBe("explicit_finish");
@@ -262,6 +262,14 @@ describe("SettingsManager", () => {
 				maxNoProgressTurns: 5,
 				maxMalformedToolRetries: 3,
 			});
+		});
+
+		it("reads explicit completionMode alias from settings", () => {
+			writeFileSync(join(agentDir, "settings.json"), JSON.stringify({ completionMode: "explicit" }));
+
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			expect(manager.getCompletionMode()).toBe("explicit_finish");
 		});
 
 		it("falls back to explicit_finish for invalid completionMode", () => {

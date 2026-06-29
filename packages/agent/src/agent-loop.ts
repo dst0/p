@@ -215,24 +215,24 @@ function isCompletionProtocolEnabled(mode: CompletionMode): boolean {
 }
 
 function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode): CompletionProtocolLimits {
-	const limits = {
-		maxTurns: config.completionLimits?.maxTurns ?? DEFAULT_MAX_TURNS,
-		maxNoProgressTurns: config.completionLimits?.maxNoProgressTurns ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
-		maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
+	const explicitFinishDefault = mode === "explicit_finish" ? Number.POSITIVE_INFINITY : undefined;
+	return {
+		maxTurns: config.completionLimits?.maxTurns ?? explicitFinishDefault ?? DEFAULT_MAX_TURNS,
+		maxNoProgressTurns:
+			config.completionLimits?.maxNoProgressTurns ?? explicitFinishDefault ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
+		maxMalformedToolRetries:
+			config.completionLimits?.maxMalformedToolRetries ??
+			explicitFinishDefault ??
+			DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
 		maxEmptyAssistantRetries:
-			config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
-		maxMissingFinishRetries: config.completionLimits?.maxMissingFinishRetries ?? DEFAULT_MAX_MISSING_FINISH_RETRIES,
+			config.completionLimits?.maxEmptyAssistantRetries ??
+			explicitFinishDefault ??
+			DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
+		maxMissingFinishRetries:
+			config.completionLimits?.maxMissingFinishRetries ??
+			explicitFinishDefault ??
+			DEFAULT_MAX_MISSING_FINISH_RETRIES,
 	};
-
-	if (mode === "explicit_finish") {
-		limits.maxTurns = Number.POSITIVE_INFINITY;
-		limits.maxNoProgressTurns = Number.POSITIVE_INFINITY;
-		limits.maxMalformedToolRetries = Number.POSITIVE_INFINITY;
-		limits.maxEmptyAssistantRetries = Number.POSITIVE_INFINITY;
-		limits.maxMissingFinishRetries = Number.POSITIVE_INFINITY;
-	}
-
-	return limits;
 }
 
 function withCompletionProtocolTools(context: AgentContext, mode: CompletionMode): AgentContext {
@@ -250,6 +250,7 @@ function createProtocolRepairMessage(text: string): AgentMessage {
 	return {
 		role: "user",
 		content: [{ type: "text", text }],
+		metadata: { pInternal: "completion_protocol_repair" },
 		timestamp: Date.now(),
 	};
 }
@@ -528,7 +529,11 @@ async function runLoop(
 										: completionLimits.maxTurns,
 							reason: protocolRepair.reason,
 						});
-						currentContext.messages.push(createProtocolRepairMessage(protocolRepair.message));
+						const repairMessage = createProtocolRepairMessage(protocolRepair.message);
+						await emit({ type: "message_start", message: repairMessage });
+						await emit({ type: "message_end", message: repairMessage });
+						currentContext.messages.push(repairMessage);
+						newMessages.push(repairMessage);
 						hasMoreToolCalls = true;
 						continue;
 					}

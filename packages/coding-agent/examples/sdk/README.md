@@ -40,7 +40,7 @@ import {
   ModelRegistry,
   SessionManager,
   SettingsManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 // Auth and models setup
 const authStorage = AuthStorage.create();

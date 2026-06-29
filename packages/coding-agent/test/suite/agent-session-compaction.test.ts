@@ -1,5 +1,11 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
-import { type AssistantMessage, createAssistantMessageEventStream, fauxAssistantMessage, type Model } from "@dst0/p-ai";
+import {
+	type AssistantMessage,
+	createAssistantMessageEventStream,
+	fauxAssistantMessage,
+	fauxToolCall,
+	type Model,
+} from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { estimateContextTokens, STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
@@ -31,16 +37,19 @@ function createAssistant(
 		errorMessage?: string;
 		totalTokens?: number;
 		timestamp?: number;
+		content?: AssistantMessage["content"];
 	},
 ): AssistantMessage {
 	const model = harness.getModel();
+	const base = fauxAssistantMessage("", {
+		stopReason: options.stopReason,
+		errorMessage: options.errorMessage,
+		timestamp: options.timestamp,
+	});
 	return {
-		...fauxAssistantMessage("", {
-			stopReason: options.stopReason,
-			errorMessage: options.errorMessage,
-			timestamp: options.timestamp,
-		}),
+		...base,
 		api: model.api,
+		content: options.content ?? base.content,
 		provider: model.provider,
 		model: model.id,
 		usage: createUsage(options.totalTokens ?? 0),
@@ -126,7 +135,7 @@ describe("AgentSession compaction characterization", () => {
 				.getEntries()
 				.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
 		).toHaveLength(0);
-		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
 	});
 
 	it("manually compacts without a selected model", async () => {
@@ -198,7 +207,7 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "message")).toHaveLength(
 			visibleMessagesBefore,
 		);
-		expect(harness.session.messages[0]?.role).toBe("compactionSummary");
+		expect(harness.session.messages.some((message) => message.role === "compactionSummary")).toBe(true);
 		const structuredEntries = harness.sessionManager
 			.getEntries()
 			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
@@ -366,6 +375,97 @@ describe("AgentSession compaction characterization", () => {
 		expect(text).toContain("Coverage: complete");
 		expect(text).toContain("do not call session_recall again for this same pointer");
 		expect(text).toContain("secret old failure line");
+	});
+
+	it("records discarded tool results as compaction-time stubs with evidence pointers", async () => {
+		const harness = await createHarness({
+			settings: {
+				compaction: {
+					keepRecentTokens: 50,
+					toolResultClearThresholdTokens: 10,
+					toolResultPromptBudgetTokens: 0,
+				},
+			},
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const relevantLine = "src/core/client.ts:42: const apiClient = createClient();";
+		const longOutput = [
+			relevantLine,
+			...Array.from(
+				{ length: 260 },
+				(_, index) => `noise-line-${index.toString().padStart(3, "0")} ${"x".repeat(80)}`,
+			),
+		].join("\n");
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "Use rg to find apiClient usage" }],
+			timestamp: now - 5000,
+		});
+		harness.sessionManager.appendMessage({
+			...createAssistant(harness, {
+				stopReason: "toolUse",
+				totalTokens: 1000,
+				timestamp: now - 4000,
+			}),
+			content: [fauxToolCall("rg", { pattern: "apiClient" })],
+		});
+		harness.sessionManager.appendMessage({
+			role: "toolResult",
+			toolCallId: "call-rg-api-client",
+			toolName: "rg",
+			content: [{ type: "text", text: longOutput }],
+			details: {
+				contextExtract: {
+					summary: "rg found apiClient usage in src/core/client.ts:42.",
+					relevantLines: [relevantLine],
+					source: "deterministic",
+				},
+			},
+			isError: false,
+			timestamp: now - 3000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 1000,
+				timestamp: now - 2000,
+			}),
+		);
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "Keep this recent suffix" }],
+			timestamp: now - 1000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 100,
+				timestamp: now - 500,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+
+		const result = await harness.session.compact();
+
+		expect(result.summary).toContain("tool-result:call-rg-api-client");
+		expect(result.summary).toContain("rg found apiClient usage in src/core/client.ts:42.");
+		expect(result.summary).toContain(relevantLine);
+		expect(result.summary).not.toContain("noise-line-050");
+		const audit = (
+			result.details as {
+				audit?: { stubbedToolResults: string[]; toolRawTokens: number; toolStubTokens: number };
+			}
+		).audit;
+		expect(audit?.stubbedToolResults).toContain("tool-result:call-rg-api-client");
+		expect(audit?.toolRawTokens).toBeGreaterThan(audit?.toolStubTokens ?? Number.POSITIVE_INFINITY);
+		const details = result.details as {
+			structuredState?: { evidence: Array<{ id: string; summary: string; retrieveWhen: string }> };
+		};
+		const pointer = details.structuredState?.evidence.find((item) => item.id === "tool-result:call-rg-api-client");
+		expect(pointer?.summary).toContain("rg found apiClient usage in src/core/client.ts:42.");
+		expect(pointer?.summary).toContain(relevantLine);
+		expect(pointer?.retrieveWhen).toContain("rg");
 	});
 
 	it("returns a larger default excerpt for raw session_recall", async () => {
@@ -623,7 +723,7 @@ describe("AgentSession compaction characterization", () => {
 		});
 		harness.sessionManager.appendMessage(staleAssistant);
 		const firstKeptEntryId = harness.sessionManager.getEntries()[0]!.id;
-		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, 900, undefined, false);
+		harness.sessionManager.appendCompaction("summary", firstKeptEntryId, 900, undefined, undefined, false);
 		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
 
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
@@ -657,6 +757,175 @@ describe("AgentSession compaction characterization", () => {
 		]);
 
 		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it("keeps ordinary large models below their normal threshold on the existing path", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-large", contextWindow: 131_072 }],
+			settings: { compaction: { keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "large ordinary model history ".repeat(4000) }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 20_000,
+				timestamp: now - 1000,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should stay below the standard threshold" }],
+				timestamp: now,
+			},
+		]);
+
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
+	});
+
+	it("uses reliable provider usage to preflight compact before overflowing a cache-hot prompt", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "cache-hot history seed ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const priorAssistant = createAssistant(harness, {
+			stopReason: "stop",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+		});
+		const nextUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "next turn after finish_work" }],
+			timestamp: now,
+		};
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(priorAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const promptOnlyEstimate = estimateContextTokens(
+			[...harness.session.agent.state.messages, nextUser],
+			harness.session.systemPrompt,
+			{ useProviderUsage: false },
+		);
+		expect(promptOnlyEstimate.tokens).toBeLessThan(32_768 - 5_000);
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(priorAssistant, false, [nextUser]);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
+
+	it("does not threshold compact in the middle of a non-terminal tool loop", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "large cache-hot history ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const readAssistant = createAssistant(harness, {
+			stopReason: "toolUse",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+			content: [fauxToolCall("read", { path: "in/file-17.txt" })],
+		});
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(readAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(readAssistant);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it("allows threshold compaction after finish_work closes the tool loop", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "large cache-hot history ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const finishAssistant = createAssistant(harness, {
+			stopReason: "toolUse",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+			content: [fauxToolCall("finish_work", { status: "success", summary: "done" })],
+		});
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(finishAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(finishAssistant);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
+
+	it("does not threshold compact when compaction is disabled", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-large", contextWindow: 131_072 }],
+			settings: { compaction: { enabled: false, keepRecentTokens: 100, triggerReserveTokens: 64_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: "large disabled-compaction history ".repeat(4000) }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 20_000,
+				timestamp: now - 1000,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals.checkCompaction(undefined, false, [
+			{
+				role: "user",
+				content: [{ type: "text", text: "next turn should not compact while disabled" }],
+				timestamp: now,
+			},
+		]);
+
+		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
 	});
 
 	it("triggers threshold compaction for error messages using the current prompt estimate", async () => {

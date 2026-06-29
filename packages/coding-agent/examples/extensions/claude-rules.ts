@@ -19,7 +19,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 
 /**
  * Recursively find all .md files in a directory

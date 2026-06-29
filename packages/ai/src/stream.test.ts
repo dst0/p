@@ -61,6 +61,48 @@ describe("stream runtime context normalization", () => {
 		expect(JSON.stringify(capturedContext?.messages[1])).toContain("next step: edit stream.ts");
 	});
 
+	it("keeps stable subagent profiles in the system prompt", async () => {
+		let capturedContext: Context | undefined;
+		const assistant: AssistantMessage = {
+			role: "assistant",
+			content: [{ type: "text", text: "ok" }],
+			api: TEST_API,
+			provider: "test",
+			model: "test-model",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 0,
+		};
+
+		registerApiProvider({
+			api: TEST_API,
+			stream: (_model, context) => {
+				capturedContext = context;
+				return createDoneStream(assistant);
+			},
+			streamSimple: (_model, context) => {
+				capturedContext = context;
+				return createDoneStream(assistant);
+			},
+		});
+
+		const model = { api: TEST_API, provider: "test", id: "test-model" } as Model<typeof TEST_API>;
+		await streamSimple(model, {
+			systemPrompt: "stable\n\n<subagent_profiles>\n- explore: read-only\n</subagent_profiles>",
+			messages: [{ role: "user", content: "continue", timestamp: 1 }],
+		}).result();
+
+		expect(capturedContext?.systemPrompt).toContain("<subagent_profiles>");
+		expect(capturedContext?.messages).toEqual([{ role: "user", content: "continue", timestamp: 1 }]);
+	});
+
 	it("replays session runtime context insertions after their original user anchors", async () => {
 		const capturedContexts: Context[] = [];
 		const assistant: AssistantMessage = {

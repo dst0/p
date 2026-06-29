@@ -4,7 +4,7 @@
  * Escape in editor returns to options, Escape in options cancels
  */
 
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 import { Editor, type EditorTheme, Key, matchesKey, Text, visibleWidth, wrapTextWithAnsi } from "@dst0/p-tui";
 import { Type } from "typebox";
 

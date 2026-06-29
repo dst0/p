@@ -134,6 +134,7 @@ describe("Agent", () => {
 			streamFn: () => {
 				throw new Error("provider exploded");
 			},
+			completionMode: "implicit",
 		});
 		const events: string[] = [];
 		agent.subscribe((event) => {
@@ -171,6 +172,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		let listenerFinished = false;
@@ -209,6 +211,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		agent.subscribe(async (event) => {
@@ -252,6 +255,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		agent.subscribe((event, signal) => {
@@ -313,6 +317,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 		agent.subscribe((event) => {
 			events.push(event);
@@ -389,6 +394,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 		agent.subscribe((event) => {
 			events.push(event);
@@ -500,6 +506,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		// Start first prompt (don't await, it will block until abort)
@@ -538,6 +545,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		// Start first prompt
@@ -564,6 +572,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		agent.state.messages = [
@@ -608,6 +617,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		agent.state.messages = [
@@ -650,6 +660,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		await agent.prompt("hello");
@@ -679,6 +690,7 @@ describe("Agent", () => {
 				});
 				return stream;
 			},
+			completionMode: "implicit",
 		});
 
 		await agent.prompt("first");

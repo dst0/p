@@ -10,7 +10,12 @@ import { DEFAULT_COMPACTION_SETTINGS } from "./compaction/default-settings.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
 
 export const DEFAULT_AGENT_RETRY_BASE_DELAY_MS = 500;
-const VALID_COMPLETION_MODES: CompletionMode[] = ["implicit", "explicit_finish", "hybrid"];
+const COMPLETION_MODE_ALIASES = {
+	implicit: "implicit",
+	explicit: "explicit_finish",
+	explicit_finish: "explicit_finish",
+	hybrid: "hybrid",
+} satisfies Record<string, CompletionMode>;
 
 export interface CompactionSettings {
 	enabled?: boolean; // default: true
@@ -107,7 +112,7 @@ export interface Settings {
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
 	followUpMode?: "all" | "one-at-a-time";
-	completionMode?: CompletionMode; // default: "explicit_finish"
+	completionMode?: CompletionMode | "explicit"; // default: "explicit"
 	completionLimits?: CompletionProtocolLimits;
 	enableToolResultContextExtraction?: boolean; // default: false - extract summaries from large tool results via service model
 	theme?: string;
@@ -763,7 +768,10 @@ export class SettingsManager {
 
 	getCompletionMode(): CompletionMode {
 		const mode = this.settings.completionMode;
-		return mode && VALID_COMPLETION_MODES.includes(mode) ? mode : "explicit_finish";
+		if (typeof mode === "string" && mode in COMPLETION_MODE_ALIASES) {
+			return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
+		}
+		return "explicit_finish";
 	}
 
 	getCompletionLimits(): CompletionProtocolLimits | undefined {

@@ -1,6 +1,6 @@
 import { appendFileSync } from "node:fs";
 import { join } from "node:path";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 
 export default function (pi: ExtensionAPI) {
 	const logFile = join(process.cwd(), ".p", "provider-payload.log");

@@ -20,7 +20,7 @@
 
 This is the home of the pi agent harness project including our self extensible coding agent.
 
-* **[@dst0/p-coding-agent](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
+* **[@dst0/p](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
 * **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
 * **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
 
@@ -51,7 +51,7 @@ I regularly publish my own `pi-mono` work sessions here:
 |---------|-------------|
 | **[@dst0/p-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
 | **[@dst0/p-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@dst0/p-coding-agent](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
+| **[@dst0/p](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
 | **[@dst0/p-tui](packages/tui)** | Terminal UI library with differential rendering |
 
 For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst0/p-chat).

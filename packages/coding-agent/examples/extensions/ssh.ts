@@ -14,7 +14,7 @@
  */
 
 import { spawn } from "node:child_process";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 import {
 	type BashOperations,
 	createBashTool,
@@ -24,7 +24,7 @@ import {
 	type EditOperations,
 	type ReadOperations,
 	type WriteOperations,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 function sshExec(remote: string, command: string): Promise<Buffer> {
 	return new Promise((resolve, reject) => {

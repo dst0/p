@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `--max-tokens` to bound provider output tokens for deterministic short CLI runs.
+
+### Fixed
+
+- Fixed explicit completion repair prompts to persist in session history so reloaded `p -p` turns preserve llama.cpp prompt-cache reuse.
+- Fixed the interactive footer to show the LLM orchestrator queue position and queued-ahead count.
+
+## [0.2.0] - 2026-06-28
+
+### Fixed
+- Added optional `tokensAfter` to compaction entries for accurate context budget ([#e8af80e6](https://github.com/dst0/p/commit/e8af80e6))
+
+### Changed
+- Bumped all packages to 0.2.0
+
+### Fixed
+
+- Fixed working-state prompt replay so consecutive turns preserve the previous provider-visible prompt prefix for full prompt-cache reuse.
+
 ## [0.1.25] - 2026-06-26
 
 ### Added

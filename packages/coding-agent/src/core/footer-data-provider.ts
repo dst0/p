@@ -224,36 +224,76 @@ export class FooterDataProvider {
 	/** Internal: set prefill progress */
 	setPrefillProgress(progress: PrefillProgress | undefined): void {
 		this.prefillProgress = progress;
+		if (progress) {
+			this.genProgress = undefined;
+			this.queuedProgress = undefined;
+			this.sendingProgress = undefined;
+			this.modelSwitchProgress = undefined;
+			this.loadingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set gen progress */
 	setGenProgress(progress: GenerationProgress | undefined): void {
 		this.genProgress = progress;
+		if (progress) {
+			this.prefillProgress = undefined;
+			this.queuedProgress = undefined;
+			this.sendingProgress = undefined;
+			this.modelSwitchProgress = undefined;
+			this.loadingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set queued progress */
 	setQueuedProgress(progress: QueuedProgress | undefined): void {
 		this.queuedProgress = progress;
+		if (progress) {
+			this.prefillProgress = undefined;
+			this.genProgress = undefined;
+			this.sendingProgress = undefined;
+			this.modelSwitchProgress = undefined;
+			this.loadingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set request sending progress */
 	setSendingProgress(progress: SendingProgress | undefined): void {
 		this.sendingProgress = progress;
+		if (progress) {
+			this.prefillProgress = undefined;
+			this.genProgress = undefined;
+			this.queuedProgress = undefined;
+			this.modelSwitchProgress = undefined;
+			this.loadingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set model switch progress */
 	setModelSwitchProgress(progress: ModelSwitchProgress | undefined): void {
 		this.modelSwitchProgress = progress;
+		if (progress) {
+			this.prefillProgress = undefined;
+			this.genProgress = undefined;
+			this.queuedProgress = undefined;
+			this.sendingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 
 	/** Internal: set loading progress */
 	setLoadingProgress(progress: LoadingProgress | undefined): void {
 		this.loadingProgress = progress;
+		if (progress) {
+			this.prefillProgress = undefined;
+			this.genProgress = undefined;
+			this.queuedProgress = undefined;
+			this.sendingProgress = undefined;
+		}
 		this.notifyProgressChange();
 	}
 

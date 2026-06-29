@@ -4,7 +4,7 @@
  * Configure API key resolution via AuthStorage and ModelRegistry.
  */
 
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@dst0/p-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@dst0/p";
 
 // Default: AuthStorage uses ~/.p/agent/auth.json
 // ModelRegistry loads built-in + custom models from ~/.p/agent/models.json

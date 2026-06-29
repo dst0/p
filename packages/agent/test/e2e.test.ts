@@ -43,6 +43,7 @@ async function basicPrompt(model: Model<string>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
+		completionMode: "implicit",
 	});
 
 	await agent.prompt("What is 2+2? Answer with just the number.");
@@ -65,6 +66,7 @@ async function toolExecution(model: Model<string>) {
 			thinkingLevel: "off",
 			tools: [calculateTool],
 		},
+		completionMode: "implicit",
 	});
 
 	const pendingToolCallsDuringEvents: Array<{ type: AgentEvent["type"]; ids: string[] }> = [];
@@ -104,6 +106,7 @@ async function abortExecution(model: Model<string>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
+		completionMode: "implicit",
 	});
 
 	const promptPromise = agent.prompt("Count slowly from 1 to 20.");
@@ -131,6 +134,7 @@ async function stateUpdates(model: Model<string>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
+		completionMode: "implicit",
 	});
 
 	const events: AgentEvent["type"][] = [];
@@ -163,6 +167,7 @@ async function multiTurnConversation(model: Model<string>) {
 			thinkingLevel: "off",
 			tools: [],
 		},
+		completionMode: "implicit",
 	});
 
 	await agent.prompt("My name is Alice.");
@@ -244,6 +249,7 @@ describe("Agent integration with faux provider", () => {
 				thinkingLevel: "low",
 				tools: [],
 			},
+			completionMode: "implicit",
 		});
 
 		await agent.prompt("What is 2+2?");
@@ -315,6 +321,7 @@ describe("Agent.continue() with faux provider", () => {
 					thinkingLevel: "off",
 					tools: [],
 				},
+				completionMode: "implicit",
 			});
 
 			const userMessage: UserMessage = {
@@ -350,6 +357,7 @@ describe("Agent.continue() with faux provider", () => {
 					thinkingLevel: "off",
 					tools: [calculateTool],
 				},
+				completionMode: "implicit",
 			});
 
 			const userMessage: UserMessage = {

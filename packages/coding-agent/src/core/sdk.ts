@@ -12,12 +12,6 @@ import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
-import {
-	estimateContextTokens,
-	selectKeepRecentTokens,
-	stubToolResultsForPrompt,
-	truncateKeptMessages,
-} from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -96,6 +90,8 @@ export interface CreateAgentSessionOptions {
 	completionMode?: CompletionMode;
 	/** Safety limits for explicit and hybrid completion modes. */
 	completionLimits?: CompletionProtocolLimits;
+	/** Default provider output token limit for each model request. */
+	maxTokens?: number;
 }
 
 /** Result from createAgentSession */
@@ -202,16 +198,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		time("resourceLoader.reload");
 	}
 
-	// Check if session has existing data to restore
+	// Check if session has existing data to restore. Do not truncate restored
+	// messages here: changing provider-visible history outside a recorded
+	// compaction boundary breaks prefix cache reuse for reopened sessions.
 	const existingSession = sessionManager.buildSessionContext();
-	if (existingSession.messages.length > 0) {
-		const settings = settingsManager.getCompactionSettings();
-		const keepRecentTokens = selectKeepRecentTokens(estimateContextTokens(existingSession.messages).tokens, settings);
-		existingSession.messages = truncateKeptMessages(existingSession.messages, {
-			keepRecentTokens,
-			targetContextTokens: settings.targetContextTokens,
-		});
-	}
 	const hasExistingSession = existingSession.messages.length > 0;
 	const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
 
@@ -286,13 +276,13 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 	const explicitlyToolless = (options.tools !== undefined && options.tools.length === 0) || options.noTools === "all";
 	const completionMode =
 		options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
+	const defaultMaxTokens = options.maxTokens;
 
 	let agent: Agent;
 
 	// Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
 	const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
-		const promptMessages = stubToolResultsForPrompt(messages, settingsManager.getCompactionSettings()).messages;
-		const converted = convertToLlm(promptMessages);
+		const converted = convertToLlm(messages);
 		// Check setting dynamically so mid-session changes take effect
 		if (!settingsManager.getBlockImages()) {
 			return converted;
@@ -357,7 +347,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 				websocketConnectTimeoutMs,
 				maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
 				maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-				maxTokens: options?.maxTokens ?? 16384,
+				maxTokens: options?.maxTokens ?? defaultMaxTokens ?? 16384,
 				headers: mergeProviderAttributionHeaders(
 					model,
 					settingsManager,

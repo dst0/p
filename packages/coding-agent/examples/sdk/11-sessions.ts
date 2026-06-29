@@ -4,7 +4,7 @@
  * Control session persistence: in-memory, new file, continue, or open specific.
  */
 
-import { createAgentSession, SessionManager } from "@dst0/p-coding-agent";
+import { createAgentSession, SessionManager } from "@dst0/p";
 
 // In-memory (no persistence)
 const { session: inMemory } = await createAgentSession({

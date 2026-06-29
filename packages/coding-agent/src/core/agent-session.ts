@@ -47,6 +47,7 @@ import {
 	type CompactionDetails,
 	type CompactionPreparation,
 	type CompactionResult,
+	type CompactionSettings,
 	type ContextUsageEstimate,
 	collectEntriesForBranchSummary,
 	computeFileLists,
@@ -55,6 +56,7 @@ import {
 	type EvidenceKind,
 	type EvidencePointer,
 	estimateContextTokens,
+	estimateTokens,
 	generateBranchSummary,
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
@@ -68,7 +70,7 @@ import {
 	selectKeepRecentTokens,
 	shouldCompact,
 	stripSessionStateUpdateBlocks,
-	stubToolResultsForPrompt,
+	stubToolResultsForCompactionSummary,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -376,6 +378,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
+	return (
+		message.role === "user" &&
+		isRecord(message.metadata) &&
+		message.metadata.pInternal === "completion_protocol_repair"
+	);
+}
+
 function normalizeCompactionDetails(details: unknown): CompactionDetails {
 	if (!isRecord(details)) {
 		return { readFiles: [], modifiedFiles: [] };
@@ -479,8 +489,10 @@ interface RuntimeContextPrompts {
 	memoryPrompt?: string;
 	rulesPrompt?: string;
 	repoMapPrompt?: string;
-	subagentPrompt?: string;
+	subagentProfilesPrompt?: string;
+	subagentDigestPrompt?: string;
 	combinedPrompt?: string;
+	turnContextPrompt?: string;
 }
 
 interface PromptContextPreparation {
@@ -494,9 +506,19 @@ interface PromptContextPreparation {
 	stubbedToolResults: string[];
 }
 
-const PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS = 8_000;
-const LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS = 32_000;
-const LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS = 64_000;
+interface WorkingStatePromptInsertion {
+	anchorKey: string;
+	content: string;
+	timestamp: number;
+}
+
+interface WorkingStatePromptInsertionOptions {
+	recordWorkingState?: boolean;
+	minimumAnchorTimestamp?: number;
+}
+
+const WORKING_STATE_PROMPT_CUSTOM_TYPE = "working_state";
+const RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE = "runtime_context";
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
@@ -541,6 +563,31 @@ function getMessageTextForRecall(message: AgentMessage): string {
 		case "compactionSummary":
 			return message.summary;
 	}
+}
+
+function estimateToolResultTokens(messages: AgentMessage[]): number {
+	let tokens = 0;
+	for (const message of messages) {
+		if (message.role === "toolResult") {
+			tokens += estimateTokens(message);
+		}
+	}
+	return tokens;
+}
+
+function hashAnchorText(text: string): string {
+	let hash = 2166136261;
+	for (let index = 0; index < text.length; index++) {
+		hash ^= text.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return (hash >>> 0).toString(36);
+}
+
+function getUserMessageAnchorKey(message: AgentMessage): string | undefined {
+	if (message.role !== "user") return undefined;
+	const text = getMessageTextForRecall(message);
+	return `${message.timestamp}:${text.length}:${hashAnchorText(text)}`;
 }
 
 function capTextByTokens(text: string, maxTokens: number): string {
@@ -678,7 +725,7 @@ function formatRecallResult(result: RecallResult): string {
 	return sections.join("\n\n");
 }
 
-const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 3;
+const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 1;
 
 // AgentSession Class
 // ============================================================================
@@ -757,6 +804,7 @@ export class AgentSession {
 	private _baseSystemPrompt = "";
 	private _baseSystemPromptOptions!: BuildSystemPromptOptions;
 	private _lastRuntimePromptComponents: RuntimeContextPrompts = {};
+	private _workingStatePromptInsertions: WorkingStatePromptInsertion[] = [];
 	private _lastTokenBreakdown: TokenBreakdown | undefined = undefined;
 
 	constructor(config: AgentSessionConfig) {
@@ -1089,6 +1137,9 @@ export class AgentSession {
 
 	/** Internal handler for agent events - shared by subscribe and reconnect */
 	private _handleAgentEvent = async (event: AgentEvent): Promise<void> => {
+		const isInternalRepairEvent =
+			(event.type === "message_start" || event.type === "message_end") &&
+			isInternalCompletionProtocolRepairMessage(event.message);
 		// When a user message starts, check if it's from either queue and remove it BEFORE emitting
 		// This ensures the UI sees the updated queue state
 		if (event.type === "message_start" && event.message.role === "user") {
@@ -1112,7 +1163,9 @@ export class AgentSession {
 		}
 
 		// Emit to extensions first
-		await this._emitExtensionEvent(event);
+		if (!isInternalRepairEvent) {
+			await this._emitExtensionEvent(event);
+		}
 
 		let assistantStateUpdateText: string | undefined;
 		if (event.type === "message_end" && event.message.role === "assistant") {
@@ -1129,8 +1182,16 @@ export class AgentSession {
 			this._shouldHideContextOverflowMessage(event.message as AssistantMessage);
 
 		// Notify all listeners
-		if (!hideContextOverflowMessage) {
-			this._emit(event.type === "agent_end" ? { ...event, willRetry: this._willRetryAfterAgentEnd(event) } : event);
+		if (!hideContextOverflowMessage && !isInternalRepairEvent) {
+			this._emit(
+				event.type === "agent_end"
+					? {
+							...event,
+							messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
+							willRetry: this._willRetryAfterAgentEnd(event),
+						}
+					: event,
+			);
 		}
 
 		// Handle session persistence
@@ -1200,6 +1261,12 @@ export class AgentSession {
 		if (!this.model) return false;
 		const sameModel = message.provider === this.model.provider && message.model === this.model.id;
 		return sameModel && isContextOverflow(message, this.model.contextWindow ?? 0);
+	}
+
+	private _assistantCallsFinishWork(message: AssistantMessage | undefined): boolean {
+		return (
+			message?.content.some((block) => block.type === "toolCall" && block.name === FINISH_WORK_TOOL_NAME) ?? false
+		);
 	}
 
 	private _shouldHideContextOverflowMessage(message: AssistantMessage): boolean {
@@ -1289,7 +1356,7 @@ export class AgentSession {
 		} else if (event.type === "agent_end") {
 			await this._extensionRunner.emit({
 				type: "agent_end",
-				messages: event.messages,
+				messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
 			});
 		} else if (event.type === "turn_start") {
 			const extensionEvent: TurnStartEvent = {
@@ -1527,7 +1594,7 @@ export class AgentSession {
 
 	/** All messages including custom types like BashExecutionMessage */
 	get messages(): AgentMessage[] {
-		return this.agent.state.messages;
+		return this.agent.state.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message));
 	}
 
 	/** Current steering mode */
@@ -1825,11 +1892,17 @@ export class AgentSession {
 				}
 			}
 			const effectiveSystemPrompt = result?.systemPrompt ?? this._baseSystemPrompt;
-			const runtimePrompts = this._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt);
+			const runtimePrompts = this._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt, messages);
 			this._lastRuntimePromptComponents = runtimePrompts;
 			this.agent.state.systemPrompt = runtimePrompts.combinedPrompt
 				? `${effectiveSystemPrompt}\n\n${runtimePrompts.combinedPrompt}`
 				: effectiveSystemPrompt;
+			if (runtimePrompts.turnContextPrompt) {
+				messages.push(this._createRuntimeContextPromptMessage(runtimePrompts.turnContextPrompt, Date.now()));
+			}
+			if (runtimePrompts.workingStatePrompt) {
+				messages.push(this._createWorkingStatePromptMessage(runtimePrompts.workingStatePrompt, Date.now()));
+			}
 			this._lastTokenBreakdown = this._createTokenBreakdownForPrompt(messages);
 
 			// Check if we need to compact before sending (catches aborted responses and preempts overflow with new messages)
@@ -2445,28 +2518,35 @@ export class AgentSession {
 		return context?.content;
 	}
 
-	private _createRuntimeContextPrompts(query: string, baseSystemPrompt: string): RuntimeContextPrompts {
+	private _createRuntimeContextPrompts(
+		query: string,
+		baseSystemPrompt: string,
+		pendingMessages: AgentMessage[] = [],
+	): RuntimeContextPrompts {
 		const settings = this._getEffectiveCompactionSettings();
-		const workingStatePrompt = renderWorkingSessionState(
-			this._getCurrentStructuredSessionState(),
-			settings.renderedStateMaxTokens,
-		);
+		const branchEntries = this.sessionManager.getBranch();
+		const previousStructuredState = getLatestStructuredSessionState(branchEntries);
+		const structuredState = previousStructuredState
+			? this._getCurrentStructuredSessionState(this._withPendingMessageEntries(branchEntries, pendingMessages))
+			: undefined;
+		const workingStatePrompt =
+			structuredState && hasMeaningfulStructuredSessionState(structuredState)
+				? renderWorkingSessionState(structuredState, settings.renderedStateMaxTokens)
+				: undefined;
 		const memoryPrompt = this._createProjectMemoryPrompt(query);
 		const rulesPrompt = createRulesContext(this._cwd, query);
 		const repoMapPrompt = createRepoMapContext(this._cwd, query)?.content;
 		const subagentDigestPrompt = createSubagentDigestContext(this._cwd, query);
 		const subagentProfilesPrompt = createSubagentProfilesPrompt();
-		const subagentPrompt = subagentDigestPrompt
-			? `${subagentProfilesPrompt}\n\n${subagentDigestPrompt}`
-			: subagentProfilesPrompt;
-		const prompts = [
-			SESSION_STATE_PROTOCOL_PROMPT,
-			workingStatePrompt,
-			memoryPrompt,
-			rulesPrompt,
-			repoMapPrompt,
-			subagentPrompt,
-		].filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0);
+		// NOTE: volatile per-turn context is NOT included in the system prompt.
+		// It is persisted as hidden custom messages next to the user message that
+		// selected it, so later turns replay the exact same prefix for KV cache reuse.
+		const prompts = [SESSION_STATE_PROTOCOL_PROMPT, subagentProfilesPrompt].filter(
+			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
+		);
+		const turnContextPrompts = [memoryPrompt, rulesPrompt, repoMapPrompt, subagentDigestPrompt].filter(
+			(prompt): prompt is string => prompt !== undefined && prompt.length > 0,
+		);
 		return {
 			baseSystemPrompt,
 			stateProtocolPrompt: SESSION_STATE_PROTOCOL_PROMPT,
@@ -2474,9 +2554,25 @@ export class AgentSession {
 			memoryPrompt,
 			rulesPrompt,
 			repoMapPrompt,
-			subagentPrompt,
+			subagentProfilesPrompt,
+			subagentDigestPrompt,
 			combinedPrompt: prompts.length > 0 ? prompts.join("\n\n") : undefined,
+			turnContextPrompt: turnContextPrompts.length > 0 ? turnContextPrompts.join("\n\n") : undefined,
 		};
+	}
+
+	private _withPendingMessageEntries(branchEntries: SessionEntry[], pendingMessages: AgentMessage[]): SessionEntry[] {
+		if (pendingMessages.length === 0) {
+			return branchEntries;
+		}
+		const pendingEntries: SessionEntry[] = pendingMessages.map((message, index) => ({
+			type: "message",
+			id: `pending:${message.timestamp}:${index}`,
+			parentId: null,
+			timestamp: new Date(message.timestamp).toISOString(),
+			message,
+		}));
+		return [...branchEntries, ...pendingEntries];
 	}
 
 	private _createToolPromptAccountingText(): string {
@@ -2493,11 +2589,103 @@ export class AgentSession {
 		const previousTransform = this.agent.transformContext?.bind(this.agent);
 		this.agent.transformContext = async (messages: AgentMessage[], signal?: AbortSignal): Promise<AgentMessage[]> => {
 			const transformed = previousTransform ? await previousTransform(messages, signal) : messages;
-			return this._preparePromptContext(transformed).messages;
+			return this._preparePromptContext(transformed, this.systemPrompt, { recordWorkingState: true }).messages;
 		};
 	}
 
-	private _preparePromptContext(messages: AgentMessage[], systemPrompt = this.systemPrompt): PromptContextPreparation {
+	private _createWorkingStatePromptMessage(content: string, timestamp: number): CustomMessage {
+		return {
+			role: "custom",
+			customType: WORKING_STATE_PROMPT_CUSTOM_TYPE,
+			content,
+			display: false,
+			timestamp,
+		};
+	}
+
+	private _createRuntimeContextPromptMessage(content: string, timestamp: number): CustomMessage {
+		return {
+			role: "custom",
+			customType: RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE,
+			content,
+			display: false,
+			timestamp,
+		};
+	}
+
+	private _withWorkingStatePromptInsertions(
+		messages: AgentMessage[],
+		workingStatePrompt: string | undefined,
+		options: WorkingStatePromptInsertionOptions = {},
+	): AgentMessage[] {
+		const validAnchorKeys = new Set<string>();
+		const persistedInsertionAnchorKeys = new Set<string>();
+		let currentAnchorKey: string | undefined;
+		let latestUserAnchorKey: string | undefined;
+		for (const message of messages) {
+			if (options.minimumAnchorTimestamp !== undefined && message.timestamp < options.minimumAnchorTimestamp) {
+				continue;
+			}
+			const anchorKey = getUserMessageAnchorKey(message);
+			if (anchorKey) {
+				validAnchorKeys.add(anchorKey);
+				latestUserAnchorKey = anchorKey;
+				currentAnchorKey = anchorKey;
+				continue;
+			}
+			if (currentAnchorKey && message.role === "custom" && message.customType === WORKING_STATE_PROMPT_CUSTOM_TYPE) {
+				persistedInsertionAnchorKeys.add(currentAnchorKey);
+			}
+		}
+
+		const sourceInsertions = options.recordWorkingState
+			? this._workingStatePromptInsertions.filter((insertion) => validAnchorKeys.has(insertion.anchorKey))
+			: this._workingStatePromptInsertions;
+		if (options.recordWorkingState) {
+			this._workingStatePromptInsertions = sourceInsertions;
+		}
+
+		const insertionsByAnchor = new Map(
+			sourceInsertions.map((insertion) => [insertion.anchorKey, insertion] as const),
+		);
+		if (
+			latestUserAnchorKey &&
+			workingStatePrompt &&
+			!insertionsByAnchor.has(latestUserAnchorKey) &&
+			!persistedInsertionAnchorKeys.has(latestUserAnchorKey)
+		) {
+			const insertion = {
+				anchorKey: latestUserAnchorKey,
+				content: workingStatePrompt,
+				timestamp: Date.now(),
+			};
+			insertionsByAnchor.set(latestUserAnchorKey, insertion);
+			if (options.recordWorkingState) {
+				this._workingStatePromptInsertions.push(insertion);
+			}
+		}
+
+		if (insertionsByAnchor.size === 0) {
+			return messages;
+		}
+
+		const withInsertions: AgentMessage[] = [];
+		for (const message of messages) {
+			withInsertions.push(message);
+			const anchorKey = getUserMessageAnchorKey(message);
+			const insertion = anchorKey ? insertionsByAnchor.get(anchorKey) : undefined;
+			if (insertion) {
+				withInsertions.push(this._createWorkingStatePromptMessage(insertion.content, insertion.timestamp));
+			}
+		}
+		return withInsertions;
+	}
+
+	private _preparePromptContext(
+		messages: AgentMessage[],
+		systemPrompt = this.systemPrompt,
+		options: { recordWorkingState?: boolean } = {},
+	): PromptContextPreparation {
 		const settings = this._getEffectiveCompactionSettings();
 		const latestCompactionTimestamp = this._getLatestCompactionTimestamp();
 		if (!settings.enabled) {
@@ -2507,7 +2695,7 @@ export class AgentSession {
 				estimate,
 				budgetEstimate: estimate,
 				source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
-				toolRawTokens: 0,
+				toolRawTokens: estimateToolResultTokens(messages),
 				toolStubTokens: 0,
 				toolStubSavings: 0,
 				stubbedToolResults: [],
@@ -2516,51 +2704,26 @@ export class AgentSession {
 
 		const contextWindow = this.model?.contextWindow ?? 0;
 		const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
-		const livePromptSettings = {
-			...settings,
-			toolResultKeepRecentCount: 1,
-			toolResultClearThresholdTokens: Math.min(
-				settings.toolResultClearThresholdTokens,
-				LIVE_PROMPT_TOOL_RESULT_THRESHOLD_TOKENS,
-			),
-			toolResultPromptBudgetTokens: Math.min(
-				settings.toolResultPromptBudgetTokens,
-				LIVE_PROMPT_TOOL_RESULT_BUDGET_TOKENS,
-			),
-		};
-		let promptContext = stubToolResultsForPrompt(messages, livePromptSettings);
-		const initialEstimate = estimateContextTokens(promptContext.messages, systemPrompt, { useProviderUsage: false });
-		const budget = createContextBudgetReport(initialEstimate.tokens, contextWindow, settings);
-		const pressureThreshold = Math.max(settings.targetContextTokens * 1.5, budget.triggerThreshold);
-		if (contextWindow > 0 && initialEstimate.tokens > pressureThreshold) {
-			promptContext = stubToolResultsForPrompt(messages, {
-				...livePromptSettings,
-				toolResultKeepRecentCount: 1,
-				toolResultClearThresholdTokens: Math.min(
-					livePromptSettings.toolResultClearThresholdTokens,
-					PROMPT_PRESSURE_TOOL_RESULT_THRESHOLD_TOKENS,
-				),
-				toolResultPromptBudgetTokens: Math.min(livePromptSettings.toolResultPromptBudgetTokens, 4000),
-			});
-		}
-		const pressureEstimate =
-			promptContext.messages === messages
-				? initialEstimate
-				: estimateContextTokens(promptContext.messages, systemPrompt, {
-						useProviderUsage: false,
-					});
+		const initialEstimate = estimateContextTokens(messages, systemPrompt, { useProviderUsage: false });
+		const pressureEstimate = initialEstimate;
 		const pressureBudget = createContextBudgetReport(pressureEstimate.tokens, contextWindow, settings);
-		let preparedMessages = promptContext.messages;
+		let preparedMessages = messages;
 
 		if (contextWindow > 0 && pressureBudget.shouldCompact) {
 			const keepRecentTokens = selectKeepRecentTokens(pressureEstimate.tokens, settings);
 			const targetContextTokens = Math.max(settings.targetContextTokens, systemPromptTokens + keepRecentTokens);
-			preparedMessages = truncateKeptMessages(promptContext.messages.slice(), {
+			preparedMessages = truncateKeptMessages(messages.slice(), {
 				keepRecentTokens,
 				targetContextTokens,
 				systemPromptTokens,
 			});
 		}
+
+		preparedMessages = this._withWorkingStatePromptInsertions(
+			preparedMessages,
+			this._lastRuntimePromptComponents.workingStatePrompt,
+			{ ...options, minimumAnchorTimestamp: latestCompactionTimestamp },
+		);
 
 		const finalEstimate = estimateContextTokens(preparedMessages, systemPrompt, { useProviderUsage: false });
 		return {
@@ -2568,10 +2731,10 @@ export class AgentSession {
 			estimate: finalEstimate,
 			budgetEstimate: pressureEstimate,
 			source: "estimated",
-			toolRawTokens: promptContext.toolRawTokens,
-			toolStubTokens: promptContext.toolStubTokens,
-			toolStubSavings: promptContext.tokenSavingsEstimate,
-			stubbedToolResults: promptContext.stubs.map((stub) => stub.rawPointer.id),
+			toolRawTokens: estimateToolResultTokens(preparedMessages),
+			toolStubTokens: 0,
+			toolStubSavings: 0,
+			stubbedToolResults: [],
 		};
 	}
 
@@ -2595,7 +2758,9 @@ export class AgentSession {
 			checkpoint: [components.stateProtocolPrompt, components.workingStatePrompt]
 				.filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0)
 				.join("\n\n"),
-			retrievedPrompt: components.subagentPrompt,
+			retrievedPrompt: [components.subagentProfilesPrompt, components.subagentDigestPrompt]
+				.filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0)
+				.join("\n\n"),
 			recentMessages: messages,
 			toolRawTokens: options.toolRawTokens,
 			toolStubTokens: options.toolStubTokens,
@@ -3074,9 +3239,18 @@ export class AgentSession {
 	private _prepareDeterministicCompaction(
 		preparation: CompactionPreparation,
 		pathEntries: SessionEntry[],
-		settings: { renderedStateMaxTokens: number },
+		settings: CompactionSettings & { renderedStateMaxTokens: number },
 	): CompactionResult<CompactionDetails> & { state: StructuredSessionState } {
 		const { readFiles, modifiedFiles } = computeFileLists(preparation.fileOps);
+		const historyStubContext = stubToolResultsForCompactionSummary(preparation.messagesToSummarize, settings);
+		const turnPrefixStubContext = stubToolResultsForCompactionSummary(preparation.turnPrefixMessages, settings);
+		const stubbedToolResultPointers = [
+			...historyStubContext.stubs.map((stub) => stub.rawPointer),
+			...turnPrefixStubContext.stubs.map((stub) => stub.rawPointer),
+		];
+		const stubbedToolResults = [...new Set(stubbedToolResultPointers.map((pointer) => pointer.id))];
+		const toolRawTokens = historyStubContext.toolRawTokens + turnPrefixStubContext.toolRawTokens;
+		const toolStubTokens = historyStubContext.toolStubTokens + turnPrefixStubContext.toolStubTokens;
 		const baseState = this._getCurrentStructuredSessionState(pathEntries);
 		const risks = hasMeaningfulStructuredSessionState(baseState)
 			? []
@@ -3102,6 +3276,7 @@ export class AgentSession {
 							relevantSymbols: [],
 						}
 					: undefined,
+			evidence: stubbedToolResultPointers.length > 0 ? { add: stubbedToolResultPointers } : undefined,
 			audit: {
 				lastCompactionAt: new Date().toISOString(),
 				compactionCount: baseState.audit.compactionCount + 1,
@@ -3118,10 +3293,10 @@ export class AgentSession {
 			summaryTokens,
 			renderedStateTokens: summaryTokens,
 			recentRawTokens: preparation.recentRawTokens,
-			toolRawTokens: 0,
-			toolStubTokens: 0,
+			toolRawTokens,
+			toolStubTokens,
 			droppedEntries: preparation.droppedEntryIds,
-			stubbedToolResults: [],
+			stubbedToolResults,
 			risks,
 		};
 		return {
@@ -3185,6 +3360,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let tokensAfter: number | undefined;
 			let details: unknown;
 			let structuredState: unknown;
 
@@ -3193,12 +3369,14 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
 				const result = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
+				tokensAfter = result.tokensAfter;
 				details = result.details;
 				structuredState = result.state;
 			}
@@ -3207,7 +3385,14 @@ export class AgentSession {
 				throw new Error("Compaction cancelled");
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				tokensAfter,
+				details,
+				fromExtension,
+			);
 			if (!fromExtension && structuredState) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
 			}
@@ -3335,7 +3520,8 @@ export class AgentSession {
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage: `Context overflow recovery failed after ${MAX_OVERFLOW_RECOVERY_COMPACTIONS} compact-and-retry attempts. Try reducing context or switching to a larger-context model.`,
+					errorMessage:
+						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 				});
 				return false;
 			}
@@ -3350,6 +3536,14 @@ export class AgentSession {
 			return await this._runAutoCompaction("overflow", true);
 		}
 
+		if (
+			!additionalMessages &&
+			assistantForCompactionCheck?.stopReason === "toolUse" &&
+			!this._assistantCallsFinishWork(assistantForCompactionCheck)
+		) {
+			return false;
+		}
+
 		// Case 2: Threshold - context is getting large. This must be based on
 		// the current prompt state, not historical provider usage persisted on
 		// assistant messages that may have survived a compaction boundary.
@@ -3359,17 +3553,40 @@ export class AgentSession {
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		let contextTokens = promptContext.budgetEstimate.tokens;
-		if (assistantForCompactionCheck?.stopReason === "error") {
-			const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
-				sinceTimestamp: compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined,
-			});
-			contextTokens = Math.max(contextTokens, providerEstimate.tokens);
+		const compactionTimestamp = compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined;
+		const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
+			sinceTimestamp: compactionTimestamp,
+		});
+		let reliableAssistantUsagesSinceCompaction = 0;
+		if (compactionTimestamp !== undefined) {
+			for (const message of messages) {
+				if (
+					message.role === "assistant" &&
+					message.stopReason !== "aborted" &&
+					message.stopReason !== "error" &&
+					message.usage &&
+					(message.usage.input > 0 || message.usage.cacheRead > 0) &&
+					message.timestamp > compactionTimestamp
+				) {
+					reliableAssistantUsagesSinceCompaction++;
+				}
+			}
 		}
+		const canUseProviderUsageForThreshold =
+			compactionTimestamp === undefined ||
+			reliableAssistantUsagesSinceCompaction > 1 ||
+			assistantForCompactionCheck?.stopReason === "error";
+		const contextTokens =
+			canUseProviderUsageForThreshold && providerEstimate.lastUsageIndex !== null
+				? Math.max(
+						promptContext.budgetEstimate.tokens,
+						providerEstimate.usageTokens + providerEstimate.trailingTokens,
+					)
+				: promptContext.budgetEstimate.tokens;
+		const hasRecordedUserRequest = branchEntries.some(
+			(entry) => entry.type === "message" && entry.message.role === "user",
+		);
 		if (shouldCompact(contextTokens, contextWindow, settings)) {
-			const hasRecordedUserRequest = branchEntries.some(
-				(entry) => entry.type === "message" && entry.message.role === "user",
-			);
 			if (!hasRecordedUserRequest) {
 				return false;
 			}
@@ -3446,6 +3663,7 @@ export class AgentSession {
 			let summary: string;
 			let firstKeptEntryId: string;
 			let tokensBefore: number;
+			let tokensAfter: number | undefined;
 			let details: unknown;
 			let structuredState: unknown;
 
@@ -3454,12 +3672,14 @@ export class AgentSession {
 				summary = extensionCompaction.summary;
 				firstKeptEntryId = extensionCompaction.firstKeptEntryId;
 				tokensBefore = extensionCompaction.tokensBefore;
+				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
 				const compactResult = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
+				tokensAfter = compactResult.tokensAfter;
 				details = compactResult.details;
 				structuredState = compactResult.state;
 			}
@@ -3475,7 +3695,14 @@ export class AgentSession {
 				return false;
 			}
 
-			this.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, details, fromExtension);
+			this.sessionManager.appendCompaction(
+				summary,
+				firstKeptEntryId,
+				tokensBefore,
+				tokensAfter,
+				details,
+				fromExtension,
+			);
 			if (!fromExtension && structuredState) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
 			}
@@ -4700,7 +4927,7 @@ export class AgentSession {
 	 * @returns Text content, or undefined if no assistant message exists
 	 */
 	getLastAssistantText(): string | undefined {
-		const lastAssistant = this.messages
+		const lastAssistant = this.agent.state.messages
 			.slice()
 			.reverse()
 			.find((m) => {

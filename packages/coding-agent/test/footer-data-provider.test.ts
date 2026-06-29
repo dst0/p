@@ -271,3 +271,74 @@ describe("FooterDataProvider reftable branch detection", () => {
 		}
 	});
 });
+
+describe("FooterDataProvider progress state", () => {
+	let tempDir: string;
+
+	beforeEach(() => {
+		tempDir = mkdtempSync(join(tmpdir(), "footer-data-provider-progress-"));
+	});
+
+	afterEach(() => {
+		if (tempDir && existsSync(tempDir)) {
+			rmSync(tempDir, { recursive: true, force: true });
+		}
+	});
+
+	it("clears stale model switch progress when a new request starts sending", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setModelSwitchProgress({
+			fromModel: "misha-pc/misha-pc-model",
+			toModel: "mini-pc-11450/lms-micro/high-32-kvq4-cache",
+		});
+		provider.setSendingProgress({ model: "mini-pc-11450/lms-micro/high-32-kvq4-cache" });
+
+		expect(provider.getSendingProgress()).toEqual({ model: "mini-pc-11450/lms-micro/high-32-kvq4-cache" });
+		expect(provider.getModelSwitchProgress()).toBeUndefined();
+	});
+
+	it("clears stale switch and loading progress when provider prefill begins", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setModelSwitchProgress({ fromModel: "offline-worker/model", toModel: "online-worker/model" });
+		provider.setLoadingProgress({ model: "online-worker/model" });
+		provider.setPrefillProgress({ percent: 25, elapsedMs: 1000, tokensPerSecond: 200 });
+
+		expect(provider.getPrefillProgress()).toEqual({ percent: 25, elapsedMs: 1000, tokensPerSecond: 200 });
+		expect(provider.getModelSwitchProgress()).toBeUndefined();
+		expect(provider.getLoadingProgress()).toBeUndefined();
+	});
+
+	it("clears stale switch progress when llm-orchestrator queue progress arrives", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setModelSwitchProgress({ fromModel: "misha-pc/misha-pc-model", toModel: "lms-micro/model" });
+		provider.setQueuedProgress({
+			messages: 2,
+			position: 2,
+			queuedAhead: 1,
+			workerId: "llama-cpu",
+			source: "llm-orchestrator",
+		});
+
+		expect(provider.getQueuedProgress()).toEqual({
+			messages: 2,
+			position: 2,
+			queuedAhead: 1,
+			workerId: "llama-cpu",
+			source: "llm-orchestrator",
+		});
+		expect(provider.getModelSwitchProgress()).toBeUndefined();
+	});
+
+	it("keeps loading visible with the current model switch for retry display", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setModelSwitchProgress({ fromModel: "old/model", toModel: "new/model" });
+		provider.setLoadingProgress({ model: "new/model" });
+
+		expect(provider.getModelSwitchProgress()).toEqual({ fromModel: "old/model", toModel: "new/model" });
+		expect(provider.getLoadingProgress()).toEqual({ model: "new/model" });
+	});
+});

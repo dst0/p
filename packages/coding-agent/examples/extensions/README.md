@@ -140,7 +140,7 @@ cp permission-gate.ts ~/.p/agent/extensions/
 See [docs/extensions.md](../../docs/extensions.md) for full documentation.
 
 ```typescript
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 import { Type } from "typebox";
 
 export default function (pi: ExtensionAPI) {

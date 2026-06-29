@@ -1184,6 +1184,24 @@ function mapStopReason(reason: ChatCompletionChunk.Choice["finish_reason"] | str
 	}
 }
 
+function isLocalOrPrivateBaseUrl(baseUrl: string): boolean {
+	try {
+		const hostname = new URL(baseUrl).hostname.toLowerCase();
+		if (hostname === "localhost" || hostname === "::1" || hostname.endsWith(".local")) return true;
+		if (hostname.startsWith("127.")) return true;
+		if (hostname.startsWith("10.")) return true;
+		if (hostname.startsWith("192.168.")) return true;
+		const parts = hostname.split(".");
+		if (parts.length === 4 && parts[0] === "172") {
+			const second = Number.parseInt(parts[1], 10);
+			return second >= 16 && second <= 31;
+		}
+		return false;
+	} catch {
+		return false;
+	}
+}
+
 /**
  * Detect compatibility settings from provider and baseUrl for known providers.
  * Provider takes precedence over URL-based detection since it's explicitly configured.
@@ -1213,7 +1231,8 @@ function detectCompat(model: Model<"openai-completions">): ResolvedOpenAIComplet
 		provider.includes("orchestrator") ||
 		baseUrl.includes("llama") ||
 		baseUrl.includes("llm.org") ||
-		baseUrl.includes("orchestrator");
+		baseUrl.includes("orchestrator") ||
+		isLocalOrPrivateBaseUrl(baseUrl);
 
 	const isNonStandard =
 		isNvidia ||

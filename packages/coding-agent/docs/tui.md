@@ -434,7 +434,7 @@ renderResult(result, options, theme, context) {
 **For Markdown**, use `getMarkdownTheme()`:
 
 ```typescript
-import { getMarkdownTheme } from "@dst0/p-coding-agent";
+import { getMarkdownTheme } from "@dst0/p";
 import { Markdown } from "@dst0/p-tui";
 
 renderResult(result, options, theme, context) {
@@ -599,8 +599,8 @@ These patterns cover the most common UI needs in extensions. **Copy these patter
 For letting users pick from a list of options. Use `SelectList` from `@dst0/p-tui` with `DynamicBorder` for framing.
 
 ```typescript
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
-import { DynamicBorder } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
+import { DynamicBorder } from "@dst0/p";
 import { Container, type SelectItem, SelectList, Text } from "@dst0/p-tui";
 
 pi.registerCommand("pick", {
@@ -659,7 +659,7 @@ pi.registerCommand("pick", {
 For operations that take time and should be cancellable. `BorderedLoader` shows a spinner and handles escape to cancel.
 
 ```typescript
-import { BorderedLoader } from "@dst0/p-coding-agent";
+import { BorderedLoader } from "@dst0/p";
 
 pi.registerCommand("fetch", {
   handler: async (_args, ctx) => {
@@ -691,7 +691,7 @@ pi.registerCommand("fetch", {
 For toggling multiple settings. Use `SettingsList` from `@dst0/p-tui` with `getSettingsListTheme()`.
 
 ```typescript
-import { getSettingsListTheme } from "@dst0/p-coding-agent";
+import { getSettingsListTheme } from "@dst0/p";
 import { Container, type SettingItem, SettingsList, Text } from "@dst0/p-tui";
 
 pi.registerCommand("settings", {
@@ -831,7 +831,7 @@ Token stats available via `ctx.sessionManager.getBranch()` and `ctx.model`.
 Replace the main input editor with a custom implementation. Useful for modal editing (vim), different keybindings (emacs), or specialized input handling.
 
 ```typescript
-import { CustomEditor, type ExtensionAPI } from "@dst0/p-coding-agent";
+import { CustomEditor, type ExtensionAPI } from "@dst0/p";
 import { matchesKey, truncateToWidth } from "@dst0/p-tui";
 
 type Mode = "normal" | "insert";

@@ -3,8 +3,8 @@
 	"compilerOptions": {
 		"noEmit": true,
 		"paths": {
-			"@dst0/p-coding-agent": ["./src/index.ts"],
-			"@dst0/p-coding-agent/hooks": ["./src/core/hooks/index.ts"],
+			"@dst0/p": ["./src/index.ts"],
+			"@dst0/p/hooks": ["./src/core/hooks/index.ts"],
 			"@dst0/p-tui": ["../tui/src/index.ts"],
 			"@dst0/p-ai": ["../ai/src/index.ts"],
 			"typebox": ["../../node_modules/typebox"]

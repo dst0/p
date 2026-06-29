@@ -21,7 +21,7 @@ export interface ResolveProjectTrustedOptions {
 }
 
 function formatProjectTrustPrompt(cwd: string): string {
-	return `Trust project folder?\n${cwd}\n\nThis allows pi to load .pi settings and resources, install missing project packages, and execute project extensions.`;
+	return `Trust project folder?\n${cwd}\n\nThis allows p to load .p settings and resources, install missing project packages, and execute project extensions.`;
 }
 
 async function selectProjectTrustOption(

@@ -4,7 +4,7 @@
 
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { getAgentDir, parseFrontmatter } from "@dst0/p-coding-agent";
+import { getAgentDir, parseFrontmatter } from "@dst0/p";
 
 export type AgentScope = "user" | "project" | "both";
 

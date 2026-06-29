@@ -16,7 +16,7 @@
  * Then use ctrl+o to toggle between minimal (collapsed) and full (expanded) views.
  */
 
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 import {
 	createBashTool,
 	createEditTool,
@@ -25,7 +25,7 @@ import {
 	createLsTool,
 	createReadTool,
 	createWriteTool,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 import { Text } from "@dst0/p-tui";
 import { homedir } from "os";
 

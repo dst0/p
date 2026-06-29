@@ -21,7 +21,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 
 // Default interactive commands - editors, pagers, git ops, TUIs
 const DEFAULT_INTERACTIVE_COMMANDS = [

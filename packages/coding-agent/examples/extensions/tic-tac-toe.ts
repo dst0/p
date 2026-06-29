@@ -17,8 +17,8 @@
  * separate variables. Only the agent cursor is ever exposed to the agent.
  */
 
+import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@dst0/p";
 import { StringEnum } from "@dst0/p-ai";
-import type { ExtensionAPI, ExtensionContext, Theme, ToolExecutionMode } from "@dst0/p-coding-agent";
 import { type Component, matchesKey, Text, truncateToWidth, visibleWidth } from "@dst0/p-tui";
 import { Type } from "typebox";
 

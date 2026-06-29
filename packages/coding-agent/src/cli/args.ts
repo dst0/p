@@ -16,6 +16,7 @@ export interface Args {
 	systemPrompt?: string;
 	appendSystemPrompt?: string[];
 	thinking?: ThinkingLevel;
+	maxTokens?: number;
 	completionMode?: CompletionMode;
 	continue?: boolean;
 	resume?: boolean;
@@ -56,14 +57,31 @@ export interface Args {
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-const VALID_COMPLETION_MODES = ["implicit", "explicit_finish", "hybrid"] as const;
+const COMPLETION_MODE_ALIASES = {
+	implicit: "implicit",
+	explicit: "explicit_finish",
+	explicit_finish: "explicit_finish",
+	hybrid: "hybrid",
+} satisfies Record<string, CompletionMode>;
+const VALID_COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish", "hybrid"] as const;
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
 
-function isValidCompletionMode(mode: string): mode is CompletionMode {
-	return VALID_COMPLETION_MODES.includes(mode as CompletionMode);
+function parseCompletionMode(mode: string): CompletionMode | undefined {
+	if (mode in COMPLETION_MODE_ALIASES) {
+		return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
+	}
+	return undefined;
+}
+
+function parsePositiveIntegerFlag(value: string): number | undefined {
+	if (!/^[1-9]\d*$/.test(value)) {
+		return undefined;
+	}
+	const parsed = Number(value);
+	return Number.isSafeInteger(parsed) ? parsed : undefined;
 }
 
 export function parseArgs(args: string[]): Args {
@@ -143,14 +161,30 @@ export function parseArgs(args: string[]): Args {
 					message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
 				});
 			}
+		} else if (arg === "--max-tokens") {
+			if (i + 1 >= args.length) {
+				result.diagnostics.push({ type: "error", message: "--max-tokens requires a value" });
+			} else {
+				const value = args[++i];
+				const maxTokens = parsePositiveIntegerFlag(value);
+				if (maxTokens === undefined) {
+					result.diagnostics.push({
+						type: "error",
+						message: `--max-tokens requires a positive integer, got "${value}"`,
+					});
+				} else {
+					result.maxTokens = maxTokens;
+				}
+			}
 		} else if (arg === "--completion-mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (isValidCompletionMode(mode)) {
-				result.completionMode = mode;
+			const completionMode = parseCompletionMode(mode);
+			if (completionMode) {
+				result.completionMode = completionMode;
 			} else {
 				result.diagnostics.push({
 					type: "warning",
-					message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODES.join(", ")}`,
+					message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODE_LABELS.join(", ")}`,
 				});
 			}
 		} else if (arg === "--print" || arg === "-p") {
@@ -275,7 +309,8 @@ ${chalk.bold("Options:")}
   --exclude-tools, -xt <tools>   Comma-separated denylist of tool names to disable
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
-  --completion-mode <mode>       Completion mode: explicit_finish (default), hybrid, implicit
+  --max-tokens <n>               Limit provider output tokens for each model request
+  --completion-mode <mode>       Completion mode: explicit (default), hybrid, implicit
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)

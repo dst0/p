@@ -9,7 +9,7 @@
  */
 
 import path from "node:path";
-import type { ExtensionAPI, ExtensionContext } from "@dst0/p-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
 
 const BRAILLE_FRAMES = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
 

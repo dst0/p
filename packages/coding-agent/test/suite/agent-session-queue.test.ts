@@ -1,6 +1,6 @@
+import type { ExtensionAPI } from "@dst0/p";
 import type { AgentTool } from "@dst0/p-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
@@ -36,6 +36,7 @@ async function createWaitingHarness(
 		},
 	};
 	const harness = await createHarness({
+		completionMode: "implicit",
 		tools: [waitTool, ...(options.tools ?? [])],
 		extensionFactories: options.extensionFactories,
 	});
@@ -69,6 +70,7 @@ describe("AgentSession queue characterization", () => {
 	it("dispatches extension commands immediately when prompted while idle", async () => {
 		const commandRuns: string[] = [];
 		const harness = await createHarness({
+			completionMode: "implicit",
 			extensionFactories: [
 				(pi) => {
 					pi.registerCommand("testcmd", {
@@ -326,7 +328,7 @@ describe("AgentSession queue characterization", () => {
 	});
 
 	it("injects nextTurn custom messages into the next prompt", async () => {
-		const harness = await createHarness();
+		const harness = await createHarness({ completionMode: "implicit" });
 		harnesses.push(harness);
 		let sawCustomMessage = false;
 
@@ -386,6 +388,7 @@ describe("AgentSession queue characterization", () => {
 
 	it("throws when queueing an extension command with steer", async () => {
 		const harness = await createHarness({
+			completionMode: "implicit",
 			extensionFactories: [
 				(pi) => {
 					pi.registerCommand("testcmd", {
@@ -404,6 +407,7 @@ describe("AgentSession queue characterization", () => {
 
 	it("throws when queueing an extension command with followUp", async () => {
 		const harness = await createHarness({
+			completionMode: "implicit",
 			extensionFactories: [
 				(pi) => {
 					pi.registerCommand("testcmd", {
@@ -423,6 +427,7 @@ describe("AgentSession queue characterization", () => {
 	it("delivers follow-ups queued during agent_end", async () => {
 		let sent = false;
 		const harness = await createHarness({
+			completionMode: "implicit",
 			extensionFactories: [
 				(pi: ExtensionAPI) => {
 					pi.on("agent_end", async () => {

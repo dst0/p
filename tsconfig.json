@@ -13,11 +13,11 @@
       "@dst0/p-ai/dist/*": ["./packages/ai/src/*"],
       "@dst0/p-agent-core": ["./packages/agent/src/index.ts"],
       "@dst0/p-agent-core/*": ["./packages/agent/src/*"],
-      "@dst0/p-coding-agent": ["./packages/coding-agent/src/index.ts"],
-      "@dst0/p-coding-agent/hooks": [
+      "@dst0/p": ["./packages/coding-agent/src/index.ts"],
+      "@dst0/p/hooks": [
         "./packages/coding-agent/src/core/hooks/index.ts"
       ],
-      "@dst0/p-coding-agent/*": ["./packages/coding-agent/src/*"],
+      "@dst0/p/*": ["./packages/coding-agent/src/*"],
       "typebox": ["./node_modules/typebox"],
       "@dst0/p-tui": ["./packages/tui/src/index.ts"],
       "@dst0/p-tui/*": ["./packages/tui/src/*"],

@@ -484,13 +484,13 @@ export function getBundledInteractiveAssetPath(name: string): string {
 }
 
 // =============================================================================
-// App Config (from package.json pConfig)
+// App Config (from package.json piConfig)
 // =============================================================================
 
 interface PackageJson {
 	name?: string;
 	version?: string;
-	pConfig?: {
+	piConfig?: {
 		name?: string;
 		configDir?: string;
 	};
@@ -504,11 +504,11 @@ try {
 	if (err.code !== "ENOENT") throw e;
 }
 
-const pConfigName: string | undefined = pkg.pConfig?.name;
-export const PACKAGE_NAME: string = pkg.name || "@dst0/p-coding-agent";
-export const APP_NAME: string = pConfigName || "p";
-export const APP_TITLE: string = pConfigName ? APP_NAME : "π";
-export const CONFIG_DIR_NAME: string = pkg.pConfig?.configDir || ".p";
+const piConfigName: string | undefined = pkg.piConfig?.name;
+export const PACKAGE_NAME: string = pkg.name || "@dst0/p";
+export const APP_NAME: string = piConfigName || "p";
+export const APP_TITLE: string = piConfigName ? APP_NAME : "π";
+export const CONFIG_DIR_NAME: string = pkg.piConfig?.configDir || ".p";
 export const VERSION: string = pkg.version || "0.0.0";
 
 // e.g., P_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR

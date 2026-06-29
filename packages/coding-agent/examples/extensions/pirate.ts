@@ -10,7 +10,7 @@
  * 3. When enabled, the agent will respond like a pirate
  */
 
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
+import type { ExtensionAPI } from "@dst0/p";
 
 export default function pirateExtension(pi: ExtensionAPI) {
 	let pirateMode = false;

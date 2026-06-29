@@ -53,7 +53,7 @@ describe("AgentSession bash and persistence characterization", () => {
 				};
 			},
 		};
-		const harness = await createHarness({ tools: [waitTool] });
+		const harness = await createHarness({ completionMode: "implicit", tools: [waitTool] });
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage([fauxToolCall("wait", {})], { stopReason: "toolUse" }),
@@ -143,7 +143,7 @@ describe("AgentSession bash and persistence characterization", () => {
 				return { content: [{ type: "text", text: `echo:${text}` }], details: { text } };
 			},
 		};
-		const harness = await createHarness({ tools: [echoTool] });
+		const harness = await createHarness({ completionMode: "implicit", tools: [echoTool] });
 		harnesses.push(harness);
 		harness.setResponses([
 			fauxAssistantMessage([fauxToolCall("echo", { text: "hello" })], { stopReason: "toolUse" }),

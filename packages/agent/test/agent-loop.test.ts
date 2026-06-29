@@ -94,6 +94,16 @@ function getAssistantText(message: AssistantMessage | undefined): string {
 	);
 }
 
+function getMessageText(message: AgentMessage | undefined): string {
+	if (!message || !("content" in message)) return "";
+	const content = message.content;
+	if (typeof content === "string") return content;
+	return content
+		.filter((block): block is { type: "text"; text: string } => block.type === "text")
+		.map((block) => block.text)
+		.join("\n");
+}
+
 // Simple identity converter for tests - just passes through standard messages
 function identityConverter(messages: AgentMessage[]): Message[] {
 	return messages.filter((m) => m.role === "user" || m.role === "assistant" || m.role === "toolResult") as Message[];
@@ -2015,6 +2025,11 @@ describe("Explicit Completion Protocol", () => {
 		);
 
 		expect(contexts).toHaveLength(2);
+		expect(messages.map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant", "toolResult"]);
+		expect(getMessageText(messages[2])).toContain("finish_work");
+		expect(messages[2]?.role === "user" ? messages[2].metadata?.pInternal : undefined).toBe(
+			"completion_protocol_repair",
+		);
 		expect(messages[messages.length - 1].role).toBe("toolResult");
 		expect(
 			events.filter((event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry"),

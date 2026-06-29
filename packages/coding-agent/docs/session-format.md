@@ -34,7 +34,7 @@ Source on GitHub ([pi-mono](https://github.com/dst0/p-mono)):
 - [`packages/ai/src/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/ai/src/types.ts) - Base message types (UserMessage, AssistantMessage, ToolResultMessage)
 - [`packages/agent/src/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/agent/src/types.ts) - AgentMessage union type
 
-For TypeScript definitions in your project, inspect `node_modules/@dst0/p-coding-agent/dist/` and `node_modules/@dst0/p-ai/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@dst0/p/dist/` and `node_modules/@dst0/p-ai/dist/`.
 
 ## Message Types
 

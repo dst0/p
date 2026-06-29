@@ -40,9 +40,9 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
+import { DynamicBorder, getAgentDir } from "@dst0/p";
 import type { Api, Model } from "@dst0/p-ai";
-import type { ExtensionAPI, ExtensionContext } from "@dst0/p-coding-agent";
-import { DynamicBorder, getAgentDir } from "@dst0/p-coding-agent";
 import { Container, Key, type SelectItem, SelectList, Text } from "@dst0/p-tui";
 
 // Preset configuration

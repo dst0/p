@@ -119,6 +119,13 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		toolStubTokens: 0,
 		tokenSavingsEstimate: 0,
 	}),
+	stubToolResultsForCompactionSummary: (messages: any[]) => ({
+		messages,
+		stubs: [],
+		toolRawTokens: 0,
+		toolStubTokens: 0,
+		tokenSavingsEstimate: 0,
+	}),
 	truncateKeptMessages: (messages: any[]) => messages,
 }));
 
@@ -245,12 +252,12 @@ describe("AgentSession auto-compaction queue resume", () => {
 		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 2 });
 		await checkCompaction({ ...overflowMessage, timestamp: Date.now() + 3 });
 
-		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(3);
+		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
 		expect(events).toContainEqual({
 			type: "compaction_end",
 			reason: "overflow",
 			errorMessage:
-				"Context overflow recovery failed after 3 compact-and-retry attempts. Try reducing context or switching to a larger-context model.",
+				"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
 		});
 	});
 
@@ -283,7 +290,14 @@ describe("AgentSession auto-compaction queue resume", () => {
 		sessionManager.appendMessage(staleAssistant);
 
 		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
-		sessionManager.appendCompaction("summary", firstKeptEntryId, staleAssistant.usage.totalTokens, undefined, false);
+		sessionManager.appendCompaction(
+			"summary",
+			firstKeptEntryId,
+			staleAssistant.usage.totalTokens,
+			undefined,
+			undefined,
+			false,
+		);
 
 		sessionManager.appendMessage({
 			role: "user",
@@ -467,7 +481,14 @@ describe("AgentSession auto-compaction queue resume", () => {
 		});
 		sessionManager.appendMessage(keptAssistant);
 		const firstKeptEntryId = sessionManager.getEntries()[0]!.id;
-		sessionManager.appendCompaction("summary", firstKeptEntryId, keptAssistant.usage.totalTokens, undefined, false);
+		sessionManager.appendCompaction(
+			"summary",
+			firstKeptEntryId,
+			keptAssistant.usage.totalTokens,
+			undefined,
+			undefined,
+			false,
+		);
 
 		// Post-compaction error message
 		const errorAssistant: AssistantMessage = {

@@ -21,7 +21,7 @@ import * as _bundledTypeboxCompile from "typebox/compile";
 import * as _bundledTypeboxValue from "typebox/value";
 import { CONFIG_DIR_NAME, getAgentDir, isBunBinary } from "../../config.ts";
 // NOTE: This import works because loader.ts exports are NOT re-exported from index.ts,
-// avoiding a circular dependency. Extensions can import from @dst0/p-coding-agent.
+// avoiding a circular dependency. Extensions can import from @dst0/p.
 import * as _bundledPiCodingAgent from "../../index.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
@@ -52,7 +52,7 @@ const VIRTUAL_MODULES: Record<string, unknown> = {
 	"@dst0/p-tui": _bundledPiTui,
 	"@dst0/p-ai": _bundledPiAi,
 	"@dst0/p-ai/oauth": _bundledPiAiOauth,
-	"@dst0/p-coding-agent": _bundledPiCodingAgent,
+	"@dst0/p": _bundledPiCodingAgent,
 	"@mariozechner/pi-agent-core": _bundledPiAgentCore,
 	"@mariozechner/pi-tui": _bundledPiTui,
 	"@mariozechner/pi-ai": _bundledPiAi,
@@ -94,7 +94,7 @@ function getAliases(): Record<string, string> {
 	const piAiOauthEntry = resolveWorkspaceOrImport("ai/dist/oauth.js", "@dst0/p-ai/oauth");
 
 	_aliases = {
-		"@dst0/p-coding-agent": piCodingAgentEntry,
+		"@dst0/p": piCodingAgentEntry,
 		"@dst0/p-agent-core": piAgentCoreEntry,
 		"@dst0/p-tui": piTuiEntry,
 		"@dst0/p-ai": piAiEntry,
@@ -447,7 +447,7 @@ export async function loadExtensions(
 	};
 }
 
-interface PManifest {
+interface PiManifest {
 	extensions?: string[];
 	themes?: string[];
 	skills?: string[];
@@ -458,8 +458,8 @@ function readPiManifest(packageJsonPath: string): PiManifest | null {
 	try {
 		const content = fs.readFileSync(packageJsonPath, "utf-8");
 		const pkg = JSON.parse(content);
-		if (pkg.p && typeof pkg.p === "object") {
-			return pkg.p as PManifest;
+		if (pkg.pi && typeof pkg.pi === "object") {
+			return pkg.pi as PiManifest;
 		}
 		return null;
 	} catch {

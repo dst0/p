@@ -9,7 +9,7 @@ LLMs have limited context windows. When conversations grow too long, pi uses com
 - [`packages/coding-agent/src/core/session-manager.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/session-manager.ts) - Entry types (`CompactionEntry`, `BranchSummaryEntry`)
 - [`packages/coding-agent/src/core/extensions/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) - Extension event types
 
-For TypeScript definitions in your project, inspect `node_modules/@dst0/p-coding-agent/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@dst0/p/dist/`.
 
 ## Overview
 
@@ -38,6 +38,8 @@ Both limits are evaluated when present, and the lower threshold wins. By default
 The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`.
 
 Provider prompt-cache reuse is separate from compaction. Runtime-only project/session context is sent after the user turn so the provider-visible prefix remains stable across idle follow-up prompts and tool-loop continuations. Large prompts are still bounded by the loaded model's actual context window; if the conversation exceeds that window, compaction or trimming may still occur before a request is sent.
+
+Interrupted provider streams do not resume. After a dropped connection or killed p process, the next prompt with the same session id is a fresh provider request. Prompt-cache reuse depends on the saved provider-visible prefix and any intermediary checkpoint restore, not on continuing the previous stream. Cache-stability tests should therefore verify that post-interruption turns reuse or restore cache on the next request and that no non-compaction turn falls back to full prompt prefill.
 
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
@@ -314,7 +316,7 @@ pi.on("session_before_compact", async (event, ctx) => {
 To generate a summary with your own model, convert messages to text using `serializeConversation`:
 
 ```typescript
-import { convertToLlm, serializeConversation } from "@dst0/p-coding-agent";
+import { convertToLlm, serializeConversation } from "@dst0/p";
 
 pi.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;

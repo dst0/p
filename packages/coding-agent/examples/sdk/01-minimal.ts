@@ -5,7 +5,7 @@
  * from cwd and ~/.p/agent. Model chosen from settings or first available.
  */
 
-import { createAgentSession } from "@dst0/p-coding-agent";
+import { createAgentSession } from "@dst0/p";
 
 const { session } = await createAgentSession();
 

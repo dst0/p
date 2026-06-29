@@ -1,3 +1,4 @@
+import type { ToolResultMessage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import {
 	type BranchSummaryEntry,
@@ -33,6 +34,62 @@ function msg(id: string, parentId: string | null, role: "user" | "assistant", te
 			stopReason: "stop",
 			timestamp: 1,
 		},
+	};
+}
+
+function assistantToolCallMsg(
+	id: string,
+	parentId: string | null,
+	toolCallId: string,
+	name: string,
+	args: Record<string, unknown>,
+): SessionMessageEntry {
+	return {
+		type: "message",
+		id,
+		parentId,
+		timestamp: "2025-01-01T00:00:00Z",
+		message: {
+			role: "assistant",
+			content: [{ type: "toolCall", id: toolCallId, name, arguments: args }],
+			api: "openai-completions",
+			provider: "openai",
+			model: "gpt-test",
+			usage: {
+				input: 1,
+				output: 1,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 2,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "toolUse",
+			timestamp: 1,
+		},
+	};
+}
+
+function toolResultMsg(
+	id: string,
+	parentId: string | null,
+	toolCallId: string,
+	toolName: string,
+	text: string,
+): SessionMessageEntry {
+	const message: ToolResultMessage = {
+		role: "toolResult",
+		toolCallId,
+		toolName,
+		content: [{ type: "text", text }],
+		isError: false,
+		timestamp: 1,
+	};
+	return {
+		type: "message",
+		id,
+		parentId,
+		timestamp: "2025-01-01T00:00:00Z",
+		message,
 	};
 }
 
@@ -132,7 +189,7 @@ describe("buildSessionContext", () => {
 	});
 
 	describe("with compaction", () => {
-		it("includes summary before kept messages", () => {
+		it("emits the summary before recent kept messages", () => {
 			const entries: SessionEntry[] = [
 				msg("1", null, "user", "first"),
 				msg("2", "1", "assistant", "response1"),
@@ -146,11 +203,11 @@ describe("buildSessionContext", () => {
 
 			// Should have: summary + kept (3,4) + after (6,7) = 5 messages
 			expect(ctx.messages).toHaveLength(5);
-			expect((ctx.messages[0] as any).summary).toContain("Summary of first two turns");
-			expect((ctx.messages[1] as any).content).toBe("second");
-			expect((ctx.messages[2] as any).content[0].text).toBe("response2");
-			expect((ctx.messages[3] as any).content).toBe("third");
-			expect((ctx.messages[4] as any).content[0].text).toBe("response3");
+			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Summary of first two turns" });
+			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "second" });
+			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "third" });
+			expect(ctx.messages[4]).toMatchObject({ role: "assistant" });
 		});
 
 		it("handles compaction keeping from first message", () => {
@@ -162,9 +219,12 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Summary + all messages (1,2,4)
+			// Summary, all kept messages (1,2), then after (4)
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).summary).toContain("Empty summary");
+			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Empty summary" });
+			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "first" });
+			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "second" });
 		});
 
 		it("multiple compactions uses latest", () => {
@@ -179,9 +239,49 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Should use second summary, keep from 4
+			// Should use second summary, then keep from 4
 			expect(ctx.messages).toHaveLength(4);
-			expect((ctx.messages[0] as any).summary).toContain("Second summary");
+			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Second summary" });
+			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "c" });
+			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "e" });
+		});
+
+		it("does not put a completed tool loop before the compaction summary", () => {
+			const entries: SessionEntry[] = [
+				msg("1", null, "user", "Turn 20"),
+				assistantToolCallMsg("2", "1", "read-20", "read", { path: "in/file-20.txt" }),
+				toolResultMsg("3", "2", "read-20", "read", "turn 20 source"),
+				assistantToolCallMsg("4", "3", "finish-20", "finish_work", {
+					status: "success",
+					summary: "Read in/file-20.txt",
+				}),
+				toolResultMsg("5", "4", "finish-20", "finish_work", "Read in/file-20.txt"),
+				msg("6", "5", "user", "Turn 21"),
+				assistantToolCallMsg("7", "6", "read-21", "read", { path: "in/file-21.txt" }),
+				toolResultMsg("8", "7", "read-21", "read", "turn 21 source"),
+				assistantToolCallMsg("9", "8", "finish-21", "finish_work", {
+					status: "success",
+					summary: "Read in/file-21.txt",
+				}),
+				toolResultMsg("10", "9", "finish-21", "finish_work", "Read in/file-21.txt"),
+				compaction("11", "10", "Summary through turn 21", "6"),
+				msg("12", "11", "user", "Turn 22"),
+			];
+			const ctx = buildSessionContext(entries);
+
+			expect(ctx.messages.map((message) => message.role)).toEqual([
+				"compactionSummary",
+				"user",
+				"assistant",
+				"toolResult",
+				"assistant",
+				"toolResult",
+				"user",
+			]);
+			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Summary through turn 21" });
+			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "Turn 21" });
+			expect(ctx.messages[6]).toMatchObject({ role: "user", content: "Turn 22" });
 		});
 	});
 
@@ -245,11 +345,11 @@ describe("buildSessionContext", () => {
 			// Main path to 7: summary + kept(3,4) + after(6,7)
 			const ctxMain = buildSessionContext(entries, "7");
 			expect(ctxMain.messages).toHaveLength(5);
-			expect((ctxMain.messages[0] as any).summary).toContain("Compacted history");
-			expect((ctxMain.messages[1] as any).content).toBe("q2");
-			expect((ctxMain.messages[2] as any).content[0].text).toBe("r2");
-			expect((ctxMain.messages[3] as any).content).toBe("q3");
-			expect((ctxMain.messages[4] as any).content[0].text).toBe("r3");
+			expect(ctxMain.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Compacted history" });
+			expect(ctxMain.messages[1]).toMatchObject({ role: "user", content: "q2" });
+			expect(ctxMain.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctxMain.messages[3]).toMatchObject({ role: "user", content: "q3" });
+			expect(ctxMain.messages[4]).toMatchObject({ role: "assistant" });
 
 			// Branch path to 11: 1,2,3 + branch_summary + 11
 			const ctxBranch = buildSessionContext(entries, "11");
