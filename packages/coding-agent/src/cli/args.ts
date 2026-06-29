@@ -57,14 +57,23 @@ export interface Args {
 }
 
 const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-const VALID_COMPLETION_MODES = ["implicit", "explicit_finish", "hybrid"] as const;
+const COMPLETION_MODE_ALIASES = {
+	implicit: "implicit",
+	explicit: "explicit_finish",
+	explicit_finish: "explicit_finish",
+	hybrid: "hybrid",
+} satisfies Record<string, CompletionMode>;
+const VALID_COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish", "hybrid"] as const;
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
 	return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
 
-function isValidCompletionMode(mode: string): mode is CompletionMode {
-	return VALID_COMPLETION_MODES.includes(mode as CompletionMode);
+function parseCompletionMode(mode: string): CompletionMode | undefined {
+	if (mode in COMPLETION_MODE_ALIASES) {
+		return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
+	}
+	return undefined;
 }
 
 function parsePositiveIntegerFlag(value: string): number | undefined {
@@ -169,12 +178,13 @@ export function parseArgs(args: string[]): Args {
 			}
 		} else if (arg === "--completion-mode" && i + 1 < args.length) {
 			const mode = args[++i];
-			if (isValidCompletionMode(mode)) {
-				result.completionMode = mode;
+			const completionMode = parseCompletionMode(mode);
+			if (completionMode) {
+				result.completionMode = completionMode;
 			} else {
 				result.diagnostics.push({
 					type: "warning",
-					message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODES.join(", ")}`,
+					message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODE_LABELS.join(", ")}`,
 				});
 			}
 		} else if (arg === "--print" || arg === "-p") {
@@ -300,7 +310,7 @@ ${chalk.bold("Options:")}
                                  Applies to built-in, extension, and custom tools
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --max-tokens <n>               Limit provider output tokens for each model request
-  --completion-mode <mode>       Completion mode: explicit_finish (default), hybrid, implicit
+  --completion-mode <mode>       Completion mode: explicit (default), hybrid, implicit
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)

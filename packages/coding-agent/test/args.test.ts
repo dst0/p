@@ -179,13 +179,18 @@ describe("parseArgs", () => {
 			expect(result.completionMode).toBe("implicit");
 		});
 
+		test("parses explicit --completion-mode alias", () => {
+			const result = parseArgs(["--completion-mode", "explicit"]);
+			expect(result.completionMode).toBe("explicit_finish");
+		});
+
 		test("warns on invalid --completion-mode", () => {
 			const result = parseArgs(["--completion-mode", "strict"]);
 			expect(result.completionMode).toBeUndefined();
 			expect(result.diagnostics).toEqual([
 				{
 					type: "warning",
-					message: 'Invalid completion mode "strict". Valid values: implicit, explicit_finish, hybrid',
+					message: 'Invalid completion mode "strict". Valid values: implicit, explicit, explicit_finish, hybrid',
 				},
 			]);
 		});
