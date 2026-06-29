@@ -94,6 +94,10 @@ describe("working state cache isolation", () => {
 		return parts.join("\n\n");
 	}
 
+	function promptTokenUsage(usage: AssistantMessage["usage"]): number {
+		return usage.input + usage.cacheRead;
+	}
+
 	function assistantMessages(messages: readonly unknown[]): AssistantMessage[] {
 		return messages.filter((message): message is AssistantMessage => {
 			return typeof message === "object" && message !== null && "role" in message && message.role === "assistant";
@@ -333,6 +337,60 @@ describe("working state cache isolation", () => {
 		);
 		expect(workingStateMessages).toHaveLength(2);
 		expect(workingStateMessages.every((message) => message.display === false)).toBe(true);
+	}, 30000);
+
+	it("keeps reopened runtime-context turns prefix-cache stable", async () => {
+		const { runtime, session, faux, createRuntime, tempDir } = await createRuntimeForTest([]);
+		const prompts: Array<ReturnType<typeof captureProviderPrompt>> = [];
+		const promptStrings: string[] = [];
+		const usageByTurn: AssistantMessage["usage"][] = [];
+		let activeRuntime = runtime;
+
+		const runTurn = async (turn: number) => {
+			faux.setResponses([
+				(context) => {
+					const prompt = captureProviderPrompt(context);
+					prompts.push(prompt);
+					promptStrings.push(serializeCapturedPrompt(prompt));
+					return fauxAssistantMessage(`turn ${turn} complete`);
+				},
+			]);
+
+			await activeRuntime.session.prompt(`turn ${turn}: continue the cache-stability task`);
+			await activeRuntime.session.agent.waitForIdle();
+
+			const assistants = assistantMessages(activeRuntime.session.messages);
+			const lastAssistant = assistants.at(-1);
+			expect(lastAssistant).toBeDefined();
+			usageByTurn.push(lastAssistant!.usage);
+		};
+
+		await runTurn(1);
+		const sessionFile = session.sessionManager.getSessionFile();
+		expect(sessionFile).toBeDefined();
+		if (!sessionFile) throw new Error("Expected persisted session file");
+
+		for (let turn = 2; turn <= 14; turn++) {
+			const reopenedRuntime = await createAgentSessionRuntime(createRuntime, {
+				cwd: tempDir,
+				agentDir: tempDir,
+				sessionManager: SessionManager.open(sessionFile, undefined, tempDir),
+			});
+			reopenedRuntime.session.setActiveToolsByName([]);
+			reopenedRuntime.session.settingsManager.applyOverrides({ compaction: { enabled: true } });
+			cleanups.push(async () => {
+				await reopenedRuntime.dispose();
+			});
+			activeRuntime = reopenedRuntime;
+			await runTurn(turn);
+		}
+
+		expect(prompts).toHaveLength(14);
+		expect(prompts.some((prompt) => prompt.texts.some((text) => text.includes("<project_memory>")))).toBe(true);
+		for (let index = 1; index < promptStrings.length; index++) {
+			expect(promptStrings[index]?.startsWith(promptStrings[index - 1] ?? "")).toBe(true);
+			expect(usageByTurn[index]?.cacheRead ?? 0).toBeGreaterThanOrEqual(promptTokenUsage(usageByTurn[index - 1]!));
+		}
 	}, 30000);
 
 	it("keeps post-compaction provider prompts user-continuable", async () => {
