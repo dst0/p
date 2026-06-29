@@ -6,8 +6,8 @@
  * and can be activated via CLI flag, /preset command, or Ctrl+Shift+U to cycle.
  *
  * Config files (merged, project takes precedence):
- * - ~/.pi/agent/presets.json (global)
- * - <cwd>/.pi/presets.json (project-local)
+ * - ~/.p/agent/presets.json (global)
+ * - <cwd>/.p/presets.json (project-local)
  *
  * Example presets.json:
  * ```json
@@ -40,9 +40,9 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
+import { DynamicBorder, getAgentDir } from "@dst0/p";
 import type { Api, Model } from "@dst0/p-ai";
-import type { ExtensionAPI, ExtensionContext } from "@dst0/p-coding-agent";
-import { DynamicBorder, getAgentDir } from "@dst0/p-coding-agent";
 import { Container, Key, type SelectItem, SelectList, Text } from "@dst0/p-tui";
 
 // Preset configuration
@@ -69,7 +69,7 @@ interface PresetsConfig {
  */
 function loadPresets(cwd: string): PresetsConfig {
 	const globalPath = join(getAgentDir(), "presets.json");
-	const projectPath = join(cwd, ".pi", "presets.json");
+	const projectPath = join(cwd, ".p", "presets.json");
 
 	let globalPresets: PresetsConfig = {};
 	let projectPresets: PresetsConfig = {};
@@ -200,7 +200,7 @@ export default function presetExtension(pi: ExtensionAPI) {
 		const presetNames = Object.keys(presets);
 
 		if (presetNames.length === 0) {
-			ctx.ui.notify("No presets defined. Add presets to ~/.pi/agent/presets.json or .pi/presets.json", "warning");
+			ctx.ui.notify("No presets defined. Add presets to ~/.p/agent/presets.json or .p/presets.json", "warning");
 			return;
 		}
 
@@ -308,7 +308,7 @@ export default function presetExtension(pi: ExtensionAPI) {
 	async function cyclePreset(ctx: ExtensionContext): Promise<void> {
 		const presetNames = getPresetOrder();
 		if (presetNames.length === 0) {
-			ctx.ui.notify("No presets defined. Add presets to ~/.pi/agent/presets.json or .pi/presets.json", "warning");
+			ctx.ui.notify("No presets defined. Add presets to ~/.p/agent/presets.json or .p/presets.json", "warning");
 			return;
 		}
 

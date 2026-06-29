@@ -16,10 +16,10 @@ import { spawn } from "node:child_process";
 import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
+import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@dst0/p";
 import type { AgentToolResult } from "@dst0/p-agent-core";
 import type { Message } from "@dst0/p-ai";
 import { StringEnum } from "@dst0/p-ai";
-import { type ExtensionAPI, getMarkdownTheme, withFileMutationQueue } from "@dst0/p-coding-agent";
 import { Container, Markdown, Spacer, Text } from "@dst0/p-tui";
 import { Type } from "typebox";
 import { type AgentConfig, type AgentScope, discoverAgents } from "./agents.ts";
@@ -458,8 +458,8 @@ export default function (pi: ExtensionAPI) {
 		description: [
 			"Delegate tasks to specialized subagents with isolated context.",
 			"Modes: single (agent + task), parallel (tasks array), chain (sequential with {previous} placeholder).",
-			'Default agent scope is "user" (from ~/.pi/agent/agents).',
-			'To enable project-local agents in .pi/agents, set agentScope: "both" (or "project").',
+			'Default agent scope is "user" (from ~/.p/agent/agents).',
+			'To enable project-local agents in .p/agents, set agentScope: "both" (or "project").',
 		].join(" "),
 		parameters: SubagentParams,
 

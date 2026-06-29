@@ -1,15 +1,15 @@
 {
-	"name": "@dst0/p-coding-agent",
-	"version": "0.2.0",
+	"name": "@dst0/p",
+	"version": "0.2.5",
 	"description": "Coding agent CLI with read, bash, edit, write tools and session management",
 	"type": "module",
-	"piConfig": {
-		"name": "p",
-		"configDir": ".pi"
-	},
 	"bin": {
 		"p": "dist/cli.js",
 		"p-voice": "dist/voice-server-cli.js"
+	},
+	"piConfig": {
+		"name": "p",
+		"configDir": ".p"
 	},
 	"main": "./dist/index.js",
 	"types": "./dist/index.d.ts",
@@ -38,9 +38,9 @@
 		"prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
 	},
 	"dependencies": {
-		"@dst0/p-agent-core": "^0.2.0",
-		"@dst0/p-ai": "^0.2.0",
-		"@dst0/p-tui": "^0.2.0",
+		"@dst0/p-agent-core": "^0.2.5",
+		"@dst0/p-ai": "^0.2.5",
+		"@dst0/p-tui": "^0.2.5",
 		"@silvia-odwyer/photon-node": "0.3.4",
 		"chalk": "5.6.2",
 		"cross-spawn": "7.0.6",

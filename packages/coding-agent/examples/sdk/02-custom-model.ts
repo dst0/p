@@ -4,8 +4,8 @@
  * Shows how to select a specific model and thinking level.
  */
 
+import { AuthStorage, createAgentSession, ModelRegistry } from "@dst0/p";
 import { getModel } from "@dst0/p-ai";
-import { AuthStorage, createAgentSession, ModelRegistry } from "@dst0/p-coding-agent";
 
 // Set up auth storage and model registry
 const authStorage = AuthStorage.create();

@@ -860,7 +860,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return [];
 		}
 
@@ -956,7 +956,7 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return;
 		}
 
@@ -2879,7 +2879,7 @@ export class InteractiveMode {
 						this.footerDataProvider.setLoadingProgress({
 							model: event.assistantMessageEvent.model,
 						});
-					}} else if (
+					} else if (
 						event.assistantMessageEvent?.type === "text_start" ||
 						event.assistantMessageEvent?.type === "thinking_start" ||
 						event.assistantMessageEvent?.type === "toolcall_start"

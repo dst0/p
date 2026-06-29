@@ -3,10 +3,10 @@
  *
  * Replaces text-by-text matching with precise line/column offsets.
  * Every mutation tool (except easy:revert) creates a timestamped backup
- * in `.pi/edits/` with project paths preserved.
+ * in `.p/edits/` with project paths preserved.
  *
- * Place in:  ~/.pi/agent/extensions/easy-edit.ts   (global)
- *            .pi/extensions/easy-edit.ts             (project-local)
+ * Place in:  ~/.p/agent/extensions/easy-edit.ts   (global)
+ *            .p/extensions/easy-edit.ts             (project-local)
  *
  * Tools:
  *   easy:find    — locate text, return {line, position} ranges + length
@@ -41,7 +41,7 @@ interface Position {
 // ──────────────────────────────────────────────
 
 function getEditsDir(cwd: string): string {
-  const editsDir = join(cwd, ".pi", "edits");
+  const editsDir = join(cwd, ".p", "edits");
   mkdirSync(editsDir, { recursive: true });
   return editsDir;
 }

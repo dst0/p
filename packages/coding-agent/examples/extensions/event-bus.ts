@@ -7,7 +7,7 @@
  * Usage: /emit [event-name] [data] - emit an event on the bus
  */
 
-import type { ExtensionAPI, ExtensionContext } from "@dst0/p-coding-agent";
+import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
 
 export default function (pi: ExtensionAPI) {
 	// Store ctx for use in event handler

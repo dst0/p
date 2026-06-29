@@ -4,7 +4,7 @@
  * Override settings using SettingsManager.
  */
 
-import { createAgentSession, SessionManager, SettingsManager } from "@dst0/p-coding-agent";
+import { createAgentSession, SessionManager, SettingsManager } from "@dst0/p";
 
 const cwd = process.cwd();
 

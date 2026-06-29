@@ -7,7 +7,7 @@ This page gets you from install to a useful first pi session.
 Pi is distributed as an npm package:
 
 ```bash
-npm install -g --ignore-scripts @dst0/p-coding-agent
+npm install -g --ignore-scripts @dst0/p
 ```
 
 `--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
@@ -18,19 +18,19 @@ Use the package manager that installed pi. The curl installer uses npm globally,
 
 ```bash
 # curl installer or npm install -g
-npm uninstall -g @dst0/p-coding-agent
+npm uninstall -g @dst0/p
 
 # pnpm
-pnpm remove -g @dst0/p-coding-agent
+pnpm remove -g @dst0/p
 
 # Yarn
-yarn global remove @dst0/p-coding-agent
+yarn global remove @dst0/p
 
 # Bun
-bun uninstall -g @dst0/p-coding-agent
+bun uninstall -g @dst0/p
 ```
 
-Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.pi/agent/`.
+Uninstalling pi leaves settings, credentials, sessions, and installed pi packages in `~/.p/agent/`.
 
 Then start pi in the project directory you want it to work on:
 
@@ -62,7 +62,7 @@ export ANTHROPIC_API_KEY=sk-ant-...
 pi
 ```
 
-You can also run `/login` and select an API-key provider to store the key in `~/.pi/agent/auth.json`.
+You can also run `/login` and select an API-key provider to store the key in `~/.p/agent/auth.json`.
 
 See [Providers](providers.md) for all supported providers, environment variables, and cloud-provider setup.
 
@@ -97,7 +97,7 @@ Pi loads context files at startup. Add an `AGENTS.md` file to tell it how to wor
 
 Pi loads:
 
-- `~/.pi/agent/AGENTS.md` for global instructions
+- `~/.p/agent/AGENTS.md` for global instructions
 - `AGENTS.md` or `CLAUDE.md` from parent directories and the current directory
 
 Restart pi, or run `/reload`, after changing context files.

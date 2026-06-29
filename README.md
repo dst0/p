@@ -20,7 +20,7 @@
 
 This is the home of the pi agent harness project including our self extensible coding agent.
 
-* **[@dst0/p-coding-agent](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
+* **[@dst0/p](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
 * **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
 * **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
 
@@ -51,7 +51,7 @@ I regularly publish my own `pi-mono` work sessions here:
 |---------|-------------|
 | **[@dst0/p-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
 | **[@dst0/p-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@dst0/p-coding-agent](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
+| **[@dst0/p](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
 | **[@dst0/p-tui](packages/tui)** | Terminal UI library with differential rendering |
 
 For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst0/p-chat).
@@ -86,7 +86,7 @@ We treat npm dependency changes as reviewed code changes.
 
 - Direct external dependencies are pinned to exact versions. Internal workspace packages remain version-ranged.
 - `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
-- `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `PI_ALLOW_LOCKFILE_CHANGE=1` is set.
+- `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `P_ALLOW_LOCKFILE_CHANGE=1` is set.
 - `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap.
 - The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive deps for npm users.
 - Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release.

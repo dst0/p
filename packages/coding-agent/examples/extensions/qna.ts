@@ -7,9 +7,9 @@
  * 3. Loads the result into the editor for user to fill in answers
  */
 
+import type { ExtensionAPI } from "@dst0/p";
+import { BorderedLoader } from "@dst0/p";
 import { complete, type UserMessage } from "@dst0/p-ai";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
-import { BorderedLoader } from "@dst0/p-coding-agent";
 
 const SYSTEM_PROMPT = `You are a question extractor. Given text from a conversation, extract any questions that need answering and format them for the user to fill in.
 

@@ -535,7 +535,7 @@
 
 ### Added
 
-- Added `PI_DEBUG_REDRAW=1` env var for debugging full redraws (logs triggers to `~/.pi/agent/pi-debug.log`)
+- Added `PI_DEBUG_REDRAW=1` env var for debugging full redraws (logs triggers to `~/.p/agent/pi-debug.log`)
 
 ### Changed
 

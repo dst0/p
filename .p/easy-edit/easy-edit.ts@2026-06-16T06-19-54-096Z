@@ -3,10 +3,10 @@
  *
  * Replaces text-by-text matching with precise line/column offsets.
  * Every mutation tool (except easy:revert) creates a timestamped backup
- * in `.pi/edits/` with project paths preserved.
+ * in `.p/edits/` with project paths preserved.
  *
- * Place in:  ~/.pi/agent/extensions/easy-edit.ts   (global)
- *            .pi/extensions/easy-edit.ts             (project-local)
+ * Place in:  ~/.p/agent/extensions/easy-edit.ts   (global)
+ *            .p/extensions/easy-edit.ts             (project-local)
  *
  * Tools:
  *   easy:find    — locate text, return {line, position} ranges + length
@@ -27,9 +27,9 @@ import {
   readdirSync,
   statSync,
 } from "node:fs";
-import { join, relative, resolve, dirname } from "node:path";
+import { basename, join, relative, resolve, dirname } from "node:path";h";
 
-// ────────────────────────────────────────────────────────────────────────────
+// ──────────────────────────────────────────────
 //  Types
 // ──────────────────────────────────────────────
 
@@ -43,7 +43,7 @@ interface Position {
 // ──────────────────────────────────────────────
 
 function getEditsDir(cwd: string): string {
-  const editsDir = join(cwd, ".pi", "edits");
+  const editsDir = join(cwd, ".p", "edits");
   mkdirSync(editsDir, { recursive: true });
   return editsDir;
 }
@@ -59,7 +59,7 @@ function createBackup(filePath: string, cwd: string): string {
   mkdirSync(backupDir, { recursive: true });
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-  const backupPath = join(backupDir, `${basename(relPath)}@${timestamp}`);
+  const backupPath = join(backupDir, `${relPath}@${timestamp}`);
   copyFileSync(absFile, backupPath);
   return backupPath;
 }

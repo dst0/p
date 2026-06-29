@@ -4,7 +4,6 @@
  * Replace everything - no discovery, explicit configuration.
  */
 
-import { getModel } from "@dst0/p-ai";
 import {
 	AuthStorage,
 	createAgentSession,
@@ -13,7 +12,8 @@ import {
 	type ResourceLoader,
 	SessionManager,
 	SettingsManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
+import { getModel } from "@dst0/p-ai";
 
 // Custom auth storage location
 const authStorage = AuthStorage.create("/tmp/my-agent/auth.json");

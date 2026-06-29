@@ -5,12 +5,12 @@
  * Tool selection persists across session reloads and respects branch navigation.
  *
  * Usage:
- * 1. Copy this file to ~/.pi/agent/extensions/ or your project's .pi/extensions/
+ * 1. Copy this file to ~/.p/agent/extensions/ or your project's .p/extensions/
  * 2. Use /tools to open the tool selector
  */
 
-import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@dst0/p-coding-agent";
-import { getSettingsListTheme } from "@dst0/p-coding-agent";
+import type { ExtensionAPI, ExtensionContext, ToolInfo } from "@dst0/p";
+import { getSettingsListTheme } from "@dst0/p";
 import { Container, type SettingItem, SettingsList } from "@dst0/p-tui";
 
 // State persisted to session

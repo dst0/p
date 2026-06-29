@@ -860,7 +860,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return [];
 		}
 
@@ -956,7 +956,7 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return;
 		}
 
@@ -2866,7 +2866,20 @@ export class InteractiveMode {
 							tokensPerSecond: event.assistantMessageEvent.tokensPerSecond,
 							tokens: event.assistantMessageEvent.tokens,
 						});
-					} else if (
+					} else if (event.assistantMessageEvent?.type === "model_switch_progress") {
+						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setModelSwitchProgress({
+							fromModel: event.assistantMessageEvent.fromModel,
+							toModel: event.assistantMessageEvent.toModel,
+						});
+					} else if (event.assistantMessageEvent?.type === "loading_progress") {
+						this.footerDataProvider.setPrefillProgress(undefined);
+						this.footerDataProvider.setGenProgress(undefined);
+						this.footerDataProvider.setLoadingProgress({
+							model: event.assistantMessageEvent.model,
+						});
+					}} else if (
 						event.assistantMessageEvent?.type === "text_start" ||
 						event.assistantMessageEvent?.type === "thinking_start" ||
 						event.assistantMessageEvent?.type === "toolcall_start"

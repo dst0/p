@@ -5,14 +5,14 @@ Sessions are stored as JSONL (JSON Lines) files. Each line is a JSON object with
 ## File Location
 
 ```
-~/.pi/agent/sessions/--<path>--/<timestamp>_<uuid>.jsonl
+~/.p/agent/sessions/--<path>--/<timestamp>_<uuid>.jsonl
 ```
 
 Where `<path>` is the working directory with `/` replaced by `-`.
 
 ## Deleting Sessions
 
-Sessions can be removed by deleting their `.jsonl` files under `~/.pi/agent/sessions/`.
+Sessions can be removed by deleting their `.jsonl` files under `~/.p/agent/sessions/`.
 
 Pi also supports deleting sessions interactively from `/resume` (select a session and press `Ctrl+D`, then confirm). When available, pi uses the `trash` CLI to avoid permanent deletion.
 
@@ -34,7 +34,7 @@ Source on GitHub ([pi-mono](https://github.com/dst0/p-mono)):
 - [`packages/ai/src/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/ai/src/types.ts) - Base message types (UserMessage, AssistantMessage, ToolResultMessage)
 - [`packages/agent/src/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/agent/src/types.ts) - AgentMessage union type
 
-For TypeScript definitions in your project, inspect `node_modules/@dst0/p-coding-agent/dist/` and `node_modules/@dst0/p-ai/dist/`.
+For TypeScript definitions in your project, inspect `node_modules/@dst0/p/dist/` and `node_modules/@dst0/p-ai/dist/`.
 
 ## Message Types
 

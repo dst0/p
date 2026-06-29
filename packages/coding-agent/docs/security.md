@@ -8,18 +8,18 @@ Project trust controls whether pi loads project-local settings, resources, packa
 
 Pi considers a project to have resources that require trust when it finds any of these from the current working directory:
 
-- `.pi/settings.json`
-- `.pi/extensions`, `.pi/skills`, `.pi/prompts`, or `.pi/themes`
-- `.pi/SYSTEM.md` or `.pi/APPEND_SYSTEM.md`
+- `.p/settings.json`
+- `.p/extensions`, `.p/skills`, `.p/prompts`, or `.p/themes`
+- `.p/SYSTEM.md` or `.p/APPEND_SYSTEM.md`
 - project `.agents/skills` in the current directory or an ancestor directory
 
 A bare `.pi` directory does not count as a project resource that requires trust.
 
-When an interactive session starts in a project with resources that require trust and no saved decision for the current directory or a parent directory, pi follows `defaultProjectTrust` from global settings. The default value is `"ask"`, which asks whether to trust the project when UI is available. Saved decisions are stored by canonical directory in `~/.pi/agent/trust.json`, and the closest saved decision on the current or parent path applies before the global default.
+When an interactive session starts in a project with resources that require trust and no saved decision for the current directory or a parent directory, pi follows `defaultProjectTrust` from global settings. The default value is `"ask"`, which asks whether to trust the project when UI is available. Saved decisions are stored by canonical directory in `~/.p/agent/trust.json`, and the closest saved decision on the current or parent path applies before the global default.
 
 Trusting a project allows pi to load project resources that require trust, including:
 
-- `.pi/settings.json`
+- `.p/settings.json`
 - `.pi` resources such as extensions, skills, prompt templates, themes, and system prompt files
 - missing project packages configured through project settings
 - project-local extensions and project package-managed extensions
@@ -45,7 +45,7 @@ Common patterns are documented in [Containerization](containerization.md):
 - run the whole `pi` process inside a container/sandbox
 - run host pi while routing built-in tool execution into a Gondolin micro-VM
 - mount only the workspace paths the agent should access
-- avoid mounting host `~/.pi/agent` unless the container should access host sessions, settings, and credentials
+- avoid mounting host `~/.p/agent` unless the container should access host sessions, settings, and credentials
 - pass the minimum required API keys or use short-lived credentials
 - restrict network access when the task does not need it
 - review diffs and outputs before copying results back to trusted systems

@@ -10,8 +10,8 @@
  * correct for that point in history.
  */
 
+import type { ExtensionAPI, ExtensionContext, Theme } from "@dst0/p";
 import { StringEnum } from "@dst0/p-ai";
-import type { ExtensionAPI, ExtensionContext, Theme } from "@dst0/p-coding-agent";
 import { matchesKey, Text, truncateToWidth } from "@dst0/p-tui";
 import { Type } from "typebox";
 

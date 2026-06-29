@@ -12,9 +12,9 @@
  * - Progress tracking widget during execution
  */
 
+import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
 import type { AgentMessage } from "@dst0/p-agent-core";
 import type { AssistantMessage, TextContent } from "@dst0/p-ai";
-import type { ExtensionAPI, ExtensionContext } from "@dst0/p-coding-agent";
 import { Key } from "@dst0/p-tui";
 import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
 

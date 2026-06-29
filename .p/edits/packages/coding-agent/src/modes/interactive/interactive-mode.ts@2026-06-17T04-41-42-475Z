@@ -860,7 +860,7 @@ export class InteractiveMode {
 	}
 
 	private async checkForPackageUpdates(): Promise<string[]> {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return [];
 		}
 
@@ -956,7 +956,7 @@ export class InteractiveMode {
 	}
 
 	private reportInstallTelemetry(version: string): void {
-		if (process.env.PI_OFFLINE) {
+		if (process.env.P_OFFLINE) {
 			return;
 		}
 
@@ -2886,7 +2886,8 @@ export class InteractiveMode {
 					) {
 						this.footerDataProvider.setPrefillProgress(undefined);
 						this.footerDataProvider.setGenProgress({ tokensPerSecond: 0, tokens: 0 });
-					}
+					this.footerDataProvider.setModelSwitchProgress(undefined);
+						this.footerDataProvider.setLoadingProgress(undefined);					}
 
 					for (const content of this.streamingMessage.content) {
 						if (content.type === "toolCall") {

@@ -11,7 +11,7 @@ import {
 
 const execPathDescriptor = Object.getOwnPropertyDescriptor(process, "execPath");
 const originalPath = process.env.PATH;
-const originalPiPackageDir = process.env.PI_PACKAGE_DIR;
+const originalPiPackageDir = process.env.P_PACKAGE_DIR;
 const originalArgv1 = process.argv[1];
 let tempDir: string | undefined;
 
@@ -32,9 +32,9 @@ afterEach(() => {
 		process.env.PATH = originalPath;
 	}
 	if (originalPiPackageDir === undefined) {
-		delete process.env.PI_PACKAGE_DIR;
+		delete process.env.P_PACKAGE_DIR;
 	} else {
-		process.env.PI_PACKAGE_DIR = originalPiPackageDir;
+		process.env.P_PACKAGE_DIR = originalPiPackageDir;
 	}
 	if (originalArgv1 === undefined) {
 		process.argv.splice(1, 1);
@@ -55,7 +55,7 @@ function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; pack
 	const packageDir = join(scopeDir, "pi-coding-agent");
 	mkdirSync(packageDir, { recursive: true });
 	tempDir = prefix;
-	process.env.PI_PACKAGE_DIR = packageDir;
+	process.env.P_PACKAGE_DIR = packageDir;
 	setExecPath(join(packageDir, "dist", "cli.js"));
 	return { prefix, packageDir };
 }
@@ -71,7 +71,7 @@ function createPnpmGlobalInstall(): { root: string; packageDir: string } {
 	chmodSync(join(binDir, process.platform === "win32" ? "pnpm.cmd" : "pnpm"), 0o755);
 	tempDir = temp;
 	process.env.PATH = `${binDir}${delimiter}${originalPath ?? ""}`;
-	process.env.PI_PACKAGE_DIR = packageDir;
+	process.env.P_PACKAGE_DIR = packageDir;
 	setExecPath(
 		join(
 			root,
@@ -98,7 +98,7 @@ function createYarnGlobalInstall(): { globalDir: string; packageDir: string } {
 	chmodSync(join(binDir, process.platform === "win32" ? "yarn.cmd" : "yarn"), 0o755);
 	tempDir = temp;
 	process.env.PATH = `${binDir}${delimiter}${originalPath ?? ""}`;
-	process.env.PI_PACKAGE_DIR = packageDir;
+	process.env.P_PACKAGE_DIR = packageDir;
 	setExecPath(join(globalDir, ".yarn", "@mariozechner", "pi-coding-agent", "dist", "cli.js"));
 	return { globalDir, packageDir };
 }
@@ -116,7 +116,7 @@ function createBunGlobalInstall(): { packageDir: string } {
 	chmodSync(join(bunBin, process.platform === "win32" ? "bun.cmd" : "bun"), 0o755);
 	tempDir = temp;
 	process.env.PATH = `${bunBin}${delimiter}${originalPath ?? ""}`;
-	process.env.PI_PACKAGE_DIR = packageDir;
+	process.env.P_PACKAGE_DIR = packageDir;
 	setExecPath(join(packageDir, "dist", "cli.js"));
 	return { packageDir };
 }
@@ -152,8 +152,8 @@ describe("detectInstallMethod", () => {
 		);
 
 		expect(detectInstallMethod()).toBe("pnpm");
-		expect(getUpdateInstruction("@dst0/p-coding-agent")).toBe(
-			"Run: pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @dst0/p-coding-agent",
+		expect(getUpdateInstruction("@dst0/p")).toBe(
+			"Run: pnpm install -g --ignore-scripts --config.minimumReleaseAge=0 @dst0/p",
 		);
 	});
 
@@ -161,22 +161,22 @@ describe("detectInstallMethod", () => {
 		setExecPath("/usr/local/bin/node");
 
 		expect(detectInstallMethod()).toBe("unknown");
-		expect(getSelfUpdateCommand("@dst0/p-coding-agent")).toBeUndefined();
-		expect(getUpdateInstruction("@dst0/p-coding-agent")).toBe(
-			"Update @dst0/p-coding-agent using the package manager, wrapper, or source checkout that provides this installation.",
+		expect(getSelfUpdateCommand("@dst0/p")).toBeUndefined();
+		expect(getUpdateInstruction("@dst0/p")).toBe(
+			"Update @dst0/p using the package manager, wrapper, or source checkout that provides this installation.",
 		);
 	});
 
 	test("self-updates npm installs from custom prefixes", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@dst0/p-coding-agent");
+		const command = getSelfUpdateCommand("@dst0/p");
 
 		expect(detectInstallMethod()).toBe("npm");
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@dst0/p-coding-agent"],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @dst0/p-coding-agent`,
+			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@dst0/p"],
+			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @dst0/p`,
 		});
 	});
 
@@ -207,19 +207,19 @@ describe("detectInstallMethod", () => {
 	test("self-update respects configured npmCommand", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@dst0/p-coding-agent", ["npm", "--prefix", prefix]);
+		const command = getSelfUpdateCommand("@dst0/p", ["npm", "--prefix", prefix]);
 
 		expect(command).toEqual({
 			command: "npm",
-			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@dst0/p-coding-agent"],
-			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @dst0/p-coding-agent`,
+			args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@dst0/p"],
+			display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @dst0/p`,
 		});
 	});
 
 	test("self-update treats empty npmCommand as unset", () => {
 		const { prefix } = createNpmPrefixInstall();
 
-		const command = getSelfUpdateCommand("@dst0/p-coding-agent", []);
+		const command = getSelfUpdateCommand("@dst0/p", []);
 
 		expect(command?.args).toEqual([
 			"--prefix",
@@ -228,41 +228,37 @@ describe("detectInstallMethod", () => {
 			"-g",
 			"--ignore-scripts",
 			"--min-release-age=0",
-			"@dst0/p-coding-agent",
+			"@dst0/p",
 		]);
 	});
 
 	test("quotes npm self-update display paths", () => {
 		const { prefix } = createNpmPrefixInstall("pi prefix ");
 
-		const command = getSelfUpdateCommand("@dst0/p-coding-agent");
+		const command = getSelfUpdateCommand("@dst0/p");
 
-		expect(command?.display).toBe(
-			`npm --prefix "${prefix}" install -g --ignore-scripts --min-release-age=0 @dst0/p-coding-agent`,
-		);
+		expect(command?.display).toBe(`npm --prefix "${prefix}" install -g --ignore-scripts --min-release-age=0 @dst0/p`);
 	});
 
 	test("does not infer Windows npm custom prefixes from package paths", () => {
 		const packageDir = "C:\\Users\\Admin\\npm prefix\\node_modules\\@dst0\\pi-coding-agent";
-		process.env.PI_PACKAGE_DIR = packageDir;
+		process.env.P_PACKAGE_DIR = packageDir;
 		setExecPath(`${packageDir}\\dist\\cli.js`);
 
 		expect(detectInstallMethod()).toBe("npm");
-		expect(getUpdateInstruction("@dst0/p-coding-agent")).toBe(
-			"Run: npm install -g --ignore-scripts --min-release-age=0 @dst0/p-coding-agent",
-		);
+		expect(getUpdateInstruction("@dst0/p")).toBe("Run: npm install -g --ignore-scripts --min-release-age=0 @dst0/p");
 	});
 
 	test("self-updates bun global installs from bun pm bin", () => {
 		createBunGlobalInstall();
 
-		const command = getSelfUpdateCommand("@dst0/p-coding-agent");
+		const command = getSelfUpdateCommand("@dst0/p");
 
 		expect(detectInstallMethod()).toBe("bun");
 		expect(command).toEqual({
 			command: "bun",
-			args: ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", "@dst0/p-coding-agent"],
-			display: "bun install -g --ignore-scripts --minimum-release-age=0 @dst0/p-coding-agent",
+			args: ["install", "-g", "--ignore-scripts", "--minimum-release-age=0", "@dst0/p"],
+			display: "bun install -g --ignore-scripts --minimum-release-age=0 @dst0/p",
 		});
 	});
 
@@ -296,7 +292,7 @@ describe("detectInstallMethod", () => {
 		const temp = mkdtempSync(join(tmpdir(), "pi-pnpm11-"));
 		const binDir = join(temp, "bin");
 		const root = join(temp, "Library", "pnpm", "global", "v11");
-		const packageName = "@dst0/p-coding-agent";
+		const packageName = "@dst0/p";
 		const globalPackageDir = join(root, "11e9a", "node_modules", "@dst0", "pi-coding-agent");
 		const storePackageDir = join(
 			temp,
@@ -321,7 +317,7 @@ describe("detectInstallMethod", () => {
 		chmodSync(join(binDir, process.platform === "win32" ? "pnpm.cmd" : "pnpm"), 0o755);
 		tempDir = temp;
 		process.env.PATH = `${binDir}${delimiter}${originalPath ?? ""}`;
-		process.env.PI_PACKAGE_DIR = storePackageDir;
+		process.env.P_PACKAGE_DIR = storePackageDir;
 		process.argv[1] = join(globalPackageDir, "dist", "cli.js");
 		setExecPath(join(storePackageDir, "dist", "cli.js"));
 
@@ -390,7 +386,7 @@ describe("detectInstallMethod", () => {
 		const { packageDir } = createNpmPrefixInstall();
 		chmodSync(packageDir, 0o500);
 
-		expect(getSelfUpdateCommand("@dst0/p-coding-agent")).toBeUndefined();
-		expect(getSelfUpdateUnavailableInstruction("@dst0/p-coding-agent")).toContain("the install path is not writable");
+		expect(getSelfUpdateCommand("@dst0/p")).toBeUndefined();
+		expect(getSelfUpdateUnavailableInstruction("@dst0/p")).toContain("the install path is not writable");
 	});
 });

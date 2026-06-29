@@ -8,7 +8,7 @@ const packages = [
 	{ directory: "packages/ai", name: "@dst0/p-ai" },
 	{ directory: "packages/agent", name: "@dst0/p-agent-core" },
 	{ directory: "packages/tui", name: "@dst0/p-tui" },
-	{ directory: "packages/coding-agent", name: "@dst0/p-coding-agent" },
+	{ directory: "packages/coding-agent", name: "@dst0/p" },
 ];
 
 const dryRun = process.argv.includes("--dry-run");
@@ -87,7 +87,7 @@ if (versions.length !== 1) {
 	throw new Error(`Publish packages are not lockstep versioned: ${versions.join(", ")}`);
 }
 
-console.log(`Publishing pi packages at ${versions[0]}${dryRun ? " (dry run)" : ""}\n`);
+console.log(`Publishing P packages at ${versions[0]}${dryRun ? " (dry run)" : ""}\n`);
 
 for (const pkg of packages) {
 	const version = packageVersions.get(pkg.name);

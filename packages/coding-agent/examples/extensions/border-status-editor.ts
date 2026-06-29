@@ -1,4 +1,4 @@
-import { CustomEditor, type ExtensionAPI, type ExtensionContext, type KeybindingsManager } from "@dst0/p-coding-agent";
+import { CustomEditor, type ExtensionAPI, type ExtensionContext, type KeybindingsManager } from "@dst0/p";
 import type { Component, EditorTheme, TUI } from "@dst0/p-tui";
 import { truncateToWidth, visibleWidth } from "@dst0/p-tui";
 

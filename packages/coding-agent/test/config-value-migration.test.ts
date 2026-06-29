@@ -37,6 +37,40 @@ describe("config value env var syntax migration", () => {
 		}
 	}
 
+	it("migrates legacy ~/.pi contents to ~/.p before agent-dir migrations", () => {
+		const homeDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-home-migration-test-"));
+		tempDirs.push(homeDir);
+		const previousHome = process.env.HOME;
+		const previousAgentDir = process.env[ENV_AGENT_DIR];
+		delete process.env[ENV_AGENT_DIR];
+		process.env.HOME = homeDir;
+
+		try {
+			const legacyAgentDir = path.join(homeDir, ".pi", "agent");
+			fs.mkdirSync(legacyAgentDir, { recursive: true });
+			fs.writeFileSync(path.join(legacyAgentDir, "settings.json"), `${JSON.stringify({ theme: "dark" })}\n`);
+
+			const result = runMigrations(homeDir);
+
+			expect(result.migratedDotPiToDotP).toBe(true);
+			expect(fs.existsSync(path.join(homeDir, ".pi"))).toBe(false);
+			expect(fs.readFileSync(path.join(homeDir, ".p", "agent", "settings.json"), "utf-8")).toBe(
+				`${JSON.stringify({ theme: "dark" })}\n`,
+			);
+		} finally {
+			if (previousHome === undefined) {
+				delete process.env.HOME;
+			} else {
+				process.env.HOME = previousHome;
+			}
+			if (previousAgentDir === undefined) {
+				delete process.env[ENV_AGENT_DIR];
+			} else {
+				process.env[ENV_AGENT_DIR] = previousAgentDir;
+			}
+		}
+	});
+
 	it("leaves uppercase auth.json API key values unchanged", () => {
 		const agentDir = createAgentDir();
 		fs.writeFileSync(

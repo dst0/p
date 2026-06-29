@@ -8,11 +8,11 @@
  * are currently active, respecting whatever the user has configured.
  *
  * Usage:
- * 1. Copy this file to ~/.pi/agent/extensions/ or your project's .pi/extensions/
+ * 1. Copy this file to ~/.p/agent/extensions/ or your project's .p/extensions/
  * 2. Use the extension — it automatically adapts to your active tools and skills
  */
 
-import type { BuildSystemPromptOptions, ExtensionAPI } from "@dst0/p-coding-agent";
+import type { BuildSystemPromptOptions, ExtensionAPI } from "@dst0/p";
 
 /**
  * Adds tool-specific guidance that adapts to the active tool set.

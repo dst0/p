@@ -57,7 +57,7 @@ function getDefaultAttributionHeaders(
 
 	if (isCloudflareModel(model)) {
 		return {
-			"User-Agent": "p-coding-agent",
+			"User-Agent": "p",
 		};
 	}
 

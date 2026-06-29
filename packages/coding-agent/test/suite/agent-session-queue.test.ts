@@ -1,6 +1,6 @@
+import type { ExtensionAPI } from "@dst0/p";
 import type { AgentTool } from "@dst0/p-agent-core";
 import { fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
-import type { ExtensionAPI } from "@dst0/p-coding-agent";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";

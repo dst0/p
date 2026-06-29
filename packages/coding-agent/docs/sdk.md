@@ -16,7 +16,7 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@dst0/p-coding-agent";
+import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@dst0/p";
 
 // Set up credential storage and model registry
 const authStorage = AuthStorage.create();
@@ -40,7 +40,7 @@ await session.prompt("What files are in the current directory?");
 ## Installation
 
 ```bash
-npm install @dst0/p-coding-agent
+npm install @dst0/p
 ```
 
 The SDK is included in the main package. No separate installation needed.
@@ -54,7 +54,7 @@ The main factory function for a single `AgentSession`.
 `createAgentSession()` uses a `ResourceLoader` to supply extensions, skills, prompt templates, themes, and context files. If you do not provide one, it uses `DefaultResourceLoader` with standard discovery.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@dst0/p-coding-agent";
+import { createAgentSession, SessionManager } from "@dst0/p";
 
 // Minimal: defaults with DefaultResourceLoader
 const { session } = await createAgentSession();
@@ -132,7 +132,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -338,23 +338,23 @@ const { session } = await createAgentSession({
   cwd: process.cwd(), // default
   
   // Global config directory
-  agentDir: "~/.pi/agent", // default (expands ~)
+  agentDir: "~/.p/agent", // default (expands ~)
 });
 ```
 
 `cwd` is used by `DefaultResourceLoader` for:
-- Project extensions (`.pi/extensions/`)
+- Project extensions (`.p/extensions/`)
 - Project skills:
-  - `.pi/skills/`
+  - `.p/skills/`
   - `.agents/skills/` in `cwd` and ancestor directories (up to git repo root, or filesystem root when not in a repo)
-- Project prompts (`.pi/prompts/`)
+- Project prompts (`.p/prompts/`)
 - Context files (`AGENTS.md` walking up from cwd)
 - Session directory naming
 
 `agentDir` is used by `DefaultResourceLoader` for:
 - Global extensions (`extensions/`)
 - Global skills:
-  - `skills/` under `agentDir` (for example `~/.pi/agent/skills/`)
+  - `skills/` under `agentDir` (for example `~/.p/agent/skills/`)
   - `~/.agents/skills/`
 - Global prompts (`prompts/`)
 - Global context file (`AGENTS.md`)
@@ -369,7 +369,7 @@ When you pass a custom `ResourceLoader`, `cwd` and `agentDir` no longer control 
 
 ```typescript
 import { getModel } from "@dst0/p-ai";
-import { AuthStorage, ModelRegistry } from "@dst0/p-coding-agent";
+import { AuthStorage, ModelRegistry } from "@dst0/p";
 
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
@@ -416,9 +416,9 @@ API key resolution priority (handled by AuthStorage):
 4. Fallback resolver (for custom provider keys from `models.json`)
 
 ```typescript
-import { AuthStorage, ModelRegistry } from "@dst0/p-coding-agent";
+import { AuthStorage, ModelRegistry } from "@dst0/p";
 
-// Default: uses ~/.pi/agent/auth.json and ~/.pi/agent/models.json
+// Default: uses ~/.p/agent/auth.json and ~/.p/agent/models.json
 const authStorage = AuthStorage.create();
 const modelRegistry = ModelRegistry.create(authStorage);
 
@@ -452,7 +452,7 @@ const simpleRegistry = ModelRegistry.inMemory(authStorage);
 Use a `ResourceLoader` to override the system prompt:
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@dst0/p-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@dst0/p";
 
 const loader = new DefaultResourceLoader({
   systemPromptOverride: () => "You are a helpful assistant.",
@@ -477,7 +477,7 @@ Specify which built-in tools to enable:
 The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
 ```typescript
-import { createAgentSession } from "@dst0/p-coding-agent";
+import { createAgentSession } from "@dst0/p";
 
 // Read-only mode
 const { session } = await createAgentSession({
@@ -500,7 +500,7 @@ const { session } = await createAgentSession({
 When you pass a custom `cwd`, `createAgentSession()` builds selected built-in tools for that cwd.
 
 ```typescript
-import { createAgentSession, SessionManager } from "@dst0/p-coding-agent";
+import { createAgentSession, SessionManager } from "@dst0/p";
 
 const cwd = "/path/to/project";
 
@@ -524,7 +524,7 @@ const { session } = await createAgentSession({
 
 ```typescript
 import { Type } from "typebox";
-import { createAgentSession, defineTool } from "@dst0/p-coding-agent";
+import { createAgentSession, defineTool } from "@dst0/p";
 
 // Inline custom tool
 const myTool = defineTool({
@@ -556,10 +556,10 @@ If you pass `tools`, include each custom or extension tool name you want enabled
 
 ### Extensions
 
-Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.pi/agent/extensions/`, `.pi/extensions/`, and settings.json extension sources.
+Extensions are loaded by the `ResourceLoader`. `DefaultResourceLoader` discovers extensions from `~/.p/agent/extensions/`, `.p/extensions/`, and settings.json extension sources.
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@dst0/p-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@dst0/p";
 
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
@@ -581,7 +581,7 @@ Extensions can register tools, subscribe to events, add commands, and more. See 
 **Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
-import { createEventBus, DefaultResourceLoader } from "@dst0/p-coding-agent";
+import { createEventBus, DefaultResourceLoader } from "@dst0/p";
 
 const eventBus = createEventBus();
 const loader = new DefaultResourceLoader({
@@ -601,7 +601,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type Skill,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const customSkill: Skill = {
   name: "my-skill",
@@ -627,7 +627,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 ### Context Files
 
 ```typescript
-import { createAgentSession, DefaultResourceLoader } from "@dst0/p-coding-agent";
+import { createAgentSession, DefaultResourceLoader } from "@dst0/p";
 
 const loader = new DefaultResourceLoader({
   agentsFilesOverride: (current) => ({
@@ -651,7 +651,7 @@ import {
   createAgentSession,
   DefaultResourceLoader,
   type PromptTemplate,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const customCommand: PromptTemplate = {
   name: "deploy",
@@ -686,7 +686,7 @@ import {
   createAgentSessionServices,
   getAgentDir,
   SessionManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 // In-memory (no persistence)
 const { session } = await createAgentSession({
@@ -780,7 +780,7 @@ sm.createBranchedSession(leafId);       // Extract path to new file
 ### Settings Management
 
 ```typescript
-import { createAgentSession, SettingsManager, SessionManager } from "@dst0/p-coding-agent";
+import { createAgentSession, SettingsManager, SessionManager } from "@dst0/p";
 
 // Default: loads from files (global + project merged)
 const { session } = await createAgentSession({
@@ -814,8 +814,8 @@ const { session } = await createAgentSession({
 **Project-specific settings:**
 
 Settings load from two locations and merge:
-1. Global: `~/.pi/agent/settings.json`
-2. Project: `<cwd>/.pi/settings.json`
+1. Global: `~/.p/agent/settings.json`
+2. Project: `<cwd>/.p/settings.json`
 
 Project overrides global. Nested objects merge keys. Setters modify global settings by default.
 
@@ -836,7 +836,7 @@ Use `DefaultResourceLoader` to discover extensions, skills, prompts, themes, and
 import {
   DefaultResourceLoader,
   getAgentDir,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const loader = new DefaultResourceLoader({
   cwd,
@@ -887,7 +887,7 @@ import {
   ModelRegistry,
   SessionManager,
   SettingsManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 // Set up auth storage (custom location)
 const authStorage = AuthStorage.create("/custom/agent/auth.json");
@@ -972,7 +972,7 @@ import {
   getAgentDir,
   InteractiveMode,
   SessionManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -1012,7 +1012,7 @@ import {
   getAgentDir,
   runPrintMode,
   SessionManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
@@ -1049,7 +1049,7 @@ import {
   getAgentDir,
   runRpcMode,
   SessionManager,
-} from "@dst0/p-coding-agent";
+} from "@dst0/p";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
   const services = await createAgentSessionServices({ cwd });
