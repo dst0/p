@@ -37,16 +37,19 @@ function createAssistant(
 		errorMessage?: string;
 		totalTokens?: number;
 		timestamp?: number;
+		content?: AssistantMessage["content"];
 	},
 ): AssistantMessage {
 	const model = harness.getModel();
+	const base = fauxAssistantMessage("", {
+		stopReason: options.stopReason,
+		errorMessage: options.errorMessage,
+		timestamp: options.timestamp,
+	});
 	return {
-		...fauxAssistantMessage("", {
-			stopReason: options.stopReason,
-			errorMessage: options.errorMessage,
-			timestamp: options.timestamp,
-		}),
+		...base,
 		api: model.api,
+		content: options.content ?? base.content,
 		provider: model.provider,
 		model: model.id,
 		usage: createUsage(options.totalTokens ?? 0),
@@ -827,6 +830,66 @@ describe("AgentSession compaction characterization", () => {
 		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
 
 		await sessionInternals.checkCompaction(priorAssistant, false, [nextUser]);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
+
+	it("does not threshold compact in the middle of a non-terminal tool loop", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "large cache-hot history ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const readAssistant = createAssistant(harness, {
+			stopReason: "toolUse",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+			content: [fauxToolCall("read", { path: "in/file-17.txt" })],
+		});
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(readAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(readAssistant);
+
+		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+	});
+
+	it("allows threshold compaction after finish_work closes the tool loop", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "large cache-hot history ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const finishAssistant = createAssistant(harness, {
+			stopReason: "toolUse",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+			content: [fauxToolCall("finish_work", { status: "success", summary: "done" })],
+		});
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(finishAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(finishAssistant);
 
 		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});

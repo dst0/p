@@ -1263,6 +1263,12 @@ export class AgentSession {
 		return sameModel && isContextOverflow(message, this.model.contextWindow ?? 0);
 	}
 
+	private _assistantCallsFinishWork(message: AssistantMessage | undefined): boolean {
+		return (
+			message?.content.some((block) => block.type === "toolCall" && block.name === FINISH_WORK_TOOL_NAME) ?? false
+		);
+	}
+
 	private _shouldHideContextOverflowMessage(message: AssistantMessage): boolean {
 		return this._getEffectiveCompactionSettings().enabled && this._isContextOverflowForCurrentModel(message);
 	}
@@ -3506,6 +3512,14 @@ export class AgentSession {
 				this.agent.state.messages = stateMessages.slice(0, -1);
 			}
 			return await this._runAutoCompaction("overflow", true);
+		}
+
+		if (
+			!additionalMessages &&
+			assistantForCompactionCheck?.stopReason === "toolUse" &&
+			!this._assistantCallsFinishWork(assistantForCompactionCheck)
+		) {
+			return false;
 		}
 
 		// Case 2: Threshold - context is getting large. This must be based on
