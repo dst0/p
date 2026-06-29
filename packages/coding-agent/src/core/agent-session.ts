@@ -3517,13 +3517,36 @@ export class AgentSession {
 		}
 
 		const promptContext = this._preparePromptContext(messages);
-		let contextTokens = promptContext.budgetEstimate.tokens;
-		if (assistantForCompactionCheck?.stopReason === "error") {
-			const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
-				sinceTimestamp: compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined,
-			});
-			contextTokens = Math.max(contextTokens, providerEstimate.tokens);
+		const compactionTimestamp = compactionEntry ? new Date(compactionEntry.timestamp).getTime() : undefined;
+		const providerEstimate = estimateContextTokens(messages, this.systemPrompt, {
+			sinceTimestamp: compactionTimestamp,
+		});
+		let reliableAssistantUsagesSinceCompaction = 0;
+		if (compactionTimestamp !== undefined) {
+			for (const message of messages) {
+				if (
+					message.role === "assistant" &&
+					message.stopReason !== "aborted" &&
+					message.stopReason !== "error" &&
+					message.usage &&
+					(message.usage.input > 0 || message.usage.cacheRead > 0) &&
+					message.timestamp > compactionTimestamp
+				) {
+					reliableAssistantUsagesSinceCompaction++;
+				}
+			}
 		}
+		const canUseProviderUsageForThreshold =
+			compactionTimestamp === undefined ||
+			reliableAssistantUsagesSinceCompaction > 1 ||
+			assistantForCompactionCheck?.stopReason === "error";
+		const contextTokens =
+			canUseProviderUsageForThreshold && providerEstimate.lastUsageIndex !== null
+				? Math.max(
+						promptContext.budgetEstimate.tokens,
+						providerEstimate.usageTokens + providerEstimate.trailingTokens,
+					)
+				: promptContext.budgetEstimate.tokens;
 		const hasRecordedUserRequest = branchEntries.some(
 			(entry) => entry.type === "message" && entry.message.role === "user",
 		);

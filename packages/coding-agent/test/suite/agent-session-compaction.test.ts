@@ -790,6 +790,47 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(0);
 	});
 
+	it("uses reliable provider usage to preflight compact before overflowing a cache-hot prompt", async () => {
+		const harness = await createHarness({
+			withConfiguredAuth: false,
+			models: [{ id: "faux-small", contextWindow: 32_768 }],
+			settings: { compaction: { keepRecentTokens: 100, reserveTokens: 5_000 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const priorUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "cache-hot history seed ".repeat(100) }],
+			timestamp: now - 2000,
+		};
+		const priorAssistant = createAssistant(harness, {
+			stopReason: "stop",
+			totalTokens: 31_956,
+			timestamp: now - 1000,
+		});
+		const nextUser: AgentMessage = {
+			role: "user",
+			content: [{ type: "text", text: "next turn after finish_work" }],
+			timestamp: now,
+		};
+		harness.sessionManager.appendMessage(priorUser);
+		harness.sessionManager.appendMessage(priorAssistant);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+		const promptOnlyEstimate = estimateContextTokens(
+			[...harness.session.agent.state.messages, nextUser],
+			harness.session.systemPrompt,
+			{ useProviderUsage: false },
+		);
+		expect(promptOnlyEstimate.tokens).toBeLessThan(32_768 - 5_000);
+
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+		const runAutoCompactionSpy = vi.spyOn(sessionInternals, "_runAutoCompaction").mockResolvedValue(false);
+
+		await sessionInternals.checkCompaction(priorAssistant, false, [nextUser]);
+
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
+	});
+
 	it("does not threshold compact when compaction is disabled", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
