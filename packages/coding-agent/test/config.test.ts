@@ -4,14 +4,23 @@ import { delimiter, join } from "path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
 	detectInstallMethod,
+	ENV_AGENT_DIR,
+	ENV_SESSION_DIR,
 	getSelfUpdateCommand,
 	getSelfUpdateUnavailableInstruction,
 	getUpdateInstruction,
+	installLegacyAgentDirEnvAlias,
+	LEGACY_ENV_AGENT_DIR,
+	LEGACY_ENV_SESSION_DIR,
 } from "../src/config.ts";
 
 const execPathDescriptor = Object.getOwnPropertyDescriptor(process, "execPath");
 const originalPath = process.env.PATH;
 const originalPiPackageDir = process.env.P_PACKAGE_DIR;
+const originalAgentDir = process.env[ENV_AGENT_DIR];
+const originalSessionDir = process.env[ENV_SESSION_DIR];
+const originalLegacyAgentDir = process.env[LEGACY_ENV_AGENT_DIR];
+const originalLegacySessionDir = process.env[LEGACY_ENV_SESSION_DIR];
 const originalArgv1 = process.argv[1];
 let tempDir: string | undefined;
 
@@ -36,6 +45,26 @@ afterEach(() => {
 	} else {
 		process.env.P_PACKAGE_DIR = originalPiPackageDir;
 	}
+	if (originalAgentDir === undefined) {
+		delete process.env[ENV_AGENT_DIR];
+	} else {
+		process.env[ENV_AGENT_DIR] = originalAgentDir;
+	}
+	if (originalSessionDir === undefined) {
+		delete process.env[ENV_SESSION_DIR];
+	} else {
+		process.env[ENV_SESSION_DIR] = originalSessionDir;
+	}
+	if (originalLegacyAgentDir === undefined) {
+		delete process.env[LEGACY_ENV_AGENT_DIR];
+	} else {
+		process.env[LEGACY_ENV_AGENT_DIR] = originalLegacyAgentDir;
+	}
+	if (originalLegacySessionDir === undefined) {
+		delete process.env[LEGACY_ENV_SESSION_DIR];
+	} else {
+		process.env[LEGACY_ENV_SESSION_DIR] = originalLegacySessionDir;
+	}
 	if (originalArgv1 === undefined) {
 		process.argv.splice(1, 1);
 	} else {
@@ -46,6 +75,23 @@ afterEach(() => {
 		rmSync(tempDir, { recursive: true, force: true });
 		tempDir = undefined;
 	}
+});
+
+describe("legacy agent directory compatibility", () => {
+	test("points legacy Pi extensions at the current p directories", () => {
+		const agentDir = mkdtempSync(join(tmpdir(), "p-agent-dir-"));
+		const sessionDir = join(agentDir, "sessions");
+		tempDir = agentDir;
+		process.env[ENV_AGENT_DIR] = agentDir;
+		process.env[ENV_SESSION_DIR] = join(agentDir, "env-sessions");
+		process.env[LEGACY_ENV_AGENT_DIR] = join(tmpdir(), "old-pi-agent");
+		process.env[LEGACY_ENV_SESSION_DIR] = join(tmpdir(), "old-pi-sessions");
+
+		installLegacyAgentDirEnvAlias(sessionDir);
+
+		expect(process.env[LEGACY_ENV_AGENT_DIR]).toBe(agentDir);
+		expect(process.env[LEGACY_ENV_SESSION_DIR]).toBe(sessionDir);
+	});
 });
 
 function createNpmPrefixInstall(template = "pi-prefix-"): { prefix: string; packageDir: string } {

@@ -514,6 +514,8 @@ export const VERSION: string = pkg.version || "0.0.0";
 // e.g., P_CODING_AGENT_DIR or TAU_CODING_AGENT_DIR
 export const ENV_AGENT_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_DIR`;
 export const ENV_SESSION_DIR = `${APP_NAME.toUpperCase()}_CODING_AGENT_SESSION_DIR`;
+export const LEGACY_ENV_AGENT_DIR = "PI_CODING_AGENT_DIR";
+export const LEGACY_ENV_SESSION_DIR = "PI_CODING_AGENT_SESSION_DIR";
 
 export function expandTildePath(path: string): string {
 	return normalizePath(path);
@@ -538,6 +540,20 @@ export function getAgentDir(): string {
 		return expandTildePath(envDir);
 	}
 	return join(homedir(), CONFIG_DIR_NAME, "agent");
+}
+
+export function installLegacyAgentDirEnvAlias(sessionDir?: string): void {
+	if (ENV_AGENT_DIR === LEGACY_ENV_AGENT_DIR) {
+		return;
+	}
+	process.env[LEGACY_ENV_AGENT_DIR] = getAgentDir();
+	if (ENV_SESSION_DIR === LEGACY_ENV_SESSION_DIR) {
+		return;
+	}
+	const currentSessionDir = sessionDir ?? process.env[ENV_SESSION_DIR];
+	if (currentSessionDir) {
+		process.env[LEGACY_ENV_SESSION_DIR] = expandTildePath(currentSessionDir);
+	}
 }
 
 /** Get path to user's custom themes directory */
