@@ -16,6 +16,8 @@
 - Fixed the interactive footer to show the LLM orchestrator queue position and queued-ahead count.
 - Fixed legacy MCP extensions that still read `PI_CODING_AGENT_DIR` to use the active `p` agent directory during `p` runs.
 - Fixed overflow auto-compaction to hide raw context-size errors and keep provider error messages out of retry context.
+- Fixed interactive auto-compaction rendering to show a single compaction summary instead of duplicating the rebuilt session summary.
+- Fixed overflow recovery to allow three bounded compact-and-retry attempts before surfacing a failure.
 
 ## [0.2.0] - 2026-06-28
 

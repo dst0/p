@@ -725,7 +725,7 @@ function formatRecallResult(result: RecallResult): string {
 	return sections.join("\n\n");
 }
 
-const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 1;
+const MAX_OVERFLOW_RECOVERY_COMPACTIONS = 3;
 
 // AgentSession Class
 // ============================================================================
@@ -3530,8 +3530,7 @@ export class AgentSession {
 					result: undefined,
 					aborted: false,
 					willRetry: false,
-					errorMessage:
-						"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+					errorMessage: `Context overflow recovery failed after ${MAX_OVERFLOW_RECOVERY_COMPACTIONS} compact-and-retry attempts. Try reducing context or switching to a larger-context model.`,
 				});
 				return false;
 			}
