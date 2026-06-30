@@ -377,6 +377,62 @@ describe("AgentSession compaction characterization", () => {
 		expect(text).toContain("secret old failure line");
 	});
 
+	it("recalls compacted original user prompts from a generic prompt-history query", async () => {
+		const harness = await createHarness({
+			initialActiveToolNames: ["session_recall"],
+			withConfiguredAuth: false,
+			settings: { compaction: { keepRecentTokens: 1 } },
+		});
+		harnesses.push(harness);
+		const now = Date.now();
+		const firstPrompt = "First task: resolve overflow recovery rendering duplicate compact notices.";
+		const secondPrompt = "Second task: reproduce invalid input batch and add regression coverage.";
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: firstPrompt }],
+			timestamp: now - 4000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 1200,
+				timestamp: now - 3000,
+			}),
+		);
+		harness.sessionManager.appendMessage({
+			role: "user",
+			content: [{ type: "text", text: secondPrompt }],
+			timestamp: now - 2000,
+		});
+		harness.sessionManager.appendMessage(
+			createAssistant(harness, {
+				stopReason: "stop",
+				totalTokens: 1200,
+				timestamp: now - 1000,
+			}),
+		);
+		harness.session.agent.state.messages = harness.sessionManager.buildSessionContext().messages;
+
+		await harness.session.compact();
+		const recallTool = harness.session.agent.state.tools.find((tool) => tool.name === "session_recall");
+		expect(recallTool).toBeDefined();
+		const result = await recallTool!.execute("recall-prompts", {
+			query: "all prompts",
+			includeRaw: true,
+			maxTokens: 1000,
+		});
+		const text = result.content
+			.filter((block): block is { type: "text"; text: string } => block.type === "text")
+			.map((block) => block.text)
+			.join("\n");
+
+		expect(text).toContain("request:");
+		expect(text).toContain("User request:");
+		expect(text).toContain("User follow-up:");
+		expect(text).toContain(firstPrompt);
+		expect(text).toContain(secondPrompt);
+	});
+
 	it("records discarded tool results as compaction-time stubs with evidence pointers", async () => {
 		const harness = await createHarness({
 			settings: {

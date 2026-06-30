@@ -18,6 +18,7 @@
 - Fixed overflow auto-compaction to hide raw context-size errors and keep provider error messages out of retry context.
 - Fixed interactive auto-compaction rendering to show a single compaction summary instead of duplicating the rebuilt session summary.
 - Fixed overflow recovery to allow three bounded compact-and-retry attempts before surfacing a failure.
+- Fixed `session_recall` to return compacted original user prompts for generic prompt-history queries.
 
 ## [0.2.0] - 2026-06-28
 
