@@ -636,7 +636,7 @@ describe("AgentSession compaction characterization", () => {
 		await expect(sessionInternals._runAutoCompaction("threshold", false)).resolves.toBe(true);
 	});
 
-	it("does not retry overflow recovery more than once", async () => {
+	it("caps overflow recovery after bounded compact-and-retry attempts", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
 		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
@@ -658,10 +658,18 @@ describe("AgentSession compaction characterization", () => {
 			...overflowMessage,
 			timestamp: Date.now() + 1,
 		});
+		await sessionInternals.checkCompaction({
+			...overflowMessage,
+			timestamp: Date.now() + 2,
+		});
+		await sessionInternals.checkCompaction({
+			...overflowMessage,
+			timestamp: Date.now() + 3,
+		});
 
-		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(1);
+		expect(runAutoCompactionSpy).toHaveBeenCalledTimes(3);
 		expect(compactionErrors).toContain(
-			"Context overflow recovery failed after one compact-and-retry attempt. Try reducing context or switching to a larger-context model.",
+			"Context overflow recovery failed after 3 compact-and-retry attempts. Try reducing context or switching to a larger-context model.",
 		);
 	});
 
@@ -673,8 +681,10 @@ describe("AgentSession compaction characterization", () => {
 		harnesses.push(harness);
 		seedCompactableSession(harness);
 
-		const overflowText = "request exceeds the available context size";
+		const overflowText =
+			"400 request (66721 tokens) exceeds the available context size (65536 tokens), try increasing it";
 		const retryContextRoles: string[][] = [];
+		const retryErrorMessages: string[] = [];
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: overflowText }),
 			(context) => {
@@ -683,7 +693,9 @@ describe("AgentSession compaction characterization", () => {
 					return message.role === "assistant" && message.errorMessage?.includes(overflowText);
 				});
 				if (leakedOverflow) {
-					return fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid input batch" });
+					const invalidBatch = "Invalid input batch.";
+					retryErrorMessages.push(invalidBatch);
+					return fauxAssistantMessage("", { stopReason: "error", errorMessage: invalidBatch });
 				}
 				return fauxAssistantMessage("recovered");
 			},
@@ -694,6 +706,12 @@ describe("AgentSession compaction characterization", () => {
 		expect(retryContextRoles).toHaveLength(1);
 		expect(retryContextRoles[0]?.at(-1)).toBe("user");
 		expect(harness.eventsOfType("message_end").filter((event) => event.message.role === "assistant")).toHaveLength(1);
+		expect(
+			harness
+				.eventsOfType("message_end")
+				.some((event) => event.message.role === "assistant" && event.message.errorMessage === overflowText),
+		).toBe(false);
+		expect(retryErrorMessages).toEqual([]);
 		expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["overflow"]);
 		expect(harness.eventsOfType("compaction_end").map((event) => event.reason)).toEqual(["overflow"]);
 		expect(
