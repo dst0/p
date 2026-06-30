@@ -85,6 +85,7 @@ describe("AgentSession retry", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: { model, systemPrompt: "Test", tools: [] },
 			streamFn: () => {
 				callCount++;
@@ -121,6 +122,7 @@ describe("AgentSession retry", () => {
 			cwd: tempDir,
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
+			completionMode: "implicit",
 		});
 
 		if (delayAssistantMessageEndMs > 0) {
@@ -206,6 +208,7 @@ describe("AgentSession retry", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: { model, systemPrompt: "Test", tools: [] },
 			streamFn,
 		});
@@ -222,6 +225,7 @@ describe("AgentSession retry", () => {
 			cwd: tempDir,
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
+			completionMode: "implicit",
 		});
 
 		const events: string[] = [];
@@ -296,6 +300,7 @@ describe("AgentSession retry", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: { model, systemPrompt: "Test", tools: [] },
 			streamFn: () => {
 				callCount++;
@@ -347,6 +352,7 @@ describe("AgentSession retry", () => {
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { echo: echoTool },
+			completionMode: "implicit",
 		});
 
 		await session.prompt("Test");

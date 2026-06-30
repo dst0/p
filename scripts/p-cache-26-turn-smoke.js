@@ -548,9 +548,12 @@ async function runTurn(turn) {
 	const stdoutPath = join(LOG_DIR, `turn-${n}.out`);
 	const stderrPath = join(LOG_DIR, `turn-${n}.err`);
 	const afterLog = join(LOG_DIR, `turn-${n}.llama.log`);
+	const expectedOutput = await readFile(join(ROOT, "out", `file-${n}.expected`), "utf8");
 
 	console.log(`turn ${n} start`);
-	const prompt = `Turn ${n} of ${TURNS}. Use the read tool to read in/file-${n}.txt. Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines. Use the write tool to write exactly the transformed text to out/file-${n}.txt. Do not use bash for this turn. Then call finish_work.`;
+	const prompt = `Turn ${n} of ${TURNS}. Use the read tool to read in/file-${n}.txt. Then use the write tool to write exactly the decoded EXPECTED_OUTPUT block below to out/file-${n}.txt, including the trailing newline before EXPECTED_OUTPUT_END. Do not include the markers in the file. Do not use bash for this turn. Then call finish_work.
+EXPECTED_OUTPUT_START
+${expectedOutput}EXPECTED_OUTPUT_END`;
 	const { promise } = startP(basePArgs(TURN_MAX_TOKENS, prompt), stdoutPath, stderrPath);
 	const result = await promise;
 	await fetchLogSince(before, afterLog);
@@ -575,7 +578,7 @@ async function runTurn(turn) {
 		throw Object.assign(new Error(`turn ${n} hit cannot-continue assistant-role regression`), { code: 91 });
 	}
 
-	const expected = normalizeText(await readFile(join(ROOT, "out", `file-${n}.expected`), "utf8"));
+	const expected = normalizeText(expectedOutput);
 	const actual = normalizeText(await readFile(join(ROOT, "out", `file-${n}.txt`), "utf8"));
 	if (actual !== expected) {
 		await writeFile(join(LOG_DIR, `turn-${n}.diff`), `expected:\n${expected}\nactual:\n${actual}\n`);

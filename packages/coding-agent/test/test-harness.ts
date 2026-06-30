@@ -10,7 +10,7 @@
 import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { AgentTool } from "@dst0/p-agent-core";
+import type { AgentTool, CompletionMode } from "@dst0/p-agent-core";
 import { Agent } from "@dst0/p-agent-core";
 import type {
 	AssistantMessage,
@@ -336,6 +336,8 @@ export interface HarnessOptions {
 	resourceLoader?: ResourceLoader;
 	/** Inline extensions to load into the session resource loader. */
 	extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
+	/** Completion protocol mode. Defaults to implicit for this legacy harness. */
+	completionMode?: CompletionMode;
 }
 
 export interface Harness {
@@ -368,6 +370,7 @@ function createHarnessWithResourceLoader(
 ): Harness {
 	const baseModel = options.model ?? fauxModel;
 	const model: Model<any> = options.contextWindow ? { ...baseModel, contextWindow: options.contextWindow } : baseModel;
+	const completionMode = options.completionMode ?? "implicit";
 
 	const { streamFn, state: fauxState } = createFauxStreamFn(options.responses ?? ["ok"]);
 
@@ -379,6 +382,7 @@ function createHarnessWithResourceLoader(
 			tools: options.tools ?? [],
 		},
 		streamFn,
+		completionMode,
 	});
 
 	const sessionManager = SessionManager.inMemory();
@@ -400,6 +404,7 @@ function createHarnessWithResourceLoader(
 		modelRegistry,
 		resourceLoader,
 		baseToolsOverride: options.baseToolsOverride,
+		completionMode,
 	});
 
 	const events: AgentSessionEvent[] = [];

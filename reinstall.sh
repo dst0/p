@@ -13,11 +13,12 @@ echo "=== Rebuilding Workspace Packages ==="
 npm run build
 
 echo "=== Globally Relinking Pi CLI ==="
-# npm link from repo root so the workspace is linked correctly
+# Link the CLI workspace explicitly; a root-level npm link can leave an old
+# global @dst0/p symlink pointing at a sibling checkout.
 if sudo -n true 2>/dev/null; then
-    sudo npm link --ignore-scripts
+    sudo npm link -w @dst0/p --ignore-scripts
 else
-    npm link --ignore-scripts
+    npm link -w @dst0/p --ignore-scripts
 fi
 
 echo "=== Verification ==="

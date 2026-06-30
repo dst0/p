@@ -189,7 +189,7 @@ describe("buildSessionContext", () => {
 	});
 
 	describe("with compaction", () => {
-		it("emits the summary before recent kept messages", () => {
+		it("emits recent kept messages before the summary", () => {
 			const entries: SessionEntry[] = [
 				msg("1", null, "user", "first"),
 				msg("2", "1", "assistant", "response1"),
@@ -201,11 +201,11 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Should have: summary + kept (3,4) + after (6,7) = 5 messages
+			// Should have: kept (3,4) + summary + after (6,7) = 5 messages
 			expect(ctx.messages).toHaveLength(5);
-			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Summary of first two turns" });
-			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "second" });
-			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[0]).toMatchObject({ role: "user", content: "second" });
+			expect(ctx.messages[1]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[2]).toMatchObject({ role: "compactionSummary", summary: "Summary of first two turns" });
 			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "third" });
 			expect(ctx.messages[4]).toMatchObject({ role: "assistant" });
 		});
@@ -219,11 +219,11 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Summary, all kept messages (1,2), then after (4)
+			// All kept messages (1,2), then summary, then after (4)
 			expect(ctx.messages).toHaveLength(4);
-			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Empty summary" });
-			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "first" });
-			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[0]).toMatchObject({ role: "user", content: "first" });
+			expect(ctx.messages[1]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[2]).toMatchObject({ role: "compactionSummary", summary: "Empty summary" });
 			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "second" });
 		});
 
@@ -239,15 +239,15 @@ describe("buildSessionContext", () => {
 			];
 			const ctx = buildSessionContext(entries);
 
-			// Should use second summary, then keep from 4
+			// Should keep from 4, then use second summary
 			expect(ctx.messages).toHaveLength(4);
-			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Second summary" });
-			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "c" });
-			expect(ctx.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[0]).toMatchObject({ role: "user", content: "c" });
+			expect(ctx.messages[1]).toMatchObject({ role: "assistant" });
+			expect(ctx.messages[2]).toMatchObject({ role: "compactionSummary", summary: "Second summary" });
 			expect(ctx.messages[3]).toMatchObject({ role: "user", content: "e" });
 		});
 
-		it("does not put a completed tool loop before the compaction summary", () => {
+		it("keeps a completed retained tool loop before the compaction summary", () => {
 			const entries: SessionEntry[] = [
 				msg("1", null, "user", "Turn 20"),
 				assistantToolCallMsg("2", "1", "read-20", "read", { path: "in/file-20.txt" }),
@@ -271,16 +271,16 @@ describe("buildSessionContext", () => {
 			const ctx = buildSessionContext(entries);
 
 			expect(ctx.messages.map((message) => message.role)).toEqual([
+				"user",
+				"assistant",
+				"toolResult",
+				"assistant",
+				"toolResult",
 				"compactionSummary",
 				"user",
-				"assistant",
-				"toolResult",
-				"assistant",
-				"toolResult",
-				"user",
 			]);
-			expect(ctx.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Summary through turn 21" });
-			expect(ctx.messages[1]).toMatchObject({ role: "user", content: "Turn 21" });
+			expect(ctx.messages[0]).toMatchObject({ role: "user", content: "Turn 21" });
+			expect(ctx.messages[5]).toMatchObject({ role: "compactionSummary", summary: "Summary through turn 21" });
 			expect(ctx.messages[6]).toMatchObject({ role: "user", content: "Turn 22" });
 		});
 	});
@@ -345,9 +345,9 @@ describe("buildSessionContext", () => {
 			// Main path to 7: summary + kept(3,4) + after(6,7)
 			const ctxMain = buildSessionContext(entries, "7");
 			expect(ctxMain.messages).toHaveLength(5);
-			expect(ctxMain.messages[0]).toMatchObject({ role: "compactionSummary", summary: "Compacted history" });
-			expect(ctxMain.messages[1]).toMatchObject({ role: "user", content: "q2" });
-			expect(ctxMain.messages[2]).toMatchObject({ role: "assistant" });
+			expect(ctxMain.messages[0]).toMatchObject({ role: "user", content: "q2" });
+			expect(ctxMain.messages[1]).toMatchObject({ role: "assistant" });
+			expect(ctxMain.messages[2]).toMatchObject({ role: "compactionSummary", summary: "Compacted history" });
 			expect(ctxMain.messages[3]).toMatchObject({ role: "user", content: "q3" });
 			expect(ctxMain.messages[4]).toMatchObject({ role: "assistant" });
 

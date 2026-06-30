@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { getModel } from "../src/models.ts";
 import { streamSimple } from "../src/stream.ts";
+import type { Model } from "../src/types.ts";
 
 // Empty tools arrays must NOT be serialized as `tools: []` — some OpenAI-compatible
 // backends (e.g. DashScope / Aliyun Qwen via compatible-mode) reject the request with
@@ -125,6 +126,29 @@ describe("openai-completions empty tools handling", () => {
 		const params = mockState.lastParams as { max_tokens?: number; max_completion_tokens?: number };
 		expect(params.max_tokens).toBeUndefined();
 		expect(params.max_completion_tokens).toBe(1234);
+	});
+
+	it("sends max_tokens for local OpenAI-compatible endpoints", async () => {
+		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini")!;
+		const model = {
+			...baseModel,
+			api: "openai-completions",
+			provider: "mini-pc-smoke",
+			id: "mini-pc/large-32-kvq4-cache",
+			baseUrl: "http://127.0.0.1:11450/v1",
+		} satisfies Model<"openai-completions">;
+
+		await streamSimple(
+			model,
+			{
+				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+			},
+			{ apiKey: "test", maxTokens: 1024 },
+		).result();
+
+		const params = mockState.lastParams as { max_tokens?: number; max_completion_tokens?: number };
+		expect(params.max_tokens).toBe(1024);
+		expect(params.max_completion_tokens).toBeUndefined();
 	});
 
 	it("uses conservative OpenAI-compatible fields for Cloudflare AI Gateway /compat models", async () => {

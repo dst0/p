@@ -95,7 +95,12 @@ describe("compaction golden fixtures", () => {
 		});
 		const checkpoint = renderStructuredSessionCheckpoint(state, 300);
 
-		expect(state.canonicalRequest.current).toContain("structured context subsystem");
+		expect(state.canonicalRequest.current).toContain("Fix the coding-agent compaction failure");
+		expect(
+			state.canonicalRequest.originalRequests.some((request) =>
+				request.text.includes("structured context subsystem"),
+			),
+		).toBe(true);
 		expect(state.progress.blocked).toContain("TypeScript failure in compaction.ts must be fixed before final.");
 		expect(state.decisions.map((decision) => decision.decision)).toContain("Structured JSON checkpoint");
 		expect(state.codebase.touchedFiles.map((file) => file.path)).toContain(
@@ -170,7 +175,10 @@ describe("compaction golden fixtures", () => {
 		}
 
 		expect(state.audit.compactionCount).toBe(10);
-		expect(state.canonicalRequest.current).toContain("structured context subsystem");
+		expect(state.canonicalRequest.current).toContain("Use only mini-pc-orc-0/high-64");
+		expect(
+			state.canonicalRequest.originalRequests.some((request) => request.text.includes("structured subsystem goal")),
+		).toBe(true);
 		expect(state.constraints.find((constraint) => constraint.id === "constraint-orc0")?.status).toBe("active");
 		expect(renderStructuredSessionCheckpoint(state, 300)).toContain("Use only mini-pc-orc-0/high-64");
 	});

@@ -384,10 +384,8 @@ export function buildSessionContext(
 
 	// Build messages and collect corresponding entries.
 	// When there's a compaction, firstKeptEntryId marks the recent raw suffix kept
-	// after the summarized history. Emit the summary first, then that suffix, then
-	// messages appended after the compaction boundary. Keeping this chronological
-	// order prevents a completed pre-compaction tool loop from sitting before the
-	// summary and being replayed as the active task.
+	// after the summarized history. Emit that suffix first so provider prompts still
+	// begin with a normal user/assistant turn, then add the summary and newer messages.
 	const messages: AgentMessage[] = [];
 
 	const appendMessage = (entry: SessionEntry) => {
@@ -406,15 +404,6 @@ export function buildSessionContext(
 		// Find compaction index in path
 		const compactionIdx = path.findIndex((e) => e.type === "compaction" && e.id === compaction.id);
 
-		messages.push(
-			createCompactionSummaryMessage(
-				compaction.summary,
-				compaction.tokensBefore,
-				compaction.timestamp,
-				compaction.tokensAfter,
-			),
-		);
-
 		let foundFirstKept = false;
 		for (let i = 0; i < compactionIdx; i++) {
 			const entry = path[i];
@@ -425,6 +414,15 @@ export function buildSessionContext(
 				appendMessage(entry);
 			}
 		}
+
+		messages.push(
+			createCompactionSummaryMessage(
+				compaction.summary,
+				compaction.tokensBefore,
+				compaction.timestamp,
+				compaction.tokensAfter,
+			),
+		);
 
 		// Emit messages after compaction
 		for (let i = compactionIdx + 1; i < path.length; i++) {

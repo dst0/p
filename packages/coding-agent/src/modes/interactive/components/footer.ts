@@ -192,6 +192,26 @@ export class FooterComponent implements Component {
 			statsParts.push(costStr);
 		}
 
+		// Colorize context percentage based on usage
+		let contextPercentStr: string;
+		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
+
+		const staticTokensValue = contextUsage?.staticTokens ?? 0;
+		const staticCtxDisplay = staticTokensValue > 0 ? `${(staticTokensValue / 1000).toFixed(1)}K|` : "";
+
+		const contextPercentDisplay =
+			contextPercent === "?"
+				? `${staticCtxDisplay}?/${formatTokens(contextWindow)}${autoIndicator}`
+				: `${staticCtxDisplay}${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
+		if (contextPercentValue > 90) {
+			contextPercentStr = theme.fg("error", contextPercentDisplay);
+		} else if (contextPercentValue > 70) {
+			contextPercentStr = theme.fg("warning", contextPercentDisplay);
+		} else {
+			contextPercentStr = contextPercentDisplay;
+		}
+		statsParts.push(contextPercentStr);
+
 		if (this.showTokenProgress) {
 			const queued = this.footerData.getQueuedProgress();
 			const sending = this.footerData.getSendingProgress();
@@ -235,26 +255,6 @@ export class FooterComponent implements Component {
 				statsParts.push(theme.fg("warning", `${theme.bold("LOADING")} ${loading.model}`));
 			}
 		}
-
-		// Colorize context percentage based on usage
-		let contextPercentStr: string;
-		const autoIndicator = this.autoCompactEnabled ? " (auto)" : "";
-
-		const staticTokensValue = contextUsage?.staticTokens ?? 0;
-		const staticCtxDisplay = staticTokensValue > 0 ? `${(staticTokensValue / 1000).toFixed(1)}K|` : "";
-
-		const contextPercentDisplay =
-			contextPercent === "?"
-				? `${staticCtxDisplay}?/${formatTokens(contextWindow)}${autoIndicator}`
-				: `${staticCtxDisplay}${contextPercent}%/${formatTokens(contextWindow)}${autoIndicator}`;
-		if (contextPercentValue > 90) {
-			contextPercentStr = theme.fg("error", contextPercentDisplay);
-		} else if (contextPercentValue > 70) {
-			contextPercentStr = theme.fg("warning", contextPercentDisplay);
-		} else {
-			contextPercentStr = contextPercentDisplay;
-		}
-		statsParts.push(contextPercentStr);
 
 		let statsLeft = statsParts.join(" ");
 

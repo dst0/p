@@ -85,6 +85,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		// Use a stream function that responds to abort
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: {
 				model,
 				systemPrompt: "Test",
@@ -122,6 +123,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			cwd: tempDir,
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
+			completionMode: "implicit",
 		});
 
 		return session;
@@ -190,6 +192,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: {
 				model,
 				systemPrompt: "Test",
@@ -257,6 +260,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			cwd: tempDir,
 			modelRegistry,
 			resourceLoader: createTestResourceLoader({ extensionsResult }),
+			completionMode: "implicit",
 		});
 		session.subscribe((event) => {
 			if (event.type === "queue_update") {
@@ -296,6 +300,7 @@ describe("AgentSession concurrent prompt guard", () => {
 		const model = getModel("anthropic", "claude-sonnet-4-5")!;
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: {
 				model,
 				systemPrompt: "Test",
@@ -324,6 +329,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			cwd: tempDir,
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
+			completionMode: "implicit",
 		});
 
 		// First prompt completes
@@ -357,6 +363,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: {
 				model,
 				systemPrompt: "Test",
@@ -431,6 +438,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
+			completionMode: "implicit",
 		});
 
 		const snapshots: string[][] = [];
@@ -503,6 +511,7 @@ describe("AgentSession concurrent prompt guard", () => {
 
 		const agent = new Agent({
 			getApiKey: () => "test-key",
+			completionMode: "implicit",
 			initialState: {
 				model,
 				systemPrompt: "Test",
@@ -578,6 +587,7 @@ describe("AgentSession concurrent prompt guard", () => {
 			modelRegistry,
 			resourceLoader: createTestResourceLoader(),
 			baseToolsOverride: { dummy: tool },
+			completionMode: "implicit",
 		});
 
 		const sessionWithRunner = session as unknown as {

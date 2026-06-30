@@ -235,6 +235,14 @@ describe("FooterComponent width handling", () => {
 		expect(statsLine).toContain("42%");
 	});
 
+	it("shows context usage before prefill progress", () => {
+		const session = createSession({ sessionName: "" });
+		const footer = new FooterComponent(session, createFooterData(1, { prefill: { percent: 42, elapsedMs: 1000 } }));
+
+		const statsLine = stripAnsi(footer.render(120)[1]);
+		expect(statsLine.indexOf("12.3%/200k (auto)")).toBeLessThan(statsLine.indexOf("PREFILL"));
+	});
+
 	it("shows compact generation progress", () => {
 		const session = createSession({ sessionName: "" });
 		const footer = new FooterComponent(session, createFooterData(1, { gen: { tokens: 1234, tokensPerSecond: 56 } }));
