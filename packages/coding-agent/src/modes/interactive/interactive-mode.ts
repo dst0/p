@@ -4635,11 +4635,14 @@ export class InteractiveMode {
 			this.ui.requestRender();
 		};
 
+		const activeModelId = this.session.model ? `${this.session.model.provider}/${this.session.model.id}` : undefined;
+
 		this.showSelector((done) => {
 			const selector = new ScopedModelsSelectorComponent(
 				{
 					allModels,
 					enabledModelIds: currentEnabledIds,
+					activeModelId,
 				},
 				{
 					onChange: async (enabledIds) => {

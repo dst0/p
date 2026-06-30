@@ -73,6 +73,8 @@ interface ModelItem {
 export interface ModelsConfig {
 	allModels: Model<any>[];
 	enabledModelIds: string[] | null;
+	/** Full ID of the currently active model (provider/id), rendered in green */
+	activeModelId?: string;
 }
 
 export interface ModelsCallbacks {
@@ -109,6 +111,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 	private callbacks: ModelsCallbacks;
 	private maxVisible = 8;
 	private isDirty = false;
+	private activeModelId: string | undefined;
 
 	constructor(config: ModelsConfig, callbacks: ModelsCallbacks) {
 		super();
@@ -121,6 +124,7 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		}
 
 		this.enabledIds = config.enabledModelIds === null ? null : [...config.enabledModelIds];
+		this.activeModelId = config.activeModelId;
 		this.filteredItems = this.buildItems();
 
 		// Header
@@ -210,8 +214,18 @@ export class ScopedModelsSelectorComponent extends Container implements Focusabl
 		for (let i = startIndex; i < endIndex; i++) {
 			const item = this.filteredItems[i]!;
 			const isSelected = i === this.selectedIndex;
-			const prefix = isSelected ? theme.fg("accent", "→ ") : "  ";
-			const modelText = isSelected ? theme.fg("accent", item.model.id) : item.model.id;
+			const isActive = item.fullId === this.activeModelId;
+			// Fixed-width prefix: no alignment shift between selected/unselected
+			const prefix = isSelected ? theme.fg("accent", "> ") : "  ";
+			// Active model gets juicy green highlight; pointer-selected model gets accent
+			let modelText: string;
+			if (isActive) {
+				modelText = theme.fg("success", item.model.id);
+			} else if (isSelected) {
+				modelText = theme.fg("accent", item.model.id);
+			} else {
+				modelText = item.model.id;
+			}
 			const providerBadge = theme.fg("muted", ` [${item.model.provider}]`);
 			const status = allEnabled ? "" : item.enabled ? theme.fg("success", " ✓") : theme.fg("dim", " ✗");
 			this.listContainer.addChild(new Text(`${prefix}${modelText}${providerBadge}${status}`, 0, 0));

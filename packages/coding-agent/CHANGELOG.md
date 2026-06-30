@@ -6,6 +6,10 @@
 
 - Added `--max-tokens` to bound provider output tokens for deterministic short CLI runs.
 
+### Changed
+
+- Model selection UI now highlights the pointer-selected model with accent color (no alignment shift) and the currently active model in green.
+
 ### Fixed
 
 - Fixed explicit completion repair prompts to persist in session history so reloaded `p -p` turns preserve llama.cpp prompt-cache reuse.
