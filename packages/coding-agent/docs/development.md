@@ -1,12 +1,12 @@
 # Development
 
-See [AGENTS.md](https://github.com/dst0/p-mono/blob/main/AGENTS.md) for additional guidelines.
+See [AGENTS.md](https://github.com/dst0/p/blob/main/AGENTS.md) for additional guidelines.
 
 ## Setup
 
 ```bash
-git clone https://github.com/dst0/p-mono
-cd pi-mono
+git clone https://github.com/dst0/p
+cd p
 npm install
 npm run build
 ```
@@ -14,7 +14,7 @@ npm run build
 Run from source:
 
 ```bash
-/path/to/pi-mono/p-test.sh
+/path/to/p/p-test.sh
 ```
 
 The script can be run from any directory. Pi keeps the caller's current working directory.
@@ -22,8 +22,10 @@ The script can be run from any directory. Pi keeps the caller's current working 
 For a quicker alias during local development, add to `~/.zshrc`:
 
 ```bash
-alias p='/path/to/pi-mono/packages/coding-agent/dist/cli.js'
+alias p='/path/to/p/packages/coding-agent/dist/cli.js'
 ```
+
+After making code changes, run `./reinstall.sh` from the repo root to rebuild and relink. This is the correct way to install — do not use `npm run build` + `npm link` manually.
 
 ## Forking / Rebranding
 

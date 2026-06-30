@@ -38,6 +38,7 @@
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
 - After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
+- `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step.
 
 ## Dependency and Install Security
 
@@ -119,8 +120,8 @@ Rules:
 
 Attribution:
 
-- Internal (from issues): `Fixed foo bar ([#123](https://github.com/dst0/p-mono/issues/123))`
-- External contributions: `Added feature X ([#456](https://github.com/dst0/p-mono/pull/456) by [@username](https://github.com/username))`
+- Internal (from issues): `Fixed foo bar ([#123](https://github.com/dst0/p/issues/123))`
+- External contributions: `Added feature X ([#456](https://github.com/dst0/p/pull/456) by [@username](https://github.com/username))`
 
 ## Releasing
 
