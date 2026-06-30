@@ -1198,7 +1198,11 @@ export class AgentSession {
 		if (event.type === "message_end") {
 			let persistedEntryId: string | undefined;
 			// Check if this is a custom message from extensions
-			if (event.message.role === "custom") {
+			if (hideContextOverflowMessage) {
+				// Context overflow errors are an internal recovery signal. Persisting
+				// them leaks invalid assistant error messages back into compacted retry
+				// context and can make providers reject the recovered request.
+			} else if (event.message.role === "custom") {
 				// Persist as CustomMessageEntry
 				persistedEntryId = this.sessionManager.appendCustomMessageEntry(
 					event.message.customType,
@@ -1261,6 +1265,12 @@ export class AgentSession {
 		if (!this.model) return false;
 		const sameModel = message.provider === this.model.provider && message.model === this.model.id;
 		return sameModel && isContextOverflow(message, this.model.contextWindow ?? 0);
+	}
+
+	private _removeContextOverflowMessages(messages: AgentMessage[]): AgentMessage[] {
+		return messages.filter((message) => {
+			return message.role !== "assistant" || !this._isContextOverflowForCurrentModel(message as AssistantMessage);
+		});
 	}
 
 	private _assistantCallsFinishWork(message: AssistantMessage | undefined): boolean {
@@ -3719,8 +3729,9 @@ export class AgentSession {
 				targetContextTokens: settings.targetContextTokens,
 				systemPromptTokens,
 			});
-			this.agent.state.messages = truncatedMessages;
-			const tokensAfterAuto = estimateContextTokens(truncatedMessages, this.systemPrompt, {
+			const retryMessagesWithoutOverflow = this._removeContextOverflowMessages(truncatedMessages);
+			this.agent.state.messages = retryMessagesWithoutOverflow;
+			const tokensAfterAuto = estimateContextTokens(retryMessagesWithoutOverflow, this.systemPrompt, {
 				useProviderUsage: false,
 			}).tokens;
 

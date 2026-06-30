@@ -665,6 +665,49 @@ describe("AgentSession compaction characterization", () => {
 		);
 	});
 
+	it("hides overflow errors and keeps them out of compacted retry context", async () => {
+		const harness = await createHarness({
+			completionMode: "implicit",
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+
+		const overflowText = "request exceeds the available context size";
+		const retryContextRoles: string[][] = [];
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: overflowText }),
+			(context) => {
+				retryContextRoles.push(context.messages.map((message) => message.role));
+				const leakedOverflow = context.messages.some((message) => {
+					return message.role === "assistant" && message.errorMessage?.includes(overflowText);
+				});
+				if (leakedOverflow) {
+					return fauxAssistantMessage("", { stopReason: "error", errorMessage: "invalid input batch" });
+				}
+				return fauxAssistantMessage("recovered");
+			},
+		]);
+
+		await harness.session.prompt("trigger overflow recovery");
+
+		expect(retryContextRoles).toHaveLength(1);
+		expect(retryContextRoles[0]?.at(-1)).toBe("user");
+		expect(harness.eventsOfType("message_end").filter((event) => event.message.role === "assistant")).toHaveLength(1);
+		expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["overflow"]);
+		expect(harness.eventsOfType("compaction_end").map((event) => event.reason)).toEqual(["overflow"]);
+		expect(
+			harness.session.agent.state.messages.some((message) => message.role === "assistant" && message.errorMessage),
+		).toBe(false);
+		expect(
+			harness.sessionManager
+				.getEntries()
+				.some(
+					(entry) => entry.type === "message" && entry.message.role === "assistant" && entry.message.errorMessage,
+				),
+		).toBe(false);
+	});
+
 	it("ignores stale pre-compaction assistant usage on pre-prompt checks", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);
