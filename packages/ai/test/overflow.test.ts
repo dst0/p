@@ -63,6 +63,11 @@ describe("isContextOverflow", () => {
 		expect(isContextOverflow(message, 131072)).toBe(true);
 	});
 
+	it("detects llama.cpp invalid input batch errors", () => {
+		const message = createErrorMessage("Invalid input batch.");
+		expect(isContextOverflow(message, 46080)).toBe(true);
+	});
+
 	it("does not treat generic non-overflow Ollama errors as overflow", () => {
 		const message = createErrorMessage("500 `model runner crashed unexpectedly`");
 		expect(isContextOverflow(message, 32768)).toBe(false);

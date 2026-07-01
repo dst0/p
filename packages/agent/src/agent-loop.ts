@@ -439,8 +439,7 @@ async function runLoop(
 			const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
 			newMessages.push(message);
 
-			const assistantErrored = message.stopReason === "error";
-			if (message.stopReason === "aborted" || (assistantErrored && !isCompletionProtocolEnabled(completionMode))) {
+			if (message.stopReason === "error" || message.stopReason === "aborted") {
 				await emit({ type: "turn_end", message, toolResults: [] });
 				await emit({ type: "agent_end", messages: newMessages });
 				return;
@@ -454,7 +453,7 @@ async function runLoop(
 
 			const toolResults: ToolResultMessage[] = [];
 			hasMoreToolCalls = false;
-			if (toolCalls.length > 0 && !protocolRepairBeforeExecution && !assistantErrored) {
+			if (toolCalls.length > 0 && !protocolRepairBeforeExecution) {
 				const executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
 				toolResults.push(...executedToolBatch.messages);
 				hasMoreToolCalls = !executedToolBatch.terminate;

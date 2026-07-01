@@ -161,6 +161,39 @@ describe("context management", () => {
 		expect(getTextPart((result.messages[2] as ToolResultMessage).content[0]).text).toBe(largeContent);
 	});
 
+	it("keeps all tool results raw when they fit inside the recent-result window", () => {
+		const messages: AgentMessage[] = [
+			{
+				role: "toolResult",
+				toolCallId: "call-first",
+				toolName: "read",
+				content: [{ type: "text", text: "first\n".repeat(2000) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+			{
+				role: "toolResult",
+				toolCallId: "call-second",
+				toolName: "read",
+				content: [{ type: "text", text: "second\n".repeat(2000) }],
+				isError: false,
+				timestamp: Date.now(),
+			},
+		];
+
+		const result = stubToolResultsForPrompt(
+			messages,
+			createPromptSettings({
+				toolResultKeepRecentCount: 3,
+				toolResultClearThresholdTokens: 100,
+				toolResultPromptBudgetTokens: 0,
+			}),
+		);
+
+		expect(result.stubs).toHaveLength(0);
+		expect(result.messages).toBe(messages);
+	});
+
 	it("stubs older large tool results but keeps the most recent one", () => {
 		const largeContent = "a".repeat(10000);
 		const messages: AgentMessage[] = [

@@ -4,7 +4,7 @@
 
 ### Fixed
 
-- Fixed explicit-finish sessions to continue through provider errors and request `finish_work` instead of ending the agent run early.
+- Fixed provider errors in explicit-finish sessions to end the current agent run so session-level retry and compaction recovery can continue work instead of requesting `finish_work`.
 - Fixed explicit completion repair prompts to be returned as transcript messages so follow-up turns can continue from the exact provider-visible context.
 
 ## [0.2.0] - 2026-06-28

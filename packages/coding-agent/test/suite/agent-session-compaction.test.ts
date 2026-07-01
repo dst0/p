@@ -782,6 +782,58 @@ describe("AgentSession compaction characterization", () => {
 		).toBe(false);
 	});
 
+	it("compacts and retries Invalid input batch instead of asking for finish_work", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		harness.session.agent.completionLimits = {
+			maxTurns: 4,
+			maxNoProgressTurns: 2,
+			maxMalformedToolRetries: 1,
+			maxEmptyAssistantRetries: 1,
+			maxMissingFinishRetries: 1,
+		};
+		const retryContextRoles: string[][] = [];
+		harness.setResponses([
+			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Invalid input batch." }),
+			(context) => {
+				retryContextRoles.push(context.messages.map((message) => message.role));
+				const leakedInvalidBatch = context.messages.some(
+					(message) => message.role === "assistant" && message.errorMessage === "Invalid input batch.",
+				);
+				if (leakedInvalidBatch) {
+					return fauxAssistantMessage("bad retry context");
+				}
+				return fauxAssistantMessage(
+					[fauxToolCall("finish_work", { status: "success", summary: "continued after compaction" })],
+					{ stopReason: "toolUse" },
+				);
+			},
+		]);
+
+		await harness.session.prompt("continue after invalid batch");
+
+		expect(harness.faux.state.callCount).toBeGreaterThan(1);
+		expect(retryContextRoles).toHaveLength(1);
+		expect(retryContextRoles[0]?.at(-1)).toBe("user");
+		expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["overflow"]);
+		expect(harness.eventsOfType("compaction_end").map((event) => [event.reason, event.willRetry])).toEqual([
+			["overflow", true],
+		]);
+		expect(
+			harness.eventsOfType("completion_protocol").some((event) => event.event === "missing_finish_work_retry"),
+		).toBe(false);
+		expect(harness.eventsOfType("completion_protocol").some((event) => event.event === "finish_work_called")).toBe(
+			true,
+		);
+		expect(
+			harness.session.agent.state.messages.some(
+				(message) => message.role === "assistant" && message.errorMessage === "Invalid input batch.",
+			),
+		).toBe(false);
+	});
+
 	it("ignores stale pre-compaction assistant usage on pre-prompt checks", async () => {
 		const harness = await createHarness();
 		harnesses.push(harness);

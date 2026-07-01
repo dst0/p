@@ -6,6 +6,10 @@
 
 - Updated generated model metadata from provider registries.
 
+### Fixed
+
+- Fixed llama.cpp `Invalid input batch` errors to be classified as context overflow for compact-and-retry recovery.
+
 ## [0.2.0] - 2026-06-28
 
 ### Fixed

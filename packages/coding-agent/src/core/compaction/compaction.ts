@@ -780,7 +780,7 @@ export function stubToolResultsForPrompt(
 	const recentToolResultStartIndex =
 		keepRecentCount === 0
 			? messages.length
-			: (toolResultIndexes[toolResultIndexes.length - keepRecentCount] ?? messages.length);
+			: (toolResultIndexes[Math.max(0, toolResultIndexes.length - keepRecentCount)] ?? messages.length);
 	const stubbedMessages = messages.slice();
 	const stubs: ToolResultStub[] = [];
 	let toolRawTokens = 0;

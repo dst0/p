@@ -480,7 +480,7 @@ describe("AgentSession prompt characterization", () => {
 		}
 	});
 
-	it("keeps completed-turn tool result representation stable after cumulative prompt budget pressure", async () => {
+	it("stubs older completed tool results under prompt budget pressure without mutating session history", async () => {
 		const readSmallChunkTool: AgentTool = {
 			name: "read_small_chunk",
 			label: "Read small chunk",
@@ -530,11 +530,16 @@ describe("AgentSession prompt characterization", () => {
 			expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
 		}
 
-		for (let index = 1; index < firstRequestPrompts.length; index++) {
+		const firstStubIndex = firstRequestPrompts.findIndex((prompt) => prompt.includes("[Tool result stubbed"));
+		expect(firstStubIndex).toBeGreaterThan(0);
+		for (let index = 1; index < firstStubIndex; index++) {
 			expect(firstRequestPrompts[index]?.startsWith(firstRequestPrompts[index - 1] ?? "")).toBe(true);
 		}
-		expect(firstRequestPrompts.some((prompt) => prompt.includes("[Tool result stubbed"))).toBe(false);
-		expect(firstRequestPrompts[17]).toContain("turn 17 line 047");
+		const finalPrompt = firstRequestPrompts[17] ?? "";
+		expect(finalPrompt).toContain("[Tool result stubbed");
+		expect(finalPrompt).toContain('session_recall("tool-result:');
+		expect(finalPrompt).toContain("turn 17 line 047");
+		expect(harness.session.messages.map(getMessageText).join("\n")).toContain("turn 1 line 047");
 	});
 
 	it("sends raw tool-result context to the provider before compaction without mutating session history", async () => {

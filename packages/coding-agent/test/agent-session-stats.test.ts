@@ -183,9 +183,17 @@ describe("AgentSession.getSessionStats", () => {
 	});
 
 	it("reports prompt-stubbed trailing tool output before compaction", () => {
-		const { session, sessionManager } = createSession();
+		const { session, sessionManager, settingsManager } = createSession();
 
 		try {
+			settingsManager.applyOverrides({
+				compaction: {
+					toolResultKeepRecentCount: 1,
+					toolResultClearThresholdTokens: 1200,
+					toolResultPromptBudgetTokens: 4000,
+				},
+			});
+
 			const longReadOutput = Array.from(
 				{ length: 800 },
 				(_, index) => `doc-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
