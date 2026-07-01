@@ -449,8 +449,20 @@ export function selectKeepRecentTokens(contextTokens: number, settings: Compacti
 // ============================================================================
 
 const ESTIMATED_IMAGE_CHARS = 4800;
+const DATA_URL_PREFIX_CHARS = "data:;base64,".length;
 
-function estimateTextAndImageContentChars(content: string | Array<{ type: string; text?: string }>): number {
+function estimateImageContentChars(block: { data?: string; mimeType?: string }): number {
+	const dataChars = typeof block.data === "string" ? block.data.length : 0;
+	if (dataChars <= 0) {
+		return ESTIMATED_IMAGE_CHARS;
+	}
+	const mimeTypeChars = typeof block.mimeType === "string" ? block.mimeType.length : 0;
+	return Math.max(ESTIMATED_IMAGE_CHARS, DATA_URL_PREFIX_CHARS + mimeTypeChars + dataChars);
+}
+
+function estimateTextAndImageContentChars(
+	content: string | Array<{ type: string; text?: string; data?: string; mimeType?: string }>,
+): number {
 	if (typeof content === "string") {
 		return content.length;
 	}
@@ -460,7 +472,7 @@ function estimateTextAndImageContentChars(content: string | Array<{ type: string
 		if (block.type === "text" && block.text) {
 			chars += block.text.length;
 		} else if (block.type === "image") {
-			chars += ESTIMATED_IMAGE_CHARS;
+			chars += estimateImageContentChars(block);
 		}
 	}
 	return chars;

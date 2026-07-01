@@ -37,6 +37,13 @@ export function estimateTokenCount(text: string | undefined): number {
 	return Math.ceil(text.length / 4);
 }
 
+function estimateImageTokenCount(part: { data?: string; mimeType?: string }): number {
+	const dataChars = typeof part.data === "string" ? part.data.length : 0;
+	if (dataChars <= 0) return 1200;
+	const mimeTypeChars = typeof part.mimeType === "string" ? part.mimeType.length : 0;
+	return Math.ceil(Math.max(4800, "data:;base64,".length + mimeTypeChars + dataChars) / 4);
+}
+
 export function createTokenBreakdown(input: TokenBreakdownInput): TokenBreakdown {
 	const systemPrompt = estimateTokenCount(input.systemPrompt);
 	const tools = estimateTokenCount(input.toolsPrompt);
@@ -85,9 +92,35 @@ export function formatTokenBreakdown(breakdown: TokenBreakdown): string {
 function estimateMessages(messages: AgentMessage[]): number {
 	let total = 0;
 	for (const message of messages) {
-		total += estimateTokenCount(messageText(message));
+		total += estimateMessage(message);
 	}
 	return total;
+}
+
+function estimateMessage(message: AgentMessage): number {
+	switch (message.role) {
+		case "user":
+		case "custom":
+		case "toolResult": {
+			if (typeof message.content === "string") {
+				return estimateTokenCount(message.content);
+			}
+			let total = 0;
+			for (const part of message.content) {
+				if (part.type === "text") {
+					total += estimateTokenCount(part.text);
+				} else if (part.type === "image") {
+					total += estimateImageTokenCount(part);
+				}
+			}
+			return total;
+		}
+		case "assistant":
+		case "bashExecution":
+		case "branchSummary":
+		case "compactionSummary":
+			return estimateTokenCount(messageText(message));
+	}
 }
 
 function messageText(message: AgentMessage): string {

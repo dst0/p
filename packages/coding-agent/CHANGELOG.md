@@ -13,6 +13,7 @@
 ### Fixed
 
 - Fixed explicit completion repair prompts to persist in session history so reloaded `p -p` turns preserve llama.cpp prompt-cache reuse.
+- Fixed live prompt preparation to count image tool-result payloads by data size and stub older image results before model calls.
 - Fixed the interactive footer to show the LLM orchestrator queue position and queued-ahead count.
 - Fixed legacy MCP extensions that still read `PI_CODING_AGENT_DIR` to use the active `p` agent directory during `p` runs.
 - Fixed overflow auto-compaction to hide raw context-size errors and keep provider error messages out of retry context.

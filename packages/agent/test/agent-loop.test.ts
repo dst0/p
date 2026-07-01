@@ -77,6 +77,13 @@ function createAssistantMessage(
 	};
 }
 
+function createErrorAssistantMessage(errorMessage: string): AssistantMessage {
+	return {
+		...createAssistantMessage([], "error"),
+		errorMessage,
+	};
+}
+
 function createUserMessage(text: string): UserMessage {
 	return {
 		role: "user",
@@ -126,9 +133,13 @@ function createScriptedStream(
 		callIndex++;
 		const stream = new MockAssistantStream();
 		queueMicrotask(() => {
-			const reason =
-				message.stopReason === "toolUse" || message.stopReason === "length" ? message.stopReason : "stop";
-			stream.push({ type: "done", reason, message });
+			if (message.stopReason === "error" || message.stopReason === "aborted") {
+				stream.push({ type: "error", reason: message.stopReason, error: message });
+			} else {
+				const reason =
+					message.stopReason === "toolUse" || message.stopReason === "length" ? message.stopReason : "stop";
+				stream.push({ type: "done", reason, message });
+			}
 		});
 		return stream;
 	};
@@ -2031,6 +2042,44 @@ describe("Explicit Completion Protocol", () => {
 			"completion_protocol_repair",
 		);
 		expect(messages[messages.length - 1].role).toBe("toolResult");
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry"),
+		).toHaveLength(1);
+	});
+
+	it("continues on provider errors without finish_work in explicit_finish", async () => {
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			[
+				createErrorAssistantMessage("Invalid input batch."),
+				(context) => {
+					const lastMessage = context.messages[context.messages.length - 1];
+					expect(lastMessage.role).toBe("user");
+					expect(getMessageText(lastMessage)).toContain("finish_work");
+					return createAssistantMessage(
+						[createFinishWorkCall({ status: "success", summary: "recovered" })],
+						"toolUse",
+					);
+				},
+			],
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(2);
+		expect(messages.map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant", "toolResult"]);
+		expect(messages[1]).toMatchObject({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: "Invalid input batch.",
+		});
+		expect(messages[2]?.role === "user" ? messages[2].metadata?.pInternal : undefined).toBe(
+			"completion_protocol_repair",
+		);
+		expect(messages[messages.length - 1]).toMatchObject({
+			role: "toolResult",
+			toolName: FINISH_WORK_TOOL_NAME,
+			details: { summary: "recovered" },
+		});
+		expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
 		expect(
 			events.filter((event) => event.type === "completion_protocol" && event.event === "missing_finish_work_retry"),
 		).toHaveLength(1);

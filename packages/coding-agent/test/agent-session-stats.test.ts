@@ -1,5 +1,5 @@
 import { Agent, type AgentMessage } from "@dst0/p-agent-core";
-import { type AssistantMessage, getModel, type Usage } from "@dst0/p-ai";
+import { type AssistantMessage, getModel, type TextContent, type ToolResultMessage, type Usage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -43,12 +43,47 @@ function createAssistantMessage(text: string, totalTokens: number, offsetMs: num
 	};
 }
 
+function createAssistantToolCallMessage(
+	id: string,
+	name: string,
+	arguments_: Record<string, unknown>,
+): AssistantMessage {
+	return {
+		role: "assistant",
+		content: [{ type: "toolCall", id, name, arguments: arguments_ }],
+		api: model.api,
+		provider: model.provider,
+		model: model.id,
+		usage: createUsage(100),
+		stopReason: "toolUse",
+		timestamp: Date.now(),
+	};
+}
+
 function createUserMessage(text: string, offsetMs: number) {
 	return {
 		role: "user" as const,
 		content: text,
 		timestamp: BASE_TIME + offsetMs,
 	};
+}
+
+function getTextPart(part: ToolResultMessage["content"][number] | undefined): TextContent {
+	expect(part?.type).toBe("text");
+	if (!part || part.type !== "text") {
+		throw new Error("Expected text content");
+	}
+	return part;
+}
+
+function findToolResult(messages: AgentMessage[], toolCallId: string): ToolResultMessage {
+	const found = messages.find(
+		(message): message is ToolResultMessage => message.role === "toolResult" && message.toolCallId === toolCallId,
+	);
+	if (!found) {
+		throw new Error(`Expected tool result ${toolCallId}`);
+	}
+	return found;
 }
 
 function createSession() {
@@ -73,7 +108,7 @@ function createSession() {
 		resourceLoader: createTestResourceLoader(),
 	});
 
-	return { session, sessionManager };
+	return { session, sessionManager, settingsManager };
 }
 
 function syncAgentMessages(session: AgentSession, sessionManager: SessionManager): void {
@@ -147,7 +182,7 @@ describe("AgentSession.getSessionStats", () => {
 		}
 	});
 
-	it("reports raw trailing tool output before compaction", () => {
+	it("reports prompt-stubbed trailing tool output before compaction", () => {
 		const { session, sessionManager } = createSession();
 
 		try {
@@ -179,11 +214,74 @@ describe("AgentSession.getSessionStats", () => {
 
 			const usage = session.getContextUsage();
 			expect(usage).toBeDefined();
-			expect(usage?.stubbedToolResults).toEqual([]);
-			expect(usage?.toolStubSavings).toBe(0);
+			expect(usage?.stubbedToolResults).toEqual(["tool-result:call-read-doc"]);
+			expect(usage?.toolStubSavings).toBeGreaterThan(8_000);
 			expect(usage?.toolRawTokens).toBeGreaterThan(8_000);
-			expect(usage?.toolStubTokens).toBe(0);
-			expect(usage?.tokens).toBeGreaterThan(8_000);
+			expect(usage?.toolStubTokens).toBeGreaterThan(0);
+			expect(usage?.tokens).toBeLessThan(usage?.toolRawTokens ?? 0);
+		} finally {
+			session.dispose();
+		}
+	});
+
+	it("stubs older image tool results through prompt transform before model calls", async () => {
+		const { session, sessionManager, settingsManager } = createSession();
+
+		try {
+			settingsManager.applyOverrides({
+				compaction: {
+					toolResultKeepRecentCount: 1,
+					toolResultClearThresholdTokens: 1200,
+					toolResultPromptBudgetTokens: 4000,
+				},
+			});
+
+			const oldImageResult: ToolResultMessage = {
+				role: "toolResult",
+				toolCallId: "call-old-image",
+				toolName: "read",
+				content: [
+					{ type: "text", text: "Read image file [image/png]" },
+					{ type: "image", mimeType: "image/png", data: "a".repeat(64_000) },
+				],
+				isError: false,
+				timestamp: BASE_TIME + 200,
+			};
+			const latestResult: ToolResultMessage = {
+				role: "toolResult",
+				toolCallId: "call-latest",
+				toolName: "bro_evaluate",
+				content: [{ type: "text", text: "latest small output" }],
+				isError: false,
+				timestamp: BASE_TIME + 400,
+			};
+
+			sessionManager.appendMessage(createUserMessage("inspect screenshots", 0));
+			sessionManager.appendMessage(
+				createAssistantToolCallMessage("call-old-image", "read", { path: "/tmp/shot.png" }),
+			);
+			sessionManager.appendMessage(oldImageResult);
+			sessionManager.appendMessage(createAssistantToolCallMessage("call-latest", "bro_evaluate", { script: "1" }));
+			sessionManager.appendMessage(latestResult);
+			syncAgentMessages(session, sessionManager);
+
+			const transformContext = session.agent.transformContext;
+			expect(transformContext).toBeDefined();
+			if (!transformContext) {
+				throw new Error("Expected AgentSession to install transformContext");
+			}
+			const transformed = await transformContext(session.agent.state.messages);
+
+			const stubbedOldResult = findToolResult(transformed, "call-old-image");
+			expect(stubbedOldResult.content.some((part) => part.type === "image")).toBe(false);
+			expect(getTextPart(stubbedOldResult.content[0]).text).toContain("[Tool result stubbed");
+
+			const keptLatestResult = findToolResult(transformed, "call-latest");
+			expect(keptLatestResult.content).toEqual(latestResult.content);
+
+			const usage = session.getContextUsage();
+			expect(usage?.stubbedToolResults).toContain("tool-result:call-old-image");
+			expect(usage?.toolStubSavings).toBeGreaterThan(10_000);
 		} finally {
 			session.dispose();
 		}

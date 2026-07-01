@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Updated generated model metadata from provider registries.
+
 ## [0.2.0] - 2026-06-28
 
 ### Fixed

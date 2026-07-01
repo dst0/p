@@ -155,6 +155,21 @@ export const IMAGE_MODELS = {
 				cacheWrite: 0,
 			},
 		} satisfies ImagesModel<"openrouter-images">,
+		"google/gemini-3.1-flash-lite-image": {
+			id: "google/gemini-3.1-flash-lite-image",
+			name: "Google: Nano Banana 2 Lite (Gemini 3.1 Flash Lite Image)",
+			api: "openrouter-images",
+			provider: "openrouter",
+			baseUrl: "https://openrouter.ai/api/v1",
+			input: ["image", "text"],
+			output: ["image", "text"],
+			cost: {
+				input: 0.25,
+				output: 1.5,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+		} satisfies ImagesModel<"openrouter-images">,
 		"microsoft/mai-image-2.5": {
 			id: "microsoft/mai-image-2.5",
 			name: "Microsoft: MAI-Image-2.5",

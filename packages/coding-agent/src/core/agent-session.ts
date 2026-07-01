@@ -71,6 +71,7 @@ import {
 	shouldCompact,
 	stripSessionStateUpdateBlocks,
 	stubToolResultsForCompactionSummary,
+	stubToolResultsForPrompt,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -2764,6 +2765,8 @@ export class AgentSession {
 			this._lastRuntimePromptComponents.workingStatePrompt,
 			{ ...options, minimumAnchorTimestamp: latestCompactionTimestamp },
 		);
+		const toolPromptContext = stubToolResultsForPrompt(preparedMessages, settings);
+		preparedMessages = toolPromptContext.messages;
 
 		const finalEstimate = estimateContextTokens(preparedMessages, systemPrompt, { useProviderUsage: false });
 		return {
@@ -2771,10 +2774,10 @@ export class AgentSession {
 			estimate: finalEstimate,
 			budgetEstimate: pressureEstimate,
 			source: "estimated",
-			toolRawTokens: estimateToolResultTokens(preparedMessages),
-			toolStubTokens: 0,
-			toolStubSavings: 0,
-			stubbedToolResults: [],
+			toolRawTokens: toolPromptContext.toolRawTokens,
+			toolStubTokens: toolPromptContext.stubs.length > 0 ? toolPromptContext.toolStubTokens : 0,
+			toolStubSavings: toolPromptContext.tokenSavingsEstimate,
+			stubbedToolResults: toolPromptContext.stubs.map((stub) => stub.rawPointer.id),
 		};
 	}
 
