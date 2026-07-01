@@ -1,0 +1,3 @@
+## 2026-06-30 - Regex inside tight loops in JS is slow
+**Learning:** Checking for boundary characters inside a tight string-matching loop is significantly slower when using `RegExp.test()` compared to explicitly checking for individual characters via `===` or `!==`. Additionally, allocating `.toLowerCase()` results repeatedly in a loop is an unnecessary performance penalty when strings can be pre-lowercased before entering the iteration scope.
+**Action:** Always prefer direct string comparison for simple character classes in high-frequency loops instead of using a generic regex test. Consider hoisting string allocations or normalization steps outside of heavy iterative processes.

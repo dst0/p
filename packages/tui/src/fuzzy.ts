@@ -9,10 +9,8 @@ export interface FuzzyMatch {
 	score: number;
 }
 
-export function fuzzyMatch(query: string, text: string): FuzzyMatch {
-	const queryLower = query.toLowerCase();
-	const textLower = text.toLowerCase();
-
+// Internal version that expects pre-lowercased strings to avoid repeated toLowerCase() calls in tight loops
+function fuzzyMatchInternal(queryLower: string, textLower: string): FuzzyMatch {
 	const matchQuery = (normalizedQuery: string): FuzzyMatch => {
 		if (normalizedQuery.length === 0) {
 			return { matches: true, score: 0 };
@@ -29,7 +27,19 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 
 		for (let i = 0; i < textLower.length && queryIndex < normalizedQuery.length; i++) {
 			if (textLower[i] === normalizedQuery[queryIndex]) {
-				const isWordBoundary = i === 0 || /[\s\-_./:]/.test(textLower[i - 1]!);
+				// Optimization: manually check boundary chars instead of using RegExp test in a tight loop
+				const prevChar = i > 0 ? textLower[i - 1]! : "";
+				const isWordBoundary =
+					i === 0 ||
+					prevChar === " " ||
+					prevChar === "\t" ||
+					prevChar === "\n" ||
+					prevChar === "\r" ||
+					prevChar === "-" ||
+					prevChar === "_" ||
+					prevChar === "." ||
+					prevChar === "/" ||
+					prevChar === ":";
 
 				// Reward consecutive matches
 				if (lastMatchIndex === i - 1) {
@@ -92,6 +102,10 @@ export function fuzzyMatch(query: string, text: string): FuzzyMatch {
 	return { matches: true, score: swappedMatch.score + 5 };
 }
 
+export function fuzzyMatch(query: string, text: string): FuzzyMatch {
+	return fuzzyMatchInternal(query.toLowerCase(), text.toLowerCase());
+}
+
 /**
  * Filter and sort items by fuzzy match quality (best matches first).
  * Supports whitespace- and slash-separated tokens: all tokens must match.
@@ -103,6 +117,8 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 
 	const tokens = query
 		.trim()
+		// Pre-lowercase query tokens to skip repeated lowercase calls per item
+		.toLowerCase()
 		.split(/[\s/]+/)
 		.filter((t) => t.length > 0);
 
@@ -114,11 +130,13 @@ export function fuzzyFilter<T>(items: T[], query: string, getText: (item: T) => 
 
 	for (const item of items) {
 		const text = getText(item);
+		// Pre-lowercase item text once to skip repeated lowercase calls per token
+		const textLower = text.toLowerCase();
 		let totalScore = 0;
 		let allMatch = true;
 
 		for (const token of tokens) {
-			const match = fuzzyMatch(token, text);
+			const match = fuzzyMatchInternal(token, textLower);
 			if (match.matches) {
 				totalScore += match.score;
 			} else {
