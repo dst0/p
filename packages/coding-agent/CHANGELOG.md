@@ -12,6 +12,7 @@
 
 ### Fixed
 
+- Fixed the local release smoke script to recognize the rebranded `p-monorepo` root package name.
 - Fixed explicit completion repair prompts to persist in session history so reloaded `p -p` turns preserve llama.cpp prompt-cache reuse.
 - Fixed live prompt preparation to count image tool-result payloads by data size and stub older image results before model calls.
 - Fixed live prompt preparation to honor `toolResultKeepRecentCount` when the session has fewer tool results than the recent-result limit.
