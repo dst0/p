@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added cold-prefill lifecycle updates when provider progress proves an uncached prompt prefill.
+
 ### Fixed
 
 - Fixed provider errors in explicit-finish sessions to end the current agent run so session-level retry and compaction recovery can continue work instead of requesting `finish_work`.

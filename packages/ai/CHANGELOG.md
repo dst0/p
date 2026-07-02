@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added cold-prefill metadata to OpenAI-compatible prefill progress events.
+
 ### Changed
 
 - Updated generated model metadata from provider registries.

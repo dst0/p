@@ -74,6 +74,16 @@ export interface ThinkingBudgetsSettings {
 	high?: number;
 }
 
+export interface FastResponderSettings {
+	enabled?: boolean; // default: true when a responder or service model is configured
+	provider?: string;
+	model?: string;
+	thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	minContextTokens?: number; // default: 1000
+	timeoutMs?: number; // default: 2000
+	maxTokens?: number; // default: 120
+}
+
 export interface MarkdownSettings {
 	codeBlockIndent?: string; // default: "  "
 }
@@ -108,6 +118,7 @@ export interface Settings {
 	serviceProvider?: string; // Optional fast model provider for compaction/memory/tool-output extraction tasks
 	serviceModel?: string; // Optional fast model id; falls back to current model when unavailable
 	serviceThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+	fastResponder?: FastResponderSettings; // Optional fast model response emitted before cold prefill
 	defaultThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
 	transport?: TransportSetting; // default: "auto"
 	steeringMode?: "all" | "one-at-a-time";
@@ -723,6 +734,36 @@ export class SettingsManager {
 			provider: this.settings.serviceProvider,
 			modelId: this.settings.serviceModel,
 			thinkingLevel: this.settings.serviceThinkingLevel,
+		};
+	}
+
+	getFastResponderSettings(): {
+		enabled: boolean;
+		provider?: string;
+		modelId?: string;
+		thinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";
+		minContextTokens: number;
+		timeoutMs: number;
+		maxTokens: number;
+	} {
+		const responder = this.settings.fastResponder;
+		const service = this.getServiceModelSelection();
+		const modelId = responder?.model ?? service.modelId;
+		const provider = responder?.provider ?? service.provider;
+		const minContextTokens = parsePositiveIntegerSetting(
+			responder?.minContextTokens,
+			"fastResponder.minContextTokens",
+		);
+		const timeoutMs = parsePositiveIntegerSetting(responder?.timeoutMs, "fastResponder.timeoutMs");
+		const maxTokens = parsePositiveIntegerSetting(responder?.maxTokens, "fastResponder.maxTokens");
+		return {
+			enabled: responder?.enabled ?? true,
+			provider,
+			modelId,
+			thinkingLevel: responder?.thinkingLevel ?? service.thinkingLevel,
+			minContextTokens: minContextTokens ?? 1000,
+			timeoutMs: timeoutMs ?? 2000,
+			maxTokens: maxTokens ?? 120,
 		};
 	}
 

@@ -105,7 +105,7 @@ import {
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type ConstraintPhase, evaluateGuardrails, type GuardrailReport } from "./guardrails.ts";
-import type { BashExecutionMessage, CustomMessage } from "./messages.ts";
+import { type BashExecutionMessage, type CustomMessage, FAST_RESPONDER_CUSTOM_TYPE } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
 	createProjectMemoryContext,
@@ -523,6 +523,7 @@ const RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE = "runtime_context";
 const TOOL_RESULT_EXTRACT_MIN_TOKENS = 1_200;
 const TOOL_RESULT_EXTRACT_INPUT_TOKENS = 6_000;
 const TOOL_RESULT_EXTRACT_OUTPUT_TOKENS = 500;
+const FAST_RESPONDER_INPUT_TOKENS = 800;
 
 interface ToolResultContextExtract {
 	summary: string;
@@ -674,6 +675,14 @@ function parseToolExtractResponse(
 		source: "service_model",
 		model: modelLabel,
 	};
+}
+
+function normalizeFastResponderText(text: string): string | undefined {
+	const stripped = stripSessionStateUpdateBlocks(text).replace(/\s+/g, " ").trim();
+	if (!stripped) {
+		return undefined;
+	}
+	return capTextByTokens(stripped, 180);
 }
 
 function getLatestUserText(messages: AgentMessage[]): string {
@@ -973,6 +982,129 @@ export class AgentSession {
 				apiKey,
 				headers,
 			};
+		}
+	}
+
+	private _getFastResponderModelRequest():
+		| {
+				model: Model<string>;
+				thinkingLevel: ThinkingLevel;
+		  }
+		| undefined {
+		const settings = this.settingsManager.getFastResponderSettings();
+		if (!settings.enabled || !settings.modelId) {
+			return undefined;
+		}
+
+		const fallbackModel = this.model;
+		if (!fallbackModel) {
+			return undefined;
+		}
+
+		const selectedModel = settings.provider
+			? this._modelRegistry.find(settings.provider, settings.modelId)
+			: this._modelRegistry.find(fallbackModel.provider, settings.modelId);
+		if (!selectedModel) {
+			return undefined;
+		}
+
+		return {
+			model: selectedModel,
+			thinkingLevel: clampThinkingLevel(selectedModel, settings.thinkingLevel ?? "off"),
+		};
+	}
+
+	private _shouldRunFastResponder(messages: AgentMessage[]): boolean {
+		const settings = this.settingsManager.getFastResponderSettings();
+		if (!settings.enabled) {
+			return false;
+		}
+		if (!this._getFastResponderModelRequest()) {
+			return false;
+		}
+		const promptTokens = estimateContextTokens(messages, this.systemPrompt, { useProviderUsage: false }).tokens;
+		if (promptTokens < settings.minContextTokens) {
+			return false;
+		}
+		const lastAssistant = this._findLastAssistantMessage();
+		return !lastAssistant || lastAssistant.stopReason === "error" || lastAssistant.usage.cacheRead === 0;
+	}
+
+	private async _createFastResponderMessage(
+		userText: string,
+		messages: AgentMessage[],
+	): Promise<CustomMessage<{ model: string; contextTokens: number }> | undefined> {
+		if (!this._shouldRunFastResponder(messages)) {
+			return undefined;
+		}
+
+		const request = this._getFastResponderModelRequest();
+		if (!request) {
+			return undefined;
+		}
+
+		const settings = this.settingsManager.getFastResponderSettings();
+		const promptTokens = estimateContextTokens(messages, this.systemPrompt, { useProviderUsage: false }).tokens;
+		const timeoutController = new AbortController();
+		const timeout = setTimeout(() => timeoutController.abort(), settings.timeoutMs);
+		try {
+			const { apiKey, headers } = await this._getCompactionRequestAuth(request.model);
+			const response = await completeSimple(
+				request.model,
+				{
+					systemPrompt: [
+						"You are P's fast local responder for a coding-agent session.",
+						"Write one short user-visible update in the same language as the user's request.",
+						"Restate the request concretely and say that work is starting.",
+						"Do not claim that anything is already done. Do not mention hidden context, cache, or prefill.",
+						"Use one or two concise sentences, no headings and no bullets.",
+					].join("\n"),
+					messages: [
+						{
+							role: "user",
+							content: [
+								"User request:",
+								capTextByTokens(userText, FAST_RESPONDER_INPUT_TOKENS),
+								"",
+								`Estimated main prompt size: ${promptTokens} tokens.`,
+							].join("\n"),
+							timestamp: Date.now(),
+						},
+					],
+				},
+				{
+					apiKey,
+					headers,
+					signal: timeoutController.signal,
+					reasoning: request.thinkingLevel === "off" ? undefined : request.thinkingLevel,
+					thinkingBudgets: this.agent.thinkingBudgets,
+					maxRetryDelayMs: this.agent.maxRetryDelayMs,
+					timeoutMs: settings.timeoutMs,
+					maxTokens: settings.maxTokens,
+				},
+			);
+			if (response.stopReason === "error" || response.stopReason === "aborted") {
+				return undefined;
+			}
+			const text = normalizeFastResponderText(getMessageTextForRecall(response));
+			if (!text) {
+				return undefined;
+			}
+			return {
+				role: "custom",
+				customType: FAST_RESPONDER_CUSTOM_TYPE,
+				content: text,
+				display: true,
+				details: {
+					model: `${request.model.provider}/${request.model.id}`,
+					contextTokens: promptTokens,
+				},
+				timestamp: Date.now(),
+			};
+		} catch {
+			return undefined;
+		} finally {
+			clearTimeout(timeout);
 		}
 	}
 
@@ -1957,6 +2089,12 @@ export class AgentSession {
 				} finally {
 					this._flushPendingBashMessages();
 				}
+			}
+
+			const fastResponderMessage = await this._createFastResponderMessage(expandedText, messages);
+			if (fastResponderMessage) {
+				const firstUserIndex = messages.findIndex((message) => message.role === "user");
+				messages.splice(firstUserIndex === -1 ? 0 : firstUserIndex + 1, 0, fastResponderMessage);
 			}
 		} catch (error) {
 			preflightResult?.(false);

@@ -647,6 +647,7 @@ async function streamAssistantResponse(
 	let tokenCount = 0;
 	let lastGenProgressMs: number | null = null;
 	let intervalTokenCount = 0;
+	let coldPrefillEmitted = false;
 	const GEN_PROGRESS_INTERVAL_MS = 1000;
 
 	for await (const event of response) {
@@ -729,10 +730,31 @@ async function streamAssistantResponse(
 			case "thinking_end":
 			case "toolcall_end":
 			case "prefill_progress":
+			case "cold_prefill_detected":
 			case "gen_progress":
-			case "queue_progress": {
+			case "queue_progress":
+			case "model_switch_progress":
+			case "loading_progress": {
 				partialMessage = event.partial;
 				context.messages[context.messages.length - 1] = partialMessage;
+				if (event.type === "prefill_progress" && event.cold && !coldPrefillEmitted) {
+					coldPrefillEmitted = true;
+					await emit({
+						type: "message_update",
+						assistantMessageEvent: {
+							type: "cold_prefill_detected",
+							elapsedMs: event.elapsedMs,
+							tokens: event.tokens,
+							cachedTokens: event.cachedTokens,
+							reason: event.cachedTokens === 0 ? "cache_miss" : "provider_signal",
+							partial: event.partial,
+						},
+						message: partialMessage,
+					});
+				}
+				if (event.type === "cold_prefill_detected") {
+					coldPrefillEmitted = true;
+				}
 				await emit({
 					type: "message_update",
 					assistantMessageEvent: event,
