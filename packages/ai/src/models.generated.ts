@@ -73,6 +73,24 @@ export const MODELS = {
 			contextWindow: 300000,
 			maxTokens: 8192,
 		} satisfies Model<"bedrock-converse-stream">,
+		"anthropic.claude-fable-5": {
+			id: "anthropic.claude-fable-5",
+			name: "Claude Fable 5",
+			api: "bedrock-converse-stream",
+			provider: "amazon-bedrock",
+			baseUrl: "https://bedrock-runtime.us-east-1.amazonaws.com",
+			reasoning: true,
+			thinkingLevelMap: {"off":null,"xhigh":"xhigh"},
+			input: ["text", "image"],
+			cost: {
+				input: 10,
+				output: 50,
+				cacheRead: 1,
+				cacheWrite: 12.5,
+			},
+			contextWindow: 1000000,
+			maxTokens: 128000,
+		} satisfies Model<"bedrock-converse-stream">,
 		"anthropic.claude-haiku-4-5-20251001-v1:0": {
 			id: "anthropic.claude-haiku-4-5-20251001-v1:0",
 			name: "Claude Haiku 4.5",
@@ -9473,7 +9491,7 @@ export const MODELS = {
 		} satisfies Model<"openai-completions">,
 		"minimax-m3": {
 			id: "minimax-m3",
-			name: "MiniMax-M3 (3x usage)",
+			name: "MiniMax-M3",
 			api: "anthropic-messages",
 			provider: "opencode-go",
 			baseUrl: "https://opencode.ai/zen/go",
