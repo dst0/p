@@ -76,6 +76,10 @@ function isImageContentBlock(block: { type: string }): block is ImageContent {
 	return block.type === "image";
 }
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+	return typeof value === "object" && value !== null;
+}
+
 function readFiniteNumber(fields: Record<string, unknown>, ...names: string[]): number | undefined {
 	for (const name of names) {
 		const value = fields[name];
@@ -101,8 +105,72 @@ type ProgressChunk = Extract<
 	{ type: "prefill_progress" | "gen_progress" | "queue_progress" | "model_switch_progress" | "loading_progress" }
 >;
 
+function parseLlamaPromptProgress(
+	fields: Record<string, unknown>,
+	output: AssistantMessage,
+): ProgressChunk | undefined {
+	const promptProgress = fields.prompt_progress;
+	if (!isRecord(promptProgress)) {
+		return undefined;
+	}
+
+	const total = readFiniteNumber(promptProgress, "total");
+	const processed = readFiniteNumber(promptProgress, "processed");
+	if (total === undefined || processed === undefined) {
+		return undefined;
+	}
+
+	const cache = readFiniteNumber(promptProgress, "cache") ?? 0;
+	const timedTotal = Math.max(0, total - cache);
+	const timedProcessed = Math.max(0, processed - cache);
+	const percent =
+		timedTotal > 0 ? Math.max(0, Math.min(100, (timedProcessed / timedTotal) * 100)) : processed >= total ? 100 : 0;
+	const elapsedMs = readFiniteNumber(promptProgress, "time_ms", "timeMs") ?? 0;
+	const timings = isRecord(fields.timings) ? fields.timings : undefined;
+	const tokensPerSecond =
+		(timings ? readFiniteNumber(timings, "prompt_per_second", "promptPerSecond") : undefined) ??
+		(elapsedMs > 0 ? timedProcessed / (elapsedMs / 1000) : undefined);
+
+	return {
+		type: "prefill_progress",
+		elapsedMs,
+		percent,
+		tokensPerSecond,
+		partial: output,
+	};
+}
+
 function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage): ProgressChunk | undefined {
 	const fields = chunk as ChatCompletionChunk & Record<string, unknown>;
+	const llamaPromptProgress = parseLlamaPromptProgress(fields, output);
+	if (llamaPromptProgress) {
+		return llamaPromptProgress;
+	}
+	if (fields.type === "prompt_processing.start") {
+		return {
+			type: "prefill_progress",
+			elapsedMs: 0,
+			percent: 0,
+			partial: output,
+		};
+	}
+	if (fields.type === "prompt_processing.progress") {
+		const progress = readFiniteNumber(fields, "progress") ?? 0;
+		return {
+			type: "prefill_progress",
+			elapsedMs: readFiniteNumber(fields, "elapsedMs", "elapsed_ms", "time_ms", "timeMs") ?? 0,
+			percent: Math.max(0, Math.min(100, progress * 100)),
+			partial: output,
+		};
+	}
+	if (fields.type === "prompt_processing.end") {
+		return {
+			type: "prefill_progress",
+			elapsedMs: readFiniteNumber(fields, "elapsedMs", "elapsed_ms", "time_ms", "timeMs") ?? 0,
+			percent: 100,
+			partial: output,
+		};
+	}
 	if (fields.type === "prefill_progress") {
 		return {
 			type: "prefill_progress",
@@ -380,7 +448,6 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 				const progressEvent = parseProgressChunk(chunk, output);
 				if (progressEvent) {
 					stream.push(progressEvent);
-					continue;
 				}
 
 				if (chunk.usage) {

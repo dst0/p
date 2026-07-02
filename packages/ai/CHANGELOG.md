@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed OpenAI-compatible prefill progress parsing for llama.cpp `prompt_progress` chunks and LM Studio `prompt_processing` stream events.
 - Fixed llama.cpp `Invalid input batch` errors to be classified as context overflow for compact-and-retry recovery.
 
 ## [0.2.0] - 2026-06-28

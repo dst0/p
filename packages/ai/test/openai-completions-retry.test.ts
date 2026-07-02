@@ -162,4 +162,95 @@ describe("openai-completions provider retries", () => {
 			]),
 		);
 	});
+
+	it("maps llama.cpp prompt_progress chunks to prefill progress events", async () => {
+		mockState.streamChunks = [
+			{
+				id: "chatcmpl-test",
+				model: "local.gguf",
+				object: "chat.completion.chunk",
+				timings: {
+					prompt_per_second: 40,
+				},
+				prompt_progress: {
+					total: 17,
+					cache: 7,
+					processed: 13,
+					time_ms: 223,
+				},
+				choices: [{ index: 0, delta: { role: "assistant", content: null }, finish_reason: null }],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: { content: "ok" } }],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+			},
+		];
+
+		const events = await consume();
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "prefill_progress",
+					percent: 60,
+					elapsedMs: 223,
+					tokensPerSecond: 40,
+				}),
+			]),
+		);
+	});
+
+	it("maps LM Studio prompt_processing chunks to prefill progress events", async () => {
+		mockState.streamChunks = [
+			{
+				type: "prompt_processing.start",
+				choices: [],
+			},
+			{
+				type: "prompt_processing.progress",
+				progress: 0.5,
+				time_ms: 1000,
+				choices: [],
+			},
+			{
+				type: "prompt_processing.end",
+				time_ms: 1800,
+				choices: [],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: { content: "ok" } }],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+			},
+		];
+
+		const events = await consume();
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "prefill_progress",
+					percent: 0,
+					elapsedMs: 0,
+				}),
+				expect.objectContaining({
+					type: "prefill_progress",
+					percent: 50,
+					elapsedMs: 1000,
+				}),
+				expect.objectContaining({
+					type: "prefill_progress",
+					percent: 100,
+					elapsedMs: 1800,
+				}),
+			]),
+		);
+	});
 });
