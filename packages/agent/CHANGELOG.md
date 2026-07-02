@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added cold-prefill lifecycle updates when provider progress proves an uncached prompt prefill.
+
 ## [0.2.6] - 2026-07-02
 
 ### Fixed

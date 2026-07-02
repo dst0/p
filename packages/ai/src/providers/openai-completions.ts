@@ -102,8 +102,35 @@ function readString(fields: Record<string, unknown>, ...names: string[]): string
 
 type ProgressChunk = Extract<
 	AssistantMessageEvent,
-	{ type: "prefill_progress" | "gen_progress" | "queue_progress" | "model_switch_progress" | "loading_progress" }
+	{
+		type:
+			| "prefill_progress"
+			| "cold_prefill_detected"
+			| "gen_progress"
+			| "queue_progress"
+			| "model_switch_progress"
+			| "loading_progress";
+	}
 >;
+
+const COLD_PREFILL_MIN_TOKENS = 512;
+
+function readBoolean(fields: Record<string, unknown>, ...names: string[]): boolean | undefined {
+	for (const name of names) {
+		const value = fields[name];
+		if (typeof value === "boolean") {
+			return value;
+		}
+	}
+	return undefined;
+}
+
+function isColdPrefill(tokens: number | undefined, cachedTokens: number | undefined): boolean | undefined {
+	if (cachedTokens === undefined || tokens === undefined) {
+		return undefined;
+	}
+	return cachedTokens === 0 && tokens >= COLD_PREFILL_MIN_TOKENS;
+}
 
 function parseLlamaPromptProgress(
 	fields: Record<string, unknown>,
@@ -135,7 +162,10 @@ function parseLlamaPromptProgress(
 		type: "prefill_progress",
 		elapsedMs,
 		percent,
+		tokens: total,
+		cachedTokens: cache,
 		tokensPerSecond,
+		cold: isColdPrefill(total, cache),
 		partial: output,
 	};
 }
@@ -172,11 +202,34 @@ function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage
 		};
 	}
 	if (fields.type === "prefill_progress") {
+		const tokens = readFiniteNumber(fields, "tokens", "total", "promptTokens", "prompt_tokens");
+		const cachedTokens = readFiniteNumber(
+			fields,
+			"cachedTokens",
+			"cached_tokens",
+			"cacheRead",
+			"cache_read",
+			"cache",
+		);
+		const explicitCold = readBoolean(fields, "coldPrefill", "cold_prefill", "cold", "cache_miss");
 		return {
 			type: "prefill_progress",
 			elapsedMs: readFiniteNumber(fields, "elapsedMs", "elapsed_ms") ?? 0,
 			percent: readFiniteNumber(fields, "percent"),
+			tokens,
+			cachedTokens,
 			tokensPerSecond: readFiniteNumber(fields, "tokensPerSecond", "tokens_per_second"),
+			cold: explicitCold ?? isColdPrefill(tokens, cachedTokens),
+			partial: output,
+		};
+	}
+	if (fields.type === "cold_prefill_detected") {
+		return {
+			type: "cold_prefill_detected",
+			elapsedMs: readFiniteNumber(fields, "elapsedMs", "elapsed_ms") ?? 0,
+			tokens: readFiniteNumber(fields, "tokens", "total", "promptTokens", "prompt_tokens"),
+			cachedTokens: readFiniteNumber(fields, "cachedTokens", "cached_tokens", "cacheRead", "cache_read", "cache"),
+			reason: readBoolean(fields, "cache_miss") === true ? "cache_miss" : "provider_signal",
 			partial: output,
 		};
 	}

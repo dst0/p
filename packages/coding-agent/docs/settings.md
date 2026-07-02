@@ -46,6 +46,38 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 }
 ```
 
+### Service Model & Fast Responder
+
+Service tasks such as compaction, memory extraction, and the fast responder can use a cheaper or local model through `serviceProvider`, `serviceModel`, and `serviceThinkingLevel`.
+
+The fast responder emits a short generated acknowledgement before large uncached prompts finish prefill. It runs only when `fastResponder.enabled` is not `false`, a responder or service model is configured, the prompt estimate is at least `fastResponder.minContextTokens`, and the previous assistant response did not report a prompt-cache read.
+
+| Setting | Type | Default | Description |
+|---------|------|---------|-------------|
+| `serviceProvider` | string | - | Provider for service-model work |
+| `serviceModel` | string | - | Model ID for service-model work |
+| `serviceThinkingLevel` | string | - | Thinking level for service-model work |
+| `fastResponder.enabled` | boolean | `true` | Enable generated fast-responder messages when a responder or service model is configured |
+| `fastResponder.provider` | string | `serviceProvider` | Provider override for the fast responder |
+| `fastResponder.model` | string | `serviceModel` | Model override for the fast responder |
+| `fastResponder.thinkingLevel` | string | `serviceThinkingLevel` | Thinking level override for the fast responder |
+| `fastResponder.minContextTokens` | number | `1000` | Minimum estimated prompt size before the responder runs |
+| `fastResponder.timeoutMs` | number | `2000` | Maximum time to wait for the responder model |
+| `fastResponder.maxTokens` | number | `120` | Maximum responder output tokens |
+
+```json
+{
+  "serviceProvider": "ollama",
+  "serviceModel": "qwen2.5-coder:1.5b",
+  "serviceThinkingLevel": "off",
+  "fastResponder": {
+    "minContextTokens": 2000,
+    "timeoutMs": 1500,
+    "maxTokens": 80
+  }
+}
+```
+
 ### UI & Display
 
 | Setting | Type | Default | Description |

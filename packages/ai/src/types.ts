@@ -375,7 +375,18 @@ export type AssistantMessageEvent =
 			type: "prefill_progress";
 			elapsedMs: number;
 			percent?: number;
+			tokens?: number;
+			cachedTokens?: number;
 			tokensPerSecond?: number;
+			cold?: boolean;
+			partial: AssistantMessage;
+	  }
+	| {
+			type: "cold_prefill_detected";
+			elapsedMs: number;
+			tokens?: number;
+			cachedTokens?: number;
+			reason: "provider_signal" | "cache_miss";
 			partial: AssistantMessage;
 	  }
 	| { type: "gen_progress"; tokensPerSecond: number; tokens: number; partial: AssistantMessage }

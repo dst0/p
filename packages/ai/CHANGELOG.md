@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added cold-prefill metadata to OpenAI-compatible prefill progress events.
+
 ## [0.2.6] - 2026-07-02
 
 ### Changed

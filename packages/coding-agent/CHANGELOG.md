@@ -6,6 +6,7 @@
 
 ### Added
 
+- Added a configurable fast responder that uses a fast model to show a short generated acknowledgement before cold prefill finishes.
 - Added `--max-tokens` to bound provider output tokens for deterministic short CLI runs.
 
 ### Changed

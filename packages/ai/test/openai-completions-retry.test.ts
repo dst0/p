@@ -198,7 +198,47 @@ describe("openai-completions provider retries", () => {
 					type: "prefill_progress",
 					percent: 60,
 					elapsedMs: 223,
+					tokens: 17,
+					cachedTokens: 7,
 					tokensPerSecond: 40,
+				}),
+			]),
+		);
+	});
+
+	it("marks uncached large prompt_progress chunks as cold prefill", async () => {
+		mockState.streamChunks = [
+			{
+				id: "chatcmpl-test",
+				model: "local.gguf",
+				object: "chat.completion.chunk",
+				prompt_progress: {
+					total: 2048,
+					cache: 0,
+					processed: 128,
+					time_ms: 750,
+				},
+				choices: [{ index: 0, delta: { role: "assistant", content: null }, finish_reason: null }],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: { content: "ok" } }],
+			},
+			{
+				id: "chatcmpl-test",
+				choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+			},
+		];
+
+		const events = await consume();
+
+		expect(events).toEqual(
+			expect.arrayContaining([
+				expect.objectContaining({
+					type: "prefill_progress",
+					tokens: 2048,
+					cachedTokens: 0,
+					cold: true,
 				}),
 			]),
 		);
