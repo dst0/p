@@ -50,9 +50,11 @@ import {
 	type CompactionSettings,
 	type ContextUsageEstimate,
 	collectEntriesForBranchSummary,
+	compact as compactWithModel,
 	computeFileLists,
 	createContextBudgetReport,
 	createLiveStructuredSessionState,
+	createStructuredSessionState,
 	type EvidenceKind,
 	type EvidencePointer,
 	estimateContextTokens,
@@ -3504,6 +3506,61 @@ export class AgentSession {
 		};
 	}
 
+	private async _prepareDefaultCompaction(
+		preparation: CompactionPreparation,
+		pathEntries: SessionEntry[],
+		settings: CompactionSettings & { renderedStateMaxTokens: number },
+		customInstructions: string | undefined,
+		signal: AbortSignal | undefined,
+	): Promise<CompactionResult<CompactionDetails> & { state: StructuredSessionState }> {
+		const deterministic = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
+
+		try {
+			const authRequest = await this._getServiceAuthWithCurrentFallback(this._getServiceModelRequest());
+			const modelResult = await compactWithModel(
+				preparation,
+				authRequest.model,
+				authRequest.apiKey,
+				authRequest.headers,
+				customInstructions,
+				signal,
+				authRequest.thinkingLevel,
+				this.agent.streamFn,
+				(currentChunk, totalChunks) => {
+					this._emit({ type: "compaction_progress", currentChunk, totalChunks });
+				},
+			);
+			const modelDetails = modelResult.details as CompactionDetails | undefined;
+			const readFiles = modelDetails?.readFiles ?? deterministic.details?.readFiles ?? [];
+			const modifiedFiles = modelDetails?.modifiedFiles ?? deterministic.details?.modifiedFiles ?? [];
+			const audit = modelDetails?.audit ?? deterministic.details?.audit;
+			const baseState = this._getCurrentStructuredSessionState(pathEntries);
+			const state = createStructuredSessionState({
+				sessionId: this.sessionManager.getSessionId(),
+				previous: baseState,
+				summary: modelResult.summary,
+				entries: pathEntries,
+				readFiles,
+				modifiedFiles,
+				audit,
+				timestamp: new Date().toISOString(),
+			});
+			return {
+				...modelResult,
+				details: {
+					readFiles,
+					modifiedFiles,
+					audit,
+					markdownSummary: modelResult.summary,
+					structuredState: state,
+				},
+				state,
+			};
+		} catch {
+			return deterministic;
+		}
+	}
+
 	/**
 	 * Manually compact the session context.
 	 * Aborts current agent operation first.
@@ -3562,7 +3619,13 @@ export class AgentSession {
 				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
-				const result = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
+				const result = await this._prepareDefaultCompaction(
+					preparation,
+					pathEntries,
+					settings,
+					customInstructions,
+					this._compactionAbortController.signal,
+				);
 				summary = result.summary;
 				firstKeptEntryId = result.firstKeptEntryId;
 				tokensBefore = result.tokensBefore;
@@ -3864,7 +3927,13 @@ export class AgentSession {
 				tokensAfter = extensionCompaction.tokensAfter;
 				details = extensionCompaction.details;
 			} else {
-				const compactResult = this._prepareDeterministicCompaction(preparation, pathEntries, settings);
+				const compactResult = await this._prepareDefaultCompaction(
+					preparation,
+					pathEntries,
+					settings,
+					undefined,
+					this._autoCompactionAbortController.signal,
+				);
 				summary = compactResult.summary;
 				firstKeptEntryId = compactResult.firstKeptEntryId;
 				tokensBefore = compactResult.tokensBefore;
