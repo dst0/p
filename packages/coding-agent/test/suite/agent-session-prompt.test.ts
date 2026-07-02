@@ -230,6 +230,36 @@ describe("AgentSession prompt characterization", () => {
 		expect(workingState).not.toContain("in/file-16.txt");
 	});
 
+	it("preserves durable structured state goals over pending follow-up commands", async () => {
+		const harness = await createPromptHarness();
+		harnesses.push(harness);
+		const durableState = createInitialStructuredSessionState(harness.session.sessionId);
+		durableState.canonicalRequest.current = "Preserve primary session state across completed follow-up turns";
+		durableState.plan.push({
+			id: "plan-preserve-primary-goal",
+			text: "Keep the primary goal stable across later user messages",
+			status: "in_progress",
+			evidenceEntryIds: [],
+		});
+		harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, durableState);
+		let userTexts: string[] = [];
+		harness.setResponses([
+			(context) => {
+				userTexts = getUserTexts(context.messages);
+				return fauxAssistantMessage("checked");
+			},
+		]);
+
+		await harness.session.prompt(
+			"Interrupt scenario command: write at least 1200 words first. This must not replace the primary goal.",
+		);
+
+		const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
+		expect(workingState).toContain("🚩 Goal: Preserve primary session state across completed follow-up turns");
+		expect(workingState).toContain("⏳ Keep the primary goal stable across later user messages");
+		expect(workingState).not.toContain("🚩 Goal: Interrupt scenario command");
+	});
+
 	it("reuses provider prompt cache across sequential user prompts", async () => {
 		const harness = await createPromptHarness();
 		harnesses.push(harness);

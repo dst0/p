@@ -901,10 +901,12 @@ function createStatePatchFromLiveSession(input: LiveStructuredStateInput): State
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
 	const latestActionableRequest = findLatestActionableRequest(originalRequests);
+	const previousGoal = normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "");
+	const preservePreviousGoal = hasDurablePreviousGoal(input.previous);
 	const goal =
 		normalizeCanonicalRequest(latestCorrection?.summary ?? "") ||
-		normalizeCanonicalRequest(latestActionableRequest?.summary ?? "") ||
-		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
+		(preservePreviousGoal ? "" : normalizeCanonicalRequest(latestActionableRequest?.summary ?? "")) ||
+		previousGoal ||
 		normalizeCanonicalRequest(latestRequest?.summary ?? "");
 	const liveMarkdown = createLiveConversationMarkdown(input.entries);
 	const planItems = extractPlanItems(liveMarkdown, sourceEntryIds);
@@ -934,6 +936,22 @@ function createStatePatchFromLiveSession(input: LiveStructuredStateInput): State
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		evidence: evidence.length > 0 ? { add: evidence } : undefined,
 	};
+}
+
+function hasDurablePreviousGoal(previous: StructuredSessionState | undefined): boolean {
+	if (!previous?.canonicalRequest.current.trim()) return false;
+	return (
+		(previous.canonicalRequest.originalRequests?.length ?? 0) > 0 ||
+		previous.plan.length > 0 ||
+		previous.progress.done.length > 0 ||
+		previous.progress.current.length > 0 ||
+		previous.progress.next.length > 0 ||
+		previous.progress.blocked.length > 0 ||
+		previous.decisions.length > 0 ||
+		previous.codebase.touchedFiles.length > 0 ||
+		previous.evidence.length > 0 ||
+		previous.audit.knownRisks.length > 0
+	);
 }
 
 function extractSection(markdown: string, heading: string): string {

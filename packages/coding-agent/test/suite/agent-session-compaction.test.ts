@@ -164,14 +164,67 @@ describe("AgentSession compaction characterization", () => {
 		expect(result.summary).toContain("<session_checkpoint>");
 	});
 
-	it("manually compacts deterministically without invoking the summary stream", async () => {
+	it("manually compacts with an LLM summary when model auth is available", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		const markdownSummary = [
+			"## Goal",
+			"Preserve the current goal, plan, and context through compaction.",
+			"",
+			"## Plan & Progress",
+			"- [v] Reproduce the loss",
+			"- [.] Patch compaction summary state",
+			"",
+			"## Progress",
+			"### Done",
+			"- [v] Reproduced the loss",
+			"",
+			"### In Progress",
+			"- [.] Patch compaction summary state",
+			"",
+			"### Blocked",
+			"- (none)",
+			"",
+			"## Key Decisions",
+			"- **Use LLM summaries**: Keep semantic history alongside structured state.",
+			"",
+			"## Next Steps",
+			"1. Run focused tests",
+		].join("\n");
+		const getStreamCallCount = useSummaryStreamFn(harness, markdownSummary);
+
+		const result = await harness.session.compact();
+		const details = result.details as {
+			markdownSummary?: string;
+			structuredState?: {
+				canonicalRequest: { current: string };
+				plan: Array<{ text: string; status: string }>;
+			};
+		};
+
+		expect(getStreamCallCount()).toBe(1);
+		expect(result.summary).toContain("## Goal");
+		expect(result.summary).toContain("Preserve the current goal, plan, and context through compaction.");
+		expect(details.markdownSummary).toContain("## Goal");
+		expect(details.structuredState?.canonicalRequest.current).toBe(
+			"Preserve the current goal, plan, and context through compaction.",
+		);
+		expect(details.structuredState?.plan.map((item) => [item.text, item.status])).toEqual([
+			["Reproduce the loss", "done"],
+			["Patch compaction summary state", "in_progress"],
+		]);
+	});
+
+	it("falls back to deterministic manual compaction when no summarizer is available", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
 			settings: { compaction: { keepRecentTokens: 10 } },
 		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		const getStreamCallCount = useSummaryStreamFn(harness, "summary from custom stream");
 		const visibleMessagesBefore = harness.sessionManager
 			.getEntries()
 			.filter((entry) => entry.type === "message").length;
@@ -212,7 +265,6 @@ describe("AgentSession compaction characterization", () => {
 			.getEntries()
 			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
 		expect(structuredEntries).toHaveLength(1);
-		expect(getStreamCallCount()).toBe(0);
 	});
 
 	it("does not compact again when only the structured state entry follows the compaction boundary", async () => {
@@ -228,14 +280,13 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction")).toHaveLength(1);
 	});
 
-	it("auto-compacts deterministically without invoking the summary stream", async () => {
+	it("falls back to deterministic auto-compaction when no summarizer is available", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
 			settings: { compaction: { keepRecentTokens: 10 } },
 		});
 		harnesses.push(harness);
 		seedCompactableSession(harness);
-		const getStreamCallCount = useSummaryStreamFn(harness, "auto summary from custom stream");
 		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
 
 		await sessionInternals._runAutoCompaction("threshold", false);
@@ -248,7 +299,55 @@ describe("AgentSession compaction characterization", () => {
 		expect(
 			compactionEntries[0].type === "compaction" && (compactionEntries[0] as any).details?.markdownSummary,
 		).toBeUndefined();
-		expect(getStreamCallCount()).toBe(0);
+	});
+
+	it("auto-compacts with an LLM summary when model auth is available", async () => {
+		const harness = await createHarness({
+			settings: { compaction: { keepRecentTokens: 10 } },
+		});
+		harnesses.push(harness);
+		seedCompactableSession(harness);
+		const getStreamCallCount = useSummaryStreamFn(
+			harness,
+			[
+				"## Goal",
+				"Keep automatic compaction context rich.",
+				"",
+				"## Plan & Progress",
+				"- [v] Trigger automatic compaction",
+				"",
+				"## Progress",
+				"### Done",
+				"- [v] Trigger automatic compaction",
+				"",
+				"### In Progress",
+				"- (none)",
+				"",
+				"### Blocked",
+				"- (none)",
+				"",
+				"## Key Decisions",
+				"- **Use summarizer**: Keep dropped history readable.",
+				"",
+				"## Next Steps",
+				"1. Continue after compaction",
+			].join("\n"),
+		);
+		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
+
+		await sessionInternals._runAutoCompaction("threshold", false);
+
+		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+		expect(compactionEntries).toHaveLength(1);
+		const compactionEntry = compactionEntries[0];
+		expect(compactionEntry?.type).toBe("compaction");
+		if (!compactionEntry || compactionEntry.type !== "compaction") {
+			throw new Error("Expected compaction entry");
+		}
+		const details = compactionEntry.details as { markdownSummary?: string };
+		expect(compactionEntry.summary).toContain("Keep automatic compaction context rich.");
+		expect(details.markdownSummary).toContain("## Goal");
+		expect(getStreamCallCount()).toBe(1);
 	});
 
 	it("silently skips threshold auto-compaction when there is nothing useful to compact", async () => {
@@ -576,7 +675,7 @@ describe("AgentSession compaction characterization", () => {
 		expect(harness.sessionManager.getEntries().some((entry) => entry.type === "compaction")).toBe(false);
 	});
 
-	it("deterministically compacts a very large history without chunked summarization", async () => {
+	it("compacts a very large history with chunked summarization when a local stream function is available", async () => {
 		const smallContextModel = {
 			id: "small-model",
 			contextWindow: 6000,
@@ -627,9 +726,9 @@ describe("AgentSession compaction characterization", () => {
 
 		const result = await harness.session.compact();
 
-		expect(callCount).toBe(0);
-		expect(result.summary).toContain("<session_checkpoint>");
-		expect((result.details as { markdownSummary?: string }).markdownSummary).toBeUndefined();
+		expect(callCount).toBeGreaterThan(1);
+		expect(result.summary).toContain("summary chunk");
+		expect((result.details as { markdownSummary?: string }).markdownSummary).toContain("summary chunk");
 	});
 
 	it("cancels in-progress manual compaction when abortCompaction is called", async () => {
@@ -743,6 +842,7 @@ describe("AgentSession compaction characterization", () => {
 		const retryErrorMessages: string[] = [];
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: overflowText }),
+			fauxAssistantMessage("## Goal\ntrigger overflow recovery\n\n## Next Steps\n1. Retry after compaction"),
 			(context) => {
 				retryContextRoles.push(context.messages.map((message) => message.role));
 				const leakedOverflow = context.messages.some((message) => {
@@ -797,6 +897,7 @@ describe("AgentSession compaction characterization", () => {
 		const retryContextRoles: string[][] = [];
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Invalid input batch." }),
+			fauxAssistantMessage("## Goal\ncontinue after invalid batch\n\n## Next Steps\n1. Retry after compaction"),
 			(context) => {
 				retryContextRoles.push(context.messages.map((message) => message.role));
 				const leakedInvalidBatch = context.messages.some(
