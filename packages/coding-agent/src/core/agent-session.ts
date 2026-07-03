@@ -160,10 +160,11 @@ import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapp
 
 const RETRYABLE_ERROR_PATTERN =
 	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|failed to parse|could not parse|invalid json|unexpected token|unexpected end of json|response body|no response body|body is unusable/i;
-const MODEL_LOADING_RETRY_PATTERN = /loading model|model.*loading|model load|model.*not ready/i;
-const MODEL_LOADING_MIN_RETRIES = 60;
-const MODEL_LOADING_MIN_RETRY_DELAY_MULTIPLIER = 10;
-const MODEL_LOADING_MAX_RETRY_DELAY_MS = 30_000;
+const MODEL_RECOVERY_RETRY_PATTERN =
+	/loading model|model.*loading|model load|model.*not ready|no available workers?|no workers? available|workers?.*(?:unavailable|not ready|loading)/i;
+const MODEL_RECOVERY_MIN_RETRIES = 15;
+const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
+const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the end of every completed assistant turn, append exactly one hidden state block:
 <session_state_update>{"type":"none"}</session_state_update>
@@ -4529,8 +4530,7 @@ export class AgentSession {
 			return false;
 		}
 
-		const exponentialDelayMs = settings.baseDelayMs * 2 ** (this._retryAttempt - 1);
-		const delayMs = this._getRetryDelayMs(message, exponentialDelayMs, settings.baseDelayMs);
+		const delayMs = this._getRetryDelayMs(message, this._retryAttempt, settings.baseDelayMs);
 
 		this._emit({
 			type: "auto_retry_start",
@@ -4570,22 +4570,22 @@ export class AgentSession {
 	}
 
 	private _getEffectiveRetryMaxAttempts(message: AssistantMessage, configuredMaxRetries: number): number {
-		if (MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "")) {
-			return Math.max(configuredMaxRetries, MODEL_LOADING_MIN_RETRIES);
+		if (MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+			return Math.max(configuredMaxRetries, MODEL_RECOVERY_MIN_RETRIES);
 		}
 		return configuredMaxRetries;
 	}
 
 	private _getRetryReason(message: AssistantMessage): "model_loading" | "transient" {
-		return MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "") ? "model_loading" : "transient";
+		return MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "") ? "model_loading" : "transient";
 	}
 
-	private _getRetryDelayMs(message: AssistantMessage, exponentialDelayMs: number, baseDelayMs: number): number {
-		if (!MODEL_LOADING_RETRY_PATTERN.test(message.errorMessage ?? "")) {
-			return exponentialDelayMs;
+	private _getRetryDelayMs(message: AssistantMessage, attempt: number, baseDelayMs: number): number {
+		if (!MODEL_RECOVERY_RETRY_PATTERN.test(message.errorMessage ?? "")) {
+			return baseDelayMs * 2 ** (attempt - 1);
 		}
-		const modelLoadingDelayMs = Math.max(exponentialDelayMs, baseDelayMs * MODEL_LOADING_MIN_RETRY_DELAY_MULTIPLIER);
-		return Math.min(modelLoadingDelayMs, MODEL_LOADING_MAX_RETRY_DELAY_MS);
+		const modelRecoveryDelayMs = Math.max(baseDelayMs, MODEL_RECOVERY_BASE_DELAY_MS) * attempt;
+		return Math.min(modelRecoveryDelayMs, MODEL_RECOVERY_MAX_RETRY_DELAY_MS);
 	}
 
 	/**

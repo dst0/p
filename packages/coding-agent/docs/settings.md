@@ -163,6 +163,8 @@ When a provider requests a retry delay longer than `retry.provider.maxRetryDelay
 
 Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before Pi sees them, which may block the agent until the provider quota resets in some circumstances.
 
+Model-loading and LLM-orchestrator worker-unavailable errors use an extended recovery profile regardless of `retry.maxRetries`: at least 15 retries with linear delays from 1s to 15s, for about two minutes of recovery time before failing.
+
 ```json
 {
   "retry": {

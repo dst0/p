@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { Agent, type AgentEvent, type AgentTool } from "@dst0/p-agent-core";
 import { type AssistantMessage, type AssistantMessageEvent, EventStream, getModel } from "@dst0/p-ai";
 import { Type } from "typebox";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AgentSession } from "../src/core/agent-session.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
@@ -251,31 +251,38 @@ describe("AgentSession retry", () => {
 		expect(created.getCallCount()).toBe(2);
 	});
 
-	it("uses extended retry budget and longer delay while a model is loading", async () => {
-		const created = createSession({
-			failCount: 4,
-			maxRetries: 3,
-			baseDelayMs: 1,
-			errorMessage: "503 Loading model",
-		});
-		const retryStarts: Array<{ attempt: number; maxAttempts: number; delayMs: number; reason: string }> = [];
-		created.session.subscribe((event) => {
-			if (event.type === "auto_retry_start") {
-				retryStarts.push({
-					attempt: event.attempt,
-					maxAttempts: event.maxAttempts,
-					delayMs: event.delayMs,
-					reason: event.reason,
-				});
-			}
-		});
+	it("uses extended retry budget and linear delays while an orchestrator model is unavailable", async () => {
+		vi.useFakeTimers();
+		try {
+			const created = createSession({
+				failCount: 4,
+				maxRetries: 3,
+				baseDelayMs: 1,
+				errorMessage: "503 No available workers",
+			});
+			const retryStarts: Array<{ attempt: number; maxAttempts: number; delayMs: number; reason: string }> = [];
+			created.session.subscribe((event) => {
+				if (event.type === "auto_retry_start") {
+					retryStarts.push({
+						attempt: event.attempt,
+						maxAttempts: event.maxAttempts,
+						delayMs: event.delayMs,
+						reason: event.reason,
+					});
+				}
+			});
 
-		await created.session.prompt("Test");
+			const promptPromise = created.session.prompt("Test");
+			await vi.runAllTimersAsync();
+			await promptPromise;
 
-		expect(created.getCallCount()).toBe(5);
-		expect(retryStarts).toHaveLength(4);
-		expect(retryStarts[0]).toEqual({ attempt: 1, maxAttempts: 60, delayMs: 10, reason: "model_loading" });
-		expect(retryStarts[3]).toEqual({ attempt: 4, maxAttempts: 60, delayMs: 10, reason: "model_loading" });
+			expect(created.getCallCount()).toBe(5);
+			expect(retryStarts).toHaveLength(4);
+			expect(retryStarts[0]).toEqual({ attempt: 1, maxAttempts: 15, delayMs: 1_000, reason: "model_loading" });
+			expect(retryStarts[3]).toEqual({ attempt: 4, maxAttempts: 15, delayMs: 4_000, reason: "model_loading" });
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("prompt waits for full agent loop when retry produces tool calls", async () => {

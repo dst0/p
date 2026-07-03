@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.
+
 ## [0.2.6] - 2026-07-02
 
 ### Added
