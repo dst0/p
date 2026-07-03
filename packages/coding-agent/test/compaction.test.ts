@@ -17,6 +17,7 @@ import {
 	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
 	findCutPoint,
+	findMatchingPlanItem,
 	getLastAssistantUsage,
 	mergeStructuredSessionState,
 	parseSessionStateUpdateBlock,
@@ -262,6 +263,122 @@ describe("session state update protocol", () => {
 		expect(state.progress.current).toEqual(["Patch the state merge"]);
 		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
 			["Run smart-state regression tests", "in_progress"],
+		]);
+	});
+
+	it("updates similar plan items instead of appending duplicate progress after state refreshes", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			canonicalRequest: { current: "Exclude sleep from session history and TUI" },
+			plan: {
+				add: [
+					{
+						id: "plan-sleep-history",
+						text: "Exclude sleep from session history",
+						status: "in_progress",
+						evidenceEntryIds: ["seed-entry"],
+					},
+					{
+						id: "plan-state-count",
+						text: "Change /state to show tool call count instead of list",
+						status: "not_started",
+						evidenceEntryIds: ["seed-entry"],
+					},
+				],
+			},
+			progress: {
+				current: ["Exclude sleep from session history"],
+				next: ["Change /state to show tool call count instead of list"],
+			},
+		});
+
+		const state = mergeStructuredSessionState(previous, {
+			plan: {
+				add: [
+					{
+						id: "plan-reworded-sleep-history",
+						text: "Impl: Exclude sleep from session history (agent-session.ts)",
+						status: "done",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+					{
+						id: "plan-reworded-state-count",
+						text: "Impl: /state shows tool call count not list",
+						status: "in_progress",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+				],
+			},
+			progress: {
+				done: ["Skip sleep tool results in session persistence"],
+				current: ["Impl: /state shows tool call count not list"],
+			},
+		});
+
+		expect(state.plan).toHaveLength(2);
+		expect(state.plan.map((item) => [item.id, item.text, item.status])).toEqual([
+			["plan-sleep-history", "Exclude sleep from session history", "done"],
+			["plan-state-count", "Change /state to show tool call count instead of list", "in_progress"],
+		]);
+		expect(state.progress.current).toEqual(["Impl: /state shows tool call count not list"]);
+		expect(state.progress.next).toEqual([]);
+		expect(findMatchingPlanItem(state.plan, "Skip sleep in session history")?.id).toBe("plan-sleep-history");
+	});
+
+	it("reorders existing plan items when a state refresh reprioritizes the plan", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			plan: {
+				add: [
+					{
+						id: "plan-tests",
+						text: "Add tests",
+						status: "not_started",
+						evidenceEntryIds: ["seed-entry"],
+					},
+					{
+						id: "plan-implementation",
+						text: "Patch state merge behavior",
+						status: "in_progress",
+						evidenceEntryIds: ["seed-entry"],
+					},
+					{
+						id: "plan-reinstall",
+						text: "Reinstall locally",
+						status: "not_started",
+						evidenceEntryIds: ["seed-entry"],
+					},
+				],
+			},
+		});
+
+		const state = mergeStructuredSessionState(previous, {
+			plan: {
+				add: [
+					{
+						id: "incoming-implementation",
+						text: "Patch state merge behavior",
+						status: "done",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+					{
+						id: "incoming-tests",
+						text: "Add tests",
+						status: "in_progress",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+					{
+						id: "incoming-reinstall",
+						text: "Reinstall locally",
+						status: "not_started",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+				],
+			},
+		});
+
+		expect(state.plan.map((item) => [item.id, item.status])).toEqual([
+			["plan-implementation", "done"],
+			["plan-tests", "in_progress"],
+			["plan-reinstall", "not_started"],
 		]);
 	});
 

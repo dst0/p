@@ -61,6 +61,7 @@ import {
 	estimateContextTokens,
 	estimateTokens,
 	type FileTouchStatus,
+	findMatchingPlanItem,
 	generateBranchSummary,
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
@@ -170,9 +171,12 @@ const MODEL_RECOVERY_MIN_RETRIES = 15;
 const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
+const MARK_SESSION_PROGRESS_TOOL_NAME = "mark_session_progress";
+const SLEEP_TOOL_NAME = "sleep";
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
-Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, "progress_update" when the latest message only advances known work, and "none" only after explicitly checking that no state change is needed.
+Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, and "none" only after explicitly checking that no state change is needed.
+When an existing plan item changes status during work, call mark_session_progress(task, status, next?) with the existing visible task text instead of adding another plan item through update_session_state.
 This is the default state protocol and is separate from /plan mode; do not wait for user approval unless the user explicitly asked for confirmation.
 If update_session_state is not available, fall back to appending exactly one hidden state block at the end of every completed assistant turn:
 <session_state_update>{"type":"none"}</session_state_update>
@@ -443,6 +447,7 @@ function hasStateToolPatchContent(patch: StatePatch): boolean {
 	return (
 		patch.canonicalRequest !== undefined ||
 		(patch.plan?.add?.length ?? 0) > 0 ||
+		(patch.plan?.update?.length ?? 0) > 0 ||
 		patch.progress !== undefined ||
 		(patch.decisions?.add?.length ?? 0) > 0 ||
 		(patch.codebase?.touchedFiles?.length ?? 0) > 0 ||
@@ -611,6 +616,18 @@ const UPDATE_SESSION_STATE_SCHEMA = Type.Object({
 	),
 });
 
+const MARK_SESSION_PROGRESS_SCHEMA = Type.Object({
+	task: Type.String({
+		description: "Existing plan item text to update. Use the visible task text from the working state.",
+	}),
+	status: UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA,
+	next: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Replacement next actions after this progress mark.",
+		}),
+	),
+});
+
 interface UpdateSessionStateInput {
 	action: "initial_plan" | "replan" | "progress_update" | "none";
 	goal?: string;
@@ -625,6 +642,21 @@ interface UpdateSessionStateInput {
 interface UpdateSessionStateResult {
 	status: "updated" | "unchanged";
 	action: UpdateSessionStateInput["action"];
+	goal: string;
+	planItems: number;
+	toolCalls: number;
+}
+
+interface MarkSessionProgressInput {
+	task: string;
+	status: PlanStatus;
+	next?: string[];
+}
+
+interface MarkSessionProgressResult {
+	status: "updated" | "not_found";
+	task: string;
+	matchedTask?: string;
 	goal: string;
 	planItems: number;
 	toolCalls: number;
@@ -1006,6 +1038,7 @@ export class AgentSession {
 	private _interactionMode: InteractionMode = "normal";
 	private _planModePreviousActiveToolNames: string[] | undefined;
 	private _stateUpdateRequiredForCurrentUserTurn = false;
+	private _progressUpdateRequiredBeforeFinish = false;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -1378,13 +1411,32 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
-			if (this._stateUpdateRequiredForCurrentUserTurn && toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME) {
+			if (
+				this._stateUpdateRequiredForCurrentUserTurn &&
+				toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME &&
+				toolCall.name !== SLEEP_TOOL_NAME
+			) {
 				return {
 					block: true,
 					reason:
 						`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
 						"record or revise the goal, plan, and next action for the latest user message.",
 				};
+			}
+			if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
+				const progressToolName = this.getActiveToolNames().includes(MARK_SESSION_PROGRESS_TOOL_NAME)
+					? MARK_SESSION_PROGRESS_TOOL_NAME
+					: this.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME)
+						? UPDATE_SESSION_STATE_TOOL_NAME
+						: undefined;
+				if (progressToolName) {
+					return {
+						block: true,
+						reason:
+							`Before calling ${FINISH_WORK_TOOL_NAME}, call ${progressToolName} to record the latest ` +
+							"completed, current, blocked, or next session-state progress.",
+					};
+				}
 			}
 
 			const runner = this._extensionRunner;
@@ -1451,6 +1503,11 @@ export class AgentSession {
 
 			if (toolCall.name === UPDATE_SESSION_STATE_TOOL_NAME && !nextIsError) {
 				this._stateUpdateRequiredForCurrentUserTurn = false;
+				this._progressUpdateRequiredBeforeFinish = false;
+			} else if (toolCall.name === MARK_SESSION_PROGRESS_TOOL_NAME && !nextIsError) {
+				this._progressUpdateRequiredBeforeFinish = false;
+			} else if (!nextIsError && toolCall.name !== SLEEP_TOOL_NAME && toolCall.name !== FINISH_WORK_TOOL_NAME) {
+				this._progressUpdateRequiredBeforeFinish = true;
 			}
 
 			if (!changed) {
@@ -1576,6 +1633,7 @@ export class AgentSession {
 			if (event.message.role === "user" && !isInternalCompletionProtocolRepairMessage(event.message)) {
 				this._stateUpdateRequiredForCurrentUserTurn =
 					this.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME);
+				this._progressUpdateRequiredBeforeFinish = false;
 			} else if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
 				if (assistantStateUpdateText && persistedEntryId) {
@@ -3344,13 +3402,13 @@ Plan mode is active because the user invoked /plan.
 		return {
 			name: UPDATE_SESSION_STATE_TOOL_NAME,
 			label: "Update Session State",
-			description:
-				"Record or revise the canonical goal, plan, progress, and next action for the latest user message.",
+			description: "Record or revise the canonical goal, plan, and next action for the latest user message.",
 			promptSnippet:
-				"update_session_state(action, goal?, plan?, progress?, decisions?, risks?): call before other tools on every user turn to plan or re-plan against the latest user message.",
+				"update_session_state(action, goal?, plan?, progress?, decisions?, risks?): call before other tools on every user turn to set the initial plan or re-plan against the latest user message.",
 			promptGuidelines: [
 				`Call ${UPDATE_SESSION_STATE_TOOL_NAME} before any other tool on every new user turn, including the first request and queued follow-ups.`,
 				"Use it to preserve the durable goal when the latest user message is a follow-up, or to explicitly change the goal when the user corrects the objective.",
+				`Use ${MARK_SESSION_PROGRESS_TOOL_NAME} instead when only an existing plan item changes status.`,
 				"Do not wait for user approval in normal mode; this is internal state maintenance, not /plan approval mode.",
 			],
 			parameters: UPDATE_SESSION_STATE_SCHEMA,
@@ -3450,6 +3508,20 @@ Plan mode is active because the user invoked /plan.
 			.filter((pointer) => pointer.summary.length > 0);
 		const risks = (input.risks ?? []).map((risk) => capStateToolText(risk, 260)).filter((risk) => risk.length > 0);
 		const progress = normalizeStateProgress(input.progress);
+		const plan =
+			planItems.length === 0
+				? undefined
+				: input.action === "progress_update"
+					? {
+							update: planItems.map((item) => ({
+								id: item.id,
+								matchText: item.text,
+								text: item.text,
+								status: item.status,
+								evidenceEntryIds: item.evidenceEntryIds,
+							})),
+						}
+					: { add: planItems };
 		const patch: StatePatch = {
 			canonicalRequest:
 				goal || liveState.canonicalRequest.originalRequests.length > 0
@@ -3459,7 +3531,7 @@ Plan mode is active because the user invoked /plan.
 							originalRequests: liveState.canonicalRequest.originalRequests,
 						}
 					: undefined,
-			plan: planItems.length > 0 ? { add: planItems } : undefined,
+			plan,
 			progress,
 			decisions: decisions.length > 0 ? { add: decisions } : undefined,
 			codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
@@ -3467,6 +3539,124 @@ Plan mode is active because the user invoked /plan.
 			audit: risks.length > 0 ? { knownRisks: risks } : undefined,
 		};
 		return hasStateToolPatchContent(patch) ? patch : undefined;
+	}
+
+	private _createMarkSessionProgressToolDefinition(): ToolDefinition<
+		typeof MARK_SESSION_PROGRESS_SCHEMA,
+		MarkSessionProgressResult
+	> {
+		return {
+			name: MARK_SESSION_PROGRESS_TOOL_NAME,
+			label: "Mark Session Progress",
+			description: "Update the status of an existing session plan item without adding duplicate plan steps.",
+			promptSnippet:
+				"mark_session_progress(task, status, next?): update an existing visible plan item by task text; use update_session_state replan for new tasks.",
+			promptGuidelines: [
+				"Use the exact visible task text from the working state whenever possible.",
+				"Do not use this to create new plan items; call update_session_state with action replan when the task is new.",
+				`Call ${MARK_SESSION_PROGRESS_TOOL_NAME} before ${FINISH_WORK_TOOL_NAME} after completing meaningful tool work.`,
+			],
+			parameters: MARK_SESSION_PROGRESS_SCHEMA,
+			executionMode: "sequential",
+			execute: async (_toolCallId, params) => {
+				const result = this._applyMarkSessionProgress(params as MarkSessionProgressInput);
+				return {
+					content: [
+						{
+							type: "text",
+							text:
+								result.status === "updated"
+									? `Session progress updated. Task: ${result.matchedTask ?? result.task}.`
+									: `Session progress task not found: ${result.task}. Call ${UPDATE_SESSION_STATE_TOOL_NAME} with action "replan" if this is new work.`,
+						},
+					],
+					details: result,
+					isError: result.status === "not_found",
+				};
+			},
+		};
+	}
+
+	private _applyMarkSessionProgress(input: MarkSessionProgressInput): MarkSessionProgressResult {
+		const task = capStateToolText(input.task, 280);
+		const branchEntries = this.sessionManager.getBranch();
+		const previous =
+			getLatestStructuredSessionState(branchEntries) ??
+			createInitialStructuredSessionState(this.sessionManager.getSessionId());
+		const matchedPlanItem = findMatchingPlanItem(previous.plan, task);
+		if (!task || !matchedPlanItem) {
+			return {
+				status: "not_found",
+				task,
+				goal: previous.canonicalRequest.current,
+				planItems: previous.plan.length,
+				toolCalls: this.getSessionStats().toolCalls,
+			};
+		}
+
+		const sourceEntryIds = branchEntries.map((entry) => entry.id).filter((id) => id.length > 0);
+		const progress = this._createProgressPatchForPlanStatus(matchedPlanItem.text, input.status, input.next);
+		const patch: StatePatch = {
+			plan: {
+				update: [
+					{
+						id: matchedPlanItem.id,
+						matchText: task,
+						status: input.status,
+						evidenceEntryIds: sourceEntryIds,
+					},
+				],
+			},
+			progress,
+		};
+		const state = mergeStructuredSessionState(previous, patch);
+		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+		return {
+			status: "updated",
+			task,
+			matchedTask: matchedPlanItem.text,
+			goal: state.canonicalRequest.current,
+			planItems: state.plan.length,
+			toolCalls: this.getSessionStats().toolCalls,
+		};
+	}
+
+	private _createProgressPatchForPlanStatus(
+		task: string,
+		status: PlanStatus,
+		nextActions: string[] | undefined,
+	): StatePatch["progress"] {
+		const next = normalizeStateTextList(nextActions);
+		switch (status) {
+			case "done":
+				return {
+					done: [task],
+					current: [],
+					next,
+				};
+			case "in_progress":
+				return {
+					current: [task],
+					next: next.length > 0 ? next : undefined,
+				};
+			case "blocked":
+				return {
+					blocked: [task],
+					current: [],
+					next,
+				};
+			case "failed":
+				return {
+					blocked: [`Failed: ${task}`],
+					current: [],
+					next,
+				};
+			case "not_started":
+				return {
+					current: [],
+					next: [task, ...next],
+				};
+		}
 	}
 
 	private _createSessionRecallToolDefinition(): ToolDefinition<typeof SESSION_RECALL_SCHEMA, RecallResult> {
@@ -4802,6 +4992,8 @@ Plan mode is active because the user invoked /plan.
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
 			[UPDATE_SESSION_STATE_TOOL_NAME]: this._createUpdateSessionStateToolDefinition() as unknown as ToolDefinition,
+			[MARK_SESSION_PROGRESS_TOOL_NAME]:
+				this._createMarkSessionProgressToolDefinition() as unknown as ToolDefinition,
 			submit_plan: createSubmitPlanToolDefinition({
 				onApproved: () => this.disablePlanMode(),
 			}) as unknown as ToolDefinition,
@@ -4836,7 +5028,7 @@ Plan mode is active because the user invoked /plan.
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "sleep", UPDATE_SESSION_STATE_TOOL_NAME];
+			: ["read", "bash", "edit", "write", "sleep", UPDATE_SESSION_STATE_TOOL_NAME, MARK_SESSION_PROGRESS_TOOL_NAME];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,

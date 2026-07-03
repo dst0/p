@@ -11,6 +11,7 @@
 
 - Fixed `/state` to show the total tool call count without listing individual tool-result evidence entries.
 - Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.
+- Fixed structured session state updates to mark existing plan progress without duplicating or losing task priority.
 
 ## [0.2.6] - 2026-07-02
 

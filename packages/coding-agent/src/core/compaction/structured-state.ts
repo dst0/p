@@ -115,6 +115,7 @@ export interface StatePatch {
 		add?: PlanItem[];
 		update?: Array<{
 			id: string;
+			matchText?: string;
 			status?: PlanStatus;
 			text?: string;
 			evidenceEntryIds?: string[];
@@ -284,10 +285,10 @@ export function mergeStructuredSessionState(
 	}
 	if (patch.progress) {
 		next.progress = {
-			done: mergeStringList(next.progress.done, patch.progress.done),
-			current: mergeStringList([], patch.progress.current ?? next.progress.current),
-			next: mergeStringList([], patch.progress.next ?? next.progress.next),
-			blocked: mergeStringList(next.progress.blocked, patch.progress.blocked),
+			done: mergeProgressList(next.progress.done, patch.progress.done),
+			current: mergeProgressList([], patch.progress.current ?? next.progress.current),
+			next: mergeProgressList([], patch.progress.next ?? next.progress.next),
+			blocked: mergeProgressList(next.progress.blocked, patch.progress.blocked),
 		};
 	}
 	if (patch.decisions) {
@@ -310,7 +311,13 @@ export function mergeStructuredSessionState(
 		};
 	}
 
+	reconcileProgressWithPlan(next);
+
 	return next;
+}
+
+export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem | undefined {
+	return findPlanItemByIdOrText(plan, undefined, text);
 }
 
 export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
@@ -580,10 +587,10 @@ function mergeProgressPatches(
 ): StatePatch["progress"] {
 	if (!existing && !incoming) return undefined;
 	return {
-		done: mergeStringList(existing?.done ?? [], incoming?.done),
+		done: mergeProgressList(existing?.done ?? [], incoming?.done),
 		current: incoming?.current ?? existing?.current,
 		next: incoming?.next ?? existing?.next,
-		blocked: mergeStringList(existing?.blocked ?? [], incoming?.blocked),
+		blocked: mergeProgressList(existing?.blocked ?? [], incoming?.blocked),
 	};
 }
 
@@ -1373,34 +1380,92 @@ function mergeConstraints(state: StructuredSessionState, patch: NonNullable<Stat
 }
 
 function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch["plan"]>): void {
-	const byId = new Map(state.plan.map((item) => [item.id, item]));
+	const orderedIds: string[] = [];
+	const rememberOrder = (item: PlanItem): void => {
+		if (!orderedIds.includes(item.id)) {
+			orderedIds.push(item.id);
+		}
+	};
 	for (const item of patch.add ?? []) {
-		const existing = byId.get(item.id);
+		const existing = findPlanItemByIdOrText(state.plan, item.id, item.text);
 		if (!existing) {
-			state.plan.push({
+			const added = {
 				...item,
 				evidenceEntryIds: [...item.evidenceEntryIds],
-			});
-			byId.set(item.id, item);
+			};
+			state.plan.push(added);
+			rememberOrder(added);
 			continue;
 		}
 		if (item.status === "done" && item.evidenceEntryIds.length === 0) continue;
 		if (shouldReplacePlanStatus(existing.status, item.status)) {
 			existing.status = item.status;
 		}
-		existing.text = item.text;
+		if (existing.id === item.id) {
+			existing.text = item.text;
+		}
 		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, item.evidenceEntryIds);
+		rememberOrder(existing);
 	}
 	for (const update of patch.update ?? []) {
-		const existing = byId.get(update.id);
+		const existing = findPlanItemByIdOrText(state.plan, update.id, update.matchText ?? update.text ?? "");
 		if (!existing) continue;
 		if (update.status === "done" && (update.evidenceEntryIds?.length ?? existing.evidenceEntryIds.length) === 0) {
 			continue;
 		}
-		if (update.text) existing.text = update.text;
+		if (update.text && existing.id === update.id) {
+			existing.text = update.text;
+		}
 		if (update.status && shouldReplacePlanStatus(existing.status, update.status)) existing.status = update.status;
 		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);
+		rememberOrder(existing);
 	}
+	if ((patch.add?.length ?? 0) > 1 && orderedIds.length > 1) {
+		reorderPlan(state, orderedIds);
+	}
+}
+
+function findPlanItemByIdOrText(plan: PlanItem[], id: string | undefined, text: string): PlanItem | undefined {
+	if (id) {
+		const byId = plan.find((item) => item.id === id);
+		if (byId) return byId;
+	}
+	const normalizedText = normalizeComparableText(text);
+	if (!normalizedText) return undefined;
+	const exactText = plan.find((item) => normalizeComparableText(item.text) === normalizedText);
+	if (exactText) return exactText;
+
+	let best: { item: PlanItem; score: number } | undefined;
+	for (const item of plan) {
+		const score = scoreComparableText(item.text, text);
+		if (score < 0.66) continue;
+		if (!best || score > best.score) {
+			best = { item, score };
+		}
+	}
+	return best?.item;
+}
+
+function reorderPlan(state: StructuredSessionState, orderedIds: string[]): void {
+	const order = new Map(orderedIds.map((id, index) => [id, index]));
+	state.plan = [...state.plan].sort((left, right) => {
+		const leftOrder = order.get(left.id);
+		const rightOrder = order.get(right.id);
+		if (leftOrder === undefined && rightOrder === undefined) return 0;
+		if (leftOrder === undefined) return 1;
+		if (rightOrder === undefined) return -1;
+		return leftOrder - rightOrder;
+	});
+}
+
+function reconcileProgressWithPlan(state: StructuredSessionState): void {
+	const donePlanItems = state.plan.filter((item) => item.status === "done").map((item) => item.text);
+	const blockedPlanItems = state.plan
+		.filter((item) => item.status === "blocked" || item.status === "failed")
+		.map((item) => item.text);
+	const inactiveItems = [...state.progress.done, ...state.progress.blocked, ...donePlanItems, ...blockedPlanItems];
+	state.progress.current = removeSimilarProgressItems(state.progress.current, inactiveItems);
+	state.progress.next = removeSimilarProgressItems(state.progress.next, [...inactiveItems, ...state.progress.current]);
 }
 
 function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boolean {
@@ -1494,6 +1559,96 @@ function mergeStringList(existing: string[], incoming: string[] | undefined): st
 		}
 	}
 	return result;
+}
+
+function mergeProgressList(existing: string[], incoming: string[] | undefined): string[] {
+	if (!incoming) return existing;
+	const result = [...existing];
+	for (const item of incoming) {
+		const trimmed = item.trim();
+		if (!trimmed) continue;
+		const existingIndex = findSimilarProgressItemIndex(result, trimmed);
+		if (existingIndex === -1) {
+			result.push(trimmed);
+			continue;
+		}
+		if (trimmed.length > result[existingIndex]!.length) {
+			result[existingIndex] = trimmed;
+		}
+	}
+	return result;
+}
+
+function removeSimilarProgressItems(existing: string[], itemsToRemove: string[]): string[] {
+	if (itemsToRemove.length === 0) return existing;
+	return existing.filter((item) => !itemsToRemove.some((doneItem) => areComparableTextsSimilar(item, doneItem)));
+}
+
+function findSimilarProgressItemIndex(existing: string[], incoming: string): number {
+	return existing.findIndex((item) => areComparableTextsSimilar(item, incoming));
+}
+
+function areComparableTextsSimilar(left: string, right: string): boolean {
+	return scoreComparableText(left, right) >= 0.66;
+}
+
+function scoreComparableText(left: string, right: string): number {
+	const normalizedLeft = normalizeComparableText(left);
+	const normalizedRight = normalizeComparableText(right);
+	if (!normalizedLeft || !normalizedRight) return 0;
+	if (normalizedLeft === normalizedRight) return 1;
+	if (normalizedLeft.length >= 12 && normalizedRight.length >= 12) {
+		if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
+			return 0.95;
+		}
+	}
+	const leftTerms = comparableTerms(normalizedLeft);
+	const rightTerms = comparableTerms(normalizedRight);
+	if (leftTerms.size === 0 || rightTerms.size === 0) return 0;
+	let shared = 0;
+	for (const term of leftTerms) {
+		if (rightTerms.has(term)) {
+			shared++;
+		}
+	}
+	if (shared < 2) return 0;
+	const containment = shared / Math.min(leftTerms.size, rightTerms.size);
+	const dice = (2 * shared) / (leftTerms.size + rightTerms.size);
+	return Math.max(containment >= 0.8 ? containment : 0, dice);
+}
+
+function comparableTerms(text: string): Set<string> {
+	return new Set(
+		text
+			.split(/[^a-z0-9/_-]+/)
+			.map((term) => term.trim())
+			.filter((term) => term.length > 1 && !COMPARABLE_TEXT_STOP_WORDS.has(term)),
+	);
+}
+
+const COMPARABLE_TEXT_STOP_WORDS = new Set([
+	"a",
+	"an",
+	"and",
+	"for",
+	"in",
+	"of",
+	"on",
+	"or",
+	"the",
+	"to",
+	"with",
+	"without",
+]);
+
+function normalizeComparableText(text: string): string {
+	return text
+		.toLowerCase()
+		.replace(/^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu, "")
+		.replace(/^(?:impl|implement|explore|check|verify|run|change|find|fix|investigate|update|create)\s*:\s*/g, "")
+		.replace(/\([^)]*\)\s*$/g, "")
+		.replace(/\s+/g, " ")
+		.trim();
 }
 
 function extractOptionalBulletLines(text: string | undefined): string[] | undefined {

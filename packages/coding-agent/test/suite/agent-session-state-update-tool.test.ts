@@ -9,6 +9,7 @@ import {
 import { createHarness, type Harness } from "./harness.ts";
 
 const UPDATE_TOOL = "update_session_state";
+const PROGRESS_TOOL = "mark_session_progress";
 
 function updateStateCall(goal: string, action: "initial_plan" | "replan" = "initial_plan") {
 	return fauxToolCall(UPDATE_TOOL, {
@@ -21,6 +22,10 @@ function updateStateCall(goal: string, action: "initial_plan" | "replan" = "init
 
 function finishCall(summary = "done") {
 	return fauxToolCall("finish_work", { status: "success", summary });
+}
+
+function markProgressCall(task: string, status: "not_started" | "in_progress" | "done" | "failed" | "blocked") {
+	return fauxToolCall(PROGRESS_TOOL, { task, status, next: ["Report the result"] });
 }
 
 function toolEndEvents(harness: Harness, toolName: string) {
@@ -36,6 +41,8 @@ describe("AgentSession default session-state tool", () => {
 				fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
 				fauxAssistantMessage(updateStateCall("Read note.txt and report the result"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
+				fauxAssistantMessage(finishCall("premature finish"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(finishCall("read note"), { stopReason: "toolUse" }),
 			]);
 
@@ -47,9 +54,51 @@ describe("AgentSession default session-state tool", () => {
 			expect(JSON.stringify(readEnds[0]?.result.content)).toContain(UPDATE_TOOL);
 			expect(readEnds[1]?.isError).toBe(false);
 			expect(toolEndEvents(harness, UPDATE_TOOL)[0]?.isError).toBe(false);
-			expect(getLatestStructuredSessionState(harness.sessionManager.getEntries())?.canonicalRequest.current).toBe(
-				"Read note.txt and report the result",
-			);
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(2);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain(PROGRESS_TOOL);
+			expect(finishEnds[1]?.isError).toBe(false);
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
+			expect(state?.progress.done).toEqual(["Inspect the requested file"]);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("updates existing plan items for progress_update instead of adding duplicates", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Keep session state concise",
+						plan: [{ text: "Patch state merge behavior", status: "in_progress" }],
+						progress: { current: ["Patch state merge behavior"] },
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "progress_update",
+						plan: [{ text: "Impl: Patch state merge behavior", status: "done" }],
+						progress: { done: ["Patch state merge behavior"], next: ["Run focused tests"] },
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(finishCall("state updated"), { stopReason: "toolUse" }),
+			]);
+
+			await harness.session.prompt("Keep session state concise");
+
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(toolEndEvents(harness, UPDATE_TOOL).every((event) => !event.isError)).toBe(true);
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Patch state merge behavior", "done"]]);
+			expect(state?.progress.done).toEqual(["Patch state merge behavior"]);
+			expect(state?.progress.next).toEqual(["Run focused tests"]);
 		} finally {
 			harness.cleanup();
 		}
