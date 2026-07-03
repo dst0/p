@@ -1622,7 +1622,7 @@ export class AgentSession {
 			} else if (
 				event.message.role === "user" ||
 				event.message.role === "assistant" ||
-				event.message.role === "toolResult"
+				(event.message.role === "toolResult" && event.message.toolName !== "sleep")
 			) {
 				// Regular LLM message - persist as SessionMessageEntry
 				persistedEntryId = this.sessionManager.appendMessage(event.message);

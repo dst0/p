@@ -2979,7 +2979,7 @@ export class InteractiveMode {
 					}
 
 					for (const content of this.streamingMessage.content) {
-						if (content.type === "toolCall") {
+						if (content.type === "toolCall" && content.name !== "sleep") {
 							if (!this.pendingTools.has(content.id)) {
 								const component = new ToolExecutionComponent(
 									content.name,
@@ -3059,6 +3059,9 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
+				if (event.toolName === "sleep") {
+					break;
+				}
 				let component = this.pendingTools.get(event.toolCallId);
 				if (!component) {
 					component = new ToolExecutionComponent(
@@ -3092,6 +3095,10 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
+				if (event.toolName === "sleep") {
+					this.pendingTools.delete(event.toolCallId);
+					break;
+				}
 				const component = this.pendingTools.get(event.toolCallId);
 				if (component) {
 					component.updateResult({ ...event.result, isError: event.isError });
