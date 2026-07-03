@@ -5,9 +5,11 @@
 ### Added
 
 - Added `/plan` mode with a footer badge, built-in `ask_user`/`confirm_user` tools for explicit user-requested questions, and `submit_plan` approval so plan mode ends automatically after the user approves the suggested plan.
+- Added default `update_session_state` planning/state tool calls before other tools on each user turn.
 
 ### Fixed
 
+- Fixed `/state` to show the total tool call count without listing individual tool-result evidence entries.
 - Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.
 
 ## [0.2.6] - 2026-07-02

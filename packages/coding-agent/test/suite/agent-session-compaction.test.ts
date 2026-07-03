@@ -907,10 +907,20 @@ describe("AgentSession compaction characterization", () => {
 					return fauxAssistantMessage("bad retry context");
 				}
 				return fauxAssistantMessage(
-					[fauxToolCall("finish_work", { status: "success", summary: "continued after compaction" })],
+					[
+						fauxToolCall("update_session_state", {
+							action: "progress_update",
+							goal: "continue after invalid batch",
+							progress: { current: ["Retry after compaction"] },
+						}),
+					],
 					{ stopReason: "toolUse" },
 				);
 			},
+			fauxAssistantMessage(
+				[fauxToolCall("finish_work", { status: "success", summary: "continued after compaction" })],
+				{ stopReason: "toolUse" },
+			),
 		]);
 
 		await harness.session.prompt("continue after invalid batch");

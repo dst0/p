@@ -5748,11 +5748,13 @@ export class InteractiveMode {
 
 	private handleStateCommand(): void {
 		const snapshot = this.session.getSessionStateSnapshot();
+		const stats = this.session.getSessionStats();
 		const context = snapshot.contextUsage;
 		const audit = snapshot.lastCompaction?.audit;
 		const state = snapshot.state;
 		let info = `${theme.bold("Session State")}\n\n`;
 		info += `${theme.fg("dim", "Session:")} ${snapshot.sessionId}\n`;
+		info += `${theme.fg("dim", "Tool Calls:")} ${stats.toolCalls}\n`;
 		if (context) {
 			const promptTokens = (context.tokenBreakdown?.total ?? context.tokens)?.toLocaleString() ?? "unknown";
 			const dynamicTokens = context.tokens?.toLocaleString() ?? "unknown";
@@ -5805,7 +5807,9 @@ export class InteractiveMode {
 		);
 		appendSection(
 			"Evidence",
-			state.evidence.map((pointer) => `- ${pointer.id}: ${pointer.summary}`),
+			state.evidence
+				.filter((pointer) => pointer.kind !== "tool_result")
+				.map((pointer) => `- ${pointer.id}: ${pointer.summary}`),
 		);
 		appendSection(
 			"Risks",

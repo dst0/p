@@ -468,12 +468,14 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Specify which built-in tools to enable:
 
-- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `ask_user`, `confirm_user`, `submit_plan`
-- Default built-ins: `read`, `bash`, `edit`, `write`, `sleep`, `session_recall`, `keep_context`
+- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`
+- Default built-ins: `read`, `bash`, `edit`, `write`, `sleep`, `update_session_state`, `session_recall`, `keep_context`
 - `userInputTools: true` also enables `ask_user` and `confirm_user` by default
 - `noTools: "all"` disables all tools
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
+
+`update_session_state` is the default planning/state-maintenance tool. The model is instructed to call it before other tools on every user turn so follow-up messages revise the existing state instead of replacing the durable goal with the latest text.
 
 Interactive `/plan` temporarily enables `submit_plan`, adds plan-mode instructions to the system prompt, and restores the previous tool set after the user approves the submitted plan.
 

@@ -135,10 +135,29 @@ describe("InteractiveMode.handleStateCommand", () => {
 			evidenceEntryIds: [],
 		});
 		state.progress.next.push("Run targeted tests.");
+		state.evidence.push(
+			{
+				id: "tool-result:call-read",
+				kind: "tool_result",
+				entryId: "entry-read",
+				summary: "read success result",
+				retrieveWhen: "Need raw read output.",
+			},
+			{
+				id: "file:readme",
+				kind: "file",
+				path: "README.md",
+				summary: "Read README.md",
+				retrieveWhen: "Need file content.",
+			},
+		);
 		const fakeThis: any = {
 			chatContainer: new Container(),
 			ui: { requestRender: vi.fn() },
 			session: {
+				getSessionStats: () => ({
+					toolCalls: 2,
+				}),
 				getSessionStateSnapshot: () => ({
 					sessionId: "session-state",
 					checkpoint: "<session_checkpoint>\nGoal: Improve durable session state.\n</session_checkpoint>",
@@ -178,10 +197,13 @@ describe("InteractiveMode.handleStateCommand", () => {
 		const output = normalizeRenderedOutput(fakeThis.chatContainer);
 		expect(output).toContain("Prompt: 4,960/65,536 tokens");
 		expect(output).toContain("Dynamic: 0 tokens");
+		expect(output).toContain("Tool Calls: 2");
 		expect(output).toContain("🚩 Goal: Improve durable session state.");
 		expect(output).toContain("✅ Render canonical state.");
 		expect(output).toContain("Next:");
 		expect(output).toContain("📌 Run targeted tests.");
+		expect(output).toContain("file:readme: Read README.md");
+		expect(output).not.toContain("tool-result:call-read");
 		expect(output).not.toContain("Context: 0/65,536 tokens");
 		expect(output).not.toContain("<session_checkpoint>");
 		expect((output.match(/Goal:/g) ?? []).length).toBe(1);

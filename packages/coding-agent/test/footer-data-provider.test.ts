@@ -181,8 +181,10 @@ describe("FooterDataProvider reftable branch detection", () => {
 			vi.mocked(spawnSync).mockClear();
 			const onBranchChange = vi.fn();
 			provider.onBranchChange(onBranchChange);
+			const providerInternals = provider as unknown as FooterDataProviderInternals;
 
 			writeFileSync(join(reftableDir, "tables.list"), "1\n");
+			providerInternals.scheduleRefresh();
 			await waitFor(() => vi.mocked(execFile).mock.calls.length === 1);
 
 			expect(vi.mocked(execFile)).toHaveBeenCalledTimes(1);
@@ -229,8 +231,10 @@ describe("FooterDataProvider reftable branch detection", () => {
 			resolvedBranch = "foo";
 			const onBranchChange = vi.fn();
 			provider.onBranchChange(onBranchChange);
+			const providerInternals = provider as unknown as FooterDataProviderInternals;
 
 			writeFileSync(join(reftableDir, "tables.list"), "1\n");
+			providerInternals.scheduleRefresh();
 			await waitFor(() => vi.mocked(execFile).mock.calls.length === 1);
 			await waitFor(() => provider.getGitBranch() === "foo");
 

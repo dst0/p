@@ -53,21 +53,25 @@ import {
 	compact as compactWithModel,
 	computeFileLists,
 	createContextBudgetReport,
+	createInitialStructuredSessionState,
 	createLiveStructuredSessionState,
 	createStructuredSessionState,
 	type EvidenceKind,
 	type EvidencePointer,
 	estimateContextTokens,
 	estimateTokens,
+	type FileTouchStatus,
 	generateBranchSummary,
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
 	mergeStructuredSessionState,
+	type PlanStatus,
 	parseSessionStateUpdateBlock,
 	prepareCompaction,
 	renderStructuredSessionCheckpoint,
 	renderWorkingSessionState,
 	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
+	type StatePatch,
 	type StructuredSessionState,
 	selectKeepRecentTokens,
 	shouldCompact,
@@ -165,8 +169,12 @@ const MODEL_RECOVERY_RETRY_PATTERN =
 const MODEL_RECOVERY_MIN_RETRIES = 15;
 const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
+const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
-At the end of every completed assistant turn, append exactly one hidden state block:
+At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
+Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, "progress_update" when the latest message only advances known work, and "none" only after explicitly checking that no state change is needed.
+This is the default state protocol and is separate from /plan mode; do not wait for user approval unless the user explicitly asked for confirmation.
+If update_session_state is not available, fall back to appending exactly one hidden state block at the end of every completed assistant turn:
 <session_state_update>{"type":"none"}</session_state_update>
 Use {"type":"none"} when the goal, plan, progress, decisions, blockers, risks, touched files, or evidence pointers did not change.
 When state changes, use:
@@ -385,6 +393,64 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
+function normalizeStateText(text: string): string {
+	return text.replace(/\s+/g, " ").trim();
+}
+
+function capStateToolText(text: string, maxChars: number): string {
+	const normalized = normalizeStateText(text);
+	if (normalized.length <= maxChars) {
+		return normalized;
+	}
+	const hardLimit = Math.max(20, maxChars - 1);
+	const prefix = normalized.slice(0, hardLimit);
+	const wordBreak = prefix.lastIndexOf(" ");
+	const cutAt = wordBreak > Math.floor(maxChars * 0.35) ? wordBreak : hardLimit;
+	return `${prefix.slice(0, cutAt).trimEnd()}...`;
+}
+
+function createStateToolStableId(prefix: string, text: string): string {
+	const normalized = normalizeStateText(text).toLowerCase();
+	let hash = 2166136261;
+	for (let index = 0; index < normalized.length; index++) {
+		hash ^= normalized.charCodeAt(index);
+		hash = Math.imul(hash, 16777619);
+	}
+	return `${prefix}-${(hash >>> 0).toString(16)}`;
+}
+
+function normalizeStateProgress(progress: UpdateSessionStateInput["progress"]): StatePatch["progress"] | undefined {
+	if (!progress) {
+		return undefined;
+	}
+	const done = normalizeStateTextList(progress.done);
+	const current = normalizeStateTextList(progress.current);
+	const next = normalizeStateTextList(progress.next);
+	const blocked = normalizeStateTextList(progress.blocked);
+	const patch: NonNullable<StatePatch["progress"]> = {};
+	if (done.length > 0) patch.done = done;
+	if (current.length > 0) patch.current = current;
+	if (next.length > 0) patch.next = next;
+	if (blocked.length > 0) patch.blocked = blocked;
+	return Object.keys(patch).length > 0 ? patch : undefined;
+}
+
+function normalizeStateTextList(values: string[] | undefined): string[] {
+	return (values ?? []).map((value) => capStateToolText(value, 260)).filter((value) => value.length > 0);
+}
+
+function hasStateToolPatchContent(patch: StatePatch): boolean {
+	return (
+		patch.canonicalRequest !== undefined ||
+		(patch.plan?.add?.length ?? 0) > 0 ||
+		patch.progress !== undefined ||
+		(patch.decisions?.add?.length ?? 0) > 0 ||
+		(patch.codebase?.touchedFiles?.length ?? 0) > 0 ||
+		(patch.evidence?.add?.length ?? 0) > 0 ||
+		patch.audit !== undefined
+	);
+}
+
 function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
 	return (
 		message.role === "user" &&
@@ -461,6 +527,107 @@ interface SessionRecallInput {
 	kind?: EvidenceKind[];
 	maxTokens?: number;
 	includeRaw?: boolean;
+}
+
+const UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA = Type.Union([
+	Type.Literal("not_started"),
+	Type.Literal("in_progress"),
+	Type.Literal("done"),
+	Type.Literal("failed"),
+	Type.Literal("blocked"),
+]);
+
+const UPDATE_SESSION_STATE_FILE_STATUS_SCHEMA = Type.Union([
+	Type.Literal("read"),
+	Type.Literal("modified"),
+	Type.Literal("created"),
+	Type.Literal("deleted"),
+]);
+
+const UPDATE_SESSION_STATE_EVIDENCE_KIND_SCHEMA = Type.Union([
+	Type.Literal("message"),
+	Type.Literal("tool_result"),
+	Type.Literal("bash"),
+	Type.Literal("file"),
+	Type.Literal("web"),
+	Type.Literal("artifact"),
+]);
+
+const UPDATE_SESSION_STATE_SCHEMA = Type.Object({
+	action: Type.Union([
+		Type.Literal("initial_plan"),
+		Type.Literal("replan"),
+		Type.Literal("progress_update"),
+		Type.Literal("none"),
+	]),
+	goal: Type.Optional(
+		Type.String({
+			description: "Canonical current user goal after considering the latest user message.",
+		}),
+	),
+	plan: Type.Optional(
+		Type.Array(
+			Type.Object({
+				text: Type.String(),
+				status: Type.Optional(UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA),
+			}),
+		),
+	),
+	progress: Type.Optional(
+		Type.Object({
+			done: Type.Optional(Type.Array(Type.String())),
+			current: Type.Optional(Type.Array(Type.String())),
+			next: Type.Optional(Type.Array(Type.String())),
+			blocked: Type.Optional(Type.Array(Type.String())),
+		}),
+	),
+	decisions: Type.Optional(
+		Type.Array(
+			Type.Object({
+				decision: Type.String(),
+				rationale: Type.Optional(Type.String()),
+			}),
+		),
+	),
+	risks: Type.Optional(Type.Array(Type.String())),
+	touchedFiles: Type.Optional(
+		Type.Array(
+			Type.Object({
+				path: Type.String(),
+				status: Type.Optional(UPDATE_SESSION_STATE_FILE_STATUS_SCHEMA),
+				summary: Type.Optional(Type.String()),
+			}),
+		),
+	),
+	evidence: Type.Optional(
+		Type.Array(
+			Type.Object({
+				kind: Type.Optional(UPDATE_SESSION_STATE_EVIDENCE_KIND_SCHEMA),
+				summary: Type.String(),
+				path: Type.Optional(Type.String()),
+				retrieveWhen: Type.Optional(Type.String()),
+			}),
+		),
+	),
+});
+
+interface UpdateSessionStateInput {
+	action: "initial_plan" | "replan" | "progress_update" | "none";
+	goal?: string;
+	plan?: Array<{ text: string; status?: PlanStatus }>;
+	progress?: Partial<StructuredSessionState["progress"]>;
+	decisions?: Array<{ decision: string; rationale?: string }>;
+	risks?: string[];
+	touchedFiles?: Array<{ path: string; status?: FileTouchStatus; summary?: string }>;
+	evidence?: Array<{ kind?: EvidenceKind; summary: string; path?: string; retrieveWhen?: string }>;
+}
+
+interface UpdateSessionStateResult {
+	status: "updated" | "unchanged";
+	action: UpdateSessionStateInput["action"];
+	goal: string;
+	planItems: number;
+	toolCalls: number;
 }
 
 const RUN_SUBAGENT_SCHEMA = Type.Object({
@@ -838,6 +1005,7 @@ export class AgentSession {
 	private _completionMode: CompletionMode;
 	private _interactionMode: InteractionMode = "normal";
 	private _planModePreviousActiveToolNames: string[] | undefined;
+	private _stateUpdateRequiredForCurrentUserTurn = false;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -1210,6 +1378,15 @@ export class AgentSession {
 	 */
 	private _installAgentToolHooks(): void {
 		this.agent.beforeToolCall = async ({ toolCall, args }) => {
+			if (this._stateUpdateRequiredForCurrentUserTurn && toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME) {
+				return {
+					block: true,
+					reason:
+						`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
+						"record or revise the goal, plan, and next action for the latest user message.",
+				};
+			}
+
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
 				return undefined;
@@ -1270,6 +1447,10 @@ export class AgentSession {
 					contextExtract: extract,
 				};
 				changed = true;
+			}
+
+			if (toolCall.name === UPDATE_SESSION_STATE_TOOL_NAME && !nextIsError) {
+				this._stateUpdateRequiredForCurrentUserTurn = false;
 			}
 
 			if (!changed) {
@@ -1392,7 +1573,10 @@ export class AgentSession {
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
 			// Track assistant message for auto-compaction (checked on agent_end)
-			if (event.message.role === "assistant") {
+			if (event.message.role === "user" && !isInternalCompletionProtocolRepairMessage(event.message)) {
+				this._stateUpdateRequiredForCurrentUserTurn =
+					this.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME);
+			} else if (event.message.role === "assistant") {
 				this._lastAssistantMessage = event.message;
 				if (assistantStateUpdateText && persistedEntryId) {
 					this._applyAssistantSessionStateUpdate(assistantStateUpdateText, persistedEntryId);
@@ -3153,6 +3337,138 @@ Plan mode is active because the user invoked /plan.
 		};
 	}
 
+	private _createUpdateSessionStateToolDefinition(): ToolDefinition<
+		typeof UPDATE_SESSION_STATE_SCHEMA,
+		UpdateSessionStateResult
+	> {
+		return {
+			name: UPDATE_SESSION_STATE_TOOL_NAME,
+			label: "Update Session State",
+			description:
+				"Record or revise the canonical goal, plan, progress, and next action for the latest user message.",
+			promptSnippet:
+				"update_session_state(action, goal?, plan?, progress?, decisions?, risks?): call before other tools on every user turn to plan or re-plan against the latest user message.",
+			promptGuidelines: [
+				`Call ${UPDATE_SESSION_STATE_TOOL_NAME} before any other tool on every new user turn, including the first request and queued follow-ups.`,
+				"Use it to preserve the durable goal when the latest user message is a follow-up, or to explicitly change the goal when the user corrects the objective.",
+				"Do not wait for user approval in normal mode; this is internal state maintenance, not /plan approval mode.",
+			],
+			parameters: UPDATE_SESSION_STATE_SCHEMA,
+			executionMode: "sequential",
+			execute: async (_toolCallId, params) => {
+				const result = this._applyUpdateSessionState(params as UpdateSessionStateInput);
+				return {
+					content: [
+						{
+							type: "text",
+							text:
+								result.status === "updated"
+									? `Session state updated. Goal: ${result.goal || "(none)"}. Plan items: ${result.planItems}.`
+									: `Session state unchanged. Goal: ${result.goal || "(none)"}.`,
+						},
+					],
+					details: result,
+				};
+			},
+		};
+	}
+
+	private _applyUpdateSessionState(input: UpdateSessionStateInput): UpdateSessionStateResult {
+		const branchEntries = this.sessionManager.getBranch();
+		const previous =
+			getLatestStructuredSessionState(branchEntries) ??
+			createInitialStructuredSessionState(this.sessionManager.getSessionId());
+		const liveState = createLiveStructuredSessionState({
+			sessionId: this.sessionManager.getSessionId(),
+			previous: createInitialStructuredSessionState(this.sessionManager.getSessionId()),
+			entries: branchEntries,
+			timestamp: new Date().toISOString(),
+		});
+		const sourceEntryIds = liveState.canonicalRequest.sourceEntryIds;
+		const patch = this._createStatePatchFromUpdateSessionStateInput(input, sourceEntryIds, liveState);
+		if (!patch) {
+			return {
+				status: "unchanged",
+				action: input.action,
+				goal: previous.canonicalRequest.current,
+				planItems: previous.plan.length,
+				toolCalls: this.getSessionStats().toolCalls,
+			};
+		}
+		const state = mergeStructuredSessionState(previous, patch);
+		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+		return {
+			status: "updated",
+			action: input.action,
+			goal: state.canonicalRequest.current,
+			planItems: state.plan.length,
+			toolCalls: this.getSessionStats().toolCalls,
+		};
+	}
+
+	private _createStatePatchFromUpdateSessionStateInput(
+		input: UpdateSessionStateInput,
+		sourceEntryIds: string[],
+		liveState: StructuredSessionState,
+	): StatePatch | undefined {
+		if (input.action === "none") {
+			return undefined;
+		}
+		const goal = normalizeStateText(input.goal ?? "");
+		const planItems = (input.plan ?? [])
+			.map((item) => ({
+				id: createStateToolStableId("plan", item.text),
+				text: capStateToolText(item.text, 280),
+				status: item.status ?? "not_started",
+				evidenceEntryIds: [...sourceEntryIds],
+			}))
+			.filter((item) => item.text.length > 0);
+		const decisions = (input.decisions ?? [])
+			.map((item) => ({
+				id: createStateToolStableId("decision", item.decision),
+				decision: capStateToolText(item.decision, 260),
+				rationale: capStateToolText(item.rationale ?? "", 320),
+				evidencePointers: [],
+				status: "active" as const,
+			}))
+			.filter((item) => item.decision.length > 0);
+		const touchedFiles = (input.touchedFiles ?? [])
+			.map((file) => ({
+				path: file.path.trim(),
+				status: file.status ?? "modified",
+				summary: capStateToolText(file.summary ?? "Touched during this session.", 320),
+			}))
+			.filter((file) => file.path.length > 0);
+		const evidence = (input.evidence ?? [])
+			.map((pointer) => ({
+				id: createStateToolStableId("evidence", `${pointer.path ?? ""}:${pointer.summary}`),
+				kind: pointer.kind ?? "message",
+				path: normalizeStateText(pointer.path ?? "") || undefined,
+				summary: capStateToolText(pointer.summary, 260),
+				retrieveWhen: capStateToolText(pointer.retrieveWhen ?? "Need exact supporting evidence.", 260),
+			}))
+			.filter((pointer) => pointer.summary.length > 0);
+		const risks = (input.risks ?? []).map((risk) => capStateToolText(risk, 260)).filter((risk) => risk.length > 0);
+		const progress = normalizeStateProgress(input.progress);
+		const patch: StatePatch = {
+			canonicalRequest:
+				goal || liveState.canonicalRequest.originalRequests.length > 0
+					? {
+							current: goal || undefined,
+							sourceEntryIds,
+							originalRequests: liveState.canonicalRequest.originalRequests,
+						}
+					: undefined,
+			plan: planItems.length > 0 ? { add: planItems } : undefined,
+			progress,
+			decisions: decisions.length > 0 ? { add: decisions } : undefined,
+			codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
+			evidence: evidence.length > 0 ? { add: evidence } : undefined,
+			audit: risks.length > 0 ? { knownRisks: risks } : undefined,
+		};
+		return hasStateToolPatchContent(patch) ? patch : undefined;
+	}
+
 	private _createSessionRecallToolDefinition(): ToolDefinition<typeof SESSION_RECALL_SCHEMA, RecallResult> {
 		return {
 			name: "session_recall",
@@ -4485,6 +4801,7 @@ Plan mode is active because the user invoked /plan.
 				});
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
+			[UPDATE_SESSION_STATE_TOOL_NAME]: this._createUpdateSessionStateToolDefinition() as unknown as ToolDefinition,
 			submit_plan: createSubmitPlanToolDefinition({
 				onApproved: () => this.disablePlanMode(),
 			}) as unknown as ToolDefinition,
@@ -4519,7 +4836,7 @@ Plan mode is active because the user invoked /plan.
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "sleep"];
+			: ["read", "bash", "edit", "write", "sleep", UPDATE_SESSION_STATE_TOOL_NAME];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
