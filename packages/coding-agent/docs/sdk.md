@@ -468,11 +468,14 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Specify which built-in tools to enable:
 
-- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`
-- Default built-ins: `read`, `bash`, `edit`, `write`
+- Built-in tool names: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `ask_user`, `confirm_user`, `submit_plan`
+- Default built-ins: `read`, `bash`, `edit`, `write`, `sleep`, `session_recall`, `keep_context`
+- `userInputTools: true` also enables `ask_user` and `confirm_user` by default
 - `noTools: "all"` disables all tools
 - `noTools: "builtin"` disables default built-ins while keeping extension and custom tools enabled
 - `excludeTools` disables specific built-in, extension, or custom tool names after any `tools` allowlist is applied
+
+Interactive `/plan` temporarily enables `submit_plan`, adds plan-mode instructions to the system prompt, and restores the previous tool set after the user approves the submitted plan.
 
 The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
@@ -491,7 +494,7 @@ const { session } = await createAgentSession({
 
 // Disable one tool while keeping the rest available
 const { session } = await createAgentSession({
-  excludeTools: ["ask_question"],
+  excludeTools: ["confirm_user"],
 });
 ```
 

@@ -1530,7 +1530,7 @@ Register a keyboard shortcut. See [keybindings.md](keybindings.md) for the short
 
 ```typescript
 pi.registerShortcut("ctrl+shift+p", {
-  description: "Toggle plan mode",
+  description: "Toggle review mode",
   handler: async (ctx) => {
     ctx.ui.notify("Toggled!");
   },
@@ -1542,15 +1542,15 @@ pi.registerShortcut("ctrl+shift+p", {
 Register a CLI flag.
 
 ```typescript
-pi.registerFlag("plan", {
-  description: "Start in plan mode",
+pi.registerFlag("review", {
+  description: "Start in review mode",
   type: "boolean",
   default: false,
 });
 
 // Check value
-if (pi.getFlag("plan")) {
-  // Plan mode enabled
+if (pi.getFlag("review")) {
+  // Review mode enabled
 }
 ```
 
@@ -1919,7 +1919,7 @@ pi.registerTool({
 
 ### Overriding Built-in Tools
 
-Extensions can override built-in tools (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`) by registering a tool with the same name. Interactive mode displays a warning when this happens.
+Extensions can override built-in tools (`read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `ask_user`, `confirm_user`, `submit_plan`) by registering a tool with the same name. Interactive mode displays a warning when this happens.
 
 ```bash
 # Extension's read tool replaces built-in read
@@ -2735,7 +2735,7 @@ All examples in [examples/extensions/](../examples/extensions/).
 | `timed-confirm.ts`             | Dialogs with timeout                                                                                                | `ui.confirm` with timeout/signal                                                                                                  |
 | `mac-system-theme.ts`          | Auto-switch theme                                                                                                   | `setTheme`, `exec`                                                                                                                |
 | **Complex Extensions**         |                                                                                                                     |                                                                                                                                   |
-| `plan-mode/`                   | Full plan mode implementation                                                                                       | All event types, `registerCommand`, `registerShortcut`, `registerFlag`, `setStatus`, `setWidget`, `sendMessage`, `setActiveTools` |
+| `plan-mode/`                   | Custom plan-workflow implementation                                                                                 | All event types, `registerCommand`, `registerShortcut`, `registerFlag`, `setStatus`, `setWidget`, `sendMessage`, `setActiveTools` |
 | `preset.ts`                    | Saveable presets (model, tools, thinking)                                                                           | `registerCommand`, `registerShortcut`, `registerFlag`, `setModel`, `setActiveTools`, `setThinkingLevel`, `appendEntry`            |
 | `tools.ts`                     | Toggle tools on/off UI                                                                                              | `registerCommand`, `setActiveTools`, `SettingsList`, session events                                                               |
 | **Remote & Sandbox**           |                                                                                                                     |                                                                                                                                   |

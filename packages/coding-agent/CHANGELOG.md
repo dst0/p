@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added `/plan` mode with a footer badge, built-in `ask_user`/`confirm_user` tools for explicit user-requested questions, and `submit_plan` approval so plan mode ends automatically after the user approves the suggested plan.
+
 ### Fixed
 
 - Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.

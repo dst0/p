@@ -24,8 +24,10 @@ import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
 import {
+	createAskUserTool,
 	createBashTool,
 	createCodingTools,
+	createConfirmUserTool,
 	createEditTool,
 	createFindTool,
 	createGrepTool,
@@ -33,6 +35,7 @@ import {
 	createReadOnlyTools,
 	createReadTool,
 	createSleepTool,
+	createSubmitPlanTool,
 	createWriteTool,
 	withFileMutationQueue,
 } from "./tools/index.ts";
@@ -71,6 +74,14 @@ export interface CreateAgentSessionOptions {
 	 * When provided, only the listed tool names are enabled.
 	 */
 	tools?: string[];
+	/**
+	 * Enable built-in user interaction tools by default.
+	 *
+	 * The tools remain available to explicit `tools` allowlists regardless of this option.
+	 * Interactive CLI sessions set this so the model can ask or wait only when the user
+	 * explicitly requested that behavior.
+	 */
+	userInputTools?: boolean;
 	/** Optional denylist of tool names to disable. Applies after `tools` when both are provided. */
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
@@ -106,6 +117,7 @@ export interface CreateAgentSessionResult {
 
 // Re-exports
 
+export type { InteractionMode } from "./agent-session.ts";
 export * from "./agent-session-runtime.ts";
 export type {
 	ExtensionAPI,
@@ -123,7 +135,9 @@ export type { Tool } from "./tools/index.ts";
 export {
 	withFileMutationQueue,
 	// Tool factories (for custom cwd)
+	createAskUserTool,
 	createCodingTools,
+	createConfirmUserTool,
 	createReadOnlyTools,
 	createReadTool,
 	createBashTool,
@@ -133,6 +147,7 @@ export {
 	createFindTool,
 	createLsTool,
 	createSleepTool,
+	createSubmitPlanTool,
 };
 
 // Helper Functions
@@ -267,6 +282,9 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		"session_recall",
 		"keep_context",
 	];
+	if (options.userInputTools) {
+		defaultActiveToolNames.push("ask_user", "confirm_user");
+	}
 	const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
 	const excludedToolNames = options.excludeTools;
 	const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;

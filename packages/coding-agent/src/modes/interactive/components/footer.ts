@@ -212,6 +212,10 @@ export class FooterComponent implements Component {
 		}
 		statsParts.push(contextPercentStr);
 
+		if (this.session.interactionMode === "plan") {
+			statsParts.push(theme.fg("accent", theme.bold("PLAN")));
+		}
+
 		if (this.showTokenProgress) {
 			const queued = this.footerData.getQueuedProgress();
 			const sending = this.footerData.getSendingProgress();

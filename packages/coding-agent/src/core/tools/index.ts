@@ -72,6 +72,23 @@ export {
 
 import type { AgentTool } from "@dst0/p-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
+
+export {
+	type AskUserToolDetails,
+	type AskUserToolInput,
+	type ConfirmUserToolDetails,
+	type ConfirmUserToolInput,
+	createAskUserTool,
+	createAskUserToolDefinition,
+	createConfirmUserTool,
+	createConfirmUserToolDefinition,
+	createSubmitPlanTool,
+	createSubmitPlanToolDefinition,
+	type SubmitPlanToolDetails,
+	type SubmitPlanToolInput,
+	type SubmitPlanToolOptions,
+} from "./user-input.ts";
+
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
@@ -80,12 +97,44 @@ import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createSleepTool, createSleepToolDefinition } from "./sleep.ts";
+import {
+	createAskUserTool,
+	createAskUserToolDefinition,
+	createConfirmUserTool,
+	createConfirmUserToolDefinition,
+	createSubmitPlanTool,
+	createSubmitPlanToolDefinition,
+	type SubmitPlanToolOptions,
+} from "./user-input.ts";
 import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
-export type ToolName = "read" | "bash" | "edit" | "write" | "grep" | "find" | "ls" | "sleep";
-export const allToolNames: Set<ToolName> = new Set(["read", "bash", "edit", "write", "grep", "find", "ls", "sleep"]);
+export type ToolName =
+	| "read"
+	| "bash"
+	| "edit"
+	| "write"
+	| "grep"
+	| "find"
+	| "ls"
+	| "sleep"
+	| "ask_user"
+	| "confirm_user"
+	| "submit_plan";
+export const allToolNames: Set<ToolName> = new Set([
+	"read",
+	"bash",
+	"edit",
+	"write",
+	"grep",
+	"find",
+	"ls",
+	"sleep",
+	"ask_user",
+	"confirm_user",
+	"submit_plan",
+]);
 
 export interface ToolsOptions {
 	read?: ReadToolOptions;
@@ -95,6 +144,7 @@ export interface ToolsOptions {
 	grep?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
+	submitPlan?: SubmitPlanToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
@@ -115,6 +165,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createLsToolDefinition(cwd, options?.ls);
 		case "sleep":
 			return createSleepToolDefinition();
+		case "ask_user":
+			return createAskUserToolDefinition();
+		case "confirm_user":
+			return createConfirmUserToolDefinition();
+		case "submit_plan":
+			return createSubmitPlanToolDefinition(options?.submitPlan);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -138,6 +194,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createLsTool(cwd, options?.ls);
 		case "sleep":
 			return createSleepTool();
+		case "ask_user":
+			return createAskUserTool();
+		case "confirm_user":
+			return createConfirmUserTool();
+		case "submit_plan":
+			return createSubmitPlanTool(options?.submitPlan);
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -174,6 +236,9 @@ export function createAllToolDefinitions(
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		sleep: createSleepToolDefinition(),
+		ask_user: createAskUserToolDefinition(),
+		confirm_user: createConfirmUserToolDefinition(),
+		submit_plan: createSubmitPlanToolDefinition(options?.submitPlan),
 		finish_work: createFinishWorkToolDefinition(),
 	};
 }
@@ -206,5 +271,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		sleep: createSleepTool(),
+		ask_user: createAskUserTool(),
+		confirm_user: createConfirmUserTool(),
+		submit_plan: createSubmitPlanTool(options?.submitPlan),
 	};
 }

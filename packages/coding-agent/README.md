@@ -20,7 +20,7 @@
 Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
 Pi also keeps project memory, scoped rules, and repo-map snippets flowing into prompts automatically, so the active context stays grounded without manual bookkeeping.
 
-Pi ships with powerful defaults but skips features like sub agents and plan mode. Instead, you can ask pi to build what you want or install a third party pi package that matches your workflow.
+Pi ships with powerful defaults but keeps workflow-specific features narrow. Use the built-in `/plan` gate when you want approval before execution, and ask pi to build or install third party pi packages for workflows that should be customized to your environment.
 
 Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. It also ships a local `p-voice` browser bridge for speech recognition and spoken answers on top of RPC mode. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
 
@@ -96,7 +96,7 @@ pi
 /login  # Then select provider
 ```
 
-Then just talk to pi. By default, pi gives the model four tools: `read`, `write`, `edit`, and `bash`. The model uses these to fulfill your requests. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
+Then just talk to pi. By default, pi gives the model coding tools such as `read`, `write`, `edit`, and `bash`. In interactive mode, it also has narrow `ask_user` and `confirm_user` tools that it may use only when you explicitly ask it to ask, gather information, or wait for confirmation. Type `/plan` before a task to make pi gather context, propose a plan, and wait for your approval before execution; the footer shows a `PLAN` badge until you approve the suggested plan. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [pi packages](#pi-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -181,6 +181,7 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | Command | Description |
 |---------|-------------|
 | `/login`, `/logout` | OAuth authentication |
+| `/plan [request]` | Plan first and wait for approval before execution |
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
@@ -464,7 +465,7 @@ The default export can also be `async`. pi waits for async extension factories b
 
 **What's possible:**
 - Custom tools (or replace built-in tools entirely)
-- Sub-agents and plan mode
+- Sub-agents and custom plan workflows
 - Custom compaction and summarization
 - Permission gates and path protection
 - Custom editors and UI components
@@ -600,7 +601,7 @@ Pi is aggressively extensible so it doesn't have to dictate your workflow. Featu
 
 **No permission popups.** Run in a container, or build your own confirmation flow with [extensions](#extensions) inline with your environment and security requirements.
 
-**No plan mode.** Write plans to files, or build it with [extensions](#extensions), or install a package.
+**Plan mode is explicit.** Type `/plan` when you want a temporary planning gate. For custom multi-step planning workflows, build an [extension](#extensions), use a file, or install a package.
 
 **No built-in to-dos.** They confuse models. Use a TODO.md file, or build your own with [extensions](#extensions).
 
@@ -683,7 +684,9 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools by default |
 
-Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`
+Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `ask_user`, `confirm_user`, `submit_plan`
+
+In interactive mode, `ask_user` and `confirm_user` are active by default but constrained by the system prompt to explicit user-requested information gathering or confirmation waits. `/plan` temporarily enables `submit_plan`; pi stays in plan mode until that tool receives your approval, then restores the previous tool set and proceeds. In print and JSON modes, enable user-input tools explicitly with `--tools` only if the surrounding integration can answer UI requests; RPC mode can bridge those requests to a client.
 
 ### Resource Options
 
@@ -757,7 +760,7 @@ pi --tools read,grep,find,ls -p "Review the code"
 p-voice --open -- --approve
 
 # Disable one extension or built-in tool while keeping the rest available
-pi --exclude-tools ask_question
+pi --exclude-tools confirm_user
 
 # High thinking level
 pi --thinking high "Solve this complex problem"

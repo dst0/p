@@ -36,6 +36,7 @@ Type `/` in the editor to open command completion. Extensions can register custo
 | Command | Description |
 |---------|-------------|
 | `/login`, `/logout` | Manage OAuth or API-key credentials |
+| `/plan [request]` | Plan first and wait for approval before execution |
 | `/model` | Switch models |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
@@ -240,7 +241,9 @@ cat README.md | pi -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`.
+Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `ask_user`, `confirm_user`, `submit_plan`.
+
+In interactive mode, `ask_user` and `confirm_user` are active by default. The model is instructed to use them only when you explicitly ask it to ask, collect information, or wait for confirmation. Type `/plan` or `/plan <request>` to enter plan mode: pi may gather context and ask targeted questions, then must call `submit_plan` and wait for your approval before executing. The footer shows `PLAN` while this mode is active, and plan mode turns off automatically after you approve the suggested plan. Non-interactive modes do not enable user-input tools by default; RPC clients can enable them with `--tools` and answer the emitted UI requests.
 
 ### Resource Options
 
@@ -315,7 +318,7 @@ pi --models "claude-*,gpt-4o"
 pi --tools read,grep,find,ls -p "Review the code"
 
 # Disable one extension or built-in tool while keeping the rest available
-pi --exclude-tools ask_question
+pi --exclude-tools confirm_user
 
 # Opt out of mandatory finish_work for one run
 pi --completion-mode implicit -p "Say exactly: ok"
@@ -338,6 +341,6 @@ pi --completion-mode implicit -p "Say exactly: ok"
 
 Pi keeps the core small and pushes workflow-specific behavior into extensions, skills, prompt templates, and packages.
 
-It intentionally does not include built-in MCP, sub-agents, permission popups, plan mode, to-dos, or background bash. You can build or install those workflows as extensions or packages, or use external tools such as containers and tmux.
+It intentionally does not include built-in MCP, sub-agents, permission popups, to-dos, or background bash. You can build or install those workflows as extensions or packages, or use external tools such as containers and tmux.
 
 For the full rationale, read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/).

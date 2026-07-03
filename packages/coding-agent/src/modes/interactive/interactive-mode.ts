@@ -2600,6 +2600,11 @@ export class InteractiveMode {
 				this.editor.setText("");
 				return;
 			}
+			if (text === "/plan" || text.startsWith("/plan ")) {
+				this.editor.setText("");
+				await this.handlePlanCommand(text);
+				return;
+			}
 			if (text === "/scoped-models") {
 				this.editor.setText("");
 				await this.showModelsSelector();
@@ -2851,6 +2856,11 @@ export class InteractiveMode {
 			case "thinking_level_changed":
 				this.footer.invalidate();
 				this.updateEditorBorderColor();
+				break;
+
+			case "interaction_mode_changed":
+				this.footer.invalidate();
+				this.ui.requestRender();
 				break;
 
 			case "request_start": {
@@ -5343,6 +5353,45 @@ export class InteractiveMode {
 	// =========================================================================
 	// Command handlers
 	// =========================================================================
+
+	private async handlePlanCommand(text: string): Promise<void> {
+		const args = text.startsWith("/plan ") ? text.slice(6).trim() : "";
+		if (args === "off" || args === "disable") {
+			this.session.disablePlanMode();
+			this.showStatus("Plan mode off");
+			this.footer.invalidate();
+			this.ui.requestRender();
+			return;
+		}
+		if (args === "status") {
+			this.showStatus(this.session.isPlanMode ? "Plan mode is on" : "Plan mode is off");
+			return;
+		}
+
+		if (this.session.isStreaming) {
+			this.showWarning("Wait for the current response to finish before switching plan mode.");
+			return;
+		}
+		if (this.session.isCompacting) {
+			this.showWarning("Wait for compaction to finish before switching plan mode.");
+			return;
+		}
+
+		const result = this.session.enablePlanMode();
+		if (!result.enabled) {
+			this.showWarning("Plan mode needs submit_plan, but it is not available in the active tool configuration.");
+			return;
+		}
+		this.showStatus("Plan mode on. Pi will ask for approval before execution.");
+		this.footer.invalidate();
+		this.ui.requestRender();
+
+		if (args && args !== "on" && args !== "enable") {
+			this.flushPendingBashComponents();
+			this.editor.addToHistory?.(text);
+			await this.session.prompt(args);
+		}
+	}
 
 	private async handleReloadCommand(): Promise<void> {
 		if (this.session.isStreaming) {

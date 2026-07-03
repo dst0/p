@@ -270,7 +270,7 @@ export function printHelp(extensionFlags?: ExtensionFlag[]): void {
 					})
 					.join("\n")}\n`
 			: "";
-	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with read, bash, edit, write tools
+	console.log(`${chalk.bold(APP_NAME)} - AI coding assistant with coding and user-input tools
 
 ${chalk.bold("Usage:")}
   ${APP_NAME} [options] [@files...] [messages...]
@@ -329,11 +329,14 @@ ${chalk.bold("Options:")}
   --help, -h                     Show this help
   --version, -v                  Show version number
 
-Extensions can register additional flags (e.g., --plan from plan-mode extension).${extensionFlagsText}
+Extensions can register additional flags (e.g., --profile from an extension).${extensionFlagsText}
 
 ${chalk.bold("Examples:")}
   # Interactive mode
   ${APP_NAME}
+
+  # Plan first and wait for approval before execution
+  ${APP_NAME} "/plan"
 
   # Interactive mode with initial prompt
   ${APP_NAME} "List all .ts files in src/"
@@ -381,7 +384,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --tools read,grep,find,ls -p "Review the code in src/"
 
   # Disable one tool while keeping the rest available
-  ${APP_NAME} --exclude-tools ask_question
+  ${APP_NAME} --exclude-tools confirm_user
 
   # Export a session file to HTML
   ${APP_NAME} --export ~/${CONFIG_DIR_NAME}/agent/sessions/--path--/session.jsonl
@@ -434,12 +437,16 @@ ${chalk.bold("Environment Variables:")}
   P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
-  read   - Read file contents
-  bash   - Execute bash commands
-  edit   - Edit files with find/replace
-  write  - Write files (creates/overwrites)
-  grep   - Search file contents (read-only, off by default)
-  find   - Find files by glob pattern (read-only, off by default)
-  ls     - List directory contents (read-only, off by default)
+  read         - Read file contents
+  bash         - Execute bash commands
+  edit         - Edit files with find/replace
+  write        - Write files (creates/overwrites)
+  grep         - Search file contents (read-only, off by default)
+  find         - Find files by glob pattern (read-only, off by default)
+  ls           - List directory contents (read-only, off by default)
+  sleep        - Wait before retrying delayed work
+  ask_user     - Ask the user a question when explicitly requested
+  confirm_user - Wait for user confirmation when explicitly requested
+  submit_plan  - Submit a plan for approval in /plan mode
 `);
 }

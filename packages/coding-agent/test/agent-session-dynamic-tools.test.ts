@@ -163,6 +163,79 @@ describe("AgentSession dynamic tool registration", () => {
 		session.dispose();
 	});
 
+	it("registers user input tools but only activates them when requested by the host", async () => {
+		const settingsManager = SettingsManager.create(tempDir, agentDir);
+		const resourceLoader = new DefaultResourceLoader({
+			cwd: tempDir,
+			agentDir,
+			settingsManager,
+		});
+		await resourceLoader.reload();
+
+		const { session } = await createAgentSession({
+			cwd: tempDir,
+			agentDir,
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager,
+			sessionManager: SessionManager.inMemory(),
+			resourceLoader,
+		});
+		await session.bindExtensions({});
+
+		expect(session.getAllTools().map((tool) => tool.name)).toEqual(
+			expect.arrayContaining(["ask_user", "confirm_user", "submit_plan"]),
+		);
+		expect(session.getActiveToolNames()).not.toContain("ask_user");
+		expect(session.getActiveToolNames()).not.toContain("confirm_user");
+		expect(session.getActiveToolNames()).not.toContain("submit_plan");
+		expect(session.systemPrompt).not.toContain("- ask_user:");
+
+		const planResult = session.enablePlanMode();
+		expect(planResult).toEqual({ enabled: true, missingTools: [] });
+		expect(session.interactionMode).toBe("plan");
+		expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "confirm_user", "submit_plan"]));
+		expect(session.systemPrompt).toContain("<plan_mode>");
+
+		session.disablePlanMode();
+		expect(session.interactionMode).toBe("normal");
+		expect(session.getActiveToolNames()).not.toContain("ask_user");
+		expect(session.getActiveToolNames()).not.toContain("confirm_user");
+		expect(session.getActiveToolNames()).not.toContain("submit_plan");
+		expect(session.systemPrompt).not.toContain("<plan_mode>");
+
+		session.dispose();
+
+		const { session: interactiveSession } = await createAgentSession({
+			cwd: tempDir,
+			agentDir,
+			model: getModel("anthropic", "claude-sonnet-4-5")!,
+			settingsManager,
+			sessionManager: SessionManager.inMemory(),
+			resourceLoader,
+			userInputTools: true,
+		});
+		await interactiveSession.bindExtensions({});
+
+		expect(interactiveSession.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "confirm_user"]));
+		expect(interactiveSession.getActiveToolNames()).not.toContain("submit_plan");
+		expect(interactiveSession.systemPrompt).toContain(
+			"- ask_user: Ask the user a question and wait for their answer",
+		);
+		expect(interactiveSession.systemPrompt).toContain(
+			"- Use ask_user only when the user explicitly asks you to ask, collect, clarify, or wait for information before proceeding.",
+		);
+
+		interactiveSession.enablePlanMode();
+		expect(interactiveSession.getActiveToolNames()).toEqual(
+			expect.arrayContaining(["ask_user", "confirm_user", "submit_plan"]),
+		);
+		interactiveSession.disablePlanMode();
+		expect(interactiveSession.getActiveToolNames()).toEqual(expect.arrayContaining(["ask_user", "confirm_user"]));
+		expect(interactiveSession.getActiveToolNames()).not.toContain("submit_plan");
+
+		interactiveSession.dispose();
+	});
+
 	it("keeps custom tools active but omits them from available tools when promptSnippet is not provided", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();

@@ -27,6 +27,7 @@ For the JSONL file format and SessionManager API, see [Session Format](session-f
 | `/new` | Start a new session |
 | `/name <name>` | Set the current session display name |
 | `/session` | Show session info |
+| `/plan [request]` | Plan first and wait for approval before execution |
 | `/tree` | Navigate the current session tree |
 | `/fork` | Create a new session from a previous user message |
 | `/clone` | Duplicate the current active branch into a new session |

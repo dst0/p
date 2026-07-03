@@ -155,7 +155,7 @@ import {
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { createTokenBreakdown, type TokenBreakdown } from "./token-accounting.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
-import { createAllToolDefinitions } from "./tools/index.ts";
+import { createAllToolDefinitions, createSubmitPlanToolDefinition } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 
 const RETRYABLE_ERROR_PATTERN =
@@ -218,6 +218,7 @@ export type AgentSessionEvent =
 	| { type: "compaction_progress"; currentChunk: number; totalChunks: number }
 	| { type: "session_info_changed"; name: string | undefined }
 	| { type: "thinking_level_changed"; level: ThinkingLevel }
+	| { type: "interaction_mode_changed"; mode: InteractionMode }
 	| {
 			type: "compaction_end";
 			reason: "manual" | "threshold" | "overflow";
@@ -243,6 +244,8 @@ export type AgentSessionEvent =
 
 /** Listener function for agent session events */
 export type AgentSessionEventListener = (event: AgentSessionEvent) => void;
+
+export type InteractionMode = "normal" | "plan";
 
 // ============================================================================
 // Types
@@ -833,6 +836,8 @@ export class AgentSession {
 	private _extensionErrorListener?: ExtensionErrorListener;
 	private _extensionErrorUnsubscriber?: () => void;
 	private _completionMode: CompletionMode;
+	private _interactionMode: InteractionMode = "normal";
+	private _planModePreviousActiveToolNames: string[] | undefined;
 
 	// Model registry for API key resolution
 	private _modelRegistry: ModelRegistry;
@@ -1691,6 +1696,16 @@ export class AgentSession {
 		return this.agent.state.systemPrompt;
 	}
 
+	/** Current user-selected interaction mode. */
+	get interactionMode(): InteractionMode {
+		return this._interactionMode;
+	}
+
+	/** Whether plan mode is currently active. */
+	get isPlanMode(): boolean {
+		return this._interactionMode === "plan";
+	}
+
 	getLastTokenBreakdown(): TokenBreakdown | undefined {
 		return this._lastTokenBreakdown;
 	}
@@ -1757,6 +1772,43 @@ export class AgentSession {
 		this.agent.completionMode = effectiveCompletionMode;
 		this._baseSystemPrompt = this._rebuildSystemPrompt(validToolNames, effectiveCompletionMode);
 		this.agent.state.systemPrompt = this._baseSystemPrompt;
+	}
+
+	enablePlanMode(): { enabled: boolean; missingTools: string[] } {
+		const planTools = ["ask_user", "confirm_user", "submit_plan"];
+		const missingTools = planTools.filter((toolName) => !this._toolRegistry.has(toolName));
+		if (missingTools.includes("submit_plan")) {
+			return { enabled: false, missingTools };
+		}
+
+		if (this._interactionMode !== "plan") {
+			this._planModePreviousActiveToolNames = this.getActiveToolNames();
+		}
+
+		this._interactionMode = "plan";
+		const activeTools = new Set(this.getActiveToolNames());
+		for (const toolName of planTools) {
+			if (this._toolRegistry.has(toolName)) {
+				activeTools.add(toolName);
+			}
+		}
+		this.setActiveToolsByName([...activeTools]);
+		this._emit({ type: "interaction_mode_changed", mode: this._interactionMode });
+		return { enabled: true, missingTools };
+	}
+
+	disablePlanMode(): void {
+		if (this._interactionMode !== "plan") {
+			return;
+		}
+
+		const restoredToolNames =
+			this._planModePreviousActiveToolNames ??
+			this.getActiveToolNames().filter((toolName) => toolName !== "submit_plan");
+		this._planModePreviousActiveToolNames = undefined;
+		this._interactionMode = "normal";
+		this.setActiveToolsByName(restoredToolNames);
+		this._emit({ type: "interaction_mode_changed", mode: this._interactionMode });
 	}
 
 	/** Whether compaction or branch summarization is currently running */
@@ -1844,6 +1896,21 @@ export class AgentSession {
 		return activeToolCount === 0 && this._completionMode !== "implicit" ? "implicit" : this._completionMode;
 	}
 
+	private _getInteractionModeSystemPrompt(): string | undefined {
+		if (this._interactionMode !== "plan") {
+			return undefined;
+		}
+		return `<plan_mode>
+Plan mode is active because the user invoked /plan.
+- Gather enough context to propose a concrete plan. Read files or run read-only inspection commands when needed.
+- Ask targeted questions with ask_user only when user input would materially improve the plan.
+- Do not edit files, write files, run implementation commands, or otherwise start execution while plan mode is active.
+- When the plan is ready, call submit_plan with a concise summary, ordered steps, risks, and any open questions.
+- Plan mode remains active if the user rejects the plan. Revise the plan or ask a follow-up question, then call submit_plan again.
+- After submit_plan reports user approval, plan mode is off. Proceed with the approved plan without asking for the same approval again.
+</plan_mode>`;
+	}
+
 	private _rebuildSystemPrompt(
 		toolNames: string[],
 		completionMode = this._getEffectiveCompletionModeForActiveTools(toolNames.length),
@@ -1873,8 +1940,10 @@ export class AgentSession {
 
 		const loaderSystemPrompt = this._resourceLoader.getSystemPrompt();
 		const loaderAppendSystemPrompt = this._resourceLoader.getAppendSystemPrompt();
-		const appendSystemPrompt =
-			loaderAppendSystemPrompt.length > 0 ? loaderAppendSystemPrompt.join("\n\n") : undefined;
+		const interactionModeSystemPrompt = this._getInteractionModeSystemPrompt();
+		const appendSystemPrompt = [...loaderAppendSystemPrompt, interactionModeSystemPrompt]
+			.filter((text): text is string => text !== undefined && text.trim().length > 0)
+			.join("\n\n");
 		const loadedSkills = this._resourceLoader.getSkills().skills;
 		const loadedContextFiles = this._resourceLoader.getAgentsFiles().agentsFiles;
 
@@ -1883,7 +1952,7 @@ export class AgentSession {
 			skills: loadedSkills,
 			contextFiles: loadedContextFiles,
 			customPrompt: loaderSystemPrompt,
-			appendSystemPrompt,
+			appendSystemPrompt: appendSystemPrompt || undefined,
 			selectedTools: promptToolNames,
 			toolSnippets,
 			promptGuidelines,
@@ -4416,6 +4485,9 @@ export class AgentSession {
 				});
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
+			submit_plan: createSubmitPlanToolDefinition({
+				onApproved: () => this.disablePlanMode(),
+			}) as unknown as ToolDefinition,
 			session_recall: this._createSessionRecallToolDefinition() as unknown as ToolDefinition,
 			keep_context: this._createKeepContextToolDefinition() as unknown as ToolDefinition,
 			run_subagent: this._createRunSubagentToolDefinition() as unknown as ToolDefinition,

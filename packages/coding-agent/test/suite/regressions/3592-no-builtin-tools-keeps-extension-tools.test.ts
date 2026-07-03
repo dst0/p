@@ -79,7 +79,9 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 				.map((tool) => tool.name)
 				.sort(),
 		).toEqual([
+			"ask_user",
 			"bash",
+			"confirm_user",
 			"dynamic_tool",
 			"edit",
 			"find",
@@ -91,6 +93,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"run_subagent",
 			"session_recall",
 			"sleep",
+			"submit_plan",
 			"write",
 		]);
 		expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);

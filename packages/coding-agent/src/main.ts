@@ -349,6 +349,7 @@ async function createSessionManager(
 
 function buildSessionOptions(
 	parsed: Args,
+	appMode: AppMode,
 	scopedModels: ScopedModel[],
 	hasExistingSession: boolean,
 	modelRegistry: ModelRegistry,
@@ -437,6 +438,9 @@ function buildSessionOptions(
 	}
 	if (parsed.tools) {
 		options.tools = [...parsed.tools];
+	}
+	if (appMode === "interactive" && !parsed.tools && !parsed.noTools && !parsed.noBuiltinTools) {
+		options.userInputTools = true;
 	}
 	if (parsed.excludeTools) {
 		options.excludeTools = [...parsed.excludeTools];
@@ -685,6 +689,7 @@ export async function main(args: string[], options?: MainOptions) {
 			diagnostics: sessionOptionDiagnostics,
 		} = buildSessionOptions(
 			parsed,
+			appMode,
 			scopedModels,
 			sessionManager.buildSessionContext().messages.length > 0,
 			modelRegistry,
@@ -711,6 +716,7 @@ export async function main(args: string[], options?: MainOptions) {
 			thinkingLevel: sessionOptions.thinkingLevel,
 			scopedModels: sessionOptions.scopedModels,
 			tools: sessionOptions.tools,
+			userInputTools: sessionOptions.userInputTools,
 			excludeTools: sessionOptions.excludeTools,
 			noTools: sessionOptions.noTools,
 			customTools: sessionOptions.customTools,
