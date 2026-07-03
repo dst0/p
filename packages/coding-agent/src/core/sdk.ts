@@ -236,11 +236,21 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 
 	// If still no model, use findInitialModel (checks settings default, then provider defaults)
 	if (!model) {
+		const defaultModelString = settingsManager.getDefaultModel();
+		const defaultProvider = settingsManager.getDefaultProvider();
+		// defaultModel may be "provider/modelId" or just "modelId"
+		let resolvedProvider = defaultProvider;
+		let resolvedModelId = defaultModelString;
+		if (defaultModelString?.includes("/")) {
+			const slashIdx = defaultModelString.indexOf("/");
+			resolvedProvider = defaultModelString.substring(0, slashIdx);
+			resolvedModelId = defaultModelString.substring(slashIdx + 1);
+		}
 		const result = await findInitialModel({
 			scopedModels: [],
 			isContinuing: hasExistingSession,
-			defaultProvider: settingsManager.getDefaultProvider(),
-			defaultModelId: settingsManager.getDefaultModel(),
+			defaultProvider: resolvedProvider,
+			defaultModelId: resolvedModelId,
 			defaultThinkingLevel: settingsManager.getDefaultThinkingLevel(),
 			modelRegistry,
 		});
