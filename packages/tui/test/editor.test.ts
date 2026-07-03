@@ -2188,7 +2188,8 @@ describe("Editor component", () => {
 					if (!shouldMatch) {
 						return null;
 					}
-					const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(prefix.toLowerCase()));
+					const lowerPrefix = prefix.toLowerCase();
+					const filtered = allFiles.filter((f) => f.value.toLowerCase().startsWith(lowerPrefix));
 					if (filtered.length > 0) {
 						return { items: filtered, prefix };
 					}

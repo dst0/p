@@ -135,7 +135,10 @@ describe("Bedrock thinking payload", () => {
 describe.skipIf(!hasBedrockCredentials())("Bedrock Claude max tokens E2E", () => {
 	it(
 		"uses the model maxTokens cap instead of Bedrock's 4096-token default for adaptive Claude models",
-		{ retry: 2, timeout: 180000 },
+		{
+			retry: 2,
+			timeout: 180000,
+		},
 		async () => {
 			const baseModel = getModel("amazon-bedrock", "global.anthropic.claude-sonnet-4-6");
 			const model: Model<"bedrock-converse-stream"> = {

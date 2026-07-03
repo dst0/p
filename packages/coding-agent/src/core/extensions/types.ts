@@ -78,9 +78,9 @@ import type {
 } from "../tools/index.ts";
 
 export type { ExecOptions, ExecResult } from "../exec.ts";
+export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
 export type { BuildSystemPromptOptions } from "../system-prompt.ts";
 export type { AgentToolResult, AgentToolUpdateCallback, ToolExecutionMode };
-export type { AppKeybinding, KeybindingsManager } from "../keybindings.ts";
 
 // ============================================================================
 // UI Context

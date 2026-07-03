@@ -608,9 +608,10 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 			const entries = readdirSync(searchDir, { withFileTypes: true });
 			const suggestions: AutocompleteItem[] = [];
+			const searchPrefixLower = searchPrefix.toLowerCase();
 
 			for (const entry of entries) {
-				if (!entry.name.toLowerCase().startsWith(searchPrefix.toLowerCase())) {
+				if (!entry.name.toLowerCase().startsWith(searchPrefixLower)) {
 					continue;
 				}
 
@@ -694,10 +695,9 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 	// Score an entry against the query (higher = better match)
 	// isDirectory adds bonus to prioritize folders
-	private scoreEntry(filePath: string, query: string, isDirectory: boolean): number {
+	private scoreEntry(filePath: string, lowerQuery: string, isDirectory: boolean): number {
 		const fileName = basename(filePath);
 		const lowerFileName = fileName.toLowerCase();
-		const lowerQuery = query.toLowerCase();
 
 		let score = 0;
 
@@ -734,10 +734,11 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 				return [];
 			}
 
+			const lowerFdQuery = fdQuery?.toLowerCase();
 			const scoredEntries = entries
 				.map((entry) => ({
 					...entry,
-					score: fdQuery ? this.scoreEntry(entry.path, fdQuery, entry.isDirectory) : 1,
+					score: lowerFdQuery ? this.scoreEntry(entry.path, lowerFdQuery, entry.isDirectory) : 1,
 				}))
 				.filter((entry) => entry.score > 0);
 
