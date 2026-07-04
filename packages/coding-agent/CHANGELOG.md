@@ -2,20 +2,25 @@
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-04
+
 ### Added
 
-- Added `/plan` mode with a footer badge, built-in `ask_user`/`confirm_user` tools for explicit user-requested questions, and `submit_plan` approval so plan mode ends automatically after the user approves the suggested plan.
-- Added default `update_session_state` planning/state tool calls before other tools on each user turn.
+- Session state progress preserved after compaction
+- Plan items preserved during replan
+- Footer shows queued session progress with position
+- `scripts/version-bump.mjs` for automated version bumps across all packages
+- `npm run release:patch`, `npm run release:minor`, `npm run release:major` scripts
+
+### Changed
+
+- Bumped all packages from 0.2.6 to 0.3.0
 
 ### Fixed
 
-- Fixed `/state` to show the total tool call count without listing individual tool-result evidence entries.
-- Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.
-- Fixed structured session state updates to mark existing plan progress without duplicating or losing task priority.
-- Fixed `finish_work` so successful completion is blocked while structured session state still has unresolved plan or next-step items.
-- Fixed session state replan to preserve all original user-requested plan items instead of dropping them as out-of-scope.
-
-## [0.2.6] - 2026-07-02
+- Duplicate session state progress after compaction
+- Sleep tool results filtered from session summary
+- Structured tool calls with zero arguments
 
 ### Added
 
