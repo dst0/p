@@ -112,6 +112,7 @@ export interface StatePatch {
 		update?: Array<{ id: string; patch: Partial<Constraint> }>;
 	};
 	plan?: {
+		replace?: PlanItem[];
 		add?: PlanItem[];
 		update?: Array<{
 			id: string;
@@ -539,6 +540,7 @@ function mergeStatePatches(existing: StatePatch | undefined, incoming: StatePatc
 		plan:
 			existing.plan || incoming.plan
 				? {
+						replace: incoming.plan?.replace ?? existing.plan?.replace,
 						add: [...(existing.plan?.add ?? []), ...(incoming.plan?.add ?? [])],
 						update: [...(existing.plan?.update ?? []), ...(incoming.plan?.update ?? [])],
 					}
@@ -735,6 +737,7 @@ function hasStatePatchContent(patch: StatePatch): boolean {
 		patch.canonicalRequest !== undefined ||
 		(patch.constraints?.add?.length ?? 0) > 0 ||
 		(patch.constraints?.update?.length ?? 0) > 0 ||
+		(patch.plan?.replace?.length ?? 0) > 0 ||
 		(patch.plan?.add?.length ?? 0) > 0 ||
 		(patch.plan?.update?.length ?? 0) > 0 ||
 		patch.progress !== undefined ||
@@ -1386,6 +1389,20 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
 			orderedIds.push(item.id);
 		}
 	};
+	if (patch.replace) {
+		const nextPlan: PlanItem[] = [];
+		for (const item of patch.replace) {
+			const existing = findPlanItemByIdOrText(state.plan, item.id, item.text);
+			nextPlan.push({
+				...(existing ?? item),
+				id: existing?.id ?? item.id,
+				text: item.text,
+				status: item.status,
+				evidenceEntryIds: mergeStringList(existing?.evidenceEntryIds ?? [], item.evidenceEntryIds),
+			});
+		}
+		state.plan = nextPlan;
+	}
 	for (const item of patch.add ?? []) {
 		const existing = findPlanItemByIdOrText(state.plan, item.id, item.text);
 		if (!existing) {
@@ -1478,14 +1495,23 @@ function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boo
 function mergeDecisions(state: StructuredSessionState, patch: NonNullable<StatePatch["decisions"]>): void {
 	const byId = new Map(state.decisions.map((decision) => [decision.id, decision]));
 	for (const item of patch.add ?? []) {
-		if (!byId.has(item.id)) {
-			state.decisions.push({
-				...item,
-				evidencePointers: item.evidencePointers.map((pointer) => ({
-					...pointer,
-				})),
-			});
+		const existing =
+			byId.get(item.id) ??
+			state.decisions.find(
+				(decision) =>
+					normalizeComparableText(decision.decision) === normalizeComparableText(item.decision) &&
+					normalizeComparableText(decision.rationale) === normalizeComparableText(item.rationale),
+			);
+		if (existing) {
+			existing.evidencePointers = mergeEvidence(existing.evidencePointers, item.evidencePointers);
+			continue;
 		}
+		state.decisions.push({
+			...item,
+			evidencePointers: item.evidencePointers.map((pointer) => ({
+				...pointer,
+			})),
+		});
 	}
 	for (const supersede of patch.supersede ?? []) {
 		const current = byId.get(supersede.id);

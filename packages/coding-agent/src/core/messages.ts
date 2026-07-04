@@ -6,7 +6,7 @@
  */
 
 import type { AgentMessage } from "@dst0/p-agent-core";
-import type { ImageContent, Message, TextContent } from "@dst0/p-ai";
+import type { AssistantMessage, ImageContent, Message, TextContent } from "@dst0/p-ai";
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 
@@ -26,6 +26,7 @@ export const BRANCH_SUMMARY_PREFIX = `The following is a summary of a branch tha
 export const BRANCH_SUMMARY_SUFFIX = `</summary>`;
 
 export const FAST_RESPONDER_CUSTOM_TYPE = "fast_responder";
+export const SLEEP_TOOL_NAME = "sleep";
 
 /**
  * Message type for bash executions via the ! command.
@@ -144,6 +145,27 @@ export function createCustomMessage(
 	};
 }
 
+function filterSleepToolCalls(message: AssistantMessage): AssistantMessage | undefined {
+	const content = message.content.filter((block) => !(block.type === "toolCall" && block.name === SLEEP_TOOL_NAME));
+	if (content.length === message.content.length) {
+		return message;
+	}
+	if (content.length === 0) {
+		return undefined;
+	}
+	return { ...message, content };
+}
+
+export function filterSleepToolUseForHistory(message: AgentMessage): AgentMessage | undefined {
+	if (message.role === "assistant") {
+		return filterSleepToolCalls(message);
+	}
+	if (message.role === "toolResult" && message.toolName === SLEEP_TOOL_NAME) {
+		return undefined;
+	}
+	return message;
+}
+
 /**
  * Transform AgentMessages (including custom types) to LLM-compatible Messages.
  *
@@ -154,7 +176,11 @@ export function createCustomMessage(
  */
 export function convertToLlm(messages: AgentMessage[]): Message[] {
 	return messages
-		.map((m): Message | undefined => {
+		.map((originalMessage): Message | undefined => {
+			const m = filterSleepToolUseForHistory(originalMessage);
+			if (!m) {
+				return undefined;
+			}
 			switch (m.role) {
 				case "bashExecution":
 					// Skip messages excluded from context (!! prefix)

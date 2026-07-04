@@ -911,7 +911,7 @@ describe("AgentSession compaction characterization", () => {
 						fauxToolCall("update_session_state", {
 							action: "progress_update",
 							goal: "continue after invalid batch",
-							progress: { current: ["Retry after compaction"] },
+							progress: { done: ["Retry after compaction"] },
 						}),
 					],
 					{ stopReason: "toolUse" },

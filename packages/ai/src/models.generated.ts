@@ -7662,6 +7662,25 @@ export const MODELS = {
 			contextWindow: 256000,
 			maxTokens: 16384,
 		} satisfies Model<"openai-completions">,
+		"z-ai/glm-5.2": {
+			id: "z-ai/glm-5.2",
+			name: "GLM-5.2",
+			api: "openai-completions",
+			provider: "nvidia",
+			baseUrl: "https://integrate.api.nvidia.com/v1",
+			headers: {"NVCF-POLL-SECONDS":"3600"},
+			compat: {"supportsStore":false,"supportsDeveloperRole":false,"supportsReasoningEffort":false,"maxTokensField":"max_tokens","supportsStrictMode":false,"supportsLongCacheRetention":false},
+			reasoning: true,
+			input: ["text"],
+			cost: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+			},
+			contextWindow: 1000000,
+			maxTokens: 131072,
+		} satisfies Model<"openai-completions">,
 	},
 	"openai": {
 		"gpt-4": {
@@ -13812,13 +13831,13 @@ export const MODELS = {
 			reasoning: true,
 			input: ["text"],
 			cost: {
-				input: 0.93,
-				output: 3,
-				cacheRead: 0.18,
+				input: 0.91,
+				output: 2.86,
+				cacheRead: 0.169,
 				cacheWrite: 0,
 			},
 			contextWindow: 1048576,
-			maxTokens: 32768,
+			maxTokens: 128000,
 		} satisfies Model<"openai-completions">,
 		"z-ai/glm-5v-turbo": {
 			id: "z-ai/glm-5v-turbo",

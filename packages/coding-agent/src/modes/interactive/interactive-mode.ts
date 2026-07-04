@@ -81,6 +81,7 @@ import type {
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
+import { SLEEP_TOOL_NAME } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
 import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
@@ -117,7 +118,7 @@ import { EarendilAnnouncementComponent } from "./components/earendil-announcemen
 import { ExtensionEditorComponent } from "./components/extension-editor.ts";
 import { ExtensionInputComponent } from "./components/extension-input.ts";
 import { ExtensionSelectorComponent } from "./components/extension-selector.ts";
-import { FooterComponent } from "./components/footer.ts";
+import { FooterComponent, QUEUED_FOOTER_ANIMATION_MS } from "./components/footer.ts";
 import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./components/keybinding-hints.ts";
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
@@ -285,6 +286,7 @@ export class InteractiveMode {
 	private editorContainer: Container;
 	private footer: FooterComponent;
 	private footerDataProvider: FooterDataProvider;
+	private queuedFooterSpinnerTimer: ReturnType<typeof setInterval> | undefined = undefined;
 	// Stored so the same manager can be injected into custom editors, selectors, and extension UI.
 	private keybindings: KeybindingsManager;
 	private version: string;
@@ -775,6 +777,7 @@ export class InteractiveMode {
 
 		// Set up progress watcher to update footer
 		this.footerDataProvider.onProgressChange(() => {
+			this.updateQueuedFooterSpinnerTimer();
 			this.ui.requestRender();
 		});
 
@@ -2979,7 +2982,7 @@ export class InteractiveMode {
 					}
 
 					for (const content of this.streamingMessage.content) {
-						if (content.type === "toolCall" && content.name !== "sleep") {
+						if (content.type === "toolCall" && content.name !== SLEEP_TOOL_NAME) {
 							if (!this.pendingTools.has(content.id)) {
 								const component = new ToolExecutionComponent(
 									content.name,
@@ -3059,7 +3062,7 @@ export class InteractiveMode {
 				break;
 
 			case "tool_execution_start": {
-				if (event.toolName === "sleep") {
+				if (event.toolName === SLEEP_TOOL_NAME) {
 					break;
 				}
 				let component = this.pendingTools.get(event.toolCallId);
@@ -3095,7 +3098,7 @@ export class InteractiveMode {
 			}
 
 			case "tool_execution_end": {
-				if (event.toolName === "sleep") {
+				if (event.toolName === SLEEP_TOOL_NAME) {
 					this.pendingTools.delete(event.toolCallId);
 					break;
 				}
@@ -3418,7 +3421,7 @@ export class InteractiveMode {
 				this.addMessageToChat(message);
 				// Render tool call components
 				for (const content of message.content) {
-					if (content.type === "toolCall") {
+					if (content.type === "toolCall" && content.name !== SLEEP_TOOL_NAME) {
 						const component = new ToolExecutionComponent(
 							content.name,
 							content.id,
@@ -3865,6 +3868,24 @@ export class InteractiveMode {
 	private clearLlmOrchestratorQueueProgress(): void {
 		if (this.footerDataProvider.getQueuedProgress()?.source === "llm-orchestrator") {
 			this.footerDataProvider.setQueuedProgress(undefined);
+		}
+	}
+
+	private updateQueuedFooterSpinnerTimer(): void {
+		const shouldAnimate = this.footerDataProvider.getQueuedProgress() !== undefined;
+		if (shouldAnimate && !this.queuedFooterSpinnerTimer) {
+			this.queuedFooterSpinnerTimer = setInterval(() => {
+				if (this.footerDataProvider.getQueuedProgress() === undefined) {
+					this.updateQueuedFooterSpinnerTimer();
+					return;
+				}
+				this.ui.requestRender();
+			}, QUEUED_FOOTER_ANIMATION_MS);
+			return;
+		}
+		if (!shouldAnimate && this.queuedFooterSpinnerTimer) {
+			clearInterval(this.queuedFooterSpinnerTimer);
+			this.queuedFooterSpinnerTimer = undefined;
 		}
 	}
 
@@ -6339,6 +6360,10 @@ export class InteractiveMode {
 	stop(): void {
 		if (this.settingsManager.getShowTerminalProgress()) {
 			this.ui.terminal.setProgress(false);
+		}
+		if (this.queuedFooterSpinnerTimer) {
+			clearInterval(this.queuedFooterSpinnerTimer);
+			this.queuedFooterSpinnerTimer = undefined;
 		}
 		if (this.loadingAnimation) {
 			this.loadingAnimation.stop();

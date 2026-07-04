@@ -1,5 +1,5 @@
 import { visibleWidth } from "@dst0/p-tui";
-import { beforeAll, describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import type {
 	GenerationProgress,
@@ -194,8 +194,32 @@ describe("FooterComponent width handling", () => {
 		);
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("QUEUED #2, 1 ahead");
+		expect(statsLine).toContain("QUEUED");
+		expect(statsLine).toContain("#2, 1 ahead");
 		expect(statsLine).not.toContain("QUEUED 2");
+	});
+
+	it("animates queued progress with a one-character spinner", () => {
+		vi.useFakeTimers();
+		try {
+			const session = createSession({ sessionName: "" });
+			const footer = new FooterComponent(
+				session,
+				createFooterData(1, {
+					queued: { messages: 2, position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
+				}),
+			);
+
+			vi.setSystemTime(0);
+			const firstStatsLine = stripAnsi(footer.render(120)[1]);
+			vi.setSystemTime(250);
+			const secondStatsLine = stripAnsi(footer.render(120)[1]);
+
+			expect(firstStatsLine).toContain("QUEUED | #2, 1 ahead");
+			expect(secondStatsLine).toContain("QUEUED / #2, 1 ahead");
+		} finally {
+			vi.useRealTimers();
+		}
 	});
 
 	it("shows sending progress until provider progress arrives", () => {
@@ -222,7 +246,8 @@ describe("FooterComponent width handling", () => {
 		);
 
 		const statsLine = stripAnsi(footer.render(120)[1]);
-		expect(statsLine).toContain("QUEUED #3, 2 ahead");
+		expect(statsLine).toContain("QUEUED");
+		expect(statsLine).toContain("#3, 2 ahead");
 		expect(statsLine).not.toContain("SENDING");
 	});
 

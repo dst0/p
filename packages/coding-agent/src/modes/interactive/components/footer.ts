@@ -4,6 +4,9 @@ import type { AgentSession } from "../../../core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.ts";
 import { theme } from "../theme/theme.ts";
 
+const QUEUED_SPINNER_FRAMES = ["|", "/", "-", "\\"];
+export const QUEUED_FOOTER_ANIMATION_MS = 250;
+
 /**
  * Sanitize text for display in a single-line status.
  * Removes newlines, tabs, carriage returns, and other control characters.
@@ -60,6 +63,11 @@ function formatQueuedProgress(queued: { messages: number; position?: number; que
 		return `#${queued.position}, ${aheadText}`;
 	}
 	return queued.messages.toString();
+}
+
+function formatQueuedSpinner(now = Date.now()): string {
+	const frameIndex = Math.floor(now / QUEUED_FOOTER_ANIMATION_MS) % QUEUED_SPINNER_FRAMES.length;
+	return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
 }
 
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
@@ -243,7 +251,9 @@ export class FooterComponent implements Component {
 				this.lastGenRate = gen.tokensPerSecond;
 			}
 			if (!prefill && !gen && queued) {
-				statsParts.push(theme.fg("accent", `${theme.bold("QUEUED")} ${formatQueuedProgress(queued)}`));
+				statsParts.push(
+					theme.fg("accent", `${theme.bold("QUEUED")} ${formatQueuedSpinner()} ${formatQueuedProgress(queued)}`),
+				);
 			}
 			if (!prefill && !gen && !queued && sending) {
 				statsParts.push(theme.fg("accent", `${theme.bold("SENDING")} ${sending.model}`));

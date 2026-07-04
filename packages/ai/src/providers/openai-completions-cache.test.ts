@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AssistantMessage, Model } from "../types.ts";
-import { streamSimpleOpenAICompletions } from "./openai-completions.ts";
+import { parseOpenAICompletionsProgressChunk, streamSimpleOpenAICompletions } from "./openai-completions.ts";
 
 function createLocalMiniPcModel(): Model<"openai-completions"> {
 	return {
@@ -18,6 +18,46 @@ function createLocalMiniPcModel(): Model<"openai-completions"> {
 }
 
 describe("openai completions local llama cache compatibility", () => {
+	it("parses llm-orchestrator queue position progress chunks", () => {
+		const assistant: AssistantMessage = {
+			role: "assistant",
+			content: [],
+			api: "openai-completions",
+			provider: "mini-pc-11450",
+			model: "mini-pc/qwen3.6-27b-iq4xs-q4kv",
+			usage: {
+				input: 0,
+				output: 0,
+				cacheRead: 0,
+				cacheWrite: 0,
+				totalTokens: 0,
+				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+			},
+			stopReason: "stop",
+			timestamp: 0,
+		};
+
+		const event = parseOpenAICompletionsProgressChunk(
+			{
+				type: "queue_progress",
+				position: 3,
+				queued_ahead: 2,
+				queue: "worker-queue",
+				worker_id: "llama-gpu",
+			} as unknown as Parameters<typeof parseOpenAICompletionsProgressChunk>[0],
+			assistant,
+		);
+
+		expect(event).toEqual({
+			type: "queue_progress",
+			queue: "worker-queue",
+			position: 3,
+			queuedAhead: 2,
+			workerId: "llama-gpu",
+			partial: assistant,
+		});
+	});
+
 	it("enables llama cache_prompt for local discovered mini-pc models", async () => {
 		let capturedPayload: Record<string, unknown> | undefined;
 		const stream = streamSimpleOpenAICompletions(

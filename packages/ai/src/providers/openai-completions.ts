@@ -170,7 +170,10 @@ function parseLlamaPromptProgress(
 	};
 }
 
-function parseProgressChunk(chunk: ChatCompletionChunk, output: AssistantMessage): ProgressChunk | undefined {
+export function parseOpenAICompletionsProgressChunk(
+	chunk: ChatCompletionChunk,
+	output: AssistantMessage,
+): ProgressChunk | undefined {
 	const fields = chunk as ChatCompletionChunk & Record<string, unknown>;
 	const llamaPromptProgress = parseLlamaPromptProgress(fields, output);
 	if (llamaPromptProgress) {
@@ -498,7 +501,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
 					output.responseModel ||= chunk.model;
 				}
 
-				const progressEvent = parseProgressChunk(chunk, output);
+				const progressEvent = parseOpenAICompletionsProgressChunk(chunk, output);
 				if (progressEvent) {
 					stream.push(progressEvent);
 				}

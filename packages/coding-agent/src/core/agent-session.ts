@@ -112,7 +112,13 @@ import {
 } from "./extensions/index.ts";
 import { emitSessionShutdownEvent } from "./extensions/runner.ts";
 import { type ConstraintPhase, evaluateGuardrails, type GuardrailReport } from "./guardrails.ts";
-import { type BashExecutionMessage, type CustomMessage, FAST_RESPONDER_CUSTOM_TYPE } from "./messages.ts";
+import {
+	type BashExecutionMessage,
+	type CustomMessage,
+	FAST_RESPONDER_CUSTOM_TYPE,
+	filterSleepToolUseForHistory,
+	SLEEP_TOOL_NAME,
+} from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
 import {
 	createProjectMemoryContext,
@@ -172,10 +178,10 @@ const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
 const MARK_SESSION_PROGRESS_TOOL_NAME = "mark_session_progress";
-const SLEEP_TOOL_NAME = "sleep";
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
 Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, and "none" only after explicitly checking that no state change is needed.
+For action "replan", provide the complete current plan; omitted open items are treated as no longer in scope.
 When an existing plan item changes status during work, call mark_session_progress(task, status, next?) with the existing visible task text instead of adding another plan item through update_session_state.
 This is the default state protocol and is separate from /plan mode; do not wait for user approval unless the user explicitly asked for confirmation.
 If update_session_state is not available, fall back to appending exactly one hidden state block at the end of every completed assistant turn:
@@ -446,6 +452,7 @@ function normalizeStateTextList(values: string[] | undefined): string[] {
 function hasStateToolPatchContent(patch: StatePatch): boolean {
 	return (
 		patch.canonicalRequest !== undefined ||
+		(patch.plan?.replace?.length ?? 0) > 0 ||
 		(patch.plan?.add?.length ?? 0) > 0 ||
 		(patch.plan?.update?.length ?? 0) > 0 ||
 		patch.progress !== undefined ||
@@ -454,6 +461,34 @@ function hasStateToolPatchContent(patch: StatePatch): boolean {
 		(patch.evidence?.add?.length ?? 0) > 0 ||
 		patch.audit !== undefined
 	);
+}
+
+function getOpenSessionStateItems(state: StructuredSessionState): string[] {
+	const openPlanItems = state.plan
+		.filter((item) => item.status !== "done")
+		.map((item) => `${item.text} (${item.status})`);
+	if (openPlanItems.length > 0) {
+		return openPlanItems;
+	}
+	return [
+		...state.progress.current.map((item) => `${item} (current)`),
+		...state.progress.next.map((item) => `${item} (next)`),
+		...state.progress.blocked.map((item) => `${item} (blocked)`),
+	];
+}
+
+function getFinishWorkStatus(args: unknown): string | undefined {
+	return isRecord(args) && typeof args.status === "string" ? args.status : undefined;
+}
+
+function getFinishWorkRemainingWork(args: unknown): string[] {
+	if (!isRecord(args) || !Array.isArray(args.remaining_work)) {
+		return [];
+	}
+	return args.remaining_work
+		.filter((item): item is string => typeof item === "string")
+		.map((item) => item.trim())
+		.filter((item) => item.length > 0);
 }
 
 function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
@@ -1438,6 +1473,15 @@ export class AgentSession {
 					};
 				}
 			}
+			if (toolCall.name === FINISH_WORK_TOOL_NAME) {
+				const blockReason = this._getFinishWorkSessionStateBlockReason(args);
+				if (blockReason) {
+					return {
+						block: true,
+						reason: blockReason,
+					};
+				}
+			}
 
 			const runner = this._extensionRunner;
 			if (!runner.hasHandlers("tool_call")) {
@@ -1520,6 +1564,41 @@ export class AgentSession {
 				isError: nextIsError,
 			};
 		};
+	}
+
+	private _getFinishWorkSessionStateBlockReason(args: unknown): string | undefined {
+		const state = getLatestStructuredSessionState(this.sessionManager.getBranch());
+		if (!state) {
+			return undefined;
+		}
+		const openItems = getOpenSessionStateItems(state);
+		if (openItems.length === 0) {
+			return undefined;
+		}
+
+		const status = getFinishWorkStatus(args);
+		const remainingWork = getFinishWorkRemainingWork(args);
+		if ((status === "partial" || status === "failed") && remainingWork.length > 0) {
+			return undefined;
+		}
+
+		const preview = openItems
+			.slice(0, 8)
+			.map((item) => `- ${item}`)
+			.join("\n");
+		const suffix = openItems.length > 8 ? `\n- ...and ${openItems.length - 8} more` : "";
+		if (status === "partial" || status === "failed") {
+			return (
+				`Cannot call ${FINISH_WORK_TOOL_NAME} with status "${status}" while session state has unresolved work ` +
+				`unless remaining_work lists what is still unfinished:\n${preview}${suffix}`
+			);
+		}
+		return (
+			`Cannot call ${FINISH_WORK_TOOL_NAME} with status "${status ?? "success"}" while session state has ` +
+			`unresolved work:\n${preview}${suffix}\n` +
+			`Call ${MARK_SESSION_PROGRESS_TOOL_NAME} for completed existing items, call ${UPDATE_SESSION_STATE_TOOL_NAME} ` +
+			`with action "replan" if the scope changed, or finish with status "partial" and remaining_work.`
+		);
 	}
 
 	// =========================================================================
@@ -1619,13 +1698,17 @@ export class AgentSession {
 					event.message.display,
 					event.message.details,
 				);
-			} else if (
-				event.message.role === "user" ||
-				event.message.role === "assistant" ||
-				(event.message.role === "toolResult" && event.message.toolName !== "sleep")
-			) {
-				// Regular LLM message - persist as SessionMessageEntry
-				persistedEntryId = this.sessionManager.appendMessage(event.message);
+			} else {
+				const messageForHistory = filterSleepToolUseForHistory(event.message);
+				if (
+					messageForHistory &&
+					(messageForHistory.role === "user" ||
+						messageForHistory.role === "assistant" ||
+						messageForHistory.role === "toolResult")
+				) {
+					// Regular LLM message - persist as SessionMessageEntry
+					persistedEntryId = this.sessionManager.appendMessage(messageForHistory);
+				}
 			}
 			// Other message types (bashExecution, compactionSummary, branchSummary) are persisted elsewhere
 
@@ -2064,7 +2147,10 @@ export class AgentSession {
 
 	/** All messages including custom types like BashExecutionMessage */
 	get messages(): AgentMessage[] {
-		return this.agent.state.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message));
+		return this.agent.state.messages
+			.filter((message) => !isInternalCompletionProtocolRepairMessage(message))
+			.map(filterSleepToolUseForHistory)
+			.filter((message): message is AgentMessage => message !== undefined);
 	}
 
 	/** Current steering mode */
@@ -3408,6 +3494,7 @@ Plan mode is active because the user invoked /plan.
 			promptGuidelines: [
 				`Call ${UPDATE_SESSION_STATE_TOOL_NAME} before any other tool on every new user turn, including the first request and queued follow-ups.`,
 				"Use it to preserve the durable goal when the latest user message is a follow-up, or to explicitly change the goal when the user corrects the objective.",
+				`For action "replan", provide the complete current plan; omitted open items are removed from the active plan.`,
 				`Use ${MARK_SESSION_PROGRESS_TOOL_NAME} instead when only an existing plan item changes status.`,
 				"Do not wait for user approval in normal mode; this is internal state maintenance, not /plan approval mode.",
 			],
@@ -3521,7 +3608,9 @@ Plan mode is active because the user invoked /plan.
 								evidenceEntryIds: item.evidenceEntryIds,
 							})),
 						}
-					: { add: planItems };
+					: input.action === "replan"
+						? { replace: planItems }
+						: { add: planItems };
 		const patch: StatePatch = {
 			canonicalRequest:
 				goal || liveState.canonicalRequest.originalRequests.length > 0
@@ -5590,10 +5679,10 @@ Plan mode is active because the user invoked /plan.
 	 * Get session statistics.
 	 */
 	getSessionStats(): SessionStats {
-		const state = this.state;
-		const userMessages = state.messages.filter((m) => m.role === "user").length;
-		const assistantMessages = state.messages.filter((m) => m.role === "assistant").length;
-		const toolResults = state.messages.filter((m) => m.role === "toolResult").length;
+		const messages = this.messages;
+		const userMessages = messages.filter((m) => m.role === "user").length;
+		const assistantMessages = messages.filter((m) => m.role === "assistant").length;
+		const toolResults = messages.filter((m) => m.role === "toolResult").length;
 
 		let toolCalls = 0;
 		let totalInput = 0;
@@ -5602,7 +5691,7 @@ Plan mode is active because the user invoked /plan.
 		let totalCacheWrite = 0;
 		let totalCost = 0;
 
-		for (const message of state.messages) {
+		for (const message of messages) {
 			if (message.role === "assistant") {
 				const assistantMsg = message as AssistantMessage;
 				toolCalls += assistantMsg.content.filter((c) => c.type === "toolCall").length;
@@ -5621,7 +5710,7 @@ Plan mode is active because the user invoked /plan.
 			assistantMessages,
 			toolCalls,
 			toolResults,
-			totalMessages: state.messages.length,
+			totalMessages: messages.length,
 			tokens: {
 				input: totalInput,
 				output: totalOutput,

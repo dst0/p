@@ -382,6 +382,69 @@ describe("session state update protocol", () => {
 		]);
 	});
 
+	it("replaces stale open plan items when the current plan is replanned", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			plan: {
+				add: [
+					{
+						id: "plan-old",
+						text: "Old stale task",
+						status: "in_progress",
+						evidenceEntryIds: ["seed-entry"],
+					},
+					{
+						id: "plan-current",
+						text: "Run checks",
+						status: "not_started",
+						evidenceEntryIds: ["seed-entry"],
+					},
+				],
+			},
+		});
+
+		const state = mergeStructuredSessionState(previous, {
+			plan: {
+				replace: [
+					{
+						id: "incoming-current",
+						text: "Run checks",
+						status: "in_progress",
+						evidenceEntryIds: ["assistant-entry"],
+					},
+				],
+			},
+		});
+
+		expect(state.plan.map((item) => [item.id, item.text, item.status])).toEqual([
+			["plan-current", "Run checks", "in_progress"],
+		]);
+	});
+
+	it("deduplicates repeated decisions with the same text and rationale", () => {
+		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			decisions: {
+				add: [
+					{
+						id: "decision-one",
+						decision: "Sleep filtering is complete",
+						rationale: "Both persistence and TUI filtering pass checks.",
+						evidencePointers: [],
+						status: "active",
+					},
+					{
+						id: "decision-two",
+						decision: "Sleep filtering is complete",
+						rationale: "Both persistence and TUI filtering pass checks.",
+						evidencePointers: [],
+						status: "active",
+					},
+				],
+			},
+		});
+
+		expect(state.decisions.map((decision) => decision.decision)).toEqual(["Sleep filtering is complete"]);
+	});
+
 	it("rejects malformed patches safely while stripping protocol text", () => {
 		const parsed = parseSessionStateUpdateBlock(
 			`Visible answer.\n<session_state_update>{"type":"unexpected"}</session_state_update>`,
