@@ -13,6 +13,7 @@
 - Fixed LLM orchestrator model reload recovery to keep retrying `no available workers` 503s with a longer model-loading retry profile.
 - Fixed structured session state updates to mark existing plan progress without duplicating or losing task priority.
 - Fixed `finish_work` so successful completion is blocked while structured session state still has unresolved plan or next-step items.
+- Fixed session state replan to preserve all original user-requested plan items instead of dropping them as out-of-scope.
 
 ## [0.2.6] - 2026-07-02
 
