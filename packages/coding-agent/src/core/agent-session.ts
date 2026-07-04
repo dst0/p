@@ -935,15 +935,13 @@ function getLatestUserText(messages: AgentMessage[]): string {
 	return "";
 }
 
-function scoreRecallCandidate(query: string, candidate: RecallCandidate): number {
-	const normalizedQuery = query.trim().toLowerCase();
+function scoreRecallCandidate(normalizedQuery: string, terms: string[], candidate: RecallCandidate): number {
 	if (!normalizedQuery) return 0;
 	const pointerId = candidate.pointer.id.toLowerCase();
 	if (pointerId === normalizedQuery) return 1;
 	if (pointerId.includes(normalizedQuery)) return 0.95;
 
 	const haystack = `${candidate.pointer.summary}\n${candidate.searchText}`.toLowerCase();
-	const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 1);
 	if (terms.length === 0) return haystack.includes(normalizedQuery) ? 0.5 : 0;
 	const matchedTerms = terms.filter((term) => haystack.includes(term)).length;
 	return matchedTerms === 0 ? 0 : matchedTerms / terms.length;
@@ -3954,11 +3952,13 @@ Plan mode is active because the user invoked /plan.
 		const defaultMaxTokens = params.includeRaw ? 4000 : 1200;
 		const maxTokens = Math.max(1, Math.min(params.maxTokens ?? defaultMaxTokens, 4000));
 		const kindFilter = params.kind ? new Set<EvidenceKind>(params.kind) : undefined;
+		const normalizedQuery = params.query.trim().toLowerCase();
+		const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 1);
 		const scored = this._collectRecallCandidates()
 			.filter((candidate) => !kindFilter || kindFilter.has(candidate.pointer.kind))
 			.map((candidate) => ({
 				candidate,
-				relevance: scoreRecallCandidate(params.query, candidate),
+				relevance: scoreRecallCandidate(normalizedQuery, terms, candidate),
 			}))
 			.filter((item) => item.relevance > 0)
 			.sort((a, b) => b.relevance - a.relevance || a.candidate.pointer.id.localeCompare(b.candidate.pointer.id));
