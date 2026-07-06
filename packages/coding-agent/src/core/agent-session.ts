@@ -1470,6 +1470,10 @@ export class AgentSession {
 				const blockReason = this._getFinishWorkSessionStateBlockReason(args);
 				if (blockReason) {
 					this._autoExecuteUpdateSessionStateForFinishWork();
+					const updatedBlockReason = this._getFinishWorkSessionStateBlockReason(args);
+					if (updatedBlockReason) {
+						return { block: true, reason: updatedBlockReason };
+					}
 				}
 			}
 

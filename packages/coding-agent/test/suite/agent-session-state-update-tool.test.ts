@@ -214,30 +214,23 @@ describe("AgentSession default session-state tool", () => {
 		}
 	});
 
-	it("requires update_session_state before completion after a direct assistant answer", async () => {
+	it("auto-prepends update_session_state before completion after a direct assistant answer", async () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([
 				fauxAssistantMessage("plain answer without finish_work"),
-				fauxAssistantMessage(finishCall("premature finish"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(updateStateCall("Answer directly after recording the goal"), {
-					stopReason: "toolUse",
-				}),
-				fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(finishCall("recorded state before finishing"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(finishCall("auto-prepended state"), { stopReason: "toolUse" }),
 			]);
 
 			await harness.session.prompt("Answer directly after recording the goal");
 
 			const finishEnds = toolEndEvents(harness, "finish_work");
-			expect(finishEnds).toHaveLength(2);
-			expect(finishEnds[0]?.isError).toBe(true);
-			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain(UPDATE_TOOL);
-			expect(finishEnds[1]?.isError).toBe(false);
-			expect(toolEndEvents(harness, UPDATE_TOOL)[0]?.isError).toBe(false);
-			expect(getLatestStructuredSessionState(harness.sessionManager.getEntries())?.canonicalRequest.current).toBe(
-				"Answer directly after recording the goal",
-			);
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(false);
+
+			// Auto-prepend creates state from current values; on first turn there is no prior state
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.canonicalRequest.current).toBe("");
 		} finally {
 			harness.cleanup();
 		}
