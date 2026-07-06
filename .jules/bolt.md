@@ -1,3 +1,6 @@
 ## 2026-06-30 - Regex inside tight loops in JS is slow
 **Learning:** Checking for boundary characters inside a tight string-matching loop is significantly slower when using `RegExp.test()` compared to explicitly checking for individual characters via `===` or `!==`. Additionally, allocating `.toLowerCase()` results repeatedly in a loop is an unnecessary performance penalty when strings can be pre-lowercased before entering the iteration scope.
 **Action:** Always prefer direct string comparison for simple character classes in high-frequency loops instead of using a generic regex test. Consider hoisting string allocations or normalization steps outside of heavy iterative processes.
+## 2026-07-06 - Auto-generated files in workspace should be excluded from performance changes unless running a specific script
+**Learning:** Running generic test scripts or 'npm run build' that contain code-generation steps can unintentionally modify and track non-source files (like models.generated.ts). When applying precise performance optimizations, changes must strictly target source files that were consciously edited.
+**Action:** Always run `git diff` or `git status` prior to submitting to verify that only intentionally modified files are staged for commit. Specifically revert any changes to generated files before committing.
