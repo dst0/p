@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Auto-prepend `update_session_state` when `finish_work` is called without prior session state update
+- Re-check block reason after auto-execute to avoid stale block state
+
 ## [0.3.0] - 2026-07-04
 
 ### Added
