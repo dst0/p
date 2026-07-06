@@ -79,6 +79,7 @@ import {
 	stripSessionStateUpdateBlocks,
 	stubToolResultsForCompactionSummary,
 	stubToolResultsForPrompt,
+	type TouchedFile,
 	truncateKeptMessages,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -1451,35 +1452,24 @@ export class AgentSession {
 				toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME &&
 				toolCall.name !== SLEEP_TOOL_NAME
 			) {
-				return {
-					block: true,
-					reason:
-						`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
-						"record or revise the goal, plan, and next action for the latest user message.",
-				};
-			}
-			if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
-				const progressToolName = this.getActiveToolNames().includes(MARK_SESSION_PROGRESS_TOOL_NAME)
-					? MARK_SESSION_PROGRESS_TOOL_NAME
-					: this.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME)
-						? UPDATE_SESSION_STATE_TOOL_NAME
-						: undefined;
-				if (progressToolName) {
+				if (toolCall.name === FINISH_WORK_TOOL_NAME) {
+					this._autoExecuteUpdateSessionStateForFinishWork();
+				} else {
 					return {
 						block: true,
 						reason:
-							`Before calling ${FINISH_WORK_TOOL_NAME}, call ${progressToolName} to record the latest ` +
-							"completed, current, blocked, or next session-state progress.",
+							`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
+							"record or revise the goal, plan, and next action for the latest user message.",
 					};
 				}
+			}
+			if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
+				this._autoExecuteUpdateSessionStateForFinishWork();
 			}
 			if (toolCall.name === FINISH_WORK_TOOL_NAME) {
 				const blockReason = this._getFinishWorkSessionStateBlockReason(args);
 				if (blockReason) {
-					return {
-						block: true,
-						reason: blockReason,
-					};
+					this._autoExecuteUpdateSessionStateForFinishWork();
 				}
 			}
 
@@ -3549,6 +3539,41 @@ Plan mode is active because the user invoked /plan.
 			planItems: state.plan.length,
 			toolCalls: this.getSessionStats().toolCalls,
 		};
+	}
+
+	/**
+	 * Silently execute update_session_state using current session state as defaults.
+	 * Clears the blocking flags so that a subsequent finish_work call can proceed.
+	 */
+	private _autoExecuteUpdateSessionStateForFinishWork(): void {
+		if (!this._progressUpdateRequiredBeforeFinish && !this._stateUpdateRequiredForCurrentUserTurn) {
+			return;
+		}
+
+		const state = getLatestStructuredSessionState(this.sessionManager.getBranch());
+		const params: UpdateSessionStateInput = {
+			action: "progress_update",
+			goal: state?.canonicalRequest.current ?? "",
+			plan: (state?.plan ?? []).map((item) => ({ text: item.text, status: item.status })),
+			progress: state?.progress ?? { done: [], current: [], next: [], blocked: [] },
+			decisions: (state?.decisions ?? []).map((item) => ({ decision: item.decision, rationale: item.rationale })),
+			risks: state?.audit.knownRisks ?? [],
+			touchedFiles: (state?.codebase.touchedFiles ?? []).map((file: TouchedFile) => ({
+				path: file.path,
+				status: file.status,
+				summary: file.summary,
+			})),
+			evidence: (state?.evidence ?? []).map((item: EvidencePointer) => ({
+				kind: item.kind,
+				summary: item.summary,
+				path: item.path,
+				retrieveWhen: item.retrieveWhen,
+			})),
+		};
+
+		this._applyUpdateSessionState(params);
+		this._progressUpdateRequiredBeforeFinish = false;
+		this._stateUpdateRequiredForCurrentUserTurn = false;
 	}
 
 	private _createStatePatchFromUpdateSessionStateInput(
