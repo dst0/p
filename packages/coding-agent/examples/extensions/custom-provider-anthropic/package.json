@@ -1,7 +1,7 @@
 {
   "name": "p-extension-custom-provider-anthropic",
   "private": true,
-  "version": "0.3.0",
+  "version": "0.4.0",
   "type": "module",
   "scripts": {
     "clean": "echo 'nothing to clean'",
