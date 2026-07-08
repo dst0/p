@@ -608,9 +608,10 @@ export class CombinedAutocompleteProvider implements AutocompleteProvider {
 
 			const entries = readdirSync(searchDir, { withFileTypes: true });
 			const suggestions: AutocompleteItem[] = [];
+			const searchPrefixLower = searchPrefix.toLowerCase();
 
 			for (const entry of entries) {
-				if (!entry.name.toLowerCase().startsWith(searchPrefix.toLowerCase())) {
+				if (!entry.name.toLowerCase().startsWith(searchPrefixLower)) {
 					continue;
 				}
 
