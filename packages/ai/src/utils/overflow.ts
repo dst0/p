@@ -60,6 +60,9 @@ const OVERFLOW_PATTERNS = [
 	/^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i, // Cerebras: 400/413 with no body
 ];
 
+// Optimization: Combining patterns into a single Regex reduces overhead in tight evaluation loops compared to iterating .some()
+const OVERFLOW_REGEX = new RegExp(OVERFLOW_PATTERNS.map((p) => p.source).join("|"), "i");
+
 /**
  * Patterns that indicate non-overflow errors (e.g. rate limiting, server errors).
  * Error messages matching any of these are excluded from overflow detection
@@ -74,6 +77,9 @@ const NON_OVERFLOW_PATTERNS = [
 	/rate limit/i, // Generic rate limiting
 	/too many requests/i, // Generic HTTP 429 style
 ];
+
+// Optimization: Combining patterns into a single Regex reduces overhead in tight evaluation loops compared to iterating .some()
+const NON_OVERFLOW_REGEX = new RegExp(NON_OVERFLOW_PATTERNS.map((p) => p.source).join("|"), "i");
 
 /**
  * Check if an assistant message represents a context overflow error.
@@ -129,8 +135,8 @@ export function isContextOverflow(message: AssistantMessage, contextWindow?: num
 	// Case 1: Check error message patterns
 	if (message.stopReason === "error" && message.errorMessage) {
 		// Skip messages matching known non-overflow patterns (e.g. throttling / rate-limit)
-		const isNonOverflow = NON_OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!));
-		if (!isNonOverflow && OVERFLOW_PATTERNS.some((p) => p.test(message.errorMessage!))) {
+		const isNonOverflow = NON_OVERFLOW_REGEX.test(message.errorMessage!);
+		if (!isNonOverflow && OVERFLOW_REGEX.test(message.errorMessage!)) {
 			return true;
 		}
 	}

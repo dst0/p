@@ -1,3 +1,6 @@
 ## 2026-06-30 - Regex inside tight loops in JS is slow
 **Learning:** Checking for boundary characters inside a tight string-matching loop is significantly slower when using `RegExp.test()` compared to explicitly checking for individual characters via `===` or `!==`. Additionally, allocating `.toLowerCase()` results repeatedly in a loop is an unnecessary performance penalty when strings can be pre-lowercased before entering the iteration scope.
 **Action:** Always prefer direct string comparison for simple character classes in high-frequency loops instead of using a generic regex test. Consider hoisting string allocations or normalization steps outside of heavy iterative processes.
+## 2026-06-30 - Combining array of Regexes is faster than .some(.test)
+**Learning:** Iterating through an array of regular expressions and checking each one individually using `.some(regex => regex.test(string))` is significantly slower than combining those regular expressions into a single `RegExp` pattern using `.map(p => p.source).join('|')` and testing once. For an array of ~25 patterns, testing the combined regex is about 5x faster than testing them individually.
+**Action:** When performing high-frequency pattern matching against a fixed set of fallback regular expressions, combine them into a single `RegExp` at module load time to maximize evaluation performance.
