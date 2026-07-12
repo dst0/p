@@ -65,10 +65,12 @@ import {
 	generateBranchSummary,
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
+	isStructuredSessionState,
 	mergeStructuredSessionState,
 	type PlanStatus,
 	parseSessionStateUpdateBlock,
 	prepareCompaction,
+	readSessionStateFile,
 	renderStructuredSessionCheckpoint,
 	renderWorkingSessionState,
 	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
@@ -81,6 +83,7 @@ import {
 	stubToolResultsForPrompt,
 	type TouchedFile,
 	truncateKeptMessages,
+	writeSessionStateFile,
 } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import { exportSessionToHtml, type ToolHtmlRenderer } from "./export-html/index.ts";
@@ -1600,7 +1603,7 @@ export class AgentSession {
 	}
 
 	private _getFinishWorkSessionStateBlockReason(args: unknown): string | undefined {
-		const state = getLatestStructuredSessionState(this.sessionManager.getBranch());
+		const state = readSessionStateFile(this._cwd, this.sessionManager.getSessionId());
 		if (!state) {
 			return undefined;
 		}
@@ -1885,6 +1888,7 @@ export class AgentSession {
 		const previous = this._getCurrentStructuredSessionState(branchEntries);
 		const state = mergeStructuredSessionState(previous, parsed.patch);
 		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+		writeSessionStateFile(this._cwd, state);
 	}
 
 	/** Emit extension events based on agent events */
@@ -3575,6 +3579,7 @@ Plan mode is active because the user invoked /plan.
 		}
 		const state = mergeStructuredSessionState(previous, patch);
 		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+		writeSessionStateFile(this._cwd, state);
 		return {
 			status: "updated",
 			action: input.action,
@@ -3768,6 +3773,7 @@ Plan mode is active because the user invoked /plan.
 		};
 		const state = mergeStructuredSessionState(previous, patch);
 		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
+		writeSessionStateFile(this._cwd, state);
 		return {
 			status: "updated",
 			task,
@@ -4479,8 +4485,9 @@ Plan mode is active because the user invoked /plan.
 				details,
 				fromExtension,
 			);
-			if (!fromExtension && structuredState) {
+			if (!fromExtension && structuredState && isStructuredSessionState(structuredState)) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
+				writeSessionStateFile(this._cwd, structuredState);
 			}
 			this._syncProjectMemory();
 			const newEntries = this.sessionManager.getEntries();
@@ -4794,8 +4801,9 @@ Plan mode is active because the user invoked /plan.
 				details,
 				fromExtension,
 			);
-			if (!fromExtension && structuredState) {
+			if (!fromExtension && structuredState && isStructuredSessionState(structuredState)) {
 				this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
+				writeSessionStateFile(this._cwd, structuredState);
 			}
 			this._syncProjectMemory();
 			const newEntries = this.sessionManager.getEntries();
