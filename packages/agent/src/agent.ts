@@ -22,6 +22,7 @@ import type {
 	AgentTool,
 	BeforeToolCallContext,
 	BeforeToolCallResult,
+	PrepareNextTurnContext,
 	QueueMode,
 	StreamFn,
 	ToolExecutionMode,
@@ -106,6 +107,7 @@ export interface AgentOptions {
 	afterToolCall?: (context: AfterToolCallContext, signal?: AbortSignal) => Promise<AfterToolCallResult | undefined>;
 	prepareNextTurn?: (
 		signal?: AbortSignal,
+		context?: PrepareNextTurnContext,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	steeringMode?: QueueMode;
 	followUpMode?: QueueMode;
@@ -189,6 +191,7 @@ export class Agent {
 	) => Promise<AfterToolCallResult | undefined>;
 	public prepareNextTurn?: (
 		signal?: AbortSignal,
+		context?: PrepareNextTurnContext,
 	) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 	private activeRun?: ActiveRun;
 	/** Session identifier forwarded to providers for cache-aware backends. */
@@ -449,7 +452,9 @@ export class Agent {
 			completionLimits: this.completionLimits,
 			beforeToolCall: this.beforeToolCall,
 			afterToolCall: this.afterToolCall,
-			prepareNextTurn: this.prepareNextTurn ? async () => await this.prepareNextTurn?.(this.signal) : undefined,
+			prepareNextTurn: this.prepareNextTurn
+				? async (context) => await this.prepareNextTurn?.(this.signal, context)
+				: undefined,
 			convertToLlm: this.convertToLlm,
 			transformContext: this.transformContext,
 			getApiKey: this.getApiKey,

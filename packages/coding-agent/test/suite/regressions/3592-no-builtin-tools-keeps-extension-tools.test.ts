@@ -95,6 +95,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
 			"session_recall",
 			"sleep",
 			"submit_plan",
+			"tool_search",
 			"update_session_state",
 			"write",
 		]);

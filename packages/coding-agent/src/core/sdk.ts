@@ -9,7 +9,7 @@ import {
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
-import { AgentSession } from "./agent-session.ts";
+import { AgentSession, TOOL_SEARCH_TOOL_NAME } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
@@ -86,6 +86,13 @@ export interface CreateAgentSessionOptions {
 	excludeTools?: string[];
 	/** Custom tools to register (in addition to built-in tools). */
 	customTools?: ToolDefinition[];
+	/**
+	 * Activate every registered extension/custom tool on startup.
+	 *
+	 * When false, extension tools remain registered and can be selected explicitly,
+	 * but their schemas are not sent to the first provider request. Defaults to false.
+	 */
+	includeAllExtensionTools?: boolean;
 
 	/** Resource loader. When omitted, DefaultResourceLoader is used. */
 	resourceLoader?: ResourceLoader;
@@ -292,6 +299,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		"update_session_state",
 		"session_recall",
 		"keep_context",
+		TOOL_SEARCH_TOOL_NAME,
 	];
 	if (options.userInputTools) {
 		defaultActiveToolNames.push("ask_user", "confirm_user");
@@ -441,6 +449,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		scopedModels: options.scopedModels,
 		resourceLoader,
 		customTools: options.customTools,
+		includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
 		modelRegistry,
 		initialActiveToolNames,
 		allowedToolNames,
@@ -450,42 +459,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		completionMode,
 	});
 	const extensionsResult = resourceLoader.getExtensions();
-
-	agent.prepareNextTurn = async () => {
-		const msgs = agent.state.messages;
-		if (msgs.length === 0) {
-			return {
-				model: agent.state.model,
-				thinkingLevel: agent.state.thinkingLevel,
-			};
-		}
-
-		const lastAssistantMsg = msgs
-			.slice()
-			.reverse()
-			.find((msg) => msg.role === "assistant") as Extract<AgentMessage, { role: "assistant" }> | undefined;
-
-		const turnUpdate = {
-			model: agent.state.model,
-			thinkingLevel: agent.state.thinkingLevel,
-		};
-
-		if (lastAssistantMsg) {
-			const compacted = await session.checkCompaction(lastAssistantMsg, false);
-			if (compacted) {
-				return {
-					...turnUpdate,
-					context: {
-						systemPrompt: agent.state.systemPrompt,
-						messages: agent.state.messages.slice(),
-						tools: agent.state.tools.slice(),
-					},
-				};
-			}
-		}
-
-		return turnUpdate;
-	};
 
 	return {
 		session,

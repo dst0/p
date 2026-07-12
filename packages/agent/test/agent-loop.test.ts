@@ -1541,6 +1541,72 @@ describe("agentLoop with AgentMessage", () => {
 		expect(convertedSecondTurnSystemPrompt).toBe("second prompt");
 	});
 
+	it("appends prepareNextTurn messages before the next provider request", async () => {
+		const toolSchema = Type.Object({});
+		const tool: AgentTool<typeof toolSchema, undefined> = {
+			name: "observe",
+			label: "Observe",
+			description: "Return an observation",
+			parameters: toolSchema,
+			async execute() {
+				return {
+					content: [{ type: "text", text: "observed" }],
+					details: undefined,
+				};
+			},
+		};
+		const checkpoint = createUserMessage("turn checkpoint: observation already completed");
+		let appended = false;
+		let secondTurnLastMessage = "";
+		const config: AgentLoopConfig = {
+			model: createModel(),
+			completionMode: "implicit",
+			convertToLlm: identityConverter,
+			prepareNextTurn: async () => {
+				if (appended) return undefined;
+				appended = true;
+				return { appendMessages: [checkpoint] };
+			},
+		};
+
+		let llmCalls = 0;
+		const stream = agentLoop(
+			[createUserMessage("observe once")],
+			{ systemPrompt: "", messages: [], tools: [tool] },
+			config,
+			undefined,
+			(_model, context) => {
+				llmCalls++;
+				if (llmCalls === 2) {
+					secondTurnLastMessage = getMessageText(context.messages.at(-1) as AgentMessage | undefined);
+				}
+				const mockStream = new MockAssistantStream();
+				queueMicrotask(() => {
+					mockStream.push({
+						type: "done",
+						reason: llmCalls === 1 ? "toolUse" : "stop",
+						message:
+							llmCalls === 1
+								? createAssistantMessage(
+										[{ type: "toolCall", id: "observe-1", name: "observe", arguments: {} }],
+										"toolUse",
+									)
+								: createAssistantMessage([{ type: "text", text: "done" }]),
+					});
+				});
+				return mockStream;
+			},
+		);
+
+		const events: AgentEvent[] = [];
+		for await (const event of stream) {
+			events.push(event);
+		}
+
+		expect(secondTurnLastMessage).toBe("turn checkpoint: observation already completed");
+		expect(events.filter((event) => event.type === "message_end" && event.message === checkpoint)).toHaveLength(1);
+	});
+
 	it("should stop after the current turn when shouldStopAfterTurn returns true", async () => {
 		const toolSchema = Type.Object({ value: Type.String() });
 		const executed: string[] = [];
@@ -2093,6 +2159,27 @@ describe("Explicit Completion Protocol", () => {
 		).toHaveLength(1);
 	});
 
+	it("stops repeated toolUse responses that contain no tool call", async () => {
+		const malformedResponse = createAssistantMessage(
+			[{ type: "thinking", thinking: "The page is loading. I should check it." }],
+			"toolUse",
+		);
+		const { messages, events, contexts } = await runScriptedAgentLoop(
+			Array.from({ length: 4 }, () => malformedResponse),
+			{ config: { completionMode: "explicit_finish" } },
+		);
+
+		expect(contexts).toHaveLength(4);
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
+		).toHaveLength(3);
+		expect(messages[messages.length - 1]).toMatchObject({
+			role: "assistant",
+			stopReason: "error",
+			errorMessage: expect.stringContaining("reported tool use without returning a valid tool call"),
+		});
+	});
+
 	it("stops clearly when explicit_finish makes no progress", async () => {
 		const { messages, events, contexts } = await runScriptedAgentLoop(
 			[
@@ -2115,6 +2202,29 @@ describe("Explicit Completion Protocol", () => {
 			stopReason: "error",
 			errorMessage: expect.stringContaining("did not call `finish_work`"),
 		});
+		expect(
+			events.filter((event) => event.type === "completion_protocol" && event.event === "no_progress_stop"),
+		).toHaveLength(1);
+	});
+
+	it("does not reset no-progress tracking after a failed tool call", async () => {
+		const { events, contexts } = await runScriptedAgentLoop(
+			[
+				createAssistantMessage([{ type: "text", text: "I will continue" }]),
+				createAssistantMessage(
+					[{ type: "toolCall", id: "missing-1", name: "missing_tool", arguments: {} }],
+					"toolUse",
+				),
+			],
+			{
+				config: {
+					completionMode: "explicit_finish",
+					completionLimits: { maxNoProgressTurns: 1, maxTurns: 10 },
+				},
+			},
+		);
+
+		expect(contexts).toHaveLength(2);
 		expect(
 			events.filter((event) => event.type === "completion_protocol" && event.event === "no_progress_stop"),
 		).toHaveLength(1);

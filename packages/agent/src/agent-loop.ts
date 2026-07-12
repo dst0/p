@@ -220,14 +220,9 @@ function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode):
 		maxTurns: config.completionLimits?.maxTurns ?? explicitFinishDefault ?? DEFAULT_MAX_TURNS,
 		maxNoProgressTurns:
 			config.completionLimits?.maxNoProgressTurns ?? explicitFinishDefault ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
-		maxMalformedToolRetries:
-			config.completionLimits?.maxMalformedToolRetries ??
-			explicitFinishDefault ??
-			DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
+		maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
 		maxEmptyAssistantRetries:
-			config.completionLimits?.maxEmptyAssistantRetries ??
-			explicitFinishDefault ??
-			DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
+			config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
 		maxMissingFinishRetries:
 			config.completionLimits?.maxMissingFinishRetries ??
 			explicitFinishDefault ??
@@ -270,7 +265,7 @@ function isEmptyAssistantMessage(message: AssistantMessage, toolCalls: AgentTool
 }
 
 function hasMalformedOrTruncatedToolCall(message: AssistantMessage, toolCalls: AgentToolCall[]): boolean {
-	if (message.stopReason === "length") {
+	if (message.stopReason === "length" || (message.stopReason === "toolUse" && toolCalls.length === 0)) {
 		return true;
 	}
 	if (toolCalls.length > 0) {
@@ -487,25 +482,35 @@ async function runLoop(
 					if (isEmptyAssistantMessage(message, toolCalls)) {
 						completionState.emptyAssistantRetries++;
 					}
+				} else if (toolResults.some((result) => !result.isError)) {
+					resetCompletionProgress(completionState);
+				} else if (toolCalls.length > 0) {
+					completionState.noProgressTurns++;
+				}
 
-					const malformedExceeded =
-						completionState.malformedToolRetries > completionLimits.maxMalformedToolRetries;
-					const emptyExceeded = completionState.emptyAssistantRetries > completionLimits.maxEmptyAssistantRetries;
-					const noProgressExceeded = completionState.noProgressTurns > completionLimits.maxNoProgressTurns;
-					if (malformedExceeded || emptyExceeded || noProgressExceeded) {
-						await emitProtocolFailure(
-							currentContext,
-							newMessages,
-							config,
-							emit,
-							completionMode,
-							"no_progress_stop",
-							`Agent stopped because the model did not call \`finish_work\` and made no progress for ${completionState.noProgressTurns} turns.`,
-							false,
-						);
-						return;
-					}
+				const malformedExceeded = completionState.malformedToolRetries > completionLimits.maxMalformedToolRetries;
+				const emptyExceeded = completionState.emptyAssistantRetries > completionLimits.maxEmptyAssistantRetries;
+				const noProgressExceeded = completionState.noProgressTurns > completionLimits.maxNoProgressTurns;
+				if (malformedExceeded || emptyExceeded || noProgressExceeded) {
+					const diagnostic = malformedExceeded
+						? `Agent stopped because the provider repeatedly reported tool use without returning a valid tool call after ${completionState.malformedToolRetries} attempts.`
+						: emptyExceeded
+							? `Agent stopped because the provider returned ${completionState.emptyAssistantRetries} empty responses without a valid tool call.`
+							: `Agent stopped because the model did not call \`finish_work\` and made no progress for ${completionState.noProgressTurns} turns.`;
+					await emitProtocolFailure(
+						currentContext,
+						newMessages,
+						config,
+						emit,
+						completionMode,
+						"no_progress_stop",
+						diagnostic,
+						false,
+					);
+					return;
+				}
 
+				if (protocolRepair) {
 					if (
 						completionMode === "hybrid" &&
 						protocolRepair.reason === "missing_finish_work_or_tool_call" &&
@@ -537,8 +542,6 @@ async function runLoop(
 						hasMoreToolCalls = true;
 						continue;
 					}
-				} else if (toolCalls.length > 0) {
-					resetCompletionProgress(completionState);
 				}
 			}
 
@@ -561,6 +564,12 @@ async function runLoop(
 								? undefined
 								: nextTurnSnapshot.thinkingLevel,
 				};
+				for (const appendedMessage of nextTurnSnapshot.appendMessages ?? []) {
+					await emit({ type: "message_start", message: appendedMessage });
+					await emit({ type: "message_end", message: appendedMessage });
+					currentContext.messages.push(appendedMessage);
+					newMessages.push(appendedMessage);
+				}
 			}
 
 			const canStopImplicitly =

@@ -338,6 +338,8 @@ describe("AgentSession retry and event characterization", () => {
 			"message_start:toolResult",
 			"message_end:toolResult",
 			"turn_end",
+			"message_start:custom",
+			"message_end:custom",
 			"turn_start",
 			"request_start",
 			"message_start:assistant",

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Persist tool-turn checkpoints and refreshed working state so agents continue from completed actions instead of repeating them
+- Keep the initial provider request small by registering extension and MCP tools lazily, with `tool_search` activating only relevant schemas instead of sending every cached tool definition
+
 ## [0.4.0] - 2026-07-06
 
 ### Fixed

@@ -84,7 +84,7 @@ export function findRepos(workspace: string): string[] {
  * Discover source files in a repository, respecting .gitignore and exclusion rules.
  */
 export function discoverFiles(repoPath: string, maxFileSize: number): string[] {
-	const _ig = loadGitignore(repoPath);
+	const gitignore = loadGitignore(repoPath);
 
 	// Build glob patterns: include all files, exclude directories and extensions
 	const ignorePatterns: string[] = [];
@@ -103,18 +103,6 @@ export function discoverFiles(repoPath: string, maxFileSize: number): string[] {
 		ignorePatterns.push(`**/*${ext}`);
 	}
 
-	// Add gitignore patterns
-	const gitignoreText = path.join(repoPath, ".gitignore");
-	if (fs.existsSync(gitignoreText)) {
-		const content = fs.readFileSync(gitignoreText, "utf-8");
-		for (const line of content.split("\n")) {
-			const trimmed = line.trim();
-			if (trimmed && !trimmed.startsWith("#") && !trimmed.startsWith("!")) {
-				ignorePatterns.push(trimmed);
-			}
-		}
-	}
-
 	const files = fg.sync(["**/*"], {
 		cwd: repoPath,
 		onlyFiles: true,
@@ -126,6 +114,8 @@ export function discoverFiles(repoPath: string, maxFileSize: number): string[] {
 	// Filter by size and readability
 	return files.filter((fpath) => {
 		try {
+			const relativePath = path.relative(repoPath, fpath).split(path.sep).join("/");
+			if (gitignore.ignores(relativePath)) return false;
 			const stat = fs.statSync(fpath);
 			if (stat.size > maxFileSize) return false;
 			if (!stat.isFile()) return false;

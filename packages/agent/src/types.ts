@@ -129,6 +129,12 @@ export interface AgentLoopTurnUpdate {
 	model?: Model<any>;
 	/** Thinking level for the next provider request. */
 	thinkingLevel?: ThinkingLevel;
+	/**
+	 * Messages to append after the completed turn and before the next provider request.
+	 * The loop emits normal message lifecycle events for these messages so stateful
+	 * wrappers can persist them and later requests retain an exact cacheable prefix.
+	 */
+	appendMessages?: AgentMessage[];
 }
 
 export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}

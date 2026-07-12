@@ -13,6 +13,7 @@ export class BM25Vocabulary {
 	nextIdx = 0;
 	totalDocs = 0;
 	avgDl = 0;
+	private totalTokens = 0;
 
 	/**
 	 * Register one document's unique tokens. Call once per chunk before encoding.
@@ -31,7 +32,8 @@ export class BM25Vocabulary {
 		}
 
 		this.totalDocs++;
-		this.avgDl += tokens.length;
+		this.totalTokens += tokens.length;
+		this.avgDl = this.totalTokens / this.totalDocs;
 	}
 
 	/**
@@ -39,7 +41,7 @@ export class BM25Vocabulary {
 	 */
 	finalize(): void {
 		if (this.totalDocs > 0) {
-			this.avgDl /= this.totalDocs;
+			this.avgDl = this.totalTokens / this.totalDocs;
 		}
 	}
 
@@ -106,6 +108,7 @@ export class BM25Vocabulary {
 			nextIdx: this.nextIdx,
 			totalDocs: this.totalDocs,
 			avgDl: this.avgDl,
+			totalTokens: this.totalTokens,
 		};
 
 		fs.writeFileSync(path, JSON.stringify(data));
@@ -123,6 +126,7 @@ export class BM25Vocabulary {
 		v.nextIdx = data.nextIdx;
 		v.totalDocs = data.totalDocs;
 		v.avgDl = data.avgDl;
+		v.totalTokens = data.totalTokens ?? data.avgDl * data.totalDocs;
 
 		return v;
 	}

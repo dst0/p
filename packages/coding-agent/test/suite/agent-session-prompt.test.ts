@@ -311,8 +311,10 @@ describe("AgentSession prompt characterization", () => {
 			"user",
 			"assistant",
 			"toolResult",
+			"custom",
 			"assistant",
 		]);
+		expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
 
 		vi.useFakeTimers();
 		try {
@@ -721,10 +723,12 @@ describe("AgentSession prompt characterization", () => {
 			"user",
 			"assistant",
 			"toolResult",
+			"custom",
 			"assistant",
 		]);
 		expect(harness.session.messages[2]?.role).toBe("toolResult");
-		expect(harness.session.messages[3]?.role).toBe("assistant");
+		expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
+		expect(harness.session.messages[4]?.role).toBe("assistant");
 	});
 
 	it("executes multiple tool calls from one response and continues with a single follow-up response", async () => {

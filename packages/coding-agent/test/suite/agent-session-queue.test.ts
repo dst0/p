@@ -228,7 +228,9 @@ describe("AgentSession queue characterization", () => {
 		releaseToolExecution();
 		await promptPromise;
 
-		expect(batchedUserMessages).toEqual(["start", "steer 1", "steer 2"]);
+		expect(batchedUserMessages[0]).toBe("start");
+		expect(batchedUserMessages[1]).toContain("<turn_checkpoint>");
+		expect(batchedUserMessages.slice(2)).toEqual(["steer 1", "steer 2"]);
 		expect(getAssistantTexts(harness)).toEqual(["", "batched steer response"]);
 	});
 
@@ -256,7 +258,9 @@ describe("AgentSession queue characterization", () => {
 		releaseToolExecution();
 		await promptPromise;
 
-		expect(batchedUserMessages).toEqual(["start", "follow-up 1", "follow-up 2"]);
+		expect(batchedUserMessages[0]).toBe("start");
+		expect(batchedUserMessages[1]).toContain("<turn_checkpoint>");
+		expect(batchedUserMessages.slice(2)).toEqual(["follow-up 1", "follow-up 2"]);
 		expect(getAssistantTexts(harness)).toEqual(["", "original turn complete", "batched follow-up response"]);
 	});
 

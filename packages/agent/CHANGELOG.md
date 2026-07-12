@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Preserve cache-stable next-turn checkpoint messages and only reset completion progress after successful tool execution
+- Stop boundedly when a provider repeatedly reports tool use without returning a valid tool call, while preserving infinite long-horizon work limits
+
 ## [0.4.0] - 2026-07-06
 
 ### Added

@@ -97,11 +97,9 @@ function chunkBySymbols(
 
 	const matches = content.matchAll(pattern);
 	for (const match of matches) {
-		const _lineNo = content.slice(0, match.index!).indexOf("\n", 0);
-		// Count newlines before this match to get line number
-		const lineNum = content.slice(0, match.index!).split("\n").length;
-		if (lineNum > 0 && lineNum < totalLines) {
-			boundaries.push(lineNum);
+		const lineIndex = content.slice(0, match.index).split("\n").length - 1;
+		if (lineIndex > 0 && lineIndex < totalLines) {
+			boundaries.push(lineIndex);
 		}
 	}
 	boundaries.push(totalLines);

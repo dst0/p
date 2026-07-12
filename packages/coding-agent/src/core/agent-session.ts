@@ -121,6 +121,7 @@ import {
 	SLEEP_TOOL_NAME,
 } from "./messages.ts";
 import type { ModelRegistry } from "./model-registry.ts";
+import { installAgentSessionPrepareNextTurn } from "./prepare-next-turn.ts";
 import {
 	createProjectMemoryContext,
 	diffProjectMemorySnapshot,
@@ -169,6 +170,7 @@ import { createTokenBreakdown, type TokenBreakdown } from "./token-accounting.ts
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
 import { createAllToolDefinitions, createSubmitPlanToolDefinition } from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
+import { createTurnCheckpointMessages } from "./turn-checkpoint.ts";
 
 const RETRYABLE_ERROR_PATTERN =
 	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|failed to parse|could not parse|invalid json|unexpected token|unexpected end of json|response body|no response body|body is unusable/i;
@@ -179,6 +181,38 @@ const MODEL_RECOVERY_BASE_DELAY_MS = 1_000;
 const MODEL_RECOVERY_MAX_RETRY_DELAY_MS = 15_000;
 const UPDATE_SESSION_STATE_TOOL_NAME = "update_session_state";
 const MARK_SESSION_PROGRESS_TOOL_NAME = "mark_session_progress";
+export const TOOL_SEARCH_TOOL_NAME = "tool_search";
+const TOOL_SEARCH_SCHEMA = Type.Object({
+	query: Type.Optional(
+		Type.String({
+			description:
+				"Capability to find, such as 'Chrome tabs', 'Gmail', 'TypeScript diagnostics', or 'memory search'",
+		}),
+	),
+	names: Type.Optional(
+		Type.Array(Type.String(), {
+			description: "Exact tool names to activate when they are already known",
+			maxItems: 8,
+		}),
+	),
+	limit: Type.Optional(
+		Type.Integer({ description: "Maximum query matches to activate (default 5, maximum 8)", minimum: 1, maximum: 8 }),
+	),
+});
+
+interface ToolSearchMatch {
+	name: string;
+	description: string;
+	source: string;
+}
+
+interface ToolSearchResult {
+	query?: string;
+	activated: string[];
+	alreadyActive: string[];
+	matches: ToolSearchMatch[];
+	unknownNames: string[];
+}
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
 Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, and "none" only after explicitly checking that no state change is needed.
@@ -281,6 +315,8 @@ export interface AgentSessionConfig {
 	resourceLoader: ResourceLoader;
 	/** SDK custom tools registered outside extensions */
 	customTools?: ToolDefinition[];
+	/** Whether every registered extension/custom tool starts active. */
+	includeAllExtensionTools?: boolean;
 	/** Model registry for API key resolution and model discovery */
 	modelRegistry: ModelRegistry;
 	/** Initial active built-in tool names. Default: [read, bash, edit, write] */
@@ -1062,6 +1098,7 @@ export class AgentSession {
 	private _allowedToolNames?: Set<string>;
 	private _excludedToolNames?: Set<string>;
 	private _baseToolsOverride?: Record<string, AgentTool>;
+	private _includeAllExtensionTools = false;
 	private _sessionStartEvent: SessionStartEvent;
 	private _extensionUIContext?: ExtensionUIContext;
 	private _extensionMode: ExtensionMode = "print";
@@ -1107,6 +1144,7 @@ export class AgentSession {
 		this._allowedToolNames = config.allowedToolNames ? new Set(config.allowedToolNames) : undefined;
 		this._excludedToolNames = config.excludedToolNames ? new Set(config.excludedToolNames) : undefined;
 		this._baseToolsOverride = config.baseToolsOverride;
+		this._includeAllExtensionTools = config.includeAllExtensionTools ?? false;
 		this._sessionStartEvent = config.sessionStartEvent ?? {
 			type: "session_start",
 			reason: "startup",
@@ -1121,8 +1159,9 @@ export class AgentSession {
 
 		this._buildRuntime({
 			activeToolNames: this._initialActiveToolNames,
-			includeAllExtensionTools: true,
+			includeAllExtensionTools: this._includeAllExtensionTools,
 		});
+		installAgentSessionPrepareNextTurn(this.agent, this, this.settingsManager);
 	}
 
 	/** Model registry for API key resolution and model discovery */
@@ -3800,6 +3839,97 @@ Plan mode is active because the user invoked /plan.
 		};
 	}
 
+	private _createToolSearchToolDefinition(): ToolDefinition<typeof TOOL_SEARCH_SCHEMA, ToolSearchResult> {
+		return {
+			name: TOOL_SEARCH_TOOL_NAME,
+			label: "Tool Search",
+			description:
+				"Search registered extension and MCP tools by capability and activate a small relevant set for the next turn. " +
+				"Use this before browser, external-service, language-server, memory, or other specialized work when the needed tool is not already available.",
+			promptSnippet:
+				"tool_search(query, names?, limit?): find and activate relevant extension or MCP tools without loading every tool schema",
+			promptGuidelines: [
+				"When specialized tools are needed but not active, call tool_search with a specific capability, then use the activated tools on the next turn.",
+			],
+			parameters: TOOL_SEARCH_SCHEMA,
+			executionMode: "sequential",
+			execute: async (_toolCallId, params) => {
+				const query = params.query?.trim();
+				const requestedNames = [...new Set(params.names ?? [])].slice(0, 8);
+				const activeNames = new Set(this.getActiveToolNames());
+				const alreadyActive = requestedNames.filter((name) => activeNames.has(name));
+				const unknownNames = requestedNames.filter((name) => !this._toolDefinitions.has(name));
+				const exactMatches = requestedNames.filter(
+					(name) => this._toolDefinitions.has(name) && !activeNames.has(name),
+				);
+				const limit = Math.min(8, Math.max(1, params.limit ?? 5));
+				const terms = query
+					?.toLowerCase()
+					.split(/[^a-z0-9_]+/u)
+					.filter((term) => term.length >= 2);
+				const compactQuery = terms?.join("") ?? "";
+				const rankedMatches = query
+					? Array.from(this._toolDefinitions.entries())
+							.filter(([name, entry]) => !activeNames.has(name) && entry.sourceInfo.source !== "builtin")
+							.map(([name, entry]) => {
+								const normalizedName = name.toLowerCase();
+								const normalizedLabel = entry.definition.label.toLowerCase();
+								const normalizedDescription = entry.definition.description.toLowerCase();
+								const normalizedSnippet = entry.definition.promptSnippet?.toLowerCase() ?? "";
+								const normalizedSource = entry.sourceInfo.path.toLowerCase();
+								let score = normalizedName === query.toLowerCase() ? 1_000 : 0;
+								if (
+									compactQuery.length >= 3 &&
+									normalizedName.replace(/[^a-z0-9]/gu, "").includes(compactQuery)
+								) {
+									score += 150;
+								}
+								for (const term of terms ?? []) {
+									if (normalizedName.includes(term)) score += 20;
+									if (normalizedLabel.includes(term)) score += 10;
+									if (normalizedDescription.includes(term)) score += 5;
+									if (normalizedSnippet.includes(term)) score += 3;
+									if (normalizedSource.includes(term)) score += 3;
+								}
+								return { name, entry, score };
+							})
+							.filter(({ score }) => score > 0)
+							.sort((left, right) => right.score - left.score || left.name.localeCompare(right.name))
+							.slice(0, limit)
+					: [];
+				const queryMatches = rankedMatches.map(({ name }) => name);
+				const activated = [...new Set([...exactMatches, ...queryMatches])].slice(0, 8);
+				if (activated.length > 0) {
+					this.setActiveToolsByName([...activeNames, ...activated]);
+				}
+				const matches = activated.map((name) => {
+					const entry = this._toolDefinitions.get(name)!;
+					return {
+						name,
+						description: entry.definition.description,
+						source: entry.sourceInfo.path,
+					};
+				});
+				const result: ToolSearchResult = {
+					query,
+					activated,
+					alreadyActive,
+					matches,
+					unknownNames,
+				};
+				const lines = matches.map((match) => `- ${match.name}: ${match.description}`);
+				const summary =
+					lines.length > 0
+						? `Activated for the next turn:\n${lines.join("\n")}`
+						: "No matching inactive tools were found. Use a more specific capability or exact tool names.";
+				return {
+					content: [{ type: "text", text: summary }],
+					details: result,
+				};
+			},
+		};
+	}
+
 	private _createKeepContextToolDefinition(): ToolDefinition<typeof KEEP_CONTEXT_SCHEMA, any> {
 		return {
 			name: "keep_context",
@@ -3925,6 +4055,15 @@ Plan mode is active because the user invoked /plan.
 			onResponse: this.agent.onResponse,
 			beforeToolCall: this.agent.beforeToolCall,
 			afterToolCall: this.agent.afterToolCall,
+			prepareNextTurn: (_signal, context) => ({
+				appendMessages: context
+					? createTurnCheckpointMessages(
+							context,
+							this._getCurrentStructuredSessionState(),
+							this.settingsManager.getCompactionRenderedStateMaxTokens(),
+						)
+					: undefined,
+			}),
 			toolExecution: "parallel",
 			completionMode: "implicit",
 			thinkingBudgets: this.agent.thinkingBudgets,
@@ -4937,7 +5076,7 @@ Plan mode is active because the user invoked /plan.
 				getActiveTools: () => this.getActiveToolNames(),
 				getAllTools: () => this.getAllTools(),
 				setActiveTools: (toolNames) => this.setActiveToolsByName(toolNames),
-				refreshTools: () => this._refreshToolRegistry(),
+				refreshTools: () => this._refreshToolRegistry({ includeAllExtensionTools: this._includeAllExtensionTools }),
 				getCommands,
 				setModel: async (model) => {
 					if (!this.modelRegistry.hasConfiguredAuth(model)) return false;
@@ -4992,7 +5131,6 @@ Plan mode is active because the user invoked /plan.
 	}
 
 	private _refreshToolRegistry(options?: { activeToolNames?: string[]; includeAllExtensionTools?: boolean }): void {
-		const previousRegistryNames = new Set(this._toolRegistry.keys());
 		const previousActiveToolNames = this.getActiveToolNames();
 		const allowedToolNames = this._allowedToolNames;
 		const excludedToolNames = this._excludedToolNames;
@@ -5077,12 +5215,6 @@ Plan mode is active because the user invoked /plan.
 			for (const tool of wrappedExtensionTools) {
 				nextActiveToolNames.push(tool.name);
 			}
-		} else if (!options?.activeToolNames) {
-			for (const toolName of this._toolRegistry.keys()) {
-				if (!previousRegistryNames.has(toolName)) {
-					nextActiveToolNames.push(toolName);
-				}
-			}
 		}
 
 		this.setActiveToolsByName([...new Set(nextActiveToolNames)]);
@@ -5118,6 +5250,7 @@ Plan mode is active because the user invoked /plan.
 			session_recall: this._createSessionRecallToolDefinition() as unknown as ToolDefinition,
 			keep_context: this._createKeepContextToolDefinition() as unknown as ToolDefinition,
 			run_subagent: this._createRunSubagentToolDefinition() as unknown as ToolDefinition,
+			[TOOL_SEARCH_TOOL_NAME]: this._createToolSearchToolDefinition() as unknown as ToolDefinition,
 		};
 
 		this._baseToolDefinitions = new Map(
@@ -5146,7 +5279,16 @@ Plan mode is active because the user invoked /plan.
 
 		const defaultActiveToolNames = this._baseToolsOverride
 			? Object.keys(this._baseToolsOverride)
-			: ["read", "bash", "edit", "write", "sleep", UPDATE_SESSION_STATE_TOOL_NAME, MARK_SESSION_PROGRESS_TOOL_NAME];
+			: [
+					"read",
+					"bash",
+					"edit",
+					"write",
+					"sleep",
+					UPDATE_SESSION_STATE_TOOL_NAME,
+					MARK_SESSION_PROGRESS_TOOL_NAME,
+					TOOL_SEARCH_TOOL_NAME,
+				];
 		const baseActiveToolNames = options.activeToolNames ?? defaultActiveToolNames;
 		this._refreshToolRegistry({
 			activeToolNames: baseActiveToolNames,
@@ -5167,7 +5309,7 @@ Plan mode is active because the user invoked /plan.
 		this._buildRuntime({
 			activeToolNames: this.getActiveToolNames(),
 			flagValues: previousFlagValues,
-			includeAllExtensionTools: true,
+			includeAllExtensionTools: this._includeAllExtensionTools,
 		});
 
 		const hasBindings =

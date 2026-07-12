@@ -1,6 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
+import { fauxAssistantMessage, fauxToolCall, type Message, type TextContent } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import {
 	getLatestStructuredSessionState,
@@ -43,6 +43,14 @@ function toolEndEvents(harness: Harness, toolName: string) {
 	return harness.eventsOfType("tool_execution_end").filter((event) => event.toolName === toolName);
 }
 
+function getUserTexts(messages: Message[]): string[] {
+	return messages.flatMap((message) => {
+		if (message.role !== "user") return [];
+		if (typeof message.content === "string") return [message.content];
+		return message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text);
+	});
+}
+
 describe("AgentSession default session-state tool", () => {
 	it("requires update_session_state before first-turn tool use", async () => {
 		const harness = await createHarness();
@@ -74,6 +82,58 @@ describe("AgentSession default session-state tool", () => {
 			expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
 			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
 			expect(state?.progress.done).toEqual(["Inspect the requested file"]);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("carries completed tool outcomes and refreshed working state into the next provider turn", async () => {
+		const harness = await createHarness();
+		try {
+			writeFileSync(join(harness.tempDir, "note.txt"), "state tool smoke\n");
+			let afterStateUpdate: string[] = [];
+			let afterRead: string[] = [];
+			let afterProgressUpdate: string[] = [];
+			harness.setResponses([
+				fauxAssistantMessage(updateStateCall("Read note.txt and report the result"), { stopReason: "toolUse" }),
+				(context) => {
+					afterStateUpdate = getUserTexts(context.messages);
+					return fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" });
+				},
+				(context) => {
+					afterRead = getUserTexts(context.messages);
+					return fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), {
+						stopReason: "toolUse",
+					});
+				},
+				(context) => {
+					afterProgressUpdate = getUserTexts(context.messages);
+					return fauxAssistantMessage(finishCall("read note"), { stopReason: "toolUse" });
+				},
+			]);
+
+			await harness.session.prompt("Read note.txt and report the result");
+
+			const initialCheckpoint = afterStateUpdate.find((text) => text.includes("<turn_checkpoint>")) ?? "";
+			const initialWorkingState =
+				afterStateUpdate.find((text) => text.trimStart().startsWith("<working_state>")) ?? "";
+			expect(initialCheckpoint).toContain("SUCCESS update_session_state");
+			expect(initialWorkingState).toContain("Read note.txt and report the result");
+			expect(initialWorkingState).toContain("⏳ Inspect the requested file");
+
+			const readCheckpoint = afterRead.filter((text) => text.includes("<turn_checkpoint>")).at(-1) ?? "";
+			expect(readCheckpoint).toContain("SUCCESS read");
+			expect(readCheckpoint).toContain("Do not repeat an identical successful call");
+
+			const latestWorkingState =
+				afterProgressUpdate.filter((text) => text.trimStart().startsWith("<working_state>")).at(-1) ?? "";
+			expect(latestWorkingState).toContain("✅ Inspect the requested file");
+			expect(latestWorkingState).not.toContain("⏳ Inspect the requested file");
+
+			const persistedCheckpoints = harness.session.messages.filter(
+				(message) => message.role === "custom" && message.customType === "turn_checkpoint",
+			);
+			expect(persistedCheckpoints).toHaveLength(3);
 		} finally {
 			harness.cleanup();
 		}

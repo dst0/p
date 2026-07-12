@@ -113,6 +113,13 @@ describe("AgentSession dynamic tool registration", () => {
 			scope: "temporary",
 			origin: "top-level",
 		});
+		expect(session.getActiveToolNames()).toContain("tool_search");
+		expect(session.getActiveToolNames()).not.toContain("dynamic_tool");
+		expect(session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
+
+		const toolSearch = session.agent.state.tools.find((tool) => tool.name === "tool_search");
+		const searchResult = await toolSearch?.execute("search-1", { query: "dynamic behavior", limit: 1 });
+		expect(searchResult?.details).toMatchObject({ activated: ["dynamic_tool"] });
 		expect(session.getActiveToolNames()).toContain("dynamic_tool");
 		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
@@ -158,7 +165,7 @@ describe("AgentSession dynamic tool registration", () => {
 			scope: "temporary",
 			origin: "top-level",
 		});
-		expect(session.getActiveToolNames()).toContain("sdk_tool");
+		expect(session.getActiveToolNames()).not.toContain("sdk_tool");
 
 		session.dispose();
 	});
@@ -236,7 +243,7 @@ describe("AgentSession dynamic tool registration", () => {
 		interactiveSession.dispose();
 	});
 
-	it("keeps custom tools active but omits them from available tools when promptSnippet is not provided", async () => {
+	it("registers hidden custom tools without activating their schemas by default", async () => {
 		const settingsManager = SettingsManager.create(tempDir, agentDir);
 		const sessionManager = SessionManager.inMemory();
 
@@ -275,7 +282,7 @@ describe("AgentSession dynamic tool registration", () => {
 		await session.bindExtensions({});
 
 		expect(session.getAllTools().map((tool) => tool.name)).toContain("hidden_tool");
-		expect(session.getActiveToolNames()).toContain("hidden_tool");
+		expect(session.getActiveToolNames()).not.toContain("hidden_tool");
 		expect(session.systemPrompt).not.toContain("hidden_tool");
 		expect(session.systemPrompt).not.toContain("Description should not appear in available tools");
 

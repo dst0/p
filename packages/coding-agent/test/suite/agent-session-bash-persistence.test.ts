@@ -164,6 +164,7 @@ describe("AgentSession bash and persistence characterization", () => {
 			"message",
 			"message",
 			"message",
+			"custom_message",
 			"message",
 		]);
 		expect(harness.session.messages.map((message) => message.role)).toEqual([
@@ -171,6 +172,7 @@ describe("AgentSession bash and persistence characterization", () => {
 			"user",
 			"assistant",
 			"toolResult",
+			"custom",
 			"assistant",
 		]);
 	});

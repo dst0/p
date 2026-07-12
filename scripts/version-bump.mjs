@@ -24,6 +24,7 @@ const packagePaths = [
 	'packages/agent/package.json',
 	'packages/ai/package.json',
 	'packages/coding-agent/package.json',
+	'packages/code-index/package.json',
 	'packages/tui/package.json',
 	'packages/coding-agent/examples/extensions/with-deps/package.json',
 	'packages/coding-agent/examples/extensions/custom-provider-anthropic/package.json',
@@ -55,6 +56,7 @@ const corePackagePaths = [
 	'packages/agent/package.json',
 	'packages/ai/package.json',
 	'packages/coding-agent/package.json',
+	'packages/code-index/package.json',
 	'packages/tui/package.json',
 ];
 
