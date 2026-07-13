@@ -27,6 +27,7 @@ export type QueuedProgress = {
 	queue?: string;
 	workerId?: string;
 	source?: "messages" | "llm-orchestrator";
+	queuedAt?: number;
 };
 
 export type SendingProgress = {
@@ -137,6 +138,7 @@ export class FooterDataProvider {
 	private prefillProgress?: PrefillProgress;
 	private genProgress?: GenerationProgress;
 	private queuedProgress?: QueuedProgress;
+	private queuedStartAt?: number;
 	private sendingProgress?: SendingProgress;
 	private modelSwitchProgress?: ModelSwitchProgress;
 	private loadingProgress?: LoadingProgress;
@@ -249,8 +251,16 @@ export class FooterDataProvider {
 
 	/** Internal: set queued progress */
 	setQueuedProgress(progress: QueuedProgress | undefined): void {
-		this.queuedProgress = progress;
 		if (progress) {
+			if (!this.queuedStartAt) {
+				this.queuedStartAt = Date.now();
+			}
+			this.queuedProgress = { ...progress, queuedAt: this.queuedStartAt };
+		} else {
+			this.queuedStartAt = undefined;
+			this.queuedProgress = undefined;
+		}
+		if (this.queuedProgress) {
 			this.prefillProgress = undefined;
 			this.genProgress = undefined;
 			this.sendingProgress = undefined;

@@ -53,16 +53,29 @@ function computeGenTrend(currentRate: number, previousRate: number | undefined):
 	return "→";
 }
 
-function formatQueuedProgress(queued: { messages: number; position?: number; queuedAhead?: number }): string {
+function formatQueuedProgress(queued: {
+	messages: number;
+	position?: number;
+	queuedAhead?: number;
+	queuedAt?: number;
+}): string {
+	const parts: string[] = [];
 	if (queued.position !== undefined) {
 		if (queued.position <= 1) {
-			return "next";
+			parts.push("next");
+		} else {
+			const queuedAhead = queued.queuedAhead ?? queued.position - 1;
+			const aheadText = queuedAhead === 1 ? "1 ahead" : `${queuedAhead} ahead`;
+			parts.push(`#${queued.position}, ${aheadText}`);
 		}
-		const queuedAhead = queued.queuedAhead ?? queued.position - 1;
-		const aheadText = queuedAhead === 1 ? "1 ahead" : `${queuedAhead} ahead`;
-		return `#${queued.position}, ${aheadText}`;
+	} else {
+		parts.push(queued.messages.toString());
 	}
-	return queued.messages.toString();
+	if (queued.queuedAt !== undefined) {
+		const elapsed = Math.floor((Date.now() - queued.queuedAt) / 1000);
+		parts.push(`${elapsed}s`);
+	}
+	return parts.join(" ");
 }
 
 function formatQueuedSpinner(now = Date.now()): string {
