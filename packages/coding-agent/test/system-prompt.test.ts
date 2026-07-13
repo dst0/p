@@ -142,6 +142,19 @@ describe("buildSystemPrompt", () => {
 			expect(prompt).toContain("call `finish_work`");
 		});
 
+		test("requires reconciling next actions before finishing", () => {
+			const prompt = buildSystemPrompt({
+				completionMode: "explicit_finish",
+				contextFiles: [],
+				skills: [],
+				cwd: process.cwd(),
+			});
+
+			expect(prompt).toContain("never use completed or status-only entries such as `Done`");
+			expect(prompt).toContain("leave next actions empty when no work remains");
+			expect(prompt).toContain("Never edit `.pdev` state or snapshot files directly");
+		});
+
 		test("adds completion instructions to custom prompts", () => {
 			const prompt = buildSystemPrompt({
 				customPrompt: "Custom base prompt.",
