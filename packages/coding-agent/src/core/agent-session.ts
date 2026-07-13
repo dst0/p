@@ -66,6 +66,7 @@ import {
 	getLatestStructuredSessionState,
 	hasMeaningfulStructuredSessionState,
 	isStructuredSessionState,
+	isTerminalProgressMarker,
 	mergeStructuredSessionState,
 	type PlanStatus,
 	parseSessionStateUpdateBlock,
@@ -479,8 +480,8 @@ function normalizeStateProgress(progress: UpdateSessionStateInput["progress"]): 
 	const blocked = normalizeStateTextList(progress.blocked);
 	const patch: NonNullable<StatePatch["progress"]> = {};
 	if (done.length > 0) patch.done = done;
-	if (current.length > 0) patch.current = current;
-	if (next.length > 0) patch.next = next;
+	if (progress.current !== undefined) patch.current = current;
+	if (progress.next !== undefined) patch.next = next;
 	if (blocked.length > 0) patch.blocked = blocked;
 	return Object.keys(patch).length > 0 ? patch : undefined;
 }
@@ -511,9 +512,9 @@ function getOpenSessionStateItems(state: StructuredSessionState): string[] {
 		return openPlanItems;
 	}
 	return [
-		...state.progress.current.map((item) => `${item} (current)`),
-		...state.progress.next.map((item) => `${item} (next)`),
-		...state.progress.blocked.map((item) => `${item} (blocked)`),
+		...state.progress.current.filter((item) => !isTerminalProgressMarker(item)).map((item) => `${item} (current)`),
+		...state.progress.next.filter((item) => !isTerminalProgressMarker(item)).map((item) => `${item} (next)`),
+		...state.progress.blocked.filter((item) => !isTerminalProgressMarker(item)).map((item) => `${item} (blocked)`),
 	];
 }
 
@@ -1603,7 +1604,9 @@ export class AgentSession {
 	}
 
 	private _getFinishWorkSessionStateBlockReason(args: unknown): string | undefined {
-		const state = readSessionStateFile(this._cwd, this.sessionManager.getSessionId());
+		const state =
+			getLatestStructuredSessionState(this.sessionManager.getBranch()) ??
+			readSessionStateFile(this._cwd, this.sessionManager.getSessionId());
 		if (!state) {
 			return undefined;
 		}
@@ -1632,7 +1635,8 @@ export class AgentSession {
 		return (
 			`Cannot call ${FINISH_WORK_TOOL_NAME} with status "${status ?? "success"}" while session state has ` +
 			`unresolved work:\n${preview}${suffix}\n` +
-			`Call ${MARK_SESSION_PROGRESS_TOOL_NAME} for completed existing items, call ${UPDATE_SESSION_STATE_TOOL_NAME} ` +
+			`Do not retry ${FINISH_WORK_TOOL_NAME} until a state-changing tool call succeeds. Call ` +
+			`${MARK_SESSION_PROGRESS_TOOL_NAME} for completed existing items, call ${UPDATE_SESSION_STATE_TOOL_NAME} ` +
 			`with action "replan" if the scope changed, or finish with status "partial" and remaining_work.`
 		);
 	}
@@ -3567,7 +3571,7 @@ Plan mode is active because the user invoked /plan.
 			timestamp: new Date().toISOString(),
 		});
 		const sourceEntryIds = liveState.canonicalRequest.sourceEntryIds;
-		const patch = this._createStatePatchFromUpdateSessionStateInput(input, sourceEntryIds, liveState);
+		const patch = this._createStatePatchFromUpdateSessionStateInput(input, previous, sourceEntryIds, liveState);
 		if (!patch) {
 			return {
 				status: "unchanged",
@@ -3626,6 +3630,7 @@ Plan mode is active because the user invoked /plan.
 
 	private _createStatePatchFromUpdateSessionStateInput(
 		input: UpdateSessionStateInput,
+		previous: StructuredSessionState,
 		sourceEntryIds: string[],
 		liveState: StructuredSessionState,
 	): StatePatch | undefined {
@@ -3667,7 +3672,18 @@ Plan mode is active because the user invoked /plan.
 			}))
 			.filter((pointer) => pointer.summary.length > 0);
 		const risks = (input.risks ?? []).map((risk) => capStateToolText(risk, 260)).filter((risk) => risk.length > 0);
-		const progress = normalizeStateProgress(input.progress);
+		const replaceCompletedPlan =
+			input.action === "initial_plan" &&
+			previous.plan.length > 0 &&
+			previous.plan.every((item) => item.status === "done");
+		const normalizedProgress = normalizeStateProgress(input.progress);
+		const progress = replaceCompletedPlan
+			? {
+					...normalizedProgress,
+					current: normalizedProgress?.current ?? [],
+					next: normalizedProgress?.next ?? [],
+				}
+			: normalizedProgress;
 		const plan =
 			planItems.length === 0
 				? undefined
@@ -3681,7 +3697,7 @@ Plan mode is active because the user invoked /plan.
 								evidenceEntryIds: item.evidenceEntryIds,
 							})),
 						}
-					: input.action === "replan"
+					: input.action === "replan" || replaceCompletedPlan
 						? { replace: planItems }
 						: { add: planItems };
 		const patch: StatePatch = {

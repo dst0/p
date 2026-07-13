@@ -16,6 +16,24 @@ export const STATE_RENDER_MARKERS = {
 	nextAction: "📌",
 	risk: "⚠️",
 } as const;
+const TERMINAL_PROGRESS_MARKERS = new Set([
+	"all complete",
+	"all done",
+	"all finished",
+	"all tasks complete",
+	"all tasks completed",
+	"all work complete",
+	"all work completed",
+	"complete",
+	"completed",
+	"done",
+	"everything complete",
+	"everything completed",
+	"finished",
+	"n a",
+	"no remaining work",
+	"none",
+]);
 const MAX_CANONICAL_REQUEST_CHARS = 480;
 const MAX_REQUEST_SUMMARY_CHARS = 280;
 
@@ -434,6 +452,15 @@ export function hasMeaningfulStructuredSessionState(state: StructuredSessionStat
 	);
 }
 
+/** Whether a progress entry is only a completion status, not actionable work. */
+export function isTerminalProgressMarker(value: string): boolean {
+	const normalized = compactWhitespace(value)
+		.toLowerCase()
+		.replace(/[^a-z0-9]+/g, " ")
+		.trim();
+	return TERMINAL_PROGRESS_MARKERS.has(normalized);
+}
+
 export function renderPlanStatusMarker(status: PlanStatus): string {
 	switch (status) {
 		case "done":
@@ -648,21 +675,28 @@ function parsePlanItemsFromUpdate(value: unknown, sourceEntryIds: string[]): Pla
 
 function parseProgressUpdate(value: unknown, fallback: Record<string, unknown>): StatePatch["progress"] {
 	const progressRecord = isRecord(value) ? value : {};
-	const done = getStringListField(progressRecord, ["done", "completed", "finished"]);
-	const current = getStringListField(progressRecord, ["current", "inProgress", "in_progress"]);
-	const next = [
-		...getStringListField(progressRecord, ["next", "nextActions", "next_actions"]),
-		...getStringListField(fallback, ["nextAction", "next_action"]),
-	];
-	const blocked = [
-		...getStringListField(progressRecord, ["blocked", "blockers"]),
-		...getStringListField(fallback, ["blockers", "blocked"]),
-	];
+	const doneKeys = ["done", "completed", "finished"];
+	const currentKeys = ["current", "inProgress", "in_progress"];
+	const nextKeys = ["next", "nextActions", "next_actions"];
+	const fallbackNextKeys = ["nextAction", "next_action"];
+	const blockedKeys = ["blocked", "blockers"];
+	const done = getStringListField(progressRecord, doneKeys);
+	const current = getStringListField(progressRecord, currentKeys);
+	const next = hasStringListField(progressRecord, nextKeys)
+		? getStringListField(progressRecord, nextKeys)
+		: getStringListField(fallback, fallbackNextKeys);
+	const blocked = hasStringListField(progressRecord, blockedKeys)
+		? getStringListField(progressRecord, blockedKeys)
+		: getStringListField(fallback, blockedKeys);
 	const progress: NonNullable<StatePatch["progress"]> = {};
-	if (done.length > 0) progress.done = done;
-	if (current.length > 0) progress.current = current;
-	if (next.length > 0) progress.next = next;
-	if (blocked.length > 0) progress.blocked = blocked;
+	if (hasStringListField(progressRecord, doneKeys)) progress.done = done;
+	if (hasStringListField(progressRecord, currentKeys)) progress.current = current;
+	if (hasStringListField(progressRecord, nextKeys) || hasStringListField(fallback, fallbackNextKeys)) {
+		progress.next = next;
+	}
+	if (hasStringListField(progressRecord, blockedKeys) || hasStringListField(fallback, blockedKeys)) {
+		progress.blocked = blocked;
+	}
 	return Object.keys(progress).length > 0 ? progress : undefined;
 }
 
@@ -770,6 +804,13 @@ function getStringListField(record: Record<string, unknown>, keys: string[]): st
 		if (parsed.length > 0) return parsed;
 	}
 	return [];
+}
+
+function hasStringListField(record: Record<string, unknown>, keys: string[]): boolean {
+	return keys.some((key) => {
+		const value = record[key];
+		return Array.isArray(value) || (typeof value === "string" && value.trim().length > 0);
+	});
 }
 
 function parseStringList(value: unknown): string[] {
@@ -1483,6 +1524,9 @@ function reconcileProgressWithPlan(state: StructuredSessionState): void {
 	const inactiveItems = [...state.progress.done, ...state.progress.blocked, ...donePlanItems, ...blockedPlanItems];
 	state.progress.current = removeSimilarProgressItems(state.progress.current, inactiveItems);
 	state.progress.next = removeSimilarProgressItems(state.progress.next, [...inactiveItems, ...state.progress.current]);
+	state.progress.current = state.progress.current.filter((item) => !isTerminalProgressMarker(item));
+	state.progress.next = state.progress.next.filter((item) => !isTerminalProgressMarker(item));
+	state.progress.blocked = state.progress.blocked.filter((item) => !isTerminalProgressMarker(item));
 }
 
 function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boolean {

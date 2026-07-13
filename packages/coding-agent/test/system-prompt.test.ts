@@ -152,6 +152,8 @@ describe("buildSystemPrompt", () => {
 
 			expect(prompt).toContain("never use completed or status-only entries such as `Done`");
 			expect(prompt).toContain("leave next actions empty when no work remains");
+			expect(prompt).toContain("Use `initial_plan` only for a fresh task with no active plan");
+			expect(prompt).toContain("do not retry it unchanged");
 			expect(prompt).toContain("Never edit `.pdev` state or snapshot files directly");
 		});
 

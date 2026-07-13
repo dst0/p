@@ -248,6 +248,24 @@ describe("session state update protocol", () => {
 		});
 	});
 
+	it("preserves explicit empty current and next progress lists in hidden state updates", () => {
+		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
+			progress: {
+				current: ["Run final verification"],
+				next: ["Report the result"],
+			},
+		});
+		const parsed = parseSessionStateUpdateBlock(
+			`<session_state_update>{"type":"patch","progress":{"current":[],"next":[]}}</session_state_update>`,
+			["assistant-entry"],
+		);
+		const state = mergeStructuredSessionState(previous, parsed.patch!);
+
+		expect(parsed.malformed).toBe(false);
+		expect(state.progress.current).toEqual([]);
+		expect(state.progress.next).toEqual([]);
+	});
+
 	it("ignores placeholder goals in hidden state patches while keeping useful metadata", () => {
 		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
 			canonicalRequest: { current: "Fix smart state persistence" },

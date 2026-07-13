@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Clear explicitly empty session-state next actions, ignore terminal placeholders such as `Done`, and replace completed plans before a fresh task so `finish_work` cannot loop on stale state
 - Instruct agents to reconcile next actions before `finish_work` and never mutate `.pdev` snapshots directly
 - Persist tool-turn checkpoints and refreshed working state so agents continue from completed actions instead of repeating them
 - Keep the initial provider request small by registering extension and MCP tools lazily, with `tool_search` activating only relevant schemas instead of sending every cached tool definition

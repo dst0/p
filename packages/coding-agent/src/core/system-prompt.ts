@@ -36,6 +36,8 @@ function formatCompletionProtocolInstructions(mode: CompletionMode | undefined):
 	const sessionStateInstructions = [
 		`Before calling \`${FINISH_WORK_TOOL_NAME}\`, reconcile the visible working state.`,
 		"A next action must be a specific unfinished action; never use completed or status-only entries such as `Done`, `Complete`, or `All done`. Record completed work as progress, and leave next actions empty when no work remains.",
+		"Use `initial_plan` only for a fresh task with no active plan; otherwise use `replan` to replace the complete current plan.",
+		`If \`${FINISH_WORK_TOOL_NAME}\` is rejected for unresolved state, do not retry it unchanged: first update or replan the state, or finish as partial/failed with remaining work.`,
 		"Use session-state tools to update that state. Never edit `.pdev` state or snapshot files directly; they do not update the running session.",
 	].join(" ");
 	if (mode === "explicit_finish") {
