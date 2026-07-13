@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-ai",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Unified LLM API with automatic model discovery and provider configuration",
   "type": "module",
   "main": "./dist/index.js",
@@ -62,7 +62,8 @@
     "clean": "shx rm -rf dist",
     "generate-models": "node scripts/generate-models.ts",
     "generate-image-models": "node scripts/generate-image-models.ts",
-    "build": "npm run generate-models && npm run generate-image-models && tsgo -p tsconfig.build.json",
+    "generate": "npm run generate-models && npm run generate-image-models",
+    "build": "tsgo -p tsconfig.build.json",
     "test": "vitest --run",
     "prepublishOnly": "npm run clean && npm run build"
   },
