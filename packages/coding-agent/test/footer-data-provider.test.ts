@@ -332,6 +332,7 @@ describe("FooterDataProvider progress state", () => {
 			queuedAhead: 1,
 			workerId: "llama-cpu",
 			source: "llm-orchestrator",
+			queuedAt: expect.any(Number),
 		});
 		expect(provider.getModelSwitchProgress()).toBeUndefined();
 	});
@@ -344,5 +345,38 @@ describe("FooterDataProvider progress state", () => {
 
 		expect(provider.getModelSwitchProgress()).toEqual({ fromModel: "old/model", toModel: "new/model" });
 		expect(provider.getLoadingProgress()).toEqual({ model: "new/model" });
+	});
+
+	it("sets queuedAt on first setQueuedProgress call", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setQueuedProgress({ messages: 3, position: 3, queuedAhead: 2, source: "llm-orchestrator" });
+
+		const result = provider.getQueuedProgress();
+		expect(result).toBeDefined();
+		expect(result!.queuedAt).toBeTypeOf("number");
+		expect(result!.queuedAt!).toBeGreaterThan(0);
+	});
+
+	it("preserves queuedAt on subsequent setQueuedProgress calls", async () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setQueuedProgress({ messages: 3, position: 3, queuedAhead: 2, source: "llm-orchestrator" });
+		const firstAt = provider.getQueuedProgress()!.queuedAt;
+
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		provider.setQueuedProgress({ messages: 2, position: 2, queuedAhead: 1, source: "llm-orchestrator" });
+
+		expect(provider.getQueuedProgress()!.queuedAt).toBe(firstAt);
+	});
+
+	it("clears queuedAt when setQueuedProgress is called with undefined", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setQueuedProgress({ messages: 1, source: "llm-orchestrator" });
+		expect(provider.getQueuedProgress()!.queuedAt).toBeDefined();
+
+		provider.setQueuedProgress(undefined);
+		expect(provider.getQueuedProgress()).toBeUndefined();
 	});
 });
