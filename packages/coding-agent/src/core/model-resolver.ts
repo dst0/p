@@ -99,10 +99,11 @@ export function findExactModelReferenceMatch(
 		const provider = trimmedReference.substring(0, slashIndex).trim();
 		const modelId = trimmedReference.substring(slashIndex + 1).trim();
 		if (provider && modelId) {
+			// ⚡ Bolt: Hoist `.toLowerCase()` allocations out of filter loop over full models list
+			const lowerProvider = provider.toLowerCase();
+			const lowerModelId = modelId.toLowerCase();
 			const providerMatches = availableModels.filter(
-				(model) =>
-					model.provider.toLowerCase() === provider.toLowerCase() &&
-					model.id.toLowerCase() === modelId.toLowerCase(),
+				(model) => model.provider.toLowerCase() === lowerProvider && model.id.toLowerCase() === lowerModelId,
 			);
 			if (providerMatches.length === 1) {
 				return providerMatches[0];
@@ -128,10 +129,10 @@ function tryMatchModel(modelPattern: string, availableModels: Model<Api>[]): Mod
 	}
 
 	// No exact match - fall back to partial matching
+	// ⚡ Bolt: Pre-allocate lowercase search string to avoid repetitive operations in filter
+	const lowerPattern = modelPattern.toLowerCase();
 	const matches = availableModels.filter(
-		(m) =>
-			m.id.toLowerCase().includes(modelPattern.toLowerCase()) ||
-			m.name?.toLowerCase()?.includes(modelPattern.toLowerCase()),
+		(m) => m.id.toLowerCase().includes(lowerPattern) || m.name?.toLowerCase()?.includes(lowerPattern),
 	);
 
 	if (matches.length === 0) {
@@ -428,8 +429,10 @@ export function resolveCliModel(options: {
 		// literal id starts with a known provider name (for example
 		// commandcode model id "xiaomi/mimo-v2.5-pro").
 		if (inferredProvider) {
+			// ⚡ Bolt: Calculate lowercased target string once before exact match checking
+			const lowerCliModel = cliModel.toLowerCase();
 			const rawExactMatches = availableModels.filter(
-				(m) => m.id.toLowerCase() === cliModel.toLowerCase() && !modelsAreEqual(m, model),
+				(m) => m.id.toLowerCase() === lowerCliModel && !modelsAreEqual(m, model),
 			);
 			if (rawExactMatches.length > 0 && !modelRegistry.hasConfiguredAuth(model)) {
 				const authenticatedRawMatches = rawExactMatches.filter((m) => modelRegistry.hasConfiguredAuth(m));

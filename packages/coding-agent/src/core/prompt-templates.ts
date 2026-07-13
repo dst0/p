@@ -37,7 +37,8 @@ export function parseCommandArgs(argsString: string): string[] {
 			}
 		} else if (char === '"' || char === "'") {
 			inQuote = char;
-		} else if (/\s/.test(char)) {
+			// ⚡ Bolt: Replaced regex `/\s/.test(char)` with direct string comparisons for measurable speedup in tight loops
+		} else if (char === " " || char === "\t" || char === "\n" || char === "\r") {
 			if (current) {
 				args.push(current);
 				current = "";

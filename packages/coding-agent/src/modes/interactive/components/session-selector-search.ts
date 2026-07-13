@@ -83,7 +83,8 @@ export function parseSearchQuery(query: string): ParsedSearchQuery {
 			continue;
 		}
 
-		if (!inQuote && /\s/.test(ch)) {
+		// ⚡ Bolt: Avoid RegExp.test() inside loop parsing input character-by-character
+		if (!inQuote && (ch === " " || ch === "\t" || ch === "\n" || ch === "\r")) {
 			flush("fuzzy");
 			continue;
 		}
