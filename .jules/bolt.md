@@ -4,3 +4,11 @@
 ## 2026-06-30 - Combining array of Regexes is faster than .some(.test)
 **Learning:** Iterating through an array of regular expressions and checking each one individually using `.some(regex => regex.test(string))` is significantly slower than combining those regular expressions into a single `RegExp` pattern using `.map(p => p.source).join('|')` and testing once. For an array of ~25 patterns, testing the combined regex is about 5x faster than testing them individually.
 **Action:** When performing high-frequency pattern matching against a fixed set of fallback regular expressions, combine them into a single `RegExp` at module load time to maximize evaluation performance.
+
+## 2026-07-13 - Replace mapping iteration with cached object for string similarity scores
+**Learning:** Comparing lists of strings by performing similarity scores via sets of words (`scoreComparableText` utilizing `normalizeComparableText` and `comparableTerms`) incurs enormous repetitive computation cost because the algorithm has to split and normalize the same strings again and again during an O(N * M) comparison loop inside `removeSimilarProgressItems`. Adding a basic bounded `Map` cache (evicting if size > 2000) reduced the evaluation time for a mock payload from ~819ms to ~35ms, a 23x performance improvement in the tight iteration path.
+**Action:** When evaluating diffs between lists by normalizing item formats repeatedly in an inner loop, cache the normalizations explicitly or hoist normalizations out into a pre-computed format.
+
+## 2026-07-13 - Replace `.some` and `.findIndex` in tight loops with `for` loops
+**Learning:** For a very tight loop executed frequently, allocating an inline callback function for `Array.prototype.some` or `Array.prototype.findIndex` introduces noticeable overhead. Refactoring them to a simple explicit `for` loop removes the overhead and speeds up the loop slightly.
+**Action:** Avoid `.some()`, `.every()`, `.filter()`, and `.findIndex()` for large dataset O(N^2) intersection tests where the inner function does very little, preferring manual `for` loop construction.

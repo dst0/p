@@ -1651,11 +1651,24 @@ function mergeProgressList(existing: string[], incoming: string[] | undefined): 
 
 function removeSimilarProgressItems(existing: string[], itemsToRemove: string[]): string[] {
 	if (itemsToRemove.length === 0) return existing;
-	return existing.filter((item) => !itemsToRemove.some((doneItem) => areComparableTextsSimilar(item, doneItem)));
+	return existing.filter((item) => {
+		// Optimization: explicit loop avoids array function allocation in this tight loop
+		for (let i = 0; i < itemsToRemove.length; i++) {
+			if (areComparableTextsSimilar(item, itemsToRemove[i]!)) {
+				return false;
+			}
+		}
+		return true;
+	});
 }
 
 function findSimilarProgressItemIndex(existing: string[], incoming: string): number {
-	return existing.findIndex((item) => areComparableTextsSimilar(item, incoming));
+	for (let i = 0; i < existing.length; i++) {
+		if (areComparableTextsSimilar(existing[i]!, incoming)) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 function areComparableTextsSimilar(left: string, right: string): boolean {
@@ -1687,13 +1700,25 @@ function scoreComparableText(left: string, right: string): number {
 	return Math.max(containment >= 0.8 ? containment : 0, dice);
 }
 
+// Optimization: cache comparable terms to avoid splitting and mapping repetitively
+const termsCache = new Map<string, Set<string>>();
+const TERM_SPLIT_REGEX = /[^a-z0-9/_-]+/;
+
 function comparableTerms(text: string): Set<string> {
-	return new Set(
+	let cached = termsCache.get(text);
+	if (cached !== undefined) return cached;
+
+	// Reset cache if it gets too large to prevent memory leak
+	if (termsCache.size > 2000) termsCache.clear();
+
+	cached = new Set(
 		text
-			.split(/[^a-z0-9/_-]+/)
+			.split(TERM_SPLIT_REGEX)
 			.map((term) => term.trim())
 			.filter((term) => term.length > 1 && !COMPARABLE_TEXT_STOP_WORDS.has(term)),
 	);
+	termsCache.set(text, cached);
+	return cached;
 }
 
 const COMPARABLE_TEXT_STOP_WORDS = new Set([
@@ -1711,14 +1736,32 @@ const COMPARABLE_TEXT_STOP_WORDS = new Set([
 	"without",
 ]);
 
+// Optimization: hoist regular expressions to avoid repeated compilation overhead
+const STATE_MARKERS_REGEX = /^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu;
+const ACTION_WORDS_REGEX =
+	/^(?:impl|implement|explore|check|verify|run|change|find|fix|investigate|update|create)\s*:\s*/g;
+const PARENTHESIS_REGEX = /\([^)]*\)\s*$/g;
+const WHITESPACE_REGEX = /\s+/g;
+
+// Optimization: cache normalized text as it is called many times in nested loops
+const normalizationCache = new Map<string, string>();
+
 function normalizeComparableText(text: string): string {
-	return text
+	let cached = normalizationCache.get(text);
+	if (cached !== undefined) return cached;
+
+	// Reset cache if it gets too large to prevent memory leak
+	if (normalizationCache.size > 2000) normalizationCache.clear();
+
+	cached = text
 		.toLowerCase()
-		.replace(/^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu, "")
-		.replace(/^(?:impl|implement|explore|check|verify|run|change|find|fix|investigate|update|create)\s*:\s*/g, "")
-		.replace(/\([^)]*\)\s*$/g, "")
-		.replace(/\s+/g, " ")
+		.replace(STATE_MARKERS_REGEX, "")
+		.replace(ACTION_WORDS_REGEX, "")
+		.replace(PARENTHESIS_REGEX, "")
+		.replace(WHITESPACE_REGEX, " ")
 		.trim();
+	normalizationCache.set(text, cached);
+	return cached;
 }
 
 function extractOptionalBulletLines(text: string | undefined): string[] | undefined {
