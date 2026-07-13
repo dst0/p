@@ -60,17 +60,6 @@ function formatQueuedProgress(queued: {
 	queuedAt?: number;
 }): string {
 	const parts: string[] = [];
-	if (queued.position !== undefined) {
-		if (queued.position <= 1) {
-			parts.push("next");
-		} else {
-			const queuedAhead = queued.queuedAhead ?? queued.position - 1;
-			const aheadText = queuedAhead === 1 ? "1 ahead" : `${queuedAhead} ahead`;
-			parts.push(`#${queued.position}, ${aheadText}`);
-		}
-	} else {
-		parts.push(queued.messages.toString());
-	}
 	if (queued.queuedAt !== undefined) {
 		const elapsed = Math.floor((Date.now() - queued.queuedAt) / 1000);
 		parts.push(`${elapsed}s`);

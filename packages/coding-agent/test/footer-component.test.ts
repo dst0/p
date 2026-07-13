@@ -72,9 +72,11 @@ describe("FooterComponent", () => {
 
 		const output = footer.render(200).join("\n");
 		expect(output).toContain("QUEUED");
-		expect(output).toContain("#2");
-		expect(output).toContain("1 ahead");
 		expect(output).toMatch(/\d+s/); // elapsed seconds like "5s"
+		// Position info is not shown in status badge (already shown in queue column)
+		const queuedLine = output.split("\n").find((line) => line.includes("QUEUED"));
+		expect(queuedLine!).not.toContain("#");
+		expect(queuedLine!).not.toContain("ahead");
 	});
 
 	it("renders QUEUED badge without elapsed seconds when queuedAt is not set", () => {
@@ -91,11 +93,10 @@ describe("FooterComponent", () => {
 
 		const output = footer.render(200).join("\n");
 		expect(output).toContain("QUEUED");
-		expect(output).toContain("#2");
-		// Should not contain a standalone "Xs" elapsed pattern
+		// No position or elapsed info in status badge when queuedAt not set
 		const queuedLine = output.split("\n").find((line) => line.includes("QUEUED"));
-		expect(queuedLine).toBeDefined();
-		// "1 ahead" is present but no "Xs" suffix after it
-		expect(queuedLine!).not.toMatch(/ahead\s+\d+s/);
+		expect(queuedLine!).not.toContain("#");
+		expect(queuedLine!).not.toContain("ahead");
+		expect(queuedLine!).not.toMatch(/\d+s/);
 	});
 });

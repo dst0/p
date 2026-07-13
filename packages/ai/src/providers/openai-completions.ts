@@ -114,6 +114,7 @@ type ProgressChunk = Extract<
 >;
 
 const COLD_PREFILL_MIN_TOKENS = 512;
+const PREFERRED_MIN_ELAPSED_MS = 100;
 
 function readBoolean(fields: Record<string, unknown>, ...names: string[]): boolean | undefined {
 	for (const name of names) {
@@ -155,8 +156,10 @@ function parseLlamaPromptProgress(
 	const elapsedMs = readFiniteNumber(promptProgress, "time_ms", "timeMs") ?? 0;
 	const timings = isRecord(fields.timings) ? fields.timings : undefined;
 	const tokensPerSecond =
-		(timings ? readFiniteNumber(timings, "prompt_per_second", "promptPerSecond") : undefined) ??
-		(elapsedMs > 0 ? timedProcessed / (elapsedMs / 1000) : undefined);
+		elapsedMs >= PREFERRED_MIN_ELAPSED_MS
+			? ((timings ? readFiniteNumber(timings, "prompt_per_second", "promptPerSecond") : undefined) ??
+				(timedProcessed > 0 ? timedProcessed / (elapsedMs / 1000) : undefined))
+			: undefined;
 
 	return {
 		type: "prefill_progress",
