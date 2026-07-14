@@ -385,12 +385,15 @@ function resolveCustomBaseUrl(baseUrl: string): string | undefined {
 	return trimmed;
 }
 
+// ⚡ Bolt: Extract regex and avoid array operations in hot path
+const GOOGLE_VERTEX_API_PATTERN = /(?:^|\/)v\d+(?:beta\d*)?(?:\/|$)/;
+
 function baseUrlIncludesApiVersion(baseUrl: string): boolean {
 	try {
 		const url = new URL(baseUrl);
-		return url.pathname.split("/").some((part) => /^v\d+(?:beta\d*)?$/.test(part));
+		return GOOGLE_VERTEX_API_PATTERN.test(url.pathname);
 	} catch {
-		return /(?:^|\/)v\d+(?:beta\d*)?(?:\/|$)/.test(baseUrl);
+		return GOOGLE_VERTEX_API_PATTERN.test(baseUrl);
 	}
 }
 

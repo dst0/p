@@ -4,3 +4,6 @@
 ## 2026-06-30 - Combining array of Regexes is faster than .some(.test)
 **Learning:** Iterating through an array of regular expressions and checking each one individually using `.some(regex => regex.test(string))` is significantly slower than combining those regular expressions into a single `RegExp` pattern using `.map(p => p.source).join('|')` and testing once. For an array of ~25 patterns, testing the combined regex is about 5x faster than testing them individually.
 **Action:** When performing high-frequency pattern matching against a fixed set of fallback regular expressions, combine them into a single `RegExp` at module load time to maximize evaluation performance.
+## 2026-07-14 - Pre-calculate string normalization outside O(N*M) loops
+**Learning:** Performing regex replacement or string normalization inside an O(N*M) loop (such as comparing a list of items against another list) creates massive overhead due to repeated execution of string operations and regex allocations on the same inputs.
+**Action:** When filtering or comparing two lists, iterate over the lists once beforehand to pre-calculate and cache any normalized strings, tokens, or `Set` objects, so the inner `N*M` loop only does simple equality checks and math. Also, extract regexes to module-level constants to avoid instantiation on every function call.
