@@ -395,6 +395,9 @@ export type AssistantMessageEvent =
 			queue: string;
 			position: number;
 			queuedAhead: number;
+			queuedAtMs?: number;
+			queuedForMs?: number;
+			ticketId?: string;
 			workerId?: string;
 			partial: AssistantMessage;
 	  }

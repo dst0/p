@@ -2868,11 +2868,14 @@ export class InteractiveMode {
 
 			case "request_start": {
 				const recentSwitch = this.getRecentModelSwitch();
-				this.footerDataProvider.clearProgress();
-				if (recentSwitch) {
-					this.footerDataProvider.setModelSwitchProgress(recentSwitch);
+				const queuedRetry = this.footerDataProvider.getQueuedProgress()?.source === "llm-orchestrator";
+				this.footerDataProvider.clearProgress({ preserveQueued: queuedRetry });
+				if (!queuedRetry) {
+					if (recentSwitch) {
+						this.footerDataProvider.setModelSwitchProgress(recentSwitch);
+					}
+					this.footerDataProvider.setSendingProgress({ model: this.getModelStatusLabel(event.model) });
 				}
-				this.footerDataProvider.setSendingProgress({ model: this.getModelStatusLabel(event.model) });
 				this.ui.requestRender();
 				break;
 			}
@@ -2916,11 +2919,13 @@ export class InteractiveMode {
 						this.footerDataProvider.setModelSwitchProgress(undefined);
 						this.footerDataProvider.setLoadingProgress(undefined);
 						this.footerDataProvider.setQueuedProgress({
-							messages: event.assistantMessageEvent.position,
 							position: event.assistantMessageEvent.position,
 							queuedAhead: event.assistantMessageEvent.queuedAhead,
 							queue: event.assistantMessageEvent.queue,
 							workerId: event.assistantMessageEvent.workerId,
+							ticketId: event.assistantMessageEvent.ticketId,
+							queuedAt: event.assistantMessageEvent.queuedAtMs,
+							queuedForMs: event.assistantMessageEvent.queuedForMs,
 							source: "llm-orchestrator",
 						});
 					} else if (event.assistantMessageEvent?.type === "prefill_progress") {
@@ -3053,9 +3058,12 @@ export class InteractiveMode {
 							component.setArgsComplete();
 						}
 					}
+					const isQueueSleepResponse = this.streamingMessage.content.some(
+						(content) => content.type === "toolCall" && content.name === SLEEP_TOOL_NAME,
+					);
 					this.streamingComponent = undefined;
 					this.streamingMessage = undefined;
-					this.footerDataProvider.clearProgress();
+					this.footerDataProvider.clearProgress({ preserveQueued: isQueueSleepResponse });
 					this.footer.invalidate();
 				}
 				this.ui.requestRender();
@@ -4102,9 +4110,6 @@ export class InteractiveMode {
 		this.pendingMessagesContainer.clear();
 		const { steering: steeringMessages, followUp: followUpMessages } = this.getAllQueuedMessages();
 		const queuedMessageCount = steeringMessages.length + followUpMessages.length;
-		this.footerDataProvider.setQueuedProgress(
-			queuedMessageCount > 0 ? { messages: queuedMessageCount, source: "messages" } : undefined,
-		);
 		if (queuedMessageCount > 0) {
 			this.pendingMessagesContainer.addChild(new Spacer(1));
 			for (const message of steeringMessages) {

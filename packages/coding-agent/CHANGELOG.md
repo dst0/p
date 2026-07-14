@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Keep retrying agent turns visibly in their real llm-orchestrator queue position, including server-reported queue duration, instead of replacing the status with local unsent-message counts.
 - Clear explicitly empty session-state next actions, ignore terminal placeholders such as `Done`, and replace completed plans before a fresh task so `finish_work` cannot loop on stale state
 - Instruct agents to reconcile next actions before `finish_work` and never mutate `.pdev` snapshots directly
 - Persist tool-turn checkpoints and refreshed working state so agents continue from completed actions instead of repeating them

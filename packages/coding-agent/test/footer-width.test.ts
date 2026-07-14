@@ -171,7 +171,7 @@ describe("FooterComponent width handling", () => {
 		const footer = new FooterComponent(
 			session,
 			createFooterData(1, {
-				queued: { messages: 2 },
+				queued: { position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
 				prefill: { percent: 42, elapsedMs: 1000 },
 				gen: { tokens: 12, tokensPerSecond: 6 },
 			}),
@@ -189,7 +189,7 @@ describe("FooterComponent width handling", () => {
 		const footer = new FooterComponent(
 			session,
 			createFooterData(1, {
-				queued: { messages: 2, position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
+				queued: { position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
 			}),
 		);
 
@@ -206,7 +206,7 @@ describe("FooterComponent width handling", () => {
 			const footer = new FooterComponent(
 				session,
 				createFooterData(1, {
-					queued: { messages: 2, position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
+					queued: { position: 2, queuedAhead: 1, queue: "worker", source: "llm-orchestrator" },
 				}),
 			);
 
@@ -240,7 +240,7 @@ describe("FooterComponent width handling", () => {
 		const footer = new FooterComponent(
 			session,
 			createFooterData(1, {
-				queued: { messages: 3, position: 3, queuedAhead: 2, queue: "worker", source: "llm-orchestrator" },
+				queued: { position: 3, queuedAhead: 2, queue: "worker", source: "llm-orchestrator" },
 				sending: { model: "local/model-a" },
 			}),
 		);
