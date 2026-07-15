@@ -166,7 +166,7 @@ Use `/export [file]` to write a session to HTML.
 
 Use `/share` to upload a private GitHub gist with a shareable HTML link.
 
-If you use pi for open source work and want to publish sessions for model, prompt, tool, and evaluation research, see [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). It publishes sessions to Hugging Face datasets.
+If you use p for open source work and want to publish sessions for model, prompt, tool, and evaluation research, share them publicly on Hugging Face or similar platforms.
 
 ## CLI Reference
 
@@ -332,7 +332,7 @@ pi --completion-mode implicit -p "Say exactly: ok"
 | `P_CODING_AGENT_SESSION_DIR` | Override session storage directory; overridden by `--session-dir` |
 | `P_PACKAGE_DIR` | Override package directory, useful for Nix/Guix store paths |
 | `P_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `P_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
+| `P_SKIP_VERSION_CHECK` | Skip the p version update check at startup. This prevents the `p.pages.dev` latest-version request |
 | `P_TELEMETRY` | Override install/update telemetry and provider attribution headers: `1`/`true`/`yes` or `0`/`false`/`no`. This does not disable update checks |
 | `P_CACHE_RETENTION` | Set to `long` for extended prompt cache where supported |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
@@ -343,4 +343,4 @@ Pi keeps the core small and pushes workflow-specific behavior into extensions, s
 
 It intentionally does not include built-in MCP, sub-agents, permission popups, to-dos, or background bash. You can build or install those workflows as extensions or packages, or use external tools such as containers and tmux.
 
-For the full rationale, read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/).
+For the full rationale, read the [source repo](https://github.com/dst0/p).

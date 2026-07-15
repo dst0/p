@@ -26,7 +26,7 @@ coding agent trivially and this cannot be protected against.
 If you believe you found a security vulnerability in pi or another package in
 this repository, please report it privately by either:
 
-- Emailing `security@earendil.com`, or
+- Emailing `security@dst0.dev`, or
 - Opening a private report through GitHub Security Advisories for this repository
 
 Please include:
@@ -42,8 +42,8 @@ reports and coordinate disclosure as appropriate.
 ## Scope
 
 Security issues in the distributed packages, command-line tools, APIs, and
-repository code are in scope as well as earendil operated infrastricture
-on `pi.dev`.
+repository code are in scope as well as infrastructure operated at
+`p.pages.dev`.
 
 ## Out Of Scope
 

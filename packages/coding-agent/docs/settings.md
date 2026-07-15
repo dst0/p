@@ -97,7 +97,7 @@ The fast responder emits a short generated acknowledgement before large uncached
 
 ### Telemetry and update checks
 
-`enableInstallTelemetry` only controls the anonymous install/update ping to `https://pi.dev/api/report-install`. Opting out of telemetry does not disable update checks; Pi can still fetch `https://pi.dev/api/latest-version` to look for the latest version.
+`enableInstallTelemetry` only controls the anonymous install/update ping to `https://p.pages.dev/api/report-install`. Opting out of telemetry does not disable update checks; p can still fetch `https://p.pages.dev/api/latest-version` to look for the latest version.
 
 Set `P_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 

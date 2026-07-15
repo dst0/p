@@ -1,44 +1,29 @@
 <p align="center">
-  <a href="https://pi.dev">
-    <img alt="pi logo" src="https://pi.dev/logo-auto.svg" width="128">
+  <a href="https://p.pages.dev">
+    <img alt="p logo" src="https://p.pages.dev/logo-auto.svg" width="128">
   </a>
 </p>
 <p align="center">
   <a href="https://discord.com/invite/3cU7Bz4UPx"><img alt="Discord" src="https://img.shields.io/badge/discord-community-5865F2?style=flat-square&logo=discord&logoColor=white" /></a>
   <a href="https://www.npmjs.com/package/@dst0/p"><img alt="npm" src="https://img.shields.io/npm/v/@dst0/p?style=flat-square" /></a>
 </p>
-<p align="center">
-  <a href="https://pi.dev">pi.dev</a> domain graciously donated by
-  <br /><br />
-  <a href="https://exe.dev"><img src="docs/images/exy.png" alt="Exy mascot" width="48" /><br />exe.dev</a>
-</p>
 
 > New issues and PRs from new contributors are auto-closed by default. Maintainers review auto-closed issues daily. See [CONTRIBUTING.md](../../CONTRIBUTING.md).
 
 ---
 
-Pi is a minimal terminal coding harness. Adapt pi to your workflows, not the other way around, without having to fork and modify pi internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [Pi Packages](#pi-packages) and share them with others via npm or git.
-Pi also keeps project memory, scoped rules, and repo-map snippets flowing into prompts automatically, so the active context stays grounded without manual bookkeeping.
+p is a minimal terminal coding harness. Adapt p to your workflows, not the other way around, without having to fork and modify p internals. Extend it with TypeScript [Extensions](#extensions), [Skills](#skills), [Prompt Templates](#prompt-templates), and [Themes](#themes). Put your extensions, skills, prompt templates, and themes in [P Packages](#pi-packages) and share them with others via npm or git.
+p also keeps project memory, scoped rules, and repo-map snippets flowing into prompts automatically, so the active context stays grounded without manual bookkeeping.
 
-Pi ships with powerful defaults but keeps workflow-specific features narrow. Use the built-in `/plan` gate when you want approval before execution, and ask pi to build or install third party pi packages for workflows that should be customized to your environment.
+p ships with powerful defaults but keeps workflow-specific features narrow. Use the built-in `/plan` gate when you want approval before execution, and ask p to build or install third party packages for workflows that should be customized to your environment.
 
-Pi runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. It also ships a local `p-voice` browser bridge for speech recognition and spoken answers on top of RPC mode. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
+p runs in four modes: interactive, print or JSON, RPC for process integration, and an SDK for embedding in your own apps. It also ships a local `p-voice` browser bridge for speech recognition and spoken answers on top of RPC mode. See [openclaw/openclaw](https://github.com/openclaw/openclaw) for a real-world SDK integration.
 
 ## Share your OSS coding agent sessions
 
-If you use pi for open source work, please share your coding agent sessions.
+If you use p for open source work, please share your coding agent sessions.
 
 Public OSS session data helps improve models, prompts, tools, and evaluations using real development workflows.
-
-For the full explanation, see [this post on X](https://x.com/badlogicgames/status/2037811643774652911).
-
-To publish sessions, use [`badlogic/pi-share-hf`](https://github.com/badlogic/pi-share-hf). Read its README.md for setup instructions. All you need is a Hugging Face account, the Hugging Face CLI, and `pi-share-hf`.
-
-You can also watch [this video](https://x.com/badlogicgames/status/2041151967695634619), where I show how I publish my `pi-mono` sessions.
-
-I regularly publish my own `pi-mono` work sessions here:
-
-- [badlogicgames/pi-mono on Hugging Face](https://huggingface.co/datasets/badlogicgames/pi-mono)
 
 ## Table of Contents
 
@@ -79,7 +64,7 @@ npm install -g --ignore-scripts @dst0/p
 Installer alternative:
 
 ```bash
-curl -fsSL https://pi.dev/install.sh | sh
+curl -fsSL https://p.pages.dev/install.sh | sh
 ```
 
 Authenticate with an API key:
@@ -321,8 +306,8 @@ Use `/trust` in interactive mode to save a project trust decision for future ses
 
 Pi has two separate startup features:
 
-- **Update check:** fetches `https://pi.dev/api/latest-version` to check whether a newer Pi version exists. Disable it with `P_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
-- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://pi.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `P_TELEMETRY=0`. This does not disable update checks; Pi may still contact `pi.dev` for the latest version unless update checks are disabled or offline mode is enabled.
+- **Update check:** fetches `https://p.pages.dev/api/latest-version` to check whether a newer p version exists. Disable it with `P_SKIP_VERSION_CHECK=1`. Disabling update checks only turns off this check.
+- **Install/update telemetry:** after first install or a changelog-detected update, sends an anonymous version ping to `https://p.pages.dev/api/report-install`. This setting also controls optional provider attribution headers for OpenRouter, Cloudflare, and direct NVIDIA NIM requests. Opt out by setting `enableInstallTelemetry` to `false` in `settings.json`, or by setting `P_TELEMETRY=0`. This does not disable update checks; p may still contact `p.pages.dev` for the latest version unless update checks are disabled or offline mode is enabled.
 
 Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 
@@ -593,11 +578,11 @@ See [docs/rpc.md](docs/rpc.md) for the protocol.
 
 ## Philosophy
 
-Pi is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [pi packages](#pi-packages). This keeps the core minimal while letting you shape pi to fit how you work.
+p is aggressively extensible so it doesn't have to dictate your workflow. Features that other tools bake in can be built with [extensions](#extensions), [skills](#skills), or installed from third-party [packages](#pi-packages). This keeps the core minimal while letting you shape p to fit how you work.
 
-**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support. [Why?](https://mariozechner.at/posts/2025-11-02-what-if-you-dont-need-mcp/)
+**No MCP.** Build CLI tools with READMEs (see [Skills](#skills)), or build an extension that adds MCP support.
 
-**No sub-agents.** There's many ways to do this. Spawn pi instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
+**No sub-agents.** There's many ways to do this. Spawn p instances via tmux, or build your own with [extensions](#extensions), or install a package that does it your way.
 
 **No permission popups.** Run in a container, or build your own confirmation flow with [extensions](#extensions) inline with your environment and security requirements.
 
@@ -606,8 +591,6 @@ Pi is aggressively extensible so it doesn't have to dictate your workflow. Featu
 **No built-in to-dos.** They confuse models. Use a TODO.md file, or build your own with [extensions](#extensions).
 
 **No background bash.** Use tmux. Full observability, direct interaction.
-
-Read the [blog post](https://mariozechner.at/posts/2025-11-30-pi-coding-agent/) for the full rationale.
 
 ---
 
@@ -777,7 +760,7 @@ pi --completion-mode implicit -p "Say exactly: ok"
 | `P_CODING_AGENT_SESSION_DIR` | Override session storage directory (overridden by `--session-dir`) |
 | `P_PACKAGE_DIR` | Override package directory (useful for Nix/Guix where store paths tokenize poorly) |
 | `P_OFFLINE` | Disable startup network operations, including update checks, package update checks, and install/update telemetry |
-| `P_SKIP_VERSION_CHECK` | Skip the Pi version update check at startup. This prevents the `pi.dev` latest-version request |
+| `P_SKIP_VERSION_CHECK` | Skip the p version update check at startup. This prevents the `p.pages.dev` latest-version request |
 | `P_TELEMETRY` | Override install/update telemetry and provider attribution headers. Use `1`/`true`/`yes` to enable or `0`/`false`/`no` to disable. This does not disable update checks |
 | `P_CACHE_RETENTION` | Set to `long` for extended prompt cache (Anthropic: 1h, OpenAI: 24h) |
 | `VISUAL`, `EDITOR` | External editor for Ctrl+G |
