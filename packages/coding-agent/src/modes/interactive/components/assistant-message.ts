@@ -76,9 +76,14 @@ export class AssistantMessageComponent extends Container {
 		// Clear content container
 		this.contentContainer.clear();
 
-		const hasVisibleContent = message.content.some(
-			(c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()),
-		);
+		let hasVisibleContent = false;
+		for (let i = 0; i < message.content.length; i++) {
+			const c = message.content[i];
+			if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
+				hasVisibleContent = true;
+				break;
+			}
+		}
 
 		if (hasVisibleContent) {
 			this.contentContainer.addChild(new Spacer(1));
@@ -94,9 +99,14 @@ export class AssistantMessageComponent extends Container {
 			} else if (content.type === "thinking" && content.thinking.trim()) {
 				// Add spacing only when another visible assistant content block follows.
 				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				const hasVisibleContentAfter = message.content
-					.slice(i + 1)
-					.some((c) => (c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim()));
+				let hasVisibleContentAfter = false;
+				for (let j = i + 1; j < message.content.length; j++) {
+					const c = message.content[j];
+					if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
+						hasVisibleContentAfter = true;
+						break;
+					}
+				}
 
 				if (this.hideThinkingBlock) {
 					// Show static thinking label when hidden
@@ -123,7 +133,13 @@ export class AssistantMessageComponent extends Container {
 
 		// Check if aborted - show after partial content
 		// But only if there are no tool calls (tool execution components will show the error)
-		const hasToolCalls = message.content.some((c) => c.type === "toolCall");
+		let hasToolCalls = false;
+		for (let i = 0; i < message.content.length; i++) {
+			if (message.content[i].type === "toolCall") {
+				hasToolCalls = true;
+				break;
+			}
+		}
 		this.hasToolCalls = hasToolCalls;
 		if (!hasToolCalls) {
 			if (message.stopReason === "aborted") {
