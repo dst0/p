@@ -1705,7 +1705,6 @@ function mergeProgressList(existing: string[], incoming: string[] | undefined): 
 
 function removeSimilarProgressItems(existing: string[], itemsToRemove: string[]): string[] {
 	if (itemsToRemove.length === 0) return existing;
-
 	// ⚡ Bolt: Pre-calculate normalized terms for O(N*M) loop optimization
 	const len = itemsToRemove.length;
 	const normalizedToRemove = itemsToRemove.map((item) => {
@@ -1737,7 +1736,12 @@ function removeSimilarProgressItems(existing: string[], itemsToRemove: string[])
 }
 
 function findSimilarProgressItemIndex(existing: string[], incoming: string): number {
-	return existing.findIndex((item) => areComparableTextsSimilar(item, incoming));
+	for (let i = 0; i < existing.length; i++) {
+		if (areComparableTextsSimilar(existing[i]!, incoming)) {
+			return i;
+		}
+	}
+	return -1;
 }
 
 function areComparableTextsSimilar(left: string, right: string): boolean {
@@ -1778,13 +1782,25 @@ function _scoreNormalizedComparableText(
 	return Math.max(containment >= 0.8 ? containment : 0, dice);
 }
 
+// Optimization: cache comparable terms to avoid splitting and mapping repetitively
+const termsCache = new Map<string, Set<string>>();
+const TERM_SPLIT_REGEX = /[^a-z0-9/_-]+/;
+
 function comparableTerms(text: string): Set<string> {
-	return new Set(
+	let cached = termsCache.get(text);
+	if (cached !== undefined) return cached;
+
+	// Reset cache if it gets too large to prevent memory leak
+	if (termsCache.size > 2000) termsCache.clear();
+
+	cached = new Set(
 		text
-			.split(/[^a-z0-9/_-]+/)
+			.split(TERM_SPLIT_REGEX)
 			.map((term) => term.trim())
 			.filter((term) => term.length > 1 && !COMPARABLE_TEXT_STOP_WORDS.has(term)),
 	);
+	termsCache.set(text, cached);
+	return cached;
 }
 
 const COMPARABLE_TEXT_STOP_WORDS = new Set([
@@ -1809,14 +1825,25 @@ const NORMALIZE_ACTION_REGEX =
 const NORMALIZE_PARENS_REGEX = /\([^)]*\)\s*$/g;
 const NORMALIZE_SPACE_REGEX = /\s+/g;
 
+// Optimization: cache normalized text as it is called many times in nested loops
+const normalizationCache = new Map<string, string>();
+
 function normalizeComparableText(text: string): string {
-	return text
+	let cached = normalizationCache.get(text);
+	if (cached !== undefined) return cached;
+
+	// Reset cache if it gets too large to prevent memory leak
+	if (normalizationCache.size > 2000) normalizationCache.clear();
+
+	cached = text
 		.toLowerCase()
 		.replace(NORMALIZE_PREFIX_REGEX, "")
 		.replace(NORMALIZE_ACTION_REGEX, "")
 		.replace(NORMALIZE_PARENS_REGEX, "")
 		.replace(NORMALIZE_SPACE_REGEX, " ")
 		.trim();
+	normalizationCache.set(text, cached);
+	return cached;
 }
 
 function extractOptionalBulletLines(text: string | undefined): string[] | undefined {
