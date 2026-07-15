@@ -529,6 +529,8 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 
 	const goal = normalizePatchGoal(getStringField(value, ["goal", "canonicalGoal", "canonicalRequest"]));
 	const constraints = parseConstraints(value.constraints);
+	const action = getStringField(value, ["action"]);
+	const isReplaceAction = action === "initial_plan" || action === "replan";
 	const planItems = parsePlanItemsFromUpdate(value.plan ?? value.planItems, sourceEntryIds);
 	const progress = parseProgressUpdate(value.progress, value);
 	const decisions = parseDecisionsFromUpdate(value.decisions);
@@ -543,7 +545,7 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 				}
 			: undefined,
 		constraints: constraints.length > 0 ? { add: constraints } : undefined,
-		plan: planItems.length > 0 ? { add: planItems } : undefined,
+		plan: planItems.length > 0 ? (isReplaceAction ? { replace: planItems } : { add: planItems }) : undefined,
 		progress,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,

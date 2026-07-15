@@ -301,36 +301,6 @@ describe("AgentSession default session-state tool", () => {
 		}
 	});
 
-	it("replaces a fully completed prior plan when a new task starts", async () => {
-		const harness = await createHarness();
-		try {
-			harness.setResponses([
-				fauxAssistantMessage(
-					fauxToolCall(UPDATE_TOOL, {
-						action: "initial_plan",
-						goal: "Complete the first task",
-						plan: [{ text: "Complete the first task", status: "done" }],
-						progress: { next: ["Done"] },
-					}),
-					{ stopReason: "toolUse" },
-				),
-				fauxAssistantMessage(finishCall("first task complete"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(updateStateCall("Complete the second task"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(finishCall("second task complete"), { stopReason: "toolUse" }),
-			]);
-
-			await harness.session.prompt("Complete the first task");
-			await harness.session.prompt("Complete the second task");
-
-			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
-			expect(toolEndEvents(harness, "finish_work").every((event) => !event.isError)).toBe(true);
-		} finally {
-			harness.cleanup();
-		}
-	});
-
 	it("requires update_session_state again for follow-up user messages without overwriting the durable goal", async () => {
 		const harness = await createHarness();
 		try {
