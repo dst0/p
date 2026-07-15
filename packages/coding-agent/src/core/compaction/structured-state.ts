@@ -139,6 +139,7 @@ export interface StatePatch {
 			text?: string;
 			evidenceEntryIds?: string[];
 		}>;
+		remove?: Array<string | { id?: string; text: string }>;
 	};
 	progress?: Partial<StructuredSessionState["progress"]>;
 	decisions?: {
@@ -529,10 +530,37 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 
 	const goal = normalizePatchGoal(getStringField(value, ["goal", "canonicalGoal", "canonicalRequest"]));
 	const constraints = parseConstraints(value.constraints);
+	const action = getStringField(value, ["action"]);
+	const isReplaceAction = action === "initial_plan";
 	const planItems = parsePlanItemsFromUpdate(value.plan ?? value.planItems, sourceEntryIds);
 	const progress = parseProgressUpdate(value.progress, value);
 	const decisions = parseDecisionsFromUpdate(value.decisions);
 	const touchedFiles = parseTouchedFilesFromUpdate(value.touchedFiles ?? value.touched_files ?? value.files);
+	const plan =
+		planItems.length > 0
+			? isReplaceAction
+				? { replace: planItems }
+				: (() => {
+						const addItems = planItems.filter((i) => !i.op || i.op === "add");
+						const updateItems = planItems
+							.filter((i) => i.op === "update")
+							.map((i) => ({
+								id: i.id,
+								matchText: i.text,
+								text: i.text,
+								status: i.status,
+								evidenceEntryIds: i.evidenceEntryIds,
+							}));
+						const removeItems = planItems
+							.filter((i) => i.op === "remove")
+							.map((i) => ({ id: i.id, text: i.text }));
+						const p: NonNullable<StatePatch["plan"]> = {};
+						if (addItems.length > 0) p.add = addItems;
+						if (updateItems.length > 0) p.update = updateItems;
+						if (removeItems.length > 0) p.remove = removeItems;
+						return Object.keys(p).length > 0 ? p : undefined;
+					})()
+			: undefined;
 	const evidence = parseEvidenceFromUpdate(value.evidence ?? value.evidencePointers ?? value.evidence_pointers);
 	const risks = getStringListField(value, ["risks", "knownRisks", "known_risks"]);
 	const patch: StatePatch = {
@@ -543,7 +571,7 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 				}
 			: undefined,
 		constraints: constraints.length > 0 ? { add: constraints } : undefined,
-		plan: planItems.length > 0 ? { add: planItems } : undefined,
+		plan,
 		progress,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
@@ -646,7 +674,10 @@ function parseConstraints(value: unknown): Constraint[] {
 	return constraints;
 }
 
-function parsePlanItemsFromUpdate(value: unknown, sourceEntryIds: string[]): PlanItem[] {
+function parsePlanItemsFromUpdate(
+	value: unknown,
+	sourceEntryIds: string[],
+): Array<PlanItem & { op?: "add" | "update" | "remove" }> {
 	const rawItems = Array.isArray(value)
 		? value
 		: isRecord(value) && Array.isArray(value.items)
@@ -654,12 +685,15 @@ function parsePlanItemsFromUpdate(value: unknown, sourceEntryIds: string[]): Pla
 			: isRecord(value) && Array.isArray(value.add)
 				? value.add
 				: [];
-	const items: PlanItem[] = [];
+	const items: Array<PlanItem & { op?: "add" | "update" | "remove" }> = [];
 	for (const item of rawItems) {
 		const text =
 			typeof item === "string" ? item : isRecord(item) ? getStringField(item, ["text", "item", "task"]) : "";
 		if (!text) continue;
 		const status = isRecord(item) ? parsePlanStatusValue(item.status ?? item.state) : "not_started";
+		const op = isRecord(item)
+			? (getStringField(item, ["op", "operation"]) as "add" | "update" | "remove" | undefined)
+			: undefined;
 		const entryIds = isRecord(item) ? getStringListField(item, ["evidenceEntryIds", "evidence_entry_ids"]) : [];
 		items.push({
 			id: isRecord(item)
@@ -667,6 +701,7 @@ function parsePlanItemsFromUpdate(value: unknown, sourceEntryIds: string[]): Pla
 				: createStableId("plan", text),
 			text: capSentence(compactWhitespace(text), 280),
 			status,
+			op,
 			evidenceEntryIds: mergeStringList([...sourceEntryIds], entryIds),
 		});
 	}
@@ -1490,6 +1525,12 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
 		if (update.status && shouldReplacePlanStatus(existing.status, update.status)) existing.status = update.status;
 		existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);
 		rememberOrder(existing);
+	}
+	// Remove items matched by id or text
+	for (const removal of patch.remove ?? []) {
+		const matchId = typeof removal === "string" ? undefined : removal.id;
+		const matchText = typeof removal === "string" ? removal : removal.text;
+		state.plan = state.plan.filter((item) => !findPlanItemByIdOrText([item], matchId, matchText));
 	}
 	if ((patch.add?.length ?? 0) > 1 && orderedIds.length > 1) {
 		reorderPlan(state, orderedIds);

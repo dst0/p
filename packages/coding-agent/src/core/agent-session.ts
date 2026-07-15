@@ -220,7 +220,7 @@ interface ToolSearchResult {
 const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
 Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, and "none" only after explicitly checking that no state change is needed.
-For action "replan", provide the complete current plan including all original user-requested items. Every item from the original user request must appear in the replan with its current status. Only mark an item as "done" when its work is verifiably complete and verified. Never remove or omit an original user-requested item from the plan unless the user explicitly declines it or asks for it to be dropped.
+For action "replan", provide the updated plan items to add or modify. Existing items not mentioned are preserved. Only mark an item as "done" when its work is verifiably complete and verified. Never remove or omit an original user-requested item from the plan unless the user explicitly declines it or asks for it to be dropped.
 When an existing plan item changes status during work, call mark_session_progress(task, status, next?) with the existing visible task text instead of adding another plan item through update_session_state.
 This is the default state protocol and is separate from /plan mode; do not wait for user approval unless the user explicitly asked for confirmation.
 If update_session_state is not available, fall back to appending exactly one hidden state block at the end of every completed assistant turn:
@@ -650,6 +650,7 @@ const UPDATE_SESSION_STATE_SCHEMA = Type.Object({
 		Type.Array(
 			Type.Object({
 				text: Type.String(),
+				op: Type.Optional(Type.Union([Type.Literal("add"), Type.Literal("update"), Type.Literal("remove")])),
 				status: Type.Optional(UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA),
 			}),
 		),
@@ -707,7 +708,7 @@ const MARK_SESSION_PROGRESS_SCHEMA = Type.Object({
 interface UpdateSessionStateInput {
 	action: "initial_plan" | "replan" | "progress_update" | "none";
 	goal?: string;
-	plan?: Array<{ text: string; status?: PlanStatus }>;
+	plan?: Array<{ text: string; op?: "add" | "update" | "remove"; status?: PlanStatus }>;
 	progress?: Partial<StructuredSessionState["progress"]>;
 	decisions?: Array<{ decision: string; rationale?: string }>;
 	risks?: string[];
@@ -3535,7 +3536,9 @@ Plan mode is active because the user invoked /plan.
 			promptGuidelines: [
 				`Call ${UPDATE_SESSION_STATE_TOOL_NAME} before any other tool on every new user turn, including the first request and queued follow-ups.`,
 				"Use it to preserve the durable goal when the latest user message is a follow-up, or to explicitly change the goal when the user corrects the objective.",
-				`For action "replan", provide the complete current plan including all original user-requested items. Never omit an original item unless the user explicitly declined it.`,
+				`For action "replan", provide updated plan items. Each item can have an optional "op" field: "add" (default, adds new or updates matched existing), "update" (updates matched existing item), or "remove" (removes matched item by exact text). Items not mentioned are preserved.`,
+				`To fully replace the entire plan mid-task, mark all items done then use "initial_plan".`,
+				`Use "action": "progress_update" to update existing plan items (status/text) without adding new ones.`,
 				`Use ${MARK_SESSION_PROGRESS_TOOL_NAME} instead when only an existing plan item changes status.`,
 				"Do not wait for user approval in normal mode; this is internal state maintenance, not /plan approval mode.",
 			],
@@ -3638,8 +3641,9 @@ Plan mode is active because the user invoked /plan.
 			return undefined;
 		}
 		const goal = normalizeStateText(input.goal ?? "");
-		const planItems = (input.plan ?? [])
+		const rawPlanItems = (input.plan ?? [])
 			.map((item) => ({
+				op: item.op ?? "add",
 				id: createStateToolStableId("plan", item.text),
 				text: capStateToolText(item.text, 280),
 				status: item.status ?? "not_started",
@@ -3685,11 +3689,11 @@ Plan mode is active because the user invoked /plan.
 				}
 			: normalizedProgress;
 		const plan =
-			planItems.length === 0
+			rawPlanItems.length === 0
 				? undefined
 				: input.action === "progress_update"
 					? {
-							update: planItems.map((item) => ({
+							update: rawPlanItems.map((item) => ({
 								id: item.id,
 								matchText: item.text,
 								text: item.text,
@@ -3697,9 +3701,28 @@ Plan mode is active because the user invoked /plan.
 								evidenceEntryIds: item.evidenceEntryIds,
 							})),
 						}
-					: input.action === "replan" || replaceCompletedPlan
-						? { replace: planItems }
-						: { add: planItems };
+					: replaceCompletedPlan
+						? { replace: rawPlanItems }
+						: (() => {
+								const addItems = rawPlanItems.filter((i) => i.op === "add");
+								const updateItems = rawPlanItems
+									.filter((i) => i.op === "update")
+									.map((i) => ({
+										id: i.id,
+										matchText: i.text,
+										text: i.text,
+										status: i.status,
+										evidenceEntryIds: i.evidenceEntryIds,
+									}));
+								const removeItems = rawPlanItems
+									.filter((i) => i.op === "remove")
+									.map((i) => ({ id: i.id, text: i.text }));
+								const p: NonNullable<StatePatch["plan"]> = {};
+								if (addItems.length > 0) p.add = addItems;
+								if (updateItems.length > 0) p.update = updateItems;
+								if (removeItems.length > 0) p.remove = removeItems;
+								return Object.keys(p).length > 0 ? p : undefined;
+							})();
 		const patch: StatePatch = {
 			canonicalRequest:
 				goal || liveState.canonicalRequest.originalRequests.length > 0
