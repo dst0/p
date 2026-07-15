@@ -21,13 +21,14 @@ export type GenerationProgress = {
 };
 
 export type QueuedProgress = {
-	messages: number;
-	position?: number;
-	queuedAhead?: number;
-	queue?: string;
+	position: number;
+	queuedAhead: number;
+	queue: string;
 	workerId?: string;
-	source?: "messages" | "llm-orchestrator";
+	ticketId?: string;
+	source: "llm-orchestrator";
 	queuedAt?: number;
+	queuedForMs?: number;
 };
 
 export type SendingProgress = {
@@ -252,9 +253,19 @@ export class FooterDataProvider {
 	/** Internal: set queued progress */
 	setQueuedProgress(progress: QueuedProgress | undefined): void {
 		if (progress) {
-			if (!this.queuedStartAt) {
-				this.queuedStartAt = Date.now();
+			// Ignore legacy/local message-queue payloads at runtime as well as at
+			// the type boundary. QUEUED is an execution phase reported by the
+			// orchestrator, while unsent steering/follow-up messages have their own UI.
+			if (progress.source !== "llm-orchestrator") {
+				return;
 			}
+			const sameTicket = progress.ticketId
+				? progress.ticketId === this.queuedProgress?.ticketId
+				: this.queuedProgress?.ticketId === undefined && progress.queue === this.queuedProgress?.queue;
+			this.queuedStartAt =
+				progress.queuedAt ??
+				(sameTicket ? this.queuedProgress?.queuedAt : undefined) ??
+				Date.now() - Math.max(0, progress.queuedForMs ?? 0);
 			this.queuedProgress = { ...progress, queuedAt: this.queuedStartAt };
 		} else {
 			this.queuedStartAt = undefined;
@@ -308,14 +319,15 @@ export class FooterDataProvider {
 	}
 
 	/** Internal: clear active stream progress */
-	clearProgress(): void {
+	clearProgress(options?: { preserveQueued?: boolean }): void {
 		this.prefillProgress = undefined;
 		this.genProgress = undefined;
 		this.sendingProgress = undefined;
 		this.modelSwitchProgress = undefined;
 		this.loadingProgress = undefined;
-		if (this.queuedProgress?.source === "llm-orchestrator") {
+		if (!options?.preserveQueued) {
 			this.queuedProgress = undefined;
+			this.queuedStartAt = undefined;
 		}
 		this.notifyProgressChange();
 	}

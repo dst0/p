@@ -258,6 +258,9 @@ export function parseOpenAICompletionsProgressChunk(
 			queue: readString(fields, "queue") ?? "orchestrator",
 			position,
 			queuedAhead,
+			queuedAtMs: readFiniteNumber(fields, "queuedAtMs", "queued_at_ms"),
+			queuedForMs: readFiniteNumber(fields, "queuedForMs", "queued_for_ms", "elapsedMs", "elapsed_ms"),
+			ticketId: readString(fields, "ticketId", "ticket_id"),
 			workerId: readString(fields, "workerId", "worker_id"),
 			partial: output,
 		};

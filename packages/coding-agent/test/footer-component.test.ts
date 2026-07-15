@@ -61,9 +61,9 @@ describe("FooterComponent", () => {
 		const footerData: ReadonlyFooterDataProvider = {
 			...createFooterData(),
 			getQueuedProgress: () => ({
-				messages: 2,
 				position: 2,
 				queuedAhead: 1,
+				queue: "worker",
 				source: "llm-orchestrator",
 				queuedAt,
 			}),
@@ -73,19 +73,18 @@ describe("FooterComponent", () => {
 		const output = footer.render(200).join("\n");
 		expect(output).toContain("QUEUED");
 		expect(output).toMatch(/\d+s/); // elapsed seconds like "5s"
-		// Position info is not shown in status badge (already shown in queue column)
 		const queuedLine = output.split("\n").find((line) => line.includes("QUEUED"));
-		expect(queuedLine!).not.toContain("#");
-		expect(queuedLine!).not.toContain("ahead");
+		expect(queuedLine!).toContain("#2, 1 ahead");
+		expect(queuedLine!).toContain("5s");
 	});
 
 	it("renders QUEUED badge without elapsed seconds when queuedAt is not set", () => {
 		const footerData: ReadonlyFooterDataProvider = {
 			...createFooterData(),
 			getQueuedProgress: () => ({
-				messages: 2,
 				position: 2,
 				queuedAhead: 1,
+				queue: "worker",
 				source: "llm-orchestrator",
 			}),
 		};
@@ -93,10 +92,8 @@ describe("FooterComponent", () => {
 
 		const output = footer.render(200).join("\n");
 		expect(output).toContain("QUEUED");
-		// No position or elapsed info in status badge when queuedAt not set
 		const queuedLine = output.split("\n").find((line) => line.includes("QUEUED"));
-		expect(queuedLine!).not.toContain("#");
-		expect(queuedLine!).not.toContain("ahead");
+		expect(queuedLine!).toContain("#2, 1 ahead");
 		expect(queuedLine!).not.toMatch(/\d+s/);
 	});
 });

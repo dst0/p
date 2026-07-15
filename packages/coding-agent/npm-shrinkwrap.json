@@ -1,17 +1,17 @@
 {
 	"name": "@dst0/p",
-	"version": "0.4.7",
+	"version": "0.4.8",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@dst0/p",
-			"version": "0.4.7",
+			"version": "0.4.8",
 			"license": "MIT",
 			"dependencies": {
-				"@dst0/p-agent-core": "^0.4.7",
-				"@dst0/p-ai": "^0.4.7",
-				"@dst0/p-tui": "^0.4.7",
+				"@dst0/p-agent-core": "^0.4.8",
+				"@dst0/p-ai": "^0.4.8",
+				"@dst0/p-tui": "^0.4.8",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
@@ -475,11 +475,11 @@
 			}
 		},
 		"node_modules/@dst0/p-agent-core": {
-			"version": "0.4.7",
-			"resolved": "https://registry.npmjs.org/@dst0/p-agent-core/-/p-agent-core-0.4.7.tgz",
+			"version": "0.4.8",
+			"resolved": "https://registry.npmjs.org/@dst0/p-agent-core/-/p-agent-core-0.4.8.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@dst0/p-ai": "^0.4.7",
+				"@dst0/p-ai": "^0.4.8",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
@@ -489,8 +489,8 @@
 			}
 		},
 		"node_modules/@dst0/p-ai": {
-			"version": "0.4.7",
-			"resolved": "https://registry.npmjs.org/@dst0/p-ai/-/p-ai-0.4.7.tgz",
+			"version": "0.4.8",
+			"resolved": "https://registry.npmjs.org/@dst0/p-ai/-/p-ai-0.4.8.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -512,8 +512,8 @@
 			}
 		},
 		"node_modules/@dst0/p-tui": {
-			"version": "0.4.7",
-			"resolved": "https://registry.npmjs.org/@dst0/p-tui/-/p-tui-0.4.7.tgz",
+			"version": "0.4.8",
+			"resolved": "https://registry.npmjs.org/@dst0/p-tui/-/p-tui-0.4.8.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",

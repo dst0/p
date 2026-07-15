@@ -53,15 +53,11 @@ function computeGenTrend(currentRate: number, previousRate: number | undefined):
 	return "→";
 }
 
-function formatQueuedProgress(queued: {
-	messages: number;
-	position?: number;
-	queuedAhead?: number;
-	queuedAt?: number;
-}): string {
-	const parts: string[] = [];
+function formatQueuedProgress(queued: { position: number; queuedAhead: number; queuedAt?: number }): string {
+	const ahead = queued.queuedAhead === 0 ? "next" : `${queued.queuedAhead} ahead`;
+	const parts = [`#${queued.position}, ${ahead}`];
 	if (queued.queuedAt !== undefined) {
-		const elapsed = Math.floor((Date.now() - queued.queuedAt) / 1000);
+		const elapsed = Math.max(0, Math.floor((Date.now() - queued.queuedAt) / 1000));
 		parts.push(`${elapsed}s`);
 	}
 	return parts.join(" ");

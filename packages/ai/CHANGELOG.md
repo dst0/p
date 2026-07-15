@@ -5,6 +5,7 @@
 ### Fixed
 
 - Kept generated model catalogs stable during ordinary builds; refresh them explicitly with `npm run generate`.
+- Preserve llm-orchestrator queue ticket identity and server queue timing in streaming progress events.
 
 ## [0.4.0] - 2026-07-06
 

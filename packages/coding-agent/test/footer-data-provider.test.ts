@@ -319,17 +319,17 @@ describe("FooterDataProvider progress state", () => {
 
 		provider.setModelSwitchProgress({ fromModel: "misha-pc/misha-pc-model", toModel: "lms-micro/model" });
 		provider.setQueuedProgress({
-			messages: 2,
 			position: 2,
 			queuedAhead: 1,
+			queue: "worker",
 			workerId: "llama-cpu",
 			source: "llm-orchestrator",
 		});
 
 		expect(provider.getQueuedProgress()).toEqual({
-			messages: 2,
 			position: 2,
 			queuedAhead: 1,
+			queue: "worker",
 			workerId: "llama-cpu",
 			source: "llm-orchestrator",
 			queuedAt: expect.any(Number),
@@ -347,25 +347,43 @@ describe("FooterDataProvider progress state", () => {
 		expect(provider.getLoadingProgress()).toEqual({ model: "new/model" });
 	});
 
-	it("sets queuedAt on first setQueuedProgress call", () => {
+	it("uses the orchestrator queue timestamp instead of resetting elapsed time locally", () => {
 		const provider = new FooterDataProvider(tempDir);
+		const queuedAt = 1_700_000_000_000;
 
-		provider.setQueuedProgress({ messages: 3, position: 3, queuedAhead: 2, source: "llm-orchestrator" });
+		provider.setQueuedProgress({
+			position: 3,
+			queuedAhead: 2,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			queuedAt,
+			source: "llm-orchestrator",
+		});
 
 		const result = provider.getQueuedProgress();
-		expect(result).toBeDefined();
-		expect(result!.queuedAt).toBeTypeOf("number");
-		expect(result!.queuedAt!).toBeGreaterThan(0);
+		expect(result?.queuedAt).toBe(queuedAt);
 	});
 
 	it("preserves queuedAt on subsequent setQueuedProgress calls", async () => {
 		const provider = new FooterDataProvider(tempDir);
 
-		provider.setQueuedProgress({ messages: 3, position: 3, queuedAhead: 2, source: "llm-orchestrator" });
+		provider.setQueuedProgress({
+			position: 3,
+			queuedAhead: 2,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			source: "llm-orchestrator",
+		});
 		const firstAt = provider.getQueuedProgress()!.queuedAt;
 
 		await new Promise((resolve) => setTimeout(resolve, 50));
-		provider.setQueuedProgress({ messages: 2, position: 2, queuedAhead: 1, source: "llm-orchestrator" });
+		provider.setQueuedProgress({
+			position: 2,
+			queuedAhead: 1,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			source: "llm-orchestrator",
+		});
 
 		expect(provider.getQueuedProgress()!.queuedAt).toBe(firstAt);
 	});
@@ -373,10 +391,81 @@ describe("FooterDataProvider progress state", () => {
 	it("clears queuedAt when setQueuedProgress is called with undefined", () => {
 		const provider = new FooterDataProvider(tempDir);
 
-		provider.setQueuedProgress({ messages: 1, source: "llm-orchestrator" });
+		provider.setQueuedProgress({
+			position: 1,
+			queuedAhead: 0,
+			queue: "model",
+			source: "llm-orchestrator",
+		});
 		expect(provider.getQueuedProgress()!.queuedAt).toBeDefined();
 
 		provider.setQueuedProgress(undefined);
+		expect(provider.getQueuedProgress()).toBeUndefined();
+	});
+
+	it("derives a stable queue start from server elapsed time when queuedAt is absent", () => {
+		vi.useFakeTimers();
+		try {
+			vi.setSystemTime(10_000);
+			const provider = new FooterDataProvider(tempDir);
+			provider.setQueuedProgress({
+				position: 1,
+				queuedAhead: 0,
+				queue: "worker",
+				queuedForMs: 2500,
+				source: "llm-orchestrator",
+			});
+
+			expect(provider.getQueuedProgress()?.queuedAt).toBe(7500);
+		} finally {
+			vi.useRealTimers();
+		}
+	});
+
+	it("can preserve orchestrator queue state across a retry request boundary", () => {
+		const provider = new FooterDataProvider(tempDir);
+		provider.setQueuedProgress({
+			position: 2,
+			queuedAhead: 1,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			queuedAt: 1234,
+			source: "llm-orchestrator",
+		});
+
+		provider.clearProgress({ preserveQueued: true });
+
+		expect(provider.getQueuedProgress()).toEqual({
+			position: 2,
+			queuedAhead: 1,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			queuedAt: 1234,
+			source: "llm-orchestrator",
+		});
+	});
+
+	it("clears orchestrator queue state and its timer by default", () => {
+		const provider = new FooterDataProvider(tempDir);
+		provider.setQueuedProgress({
+			position: 1,
+			queuedAhead: 0,
+			queue: "model",
+			ticketId: "queue-ticket-a",
+			queuedAt: 1234,
+			source: "llm-orchestrator",
+		});
+
+		provider.clearProgress();
+
+		expect(provider.getQueuedProgress()).toBeUndefined();
+	});
+
+	it("rejects legacy local message queue payloads as execution progress", () => {
+		const provider = new FooterDataProvider(tempDir);
+
+		provider.setQueuedProgress({ messages: 2, source: "messages" } as never);
+
 		expect(provider.getQueuedProgress()).toBeUndefined();
 	});
 });

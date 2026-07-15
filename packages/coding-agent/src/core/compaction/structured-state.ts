@@ -1424,6 +1424,19 @@ function mergeConstraints(state: StructuredSessionState, patch: NonNullable<Stat
 }
 
 function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch["plan"]>): void {
+	// Fast path: when there are no existing items, all incoming items are new
+	if (state.plan.length === 0 && (patch.replace?.length ?? 0) === 0) {
+		state.plan = (patch.add ?? []).map(
+			(item): PlanItem => ({
+				id: item.id,
+				text: item.text,
+				status: item.status,
+				evidenceEntryIds: item.evidenceEntryIds ?? [],
+			}),
+		);
+		return;
+	}
+
 	const orderedIds: string[] = [];
 	const rememberOrder = (item: PlanItem): void => {
 		if (!orderedIds.includes(item.id)) {
@@ -1651,12 +1664,31 @@ function mergeProgressList(existing: string[], incoming: string[] | undefined): 
 
 function removeSimilarProgressItems(existing: string[], itemsToRemove: string[]): string[] {
 	if (itemsToRemove.length === 0) return existing;
+	// ⚡ Bolt: Pre-calculate normalized terms for O(N*M) loop optimization
+	const len = itemsToRemove.length;
+	const normalizedToRemove = itemsToRemove.map((item) => {
+		const normalized = normalizeComparableText(item);
+		return {
+			normalized,
+			terms: normalized ? comparableTerms(normalized) : new Set<string>(),
+		};
+	});
+
 	return existing.filter((item) => {
-		// Optimization: explicit loop avoids array function allocation in this tight loop
-		for (let i = 0; i < itemsToRemove.length; i++) {
-			if (areComparableTextsSimilar(item, itemsToRemove[i]!)) {
-				return false;
-			}
+		const normalizedItem = normalizeComparableText(item);
+		if (!normalizedItem) return true;
+
+		let itemTerms: Set<string> | null = null; // Lazy load
+
+		for (let i = 0; i < len; i++) {
+			const removeTarget = normalizedToRemove[i];
+			const normalizedRight = removeTarget.normalized;
+			if (!normalizedRight) continue;
+
+			if (!itemTerms) itemTerms = comparableTerms(normalizedItem);
+
+			const score = _scoreNormalizedComparableText(normalizedItem, itemTerms, normalizedRight, removeTarget.terms);
+			if (score >= 0.66) return false;
 		}
 		return true;
 	});
@@ -1679,14 +1711,23 @@ function scoreComparableText(left: string, right: string): number {
 	const normalizedLeft = normalizeComparableText(left);
 	const normalizedRight = normalizeComparableText(right);
 	if (!normalizedLeft || !normalizedRight) return 0;
+	const leftTerms = comparableTerms(normalizedLeft);
+	const rightTerms = comparableTerms(normalizedRight);
+	return _scoreNormalizedComparableText(normalizedLeft, leftTerms, normalizedRight, rightTerms);
+}
+
+function _scoreNormalizedComparableText(
+	normalizedLeft: string,
+	leftTerms: Set<string>,
+	normalizedRight: string,
+	rightTerms: Set<string>,
+): number {
 	if (normalizedLeft === normalizedRight) return 1;
 	if (normalizedLeft.length >= 12 && normalizedRight.length >= 12) {
 		if (normalizedLeft.includes(normalizedRight) || normalizedRight.includes(normalizedLeft)) {
 			return 0.95;
 		}
 	}
-	const leftTerms = comparableTerms(normalizedLeft);
-	const rightTerms = comparableTerms(normalizedRight);
 	if (leftTerms.size === 0 || rightTerms.size === 0) return 0;
 	let shared = 0;
 	for (const term of leftTerms) {
@@ -1736,12 +1777,12 @@ const COMPARABLE_TEXT_STOP_WORDS = new Set([
 	"without",
 ]);
 
-// Optimization: hoist regular expressions to avoid repeated compilation overhead
-const STATE_MARKERS_REGEX = /^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu;
-const ACTION_WORDS_REGEX =
+// ⚡ Bolt: Extract regexes to module level to avoid allocation overhead in hot loops
+const NORMALIZE_PREFIX_REGEX = /^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu;
+const NORMALIZE_ACTION_REGEX =
 	/^(?:impl|implement|explore|check|verify|run|change|find|fix|investigate|update|create)\s*:\s*/g;
-const PARENTHESIS_REGEX = /\([^)]*\)\s*$/g;
-const WHITESPACE_REGEX = /\s+/g;
+const NORMALIZE_PARENS_REGEX = /\([^)]*\)\s*$/g;
+const NORMALIZE_SPACE_REGEX = /\s+/g;
 
 // Optimization: cache normalized text as it is called many times in nested loops
 const normalizationCache = new Map<string, string>();
@@ -1755,10 +1796,10 @@ function normalizeComparableText(text: string): string {
 
 	cached = text
 		.toLowerCase()
-		.replace(STATE_MARKERS_REGEX, "")
-		.replace(ACTION_WORDS_REGEX, "")
-		.replace(PARENTHESIS_REGEX, "")
-		.replace(WHITESPACE_REGEX, " ")
+		.replace(NORMALIZE_PREFIX_REGEX, "")
+		.replace(NORMALIZE_ACTION_REGEX, "")
+		.replace(NORMALIZE_PARENS_REGEX, "")
+		.replace(NORMALIZE_SPACE_REGEX, " ")
 		.trim();
 	normalizationCache.set(text, cached);
 	return cached;

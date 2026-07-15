@@ -12,3 +12,7 @@
 ## 2026-07-13 - Replace `.some` and `.findIndex` in tight loops with `for` loops
 **Learning:** For a very tight loop executed frequently, allocating an inline callback function for `Array.prototype.some` or `Array.prototype.findIndex` introduces noticeable overhead. Refactoring them to a simple explicit `for` loop removes the overhead and speeds up the loop slightly.
 **Action:** Avoid `.some()`, `.every()`, `.filter()`, and `.findIndex()` for large dataset O(N^2) intersection tests where the inner function does very little, preferring manual `for` loop construction.
+
+## 2026-07-14 - Pre-calculate string normalization outside O(N*M) loops
+**Learning:** Performing regex replacement or string normalization inside an O(N*M) loop (such as comparing a list of items against another list) creates massive overhead due to repeated execution of string operations and regex allocations on the same inputs.
+**Action:** When filtering or comparing two lists, iterate over the lists once beforehand to pre-calculate and cache any normalized strings, tokens, or `Set` objects, so the inner `N*M` loop only does simple equality checks and math. Also, extract regexes to module-level constants to avoid instantiation on every function call.
