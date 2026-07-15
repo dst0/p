@@ -1424,6 +1424,19 @@ function mergeConstraints(state: StructuredSessionState, patch: NonNullable<Stat
 }
 
 function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch["plan"]>): void {
+	// Fast path: when there are no existing items, all incoming items are new
+	if (state.plan.length === 0 && (patch.replace?.length ?? 0) === 0) {
+		state.plan = (patch.add ?? []).map(
+			(item): PlanItem => ({
+				id: item.id,
+				text: item.text,
+				status: item.status,
+				evidenceEntryIds: item.evidenceEntryIds ?? [],
+			}),
+		);
+		return;
+	}
+
 	const orderedIds: string[] = [];
 	const rememberOrder = (item: PlanItem): void => {
 		if (!orderedIds.includes(item.id)) {
