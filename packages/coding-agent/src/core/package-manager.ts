@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch, Minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -649,11 +649,7 @@ function matchesAnyPattern(filePath: string, matchers: Minimatch[], baseDir: str
 	if (name !== "SKILL.md") {
 		for (let i = 0; i < matchers.length; i++) {
 			const matcher = matchers[i];
-			if (
-				matcher.match(rel) ||
-				matcher.match(name) ||
-				matcher.match(filePathPosix)
-			) {
+			if (matcher.match(rel) || matcher.match(name) || matcher.match(filePathPosix)) {
 				return true;
 			}
 		}
@@ -667,18 +663,10 @@ function matchesAnyPattern(filePath: string, matchers: Minimatch[], baseDir: str
 
 	for (let i = 0; i < matchers.length; i++) {
 		const matcher = matchers[i];
-		if (
-			matcher.match(rel) ||
-			matcher.match(name) ||
-			matcher.match(filePathPosix)
-		) {
+		if (matcher.match(rel) || matcher.match(name) || matcher.match(filePathPosix)) {
 			return true;
 		}
-		if (
-			matcher.match(parentRel) ||
-			matcher.match(parentName) ||
-			matcher.match(parentDirPosix)
-		) {
+		if (matcher.match(parentRel) || matcher.match(parentName) || matcher.match(parentDirPosix)) {
 			return true;
 		}
 	}
@@ -722,7 +710,7 @@ function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: str
 
 	let enabled = true;
 	if (excludes.length > 0) {
-		const excludeMatchers = excludes.map(p => new Minimatch(toPosixPath(p)));
+		const excludeMatchers = excludes.map((p) => new Minimatch(toPosixPath(p)));
 		if (matchesAnyPattern(filePath, excludeMatchers, baseDir)) {
 			enabled = false;
 		}
@@ -767,13 +755,13 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		const includeMatchers = includes.map(p => new Minimatch(toPosixPath(p)));
+		const includeMatchers = includes.map((p) => new Minimatch(toPosixPath(p)));
 		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includeMatchers, baseDir));
 	}
 
 	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		const excludeMatchers = excludes.map(p => new Minimatch(toPosixPath(p)));
+		const excludeMatchers = excludes.map((p) => new Minimatch(toPosixPath(p)));
 		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludeMatchers, baseDir));
 	}
 
