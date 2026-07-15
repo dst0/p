@@ -264,7 +264,7 @@ describe("AgentSession default session-state tool", () => {
 		}
 	});
 
-	it("replaces stale open plan items on replan instead of carrying them to completion", async () => {
+	it("replan uses incremental add preserving existing plan items", async () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([
@@ -273,7 +273,7 @@ describe("AgentSession default session-state tool", () => {
 						action: "initial_plan",
 						goal: "Clean session state",
 						plan: [
-							{ text: "Old stale task", status: "in_progress" },
+							{ text: "Old task", status: "in_progress" },
 							{ text: "Run checks", status: "not_started" },
 						],
 					}),
@@ -287,6 +287,7 @@ describe("AgentSession default session-state tool", () => {
 					}),
 					{ stopReason: "toolUse" },
 				),
+				fauxAssistantMessage(markProgressCall("Old task", "done"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(markProgressCall("Run checks", "done"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(finishCall("cleaned state"), { stopReason: "toolUse" }),
 			]);
@@ -294,7 +295,11 @@ describe("AgentSession default session-state tool", () => {
 			await harness.session.prompt("Clean session state");
 
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Run checks", "done"]]);
+			// replan uses add, so "Old task" is preserved alongside "Run checks"
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
+				["Old task", "done"],
+				["Run checks", "done"],
+			]);
 			expect(toolEndEvents(harness, "finish_work").at(-1)?.isError).toBe(false);
 		} finally {
 			harness.cleanup();

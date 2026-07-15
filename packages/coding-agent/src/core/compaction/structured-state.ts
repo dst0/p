@@ -530,7 +530,7 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 	const goal = normalizePatchGoal(getStringField(value, ["goal", "canonicalGoal", "canonicalRequest"]));
 	const constraints = parseConstraints(value.constraints);
 	const action = getStringField(value, ["action"]);
-	const isReplaceAction = action === "initial_plan" || action === "replan";
+	const isReplaceAction = action === "initial_plan";
 	const planItems = parsePlanItemsFromUpdate(value.plan ?? value.planItems, sourceEntryIds);
 	const progress = parseProgressUpdate(value.progress, value);
 	const decisions = parseDecisionsFromUpdate(value.decisions);
