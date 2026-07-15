@@ -140,7 +140,7 @@ To share extensions via npm or git as pi packages, see [packages.md](packages.md
 | `@dst0/p-ai`           | AI utilities (`StringEnum` for Google-compatible enums)      |
 | `@dst0/p-tui`          | TUI components for custom rendering                          |
 
-> **Backward compatibility:** Imports from `@mariozechner/pi-*` packages are automatically aliased to their `@dst0/p-*` equivalents. Extensions using the legacy import paths continue to work without modification.
+> **Backward compatibility:** Imports from `@earendil-works/pi-coding-agent`, `@earendil-works/pi-*`, and `@mariozechner/pi-*` packages are automatically aliased to their `@dst0/p-*` equivalents. Extensions written for the upstream pi agent continue to work without modification.
 
 npm dependencies work too. Add a `package.json` next to your extension (or in a parent directory), run `npm install`, and imports from `node_modules/` are resolved automatically.
 
