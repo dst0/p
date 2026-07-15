@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p",
-  "version": "0.4.8",
+  "version": "0.4.9",
   "description": "Coding agent CLI with read, bash, edit, write tools and session management",
   "type": "module",
   "bin": {
@@ -38,9 +38,9 @@
     "prepublishOnly": "npm run clean && npm run build && npm run shrinkwrap"
   },
   "dependencies": {
-    "@dst0/p-agent-core": "^0.4.8",
-    "@dst0/p-ai": "^0.4.8",
-    "@dst0/p-tui": "^0.4.8",
+    "@dst0/p-agent-core": "^0.4.9",
+    "@dst0/p-ai": "^0.4.9",
+    "@dst0/p-tui": "^0.4.9",
     "@silvia-odwyer/photon-node": "0.3.4",
     "chalk": "5.6.2",
     "cross-spawn": "7.0.6",
