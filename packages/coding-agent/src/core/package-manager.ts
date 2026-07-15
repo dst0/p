@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { minimatch, Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,32 +640,49 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+function matchesAnyPattern(filePath: string, matchers: Minimatch[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
 	const filePathPosix = toPosixPath(filePath);
-	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-	const parentName = isSkillFile ? basename(parentDir!) : undefined;
-	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
+	// Fast path for non-SKILL.md files (the vast majority)
+	if (name !== "SKILL.md") {
+		for (let i = 0; i < matchers.length; i++) {
+			const matcher = matchers[i];
+			if (
+				matcher.match(rel) ||
+				matcher.match(name) ||
+				matcher.match(filePathPosix)
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+
+	const parentDir = dirname(filePath);
+	const parentRel = toPosixPath(relative(baseDir, parentDir));
+	const parentName = basename(parentDir);
+	const parentDirPosix = toPosixPath(parentDir);
+
+	for (let i = 0; i < matchers.length; i++) {
+		const matcher = matchers[i];
 		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
+			matcher.match(rel) ||
+			matcher.match(name) ||
+			matcher.match(filePathPosix)
 		) {
 			return true;
 		}
-		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
-	});
+		if (
+			matcher.match(parentRel) ||
+			matcher.match(parentName) ||
+			matcher.match(parentDirPosix)
+		) {
+			return true;
+		}
+	}
+	return false;
 }
 
 function normalizeExactPattern(pattern: string): string {
@@ -704,8 +721,11 @@ function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: str
 	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
 
 	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
-		enabled = false;
+	if (excludes.length > 0) {
+		const excludeMatchers = excludes.map(p => new Minimatch(toPosixPath(p)));
+		if (matchesAnyPattern(filePath, excludeMatchers, baseDir)) {
+			enabled = false;
+		}
 	}
 	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
 		enabled = true;
@@ -747,12 +767,14 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
+		const includeMatchers = includes.map(p => new Minimatch(toPosixPath(p)));
+		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includeMatchers, baseDir));
 	}
 
 	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
+		const excludeMatchers = excludes.map(p => new Minimatch(toPosixPath(p)));
+		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludeMatchers, baseDir));
 	}
 
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
