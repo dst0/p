@@ -15,3 +15,6 @@
 ## 2026-07-14 - Pre-calculate string normalization outside O(N*M) loops
 **Learning:** Performing regex replacement or string normalization inside an O(N*M) loop (such as comparing a list of items against another list) creates massive overhead due to repeated execution of string operations and regex allocations on the same inputs.
 **Action:** When filtering or comparing two lists, iterate over the lists once beforehand to pre-calculate and cache any normalized strings, tokens, or `Set` objects, so the inner `N*M` loop only does simple equality checks and math. Also, extract regexes to module-level constants to avoid instantiation on every function call.
+## 2026-07-16 - Pre-calculate Regex outside tight loops
+**Learning:** Recompiling regular expressions using `minimatch(str, pattern)` inside inner `.filter` loop causes a massive N*M overhead. Precompiling patterns using `new Minimatch(pattern)` creates regexes outside the loop to be reused across all paths or models to match.
+**Action:** When filtering a large list of elements through an array of glob strings, compile them beforehand via `const m = new Minimatch(p)` and use `m.match(item)`.

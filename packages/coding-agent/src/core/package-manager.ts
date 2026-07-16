@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,7 +640,7 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+function matchesAnyPattern(filePath: string, patterns: Minimatch[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
 	const filePathPosix = toPosixPath(filePath);
@@ -650,22 +650,17 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 	const parentName = isSkillFile ? basename(parentDir!) : undefined;
 	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
+	for (const pattern of patterns) {
+		if (pattern.match(rel) || pattern.match(name) || pattern.match(filePathPosix)) {
 			return true;
 		}
-		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
-	});
+		if (!isSkillFile) continue;
+		if (pattern.match(parentRel!) || pattern.match(parentName!) || pattern.match(parentDirPosix!)) {
+			return true;
+		}
+	}
+
+	return false;
 }
 
 function normalizeExactPattern(pattern: string): string {
@@ -695,25 +690,6 @@ function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: s
 
 function getOverridePatterns(entries: string[]): string[] {
 	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
-}
-
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
-	const overrides = getOverridePatterns(patterns);
-	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
-
-	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
-		enabled = false;
-	}
-	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
-		enabled = true;
-	}
-	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
-		enabled = false;
-	}
-	return enabled;
 }
 
 /**
@@ -747,12 +723,14 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
+		const includesCompiled = includes.map((p) => new Minimatch(toPosixPath(p)));
+		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includesCompiled, baseDir));
 	}
 
 	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
+		const excludesCompiled = excludes.map((p) => new Minimatch(toPosixPath(p)));
+		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludesCompiled, baseDir));
 	}
 
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
@@ -2297,8 +2275,27 @@ export class DefaultPackageManager implements PackageManager {
 			baseDir: string,
 		) => {
 			const target = this.getTargetMap(accumulator, resourceType);
+			const overrideExcludes = getOverridePatterns(overrides)
+				.filter((pattern) => pattern.startsWith("!"))
+				.map((pattern) => new Minimatch(toPosixPath(pattern.slice(1))));
+			const forceIncludes = getOverridePatterns(overrides)
+				.filter((pattern) => pattern.startsWith("+"))
+				.map((pattern) => pattern.slice(1));
+			const forceExcludes = getOverridePatterns(overrides)
+				.filter((pattern) => pattern.startsWith("-"))
+				.map((pattern) => pattern.slice(1));
+
 			for (const path of paths) {
-				const enabled = isEnabledByOverrides(path, overrides, baseDir);
+				let enabled = true;
+				if (overrideExcludes.length > 0 && matchesAnyPattern(path, overrideExcludes, baseDir)) {
+					enabled = false;
+				}
+				if (forceIncludes.length > 0 && matchesAnyExactPattern(path, forceIncludes, baseDir)) {
+					enabled = true;
+				}
+				if (forceExcludes.length > 0 && matchesAnyExactPattern(path, forceExcludes, baseDir)) {
+					enabled = false;
+				}
 				this.addResource(target, path, metadata, enabled);
 			}
 		};
