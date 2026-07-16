@@ -1458,6 +1458,17 @@ function mergeConstraints(state: StructuredSessionState, patch: NonNullable<Stat
 	}
 }
 
+/**
+ * Prunes dead evidenceEntryIds from plan items.
+ * Removes entryIds that don't match any evidence pointer.
+ */
+function pruneEvidenceEntryIds(plan: PlanItem[], evidence: EvidencePointer[]): void {
+	const evidenceIds = new Set(evidence.map((e) => e.id));
+	for (const item of plan) {
+		item.evidenceEntryIds = item.evidenceEntryIds.filter((id) => evidenceIds.has(id));
+	}
+}
+
 function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch["plan"]>): void {
 	// Fast path: when there are no existing items, all incoming items are new
 	if (state.plan.length === 0 && (patch.replace?.length ?? 0) === 0) {
@@ -1535,6 +1546,8 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
 	if ((patch.add?.length ?? 0) > 1 && orderedIds.length > 1) {
 		reorderPlan(state, orderedIds);
 	}
+	// Prune dead evidenceEntryIds (entryIds that don't match any evidence pointer)
+	pruneEvidenceEntryIds(state.plan, state.evidence);
 }
 
 function findPlanItemByIdOrText(plan: PlanItem[], id: string | undefined, text: string): PlanItem | undefined {
@@ -1571,6 +1584,14 @@ function reorderPlan(state: StructuredSessionState, orderedIds: string[]): void 
 }
 
 function reconcileProgressWithPlan(state: StructuredSessionState): void {
+	// Derive progress from plan statuses
+	const planDerived = deriveProgressFromPlan(state.plan);
+
+	// Merge plan-derived progress with explicit progress
+	const synced = syncProgress(state.progress, undefined, planDerived);
+	Object.assign(state.progress, synced);
+
+	// Clean inactive items from current/next
 	const donePlanItems = state.plan.filter((item) => item.status === "done").map((item) => item.text);
 	const blockedPlanItems = state.plan
 		.filter((item) => item.status === "blocked" || item.status === "failed")
@@ -1581,6 +1602,43 @@ function reconcileProgressWithPlan(state: StructuredSessionState): void {
 	state.progress.current = state.progress.current.filter((item) => !isTerminalProgressMarker(item));
 	state.progress.next = state.progress.next.filter((item) => !isTerminalProgressMarker(item));
 	state.progress.blocked = state.progress.blocked.filter((item) => !isTerminalProgressMarker(item));
+}
+
+/**
+ * Derives progress from plan item statuses.
+ */
+function deriveProgressFromPlan(plan: PlanItem[]): StructuredSessionState["progress"] {
+	const done: string[] = plan.filter((item) => item.status === "done").map((item) => item.text);
+	const current: string[] = plan.filter((item) => item.status === "in_progress").map((item) => item.text);
+	const next: string[] = plan.filter((item) => item.status === "not_started").map((item) => item.text);
+	const blocked: string[] = plan
+		.filter((item) => item.status === "blocked" || item.status === "failed")
+		.map((item) => item.text);
+	return { done, current, next, blocked };
+}
+
+/**
+ * Syncs explicit progress with plan-derived progress.
+ * Merges plan-derived items into progress while preserving explicit items.
+ */
+function syncProgress(
+	current: StructuredSessionState["progress"],
+	incoming: Partial<StructuredSessionState["progress"]> | undefined,
+	planDerived: StructuredSessionState["progress"],
+): StructuredSessionState["progress"] {
+	const base = {
+		done: incoming?.done ?? current.done,
+		current: incoming?.current ?? current.current,
+		next: incoming?.next ?? current.next,
+		blocked: incoming?.blocked ?? current.blocked,
+	};
+
+	return {
+		done: mergeProgressList(base.done, planDerived.done),
+		current: mergeProgressList(base.current, planDerived.current),
+		next: mergeProgressList(base.next, planDerived.next),
+		blocked: mergeProgressList(base.blocked, planDerived.blocked),
+	};
 }
 
 function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boolean {
@@ -1622,21 +1680,57 @@ function mergeDecisions(state: StructuredSessionState, patch: NonNullable<StateP
 	}
 }
 
-function mergeTouchedFiles(existing: TouchedFile[], incoming: TouchedFile[]): TouchedFile[] {
-	const byPath = new Map(existing.map((file) => [file.path, file]));
-	for (const file of incoming) {
-		const current = byPath.get(file.path);
-		if (!current) {
-			existing.push({ ...file });
-			byPath.set(file.path, file);
-			continue;
-		}
-		if (file.status !== "read" || current.status === "read") {
-			current.status = file.status;
-		}
-		current.summary = file.summary;
+/**
+ * Normalizes a file path for session state storage:
+ * - Filters out /tmp/ scratch files
+ * - Converts absolute paths to relative paths (keeps only basename for absolute paths outside cwd)
+ * Returns null if the file should be filtered out.
+ */
+function normalizeFilePath(filePath: string): string | null {
+	// Filter out /tmp/ scratch files
+	if (filePath.startsWith("/tmp/") || filePath.startsWith("/var/folders/")) {
+		return null;
 	}
-	return existing;
+
+	// Convert absolute paths to relative (basename for paths outside project)
+	if (filePath.startsWith("/")) {
+		const parts = filePath.split("/");
+		// Keep relative-like paths (e.g., "packages/foo/bar.ts") but not deep absolute paths
+		if (parts.length <= 4) {
+			// Short absolute path, keep as-is but strip leading /
+			return filePath.slice(1);
+		}
+		// Deep absolute path - use basename to avoid leaking project paths
+		return parts[parts.length - 1];
+	}
+
+	return filePath;
+}
+
+function mergeTouchedFiles(existing: TouchedFile[], incoming: TouchedFile[]): TouchedFile[] {
+	const byPath = new Map<string, TouchedFile>();
+
+	// Process existing files with normalization
+	for (const file of existing) {
+		const normalized = normalizeFilePath(file.path);
+		if (normalized === null) continue; // skip filtered files
+		const entry = { ...file, path: normalized };
+		if (!byPath.has(normalized) || entry.summary.length > byPath.get(normalized)!.summary.length) {
+			byPath.set(normalized, entry);
+		}
+	}
+
+	// Process incoming files with normalization
+	for (const file of incoming) {
+		const normalized = normalizeFilePath(file.path);
+		if (normalized === null) continue; // skip filtered files
+		const entry = { ...file, path: normalized };
+		if (!byPath.has(normalized) || entry.summary.length > byPath.get(normalized)!.summary.length) {
+			byPath.set(normalized, entry);
+		}
+	}
+
+	return Array.from(byPath.values());
 }
 
 function mergeRelevantSymbols(existing: RelevantSymbol[], incoming: RelevantSymbol[]): RelevantSymbol[] {
@@ -1651,24 +1745,50 @@ function mergeRelevantSymbols(existing: RelevantSymbol[], incoming: RelevantSymb
 	return existing;
 }
 
-function mergeEvidence(existing: EvidencePointer[], incoming: EvidencePointer[]): EvidencePointer[] {
-	const indexById = new Map(existing.map((pointer, index) => [pointer.id, index]));
-	for (const pointer of incoming) {
-		const existingIndex = indexById.get(pointer.id);
-		if (existingIndex === undefined) {
-			existing.push({ ...pointer });
-			indexById.set(pointer.id, existing.length - 1);
+function mergeEvidence(
+	existing: EvidencePointer[],
+	incoming: EvidencePointer[],
+	maxKeep: number = 50,
+): EvidencePointer[] {
+	const indexById = new Map<string, number>();
+	const result: EvidencePointer[] = [];
+
+	// Process existing pointers, filtering dead references
+	for (const pointer of existing) {
+		// Filter out dead references (no entryId, no path, has retrieveWhen)
+		if (!pointer.id || (!pointer.path && pointer.retrieveWhen)) {
 			continue;
 		}
-		const current = existing[existingIndex];
-		if (
-			pointer.summary.length > current.summary.length ||
-			pointer.retrieveWhen.length > current.retrieveWhen.length
-		) {
-			existing[existingIndex] = { ...current, ...pointer };
+		indexById.set(pointer.id, result.length);
+		result.push({ ...pointer });
+	}
+
+	// Process incoming pointers
+	for (const pointer of incoming) {
+		// Filter out dead references
+		if (!pointer.id || (!pointer.path && pointer.retrieveWhen)) {
+			continue;
+		}
+		const existingIndex = indexById.get(pointer.id);
+		if (existingIndex === undefined) {
+			result.push({ ...pointer });
+			indexById.set(pointer.id, result.length - 1);
+		} else {
+			const current = result[existingIndex];
+			if (
+				pointer.summary.length > (current?.summary.length ?? 0) ||
+				pointer.retrieveWhen.length > (current?.retrieveWhen.length ?? 0)
+			) {
+				result[existingIndex] = { ...pointer };
+			}
 		}
 	}
-	return existing;
+
+	// Prune to maxKeep, keeping most recent
+	if (result.length > maxKeep) {
+		return result.slice(result.length - maxKeep);
+	}
+	return result;
 }
 
 function mergeStringList(existing: string[], incoming: string[] | undefined): string[] {
@@ -1687,17 +1807,32 @@ function mergeStringList(existing: string[], incoming: string[] | undefined): st
 
 function mergeProgressList(existing: string[], incoming: string[] | undefined): string[] {
 	if (!incoming) return existing;
-	const result = [...existing];
+	const seen = new Set<string>();
+	const result: string[] = [];
+
+	// Add existing items (deduplicated)
+	for (const item of existing) {
+		const trimmed = item.trim();
+		if (trimmed && !seen.has(trimmed)) {
+			result.push(trimmed);
+			seen.add(trimmed);
+		}
+	}
+
+	// Merge incoming items
 	for (const item of incoming) {
 		const trimmed = item.trim();
 		if (!trimmed) continue;
 		const existingIndex = findSimilarProgressItemIndex(result, trimmed);
 		if (existingIndex === -1) {
-			result.push(trimmed);
-			continue;
-		}
-		if (trimmed.length > result[existingIndex]!.length) {
-			result[existingIndex] = trimmed;
+			if (!seen.has(trimmed)) {
+				result.push(trimmed);
+				seen.add(trimmed);
+			}
+		} else {
+			if (trimmed.length > result[existingIndex]!.length) {
+				result[existingIndex] = trimmed;
+			}
 		}
 	}
 	return result;
