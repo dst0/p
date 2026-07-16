@@ -15,6 +15,7 @@
 
 ## Code Quality
 
+- Avoid zero-length insertions (`was: ""`) or line-based replacements without anchors. If positional/line-based edits are used, you must run compiler checks or inspect the edited lines immediately after each edit to catch offset drift and corruption before proceeding.
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - No `any` unless absolutely necessary.
 - Inline single-line helpers that have only one call site.
