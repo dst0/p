@@ -43,7 +43,6 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		canonicalRequest: { current: "", sourceEntryIds: [], superseded: [] },
 		constraints: [],
 		plan: [],
-		progress: { done: [], current: [], next: [], blocked: [] },
 		decisions: [],
 		codebase: { touchedFiles: [], relevantSymbols: [] },
 		evidence: [],
@@ -55,7 +54,6 @@ vi.mock("../src/core/compaction/index.js", () => ({
 		canonicalRequest: { current: "compacted", sourceEntryIds: [], superseded: [] },
 		constraints: [],
 		plan: [],
-		progress: { done: [], current: [], next: [], blocked: [] },
 		decisions: [],
 		codebase: { touchedFiles: [], relevantSymbols: [] },
 		evidence: [],
@@ -113,13 +111,6 @@ vi.mock("../src/core/compaction/index.js", () => ({
 	) =>
 		settings.enabled &&
 		contextTokens > contextWindow - (settings.triggerReserveTokens ?? settings.reserveTokens ?? 4000),
-	stubToolResultsForPrompt: (messages: any[]) => ({
-		messages,
-		stubs: [],
-		toolRawTokens: 0,
-		toolStubTokens: 0,
-		tokenSavingsEstimate: 0,
-	}),
 	stubToolResultsForCompactionSummary: (messages: any[]) => ({
 		messages,
 		stubs: [],

@@ -197,9 +197,6 @@ export interface CompactionSettings {
 	summaryMaxTokens?: number;
 	renderedStateMaxTokens?: number;
 	targetContextTokens?: number;
-	toolResultClearThresholdTokens?: number;
-	toolResultKeepRecentCount?: number;
-	toolResultPromptBudgetTokens?: number;
 }
 
 interface ResolvedCompactionSettings {
@@ -211,9 +208,6 @@ interface ResolvedCompactionSettings {
 	summaryMaxTokens: number;
 	renderedStateMaxTokens: number;
 	targetContextTokens: number;
-	toolResultClearThresholdTokens: number;
-	toolResultKeepRecentCount: number;
-	toolResultPromptBudgetTokens: number;
 }
 
 export function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompactionSettings {
@@ -233,12 +227,6 @@ export function resolveCompactionSettings(settings: CompactionSettings): Resolve
 		summaryMaxTokens: settings.summaryMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens!,
 		renderedStateMaxTokens: settings.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens!,
 		targetContextTokens: settings.targetContextTokens ?? DEFAULT_COMPACTION_SETTINGS.targetContextTokens!,
-		toolResultClearThresholdTokens:
-			settings.toolResultClearThresholdTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens!,
-		toolResultKeepRecentCount:
-			settings.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount!,
-		toolResultPromptBudgetTokens:
-			settings.toolResultPromptBudgetTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens!,
 	};
 }
 
@@ -698,58 +686,7 @@ function createToolResultStub(
 	};
 }
 
-function shouldStubToolResult(
-	message: ToolResultMessage,
-	index: number,
-	recentToolResultStartIndex: number,
-	settings: ResolvedCompactionSettings,
-	originalTokens: number,
-): boolean {
-	if (index >= recentToolResultStartIndex) return false;
-	const text = getToolResultText(message);
-	if (isPinnedToolResult(message, text)) return false;
-	if (message.isError && originalTokens <= FAILED_TOOL_RESULT_KEEP_TOKENS) return false;
-	return originalTokens > settings.toolResultClearThresholdTokens;
-}
-
-function selectRawToolResultIndexes(
-	messages: AgentMessage[],
-	toolResultIndexes: number[],
-	recentToolResultStartIndex: number,
-	settings: ResolvedCompactionSettings,
-	tokenByIndex: Map<number, number>,
-): Set<number> {
-	const rawIndexes = new Set<number>();
-	let discretionaryTokens = 0;
-	for (let position = toolResultIndexes.length - 1; position >= 0; position--) {
-		const index = toolResultIndexes[position];
-		const message = messages[index] as ToolResultMessage;
-		const originalTokens = tokenByIndex.get(index) ?? estimateTokens(message);
-		const text = getToolResultText(message);
-		const forcedRaw =
-			index >= recentToolResultStartIndex ||
-			isPinnedToolResult(message, text) ||
-			(message.isError && originalTokens <= FAILED_TOOL_RESULT_KEEP_TOKENS);
-		if (forcedRaw) {
-			rawIndexes.add(index);
-			continue;
-		}
-		if (originalTokens > settings.toolResultClearThresholdTokens) {
-			continue;
-		}
-		if (discretionaryTokens + originalTokens <= settings.toolResultPromptBudgetTokens) {
-			rawIndexes.add(index);
-			discretionaryTokens += originalTokens;
-		}
-	}
-	return rawIndexes;
-}
-
-export function stubToolResultsForPrompt(
-	messages: AgentMessage[],
-	settings: CompactionSettings,
-): ToolResultStubbingResult {
-	const resolved = resolveCompactionSettings(settings);
+export function stubToolResultsForCompactionSummary(messages: AgentMessage[]): ToolResultStubbingResult {
 	if (messages.length === 0) {
 		return {
 			messages,
@@ -776,39 +713,17 @@ export function stubToolResultsForPrompt(
 		};
 	}
 
-	const keepRecentCount = Math.max(0, Math.floor(resolved.toolResultKeepRecentCount));
-	const recentToolResultStartIndex =
-		keepRecentCount === 0
-			? messages.length
-			: (toolResultIndexes[Math.max(0, toolResultIndexes.length - keepRecentCount)] ?? messages.length);
 	const stubbedMessages = messages.slice();
 	const stubs: ToolResultStub[] = [];
 	let toolRawTokens = 0;
 	let toolStubTokens = 0;
-	const tokenByIndex = new Map<number, number>();
 
 	for (const index of toolResultIndexes) {
 		const message = messages[index] as ToolResultMessage;
 		const originalTokens = estimateTokens(message);
-		tokenByIndex.set(index, originalTokens);
 		toolRawTokens += originalTokens;
-	}
-
-	const rawIndexes = selectRawToolResultIndexes(
-		messages,
-		toolResultIndexes,
-		recentToolResultStartIndex,
-		resolved,
-		tokenByIndex,
-	);
-
-	for (const index of toolResultIndexes) {
-		const message = messages[index] as ToolResultMessage;
-		const originalTokens = tokenByIndex.get(index) ?? estimateTokens(message);
-		if (
-			rawIndexes.has(index) &&
-			!shouldStubToolResult(message, index, recentToolResultStartIndex, resolved, originalTokens)
-		) {
+		const text = getToolResultText(message);
+		if (isPinnedToolResult(message, text) || (message.isError && originalTokens <= FAILED_TOOL_RESULT_KEEP_TOKENS)) {
 			toolStubTokens += originalTokens;
 			continue;
 		}
@@ -825,18 +740,6 @@ export function stubToolResultsForPrompt(
 		toolStubTokens,
 		tokenSavingsEstimate: Math.max(0, toolRawTokens - toolStubTokens),
 	};
-}
-
-export function stubToolResultsForCompactionSummary(
-	messages: AgentMessage[],
-	settings: CompactionSettings,
-): ToolResultStubbingResult {
-	return stubToolResultsForPrompt(messages, {
-		...settings,
-		toolResultClearThresholdTokens: 0,
-		toolResultKeepRecentCount: 0,
-		toolResultPromptBudgetTokens: 0,
-	});
 }
 
 // Post-compaction message truncation
@@ -1284,32 +1187,22 @@ Use this EXACT format:
 ## Goal
 [State the exact current goal. Preserve unchanged the original prompt or updated goal verbatim, incorporating any subsequent user corrections if they changed the goal.]
 
-## Plan & Progress
-[Preserve the actual step-by-step plan verbatim. Keep completed and in-progress steps clear, correcting the plan only if new info requires changing it to achieve the goal.]
+## Plan
+[Preserve the actual step-by-step plan verbatim. Encode progress only in each plan item's status, correcting the plan only if new information requires it.]
 - [ ] [Not started]
 - [.] [In progress]
 - [v] [Done]
 - [-] [Failed]
+- [!] [Blocked]
 
-## Progress
-### Done
-- [v] [Completed tasks/changes]
-
-### In Progress
-- [.] [Current work]
-
-### Blocked
-- [Issues preventing progress, if any]
-
-## Key Decisions
+## Decisions
 - **[Decision]**: [Brief rationale]
 
-## Next Steps
-1. [Ordered list of what should happen next]
+## Files
+- [read|modified|created|deleted]: [Exact path] - [Concise summary]
 
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
+## Risks
+- [Unresolved failure, blocker, warning, or "(none)"]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
@@ -1317,10 +1210,8 @@ const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation mes
 
 Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE the Plan & Progress section checkboxes: [] not started, [.] in progress, [v] done, [-] failed
-- UPDATE "Next Steps" based on what was accomplished
+- ADD new plan status, decisions, files, and risks from the new messages
+- UPDATE Plan checkboxes: [] not started, [.] in progress, [v] done, [-] failed, [!] blocked
 - PRESERVE exact file paths, function names, and error messages
 - If something is no longer relevant, you may remove it
 
@@ -1329,27 +1220,17 @@ Use this EXACT format:
 ## Goal
 [Preserve unchanged the original prompt or updated goal verbatim, adding new ones only if the task expanded]
 
-## Plan & Progress
-[Preserve the actual plan verbatim. Include previously done items AND newly completed items, updating the plan if new info requires changing it. Use [] not started, [.] in progress, [v] done, [-] failed]
+## Plan
+[Preserve the actual plan verbatim. Include previously done items and newly completed items. Use [] not started, [.] in progress, [v] done, [-] failed, [!] blocked.]
 
-## Progress
-### Done
-- [v] [Include previously done items AND newly completed items]
-
-### In Progress
-- [.] [Current work - update based on progress]
-
-### Blocked
-- [Current blockers - remove if resolved]
-
-## Key Decisions
+## Decisions
 - **[Decision]**: [Brief rationale] (preserve all previous, add new)
 
-## Next Steps
-1. [Update based on current state]
+## Files
+- [read|modified|created|deleted]: [Exact path] - [Concise summary]
 
-## Critical Context
-- [Preserve important context, add new if needed]
+## Risks
+- [Preserve unresolved failures, blockers, and warnings; remove resolved items]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
@@ -1802,8 +1683,8 @@ export async function compact(
 		systemPromptTokens,
 	} = preparation;
 	const resolvedSettings = resolveCompactionSettings(settings);
-	const historyPromptContext = stubToolResultsForCompactionSummary(messagesToSummarize, resolvedSettings);
-	const turnPrefixPromptContext = stubToolResultsForCompactionSummary(turnPrefixMessages, resolvedSettings);
+	const historyPromptContext = stubToolResultsForCompactionSummary(messagesToSummarize);
+	const turnPrefixPromptContext = stubToolResultsForCompactionSummary(turnPrefixMessages);
 	const stubbedToolResults = [
 		...new Set([
 			...historyPromptContext.stubs.map((stub) => stub.rawPointer.id),

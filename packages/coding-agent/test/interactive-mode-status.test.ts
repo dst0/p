@@ -128,29 +128,56 @@ describe("InteractiveMode.handleStateCommand", () => {
 	test("shows prompt total separately from dynamic context tokens", () => {
 		const state = createInitialStructuredSessionState("session-state");
 		state.canonicalRequest.current = "Improve durable session state.";
-		state.plan.push({
-			id: "plan-one",
-			text: "Render canonical state.",
-			status: "done",
-			evidenceEntryIds: [],
-		});
-		state.progress.next.push("Run targeted tests.");
-		state.evidence.push(
+		state.plan.push(
 			{
-				id: "tool-result:call-read",
-				kind: "tool_result",
-				entryId: "entry-read",
-				summary: "read success result",
-				retrieveWhen: "Need raw read output.",
+				id: "plan-one",
+				text: "Render canonical state.",
+				status: "done",
+				evidenceEntryIds: [],
 			},
 			{
-				id: "file:readme",
-				kind: "file",
-				path: "README.md",
-				summary: "Read README.md",
-				retrieveWhen: "Need file content.",
+				id: "plan-two",
+				text: "Run targeted tests.",
+				status: "in_progress",
+				evidenceEntryIds: [],
+			},
+			{
+				id: "plan-three",
+				text: "Run full checks.",
+				status: "not_started",
+				evidenceEntryIds: [],
+			},
+			{
+				id: "plan-four",
+				text: "Repair failed check.",
+				status: "failed",
+				evidenceEntryIds: [],
+			},
+			{
+				id: "plan-five",
+				text: "Wait for dependency.",
+				status: "blocked",
+				evidenceEntryIds: [],
 			},
 		);
+		state.decisions.push(
+			{
+				id: "decision-active",
+				decision: "Keep decisions visible.",
+				rationale: "They guide later turns.",
+				evidencePointers: [],
+				status: "active",
+			},
+			{
+				id: "decision-old",
+				decision: "Hide this superseded decision.",
+				rationale: "It no longer applies.",
+				evidencePointers: [],
+				status: "superseded",
+			},
+		);
+		state.codebase.touchedFiles.push({ path: "README.md", status: "read", summary: "Read setup notes." });
+		state.audit.knownRisks.push("Live smoke still pending.");
 		const fakeThis: any = {
 			chatContainer: new Container(),
 			ui: { requestRender: vi.fn() },
@@ -170,8 +197,6 @@ describe("InteractiveMode.handleStateCommand", () => {
 						triggerThreshold: 49_152,
 						targetContextTokens: 12_000,
 						shouldCompact: false,
-						toolStubSavings: 0,
-						stubbedToolResults: [],
 						tokenBreakdown: {
 							source: "estimated",
 							total: 4_960,
@@ -184,7 +209,6 @@ describe("InteractiveMode.handleStateCommand", () => {
 							recentMessages: 0,
 							retrieved: 0,
 							toolRaw: 0,
-							toolStubs: 0,
 						},
 					},
 				}),
@@ -198,15 +222,24 @@ describe("InteractiveMode.handleStateCommand", () => {
 		expect(output).toContain("Prompt: 4,960/65,536 tokens");
 		expect(output).toContain("Dynamic: 0 tokens");
 		expect(output).toContain("Tool Calls: 2");
-		expect(output).toContain("🚩 Goal: Improve durable session state.");
 		expect(output).toContain("✅ Render canonical state.");
-		expect(output).toContain("Next:");
-		expect(output).toContain("📌 Run targeted tests.");
-		expect(output).toContain("file:readme: Read README.md");
-		expect(output).not.toContain("tool-result:call-read");
+		expect(output).toContain("⏳ Run targeted tests.");
+		expect(output).toContain("• Run full checks.");
+		expect(output).toContain("❌ Repair failed check.");
+		expect(output).toContain("🚧 Wait for dependency.");
+		expect(output).toContain("Decisions:");
+		expect(output).toContain("• Keep decisions visible.: They guide later turns.");
+		expect(output).not.toContain("Hide this superseded decision.");
+		expect(output).toContain("Files:");
+		expect(output).toContain("• read: README.md - Read setup notes.");
+		expect(output).toContain("Risks:");
+		expect(output).toContain("⚠️ Live smoke still pending.");
 		expect(output).not.toContain("Context: 0/65,536 tokens");
 		expect(output).not.toContain("<session_checkpoint>");
-		expect((output.match(/Goal:/g) ?? []).length).toBe(1);
+		expect(output).not.toContain("Goal:");
+		expect(output).not.toContain("Progress:");
+		expect(output).not.toContain("Next:");
+		expect(output).not.toContain("Evidence:");
 		expect((output.match(/Plan/g) ?? []).length).toBe(1);
 	});
 });

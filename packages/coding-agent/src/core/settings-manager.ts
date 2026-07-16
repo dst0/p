@@ -30,9 +30,6 @@ export interface CompactionSettings {
 	summaryMaxTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens
 	renderedStateMaxTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens
 	targetContextTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.targetContextTokens
-	toolResultClearThresholdTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens
-	toolResultKeepRecentCount?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount
-	toolResultPromptBudgetTokens?: number; // default: DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens
 }
 
 export interface BranchSummarySettings {
@@ -956,26 +953,6 @@ export class SettingsManager {
 		return this.settings.compaction?.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens;
 	}
 
-	getCompactionToolResultClearThresholdTokens(): number {
-		return (
-			this.settings.compaction?.toolResultClearThresholdTokens ??
-			DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens
-		);
-	}
-
-	getCompactionToolResultKeepRecentCount(): number {
-		return (
-			this.settings.compaction?.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount
-		);
-	}
-
-	getCompactionToolResultPromptBudgetTokens(): number {
-		return (
-			this.settings.compaction?.toolResultPromptBudgetTokens ??
-			DEFAULT_COMPACTION_SETTINGS.toolResultPromptBudgetTokens
-		);
-	}
-
 	getCompactionSettings(): {
 		enabled: boolean;
 		triggerReserveTokens: number;
@@ -985,9 +962,6 @@ export class SettingsManager {
 		summaryMaxTokens: number;
 		renderedStateMaxTokens: number;
 		targetContextTokens: number;
-		toolResultClearThresholdTokens: number;
-		toolResultKeepRecentCount: number;
-		toolResultPromptBudgetTokens: number;
 	} {
 		return {
 			enabled: this.getCompactionEnabled(),
@@ -998,9 +972,6 @@ export class SettingsManager {
 			summaryMaxTokens: this.getCompactionSummaryMaxTokens(),
 			renderedStateMaxTokens: this.getCompactionRenderedStateMaxTokens(),
 			targetContextTokens: this.getCompactionTargetContextTokens(),
-			toolResultClearThresholdTokens: this.getCompactionToolResultClearThresholdTokens(),
-			toolResultKeepRecentCount: this.getCompactionToolResultKeepRecentCount(),
-			toolResultPromptBudgetTokens: this.getCompactionToolResultPromptBudgetTokens(),
 		};
 	}
 

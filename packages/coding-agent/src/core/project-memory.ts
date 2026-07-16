@@ -9,7 +9,7 @@ import {
 	writeFileSync,
 } from "node:fs";
 import { join, relative } from "node:path";
-import type { StructuredSessionState } from "./compaction/index.ts";
+import { renderPlanStatusMarker, type StructuredSessionState } from "./compaction/index.ts";
 import type { ContextUsage } from "./extensions/types.ts";
 
 export const PROJECT_MEMORY_ROOT = ".pdev";
@@ -38,7 +38,7 @@ const MEMORY_FILE_TEMPLATES: ReadonlyArray<{ path: string; body: string }> = [
 	},
 	{
 		path: "progress.md",
-		body: "# Progress\n\nCompleted work, current state, and next actions.\n",
+		body: "# Plan\n\nCurrent plan with status markers.\n",
 	},
 	{
 		path: "decisions.md",
@@ -62,15 +62,7 @@ export interface ProjectMemorySnapshot {
 	state?: StructuredSessionState;
 	contextUsage?: Pick<
 		ContextUsage,
-		| "tokens"
-		| "contextWindow"
-		| "triggerThreshold"
-		| "targetContextTokens"
-		| "shouldCompact"
-		| "toolRawTokens"
-		| "toolStubTokens"
-		| "toolStubSavings"
-		| "stubbedToolResults"
+		"tokens" | "contextWindow" | "triggerThreshold" | "targetContextTokens" | "shouldCompact" | "toolRawTokens"
 	>;
 }
 
@@ -315,9 +307,6 @@ function createSnapshot(input: ProjectMemoryUpdateInput): ProjectMemorySnapshot 
 				targetContextTokens: input.contextUsage.targetContextTokens,
 				shouldCompact: input.contextUsage.shouldCompact,
 				toolRawTokens: input.contextUsage.toolRawTokens ?? 0,
-				toolStubTokens: input.contextUsage.toolStubTokens ?? 0,
-				toolStubSavings: input.contextUsage.toolStubSavings ?? 0,
-				stubbedToolResults: [...(input.contextUsage.stubbedToolResults ?? [])],
 			}
 		: undefined;
 	return {
@@ -349,17 +338,10 @@ function updateManagedMemoryFiles(cwd: string, snapshot: ProjectMemorySnapshot):
 			body: renderManagedBlock("auto-progress", [
 				`Updated: ${snapshot.updatedAt}`,
 				"",
-				"Done:",
-				...renderBulletList(snapshot.state?.progress.done ?? []),
-				"",
-				"Current:",
-				...renderBulletList(snapshot.state?.progress.current ?? []),
-				"",
-				"Next:",
-				...renderBulletList(snapshot.state?.progress.next ?? []),
-				"",
-				"Blocked:",
-				...renderBulletList(snapshot.state?.progress.blocked ?? []),
+				"Plan:",
+				...renderBulletList(
+					snapshot.state?.plan.map((item) => `${renderPlanStatusMarker(item.status)} ${item.text}`) ?? [],
+				),
 			]),
 		},
 		{
@@ -380,7 +362,6 @@ function updateManagedMemoryFiles(cwd: string, snapshot: ProjectMemorySnapshot):
 				`Updated: ${snapshot.updatedAt}`,
 				`Context tokens: ${snapshot.contextUsage?.tokens ?? "(unknown)"}/${snapshot.contextUsage?.contextWindow ?? "(unknown)"}`,
 				`Trigger threshold: ${snapshot.contextUsage?.triggerThreshold ?? "(unknown)"}`,
-				`Tool stub savings: ${snapshot.contextUsage?.toolStubSavings ?? 0}`,
 			]),
 		},
 	];
@@ -424,12 +405,6 @@ function compareSnapshots(previous: ProjectMemorySnapshot, current: ProjectMemor
 	pushDiff(lines, "goal", previous.state?.canonicalRequest.current, current.state?.canonicalRequest.current);
 	pushDiff(lines, "checkpoint", previous.checkpoint, current.checkpoint);
 	pushDiff(lines, "context tokens", previous.contextUsage?.tokens, current.contextUsage?.tokens);
-	pushDiff(
-		lines,
-		"stubbed tool results",
-		previous.contextUsage?.stubbedToolResults?.length,
-		current.contextUsage?.stubbedToolResults?.length,
-	);
 	pushDiff(lines, "active constraints", countActiveConstraints(previous.state), countActiveConstraints(current.state));
 	pushDiff(lines, "plan signature", planSignature(previous.state), planSignature(current.state));
 	pushDiff(lines, "touched files", fileSignature(previous.state), fileSignature(current.state));

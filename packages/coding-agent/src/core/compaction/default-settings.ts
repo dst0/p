@@ -7,7 +7,4 @@ export const DEFAULT_COMPACTION_SETTINGS = {
 	summaryMaxTokens: 1200,
 	renderedStateMaxTokens: 1500,
 	targetContextTokens: 12000,
-	toolResultClearThresholdTokens: 24000,
-	toolResultKeepRecentCount: 3,
-	toolResultPromptBudgetTokens: 8000,
 } as const;

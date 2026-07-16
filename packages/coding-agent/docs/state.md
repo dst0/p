@@ -17,7 +17,7 @@ For TypeScript definitions in your project, inspect `node_modules/@dst0/p/dist/`
 The state mechanism maintains a structured representation of the current session that is:
 
 1. **Persisted** in a state file alongside the session
-2. **Injected** into the system prompt for context continuity
+2. **Injected** at stable message anchors for context continuity
 3. **Updated** by the model via `update_session_state` and `mark_session_progress` tools
 4. **Reconstructed** from compaction summaries or live session messages
 
@@ -108,19 +108,13 @@ The `update_session_state` tool allows the model to update state during a sessio
 
 ### Mark Session Progress Tool
 
-The `mark_session_progress` tool is a lighter-weight alternative for updating plan item status:
+The `mark_session_progress` tool updates the status of an existing plan item. It does not create a separate progress list:
 
 ```json
-<session_state_update>
 {
-  "type": "none",
-  "progress": {
-    "done": ["Set up OAuth provider"],
-    "current": ["Add login page"],
-    "next": ["Write integration tests"]
-  }
+  "task": "Set up OAuth provider",
+  "status": "done"
 }
-</session_state_update>
 ```
 
 ## State Injection into Context
@@ -133,21 +127,17 @@ Injected at the start of each turn (from compaction summary or state file). Prov
 
 ```
 <session_checkpoint>
-Goal: Implement user authentication with OAuth
-Original requests stored: 2
-Active constraints:
-- Must support SSO
-- No third-party auth libraries
-Current plan:
-- [done] Set up OAuth provider
-- [in_progress] Add login page
-- [not_started] Write integration tests
-Touched files:
+🚩 Goal: Implement user authentication with OAuth
+Plan:
+✅ Set up OAuth provider
+⏳ Add login page
+• Write integration tests
+Decisions:
+- Use Google OAuth: User already has Google accounts
+Files:
 - created: src/auth.ts - OAuth authentication module
-Retrieve if needed:
-- tool-result:abc123: bash ls /src success result
-Known risks:
-- OAuth callback URL not configured in production
+Risks:
+- ⚠️ OAuth callback URL not configured in production
 </session_checkpoint>
 ```
 
@@ -158,24 +148,20 @@ Injected after state update tool calls. Shows the current working state:
 ```
 <working_state>
 🚩 Goal: Implement user authentication with OAuth
-Original requests stored: 2
 Plan:
 ✅ Set up OAuth provider
 ⏳ Add login page
-➖ Write integration tests
-Active constraints:
-- Must support SSO
-- No third-party auth libraries
+• Write integration tests
 Decisions:
 - Use Google OAuth: User already has Google accounts
-Touched files:
+Files:
 - created: src/auth.ts - OAuth authentication module
-Evidence pointers:
-- tool-result:abc123: bash ls /src success result
 Risks:
-⚠️ OAuth callback URL not configured in production
+- ⚠️ OAuth callback URL not configured in production
 </working_state>
 ```
+
+Constraints, original requests, and evidence remain in persisted structured state, but the model-facing checkpoint is limited to Goal, Plan, active Decisions, Files, and Risks.
 
 ## Turn Checkpoints
 
@@ -193,6 +179,10 @@ Do not retry an unchanged failed call; first address its cause or change the arg
 
 When the working state was refreshed by `update_session_state` or `mark_session_progress`, a note indicates the refreshed `<working_state>` follows and is authoritative over earlier snapshots.
 
+## Periodic Plan-State Reminder
+
+After 90 seconds of sustained ordinary tool work without a successful state update, pi appends one hidden `<session_state_reminder>` at the next tool-turn boundary. The reminder asks the model to compare completed work with Goal, Plan, Decisions, Files, and Risks, then update only what changed. It is a persisted append-only message, so it does not rewrite an earlier provider prefix. A successful `update_session_state` or `mark_session_progress` call, or a formal compaction, restarts the interval. Sleep-only turns and sessions whose plan is already complete do not trigger it.
+
 ## State Reconstruction
 
 State can be reconstructed from:
@@ -208,7 +198,7 @@ When compaction generates a summary, the state system extracts:
 
 - Goal from the summary's "Goal" section
 - Plan items from markdown checkboxes in the plan section
-- Decisions from the key decisions section
+- Active decisions from the decisions section
 - File operations from tool calls in the messages
 - Evidence pointers from tool results and bash commands
 
@@ -218,7 +208,7 @@ When processing live session messages, the system:
 
 - Strips structured context blocks (state updates, checkpoints)
 - Extracts plan items from markdown lists
-- Extracts decisions from key decisions sections
+- Extracts decisions from decisions sections
 - Collects original user requests and classifies them
 - Builds evidence pointers from tool results and file operations
 

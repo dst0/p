@@ -5800,15 +5800,12 @@ export class InteractiveMode {
 			const dynamicTokens = context.tokens?.toLocaleString() ?? "unknown";
 			const triggerThreshold = context.triggerThreshold?.toLocaleString() ?? "unknown";
 			const targetContextTokens = context.targetContextTokens?.toLocaleString() ?? "unknown";
-			const stubbedToolResults = context.stubbedToolResults?.length ?? 0;
-			const toolStubSavings = context.toolStubSavings ?? 0;
 			info += `${theme.fg("dim", "Prompt:")} ${promptTokens}/${context.contextWindow.toLocaleString()} tokens\n`;
 			info += `${theme.fg("dim", "Dynamic:")} ${dynamicTokens} tokens\n`;
 			info += `${theme.fg("dim", "Static:")} ${context.staticTokens.toLocaleString()} tokens\n`;
 			info += `${theme.fg("dim", "Trigger:")} ${triggerThreshold} tokens\n`;
 			info += `${theme.fg("dim", "Target:")} ${targetContextTokens} tokens\n`;
 			info += `${theme.fg("dim", "Should compact:")} ${context.shouldCompact ? "yes" : "no"}\n`;
-			info += `${theme.fg("dim", "Tool stubs:")} ${stubbedToolResults} (${toolStubSavings.toLocaleString()} tokens saved)\n`;
 			if (context.tokenBreakdown) {
 				info += `\n${theme.bold("Token Breakdown")}\n${formatTokenBreakdown(context.tokenBreakdown)}\n`;
 			}
@@ -5817,43 +5814,30 @@ export class InteractiveMode {
 			if (lines.length === 0) return;
 			info += `\n${theme.bold(`${title}:`)}\n${lines.join("\n")}\n`;
 		};
-		info += `\n${theme.bold("Canonical State:")}\n`;
-		info += `${STATE_RENDER_MARKERS.goal} Goal: ${state.canonicalRequest.current || "(no user request recorded yet)"}\n`;
-		info += `${theme.fg("dim", "Original requests:")} ${state.canonicalRequest.originalRequests.length}\n`;
-		appendSection("Progress", [
-			...state.progress.done.map((item) => `${STATE_RENDER_MARKERS.done} ${item}`),
-			...state.progress.current.map((item) => `${STATE_RENDER_MARKERS.inProgress} ${item}`),
-			...state.progress.blocked.map((item) => `${STATE_RENDER_MARKERS.blocked} ${item}`),
-		]);
 		appendSection(
 			"Plan",
-			state.plan.map((item) => `${renderPlanStatusMarker(item.status)} ${item.text}`),
-		);
-		appendSection(
-			"Next",
-			(state.progress.next.length > 0 ? state.progress.next : state.progress.current).map(
-				(item) => `${STATE_RENDER_MARKERS.nextAction} ${item}`,
-			),
+			state.plan.length > 0
+				? state.plan.map((item) => `${renderPlanStatusMarker(item.status)} ${item.text}`)
+				: [`${STATE_RENDER_MARKERS.notStarted} (none)`],
 		);
 		appendSection(
 			"Decisions",
 			state.decisions
 				.filter((decision) => decision.status === "active")
-				.map((decision) => `- ${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`),
+				.map((decision) => `• ${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`)
+				.concat(state.decisions.some((decision) => decision.status === "active") ? [] : ["• (none)"]),
 		);
 		appendSection(
 			"Files",
-			state.codebase.touchedFiles.map((file) => `- ${file.status}: ${file.path} - ${file.summary}`),
-		);
-		appendSection(
-			"Evidence",
-			state.evidence
-				.filter((pointer) => pointer.kind !== "tool_result")
-				.map((pointer) => `- ${pointer.id}: ${pointer.summary}`),
+			state.codebase.touchedFiles.length > 0
+				? state.codebase.touchedFiles.map((file) => `• ${file.status}: ${file.path} - ${file.summary}`)
+				: ["• (none)"],
 		);
 		appendSection(
 			"Risks",
-			state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${risk}`),
+			state.audit.knownRisks.length > 0
+				? state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${risk}`)
+				: [`${STATE_RENDER_MARKERS.risk} (none)`],
 		);
 		const guardrails = this.session.evaluateGuardrails("final");
 		const visibleGuardrails = guardrails.results.filter(

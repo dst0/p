@@ -51,7 +51,6 @@ function isStructuredSessionState(value: unknown): value is StructuredSessionSta
 		typeof obj.version === "number" &&
 		typeof obj.sessionId === "string" &&
 		typeof obj.canonicalRequest === "object" &&
-		Array.isArray(obj.plan) &&
-		typeof obj.progress === "object"
+		Array.isArray(obj.plan)
 	);
 }

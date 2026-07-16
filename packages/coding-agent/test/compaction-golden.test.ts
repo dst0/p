@@ -5,11 +5,10 @@ import { describe, expect, it } from "vitest";
 import {
 	createInitialStructuredSessionState,
 	createStructuredSessionState,
-	DEFAULT_COMPACTION_SETTINGS,
 	estimateContextTokens,
 	mergeStructuredSessionState,
 	renderStructuredSessionCheckpoint,
-	stubToolResultsForPrompt,
+	stubToolResultsForCompactionSummary,
 } from "../src/core/compaction/index.ts";
 import { migrateSessionEntries, parseSessionEntries, type SessionEntry } from "../src/core/session-manager.ts";
 
@@ -18,24 +17,19 @@ const FIXTURE_DIR = join(__dirname, "fixtures/compaction-golden");
 const GOLDEN_SUMMARY = `## Goal
 Build the structured context subsystem.
 
-## Plan & Progress
+## Plan
 - [x] Preserve canonical request across compaction.
 - [ ] Add golden regression fixtures.
+- [ ] Harden compaction regressions.
 
-## Progress
-### Done
-- P0 structured state exists.
-### In Progress
-- Hardening compaction regressions.
-### Blocked
-- TypeScript failure in compaction.ts must be fixed before final.
-
-## Key Decisions
+## Decisions
 - Structured JSON checkpoint: avoid markdown-only drift.
 
-## Next Steps
-1. Run targeted regression tests.
-2. Run npm run check.`;
+## Files
+- packages/coding-agent/src/core/compaction/structured-state.ts
+
+## Risks
+- TypeScript failure in compaction.ts must be fixed before final.`;
 
 function loadFixture(name: string): SessionEntry[] {
 	const content = readFileSync(join(FIXTURE_DIR, name), "utf8");
@@ -66,7 +60,7 @@ function expandHugeToolOutput(messages: AgentMessage[]): AgentMessage[] {
 }
 
 describe("compaction golden fixtures", () => {
-	it("preserves canonical request, blockers, decisions, touched files, and evidence pointers", () => {
+	it("preserves canonical request, risks, decisions, touched files, and evidence pointers", () => {
 		const entries = [
 			...loadFixture("long-chat.jsonl"),
 			...loadFixture("split-tool-turns.jsonl"),
@@ -101,7 +95,7 @@ describe("compaction golden fixtures", () => {
 				request.text.includes("structured context subsystem"),
 			),
 		).toBe(true);
-		expect(state.progress.blocked).toContain("TypeScript failure in compaction.ts must be fixed before final.");
+		expect(state.audit.knownRisks).toContain("TypeScript failure in compaction.ts must be fixed before final.");
 		expect(state.decisions.map((decision) => decision.decision)).toContain("Structured JSON checkpoint");
 		expect(state.codebase.touchedFiles.map((file) => file.path)).toContain(
 			"packages/coding-agent/src/core/compaction/structured-state.ts",
@@ -128,11 +122,7 @@ describe("compaction golden fixtures", () => {
 
 	it("stubs huge tool results while preserving retrieval evidence", () => {
 		const messages = expandHugeToolOutput(messagesFrom(loadFixture("huge-tool-results.jsonl")));
-		const result = stubToolResultsForPrompt(messages, {
-			...DEFAULT_COMPACTION_SETTINGS,
-			toolResultClearThresholdTokens: 200,
-			toolResultKeepRecentCount: 0,
-		});
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		expect(result.stubs).toHaveLength(1);
 		expect(result.stubs[0].rawPointer.id).toBe("tool-result:call-huge");

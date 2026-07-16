@@ -757,8 +757,6 @@ export interface CompactionSettings {
 	summaryMaxTokens?: number;
 	renderedStateMaxTokens?: number;
 	targetContextTokens?: number;
-	toolResultClearThresholdTokens?: number;
-	toolResultKeepRecentCount?: number;
 }
 
 export interface CompactionPreparation {

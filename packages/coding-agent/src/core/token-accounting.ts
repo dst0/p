@@ -14,7 +14,6 @@ export interface TokenBreakdown {
 	recentMessages: number;
 	retrieved: number;
 	toolRaw: number;
-	toolStubs: number;
 }
 
 export interface TokenBreakdownInput {
@@ -28,7 +27,6 @@ export interface TokenBreakdownInput {
 	recentMessages?: AgentMessage[];
 	retrievedPrompt?: string;
 	toolRawTokens?: number;
-	toolStubTokens?: number;
 	totalOverride?: number;
 }
 
@@ -54,7 +52,6 @@ export function createTokenBreakdown(input: TokenBreakdownInput): TokenBreakdown
 	const recentMessages = estimateMessages(input.recentMessages ?? []);
 	const retrieved = estimateTokenCount(input.retrievedPrompt);
 	const toolRaw = input.toolRawTokens ?? 0;
-	const toolStubs = input.toolStubTokens ?? 0;
 	const estimatedTotal = systemPrompt + tools + rules + memory + repoMap + checkpoint + recentMessages + retrieved;
 	return {
 		source: input.source ?? "estimated",
@@ -68,7 +65,6 @@ export function createTokenBreakdown(input: TokenBreakdownInput): TokenBreakdown
 		recentMessages,
 		retrieved,
 		toolRaw,
-		toolStubs,
 	};
 }
 
@@ -85,7 +81,6 @@ export function formatTokenBreakdown(breakdown: TokenBreakdown): string {
 		`recent: ${breakdown.recentMessages}`,
 		`retrieved: ${breakdown.retrieved}`,
 		`tool_raw: ${breakdown.toolRaw}`,
-		`tool_stubs: ${breakdown.toolStubs}`,
 	].join("\n");
 }
 

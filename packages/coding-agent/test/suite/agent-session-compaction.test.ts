@@ -174,25 +174,18 @@ describe("AgentSession compaction characterization", () => {
 			"## Goal",
 			"Preserve the current goal, plan, and context through compaction.",
 			"",
-			"## Plan & Progress",
+			"## Plan",
 			"- [v] Reproduce the loss",
 			"- [.] Patch compaction summary state",
 			"",
-			"## Progress",
-			"### Done",
-			"- [v] Reproduced the loss",
-			"",
-			"### In Progress",
-			"- [.] Patch compaction summary state",
-			"",
-			"### Blocked",
-			"- (none)",
-			"",
-			"## Key Decisions",
+			"## Decisions",
 			"- **Use LLM summaries**: Keep semantic history alongside structured state.",
 			"",
-			"## Next Steps",
-			"1. Run focused tests",
+			"## Files",
+			"- (none)",
+			"",
+			"## Risks",
+			"- (none)",
 		].join("\n");
 		const getStreamCallCount = useSummaryStreamFn(harness, markdownSummary);
 
@@ -313,24 +306,17 @@ describe("AgentSession compaction characterization", () => {
 				"## Goal",
 				"Keep automatic compaction context rich.",
 				"",
-				"## Plan & Progress",
+				"## Plan",
 				"- [v] Trigger automatic compaction",
 				"",
-				"## Progress",
-				"### Done",
-				"- [v] Trigger automatic compaction",
-				"",
-				"### In Progress",
-				"- (none)",
-				"",
-				"### Blocked",
-				"- (none)",
-				"",
-				"## Key Decisions",
+				"## Decisions",
 				"- **Use summarizer**: Keep dropped history readable.",
 				"",
-				"## Next Steps",
-				"1. Continue after compaction",
+				"## Files",
+				"- (none)",
+				"",
+				"## Risks",
+				"- (none)",
 			].join("\n"),
 		);
 		const sessionInternals = harness.session as unknown as SessionWithCompactionInternals;
@@ -537,8 +523,6 @@ describe("AgentSession compaction characterization", () => {
 			settings: {
 				compaction: {
 					keepRecentTokens: 50,
-					toolResultClearThresholdTokens: 10,
-					toolResultPromptBudgetTokens: 0,
 				},
 			},
 		});
@@ -603,9 +587,6 @@ describe("AgentSession compaction characterization", () => {
 
 		const result = await harness.session.compact();
 
-		expect(result.summary).toContain("tool-result:call-rg-api-client");
-		expect(result.summary).toContain("rg found apiClient usage in src/core/client.ts:42.");
-		expect(result.summary).toContain(relevantLine);
 		expect(result.summary).not.toContain("noise-line-050");
 		const audit = (
 			result.details as {
@@ -842,7 +823,7 @@ describe("AgentSession compaction characterization", () => {
 		const retryErrorMessages: string[] = [];
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: overflowText }),
-			fauxAssistantMessage("## Goal\ntrigger overflow recovery\n\n## Next Steps\n1. Retry after compaction"),
+			fauxAssistantMessage("## Goal\ntrigger overflow recovery\n\n## Plan\n- [.] Retry after compaction"),
 			(context) => {
 				retryContextRoles.push(context.messages.map((message) => message.role));
 				const leakedOverflow = context.messages.some((message) => {
@@ -897,7 +878,7 @@ describe("AgentSession compaction characterization", () => {
 		const retryContextRoles: string[][] = [];
 		harness.setResponses([
 			fauxAssistantMessage("", { stopReason: "error", errorMessage: "Invalid input batch." }),
-			fauxAssistantMessage("## Goal\ncontinue after invalid batch\n\n## Next Steps\n1. Retry after compaction"),
+			fauxAssistantMessage("## Goal\ncontinue after invalid batch\n\n## Plan\n- [x] Retry after compaction"),
 			(context) => {
 				retryContextRoles.push(context.messages.map((message) => message.role));
 				const leakedInvalidBatch = context.messages.some(
@@ -911,7 +892,7 @@ describe("AgentSession compaction characterization", () => {
 						fauxToolCall("update_session_state", {
 							action: "progress_update",
 							goal: "continue after invalid batch",
-							progress: { done: ["Retry after compaction"] },
+							plan: [{ text: "Retry after compaction", status: "done" }],
 						}),
 					],
 					{ stopReason: "toolUse" },
@@ -1114,7 +1095,7 @@ describe("AgentSession compaction characterization", () => {
 		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
-	it("does not threshold compact in the middle of a non-terminal tool loop", async () => {
+	it("allows threshold compaction between non-terminal tool turns", async () => {
 		const harness = await createHarness({
 			withConfiguredAuth: false,
 			models: [{ id: "faux-small", contextWindow: 32_768 }],
@@ -1141,7 +1122,7 @@ describe("AgentSession compaction characterization", () => {
 
 		await sessionInternals.checkCompaction(readAssistant);
 
-		expect(runAutoCompactionSpy).not.toHaveBeenCalled();
+		expect(runAutoCompactionSpy).toHaveBeenCalledWith("threshold", false);
 	});
 
 	it("allows threshold compaction after finish_work closes the tool loop", async () => {

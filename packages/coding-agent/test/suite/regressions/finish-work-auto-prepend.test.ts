@@ -10,7 +10,6 @@ function updateStateCall(goal: string, action: "initial_plan" | "replan" = "init
 		action,
 		goal,
 		plan: [{ text: "Inspect the requested file", status: "in_progress" }],
-		progress: { current: ["Inspect the requested file"], next: ["Report the result"] },
 	});
 }
 
@@ -50,7 +49,7 @@ describe("finish_work auto-prepend session state update", () => {
 		}
 	});
 
-	it("auto-updates progress when finish_work called after tool use without mark_session_progress", async () => {
+	it("preserves completed plan items when finish_work auto-updates after tool use", async () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([
@@ -60,7 +59,6 @@ describe("finish_work auto-prepend session state update", () => {
 						action: "initial_plan",
 						goal: "Track progress then finish",
 						plan: [{ text: "Inspect the requested file", status: "done" }],
-						progress: { done: ["Inspect the requested file"] },
 					}),
 					{ stopReason: "toolUse" },
 				),
@@ -77,7 +75,10 @@ describe("finish_work auto-prepend session state update", () => {
 			expect(finishEnds[0]?.isError).toBe(false);
 
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-			expect(state?.progress.done).toContain("Inspect the requested file");
+			expect(state?.plan.map((item) => [item.text, item.status])).toContainEqual([
+				"Inspect the requested file",
+				"done",
+			]);
 		} finally {
 			harness.cleanup();
 		}
@@ -92,7 +93,6 @@ describe("finish_work auto-prepend session state update", () => {
 						action: "initial_plan",
 						goal: "Original goal text",
 						plan: [{ text: "Task one", status: "done" }],
-						progress: { done: ["Task one"] },
 						decisions: [{ decision: "Key decision", rationale: "Because reasons" }],
 					}),
 					{ stopReason: "toolUse" },
@@ -101,7 +101,6 @@ describe("finish_work auto-prepend session state update", () => {
 					fauxToolCall(UPDATE_TOOL, {
 						action: "progress_update",
 						plan: [{ text: "Task one", status: "done" }],
-						progress: { done: ["Task one"] },
 					}),
 					{ stopReason: "toolUse" },
 				),

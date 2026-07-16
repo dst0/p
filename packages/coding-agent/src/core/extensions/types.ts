@@ -299,14 +299,8 @@ export interface ContextUsage {
 	remainingTokens?: number;
 	/** Whether the current estimate is past the compaction trigger. */
 	shouldCompact?: boolean;
-	/** Estimated tokens from raw tool results before prompt-time stubbing. */
+	/** Estimated tokens from raw tool results in the live prompt. */
 	toolRawTokens?: number;
-	/** Estimated tokens from tool results after prompt-time stubbing. */
-	toolStubTokens?: number;
-	/** Estimated token savings from prompt-time tool result stubbing. */
-	toolStubSavings?: number;
-	/** Raw evidence pointers for tool results stubbed out of prompt context. */
-	stubbedToolResults?: string[];
 	/** Prompt token accounting split by prompt subsystem. */
 	tokenBreakdown?: TokenBreakdown;
 }

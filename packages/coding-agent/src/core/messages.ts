@@ -10,7 +10,7 @@ import type { AssistantMessage, ImageContent, Message, TextContent } from "@dst0
 
 export const COMPACTION_SUMMARY_PREFIX = `The conversation history before this point was compacted into the following summary:
 
-Treat this summary as the authoritative working-state checkpoint after compaction. Continue from its Goal, Plan, Next action, constraints, decisions, touched files, and evidence pointers. Do not infer the task only from the latest user message; the latest user message may be a continuation such as "continue", "ok", or "do it".
+Treat this summary as the authoritative working-state checkpoint after compaction. Continue from its Goal, Plan, Decisions, Files, and Risks. Do not infer the task only from the latest user message; the latest user message may be a continuation such as "continue", "ok", or "do it".
 
 <summary>
 `;
