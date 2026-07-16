@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-code-index",
-  "version": "0.4.10",
+  "version": "0.4.11",
   "description": "Codebase indexer — hybrid dense (Qwen3-Embedding) + BM25 sparse vectors into Qdrant",
   "type": "module",
   "main": "./dist/index.js",

@@ -227,7 +227,7 @@ describe("session state update protocol", () => {
 			["Write parser tests", "done"],
 			["Run manual walkthrough", "in_progress"],
 		]);
-		expect(state.progress.done).toEqual(["Parser implemented"]);
+		expect(state.progress.done).toEqual(["Parser implemented", "Write parser tests"]);
 		expect(state.progress.next).toEqual(["Run regression tests"]);
 		expect(state.audit.knownRisks).toEqual(["Prompt budget may grow"]);
 		expect(state.codebase.touchedFiles[0]).toMatchObject({
@@ -278,7 +278,7 @@ describe("session state update protocol", () => {
 
 		expect(parsed.malformed).toBe(false);
 		expect(state.canonicalRequest.current).toBe("Fix smart state persistence");
-		expect(state.progress.current).toEqual(["Patch the state merge"]);
+		expect(state.progress.current).toEqual(["Patch the state merge", "Run smart-state regression tests"]);
 		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
 			["Run smart-state regression tests", "in_progress"],
 		]);
@@ -337,7 +337,7 @@ describe("session state update protocol", () => {
 			["plan-sleep-history", "Exclude sleep from session history", "done"],
 			["plan-state-count", "Change /state to show tool call count instead of list", "in_progress"],
 		]);
-		expect(state.progress.current).toEqual(["Impl: /state shows tool call count not list"]);
+		expect(state.progress.current).toEqual(["Change /state to show tool call count instead of list"]);
 		expect(state.progress.next).toEqual([]);
 		expect(findMatchingPlanItem(state.plan, "Skip sleep in session history")?.id).toBe("plan-sleep-history");
 	});
@@ -800,7 +800,13 @@ describe("structured session state", () => {
 			"Patch live structured state.",
 			"Verify with tests.",
 		]);
-		expect(state.progress.next).toEqual(["Run targeted regression tests.", "Re-run the tmux smoke."]);
+		expect(state.progress.next).toEqual([
+			"Run targeted regression tests.",
+			"Re-run the tmux smoke.",
+			"Reproduce /state manually.",
+			"Patch live structured state.",
+			"Verify with tests.",
+		]);
 		expect(checkpoint).toContain("Run targeted regression tests.");
 	});
 

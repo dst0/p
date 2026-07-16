@@ -337,8 +337,19 @@ export function mergeStructuredSessionState(
 	// Normalize and deduplicate touched files
 	next.codebase.touchedFiles = mergeTouchedFiles(next.codebase.touchedFiles, []);
 
-	// Filter dead evidence (empty path) and prune to max 50
-	next.evidence = next.evidence.filter((e) => e.path && e.path.trim().length > 0).slice(-50);
+	// Filter dead evidence and prune to max 50
+	next.evidence = next.evidence
+		.filter((e) => {
+			const pathEmpty = e.path !== undefined && e.path.trim().length === 0;
+			const isFile = e.kind === "file";
+			const hasPath = e.path && e.path.trim().length > 0;
+			const hasEntryId = e.entryId && e.entryId.trim().length > 0;
+			const isToolResult = e.kind === "tool_result";
+			return (
+				e.id && !pathEmpty && (!isFile || hasPath) && (hasEntryId || hasPath || isToolResult || !e.retrieveWhen)
+			);
+		})
+		.slice(-50);
 
 	// Remove terminal markers from progress lists
 	next.progress.current = next.progress.current.filter((item) => !isTerminalProgressMarker(item));
@@ -1780,7 +1791,17 @@ function mergeEvidence(
 	// Process existing pointers, filtering dead references
 	for (const pointer of existing) {
 		// Filter out dead references (no entryId, no path, has retrieveWhen)
-		if (!pointer.id || (!pointer.path && pointer.retrieveWhen)) {
+		const pathEmpty = pointer.path !== undefined && pointer.path.trim().length === 0;
+		const isFile = pointer.kind === "file";
+		const hasPath = pointer.path && pointer.path.trim().length > 0;
+		const hasEntryId = pointer.entryId && pointer.entryId.trim().length > 0;
+		const isToolResult = pointer.kind === "tool_result";
+		if (
+			!pointer.id ||
+			pathEmpty ||
+			(isFile && !hasPath) ||
+			(!hasEntryId && !hasPath && !isToolResult && pointer.retrieveWhen)
+		) {
 			continue;
 		}
 		indexById.set(pointer.id, result.length);
@@ -1790,7 +1811,17 @@ function mergeEvidence(
 	// Process incoming pointers
 	for (const pointer of incoming) {
 		// Filter out dead references
-		if (!pointer.id || (!pointer.path && pointer.retrieveWhen)) {
+		const pathEmpty = pointer.path !== undefined && pointer.path.trim().length === 0;
+		const isFile = pointer.kind === "file";
+		const hasPath = pointer.path && pointer.path.trim().length > 0;
+		const hasEntryId = pointer.entryId && pointer.entryId.trim().length > 0;
+		const isToolResult = pointer.kind === "tool_result";
+		if (
+			!pointer.id ||
+			pathEmpty ||
+			(isFile && !hasPath) ||
+			(!hasEntryId && !hasPath && !isToolResult && pointer.retrieveWhen)
+		) {
 			continue;
 		}
 		const existingIndex = indexById.get(pointer.id);
