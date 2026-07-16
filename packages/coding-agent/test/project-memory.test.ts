@@ -36,9 +36,6 @@ function createContextUsage(): ContextUsage {
 		remainingTokens: 52_000,
 		shouldCompact: false,
 		toolRawTokens: 10_000,
-		toolStubTokens: 500,
-		toolStubSavings: 9_500,
-		stubbedToolResults: ["tool-result:old-read"],
 	};
 }
 
@@ -63,8 +60,20 @@ describe("project memory", () => {
 		const cwd = createTempProject();
 		const state = createInitialStructuredSessionState("session-1");
 		state.canonicalRequest.current = "Fix compaction loops";
-		state.progress.current.push("Validate high-64 manual path");
-		state.progress.next.push("Run npm run check");
+		state.plan.push(
+			{
+				id: "plan-validate",
+				text: "Validate high-64 manual path",
+				status: "in_progress",
+				evidenceEntryIds: [],
+			},
+			{
+				id: "plan-check",
+				text: "Run npm run check",
+				status: "not_started",
+				evidenceEntryIds: [],
+			},
+		);
 		state.decisions.push({
 			id: "decision-1",
 			decision: "Use structured state",
@@ -76,7 +85,7 @@ describe("project memory", () => {
 		const result = updateProjectMemorySnapshot({
 			cwd,
 			sessionId: "session-1",
-			checkpoint: "Goal: Fix compaction loops\nNext action: Run npm run check",
+			checkpoint: "Goal: Fix compaction loops\nPlan:\n⏳ Validate high-64 manual path\n• Run npm run check",
 			state,
 			contextUsage: createContextUsage(),
 		});
@@ -85,6 +94,11 @@ describe("project memory", () => {
 		expect(result.managedFiles).toContain(".pdev/memory/active-context.md");
 		expect(existsSync(join(cwd, PROJECT_MEMORY_STATE_FILE))).toBe(true);
 		expect(readFileSync(join(cwd, ".pdev/memory/active-context.md"), "utf8")).toContain("Fix compaction loops");
+		const progress = readFileSync(join(cwd, ".pdev/memory/progress.md"), "utf8");
+		expect(progress).toContain("# Plan");
+		expect(progress).toContain("⏳ Validate high-64 manual path");
+		expect(progress).toContain("• Run npm run check");
+		expect(progress).not.toContain("## Progress");
 		expect(readFileSync(join(cwd, ".pdev/memory/decisions.md"), "utf8")).toContain("Use structured state");
 	});
 

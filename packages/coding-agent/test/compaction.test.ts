@@ -27,7 +27,7 @@ import {
 	selectKeepRecentTokens,
 	shouldCompact,
 	stripSessionStateUpdateBlocks,
-	stubToolResultsForPrompt,
+	stubToolResultsForCompactionSummary,
 } from "../src/core/compaction/index.ts";
 import {
 	buildSessionContext,
@@ -215,7 +215,7 @@ function expectPrepared(result: CompactionPreparationResult): CompactionPreparat
 describe("session state update protocol", () => {
 	it("parses valid patches and merges them into structured state", () => {
 		const parsed = parseSessionStateUpdateBlock(
-			`Visible answer.\n<session_state_update>{"type":"patch","goal":"Ship deterministic state compaction","plan":[{"text":"Write parser tests","status":"done"},{"text":"Run manual walkthrough","status":"in_progress"}],"progress":{"done":["Parser implemented"],"next":["Run regression tests"]},"risks":["Prompt budget may grow"],"touchedFiles":[{"path":"packages/coding-agent/src/core/agent-session.ts","status":"modified","summary":"Wired state updates"}]}</session_state_update>`,
+			`Visible answer.\n<session_state_update>{"type":"patch","goal":"Ship deterministic state compaction","plan":[{"text":"Write parser tests","status":"done"},{"text":"Run manual walkthrough","status":"in_progress"}],"risks":["Prompt budget may grow"],"touchedFiles":[{"path":"packages/coding-agent/src/core/agent-session.ts","status":"modified","summary":"Wired state updates"}]}</session_state_update>`,
 			["assistant-entry"],
 		);
 		const state = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), parsed.patch!);
@@ -227,8 +227,6 @@ describe("session state update protocol", () => {
 			["Write parser tests", "done"],
 			["Run manual walkthrough", "in_progress"],
 		]);
-		expect(state.progress.done).toEqual(["Parser implemented", "Write parser tests"]);
-		expect(state.progress.next).toEqual(["Run regression tests"]);
 		expect(state.audit.knownRisks).toEqual(["Prompt budget may grow"]);
 		expect(state.codebase.touchedFiles[0]).toMatchObject({
 			path: "packages/coding-agent/src/core/agent-session.ts",
@@ -248,43 +246,24 @@ describe("session state update protocol", () => {
 		});
 	});
 
-	it("preserves explicit empty current and next progress lists in hidden state updates", () => {
-		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
-			progress: {
-				current: ["Run final verification"],
-				next: ["Report the result"],
-			},
-		});
-		const parsed = parseSessionStateUpdateBlock(
-			`<session_state_update>{"type":"patch","progress":{"current":[],"next":[]}}</session_state_update>`,
-			["assistant-entry"],
-		);
-		const state = mergeStructuredSessionState(previous, parsed.patch!);
-
-		expect(parsed.malformed).toBe(false);
-		expect(state.progress.current).toEqual([]);
-		expect(state.progress.next).toEqual([]);
-	});
-
 	it("ignores placeholder goals in hidden state patches while keeping useful metadata", () => {
 		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
 			canonicalRequest: { current: "Fix smart state persistence" },
 		});
 		const parsed = parseSessionStateUpdateBlock(
-			`<session_state_update>{"type":"patch","goal":"none","progress":{"current":["Patch the state merge"]},"plan":[{"text":"Run smart-state regression tests","status":"in_progress"}]}</session_state_update>`,
+			`<session_state_update>{"type":"patch","goal":"none","plan":[{"text":"Run smart-state regression tests","status":"in_progress"}]}</session_state_update>`,
 			["assistant-entry"],
 		);
 		const state = mergeStructuredSessionState(previous, parsed.patch!);
 
 		expect(parsed.malformed).toBe(false);
 		expect(state.canonicalRequest.current).toBe("Fix smart state persistence");
-		expect(state.progress.current).toEqual(["Patch the state merge", "Run smart-state regression tests"]);
 		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
 			["Run smart-state regression tests", "in_progress"],
 		]);
 	});
 
-	it("updates similar plan items instead of appending duplicate progress after state refreshes", () => {
+	it("updates similar plan items instead of appending duplicate statuses after state refreshes", () => {
 		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-state"), {
 			canonicalRequest: { current: "Exclude sleep from session history and TUI" },
 			plan: {
@@ -302,10 +281,6 @@ describe("session state update protocol", () => {
 						evidenceEntryIds: ["seed-entry"],
 					},
 				],
-			},
-			progress: {
-				current: ["Exclude sleep from session history"],
-				next: ["Change /state to show tool call count instead of list"],
 			},
 		});
 
@@ -326,10 +301,6 @@ describe("session state update protocol", () => {
 					},
 				],
 			},
-			progress: {
-				done: ["Skip sleep tool results in session persistence"],
-				current: ["Impl: /state shows tool call count not list"],
-			},
 		});
 
 		expect(state.plan).toHaveLength(2);
@@ -337,8 +308,6 @@ describe("session state update protocol", () => {
 			["plan-sleep-history", "Exclude sleep from session history", "done"],
 			["plan-state-count", "Change /state to show tool call count instead of list", "in_progress"],
 		]);
-		expect(state.progress.current).toEqual(["Change /state to show tool call count instead of list"]);
-		expect(state.progress.next).toEqual([]);
 		expect(findMatchingPlanItem(state.plan, "Skip sleep in session history")?.id).toBe("plan-sleep-history");
 	});
 
@@ -507,7 +476,29 @@ describe("session state update protocol", () => {
 					},
 				],
 			},
-			progress: { next: ["Polish UI output"] },
+			decisions: {
+				add: [
+					{
+						id: "decision-active",
+						decision: "Keep the plan authoritative",
+						rationale: "Separate progress lists drift",
+						evidencePointers: [],
+						status: "active",
+					},
+					{
+						id: "decision-old",
+						decision: "Keep a separate progress list",
+						rationale: "Superseded",
+						evidencePointers: [],
+						status: "superseded",
+					},
+				],
+			},
+			codebase: {
+				touchedFiles: [{ path: "state.ts", status: "modified", summary: "Removed progress state" }],
+				relevantSymbols: [],
+			},
+			audit: { knownRisks: ["Live smoke is pending"] },
 		});
 		const workingState = renderWorkingSessionState(state, 1000);
 
@@ -515,8 +506,16 @@ describe("session state update protocol", () => {
 		expect(workingState).toContain("🚩 Goal: Track session state");
 		expect(workingState).toContain("✅ Finished item");
 		expect(workingState).toContain("⏳ Current item");
-		expect(workingState).toContain("➖ Queued item");
-		expect(workingState).toContain("📌 Polish UI output");
+		expect(workingState).toContain("• Queued item");
+		expect(workingState).toContain("Decisions:");
+		expect(workingState).toContain("Keep the plan authoritative: Separate progress lists drift");
+		expect(workingState).not.toContain("Keep a separate progress list");
+		expect(workingState).toContain("Files:");
+		expect(workingState).toContain("modified: state.ts - Removed progress state");
+		expect(workingState).toContain("Risks:");
+		expect(workingState).toContain("⚠️ Live smoke is pending");
+		expect(workingState).not.toContain("Progress:");
+		expect(workingState).not.toContain("Next:");
 	});
 });
 // ============================================================================
@@ -533,25 +532,15 @@ describe("Token calculation", () => {
 	});
 });
 
-describe("tool result stubbing", () => {
-	it("stubs old oversized tool results while preserving raw source messages", () => {
+describe("compaction-summary tool result stubbing", () => {
+	it("stubs tool results for one-shot compaction while preserving raw source messages", () => {
 		const hugeOutput = Array.from({ length: 1200 }, (_, index) => `line ${index}: ${"x".repeat(120)}`).join("\n");
 		const oldToolResult = createToolResultMessage("call-old", "bash", hugeOutput, {
 			details: { exitCode: 0 },
 		});
-		const recentToolResult = createToolResultMessage("call-recent", "read", "recent output");
-		const messages: AgentMessage[] = [
-			createUserMessage("run tests"),
-			oldToolResult,
-			createAssistantMessage("next"),
-			recentToolResult,
-		];
+		const messages: AgentMessage[] = [createUserMessage("run tests"), oldToolResult];
 
-		const result = stubToolResultsForPrompt(messages, {
-			...DEFAULT_COMPACTION_SETTINGS,
-			toolResultClearThresholdTokens: 1000,
-			toolResultKeepRecentCount: 1,
-		});
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		expect(result.stubs).toHaveLength(1);
 		expect(result.stubs[0].toolCallId).toBe("call-old");
@@ -559,7 +548,6 @@ describe("tool result stubbing", () => {
 		expect(result.tokenSavingsEstimate).toBeGreaterThan(1000);
 		expect(result.messages).not.toBe(messages);
 		expect(result.messages[1]).not.toBe(oldToolResult);
-		expect(result.messages[3]).toBe(recentToolResult);
 		expect(oldToolResult.content[0]).toEqual({
 			type: "text",
 			text: hugeOutput,
@@ -575,36 +563,15 @@ describe("tool result stubbing", () => {
 			isError: true,
 			details: { exitCode: 1 },
 		});
-		const messages: AgentMessage[] = [pinned, failed, createToolResultMessage("call-recent", "read", "recent")];
+		const messages: AgentMessage[] = [pinned, failed];
 
-		const result = stubToolResultsForPrompt(messages, {
-			...DEFAULT_COMPACTION_SETTINGS,
-			toolResultClearThresholdTokens: 100,
-			toolResultKeepRecentCount: 1,
-		});
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		expect(result.stubs).toHaveLength(0);
 		expect(result.messages).toBe(messages);
 	});
 
-	it("stubs older medium tool results when cumulative prompt budget is exceeded", () => {
-		const messages: AgentMessage[] = Array.from({ length: 8 }, (_, index) =>
-			createToolResultMessage(`call-${index}`, "read", `chunk ${index}\n${"x".repeat(5000)}`),
-		);
-
-		const result = stubToolResultsForPrompt(messages, {
-			...DEFAULT_COMPACTION_SETTINGS,
-			toolResultClearThresholdTokens: 10_000,
-			toolResultKeepRecentCount: 0,
-			toolResultPromptBudgetTokens: 2_000,
-		});
-
-		expect(result.stubs.length).toBeGreaterThan(0);
-		expect(result.toolStubTokens).toBeLessThan(result.toolRawTokens);
-		expect(result.tokenSavingsEstimate).toBeGreaterThan(0);
-	});
-
-	it("uses a tool-result context extract when building prompt stubs", () => {
+	it("uses a tool-result context extract when building compaction stubs", () => {
 		const messages: AgentMessage[] = [
 			createToolResultMessage("call-large", "bash", `raw noise\n${"x".repeat(10_000)}`, {
 				details: {
@@ -616,11 +583,7 @@ describe("tool result stubbing", () => {
 			}),
 		];
 
-		const result = stubToolResultsForPrompt(messages, {
-			...DEFAULT_COMPACTION_SETTINGS,
-			toolResultClearThresholdTokens: 100,
-			toolResultKeepRecentCount: 0,
-		});
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		expect(result.stubs).toHaveLength(1);
 		const stubbedText = extractText(result.messages);
@@ -647,9 +610,6 @@ describe("structured session state", () => {
 					},
 				],
 			},
-			progress: {
-				next: ["Run high-64 manual smoke"],
-			},
 			codebase: {
 				touchedFiles: [
 					{
@@ -660,14 +620,33 @@ describe("structured session state", () => {
 				],
 				relevantSymbols: [],
 			},
+			decisions: {
+				add: [
+					{
+						id: "decision-1",
+						decision: "Persist formal compaction",
+						rationale: "Keep cache boundaries visible",
+						evidencePointers: [],
+						status: "active",
+					},
+				],
+			},
+			audit: { knownRisks: ["Provider smoke pending"] },
 		});
 
-		const checkpoint = renderStructuredSessionCheckpoint(state, 120);
+		const checkpoint = renderStructuredSessionCheckpoint(state, 1000);
 
 		expect(checkpoint).toContain("<session_checkpoint>");
 		expect(checkpoint).toContain("Goal: Fix compaction loop");
-		expect(checkpoint).toContain("- [done] Inspect prompt budget");
-		expect(checkpoint.length).toBeLessThanOrEqual(120 * 4 + 120);
+		expect(checkpoint).toContain("✅ Inspect prompt budget");
+		expect(checkpoint).toContain("Decisions:");
+		expect(checkpoint).toContain("Persist formal compaction: Keep cache boundaries visible");
+		expect(checkpoint).toContain("Files:");
+		expect(checkpoint).toContain("modified: packages/coding-agent/src/core/compaction/compaction.ts");
+		expect(checkpoint).toContain("Risks:");
+		expect(checkpoint).toContain("⚠️ Provider smoke pending");
+		expect(checkpoint).not.toContain("Progress:");
+		expect(checkpoint).not.toContain("Next:");
 	});
 
 	it("does not supersede active constraints or mark plan done without evidence", () => {
@@ -724,7 +703,7 @@ describe("structured session state", () => {
 
 		const state = createStructuredSessionState({
 			sessionId: "session-requests",
-			summary: `## Goal\n${hugePlan}\n## Plan & Progress\n- [ ] Continue implementation.`,
+			summary: `## Goal\n${hugePlan}\n## Plan\n- [ ] Continue implementation.`,
 			entries,
 		});
 		const checkpoint = renderStructuredSessionCheckpoint(state, 180);
@@ -733,7 +712,7 @@ describe("structured session state", () => {
 		expect(state.canonicalRequest.originalRequests[0].text).toBe(hugePlan);
 		expect(state.canonicalRequest.current.length).toBeLessThan(520);
 		expect(state.canonicalRequest.current).toContain("project memory automatic");
-		expect(checkpoint).toContain("Original requests stored: 2");
+		expect(checkpoint).not.toContain("Original requests stored:");
 		expect(checkpoint).not.toContain("Requirement 199");
 		expect(checkpoint.length).toBeLessThan(180 * 4 + 120);
 	});
@@ -753,9 +732,8 @@ describe("structured session state", () => {
 			summary: [
 				"## Goal",
 				"Awaiting initial user prompt to define the goal.",
-				"## Progress",
-				"### Done",
-				"- Completed the repository context probe.",
+				"## Plan",
+				"- [v] Complete the repository context probe.",
 			].join("\n"),
 			entries,
 		});
@@ -765,7 +743,7 @@ describe("structured session state", () => {
 		expect(state.canonicalRequest.originalRequests[0].text).toBe(request);
 	});
 
-	it("builds live state from current conversation plan and next steps before compaction", () => {
+	it("builds live state from the current conversation plan before compaction", () => {
 		const request = "Review and improve the durable session state command.";
 		const entries: SessionEntry[] = [
 			createMessageEntry(createUserMessage(request)),
@@ -778,10 +756,6 @@ describe("structured session state", () => {
 						"1. Reproduce /state manually.",
 						"2. Patch live structured state.",
 						"3. Verify with tests.",
-						"",
-						"Next Steps:",
-						"1. Run targeted regression tests.",
-						"2. Re-run the tmux smoke.",
 					].join("\n"),
 					createMockUsage(1000, 100),
 				),
@@ -800,21 +774,21 @@ describe("structured session state", () => {
 			"Patch live structured state.",
 			"Verify with tests.",
 		]);
-		expect(state.progress.next).toEqual([
-			"Run targeted regression tests.",
-			"Re-run the tmux smoke.",
-			"Reproduce /state manually.",
-			"Patch live structured state.",
-			"Verify with tests.",
-		]);
-		expect(checkpoint).toContain("Run targeted regression tests.");
+		expect(checkpoint).not.toContain("Next:");
+		expect(checkpoint).not.toContain("Run targeted regression tests.");
 	});
 
-	it("preserves live progress when a later summary omits progress sections", () => {
+	it("preserves the plan when a later summary omits the Plan section", () => {
 		const previous = mergeStructuredSessionState(createInitialStructuredSessionState("session-progress"), {
-			progress: {
-				current: ["Patch live structured state."],
-				next: ["Run targeted regression tests."],
+			plan: {
+				add: [
+					{
+						id: "plan-patch-state",
+						text: "Patch live structured state.",
+						status: "in_progress",
+						evidenceEntryIds: [],
+					},
+				],
 			},
 		});
 
@@ -822,12 +796,13 @@ describe("structured session state", () => {
 			sessionId: "session-progress",
 			previous,
 			summary:
-				"## Goal\nImprove durable session state.\n\n## Key Decisions\n- Keep structured state outside prompt context.",
+				"## Goal\nImprove durable session state.\n\n## Decisions\n- Keep structured state outside prompt context.",
 			entries: [createMessageEntry(createUserMessage("Improve durable session state."))],
 		});
 
-		expect(state.progress.current).toEqual(["Patch live structured state."]);
-		expect(state.progress.next).toEqual(["Run targeted regression tests."]);
+		expect(state.plan.map((item) => [item.text, item.status])).toEqual([
+			["Patch live structured state.", "in_progress"],
+		]);
 	});
 });
 

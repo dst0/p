@@ -16,7 +16,6 @@ function updateStateCall(goal: string, action: "initial_plan" | "replan" = "init
 		action,
 		goal,
 		plan: [{ text: "Inspect the requested file", status: "in_progress" }],
-		progress: { current: ["Inspect the requested file"], next: ["Report the result"] },
 	});
 }
 
@@ -31,12 +30,8 @@ function finishCall(
 	});
 }
 
-function markProgressCall(
-	task: string,
-	status: "not_started" | "in_progress" | "done" | "failed" | "blocked",
-	next?: string[],
-) {
-	return fauxToolCall(PROGRESS_TOOL, { task, status, next });
+function markProgressCall(task: string, status: "not_started" | "in_progress" | "done" | "failed" | "blocked") {
+	return fauxToolCall(PROGRESS_TOOL, { task, status });
 }
 
 function toolEndEvents(harness: Harness, toolName: string) {
@@ -81,7 +76,6 @@ describe("AgentSession default session-state tool", () => {
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
 			expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
 			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
-			expect(state?.progress.done).toEqual(["Inspect the requested file"]);
 		} finally {
 			harness.cleanup();
 		}
@@ -148,7 +142,6 @@ describe("AgentSession default session-state tool", () => {
 						action: "initial_plan",
 						goal: "Keep session state concise",
 						plan: [{ text: "Patch state merge behavior", status: "in_progress" }],
-						progress: { current: ["Patch state merge behavior"] },
 					}),
 					{ stopReason: "toolUse" },
 				),
@@ -156,7 +149,6 @@ describe("AgentSession default session-state tool", () => {
 					fauxToolCall(UPDATE_TOOL, {
 						action: "progress_update",
 						plan: [{ text: "Impl: Patch state merge behavior", status: "done" }],
-						progress: { done: ["Patch state merge behavior"] },
 					}),
 					{ stopReason: "toolUse" },
 				),
@@ -168,69 +160,6 @@ describe("AgentSession default session-state tool", () => {
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
 			expect(toolEndEvents(harness, UPDATE_TOOL).every((event) => !event.isError)).toBe(true);
 			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Patch state merge behavior", "done"]]);
-			expect(state?.progress.done).toEqual(["Patch state merge behavior"]);
-			expect(state?.progress.next).toEqual([]);
-		} finally {
-			harness.cleanup();
-		}
-	});
-
-	it("clears explicit next actions before finish_work", async () => {
-		const harness = await createHarness();
-		try {
-			harness.setResponses([
-				fauxAssistantMessage(
-					fauxToolCall(UPDATE_TOOL, {
-						action: "initial_plan",
-						goal: "Complete the tracked work",
-						plan: [{ text: "Complete the tracked work", status: "done" }],
-						progress: { next: ["Run final verification"] },
-					}),
-					{ stopReason: "toolUse" },
-				),
-				fauxAssistantMessage(
-					fauxToolCall(UPDATE_TOOL, {
-						action: "progress_update",
-						progress: { next: [] },
-					}),
-					{ stopReason: "toolUse" },
-				),
-				fauxAssistantMessage(finishCall("tracked work complete"), { stopReason: "toolUse" }),
-			]);
-
-			await harness.session.prompt("Complete the tracked work");
-
-			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-			expect(state?.progress.next).toEqual([]);
-			expect(toolEndEvents(harness, "finish_work")).toHaveLength(1);
-			expect(toolEndEvents(harness, "finish_work")[0]?.isError).toBe(false);
-		} finally {
-			harness.cleanup();
-		}
-	});
-
-	it("does not treat terminal next-action placeholders as unresolved work", async () => {
-		const harness = await createHarness();
-		try {
-			harness.setResponses([
-				fauxAssistantMessage(
-					fauxToolCall(UPDATE_TOOL, {
-						action: "initial_plan",
-						goal: "Complete the tracked work",
-						plan: [{ text: "Complete the tracked work", status: "done" }],
-						progress: { next: ["Done"] },
-					}),
-					{ stopReason: "toolUse" },
-				),
-				fauxAssistantMessage(finishCall("tracked work complete"), { stopReason: "toolUse" }),
-			]);
-
-			await harness.session.prompt("Complete the tracked work");
-
-			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-			expect(state?.progress.next).toEqual([]);
-			expect(toolEndEvents(harness, "finish_work")).toHaveLength(1);
-			expect(toolEndEvents(harness, "finish_work")[0]?.isError).toBe(false);
 		} finally {
 			harness.cleanup();
 		}

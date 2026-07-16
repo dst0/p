@@ -170,8 +170,20 @@ describe("working state cache isolation", () => {
 		runtime.session.settingsManager.applyOverrides({ compaction: { enabled: true } });
 		const state = createInitialStructuredSessionState(runtime.session.sessionId);
 		state.canonicalRequest.current = "Preserve prompt cache reuse";
-		state.progress.current = ["Keep working state outside the system prompt"];
-		state.progress.next = ["Replay working state at stable user-message anchors"];
+		state.plan = [
+			{
+				id: "plan-working-state",
+				text: "Keep working state outside the system prompt",
+				status: "in_progress",
+				evidenceEntryIds: [],
+			},
+			{
+				id: "plan-cache-anchor",
+				text: "Replay working state at stable user-message anchors",
+				status: "not_started",
+				evidenceEntryIds: [],
+			},
+		];
 		runtime.session.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
 
 		cleanups.push(async () => {

@@ -4,6 +4,17 @@ import { fileURLToPath } from "node:url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
+export interface EmbeddingServerManagerOptions {
+	pythonExecutable: string;
+	startupTimeoutMs: number;
+	onLog?: (level: "debug" | "error", message: string) => void;
+}
+
+const DEFAULT_SERVER_OPTIONS: EmbeddingServerManagerOptions = {
+	pythonExecutable: "python3",
+	startupTimeoutMs: 120_000,
+};
+
 /**
  * Manages the lifecycle of the Python embedding server subprocess.
  * Starts the server on demand, polls /health until ready, and cleans up on exit.
@@ -14,10 +25,17 @@ export class EmbeddingServerManager {
 	private port: number;
 	private model: string;
 	private started = false;
+	private startPromise: Promise<boolean> | undefined;
+	private options: EmbeddingServerManagerOptions;
 
-	constructor(port: number = 8081, model: string = "Qwen/Qwen3-Embedding-0.6B") {
+	constructor(
+		port: number = 8081,
+		model: string = "Qwen/Qwen3-Embedding-0.6B",
+		options: Partial<EmbeddingServerManagerOptions> = {},
+	) {
 		this.port = port;
 		this.model = model;
+		this.options = { ...DEFAULT_SERVER_OPTIONS, ...options };
 		// Resolve the Python script relative to this package
 		this.scriptPath = path.join(__dirname, "..", "..", "embedding_server.py");
 	}
@@ -26,62 +44,89 @@ export class EmbeddingServerManager {
 	 * Start the embedding server if not already running.
 	 * Returns true if this instance started the server, false if already running.
 	 */
-	async ensureStarted(): Promise<boolean> {
+	async ensureStarted(signal?: AbortSignal): Promise<boolean> {
 		if (this.started) {
 			return false;
 		}
+		if (this.startPromise) return this.startPromise;
+		this.startPromise = this.start(signal).finally(() => {
+			this.startPromise = undefined;
+		});
+		return this.startPromise;
+	}
+
+	private async start(signal?: AbortSignal): Promise<boolean> {
+		if (signal?.aborted) throw signal.reason ?? new Error("Embedding server startup cancelled");
 
 		// Check if something is already listening on the port
 		const alreadyRunning = await this.checkHealth();
 		if (alreadyRunning) {
 			this.started = true;
-			console.log(`  ⚡ Embedding server already running on port ${this.port}`);
+			this.options.onLog?.("debug", `Embedding server already running on port ${this.port}`);
 			return false;
 		}
 
-		console.log(`  🚀 Starting embedding server (port ${this.port}, model ${this.model})...`);
+		this.options.onLog?.("debug", `Starting embedding server on port ${this.port}`);
 
 		return new Promise((resolve, reject) => {
-			this.child = spawn("python3", [this.scriptPath, "--port", String(this.port), "--model", this.model], {
-				stdio: ["ignore", "pipe", "pipe"],
-				detached: false,
-			});
+			let settled = false;
+			const settle = (callback: () => void) => {
+				if (settled) return;
+				settled = true;
+				signal?.removeEventListener("abort", onAbort);
+				callback();
+			};
+			const onAbort = () => {
+				this.kill();
+				settle(() => reject(signal?.reason ?? new Error("Embedding server startup cancelled")));
+			};
+			signal?.addEventListener("abort", onAbort, { once: true });
+			this.child = spawn(
+				this.options.pythonExecutable,
+				[this.scriptPath, "--port", String(this.port), "--model", this.model],
+				{
+					stdio: ["ignore", "pipe", "pipe"],
+					detached: false,
+				},
+			);
 
 			this.child.stdout?.on("data", (data) => {
 				const text = data.toString().trim();
-				if (text) console.log(`  [embed-server] ${text}`);
+				if (text) this.options.onLog?.("debug", text);
 			});
 
 			this.child.stderr?.on("data", (data) => {
 				const text = data.toString().trim();
-				if (text) console.error(`  [embed-server] ${text}`);
+				if (text) this.options.onLog?.("error", text);
 			});
 
 			this.child.on("error", (err) => {
 				this.child = null;
-				reject(new Error(`Failed to start embedding server: ${err.message}`));
+				settle(() => reject(new Error(`Failed to start embedding server: ${err.message}`)));
 			});
 
 			this.child.on("exit", (code, signal) => {
 				if (this.child) {
-					console.error(`  [embed-server] Exited with code ${code}, signal ${signal}`);
+					this.options.onLog?.("error", `Embedding server exited with code ${code}, signal ${signal}`);
 					this.child = null;
 					this.started = false;
+					settle(() =>
+						reject(new Error(`Embedding server exited before readiness (code ${code}, signal ${signal})`)),
+					);
 				}
 			});
 
 			// Poll /health until the server reports ready or timeout
-			const timeout = 120_000; // 2 min
 			const interval = 1000;
-			const deadline = Date.now() + timeout;
+			const deadline = Date.now() + this.options.startupTimeoutMs;
 
 			const poll = async () => {
 				try {
 					const ok = await this.checkHealth();
 					if (ok) {
 						this.started = true;
-						console.log(`  ✅ Embedding server ready`);
-						resolve(true);
+						this.options.onLog?.("debug", "Embedding server ready");
+						settle(() => resolve(true));
 						return;
 					}
 				} catch {
@@ -90,7 +135,7 @@ export class EmbeddingServerManager {
 
 				if (Date.now() >= deadline) {
 					this.kill();
-					reject(new Error("Embedding server failed to start within timeout"));
+					settle(() => reject(new Error("Embedding server failed to start within timeout")));
 					return;
 				}
 
@@ -110,6 +155,7 @@ export class EmbeddingServerManager {
 			this.child = null;
 			this.started = false;
 		}
+		this.started = false;
 	}
 
 	/**

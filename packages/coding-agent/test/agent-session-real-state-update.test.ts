@@ -473,8 +473,6 @@ describe.skipIf(!RUN_REAL_SESSION_STATE)("AgentSession real LLM structured sessi
 				evidenceEntryIds: [],
 			},
 		);
-		state.progress.current = [currentAction];
-		state.progress.next = ["Keep the primary goal stable across later user messages"];
 		activeSession.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
 	}
 

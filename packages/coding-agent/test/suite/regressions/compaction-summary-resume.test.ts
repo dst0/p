@@ -14,10 +14,15 @@ describe("compaction summary resume context", () => {
 		const checkpoint = [
 			"<session_checkpoint>",
 			"Goal: Normalize task statuses before continuing the P-agent integration.",
-			"Current plan:",
-			"- [in_progress] Replace task proposals with Ready.",
-			"Next action:",
-			"- Run the targeted backend task-status tests.",
+			"Plan:",
+			"⏳ Replace task proposals with Ready.",
+			"• Run the targeted backend task-status tests.",
+			"Decisions:",
+			"- (none)",
+			"Files:",
+			"- (none)",
+			"Risks:",
+			"- (none)",
 			"</session_checkpoint>",
 		].join("\n");
 
@@ -26,7 +31,7 @@ describe("compaction summary resume context", () => {
 		expect(message?.role).toBe("user");
 		const text = message ? messageText(message) : "";
 		expect(text).toContain("authoritative working-state checkpoint");
-		expect(text).toContain("Continue from its Goal, Plan, Next action");
+		expect(text).toContain("Continue from its Goal, Plan, Decisions, Files, and Risks");
 		expect(text).toContain("latest user message");
 		expect(text).toContain("Goal: Normalize task statuses");
 		expect(text).toContain("task proposals with Ready");

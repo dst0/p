@@ -3,8 +3,28 @@ import { renderWorkingSessionState, type StructuredSessionState } from "./compac
 import { type CustomMessage, SLEEP_TOOL_NAME } from "./messages.ts";
 
 export const TURN_CHECKPOINT_CUSTOM_TYPE = "turn_checkpoint";
+export const SESSION_STATE_REMINDER_CUSTOM_TYPE = "session_state_reminder";
+export const SESSION_STATE_REMINDER_INTERVAL_MS = 90_000;
 
 const STATE_UPDATE_TOOL_NAMES = new Set(["update_session_state", "mark_session_progress"]);
+
+export function createSessionStateReminderMessage(timestamp = Date.now()): CustomMessage {
+	return {
+		role: "custom",
+		customType: SESSION_STATE_REMINDER_CUSTOM_TYPE,
+		content: [
+			"<session_state_reminder>",
+			"About 90 seconds of active work have elapsed since the last plan-state check.",
+			"Before the next action, compare completed work with the current Goal, Plan, Decisions, Files, and Risks.",
+			"- If an existing plan item changed status, call mark_session_progress with its exact visible task text.",
+			"- If scope, decisions, touched files, or risks changed, call update_session_state.",
+			"- If nothing changed, continue without a state tool call.",
+			"</session_state_reminder>",
+		].join("\n"),
+		display: false,
+		timestamp,
+	};
+}
 
 export function createTurnCheckpointMessages(
 	context: PrepareNextTurnContext,

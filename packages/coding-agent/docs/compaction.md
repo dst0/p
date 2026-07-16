@@ -37,7 +37,7 @@ Both limits are evaluated when present, and the lower threshold wins. By default
 
 The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`.
 
-Provider prompt-cache reuse is separate from compaction. Runtime-only project/session context is sent after the user turn so the provider-visible prefix remains stable across idle follow-up prompts and tool-loop continuations. Large prompts are still bounded by the loaded model's actual context window; if the conversation exceeds that window, compaction or trimming may still occur before a request is sent.
+Provider prompt-cache reuse is separate from compaction. During normal turns, provider-visible history is append-only: completed text and image tool results are never replaced by live stubs, and threshold pressure does not truncate the prompt. The between-turn hook checks pressure after ordinary tool-use turns and, when required, persists formal compaction before the next provider request. This produces one explicit cache reset at the compaction boundary, followed by append-only reuse from the rebuilt context. Tool-result stubbing remains limited to the one-shot compaction-summary request and is recorded in the compaction audit. If formal compaction fails, pi leaves live history unchanged and uses the explicit overflow-recovery path.
 
 Interrupted provider streams do not resume. After a dropped connection or killed p process, the next prompt with the same session id is a fresh provider request. Prompt-cache reuse depends on the saved provider-visible prefix and any intermediary checkpoint restore, not on continuing the previous stream. Cache-stability tests should therefore verify that post-interruption turns reuse or restore cache on the next request and that no non-compaction turn falls back to full prompt prefill.
 
@@ -219,33 +219,27 @@ See [`collectEntriesForBranchSummary()`](https://github.com/dst0/p-mono/blob/mai
 
 ## Summary Format
 
-Both compaction and branch summarization use the same structured format:
+Compaction and branch summarization use the same plan-only status format:
 
 ```markdown
 ## Goal
 [What the user is trying to accomplish]
 
-## Constraints & Preferences
-- [Requirements mentioned by user]
+## Plan
+- [ ] [Not started]
+- [.] [In progress]
+- [v] [Done]
+- [-] [Failed]
+- [!] [Blocked]
 
-## Progress
-### Done
-- [x] [Completed tasks]
-
-### In Progress
-- [ ] [Current work]
-
-### Blocked
-- [Issues, if any]
-
-## Key Decisions
+## Decisions
 - **[Decision]**: [Rationale]
 
-## Next Steps
-1. [What should happen next]
+## Files
+- [read|modified|created|deleted]: [Exact path] - [Summary]
 
-## Critical Context
-- [Data needed to continue]
+## Risks
+- [Unresolved failure, blocker, warning, or `(none)`]
 
 <read-files>
 path/to/file1.ts

@@ -51,6 +51,7 @@ export const EXCLUDE_DIRS: Set<string> = new Set([
 	".wasm-pack",
 	".tektonos",
 	".tekton",
+	".p",
 	"tektonos",
 	"storage",
 	"data",
@@ -101,6 +102,9 @@ export const EXCLUDE_EXTS: Set<string> = new Set([
 	".snap",
 	".fixture",
 	".generated",
+	".p12",
+	".pfx",
+	".jks",
 ]);
 
 /** Map file extensions to language names. */

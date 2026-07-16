@@ -1,11 +1,7 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { type AssistantMessage, getModel, type TextContent, type ToolResultMessage, type Usage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
-import {
-	type CompactionSettings,
-	estimateTokens,
-	stubToolResultsForPrompt,
-} from "../src/core/compaction/compaction.ts";
+import { estimateTokens, stubToolResultsForCompactionSummary } from "../src/core/compaction/compaction.ts";
 
 const model = getModel("anthropic", "claude-sonnet-4-5")!;
 
@@ -51,24 +47,6 @@ function getTextPart(part: ToolResultMessage["content"][number] | undefined): Te
 	return part;
 }
 
-function createPromptSettings(
-	overrides: Pick<
-		CompactionSettings,
-		"toolResultClearThresholdTokens" | "toolResultKeepRecentCount" | "toolResultPromptBudgetTokens"
-	>,
-): CompactionSettings {
-	return {
-		enabled: true,
-		triggerReserveTokens: 12000,
-		keepRecentMinTokens: 2000,
-		keepRecentMaxTokens: 8000,
-		summaryMaxTokens: 1200,
-		renderedStateMaxTokens: 1500,
-		targetContextTokens: 12000,
-		...overrides,
-	};
-}
-
 describe("context management", () => {
 	it("counts image data when estimating tool result context", () => {
 		const imageData = "a".repeat(64_000);
@@ -87,7 +65,7 @@ describe("context management", () => {
 		expect(estimateTokens(result)).toBeGreaterThan(16_000);
 	});
 
-	it("stubs older image tool results and removes image payloads from prompt context", () => {
+	it("stubs image tool results only for the one-shot compaction summary", () => {
 		const oldImageData = "a".repeat(64_000);
 		const oldImageResult: ToolResultMessage = {
 			role: "toolResult",
@@ -100,137 +78,20 @@ describe("context management", () => {
 			isError: false,
 			timestamp: Date.now(),
 		};
-		const latestResult: ToolResultMessage = {
-			role: "toolResult",
-			toolCallId: "call-latest",
-			toolName: "bro_evaluate",
-			content: [{ type: "text", text: "latest small output" }],
-			isError: false,
-			timestamp: Date.now(),
-		};
 		const messages: AgentMessage[] = [
 			{ role: "user", content: "hello", timestamp: Date.now() },
 			createAssistantToolCallMessage("call-old-image", "read", { path: "/tmp/shot.png" }),
 			oldImageResult,
-			createAssistantToolCallMessage("call-latest", "bro_evaluate", { script: "1" }),
-			latestResult,
 		];
 
-		const result = stubToolResultsForPrompt(
-			messages,
-			createPromptSettings({
-				toolResultKeepRecentCount: 1,
-				toolResultClearThresholdTokens: 1200,
-				toolResultPromptBudgetTokens: 4000,
-			}),
-		);
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		const stubbedMessage = result.messages[2] as ToolResultMessage;
 		expect(stubbedMessage.content.some((part) => part.type === "image")).toBe(false);
 		expect(getTextPart(stubbedMessage.content[0]).text).toContain("[Tool result stubbed");
 		expect(result.stubs.map((stub) => stub.rawPointer.id)).toContain("tool-result:call-old-image");
 		expect(result.tokenSavingsEstimate).toBeGreaterThan(10_000);
-		expect((result.messages[4] as ToolResultMessage).content).toEqual(latestResult.content);
-	});
-
-	it("keeps the most recent tool result raw even if it is large", () => {
-		const largeContent = "a".repeat(10000); // ~2500 tokens, exceeds old 1200 threshold
-		const messages: AgentMessage[] = [
-			{ role: "user", content: "hello", timestamp: Date.now() },
-			createAssistantToolCallMessage("call1", "bash", { command: "ls" }),
-			{
-				role: "toolResult",
-				toolCallId: "call1",
-				toolName: "bash",
-				content: [{ type: "text", text: largeContent }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-		];
-
-		const livePromptSettings = createPromptSettings({
-			toolResultKeepRecentCount: 1,
-			toolResultClearThresholdTokens: 32000,
-			toolResultPromptBudgetTokens: 64000,
-		});
-
-		const result = stubToolResultsForPrompt(messages, livePromptSettings);
-
-		expect(result.messages[2].role).toBe("toolResult");
-		expect((result.messages[2] as ToolResultMessage).content[0].type).toBe("text");
-		expect(getTextPart((result.messages[2] as ToolResultMessage).content[0]).text).toBe(largeContent);
-	});
-
-	it("keeps all tool results raw when they fit inside the recent-result window", () => {
-		const messages: AgentMessage[] = [
-			{
-				role: "toolResult",
-				toolCallId: "call-first",
-				toolName: "read",
-				content: [{ type: "text", text: "first\n".repeat(2000) }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-			{
-				role: "toolResult",
-				toolCallId: "call-second",
-				toolName: "read",
-				content: [{ type: "text", text: "second\n".repeat(2000) }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-		];
-
-		const result = stubToolResultsForPrompt(
-			messages,
-			createPromptSettings({
-				toolResultKeepRecentCount: 3,
-				toolResultClearThresholdTokens: 100,
-				toolResultPromptBudgetTokens: 0,
-			}),
-		);
-
-		expect(result.stubs).toHaveLength(0);
-		expect(result.messages).toBe(messages);
-	});
-
-	it("stubs older large tool results but keeps the most recent one", () => {
-		const largeContent = "a".repeat(10000);
-		const messages: AgentMessage[] = [
-			{ role: "user", content: "hello", timestamp: Date.now() },
-			createAssistantToolCallMessage("call1", "bash", { command: "ls" }),
-			{
-				role: "toolResult",
-				toolCallId: "call1",
-				toolName: "bash",
-				content: [{ type: "text", text: largeContent }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-			createAssistantToolCallMessage("call2", "bash", { command: "ls" }),
-			{
-				role: "toolResult",
-				toolCallId: "call2",
-				toolName: "bash",
-				content: [{ type: "text", text: "small output" }],
-				isError: false,
-				timestamp: Date.now(),
-			},
-		];
-
-		const livePromptSettings = createPromptSettings({
-			toolResultKeepRecentCount: 1,
-			toolResultClearThresholdTokens: 1200, // Trigger stubbing for large results
-			toolResultPromptBudgetTokens: 4000,
-		});
-
-		const result = stubToolResultsForPrompt(messages, livePromptSettings);
-
-		expect((result.messages[2] as ToolResultMessage).content[0].type).toBe("text");
-		expect(getTextPart((result.messages[2] as ToolResultMessage).content[0]).text).toContain("[Tool result stubbed");
-
-		expect((result.messages[4] as ToolResultMessage).content[0].type).toBe("text");
-		expect(getTextPart((result.messages[4] as ToolResultMessage).content[0]).text).toBe("small output");
+		expect(oldImageResult.content.some((part) => part.type === "image")).toBe(true);
 	});
 
 	it("uses the provided summary when a result is stubbed after calling keep_context", () => {
@@ -255,24 +116,9 @@ describe("context management", () => {
 			{ role: "user", content: "hello", timestamp: Date.now() },
 			createAssistantToolCallMessage("call1", "bash", { command: "ls" }),
 			toolResult,
-			createAssistantToolCallMessage("call2", "bash", { command: "ls" }),
-			{
-				role: "toolResult",
-				toolCallId: "call2",
-				toolName: "bash",
-				content: [{ type: "text", text: "small output" }],
-				isError: false,
-				timestamp: Date.now(),
-			},
 		];
 
-		const livePromptSettings = createPromptSettings({
-			toolResultKeepRecentCount: 1,
-			toolResultClearThresholdTokens: 1200,
-			toolResultPromptBudgetTokens: 4000,
-		});
-
-		const result = stubToolResultsForPrompt(messages, livePromptSettings);
+		const result = stubToolResultsForCompactionSummary(messages);
 
 		const stubbedMessage = result.messages[2] as ToolResultMessage;
 		const stubbedText = getTextPart(stubbedMessage.content[0]).text;

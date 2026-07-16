@@ -8,33 +8,13 @@ export const SESSION_STATE_UPDATE_START_TAG = "<session_state_update>";
 export const SESSION_STATE_UPDATE_END_TAG = "</session_state_update>";
 export const STATE_RENDER_MARKERS = {
 	goal: "🚩",
-	notStarted: "➖",
+	notStarted: "•",
 	inProgress: "⏳",
 	done: "✅",
 	failed: "❌",
 	blocked: "🚧",
-	nextAction: "📌",
 	risk: "⚠️",
 } as const;
-const TERMINAL_PROGRESS_MARKERS = new Set([
-	"all complete",
-	"all done",
-	"all finished",
-	"all tasks complete",
-	"all tasks completed",
-	"all work complete",
-	"all work completed",
-	"complete",
-	"completed",
-	"done",
-	"everything complete",
-	"everything completed",
-	"finished",
-	"n a",
-	"next task",
-	"no remaining work",
-	"none",
-]);
 const MAX_CANONICAL_REQUEST_CHARS = 480;
 const MAX_REQUEST_SUMMARY_CHARS = 280;
 
@@ -105,12 +85,6 @@ export interface StructuredSessionState {
 	};
 	constraints: Constraint[];
 	plan: PlanItem[];
-	progress: {
-		done: string[];
-		current: string[];
-		next: string[];
-		blocked: string[];
-	};
 	decisions: Decision[];
 	codebase: {
 		touchedFiles: TouchedFile[];
@@ -142,7 +116,6 @@ export interface StatePatch {
 		}>;
 		remove?: Array<string | { id?: string; text: string }>;
 	};
-	progress?: Partial<StructuredSessionState["progress"]>;
 	decisions?: {
 		add?: Decision[];
 		supersede?: Array<{ id: string; reason: string }>;
@@ -191,12 +164,6 @@ export function createInitialStructuredSessionState(sessionId: string): Structur
 		},
 		constraints: [],
 		plan: [],
-		progress: {
-			done: [],
-			current: [],
-			next: [],
-			blocked: [],
-		},
 		decisions: [],
 		codebase: {
 			touchedFiles: [],
@@ -219,7 +186,6 @@ export function isStructuredSessionState(value: unknown): value is StructuredSes
 		isRecord(value.canonicalRequest) &&
 		Array.isArray(value.constraints) &&
 		Array.isArray(value.plan) &&
-		isRecord(value.progress) &&
 		Array.isArray(value.decisions) &&
 		isRecord(value.codebase) &&
 		Array.isArray(value.evidence) &&
@@ -269,12 +235,6 @@ export function mergeStructuredSessionState(
 			...item,
 			evidenceEntryIds: [...item.evidenceEntryIds],
 		})),
-		progress: {
-			done: [...previous.progress.done],
-			current: [...previous.progress.current],
-			next: [...previous.progress.next],
-			blocked: [...previous.progress.blocked],
-		},
 		decisions: previous.decisions.map((decision) => ({
 			...decision,
 			evidencePointers: decision.evidencePointers.map((pointer) => ({
@@ -304,14 +264,6 @@ export function mergeStructuredSessionState(
 	if (patch.plan) {
 		mergePlan(next, patch.plan);
 	}
-	if (patch.progress) {
-		next.progress = {
-			done: mergeProgressList(next.progress.done, patch.progress.done),
-			current: mergeProgressList([], patch.progress.current ?? next.progress.current),
-			next: mergeProgressList([], patch.progress.next ?? next.progress.next),
-			blocked: mergeProgressList(next.progress.blocked, patch.progress.blocked),
-		};
-	}
 	if (patch.decisions) {
 		mergeDecisions(next, patch.decisions);
 	}
@@ -332,9 +284,6 @@ export function mergeStructuredSessionState(
 		};
 	}
 
-	reconcileProgressWithPlan(next);
-
-	// Normalize and deduplicate touched files
 	next.codebase.touchedFiles = mergeTouchedFiles(next.codebase.touchedFiles, []);
 
 	// Filter dead evidence and prune to max 50
@@ -351,11 +300,6 @@ export function mergeStructuredSessionState(
 		})
 		.slice(-50);
 
-	// Remove terminal markers from progress lists
-	next.progress.current = next.progress.current.filter((item) => !isTerminalProgressMarker(item));
-	next.progress.next = next.progress.next.filter((item) => !isTerminalProgressMarker(item));
-	next.progress.blocked = next.progress.blocked.filter((item) => !isTerminalProgressMarker(item));
-
 	return next;
 }
 
@@ -364,37 +308,32 @@ export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem |
 }
 
 export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
-	const activeConstraints = state.constraints
-		.filter((constraint) => constraint.status === "active")
-		.map((constraint) => capPromptLine(constraint.text, 240));
 	const plan = state.plan
 		.slice(0, 12)
-		.map((item) => `- [${renderPlanStatus(item.status)}] ${capPromptLine(item.text, 220)}`);
-	const nextAction = (state.progress.next.length > 0 ? state.progress.next : state.progress.current.slice(0, 3)).map(
-		(item) => capPromptLine(item, 220),
-	);
+		.map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
+	const decisions = state.decisions
+		.filter((decision) => decision.status === "active")
+		.slice(-8)
+		.map((decision) =>
+			capPromptLine(`${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`, 240),
+		);
 	const touchedFiles = state.codebase.touchedFiles
-		.slice(0, 20)
+		.slice(-20)
 		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
-	const evidence = state.evidence
-		.slice(0, 20)
-		.map((pointer) => `${pointer.id}: ${capPromptLine(pointer.summary, 180)}`);
-	const knownRisks = state.audit.knownRisks.map((risk) => capPromptLine(risk, 220));
+	const knownRisks = state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${capPromptLine(risk, 220)}`);
 	const lines = [
 		"<session_checkpoint>",
-		`Goal: ${capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) || "(no user request recorded yet)"}`,
-		`Original requests stored: ${state.canonicalRequest.originalRequests?.length ?? 0}`,
-		"Active constraints:",
-		...renderList(activeConstraints),
-		"Current plan:",
-		...(plan.length > 0 ? plan : ["- (none)"]),
-		"Next action:",
-		...renderList(nextAction),
-		"Touched files:",
+		`${STATE_RENDER_MARKERS.goal} Goal: ${
+			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
+			"(no user request recorded yet)"
+		}`,
+		"Plan:",
+		...(plan.length > 0 ? plan : [`${STATE_RENDER_MARKERS.notStarted} (none)`]),
+		"Decisions:",
+		...renderList(decisions),
+		"Files:",
 		...renderList(touchedFiles),
-		"Retrieve if needed:",
-		...renderList(evidence),
-		"Known risks:",
+		"Risks:",
 		...renderList(knownRisks),
 		"</session_checkpoint>",
 	];
@@ -405,25 +344,12 @@ export function renderWorkingSessionState(state: StructuredSessionState, maxToke
 	if (!hasMeaningfulStructuredSessionState(state)) {
 		return undefined;
 	}
-	const activeConstraints = state.constraints
-		.filter((constraint) => constraint.status === "active")
-		.slice(0, 8)
-		.map((constraint) => capPromptLine(constraint.text, 220));
 	const plan = state.plan
 		.slice(0, 12)
 		.map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
-	const nextAction = (state.progress.next.length > 0 ? state.progress.next : state.progress.current.slice(0, 3)).map(
-		(item) => `${STATE_RENDER_MARKERS.nextAction} ${capPromptLine(item, 220)}`,
-	);
-	const done = state.progress.done.slice(-6).map((item) => `${STATE_RENDER_MARKERS.done} ${capPromptLine(item, 220)}`);
-	const current = state.progress.current.map(
-		(item) => `${STATE_RENDER_MARKERS.inProgress} ${capPromptLine(item, 220)}`,
-	);
-	const blocked = state.progress.blocked.map((item) => `${STATE_RENDER_MARKERS.blocked} ${capPromptLine(item, 220)}`);
 	const touchedFiles = state.codebase.touchedFiles
 		.slice(-16)
 		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
-	const evidence = state.evidence.slice(-12).map((pointer) => `${pointer.id}: ${capPromptLine(pointer.summary, 180)}`);
 	const risks = state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${capPromptLine(risk, 220)}`);
 	const decisions = state.decisions
 		.filter((decision) => decision.status === "active")
@@ -437,21 +363,12 @@ export function renderWorkingSessionState(state: StructuredSessionState, maxToke
 			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
 			"(no user request recorded yet)"
 		}`,
-		`Original requests stored: ${state.canonicalRequest.originalRequests?.length ?? 0}`,
 		"Plan:",
 		...(plan.length > 0 ? plan : [`${STATE_RENDER_MARKERS.notStarted} (none)`]),
-		"Progress:",
-		...renderList([...done, ...current, ...blocked]),
-		"Next:",
-		...renderList(nextAction),
-		"Active constraints:",
-		...renderList(activeConstraints),
 		"Decisions:",
 		...renderList(decisions),
-		"Touched files:",
+		"Files:",
 		...renderList(touchedFiles),
-		"Evidence pointers:",
-		...renderList(evidence),
 		"Risks:",
 		...renderList(risks),
 		"</working_state>",
@@ -465,24 +382,11 @@ export function hasMeaningfulStructuredSessionState(state: StructuredSessionStat
 		(state.canonicalRequest.originalRequests?.length ?? 0) > 0 ||
 		state.constraints.length > 0 ||
 		state.plan.length > 0 ||
-		state.progress.done.length > 0 ||
-		state.progress.current.length > 0 ||
-		state.progress.next.length > 0 ||
-		state.progress.blocked.length > 0 ||
 		state.decisions.length > 0 ||
 		state.codebase.touchedFiles.length > 0 ||
 		state.evidence.length > 0 ||
 		state.audit.knownRisks.length > 0
 	);
-}
-
-/** Whether a progress entry is only a completion status, not actionable work. */
-export function isTerminalProgressMarker(value: string): boolean {
-	const normalized = compactWhitespace(value)
-		.toLowerCase()
-		.replace(/[^a-z0-9]+/g, " ")
-		.trim();
-	return TERMINAL_PROGRESS_MARKERS.has(normalized);
 }
 
 export function renderPlanStatusMarker(status: PlanStatus): string {
@@ -556,7 +460,6 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 	const action = getStringField(value, ["action"]);
 	const isReplaceAction = action === "initial_plan";
 	const planItems = parsePlanItemsFromUpdate(value.plan ?? value.planItems, sourceEntryIds);
-	const progress = parseProgressUpdate(value.progress, value);
 	const decisions = parseDecisionsFromUpdate(value.decisions);
 	const touchedFiles = parseTouchedFilesFromUpdate(value.touchedFiles ?? value.touched_files ?? value.files);
 	const plan =
@@ -595,7 +498,6 @@ function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: 
 			: undefined,
 		constraints: constraints.length > 0 ? { add: constraints } : undefined,
 		plan,
-		progress,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
 		evidence: evidence.length > 0 ? { add: evidence } : undefined,
@@ -623,7 +525,7 @@ function mergeStatePatches(existing: StatePatch | undefined, incoming: StatePatc
 						update: [...(existing.plan?.update ?? []), ...(incoming.plan?.update ?? [])],
 					}
 				: undefined,
-		progress: mergeProgressPatches(existing.progress, incoming.progress),
+
 		decisions:
 			existing.decisions || incoming.decisions
 				? {
@@ -658,19 +560,6 @@ function mergeStatePatches(existing: StatePatch | undefined, incoming: StatePatc
 						knownRisks: mergeStringList(existing.audit?.knownRisks ?? [], incoming.audit?.knownRisks),
 					}
 				: undefined,
-	};
-}
-
-function mergeProgressPatches(
-	existing: StatePatch["progress"],
-	incoming: StatePatch["progress"],
-): StatePatch["progress"] {
-	if (!existing && !incoming) return undefined;
-	return {
-		done: mergeProgressList(existing?.done ?? [], incoming?.done),
-		current: incoming?.current ?? existing?.current,
-		next: incoming?.next ?? existing?.next,
-		blocked: mergeProgressList(existing?.blocked ?? [], incoming?.blocked),
 	};
 }
 
@@ -729,33 +618,6 @@ function parsePlanItemsFromUpdate(
 		});
 	}
 	return items;
-}
-
-function parseProgressUpdate(value: unknown, fallback: Record<string, unknown>): StatePatch["progress"] {
-	const progressRecord = isRecord(value) ? value : {};
-	const doneKeys = ["done", "completed", "finished"];
-	const currentKeys = ["current", "inProgress", "in_progress"];
-	const nextKeys = ["next", "nextActions", "next_actions"];
-	const fallbackNextKeys = ["nextAction", "next_action"];
-	const blockedKeys = ["blocked", "blockers"];
-	const done = getStringListField(progressRecord, doneKeys);
-	const current = getStringListField(progressRecord, currentKeys);
-	const next = hasStringListField(progressRecord, nextKeys)
-		? getStringListField(progressRecord, nextKeys)
-		: getStringListField(fallback, fallbackNextKeys);
-	const blocked = hasStringListField(progressRecord, blockedKeys)
-		? getStringListField(progressRecord, blockedKeys)
-		: getStringListField(fallback, blockedKeys);
-	const progress: NonNullable<StatePatch["progress"]> = {};
-	if (hasStringListField(progressRecord, doneKeys)) progress.done = done;
-	if (hasStringListField(progressRecord, currentKeys)) progress.current = current;
-	if (hasStringListField(progressRecord, nextKeys) || hasStringListField(fallback, fallbackNextKeys)) {
-		progress.next = next;
-	}
-	if (hasStringListField(progressRecord, blockedKeys) || hasStringListField(fallback, blockedKeys)) {
-		progress.blocked = blocked;
-	}
-	return Object.keys(progress).length > 0 ? progress : undefined;
 }
 
 function parseDecisionsFromUpdate(value: unknown): Decision[] {
@@ -832,7 +694,6 @@ function hasStatePatchContent(patch: StatePatch): boolean {
 		(patch.plan?.replace?.length ?? 0) > 0 ||
 		(patch.plan?.add?.length ?? 0) > 0 ||
 		(patch.plan?.update?.length ?? 0) > 0 ||
-		patch.progress !== undefined ||
 		(patch.decisions?.add?.length ?? 0) > 0 ||
 		(patch.decisions?.supersede?.length ?? 0) > 0 ||
 		(patch.codebase?.touchedFiles?.length ?? 0) > 0 ||
@@ -862,13 +723,6 @@ function getStringListField(record: Record<string, unknown>, keys: string[]): st
 		if (parsed.length > 0) return parsed;
 	}
 	return [];
-}
-
-function hasStringListField(record: Record<string, unknown>, keys: string[]): boolean {
-	return keys.some((key) => {
-		const value = record[key];
-		return Array.isArray(value) || (typeof value === "string" && value.trim().length > 0);
-	});
 }
 
 function parseStringList(value: unknown): string[] {
@@ -963,7 +817,6 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 		normalizeCanonicalRequest(latestRequest?.summary ?? "") ||
 		createPlainSummaryFallback(input.summary);
 	const planItems = extractPlanItems(input.summary, sourceEntryIds);
-	const progress = extractProgress(input.summary);
 	const decisions = extractDecisions(input.summary);
 	const evidence = createEvidencePointers(input);
 	const touchedFiles = [
@@ -995,7 +848,6 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 				}
 			: undefined,
 		plan: planItems.length > 0 ? { add: planItems } : undefined,
-		progress,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
 		evidence: evidence.length > 0 ? { add: evidence } : undefined,
@@ -1025,7 +877,6 @@ function createStatePatchFromLiveSession(input: LiveStructuredStateInput): State
 		normalizeCanonicalRequest(latestRequest?.summary ?? "");
 	const liveMarkdown = createLiveConversationMarkdown(input.entries);
 	const planItems = extractPlanItems(liveMarkdown, sourceEntryIds);
-	const progress = withLiveProgressFallbacks(extractProgress(liveMarkdown), planItems);
 	const decisions = extractDecisions(liveMarkdown);
 	const evidence = createEvidencePointers({
 		sessionId: input.sessionId,
@@ -1047,7 +898,6 @@ function createStatePatchFromLiveSession(input: LiveStructuredStateInput): State
 				? { sourceEntryIds, originalRequests }
 				: undefined,
 		plan: planItems.length > 0 ? { add: planItems } : undefined,
-		progress,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		evidence: evidence.length > 0 ? { add: evidence } : undefined,
 	};
@@ -1058,10 +908,6 @@ function hasDurablePreviousGoal(previous: StructuredSessionState | undefined): b
 	return (
 		(previous.canonicalRequest.originalRequests?.length ?? 0) > 0 ||
 		previous.plan.length > 0 ||
-		previous.progress.done.length > 0 ||
-		previous.progress.current.length > 0 ||
-		previous.progress.next.length > 0 ||
-		previous.progress.blocked.length > 0 ||
 		previous.decisions.length > 0 ||
 		previous.codebase.touchedFiles.length > 0 ||
 		previous.evidence.length > 0 ||
@@ -1229,29 +1075,15 @@ function getAgentMessageText(message: AgentMessage): string {
 	return message.summary;
 }
 
-function extractOptionalSubsection(markdown: string, section: string, subsection: string): string | undefined {
-	const sectionText = extractSection(markdown, section);
-	const escapedSubsection = subsection.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-	const match = sectionText.match(
-		new RegExp(`^###\\s+${escapedSubsection}\\s*$([\\s\\S]*?)(?=^###\\s+|(?![\\s\\S]))`, "m"),
-	);
-	return match?.[1]?.trim();
-}
-
 function extractPlanItems(markdown: string, sourceEntryIds: string[]): PlanItem[] {
-	const section = [
-		extractOptionalSection(markdown, "Plan & Progress"),
-		extractOptionalSection(markdown, "Plan"),
-		extractOptionalSection(markdown, "Current Plan"),
-		...extractLooseSections(markdown, ["Plan & Progress", "Plan", "Current Plan"]),
-	]
+	const section = [extractOptionalSection(markdown, "Plan"), ...extractLooseSections(markdown, ["Plan"])]
 		.filter((value): value is string => value !== undefined && value.trim().length > 0)
 		.join("\n");
 	const items: PlanItem[] = [];
 	const seen = new Set<string>();
 	for (const rawLine of section.split("\n")) {
 		const line = rawLine.trim();
-		const checkboxMatch = line.match(/^-\s+\[([ .vx-])\]\s+(.+)$/i);
+		const checkboxMatch = line.match(/^-\s+\[([ .vx!-])\]\s+(.+)$/i);
 		const numberedMatch = line.match(/^\d+[.)]\s+(.+)$/);
 		const bulletMatch = line.match(/^-\s+(.+)$/);
 		const text = (checkboxMatch?.[2] ?? numberedMatch?.[1] ?? bulletMatch?.[1] ?? "").trim();
@@ -1268,23 +1100,6 @@ function extractPlanItems(markdown: string, sourceEntryIds: string[]): PlanItem[
 		});
 	}
 	return items;
-}
-
-function extractProgress(markdown: string): StatePatch["progress"] {
-	const done = extractOptionalBulletLines(findProgressBlock(markdown, "Done", ["Done", "Completed"]));
-	const current = extractOptionalBulletLines(findProgressBlock(markdown, "In Progress", ["In Progress", "Current"]));
-	const blocked = extractOptionalBulletLines(findProgressBlock(markdown, "Blocked", ["Blocked", "Blockers"]));
-	const next = extractOptionalNumberedLines(
-		extractOptionalSection(markdown, "Next Steps") ??
-			extractOptionalSection(markdown, "Next Actions") ??
-			joinLooseSections(markdown, ["Next Steps", "Next Actions", "Remaining Work"]),
-	);
-	const progress: NonNullable<StatePatch["progress"]> = {};
-	if (done !== undefined) progress.done = done;
-	if (current !== undefined) progress.current = current;
-	if (blocked !== undefined) progress.blocked = blocked;
-	if (next !== undefined) progress.next = next;
-	return Object.keys(progress).length > 0 ? progress : undefined;
 }
 
 function createLiveConversationMarkdown(entries: SessionEntry[]): string {
@@ -1305,29 +1120,6 @@ function stripStructuredContextBlocks(text: string): string {
 		.replace(/<session_checkpoint>[\s\S]*?<\/session_checkpoint>/g, "")
 		.replace(/<working_state>[\s\S]*?<\/working_state>/g, "")
 		.trim();
-}
-
-function withLiveProgressFallbacks(progress: StatePatch["progress"], planItems: PlanItem[]): StatePatch["progress"] {
-	const nextPlanItems = planItems
-		.filter((item) => item.status === "not_started" || item.status === "in_progress")
-		.slice(0, 3)
-		.map((item) => item.text);
-	if (nextPlanItems.length === 0) {
-		return progress;
-	}
-	return {
-		...progress,
-		next: progress?.next !== undefined ? progress.next : nextPlanItems,
-	};
-}
-
-function findProgressBlock(markdown: string, subsection: string, looseHeadings: string[]): string | undefined {
-	return extractOptionalSubsection(markdown, "Progress", subsection) ?? joinLooseSections(markdown, looseHeadings);
-}
-
-function joinLooseSections(markdown: string, headings: string[]): string | undefined {
-	const loose = extractLooseSections(markdown, headings).join("\n").trim();
-	return loose.length > 0 ? loose : undefined;
 }
 
 function extractLooseSections(markdown: string, headings: string[]): string[] {
@@ -1617,64 +1409,6 @@ function reorderPlan(state: StructuredSessionState, orderedIds: string[]): void 
 	});
 }
 
-function reconcileProgressWithPlan(state: StructuredSessionState): void {
-	// Derive progress from plan statuses
-	const planDerived = deriveProgressFromPlan(state.plan);
-
-	// Merge plan-derived progress with explicit progress
-	const synced = syncProgress(state.progress, undefined, planDerived);
-	Object.assign(state.progress, synced);
-
-	// Clean inactive items from current/next
-	const donePlanItems = state.plan.filter((item) => item.status === "done").map((item) => item.text);
-	const blockedPlanItems = state.plan
-		.filter((item) => item.status === "blocked" || item.status === "failed")
-		.map((item) => item.text);
-	const inactiveItems = [...state.progress.done, ...state.progress.blocked, ...donePlanItems, ...blockedPlanItems];
-	state.progress.current = removeSimilarProgressItems(state.progress.current, inactiveItems);
-	state.progress.next = removeSimilarProgressItems(state.progress.next, [...inactiveItems, ...state.progress.current]);
-	state.progress.current = state.progress.current.filter((item) => !isTerminalProgressMarker(item));
-	state.progress.next = state.progress.next.filter((item) => !isTerminalProgressMarker(item));
-	state.progress.blocked = state.progress.blocked.filter((item) => !isTerminalProgressMarker(item));
-}
-
-/**
- * Derives progress from plan item statuses.
- */
-function deriveProgressFromPlan(plan: PlanItem[]): StructuredSessionState["progress"] {
-	const done: string[] = plan.filter((item) => item.status === "done").map((item) => item.text);
-	const current: string[] = plan.filter((item) => item.status === "in_progress").map((item) => item.text);
-	const next: string[] = plan.filter((item) => item.status === "not_started").map((item) => item.text);
-	const blocked: string[] = plan
-		.filter((item) => item.status === "blocked" || item.status === "failed")
-		.map((item) => item.text);
-	return { done, current, next, blocked };
-}
-
-/**
- * Syncs explicit progress with plan-derived progress.
- * Merges plan-derived items into progress while preserving explicit items.
- */
-function syncProgress(
-	current: StructuredSessionState["progress"],
-	incoming: Partial<StructuredSessionState["progress"]> | undefined,
-	planDerived: StructuredSessionState["progress"],
-): StructuredSessionState["progress"] {
-	const base = {
-		done: incoming?.done ?? current.done,
-		current: incoming?.current ?? current.current,
-		next: incoming?.next ?? current.next,
-		blocked: incoming?.blocked ?? current.blocked,
-	};
-
-	return {
-		done: mergeProgressList(base.done, planDerived.done),
-		current: mergeProgressList(base.current, planDerived.current),
-		next: mergeProgressList(base.next, planDerived.next),
-		blocked: mergeProgressList(base.blocked, planDerived.blocked),
-	};
-}
-
 function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boolean {
 	if (current === incoming) return true;
 	if (current === "done" && incoming !== "done") return false;
@@ -1860,84 +1594,6 @@ function mergeStringList(existing: string[], incoming: string[] | undefined): st
 	return result;
 }
 
-function mergeProgressList(existing: string[], incoming: string[] | undefined): string[] {
-	if (!incoming) return existing;
-	const seen = new Set<string>();
-	const result: string[] = [];
-
-	// Add existing items (deduplicated)
-	for (const item of existing) {
-		const trimmed = item.trim();
-		if (trimmed && !seen.has(trimmed)) {
-			result.push(trimmed);
-			seen.add(trimmed);
-		}
-	}
-
-	// Merge incoming items
-	for (const item of incoming) {
-		const trimmed = item.trim();
-		if (!trimmed) continue;
-		const existingIndex = findSimilarProgressItemIndex(result, trimmed);
-		if (existingIndex === -1) {
-			if (!seen.has(trimmed)) {
-				result.push(trimmed);
-				seen.add(trimmed);
-			}
-		} else {
-			if (trimmed.length > result[existingIndex]!.length) {
-				result[existingIndex] = trimmed;
-			}
-		}
-	}
-	return result;
-}
-
-function removeSimilarProgressItems(existing: string[], itemsToRemove: string[]): string[] {
-	if (itemsToRemove.length === 0) return existing;
-	// ⚡ Bolt: Pre-calculate normalized terms for O(N*M) loop optimization
-	const len = itemsToRemove.length;
-	const normalizedToRemove = itemsToRemove.map((item) => {
-		const normalized = normalizeComparableText(item);
-		return {
-			normalized,
-			terms: normalized ? comparableTerms(normalized) : new Set<string>(),
-		};
-	});
-
-	return existing.filter((item) => {
-		const normalizedItem = normalizeComparableText(item);
-		if (!normalizedItem) return true;
-
-		let itemTerms: Set<string> | null = null; // Lazy load
-
-		for (let i = 0; i < len; i++) {
-			const removeTarget = normalizedToRemove[i];
-			const normalizedRight = removeTarget.normalized;
-			if (!normalizedRight) continue;
-
-			if (!itemTerms) itemTerms = comparableTerms(normalizedItem);
-
-			const score = _scoreNormalizedComparableText(normalizedItem, itemTerms, normalizedRight, removeTarget.terms);
-			if (score >= 0.66) return false;
-		}
-		return true;
-	});
-}
-
-function findSimilarProgressItemIndex(existing: string[], incoming: string): number {
-	for (let i = 0; i < existing.length; i++) {
-		if (areComparableTextsSimilar(existing[i]!, incoming)) {
-			return i;
-		}
-	}
-	return -1;
-}
-
-function areComparableTextsSimilar(left: string, right: string): boolean {
-	return scoreComparableText(left, right) >= 0.66;
-}
-
 function scoreComparableText(left: string, right: string): number {
 	const normalizedLeft = normalizeComparableText(left);
 	const normalizedRight = normalizeComparableText(right);
@@ -2009,7 +1665,7 @@ const COMPARABLE_TEXT_STOP_WORDS = new Set([
 ]);
 
 // ⚡ Bolt: Extract regexes to module level to avoid allocation overhead in hot loops
-const NORMALIZE_PREFIX_REGEX = /^(?:(?:✅|⏳|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu;
+const NORMALIZE_PREFIX_REGEX = /^(?:(?:✅|⏳|•|➖|❌|🚧|📌|🚩|⚠️)|[\s-])+/gu;
 const NORMALIZE_ACTION_REGEX =
 	/^(?:impl|implement|explore|check|verify|run|change|find|fix|investigate|update|create)\s*:\s*/g;
 const NORMALIZE_PARENS_REGEX = /\([^)]*\)\s*$/g;
@@ -2036,10 +1692,6 @@ function normalizeComparableText(text: string): string {
 	return cached;
 }
 
-function extractOptionalBulletLines(text: string | undefined): string[] | undefined {
-	return text === undefined ? undefined : extractBulletLines(text);
-}
-
 function extractBulletLines(text: string): string[] {
 	return text
 		.split("\n")
@@ -2048,27 +1700,9 @@ function extractBulletLines(text: string): string[] {
 		.map((line) =>
 			line
 				.slice(2)
-				.replace(/^\[[ .vx-]\]\s*/i, "")
+				.replace(/^\[[ .vx!-]\]\s*/i, "")
 				.trim(),
 		)
-		.filter((line) => line.length > 0 && line !== "(none)");
-}
-
-function extractOptionalNumberedLines(text: string | undefined): string[] | undefined {
-	return text === undefined ? undefined : extractNumberedLines(text);
-}
-
-function extractNumberedLines(text: string): string[] {
-	return text
-		.split("\n")
-		.map((line) => line.trim())
-		.map((line) => {
-			const numbered = line.match(/^\d+[.)]\s+(.+)$/);
-			if (numbered) return numbered[1].trim();
-			const bullet = line.match(/^-\s+(.+)$/);
-			if (bullet) return bullet[1].trim();
-			return line;
-		})
 		.filter((line) => line.length > 0 && line !== "(none)");
 }
 
@@ -2081,22 +1715,9 @@ function parsePlanStatus(value: string): PlanStatus {
 			return "done";
 		case "-":
 			return "failed";
-		default:
-			return "not_started";
-	}
-}
-
-function renderPlanStatus(status: PlanStatus): string {
-	switch (status) {
-		case "done":
-			return "done";
-		case "in_progress":
-			return "in_progress";
-		case "failed":
-			return "failed";
-		case "blocked":
+		case "!":
 			return "blocked";
-		case "not_started":
+		default:
 			return "not_started";
 	}
 }
@@ -2113,7 +1734,7 @@ function capPromptLine(text: string, maxChars: number): string {
 function capCheckpoint(checkpoint: string, maxTokens: number): string {
 	const maxChars = Math.max(500, maxTokens * 4);
 	if (checkpoint.length <= maxChars) return checkpoint;
-	const suffix = "\nKnown risks:\n- checkpoint truncated to fit rendered state budget\n</session_checkpoint>";
+	const suffix = `\nRisks:\n- ${STATE_RENDER_MARKERS.risk} checkpoint truncated to fit rendered state budget\n</session_checkpoint>`;
 	const prefix = checkpoint.slice(0, Math.max(0, maxChars - suffix.length));
 	const lastLineBreak = prefix.lastIndexOf("\n");
 	return `${prefix.slice(0, lastLineBreak > 0 ? lastLineBreak : prefix.length)}${suffix}`;

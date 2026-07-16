@@ -120,10 +120,6 @@ export interface CompactionSettings {
 	renderedStateMaxTokens?: number;
 	/** Target total prompt context after compaction. */
 	targetContextTokens?: number;
-	/** Tool-result token threshold for future stubbing/clearing. */
-	toolResultClearThresholdTokens?: number;
-	/** Number of latest tool results to keep raw when stubbing is enabled. */
-	toolResultKeepRecentCount?: number;
 }
 
 /** Default compaction settings used by the harness. */
@@ -136,8 +132,6 @@ export const DEFAULT_COMPACTION_SETTINGS: CompactionSettings = {
 	summaryMaxTokens: 1200,
 	renderedStateMaxTokens: 1500,
 	targetContextTokens: 12000,
-	toolResultClearThresholdTokens: 24000,
-	toolResultKeepRecentCount: 3,
 };
 
 interface ResolvedCompactionSettings {
@@ -149,8 +143,6 @@ interface ResolvedCompactionSettings {
 	summaryMaxTokens: number;
 	renderedStateMaxTokens: number;
 	targetContextTokens: number;
-	toolResultClearThresholdTokens: number;
-	toolResultKeepRecentCount: number;
 }
 
 function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompactionSettings {
@@ -170,10 +162,6 @@ function resolveCompactionSettings(settings: CompactionSettings): ResolvedCompac
 		summaryMaxTokens: settings.summaryMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.summaryMaxTokens!,
 		renderedStateMaxTokens: settings.renderedStateMaxTokens ?? DEFAULT_COMPACTION_SETTINGS.renderedStateMaxTokens!,
 		targetContextTokens: settings.targetContextTokens ?? DEFAULT_COMPACTION_SETTINGS.targetContextTokens!,
-		toolResultClearThresholdTokens:
-			settings.toolResultClearThresholdTokens ?? DEFAULT_COMPACTION_SETTINGS.toolResultClearThresholdTokens!,
-		toolResultKeepRecentCount:
-			settings.toolResultKeepRecentCount ?? DEFAULT_COMPACTION_SETTINGS.toolResultKeepRecentCount!,
 	};
 }
 
@@ -511,29 +499,22 @@ Use this EXACT format:
 ## Goal
 [State the exact current goal. Preserve unchanged the original prompt or updated goal verbatim, incorporating any subsequent user corrections if they changed the goal.]
 
-## Plan & Progress
-[Preserve the actual step-by-step plan verbatim. Keep completed and in-progress steps clear, correcting the plan only if new info requires changing it to achieve the goal.]
-- [Or "(none)" if none were mentioned]
+## Plan
+[Preserve the actual step-by-step plan verbatim. Encode progress only in each plan item's status.]
+- [ ] [Not started]
+- [.] [In progress]
+- [v] [Done]
+- [-] [Failed]
+- [!] [Blocked]
 
-## Progress
-### Done
-- [x] [Completed tasks/changes]
-
-### In Progress
-- [ ] [Current work]
-
-### Blocked
-- [Issues preventing progress, if any]
-
-## Key Decisions
+## Decisions
 - **[Decision]**: [Brief rationale]
 
-## Next Steps
-1. [Ordered list of what should happen next]
+## Files
+- [read|modified|created|deleted]: [Exact path] - [Concise summary]
 
-## Critical Context
-- [Any data, examples, or references needed to continue]
-- [Or "(none)" if not applicable]
+## Risks
+- [Unresolved failure, blocker, warning, or "(none)"]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 
@@ -541,9 +522,8 @@ const UPDATE_SUMMARIZATION_PROMPT = `The messages above are NEW conversation mes
 
 Update the existing structured summary with new information. RULES:
 - PRESERVE all existing information from the previous summary
-- ADD new progress, decisions, and context from the new messages
-- UPDATE the Progress section: move items from "In Progress" to "Done" when completed
-- UPDATE "Next Steps" based on what was accomplished
+- ADD new plan status, decisions, files, and risks from the new messages
+- UPDATE Plan checkboxes: [] not started, [.] in progress, [v] done, [-] failed, [!] blocked
 - PRESERVE exact file paths, function names, and error messages
 - If something is no longer relevant, you may remove it
 
@@ -552,27 +532,17 @@ Use this EXACT format:
 ## Goal
 [Preserve unchanged the original prompt or updated goal verbatim, adding new ones only if the task expanded]
 
-## Plan & Progress
-[Preserve the actual plan verbatim. Include previously done items AND newly completed items, updating the plan if new info requires changing it]
+## Plan
+[Preserve the actual plan verbatim. Include previously done items and newly completed items. Use [] not started, [.] in progress, [v] done, [-] failed, [!] blocked.]
 
-## Progress
-### Done
-- [x] [Include previously done items AND newly completed items]
-
-### In Progress
-- [ ] [Current work - update based on progress]
-
-### Blocked
-- [Current blockers - remove if resolved]
-
-## Key Decisions
+## Decisions
 - **[Decision]**: [Brief rationale] (preserve all previous, add new)
 
-## Next Steps
-1. [Update based on current state]
+## Files
+- [read|modified|created|deleted]: [Exact path] - [Concise summary]
 
-## Critical Context
-- [Preserve important context, add new if needed]
+## Risks
+- [Preserve unresolved failures, blockers, and warnings; remove resolved items]
 
 Keep each section concise. Preserve exact file paths, function names, and error messages.`;
 

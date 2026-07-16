@@ -1,4 +1,4 @@
-import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -55,6 +55,35 @@ describe("session-state-file", () => {
 		expect(read!.sessionId).toBe("test-session");
 		expect(read!.plan).toHaveLength(1);
 		expect(read!.plan[0].text).toBe("step one");
+	});
+
+	it("reads legacy v1 files with an extra progress property", async () => {
+		const statePath = join(tmpDir, ".pdev", "state");
+		await mkdir(statePath, { recursive: true });
+		const legacyState = {
+			...makeState({ sessionId: "legacy-progress" }),
+			progress: {
+				done: ["Old completed item"],
+				current: [],
+				next: [],
+				blocked: [],
+			},
+		};
+		await writeFile(join(statePath, "legacy-progress.json"), JSON.stringify(legacyState));
+
+		const read = readSessionStateFile(tmpDir, "legacy-progress");
+
+		expect(read?.sessionId).toBe("legacy-progress");
+		expect(read?.canonicalRequest.current).toBe("do something");
+	});
+
+	it("omits progress from newly written v1 files", async () => {
+		const state = makeState({ sessionId: "plan-only" });
+
+		writeSessionStateFile(tmpDir, state);
+		const persisted = JSON.parse(await readFile(getSessionStateFilePath(tmpDir, "plan-only"), "utf8"));
+
+		expect(persisted).not.toHaveProperty("progress");
 	});
 
 	it("writeSessionStateFile creates .pdev/state directory", () => {

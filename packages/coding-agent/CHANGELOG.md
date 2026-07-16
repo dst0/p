@@ -5,8 +5,9 @@
 ### Fixed
 
 - Keep retrying agent turns visibly in their real llm-orchestrator queue position, including server-reported queue duration, instead of replacing the status with local unsent-message counts.
-- Clear explicitly empty session-state next actions, ignore terminal placeholders such as `Done`, and replace completed plans before a fresh task so `finish_work` cannot loop on stale state
-- Instruct agents to reconcile next actions before `finish_work` and never mutate `.pdev` snapshots directly
+- Preserve complete provider prompt prefixes until a formal persisted compaction, without live tool-result stubbing or threshold truncation, and compact between tool turns at one visible cache boundary
+- Use plan-item status as the sole progress source while retaining active Decisions, Files, and Risks in model checkpoints and `/state`
+- Append a hidden cache-stable plan-state reminder after 90 seconds of sustained ordinary tool work, resetting the interval after state updates and formal compaction
 - Persist tool-turn checkpoints and refreshed working state so agents continue from completed actions instead of repeating them
 - Keep the initial provider request small by registering extension and MCP tools lazily, with `tool_search` activating only relevant schemas instead of sending every cached tool definition
 

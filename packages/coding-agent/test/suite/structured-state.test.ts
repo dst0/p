@@ -153,43 +153,6 @@ describe("structured-state normalization", () => {
 
 		expect(state.evidence.length).toBeLessThanOrEqual(50);
 	});
-	it("syncs progress.done with plan items marked done", () => {
-		const previous = createInitialStructuredSessionState("test");
-		previous.plan = [
-			{ id: "p1", text: "Step one", status: "done", evidenceEntryIds: [] },
-			{ id: "p2", text: "Step two", status: "in_progress", evidenceEntryIds: [] },
-			{ id: "p3", text: "Step three", status: "not_started", evidenceEntryIds: [] },
-		];
-
-		const state = createStructuredSessionState({
-			sessionId: "test",
-			previous,
-			summary: "Goal: test\n\nPlan:\n- [x] Step one\n- [ ] Step two\n- [ ] Step three",
-			entries: [makeEntry()],
-		});
-
-		expect(state.progress.done).toContain("Step one");
-		expect(state.progress.current).toContain("Step two");
-		expect(state.progress.next).toContain("Step three");
-	});
-
-	it("syncs progress.blocked with plan items marked blocked or failed", () => {
-		const previous = createInitialStructuredSessionState("test");
-		previous.plan = [
-			{ id: "p1", text: "Blocked task", status: "blocked", evidenceEntryIds: [] },
-			{ id: "p2", text: "Failed task", status: "failed", evidenceEntryIds: [] },
-		];
-
-		const state = createStructuredSessionState({
-			sessionId: "test",
-			previous,
-			summary: "Goal: test\n\nPlan:\n- [ ] Blocked task\n- [ ] Failed task",
-			entries: [makeEntry()],
-		});
-
-		expect(state.progress.blocked).toContain("Blocked task");
-		expect(state.progress.blocked).toContain("Failed task");
-	});
 
 	it("prunes dead evidenceEntryIds from plan items", () => {
 		const previous = createInitialStructuredSessionState("test");
@@ -281,54 +244,5 @@ describe("structured-state normalization", () => {
 		const matches = state.codebase.touchedFiles.filter((f) => f.path === "packages/foo.ts");
 		expect(matches).toHaveLength(1);
 		expect(matches[0]!.summary).toBe("very detailed summary of what was changed in this file");
-	});
-
-	it("merges explicit progress with plan-derived progress", () => {
-		const previous = createInitialStructuredSessionState("test");
-		previous.plan = [{ id: "p1", text: "Plan task one", status: "done", evidenceEntryIds: [] }];
-		previous.progress.done = ["Explicit done task"];
-
-		const state = createStructuredSessionState({
-			sessionId: "test",
-			previous,
-			summary: "Goal: test\n\nProgress:\n- ✅ Explicit done task\nPlan:\n- [x] Plan task one",
-			entries: [makeEntry()],
-		});
-
-		expect(state.progress.done).toContain("Plan task one");
-		expect(state.progress.done).toContain("Explicit done task");
-	});
-
-	it("deduplicates progress items within the same list", () => {
-		const previous = createInitialStructuredSessionState("test");
-		previous.plan = [{ id: "p1", text: "Task one", status: "done", evidenceEntryIds: [] }];
-		previous.progress.done = ["Task one"];
-
-		const state = createStructuredSessionState({
-			sessionId: "test",
-			previous,
-			summary: "Goal: test\n\nPlan:\n- [x] Task one",
-			entries: [makeEntry()],
-		});
-
-		const matches = state.progress.done.filter((d) => d === "Task one");
-		expect(matches).toHaveLength(1);
-	});
-
-	it("removes terminal markers from progress.current and progress.next", () => {
-		const previous = createInitialStructuredSessionState("test");
-		previous.plan = [{ id: "p1", text: "Task one", status: "in_progress", evidenceEntryIds: [] }];
-		previous.progress.current = ["Task one", "✅ Done"];
-		previous.progress.next = ["📌 Next task"];
-
-		const state = createStructuredSessionState({
-			sessionId: "test",
-			previous,
-			summary: "Goal: test\n\nPlan:\n- [ ] Task one",
-			entries: [makeEntry()],
-		});
-
-		expect(state.progress.current).not.toContain("✅ Done");
-		expect(state.progress.next).not.toContain("📌 Next task");
 	});
 });

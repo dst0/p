@@ -13,7 +13,6 @@ describe("token accounting", () => {
 			retrievedPrompt: "retrieved ".repeat(8),
 			recentMessages: [{ role: "user", content: "hello", timestamp: 1 }],
 			toolRawTokens: 1000,
-			toolStubTokens: 50,
 		});
 
 		expect(breakdown.source).toBe("estimated");

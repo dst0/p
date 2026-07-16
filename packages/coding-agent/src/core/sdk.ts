@@ -296,6 +296,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
 		"edit",
 		"write",
 		"sleep",
+		"semantic_search",
 		"update_session_state",
 		"session_recall",
 		"keep_context",
