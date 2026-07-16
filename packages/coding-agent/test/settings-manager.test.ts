@@ -528,4 +528,33 @@ describe("SettingsManager", () => {
 			expect(manager.getStartupNotices()).toBe(false);
 		});
 	});
+
+	describe("showVersion", () => {
+		it("should default to false", () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getShowVersion()).toBe(false);
+		});
+
+		it("should persist under terminal settings", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setShowVersion(true);
+			await manager.flush();
+
+			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(savedSettings.terminal.showVersion).toBe(true);
+		});
+
+		it("should toggle from true to false", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+
+			manager.setShowVersion(true);
+			await manager.flush();
+			expect(manager.getShowVersion()).toBe(true);
+
+			manager.setShowVersion(false);
+			await manager.flush();
+			expect(manager.getShowVersion()).toBe(false);
+		});
+	});
 });

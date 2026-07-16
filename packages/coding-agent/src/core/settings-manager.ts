@@ -60,6 +60,7 @@ export interface TerminalSettings {
 	showTerminalProgress?: boolean; // default: false (OSC 9;4 terminal progress indicators)
 	showTokenProgress?: boolean; // default: true (compact queued/prefill/generation footer progress)
 	showTokenStats?: boolean; // default: true (cumulative ↑↓R W CH token counts in footer)
+	showVersion?: boolean; // default: false (p agent version in footer)
 }
 
 export interface ImageSettings {
@@ -1347,6 +1348,19 @@ export class SettingsManager {
 		}
 		this.globalSettings.terminal.showTokenStats = enabled;
 		this.markModified("terminal", "showTokenStats");
+		this.save();
+	}
+
+	getShowVersion(): boolean {
+		return this.settings.terminal?.showVersion ?? false;
+	}
+
+	setShowVersion(enabled: boolean): void {
+		if (!this.globalSettings.terminal) {
+			this.globalSettings.terminal = {};
+		}
+		this.globalSettings.terminal.showVersion = enabled;
+		this.markModified("terminal", "showVersion");
 		this.save();
 	}
 

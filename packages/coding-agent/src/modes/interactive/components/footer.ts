@@ -90,6 +90,8 @@ export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private showTokenProgress = true;
 	private showTokenStats = true;
+	private showVersion = false;
+	private version: string | undefined;
 	private session: AgentSession;
 	private footerData: ReadonlyFooterDataProvider;
 	private lastGenRate: number | undefined;
@@ -113,6 +115,11 @@ export class FooterComponent implements Component {
 
 	setShowTokenStats(enabled: boolean): void {
 		this.showTokenStats = enabled;
+	}
+
+	setShowVersion(enabled: boolean, version: string | undefined): void {
+		this.showVersion = enabled;
+		this.version = version;
 	}
 
 	/**
@@ -220,6 +227,10 @@ export class FooterComponent implements Component {
 
 		if (this.session.interactionMode === "plan") {
 			statsParts.push(theme.fg("accent", theme.bold("PLAN")));
+		}
+
+		if (this.showVersion && this.version) {
+			statsParts.push(`v${this.version}`);
 		}
 
 		if (this.showTokenProgress) {

@@ -96,4 +96,46 @@ describe("FooterComponent", () => {
 		expect(queuedLine!).toContain("#2, 1 ahead");
 		expect(queuedLine!).not.toMatch(/\d+s/);
 	});
+
+	describe("showVersion", () => {
+		it("does not render version by default", () => {
+			const footer = new FooterComponent(createSession("normal"), createFooterData());
+
+			const output = footer.render(100).join("\n");
+			expect(output).not.toMatch(/v\d+\.\d+\.\d+/);
+		});
+
+		it("renders version when showVersion is enabled", () => {
+			const footer = new FooterComponent(createSession("normal"), createFooterData());
+			footer.setShowVersion(true, "0.4.9");
+
+			const output = footer.render(100).join("\n");
+			expect(output).toContain("v0.4.9");
+		});
+
+		it("removes version when showVersion is disabled", () => {
+			const footer = new FooterComponent(createSession("normal"), createFooterData());
+			footer.setShowVersion(true, "0.4.9");
+
+			let output = footer.render(100).join("\n");
+			expect(output).toContain("v0.4.9");
+
+			footer.setShowVersion(false, "0.4.9");
+			output = footer.render(100).join("\n");
+			expect(output).not.toContain("v0.4.9");
+		});
+
+		it("updates version when version changes", () => {
+			const footer = new FooterComponent(createSession("normal"), createFooterData());
+			footer.setShowVersion(true, "0.4.9");
+
+			let output = footer.render(100).join("\n");
+			expect(output).toContain("v0.4.9");
+
+			footer.setShowVersion(true, "1.0.0");
+			output = footer.render(100).join("\n");
+			expect(output).toContain("v1.0.0");
+			expect(output).not.toContain("v0.4.9");
+		});
+	});
 });

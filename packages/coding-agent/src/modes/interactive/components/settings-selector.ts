@@ -71,6 +71,7 @@ export interface SettingsConfig {
 	showTerminalProgress: boolean;
 	showTokenProgress: boolean;
 	showTokenStats: boolean;
+	showVersion: boolean;
 	warnings: WarningSettings;
 }
 
@@ -103,6 +104,7 @@ export interface SettingsCallbacks {
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onShowTokenProgressChange: (enabled: boolean) => void;
 	onShowTokenStatsChange: (enabled: boolean) => void;
+	onShowVersionChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onCancel: () => void;
 }
@@ -509,6 +511,16 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
+		// Version toggle (insert after token-stats)
+		const tokenStatsIndex = items.findIndex((item) => item.id === "token-stats");
+		items.splice(tokenStatsIndex + 1, 0, {
+			id: "version",
+			label: "Show version",
+			description: "Show p agent version in the footer",
+			currentValue: config.showVersion ? "true" : "false",
+			values: ["true", "false"],
+		});
+
 		// Add borders
 		this.addChild(new DynamicBorder());
 
@@ -603,6 +615,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "token-stats":
 						callbacks.onShowTokenStatsChange(newValue === "true");
+						break;
+					case "version":
+						callbacks.onShowVersionChange(newValue === "true");
 						break;
 				}
 			},
