@@ -31,6 +31,7 @@ const TERMINAL_PROGRESS_MARKERS = new Set([
 	"everything completed",
 	"finished",
 	"n a",
+	"next task",
 	"no remaining work",
 	"none",
 ]);
@@ -332,6 +333,17 @@ export function mergeStructuredSessionState(
 	}
 
 	reconcileProgressWithPlan(next);
+
+	// Normalize and deduplicate touched files
+	next.codebase.touchedFiles = mergeTouchedFiles(next.codebase.touchedFiles, []);
+
+	// Filter dead evidence (empty path) and prune to max 50
+	next.evidence = next.evidence.filter((e) => e.path && e.path.trim().length > 0).slice(-50);
+
+	// Remove terminal markers from progress lists
+	next.progress.current = next.progress.current.filter((item) => !isTerminalProgressMarker(item));
+	next.progress.next = next.progress.next.filter((item) => !isTerminalProgressMarker(item));
+	next.progress.blocked = next.progress.blocked.filter((item) => !isTerminalProgressMarker(item));
 
 	return next;
 }
@@ -924,7 +936,10 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 	const timestamp = input.timestamp ?? new Date().toISOString();
 	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
 	const summaryGoal = extractSection(input.summary, "Goal").trim();
-	const originalRequests = collectOriginalUserRequests(input.entries);
+	const originalRequests = collectOriginalUserRequests(
+		input.entries,
+		input.previous?.canonicalRequest.originalRequests,
+	);
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
 	const latestActionableRequest = findLatestActionableRequest(originalRequests);
@@ -983,7 +998,10 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 
 function createStatePatchFromLiveSession(input: LiveStructuredStateInput): StatePatch {
 	const sourceEntryIds = input.entries.map((entry) => entry.id).filter((id) => id.length > 0);
-	const originalRequests = collectOriginalUserRequests(input.entries);
+	const originalRequests = collectOriginalUserRequests(
+		input.entries,
+		input.previous?.canonicalRequest.originalRequests,
+	);
 	const latestCorrection = [...originalRequests].reverse().find((request) => request.kind === "correction");
 	const latestRequest = [...originalRequests].reverse().find((request) => request.kind !== "correction");
 	const latestActionableRequest = findLatestActionableRequest(originalRequests);
@@ -1076,15 +1094,20 @@ function normalizePatchGoal(goal: string): string {
 	return isPlaceholderGoal(normalized) ? "" : normalized;
 }
 
-function collectOriginalUserRequests(entries: SessionEntry[]): OriginalUserRequest[] {
+function collectOriginalUserRequests(
+	entries: SessionEntry[],
+	existingRequests?: OriginalUserRequest[],
+): OriginalUserRequest[] {
 	const requests: OriginalUserRequest[] = [];
+	const existingCount = existingRequests?.length ?? 0;
 	for (const entry of entries) {
 		if (entry.type !== "message" || entry.message.role !== "user") continue;
 		const text = getAgentMessageText(entry.message).trim();
 		if (!text) continue;
 		const kind = classifyUserRequest(text, requests.length);
+		const reqIndex = existingCount + requests.length + 1;
 		requests.push({
-			id: `request:${entry.id || createStableId("user", `${requests.length}:${text}`)}`,
+			id: `req-${reqIndex}`,
 			entryId: entry.id,
 			timestamp: entry.timestamp,
 			kind,
@@ -1645,6 +1668,7 @@ function shouldReplacePlanStatus(current: PlanStatus, incoming: PlanStatus): boo
 	if (current === incoming) return true;
 	if (current === "done" && incoming !== "done") return false;
 	if ((current === "blocked" || current === "failed") && incoming === "not_started") return false;
+	if (current === "in_progress" && incoming === "not_started") return false;
 	return true;
 }
 
