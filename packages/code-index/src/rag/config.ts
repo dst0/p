@@ -3,7 +3,7 @@ import path from "node:path";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
 export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
-	enabled: false,
+	enabled: true,
 	autoRefresh: true,
 	allowStaleSearch: true,
 	remoteBackendsAllowed: false,
