@@ -16,6 +16,7 @@
   },
   "files": [
     "dist",
+		"embedding_server.py",
     "README.md"
   ],
   "scripts": {

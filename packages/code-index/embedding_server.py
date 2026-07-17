@@ -43,14 +43,16 @@ class EmbeddingServer:
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
-        self.model = SentenceTransformer(self.model_name, device="mps")
-        # CRITICAL: reduce max_seq_length to avoid Metal OOM on Mac unified memory
-        # 512 tokens ≈ 40 lines of code; safe on 24GB Mac with batch_size=16
+        self.model = SentenceTransformer(self.model_name)
+        # Bound memory use across Metal, CUDA, and CPU environments.
         self.model.max_seq_length = 512
         # Sample encode to determine dim
         sample = self.model.encode(["probe"])
         self.dim = sample.shape[-1]
-        print(f"Model loaded. Dim: {self.dim}, max_seq: 512, device: mps", flush=True)
+        print(
+            f"Model loaded. Dim: {self.dim}, max_seq: 512, device: {self.model.device}",
+            flush=True,
+        )
 
 
 server: EmbeddingServer | None = None

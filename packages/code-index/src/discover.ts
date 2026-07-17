@@ -7,6 +7,22 @@ import ignore from "ignore";
 
 import { EXCLUDE_DIRS, EXCLUDE_EXTS, LANG_MAP } from "./config.ts";
 
+export interface DiscoverFilesOptions {
+	maxFileSize: number;
+	denyGlobs?: string[];
+}
+
+const SENSITIVE_DIRECTORY_NAMES = new Set([".ssh", "secrets", "credentials"]);
+const SENSITIVE_FILE_NAMES = new Set([
+	"id_rsa",
+	"id_ed25519",
+	"credentials.json",
+	"service-account.json",
+	".npmrc",
+	".pypirc",
+	".netrc",
+]);
+
 /**
  * Load and parse a .gitignore file.
  */
@@ -84,10 +100,20 @@ export function findRepos(workspace: string): string[] {
  * Discover source files in a repository, respecting .gitignore and exclusion rules.
  */
 export function discoverFiles(repoPath: string, maxFileSize: number): string[] {
+	return discoverFilesWithOptions(repoPath, { maxFileSize });
+}
+
+/**
+ * Discover source files with explicit safety options.
+ */
+export function discoverFilesWithOptions(repoPath: string, options: DiscoverFilesOptions): string[] {
+	const rootPath = path.resolve(repoPath);
+	const canonicalRoot = fs.realpathSync(repoPath);
 	const gitignore = loadGitignore(repoPath);
 
 	// Build glob patterns: include all files, exclude directories and extensions
 	const ignorePatterns: string[] = [];
+	ignorePatterns.push(".gitignore");
 
 	// Add excluded directories
 	for (const dir of EXCLUDE_DIRS) {
@@ -102,36 +128,65 @@ export function discoverFiles(repoPath: string, maxFileSize: number): string[] {
 	for (const ext of EXCLUDE_EXTS) {
 		ignorePatterns.push(`**/*${ext}`);
 	}
+	ignorePatterns.push(...(options.denyGlobs ?? []));
 
 	const files = fg.sync(["**/*"], {
-		cwd: repoPath,
+		cwd: rootPath,
 		onlyFiles: true,
 		ignore: ignorePatterns,
 		absolute: true,
-		dot: false,
+		dot: true,
+		followSymbolicLinks: false,
 	});
 
 	// Filter by size and readability
-	return files.filter((fpath) => {
-		try {
-			const relativePath = path.relative(repoPath, fpath).split(path.sep).join("/");
-			if (gitignore.ignores(relativePath)) return false;
-			const stat = fs.statSync(fpath);
-			if (stat.size > maxFileSize) return false;
-			if (!stat.isFile()) return false;
+	return files
+		.filter((fpath) => {
+			try {
+				const fileStat = fs.lstatSync(fpath);
+				if (fileStat.isSymbolicLink() || !fileStat.isFile()) return false;
+				const canonicalPath = fs.realpathSync(fpath);
+				const containmentPath = path.relative(canonicalRoot, canonicalPath);
+				if (
+					containmentPath === ".." ||
+					containmentPath.startsWith(`..${path.sep}`) ||
+					path.isAbsolute(containmentPath)
+				) {
+					return false;
+				}
+				const relativePath = path.relative(canonicalRoot, canonicalPath).split(path.sep).join("/");
+				if (gitignore.ignores(relativePath)) return false;
+				if (isSensitivePath(relativePath)) return false;
+				if (fileStat.size > options.maxFileSize) return false;
 
-			// Quick readability check
-			const fd = fs.openSync(fpath, "r");
-			const buf = Buffer.alloc(1024);
-			fs.readSync(fd, buf, 0, 1024, 0);
-			fs.closeSync(fd);
+				const fd = fs.openSync(canonicalPath, "r");
+				const buf = Buffer.alloc(Math.min(4096, fileStat.size));
+				const bytesRead = fs.readSync(fd, buf, 0, buf.length, 0);
+				fs.closeSync(fd);
+				const preview = buf.subarray(0, bytesRead);
+				if (preview.includes(0)) return false;
 
-			const preview = buf.toString("utf-8").trim();
-			return preview.length > 0;
-		} catch {
-			return false;
-		}
-	});
+				const text = preview.toString("utf-8");
+				const replacementCharacters = [...text].filter((character) => character === "�").length;
+				return text.trim().length > 0 && replacementCharacters <= Math.max(1, text.length * 0.01);
+			} catch {
+				return false;
+			}
+		})
+		.sort();
+}
+
+function isSensitivePath(relativePath: string): boolean {
+	const segments = relativePath.split("/");
+	if (segments.some((segment) => SENSITIVE_DIRECTORY_NAMES.has(segment.toLowerCase()))) return true;
+	const basename = segments.at(-1)?.toLowerCase() ?? "";
+	if (SENSITIVE_FILE_NAMES.has(basename)) return true;
+	if (basename.endsWith(".pem") || basename.endsWith(".key")) return true;
+	if (basename === ".env") return true;
+	if (basename.startsWith(".env.")) {
+		return ![".env.example", ".env.sample", ".env.template"].includes(basename);
+	}
+	return false;
 }
 
 /**

@@ -69,6 +69,7 @@ export function chunkFile(
 	maxChunkLines: number = 300,
 ): Chunk[] {
 	const lines = content.split("\n");
+	if (lines.at(-1) === "") lines.pop();
 	const totalLines = lines.length;
 
 	if (totalLines === 0) return [];

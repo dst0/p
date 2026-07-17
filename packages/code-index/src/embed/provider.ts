@@ -8,8 +8,11 @@ export interface EmbeddingProvider {
 	dim: number;
 
 	/** Encode a batch of texts into dense vectors. */
-	encode(texts: string[]): Promise<Float32Array[]>;
+	encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]>;
 
 	/** Encode a single query text. */
-	encodeQuery(text: string): Promise<Float32Array>;
+	encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array>;
+
+	/** Release provider-owned resources. */
+	dispose?(): Promise<void> | void;
 }

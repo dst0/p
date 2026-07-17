@@ -99,7 +99,7 @@ export class BM25Vocabulary {
 	save(path: string): void {
 		const dir = path.slice(0, path.lastIndexOf("/"));
 		if (dir) {
-			fs.mkdirSync(dir, { recursive: true });
+			fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
 		}
 
 		const data = {
@@ -111,7 +111,9 @@ export class BM25Vocabulary {
 			totalTokens: this.totalTokens,
 		};
 
-		fs.writeFileSync(path, JSON.stringify(data));
+		const temporaryPath = `${path}.${process.pid}.tmp`;
+		fs.writeFileSync(temporaryPath, JSON.stringify(data), { encoding: "utf-8", mode: 0o600 });
+		fs.renameSync(temporaryPath, path);
 	}
 
 	/**
@@ -136,7 +138,13 @@ export class BM25Vocabulary {
 	 * Identifiers (alphanumeric + underscore, unicode letters) and numbers.
 	 */
 	private tokenize(text: string): string[] {
-		return text.toLowerCase().match(/[a-zA-Z_\u00C0-\u024F][a-zA-Z0-9_\u00C0-\u024F]*|\d+/g) || [];
+		const expanded = text.replace(/([a-z0-9])([A-Z])/g, "$1 $2");
+		const rawTokens = expanded.match(/[a-zA-Z_\u00C0-\u024F][a-zA-Z0-9_\u00C0-\u024F]*|\d+/g) ?? [];
+		return rawTokens.flatMap((token) => {
+			const normalized = token.toLowerCase();
+			const parts = normalized.split("_").filter(Boolean);
+			return parts.length > 1 ? [normalized, ...parts] : [normalized];
+		});
 	}
 }
 

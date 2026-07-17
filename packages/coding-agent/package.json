@@ -40,6 +40,7 @@
   "dependencies": {
     "@dst0/p-agent-core": "^0.4.12",
     "@dst0/p-ai": "^0.4.12",
+		"@dst0/p-code-index": "^0.4.12",
     "@dst0/p-tui": "^0.4.12",
     "@silvia-odwyer/photon-node": "0.3.4",
     "chalk": "5.6.2",
