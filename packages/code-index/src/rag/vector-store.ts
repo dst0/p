@@ -13,6 +13,13 @@ export interface QdrantVectorStoreOptions {
 	timeoutMs: number;
 }
 
+/** HNSW query beam width — lower than default 100 for faster traversal. */
+const HNSW_EF = 60;
+/** HNSW graph max degree — leaner graph reduces traversal nodes. */
+const HNSW_M = 10;
+/** HNSW construction beam — higher than query ef for better build quality. */
+const HNSW_EF_CONSTRUCTION = 128;
+
 export class QdrantVectorStore implements RagVectorStore {
 	private client: QdrantClientRaw;
 
@@ -35,7 +42,10 @@ export class QdrantVectorStore implements RagVectorStore {
 			vectors: { dense: { size: denseDimensions, distance: "Cosine" } },
 			sparse_vectors: { sparse: {} },
 			on_disk_payload: true,
+			hnsw_config: { m: HNSW_M, ef_construction: HNSW_EF_CONSTRUCTION },
+			quantization_config: { scalar: { type: "int8" } },
 		});
+		await this.createPayloadIndexes(collection);
 	}
 
 	async deleteCollection(collection: string): Promise<void> {
@@ -55,6 +65,25 @@ export class QdrantVectorStore implements RagVectorStore {
 			}
 		}
 		return { points: info.points_count ?? 0, dimensions };
+	}
+
+	async createPayloadIndexes(collection: string): Promise<void> {
+		const indexes: Array<{ field_name: string; field_schema: Schemas["PayloadSchemaType"] }> = [
+			{ field_name: "repoId", field_schema: "keyword" },
+			{ field_name: "language", field_schema: "keyword" },
+			{ field_name: "isTest", field_schema: "bool" },
+			{ field_name: "isGenerated", field_schema: "bool" },
+		];
+		for (const idx of indexes) {
+			try {
+				await this.client.createPayloadIndex(collection, {
+					field_name: idx.field_name,
+					field_schema: idx.field_schema,
+				});
+			} catch {
+				// Index may already exist from a prior run; best effort.
+			}
+		}
 	}
 
 	async upsert(collection: string, points: VectorPoint[]): Promise<void> {
@@ -96,6 +125,7 @@ export class QdrantVectorStore implements RagVectorStore {
 			filter,
 			limit: requestLimit,
 			with_payload: true,
+			params: { hnsw_ef: HNSW_EF, quantization: { rescore: true } },
 		});
 		const sparsePromise =
 			sparse.indices.length > 0
@@ -104,6 +134,7 @@ export class QdrantVectorStore implements RagVectorStore {
 						filter,
 						limit: requestLimit,
 						with_payload: true,
+						params: { hnsw_ef: HNSW_EF },
 					})
 				: Promise.resolve([]);
 		const [denseResults, sparseResults] = await Promise.all([densePromise, sparsePromise]);
