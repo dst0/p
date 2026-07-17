@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,6 +640,22 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
+// ⚡ Bolt: Cache compiled Minimatch instances to avoid recompiling the same glob patterns
+// in tight loops (e.g. array filters over large numbers of files)
+const compiledMinimatchCache = new Map<string, Minimatch>();
+function getCompiledMinimatch(pattern: string): Minimatch {
+	let instance = compiledMinimatchCache.get(pattern);
+	if (!instance) {
+		instance = new Minimatch(pattern);
+		// Keep cache from growing unbounded if many unique patterns are used
+		if (compiledMinimatchCache.size > 1000) {
+			compiledMinimatchCache.clear();
+		}
+		compiledMinimatchCache.set(pattern, instance);
+	}
+	return instance;
+}
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
@@ -652,19 +668,13 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 
 	return patterns.some((pattern) => {
 		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
+		const mm = getCompiledMinimatch(normalizedPattern);
+
+		if (mm.match(rel) || mm.match(name) || mm.match(filePathPosix)) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
+		return mm.match(parentRel!) || mm.match(parentName!) || mm.match(parentDirPosix!);
 	});
 }
 

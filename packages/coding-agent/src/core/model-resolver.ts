@@ -1,3 +1,16 @@
+const compiledMinimatchCache = new Map<string, Minimatch>();
+function getCompiledMinimatch(pattern: string): Minimatch {
+	let instance = compiledMinimatchCache.get(pattern);
+	if (!instance) {
+		instance = new Minimatch(pattern, { nocase: true });
+		if (compiledMinimatchCache.size > 100) {
+			compiledMinimatchCache.clear();
+		}
+		compiledMinimatchCache.set(pattern, instance);
+	}
+	return instance;
+}
+
 /**
  * Model resolution, scoping, and initial selection
  */
@@ -5,7 +18,7 @@
 import type { ThinkingLevel } from "@dst0/p-agent-core";
 import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@dst0/p-ai";
 import chalk from "chalk";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRegistry } from "./model-registry.ts";
@@ -280,7 +293,8 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 			// This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
 			const matchingModels = availableModels.filter((m) => {
 				const fullId = `${m.provider}/${m.id}`;
-				return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
+				const mm = getCompiledMinimatch(globPattern);
+				return mm.match(fullId) || mm.match(m.id);
 			});
 
 			if (matchingModels.length === 0) {

@@ -15,3 +15,6 @@
 ## 2026-07-14 - Pre-calculate string normalization outside O(N*M) loops
 **Learning:** Performing regex replacement or string normalization inside an O(N*M) loop (such as comparing a list of items against another list) creates massive overhead due to repeated execution of string operations and regex allocations on the same inputs.
 **Action:** When filtering or comparing two lists, iterate over the lists once beforehand to pre-calculate and cache any normalized strings, tokens, or `Set` objects, so the inner `N*M` loop only does simple equality checks and math. Also, extract regexes to module-level constants to avoid instantiation on every function call.
+## 2026-07-17 - Avoid repeating minimatch glob compilation in loops
+**Learning:** The default `minimatch(path, pattern)` function call re-compiles the string glob pattern into a regular expression every time it is called. When used inside a tight loop iterating over many files, this incurs severe performance overhead.
+**Action:** When filtering or mapping large file structures with glob patterns, instantiate a `Minimatch` class instance outside of the loop, or use a cache (e.g. Map) to reuse the `Minimatch` objects instead of using the top-level convenience function.
