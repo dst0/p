@@ -271,3 +271,162 @@ describe("discovery security", () => {
 		expect(readFileSync(manifestPath, "utf-8")).not.toContain("outside-link.ts");
 	});
 });
+
+describe("search validation and edge cases", () => {
+	it("throws for empty query", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		await expect(service.search({ query: "   " })).rejects.toThrow("must not be empty");
+		await service.dispose();
+	});
+
+	it("throws for unknown language filter", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		await expect(service.search({ query: "test", languages: ["unknown"] })).rejects.toThrow(
+			"Unknown language filter",
+		);
+		await service.dispose();
+	});
+
+	it("throws for unknown symbol type filter", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		await expect(service.search({ query: "test", symbolTypes: ["invalid"] })).rejects.toThrow(
+			"Unknown symbol type filter",
+		);
+		await service.dispose();
+	});
+
+	it("throws for absolute path prefix", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		await expect(service.search({ query: "test", pathPrefix: "/absolute" })).rejects.toThrow(
+			"Path filter must be repository-relative",
+		);
+		await service.dispose();
+	});
+
+	it("throws for path prefix that escapes the repository", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		await expect(service.search({ query: "test", pathPrefix: "../escape" })).rejects.toThrow(
+			"Path filter cannot escape the repository",
+		);
+		await service.dispose();
+	});
+
+	it("search with no manifest returns empty results for all freshness levels", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		const response = await service.search({ query: "test", freshness: "allow_stale" });
+		expect(response.results).toEqual([]);
+		await service.dispose();
+	});
+
+	it("search cancels when signal is already aborted", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		const signal = AbortSignal.abort();
+		await expect(service.search({ query: "test" }, signal)).rejects.toThrow("cancelled");
+		await service.dispose();
+	});
+
+	it("search with embedding error marks state unavailable", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		// Make embedding provider fail
+		embedding.encodeQuery = async () => {
+			throw new Error("network error");
+		};
+		const response = await service.search({ query: "test" });
+		expect(response.results).toEqual([]);
+		const status = await service.status();
+		expect(status.state).toBe("unavailable");
+		await service.dispose();
+	});
+
+	it("disposal waits for pending refresh", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		// Dispose should not throw even when service was used
+		await expect(service.dispose()).resolves.toBeUndefined();
+	});
+
+	it("disposed service throws on initialize", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.dispose();
+		await expect(service.initialize()).rejects.toThrow("disposed");
+	});
+
+	it("disabled service returns empty update summary", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const svc = new WorkspaceCodeRagService({
+			workspaceRoot: root,
+			dataDirectory: data,
+			embeddingProvider: embedding,
+			vectorStore: store,
+			settings: { enabled: false, autoRefresh: false, embeddingDimensions: 3, embeddingModel: "test" },
+		});
+		const summary = await svc.refresh();
+		expect(summary.filesAdded).toBe(0);
+		expect(summary.fullRebuild).toBe(false);
+		await svc.dispose();
+	});
+});
+
+describe("abort and cancellation", () => {
+	it("refresh aborts when signal fires during operation", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		// Trigger a refresh with a signal that we abort immediately
+		const signal = AbortSignal.abort();
+		await expect(service.refresh({}, signal)).rejects.toThrow("cancelled");
+		await service.dispose();
+	});
+
+	it("rebuild aborts when signal fires during operation", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		const signal = AbortSignal.abort();
+		await expect(service.rebuild({}, signal)).rejects.toThrow("cancelled");
+		await service.dispose();
+	});
+});

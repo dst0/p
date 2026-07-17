@@ -287,6 +287,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		if (!this.initialized) await this.initialize({ checkFreshness: false });
 		if (this.state === "disabled") return this.emptyUpdateSummary(false);
 		if (this.configurationError) throw new CodeRagError("RAG_BACKEND_UNAVAILABLE", this.configurationError.message);
+		if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled");
 		if (this.refreshPromise) return waitForSignal(this.refreshPromise, signal);
 
 		this.refreshController = new AbortController();
@@ -307,6 +308,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		if (this.refreshPromise) return waitForSignal(this.refreshPromise, signal);
 		if (!this.initialized) await this.initialize({ checkFreshness: false });
 		if (this.state === "disabled") return this.emptyUpdateSummary(true);
+		if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled");
 		this.refreshController = new AbortController();
 		const onAbort = () => this.refreshController?.abort(signal?.reason);
 		signal?.addEventListener("abort", onAbort, { once: true });

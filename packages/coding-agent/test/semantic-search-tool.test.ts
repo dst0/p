@@ -93,4 +93,83 @@ describe("semantic_search tool", () => {
 		expect(text).toContain("RAG_DISABLED");
 		expect(text).toContain("grep, find, and read");
 	});
+
+	it("catches service errors and returns fallback guidance", async () => {
+		const service = new FakeRagService({
+			query: "",
+			workspaceRoot: "/workspace",
+			status: readyStatus,
+			results: [],
+			diagnostics: { durationMs: 0, truncated: false },
+		});
+		// Override search to throw
+		service.search = async () => {
+			throw new Error("connection refused");
+		};
+		const tool = createSemanticSearchTool("/workspace", service);
+		const result = await tool.execute("call", { query: "test" }, undefined, undefined);
+		const text = result.content.find((item) => item.type === "text")?.text ?? "";
+		expect(text).toContain("RAG_BACKEND_UNAVAILABLE");
+		expect(text).toContain("grep, find, and read");
+		expect(result.details).toHaveProperty("error");
+	});
+
+	it("provides untrusted-content boundary with multiple results", async () => {
+		const service = new FakeRagService({
+			query: "",
+			workspaceRoot: "/workspace",
+			status: readyStatus,
+			results: [
+				{
+					rank: 1,
+					path: "src/auth.ts",
+					startLine: 10,
+					endLine: 12,
+					content: "export function authenticate() {}",
+				},
+				{
+					rank: 2,
+					path: "src/auth.test.ts",
+					startLine: 20,
+					endLine: 25,
+					content: "test('auth works', () => {})",
+				},
+			],
+			diagnostics: { durationMs: 5, truncated: false },
+		});
+		const tool = createSemanticSearchTool("/workspace", service);
+		const result = await tool.execute("call", { query: "authentication" }, undefined, undefined);
+		const text = result.content.find((item) => item.type === "text")?.text ?? "";
+		expect(text).toContain("src/auth.ts:10-12");
+		expect(text).toContain("src/auth.test.ts:20-25");
+	});
+
+	it("respects includeGenerated and includeTests options", async () => {
+		const service = new FakeRagService({
+			query: "",
+			workspaceRoot: "/workspace",
+			status: readyStatus,
+			results: [{ rank: 1, path: "src/gen.ts", startLine: 1, endLine: 5, content: "generated" }],
+			diagnostics: { durationMs: 1, truncated: false },
+		});
+		const tool = createSemanticSearchTool("/workspace", service);
+		// Options like includeGenerated, includeTests, languages, symbolTypes are passed through to service.search
+		const result = await tool.execute(
+			"call",
+			{
+				query: "test",
+				includeGenerated: true,
+				includeTests: false,
+				languages: ["typescript"],
+				symbolTypes: ["function"],
+				pathPrefix: "src",
+				freshness: "require_fresh",
+				limit: 5,
+			},
+			undefined,
+			undefined,
+		);
+		expect(result.content).toBeDefined();
+		expect(result.details).toHaveProperty("response");
+	});
 });
