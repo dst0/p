@@ -242,6 +242,9 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			AbortSignal.timeout(this.settings.searchTimeoutMs),
 			...(signal ? [signal] : []),
 		]);
+		// Ensure embedding provider is ready before applying search timeout.
+		// Auto-start can take 10+ seconds, which exceeds the search timeout.
+		if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
 		try {
 			const vocabulary = this.loadVocabulary(this.manifest);
 			const dense = await this.embeddingProvider.encodeQuery(normalized.query, operationSignal);
@@ -551,6 +554,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		vocabulary: BM25Vocabulary,
 		signal: AbortSignal,
 	): Promise<void> {
+		// Ensure embedding provider is ready (auto-start if needed)
+		if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
 		for (let offset = 0; offset < chunks.length; offset += this.settings.encodeBatchSize) {
 			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
 			const batch = chunks.slice(offset, offset + this.settings.encodeBatchSize);

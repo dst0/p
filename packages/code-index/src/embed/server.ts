@@ -24,7 +24,6 @@ export class EmbeddingServerManager {
 	private scriptPath: string;
 	private port: number;
 	private model: string;
-	private started = false;
 	private startPromise: Promise<boolean> | undefined;
 	private options: EmbeddingServerManagerOptions;
 
@@ -42,12 +41,17 @@ export class EmbeddingServerManager {
 
 	/**
 	 * Start the embedding server if not already running.
+	 * Always checks health first to detect externally-killed servers.
 	 * Returns true if this instance started the server, false if already running.
 	 */
 	async ensureStarted(signal?: AbortSignal): Promise<boolean> {
-		if (this.started) {
+		// Always check health — server could have died externally
+		const alive = await this.checkHealth();
+		if (alive) {
 			return false;
 		}
+
+		// Server is down — restart
 		if (this.startPromise) return this.startPromise;
 		this.startPromise = this.start(signal).finally(() => {
 			this.startPromise = undefined;
@@ -61,7 +65,6 @@ export class EmbeddingServerManager {
 		// Check if something is already listening on the port
 		const alreadyRunning = await this.checkHealth();
 		if (alreadyRunning) {
-			this.started = true;
 			this.options.onLog?.("debug", `Embedding server already running on port ${this.port}`);
 			return false;
 		}
@@ -109,7 +112,6 @@ export class EmbeddingServerManager {
 				if (this.child) {
 					this.options.onLog?.("error", `Embedding server exited with code ${code}, signal ${signal}`);
 					this.child = null;
-					this.started = false;
 					settle(() =>
 						reject(new Error(`Embedding server exited before readiness (code ${code}, signal ${signal})`)),
 					);
@@ -124,7 +126,6 @@ export class EmbeddingServerManager {
 				try {
 					const ok = await this.checkHealth();
 					if (ok) {
-						this.started = true;
 						this.options.onLog?.("debug", "Embedding server ready");
 						settle(() => resolve(true));
 						return;
@@ -153,9 +154,7 @@ export class EmbeddingServerManager {
 		if (this.child) {
 			this.child.kill("SIGTERM");
 			this.child = null;
-			this.started = false;
 		}
-		this.started = false;
 	}
 
 	/**

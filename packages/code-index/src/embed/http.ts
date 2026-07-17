@@ -25,7 +25,6 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	private baseUrl: string;
 	public dim: number;
 	private serverManager: EmbeddingServerManager | null;
-	private started = false;
 	private options: EmbeddingProviderHttpOptions;
 
 	constructor(
@@ -44,17 +43,18 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
 	/**
 	 * Ensure the embedding server is running. Called lazily before encoding.
+	 * Always checks health and restarts if the server is down.
+	 * Does not pass the caller's signal to startup — startup has its own timeout.
 	 */
-	async ensureReady(signal?: AbortSignal): Promise<void> {
-		if (this.started) return;
+	async ensureReady(_signal?: AbortSignal): Promise<void> {
 		if (this.serverManager) {
-			await this.serverManager.ensureStarted(signal);
+			await this.serverManager.ensureStarted();
 		}
-		this.started = true;
 	}
 
 	async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
-		await this.ensureReady(signal);
+		await this.ensureReady();
+		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
 		const batchSize = 32;
 		const allVectors: Float32Array[] = [];
 
@@ -69,7 +69,8 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	}
 
 	async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
-		await this.ensureReady(signal);
+		await this.ensureReady();
+		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
 		const vectors = await this.encode([text], signal);
 		if (!vectors[0]) throw new Error("Embedding server returned no query vector");
 		return vectors[0];
@@ -80,7 +81,6 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	 */
 	stop(): void {
 		this.serverManager?.kill();
-		this.started = false;
 	}
 
 	dispose(): void {
