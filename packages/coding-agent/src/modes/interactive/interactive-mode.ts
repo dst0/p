@@ -2239,7 +2239,7 @@ export class InteractiveMode {
 		if (answer?.startsWith("Yes")) {
 			this.indexingService.enableIndexing(workspaceRoot);
 			this.showStatus("Code indexing enabled; the background service will start indexing this repository");
-		} else if (answer?.startsWith("No")) {
+		} else {
 			this.indexingService.disableIndexing(workspaceRoot);
 		}
 	}

@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Persist a disabled repository indexing decision when the first-use selector is dismissed, preventing repeated prompts while retaining `/index enable` opt-in.
 - Keep retrying agent turns visibly in their real llm-orchestrator queue position, including server-reported queue duration, instead of replacing the status with local unsent-message counts.
 - Preserve complete provider prompt prefixes until a formal persisted compaction, without live tool-result stubbing or threshold truncation, and compact between tool turns at one visible cache boundary
 - Use plan-item status as the sole progress source while retaining active Decisions, Files, and Risks in model checkpoints and `/state`

@@ -30,7 +30,7 @@ When interactive p first opens a repository with no saved indexing decision, it 
 
 - **Yes** enables the repository and starts background indexing.
 - **No** records the decision and does not ask again for that repository.
-- Dismissing the selector leaves the decision unknown, so p may ask again the next time it opens the repository.
+- Dismissing the selector records the repository as disabled and does not ask again. The canonical repository path and decision are saved in `~/.p/agent/indexed-repos.json`; use `/index enable` to opt in later.
 
 p uses the nearest parent containing `.git` as the repository root. A directory outside a Git repository is treated as its own indexing root.
 

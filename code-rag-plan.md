@@ -15,7 +15,7 @@ The core local indexing path is implemented and shipped in commit `be47eebc`:
 
 | Capability | Status | Current implementation |
 |---|---|---|
-| Repository consent | Complete | Interactive Yes/No prompt with persisted enabled/disabled decisions in `~/.p/agent/indexed-repos.json` |
+| Repository consent | Complete | Interactive Yes/No prompt; No and dismissal persist a disabled decision in `~/.p/agent/indexed-repos.json` |
 | Managed installation | Complete for source checkouts | `./reinstall.sh` installs `com.dst.p.code-index` through launchd on macOS or a systemd user service on Linux |
 | Local backends | Complete | Checksummed Qdrant binary plus a pinned Python virtual environment; Qdrant and embeddings start lazily |
 | Persistent indexing | Complete | The daemon indexes enabled repositories, recursively watches changes, debounces refreshes, retries failures, and periodically reconciles missed events |
@@ -64,7 +64,7 @@ The shipped implementation uses these defaults:
 | Initial embedding backend | Keep the existing Python embedding server for the first increment |
 | Backend architecture | Hide Qdrant and the embedding server behind stable interfaces so they can be replaced later |
 | Session startup | Validate existing index immediately; refresh non-blockingly when safe; never block the whole agent on RAG |
-| Repository consent | Ask once in interactive mode; persist both Yes and No decisions per canonical repository root |
+| Repository consent | Ask once in interactive mode; persist enabled for Yes and disabled for No or dismissal per canonical repository root |
 | Index lifecycle | Use one per-user daemon to watch all enabled repositories and serialize refresh work |
 | Retrieval mode | Explicit `semantic_search` tool first |
 | Automatic prompt injection | Deferred until evaluation, security controls, and token-budgeting are in place |
