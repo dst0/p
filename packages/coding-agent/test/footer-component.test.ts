@@ -69,7 +69,7 @@ describe("FooterComponent", () => {
 			}),
 		});
 
-		expect(footer.render(100).join("\n")).toContain("IDX 42%");
+		expect(footer.render(100).join("\n")).toContain("🔎 42%");
 	});
 
 	it("shows disabled indexing and can hide indexing information", () => {
@@ -78,9 +78,9 @@ describe("FooterComponent", () => {
 			getIndexingStatus: () => ({ decision: "disabled", indexed: false, serviceRunning: true }),
 		});
 
-		expect(footer.render(100).join("\n")).toContain("IDX OFF");
+		expect(footer.render(100).join("\n")).toContain("🔎 OFF");
 		footer.setShowIndexingInfo(false);
-		expect(footer.render(100).join("\n")).not.toContain("IDX");
+		expect(footer.render(100).join("\n")).not.toContain("🔎");
 	});
 
 	it("renders QUEUED badge with elapsed seconds when queuedAt is set", () => {

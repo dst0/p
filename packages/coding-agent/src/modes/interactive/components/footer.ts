@@ -70,10 +70,10 @@ function formatQueuedSpinner(now = Date.now()): string {
 }
 
 function formatIndexingStatus(status: IndexStatus): string {
-	if (status.decision === "disabled") return "IDX OFF";
-	if (status.decision === "unknown") return "IDX ?";
+	if (status.decision === "disabled") return "🔎 OFF";
+	if (status.decision === "unknown") return "🔎 ?";
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
-		return `IDX ${Math.max(0, Math.min(100, Math.round(status.progress?.percent ?? 0)))}%`;
+		return `🔎 ${Math.max(0, Math.min(100, Math.round(status.progress?.percent ?? 0)))}%`;
 	}
 	if (
 		!status.serviceRunning ||
@@ -83,9 +83,9 @@ function formatIndexingStatus(status: IndexStatus): string {
 		status.ragState === "unavailable" ||
 		status.ragState === "disabled"
 	) {
-		return "IDX ON!";
+		return "🔎 ON!";
 	}
-	return "IDX ON";
+	return "🔎 ON";
 }
 
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {

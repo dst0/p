@@ -52,11 +52,11 @@ The footer shows indexing state for the active repository by default:
 
 | Marker | Meaning |
 |---|---|
-| `IDX ?` | No indexing decision has been saved yet |
-| `IDX OFF` | Indexing is disabled for this repository |
-| `IDX 42%` | Indexing is enabled and a refresh is 42% complete |
-| `IDX ON` | Indexing is enabled and no refresh is active |
-| `IDX ON!` | Indexing is enabled, but the background service or latest refresh has an error |
+| `🔎 ?` | No indexing decision has been saved yet |
+| `🔎 OFF` | Indexing is disabled for this repository |
+| `🔎 42%` | Indexing is enabled and a refresh is 42% complete |
+| `🔎 ON` | Indexing is enabled and no refresh is active |
+| `🔎 ON!` | Indexing is enabled, but the background service or latest refresh has an error |
 
 Open `/settings` and change **Indexing info** to hide or show both the marker and percentage. This setting only controls footer visibility; use `/index enable` or `/index disable` to change whether the repository is indexed.
 
