@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,6 +640,19 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
+const minimatchCache = new Map<string, Minimatch>();
+function getMinimatch(pattern: string): Minimatch {
+	let mm = minimatchCache.get(pattern);
+	if (!mm) {
+		mm = new Minimatch(pattern);
+		if (minimatchCache.size > 2000) {
+			minimatchCache.clear();
+		}
+		minimatchCache.set(pattern, mm);
+	}
+	return mm;
+}
+
 function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
@@ -653,17 +666,17 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 	return patterns.some((pattern) => {
 		const normalizedPattern = toPosixPath(pattern);
 		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
+			getMinimatch(normalizedPattern).match(rel) ||
+			getMinimatch(normalizedPattern).match(name) ||
+			getMinimatch(normalizedPattern).match(filePathPosix)
 		) {
 			return true;
 		}
 		if (!isSkillFile) return false;
 		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
+			getMinimatch(normalizedPattern).match(parentRel!) ||
+			getMinimatch(normalizedPattern).match(parentName!) ||
+			getMinimatch(normalizedPattern).match(parentDirPosix!)
 		);
 	});
 }
