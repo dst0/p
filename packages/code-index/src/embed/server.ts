@@ -73,9 +73,11 @@ export class EmbeddingServerManager {
 
 		return new Promise((resolve, reject) => {
 			let settled = false;
+			let pollTimer: ReturnType<typeof setTimeout> | undefined;
 			const settle = (callback: () => void) => {
 				if (settled) return;
 				settled = true;
+				if (pollTimer) clearTimeout(pollTimer);
 				signal?.removeEventListener("abort", onAbort);
 				callback();
 			};
@@ -84,7 +86,7 @@ export class EmbeddingServerManager {
 				settle(() => reject(signal?.reason ?? new Error("Embedding server startup cancelled")));
 			};
 			signal?.addEventListener("abort", onAbort, { once: true });
-			this.child = spawn(
+			const child = spawn(
 				this.options.pythonExecutable,
 				[this.scriptPath, "--port", String(this.port), "--model", this.model],
 				{
@@ -92,24 +94,25 @@ export class EmbeddingServerManager {
 					detached: false,
 				},
 			);
+			this.child = child;
 
-			this.child.stdout?.on("data", (data) => {
+			child.stdout?.on("data", (data) => {
 				const text = data.toString().trim();
 				if (text) this.options.onLog?.("debug", text);
 			});
 
-			this.child.stderr?.on("data", (data) => {
+			child.stderr?.on("data", (data) => {
 				const text = data.toString().trim();
 				if (text) this.options.onLog?.("error", text);
 			});
 
-			this.child.on("error", (err) => {
-				this.child = null;
+			child.on("error", (err) => {
+				if (this.child === child) this.child = null;
 				settle(() => reject(new Error(`Failed to start embedding server: ${err.message}`)));
 			});
 
-			this.child.on("exit", (code, signal) => {
-				if (this.child) {
+			child.on("exit", (code, signal) => {
+				if (this.child === child) {
 					this.options.onLog?.("error", `Embedding server exited with code ${code}, signal ${signal}`);
 					this.child = null;
 					settle(() =>
@@ -140,10 +143,10 @@ export class EmbeddingServerManager {
 					return;
 				}
 
-				setTimeout(poll, interval);
+				pollTimer = setTimeout(() => void poll(), interval);
 			};
 
-			setTimeout(poll, 2000); // initial delay for model loading
+			pollTimer = setTimeout(() => void poll(), 2000); // initial delay for model loading
 		});
 	}
 

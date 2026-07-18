@@ -41,5 +41,6 @@ export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
 	{ name: "rules", description: "Lint or explain scoped project rules" },
 	{ name: "resume", description: "Resume a different session" },
 	{ name: "reload", description: "Reload keybindings, extensions, skills, prompts, and themes" },
+	{ name: "index", description: "Manage background code indexing for this repository" },
 	{ name: "quit", description: `Quit ${APP_NAME}` },
 ];

@@ -37,7 +37,7 @@ if (settings.triggerReserveTokens !== 2000) { console.error('ERROR: triggerReser
 console.log('Compaction settings verified OK');
 "
 
-# Install or update the embedding server system service (launchd/systemd)
-node scripts/install-embedding-service.js
+# Install or update the persistent code-indexing service (launchd/systemd)
+node scripts/install-indexing-service.js
 
 echo "Done. Version $VERSION installed."

@@ -5,5 +5,7 @@
 export type { EmbeddingProviderHttpOptions } from "./embed/http.ts";
 export { createDefaultProvider, EmbeddingProviderHttp } from "./embed/http.ts";
 export type { EmbeddingProvider } from "./embed/provider.ts";
+export type { QdrantServerManagerOptions } from "./embed/qdrant-server.ts";
+export { QdrantServerManager } from "./embed/qdrant-server.ts";
 export type { EmbeddingServerManagerOptions } from "./embed/server.ts";
 export { EmbeddingServerManager } from "./embed/server.ts";

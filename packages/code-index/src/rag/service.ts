@@ -7,6 +7,7 @@ import { LANG_MAP } from "../config.ts";
 import { detectLanguage, discoverFilesWithOptions, getGitInfo } from "../discover.ts";
 import { EmbeddingProviderHttp } from "../embed/http.ts";
 import type { EmbeddingProvider } from "../embed/provider.ts";
+import { QdrantServerManager } from "../embed/qdrant-server.ts";
 import { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "./config.ts";
 import {
 	acquireRepositoryLock,
@@ -102,6 +103,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 	private settings: WorkspaceCodeRagSettings;
 	private embeddingProvider: EmbeddingProvider;
 	private vectorStore: RagVectorStore;
+	private qdrantServerManager: QdrantServerManager | null;
 	private ownsEmbeddingProvider: boolean;
 	private ownsVectorStore: boolean;
 	private now: () => Date;
@@ -154,6 +156,16 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.vectorStore =
 			options.vectorStore ??
 			new QdrantVectorStore({ url: this.settings.qdrantUrl, timeoutMs: this.settings.searchTimeoutMs });
+		const qdrantUrl = new URL(this.settings.qdrantUrl);
+		const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
+		const managesLocalQdrant = this.ownsVectorStore && ["localhost", "127.0.0.1"].includes(qdrantUrl.hostname);
+		this.qdrantServerManager = managesLocalQdrant
+			? new QdrantServerManager(qdrantPort, {
+					qdrantBinary: this.settings.qdrantBinary,
+					dataDirectory: this.settings.qdrantDataDirectory,
+					startupTimeoutMs: this.settings.qdrantStartupTimeoutMs,
+				})
+			: null;
 	}
 
 	async initialize(options: InitializeRagOptions = {}): Promise<RagStatus> {
@@ -164,6 +176,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			this.initialized = true;
 			return this.snapshotStatus();
 		}
+
+		await this.qdrantServerManager?.ensureStarted();
 
 		if (!this.initialized) {
 			this.state = "initializing";
@@ -328,6 +342,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.refreshController?.abort(new Error("Code RAG service disposed"));
+		this.qdrantServerManager?.kill();
 		const embeddingDisposal = this.ownsEmbeddingProvider ? this.embeddingProvider.dispose?.() : undefined;
 		const vectorStoreDisposal = this.ownsVectorStore ? this.vectorStore.dispose?.() : undefined;
 		try {

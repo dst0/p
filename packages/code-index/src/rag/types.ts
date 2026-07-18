@@ -232,6 +232,9 @@ export interface WorkspaceCodeRagSettings {
 	allowStaleSearch: boolean;
 	remoteBackendsAllowed: boolean;
 	qdrantUrl: string;
+	qdrantBinary: string;
+	qdrantDataDirectory: string;
+	qdrantStartupTimeoutMs: number;
 	embeddingServerUrl: string;
 	embeddingModel: string;
 	embeddingDimensions: number;

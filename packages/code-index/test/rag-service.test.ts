@@ -246,6 +246,21 @@ describe("WorkspaceCodeRagService", () => {
 		expect(rebuilt.fullRebuild).toBe(true);
 		expect(rebuilt.status.collection).not.toBe(firstCollection);
 	});
+
+	it("does not launch a local Qdrant for an explicitly allowed remote backend", async () => {
+		const { root, data } = createFixture();
+		const service = new WorkspaceCodeRagService({
+			workspaceRoot: root,
+			dataDirectory: data,
+			settings: {
+				remoteBackendsAllowed: true,
+				qdrantUrl: "https://qdrant.example.test:6333",
+			},
+		});
+
+		await expect(service.initialize()).resolves.toMatchObject({ state: "not_initialized" });
+		await service.dispose();
+	});
 });
 
 describe("discovery security", () => {

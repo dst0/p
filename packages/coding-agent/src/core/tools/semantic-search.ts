@@ -10,6 +10,7 @@ import {
 import { type Static, Type } from "typebox";
 import { getAgentDir } from "../../config.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
+import { isRepoIndexed } from "../indexed-repos.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const semanticSearchSchema = Type.Object({
@@ -60,8 +61,10 @@ function getSharedService(cwd: string): WorkspaceCodeRagService {
 
 export function createSemanticSearchToolDefinition(
 	cwd: string,
-	service: CodeRagService = getSharedService(cwd),
+	service?: CodeRagService,
 ): ToolDefinition<typeof semanticSearchSchema, SemanticSearchToolDetails> {
+	const requiresRepositoryOptIn = service === undefined;
+	const activeService = service ?? getSharedService(cwd);
 	return {
 		name: "semantic_search",
 		label: "semantic_search",
@@ -74,8 +77,15 @@ export function createSemanticSearchToolDefinition(
 		],
 		parameters: semanticSearchSchema,
 		async execute(_toolCallId, input: SemanticSearchToolInput, signal?: AbortSignal) {
+			if (requiresRepositoryOptIn && !isRepoIndexed(cwd)) {
+				const message = "Code indexing is not enabled for this repository. Run /index enable to opt in.";
+				return {
+					content: [{ type: "text", text: `RAG_DISABLED: ${message}\nUse grep, find, and read as the fallback.` }],
+					details: { error: { code: "RAG_DISABLED", message } },
+				};
+			}
 			try {
-				const response = await service.search(input, signal);
+				const response = await activeService.search(input, signal);
 				return { content: [{ type: "text", text: formatSemanticSearchResponse(response) }], details: { response } };
 			} catch (error) {
 				const code = error instanceof CodeRagError ? error.code : "RAG_BACKEND_UNAVAILABLE";

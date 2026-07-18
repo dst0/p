@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
@@ -8,6 +9,9 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 	allowStaleSearch: true,
 	remoteBackendsAllowed: false,
 	qdrantUrl: "http://127.0.0.1:6333",
+	qdrantBinary: "qdrant",
+	qdrantDataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
+	qdrantStartupTimeoutMs: 30_000,
 	embeddingServerUrl: "http://127.0.0.1:8081",
 	embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
 	embeddingDimensions: 1024,
@@ -36,6 +40,7 @@ const BOOLEAN_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
 	"remoteBackendsAllowed",
 ]);
 const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
+	"qdrantStartupTimeoutMs",
 	"embeddingDimensions",
 	"defaultLimit",
 	"maxLimit",
@@ -54,6 +59,8 @@ const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
 ]);
 const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
 	"qdrantUrl",
+	"qdrantBinary",
+	"qdrantDataDirectory",
 	"embeddingServerUrl",
 	"embeddingModel",
 	"pythonExecutable",
@@ -112,6 +119,8 @@ function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
 	const autoRefresh = parseBooleanEnvironment("P_CODE_RAG_AUTO_REFRESH");
 	if (autoRefresh !== undefined) settings.autoRefresh = autoRefresh;
 	if (process.env.P_CODE_RAG_QDRANT_URL) settings.qdrantUrl = process.env.P_CODE_RAG_QDRANT_URL;
+	if (process.env.P_CODE_RAG_QDRANT_BINARY) settings.qdrantBinary = process.env.P_CODE_RAG_QDRANT_BINARY;
+	if (process.env.P_CODE_RAG_QDRANT_DATA_DIR) settings.qdrantDataDirectory = process.env.P_CODE_RAG_QDRANT_DATA_DIR;
 	if (process.env.P_CODE_RAG_EMBEDDING_URL) settings.embeddingServerUrl = process.env.P_CODE_RAG_EMBEDDING_URL;
 	if (process.env.P_CODE_RAG_EMBEDDING_MODEL) settings.embeddingModel = process.env.P_CODE_RAG_EMBEDDING_MODEL;
 	if (process.env.P_CODE_RAG_PYTHON) settings.pythonExecutable = process.env.P_CODE_RAG_PYTHON;
@@ -129,6 +138,7 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
 		throw new Error("Code RAG fullSparseRebuildChangeRatio must be between 0 and 1");
 	}
 	for (const value of [
+		settings.qdrantStartupTimeoutMs,
 		settings.maxContextCharacters,
 		settings.maxResultCharacters,
 		settings.searchTimeoutMs,

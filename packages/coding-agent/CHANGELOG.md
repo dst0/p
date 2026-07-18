@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Install a persistent macOS/Linux code-indexing service from `reinstall.sh`, remember repository opt-in decisions, and incrementally reindex watched files in the background.
+
 ### Fixed
 
 - Keep retrying agent turns visibly in their real llm-orchestrator queue position, including server-reported queue duration, instead of replacing the status with local unsent-message counts.

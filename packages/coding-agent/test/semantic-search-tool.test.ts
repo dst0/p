@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import os from "node:os";
+import path from "node:path";
 import type {
 	CodeRagService,
 	IndexUpdateSummary,
@@ -6,7 +9,11 @@ import type {
 	SemanticSearchResponse,
 } from "@dst0/p-code-index";
 import { describe, expect, it } from "vitest";
+import { ENV_AGENT_DIR } from "../src/config.ts";
+import type { ExtensionContext } from "../src/core/extensions/types.ts";
+import { disableIndexingForRepo } from "../src/core/indexed-repos.ts";
 import { createAllToolDefinitions, createSemanticSearchTool } from "../src/core/tools/index.ts";
+import { createSemanticSearchToolDefinition } from "../src/core/tools/semantic-search.ts";
 
 const readyStatus: RagStatus = {
 	state: "ready",
@@ -50,6 +57,33 @@ class FakeRagService implements CodeRagService {
 }
 
 describe("semantic_search tool", () => {
+	it("does not initialize the default service before repository opt-in", async () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-semantic-opt-in-"));
+		const agentDir = path.join(root, "agent");
+		const workspace = path.join(root, "workspace");
+		fs.mkdirSync(workspace);
+		disableIndexingForRepo(workspace, agentDir);
+		const previousAgentDir = process.env[ENV_AGENT_DIR];
+		process.env[ENV_AGENT_DIR] = agentDir;
+		try {
+			const tool = createSemanticSearchToolDefinition(workspace);
+			const result = await tool.execute(
+				"call",
+				{ query: "authentication" },
+				undefined,
+				undefined,
+				{} as ExtensionContext,
+			);
+			const text = result.content.find((item) => item.type === "text")?.text ?? "";
+			expect(text).toContain("RAG_DISABLED");
+			expect(text).toContain("/index enable");
+		} finally {
+			if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+			else process.env[ENV_AGENT_DIR] = previousAgentDir;
+			fs.rmSync(root, { recursive: true, force: true });
+		}
+	});
+
 	it("is registered as a built-in tool", () => {
 		expect(createAllToolDefinitions(process.cwd())).toHaveProperty("semantic_search");
 	});

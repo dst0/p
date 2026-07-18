@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-code-index",
-  "version": "0.4.12",
+  "version": "0.4.13",
   "description": "Codebase indexer — hybrid dense (Qwen3-Embedding) + BM25 sparse vectors into Qdrant",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,7 +16,8 @@
   },
   "files": [
     "dist",
-		"embedding_server.py",
+    "embedding_server.py",
+    "requirements.txt",
     "README.md"
   ],
   "scripts": {

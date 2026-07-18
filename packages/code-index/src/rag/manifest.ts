@@ -62,7 +62,10 @@ export function acquireRepositoryLock(directory: string, staleAfterMs: number = 
 	const lockPath = path.join(directory, "refresh.lock");
 	try {
 		const stat = fs.statSync(lockPath);
-		if (Date.now() - stat.mtimeMs > staleAfterMs) fs.unlinkSync(lockPath);
+		const lock = readLock(lockPath);
+		if ((lock && !isProcessAlive(lock.pid)) || (!lock && Date.now() - stat.mtimeMs > staleAfterMs)) {
+			fs.unlinkSync(lockPath);
+		}
 	} catch (error) {
 		if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
 	}
@@ -91,4 +94,24 @@ export function acquireRepositoryLock(directory: string, staleAfterMs: number = 
 			}
 		},
 	};
+}
+
+function readLock(lockPath: string): { pid: number } | undefined {
+	try {
+		const value = JSON.parse(fs.readFileSync(lockPath, "utf-8")) as unknown;
+		if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+		const pid = (value as { pid?: unknown }).pid;
+		return typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? { pid } : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isProcessAlive(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
 }

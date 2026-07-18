@@ -80,6 +80,8 @@ import type {
 } from "../../core/extensions/index.ts";
 import { FooterDataProvider, type ReadonlyFooterDataProvider } from "../../core/footer-data-provider.ts";
 import { configureHttpDispatcher, formatHttpIdleTimeoutMs } from "../../core/http-dispatcher.ts";
+import { findIndexWorkspaceRoot } from "../../core/indexed-repos.ts";
+import { getIndexingService, type IndexingService } from "../../core/indexing-service.ts";
 import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.ts";
 import { SLEEP_TOOL_NAME } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
@@ -313,6 +315,7 @@ export class InteractiveMode {
 	private changelogMarkdown: string | undefined = undefined;
 	private startupNoticesShown = false;
 	private anthropicSubscriptionWarningShown = false;
+	private readonly indexingService: IndexingService = getIndexingService();
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
@@ -1704,6 +1707,7 @@ export class InteractiveMode {
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
+		if (this.isInitialized) await this.promptForCodeIndexingIfNeeded();
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {
@@ -2225,6 +2229,21 @@ export class InteractiveMode {
 		return confirmed ? error.issue.fallbackCwd : undefined;
 	}
 
+	private async promptForCodeIndexingIfNeeded(): Promise<void> {
+		const workspaceRoot = findIndexWorkspaceRoot(this.sessionManager.getCwd());
+		if (this.indexingService.getDecision(workspaceRoot) !== "unknown") return;
+		const answer = await this.showExtensionSelector("Code indexing", [
+			`Yes — index ${workspaceRoot} and keep it updated in the background`,
+			"No — do not ask again for this repository",
+		]);
+		if (answer?.startsWith("Yes")) {
+			this.indexingService.enableIndexing(workspaceRoot);
+			this.showStatus("Code indexing enabled; the background service will start indexing this repository");
+		} else if (answer?.startsWith("No")) {
+			this.indexingService.disableIndexing(workspaceRoot);
+		}
+	}
+
 	/**
 	 * Show a text input for extensions.
 	 */
@@ -2722,6 +2741,11 @@ export class InteractiveMode {
 			if (text === "/reload") {
 				this.editor.setText("");
 				await this.handleReloadCommand();
+				return;
+			}
+			if (text === "/index" || text.startsWith("/index ")) {
+				this.editor.setText("");
+				this.handleIndexCommand(text);
 				return;
 			}
 			if (text === "/debug") {
@@ -5983,6 +6007,60 @@ export class InteractiveMode {
 		} catch (error) {
 			this.showError(error instanceof Error ? error.message : String(error));
 		}
+	}
+
+	private handleIndexCommand(text?: string): void {
+		const args = (text ?? "").replace(/^\/index\s*/, "").trim();
+		const workspaceRoot = findIndexWorkspaceRoot(this.sessionManager.getCwd());
+		const info = this.buildIndexStatusText(workspaceRoot, args);
+
+		this.chatContainer.addChild(new Spacer(1));
+		this.chatContainer.addChild(new Text(info, 1, 0));
+		this.ui.requestRender();
+	}
+
+	private buildIndexStatusText(resolvedPath: string, args: string): string {
+		if (args === "enable") {
+			this.indexingService.enableIndexing(resolvedPath);
+			return (
+				`${theme.bold("Code Indexing")}\n\n` +
+				`Indexing ${theme.fg("success", "enabled")} for ${theme.fg("dim", resolvedPath)}\n` +
+				"The background service will start indexing it. Check status with /index.\n"
+			);
+		}
+		if (args === "disable") {
+			this.indexingService.disableIndexing(resolvedPath);
+			return (
+				`${theme.bold("Code Indexing")}\n\n` +
+				`Indexing ${theme.fg("error", "disabled")} for ${theme.fg("dim", resolvedPath)}\n`
+			);
+		}
+		if (args) return `Usage: ${theme.fg("dim", "/index | /index enable | /index disable")}`;
+
+		const status = this.indexingService.getStatus(resolvedPath);
+		let text = `${theme.bold("Code Indexing")}\n\n`;
+		text += `Repository: ${theme.fg("dim", resolvedPath)}\n`;
+		const decision =
+			status.decision === "enabled"
+				? theme.fg("success", "enabled")
+				: status.decision === "disabled"
+					? theme.fg("error", "disabled")
+					: theme.fg("warning", "not configured");
+		text += `Indexing: ${decision}\n`;
+		text += `Background service: ${status.serviceRunning ? theme.fg("success", "running") : theme.fg("error", "not running")}\n`;
+
+		if (status.ragState) {
+			text += `Service state: ${status.ragState}\n`;
+			if (status.ragFiles !== undefined) {
+				text += `Files indexed: ${status.ragFiles}\n`;
+			}
+			if (status.ragChunks !== undefined) text += `Chunks indexed: ${status.ragChunks}\n`;
+		}
+		if (status.lastError) text += `Last error: ${status.lastError}\n`;
+
+		text += `\nUsage: ${theme.fg("dim", "/index | /index enable | /index disable")}`;
+
+		return text;
 	}
 
 	private handleChangelogCommand(): void {

@@ -10,7 +10,12 @@ export {
 	getGitInfo,
 	loadGitignore,
 } from "./discover.ts";
-export { EmbeddingProvider, EmbeddingProviderHttp } from "./embed.ts";
+export {
+	type EmbeddingProvider,
+	EmbeddingProviderHttp,
+	EmbeddingServerManager,
+	QdrantServerManager,
+} from "./embed.ts";
 export { CodeIndexer } from "./indexer.ts";
 export { QdrantClient } from "./qdrant.ts";
 export { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "./rag/config.ts";
