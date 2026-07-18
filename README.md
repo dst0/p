@@ -75,6 +75,9 @@ npm run check        # Lint, format, and type check
 ./p-test.sh         # Run p from sources (can be run from any directory)
 ```
 
+For a short same-model comparison between this fork and the upstream agent, see
+[Agent benchmarking](packages/coding-agent/docs/benchmarking.md).
+
 ## Supply-chain hardening
 
 We treat npm dependency changes as reviewed code changes.

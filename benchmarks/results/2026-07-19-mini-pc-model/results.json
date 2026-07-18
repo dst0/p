@@ -1,0 +1,465 @@
+{
+  "generatedAt": "2026-07-18T19:22:47.027Z",
+  "model": "mini-pc/model",
+  "originalVersion": "0.73.1",
+  "runs": 1,
+  "timeoutSeconds": 120,
+  "maxRuntimeSeconds": 900,
+  "tasks": [
+    {
+      "id": "read-only",
+      "description": "Read a small repository and answer without modifying it"
+    },
+    {
+      "id": "report",
+      "description": "Inspect notes and create a concise report"
+    },
+    {
+      "id": "debug",
+      "description": "Fix a failing test without editing the test"
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 3,
+      "passed": 3,
+      "averageWallMs": 39139.34130533333,
+      "averageInputTokens": 8575.666666666666,
+      "averageOutputTokens": 791,
+      "averageTotalTokens": 39462.666666666664,
+      "averageToolCalls": 7,
+      "averageToolErrors": 1.3333333333333333
+    },
+    "original": {
+      "runs": 3,
+      "passed": 3,
+      "averageWallMs": 16048.681597333327,
+      "averageInputTokens": 1753.3333333333333,
+      "averageOutputTokens": 341.3333333333333,
+      "averageTotalTokens": 5884,
+      "averageToolCalls": 3,
+      "averageToolErrors": 0
+    },
+    "winner": "original"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "read-only",
+      "description": "Read a small repository and answer without modifying it",
+      "status": "passed",
+      "elapsedMs": 33575.440166,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/p-run-1-read-only.jsonl",
+      "stderr": "stderr/p-run-1-read-only.log",
+      "workspace": "workspaces/p/run-1/read-only",
+      "metrics": {
+        "eventCount": 602,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 5,
+          "message_start": 20,
+          "message_end": 20,
+          "completion_protocol": 2,
+          "request_start": 5,
+          "message_update": 528,
+          "tool_execution_start": 7,
+          "tool_execution_end": 7,
+          "turn_end": 5,
+          "agent_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 8208,
+          "output": 623,
+          "cacheRead": 23109,
+          "cacheWrite": 0,
+          "totalTokens": 31940
+        },
+        "turns": 5,
+        "assistantMessages": 20,
+        "toolCalls": 7,
+        "toolErrors": 2,
+        "toolNames": {
+          "read": 4,
+          "update_session_state": 2,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 5
+        },
+        "errors": [],
+        "finalText": "Read README.md and package.json, then replied with a single paragraph containing the endpoint count (7), schema version (3), and operational risk (retries can duplicate writes)."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "workspace unchanged",
+            "passed": true
+          },
+          {
+            "name": "answer contains required facts",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "original",
+      "task": "read-only",
+      "description": "Read a small repository and answer without modifying it",
+      "status": "passed",
+      "elapsedMs": 12924.246,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/original-run-1-read-only.jsonl",
+      "stderr": "stderr/original-run-1-read-only.log",
+      "workspace": "workspaces/original/run-1/read-only",
+      "metrics": {
+        "eventCount": 235,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 2,
+          "message_start": 5,
+          "message_end": 5,
+          "message_update": 214,
+          "tool_execution_start": 2,
+          "tool_execution_end": 2,
+          "turn_end": 2,
+          "agent_end": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 1595,
+          "output": 247,
+          "cacheRead": 1795,
+          "cacheWrite": 0,
+          "totalTokens": 3637
+        },
+        "turns": 2,
+        "assistantMessages": 5,
+        "toolCalls": 2,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 2
+        },
+        "stopReasons": {
+          "toolUse": 1,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "The fixture-service (package version 3.0.0) exposes **7 HTTP endpoints**, is currently on **schema version 3**, and carries the operational risk that **retries can duplicate writes**."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "workspace unchanged",
+            "passed": true
+          },
+          {
+            "name": "answer contains required facts",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "original",
+      "task": "report",
+      "description": "Inspect notes and create a concise report",
+      "status": "passed",
+      "elapsedMs": 12398.764791999994,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/original-run-1-report.jsonl",
+      "stderr": "stderr/original-run-1-report.log",
+      "workspace": "workspaces/original/run-1/report",
+      "metrics": {
+        "eventCount": 255,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 3,
+          "message_start": 6,
+          "message_end": 6,
+          "message_update": 230,
+          "tool_execution_start": 2,
+          "tool_execution_end": 2,
+          "turn_end": 3,
+          "agent_end": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 1813,
+          "output": 275,
+          "cacheRead": 3356,
+          "cacheWrite": 0,
+          "totalTokens": 5444
+        },
+        "turns": 3,
+        "assistantMessages": 6,
+        "toolCalls": 2,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 1,
+          "write": 1
+        },
+        "stopReasons": {
+          "toolUse": 2,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Done. Created `report.md` with:\n\n- A Markdown heading (`# Performance & Reliability Report`)\n- A three-item list preserving Finding A, Finding B, and Finding C\n- A final recommendation section\n\n`notes.txt` was not modified."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "source notes unchanged",
+            "passed": true
+          },
+          {
+            "name": "report has heading, findings, recommendation",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "report",
+      "description": "Inspect notes and create a concise report",
+      "status": "passed",
+      "elapsedMs": 38046.044958,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/p-run-1-report.jsonl",
+      "stderr": "stderr/p-run-1-report.log",
+      "workspace": "workspaces/p/run-1/report",
+      "metrics": {
+        "eventCount": 754,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 6,
+          "message_start": 21,
+          "message_end": 21,
+          "completion_protocol": 2,
+          "request_start": 6,
+          "message_update": 677,
+          "tool_execution_start": 6,
+          "tool_execution_end": 6,
+          "turn_end": 6,
+          "agent_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 8182,
+          "output": 798,
+          "cacheRead": 29104,
+          "cacheWrite": 0,
+          "totalTokens": 38084
+        },
+        "turns": 6,
+        "assistantMessages": 21,
+        "toolCalls": 6,
+        "toolErrors": 1,
+        "toolNames": {
+          "update_session_state": 2,
+          "read": 1,
+          "write": 1,
+          "finish_work": 2
+        },
+        "stopReasons": {
+          "toolUse": 6
+        },
+        "errors": [],
+        "finalText": "Created report.md with a Markdown heading, three-item list (Finding A, B, C), and a final recommendation. notes.txt was not modified."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "source notes unchanged",
+            "passed": true
+          },
+          {
+            "name": "report has heading, findings, recommendation",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "debug",
+      "description": "Fix a failing test without editing the test",
+      "status": "passed",
+      "elapsedMs": 45796.53879199999,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/p-run-1-debug.jsonl",
+      "stderr": "stderr/p-run-1-debug.log",
+      "workspace": "workspaces/p/run-1/debug",
+      "metrics": {
+        "eventCount": 914,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 7,
+          "message_start": 25,
+          "message_end": 25,
+          "completion_protocol": 2,
+          "request_start": 7,
+          "message_update": 819,
+          "tool_execution_start": 8,
+          "tool_execution_end": 8,
+          "turn_end": 7,
+          "tool_execution_update": 3,
+          "agent_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 9337,
+          "output": 952,
+          "cacheRead": 38075,
+          "cacheWrite": 0,
+          "totalTokens": 48364
+        },
+        "turns": 7,
+        "assistantMessages": 25,
+        "toolCalls": 8,
+        "toolErrors": 1,
+        "toolNames": {
+          "update_session_state": 2,
+          "read": 2,
+          "edit": 1,
+          "bash": 1,
+          "finish_work": 2
+        },
+        "stopReasons": {
+          "toolUse": 7
+        },
+        "errors": [],
+        "finalText": "Fixed the bug in src/score.js: removed Math.round() from the average function so fractional averages are preserved. Both tests now pass."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "score implementation changed",
+            "passed": true
+          },
+          {
+            "name": "test unchanged",
+            "passed": true
+          },
+          {
+            "name": "node test passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "original",
+      "task": "debug",
+      "description": "Fix a failing test without editing the test",
+      "status": "passed",
+      "elapsedMs": 22823.033999999985,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "recording": "recordings/original-run-1-debug.jsonl",
+      "stderr": "stderr/original-run-1-debug.log",
+      "workspace": "workspaces/original/run-1/debug",
+      "metrics": {
+        "eventCount": 450,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 4,
+          "message_start": 10,
+          "message_end": 10,
+          "message_update": 404,
+          "tool_execution_start": 5,
+          "tool_execution_update": 5,
+          "tool_execution_end": 5,
+          "turn_end": 4,
+          "agent_end": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 1852,
+          "output": 502,
+          "cacheRead": 6217,
+          "cacheWrite": 0,
+          "totalTokens": 8571
+        },
+        "turns": 4,
+        "assistantMessages": 10,
+        "toolCalls": 5,
+        "toolErrors": 0,
+        "toolNames": {
+          "bash": 2,
+          "read": 2,
+          "edit": 1
+        },
+        "stopReasons": {
+          "toolUse": 3,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Both tests pass. The fix was removing `Math.round()` from the `average` function, which was incorrectly rounding fractional averages down to integers."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "score implementation changed",
+            "passed": true
+          },
+          {
+            "name": "test unchanged",
+            "passed": true
+          },
+          {
+            "name": "node test passes",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}
