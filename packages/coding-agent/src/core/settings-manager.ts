@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
 import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME, getAgentDir } from "../config.ts";
+import { stripJsonComments } from "../utils/json.ts";
 import { normalizePath, resolvePath } from "../utils/paths.ts";
 import { DEFAULT_COMPACTION_SETTINGS } from "./compaction/default-settings.ts";
 import { DEFAULT_HTTP_IDLE_TIMEOUT_MS, parseHttpIdleTimeoutMs } from "./http-dispatcher.ts";
@@ -405,7 +406,7 @@ export class SettingsManager {
 		if (!content) {
 			return {};
 		}
-		const settings = JSON.parse(content);
+		const settings = JSON.parse(stripJsonComments(content));
 		return SettingsManager.migrateSettings(settings);
 	}
 
@@ -627,7 +628,7 @@ export class SettingsManager {
 	): void {
 		this.storage.withLock(scope, (current) => {
 			const currentFileSettings = current
-				? SettingsManager.migrateSettings(JSON.parse(current) as Record<string, unknown>)
+				? SettingsManager.migrateSettings(JSON.parse(stripJsonComments(current)) as Record<string, unknown>)
 				: {};
 			const mergedSettings: Settings = { ...currentFileSettings };
 			for (const field of modifiedFields) {
