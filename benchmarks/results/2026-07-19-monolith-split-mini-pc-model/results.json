@@ -1,0 +1,207 @@
+{
+  "generatedAt": "2026-07-18T20:10:20.974Z",
+  "model": "mini-pc/model",
+  "originalVersion": "0.73.1",
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 900,
+  "tasks": [
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior"
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 0,
+      "averageWallMs": 300010.372208,
+      "averageInputTokens": 16186,
+      "averageOutputTokens": 7228,
+      "averageTotalTokens": 176909,
+      "averageToolCalls": 18,
+      "averageToolErrors": 1
+    },
+    "original": {
+      "runs": 1,
+      "passed": 0,
+      "averageWallMs": 300027.15033399995,
+      "averageInputTokens": 5372,
+      "averageOutputTokens": 7425,
+      "averageTotalTokens": 38613,
+      "averageToolCalls": 13,
+      "averageToolErrors": 0
+    },
+    "winner": "original"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 300010.372208,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 7721,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 15,
+          "message_start": 53,
+          "message_end": 52,
+          "completion_protocol": 1,
+          "request_start": 15,
+          "message_update": 7525,
+          "tool_execution_start": 18,
+          "tool_execution_end": 18,
+          "turn_end": 14,
+          "tool_execution_update": 8
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 16186,
+          "output": 7228,
+          "cacheRead": 153495,
+          "cacheWrite": 0,
+          "totalTokens": 176909
+        },
+        "turns": 14,
+        "assistantMessages": 14,
+        "toolCalls": 18,
+        "toolErrors": 1,
+        "toolNames": {
+          "update_session_state": 3,
+          "read": 6,
+          "bash": 3,
+          "write": 6
+        },
+        "stopReasons": {
+          "toolUse": 14
+        },
+        "errors": [],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": false
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "original",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 300027.15033399995,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "recording": "recordings/original-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/original-run-1-monolith-split.log",
+      "workspace": "workspaces/original/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 7056,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 6,
+          "message_start": 19,
+          "message_end": 19,
+          "message_update": 6969,
+          "tool_execution_start": 13,
+          "tool_execution_update": 10,
+          "tool_execution_end": 13,
+          "turn_end": 5
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 5372,
+          "output": 7425,
+          "cacheRead": 25816,
+          "cacheWrite": 0,
+          "totalTokens": 38613
+        },
+        "turns": 5,
+        "assistantMessages": 5,
+        "toolCalls": 13,
+        "toolErrors": 0,
+        "toolNames": {
+          "bash": 3,
+          "read": 5,
+          "write": 5
+        },
+        "stopReasons": {
+          "toolUse": 5
+        },
+        "errors": [],
+        "finalText": "Now let me verify the contract tests still pass through the facade:\n\n"
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": false
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

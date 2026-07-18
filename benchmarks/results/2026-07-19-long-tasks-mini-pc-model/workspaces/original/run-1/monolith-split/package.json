@@ -1,0 +1,15 @@
+{
+  "name": "typescript-fixture",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --import tsx --test test/*.test.ts",
+    "typecheck": "tsc --noEmit",
+    "calc": "node --import tsx src/cli.ts"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "tsx": "4.20.3",
+    "typescript": "5.9.3"
+  }
+}
