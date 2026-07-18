@@ -15,6 +15,21 @@ type IndexingPromptContext = {
 
 type InteractiveModePrototype = {
 	promptForCodeIndexingIfNeeded(this: IndexingPromptContext): Promise<void>;
+	rebindCurrentSession(this: RebindContext): Promise<void>;
+};
+
+type RebindContext = {
+	unsubscribe: (() => void) | undefined;
+	applyRuntimeSettings: () => void;
+	bindCurrentSessionExtensions: () => Promise<void>;
+	subscribeToAgent: () => void;
+	updateAvailableProviderCount: () => Promise<void>;
+	updateEditorBorderColor: () => void;
+	updateTerminalTitle: () => void;
+	isInitialized: boolean;
+	codeIndexingPrompt: Promise<void> | undefined;
+	promptForCodeIndexingIfNeeded: () => Promise<void>;
+	showError: (message: string) => void;
 };
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown as InteractiveModePrototype;
@@ -25,6 +40,35 @@ afterEach(() => {
 });
 
 describe("InteractiveMode code-indexing prompt", () => {
+	it("does not block session readiness while waiting for the indexing decision", async () => {
+		let resolvePrompt: (() => void) | undefined;
+		const prompt = new Promise<void>((resolve) => {
+			resolvePrompt = resolve;
+		});
+		const context: RebindContext = {
+			unsubscribe: vi.fn(),
+			applyRuntimeSettings: vi.fn(),
+			bindCurrentSessionExtensions: vi.fn(async () => undefined),
+			subscribeToAgent: vi.fn(),
+			updateAvailableProviderCount: vi.fn(async () => undefined),
+			updateEditorBorderColor: vi.fn(),
+			updateTerminalTitle: vi.fn(),
+			isInitialized: true,
+			codeIndexingPrompt: undefined,
+			promptForCodeIndexingIfNeeded: vi.fn(() => prompt),
+			showError: vi.fn(),
+		};
+
+		await interactiveModePrototype.rebindCurrentSession.call(context);
+
+		expect(context.promptForCodeIndexingIfNeeded).toHaveBeenCalledOnce();
+		expect(context.codeIndexingPrompt).toBe(prompt);
+		resolvePrompt?.();
+		await prompt;
+		await Promise.resolve();
+		expect(context.codeIndexingPrompt).toBeUndefined();
+	});
+
 	it("persists a disabled repository decision when the selector is dismissed", async () => {
 		const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-prompt-"));
 		temporaryDirectories.push(root);

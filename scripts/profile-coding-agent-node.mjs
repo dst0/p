@@ -14,6 +14,7 @@ const defaultNodeProfileDir = join(repoRoot, "profiles-node");
 const defaultBunProfileDir = join(repoRoot, "profiles-bun");
 const agentDirEnvName = "P_CODING_AGENT_DIR";
 const startupBenchmarkEnvName = "PI_STARTUP_BENCHMARK";
+const startupBenchmarkReadyMarker = "PI_STARTUP_BENCHMARK_READY";
 
 function printHelp() {
 	console.log(`Usage:
@@ -385,26 +386,32 @@ async function runTuiBenchmarkRun({ runtime, runIndex, measuredIndex, options, p
 	}
 
 	const command = getRuntimeCommand(runtime, "tui", profileDir, profileName, options.cpuProfile);
+	const startedAt = performance.now();
 	const child = spawn(command.executable, command.args, {
 		cwd: packageDir,
 		env: createBenchmarkEnv(options, isolatedAgentDir),
-		stdio: ["inherit", "ignore", "pipe"],
+		stdio: ["inherit", "inherit", "pipe"],
 		shell: process.platform === "win32" && runtime === "bun",
 	});
 
 	let stderr = "";
+	let readyElapsedMs;
 	child.stderr.setEncoding("utf8");
 	child.stderr.on("data", (chunk) => {
 		stderr += chunk;
+		if (readyElapsedMs === undefined && stderr.includes(startupBenchmarkReadyMarker)) {
+			readyElapsedMs = performance.now() - startedAt;
+		}
 	});
 
-	const startedAt = performance.now();
 	const exitCode = await waitForExit(child, `Benchmark ${measuredIndex === undefined ? `warmup ${runNumber}` : `run ${measuredIndex}`}`);
-	const elapsedMs = performance.now() - startedAt;
 
 	try {
 		if (exitCode !== 0) {
 			throw new Error(stderr.trim() || `Benchmark child exited with code ${exitCode}`);
+		}
+		if (readyElapsedMs === undefined) {
+			throw new Error("TUI benchmark child exited before reporting ready state");
 		}
 
 		const profilePath = options.cpuProfile ? join(profileDir, profileName) : undefined;
@@ -412,7 +419,7 @@ async function runTuiBenchmarkRun({ runtime, runIndex, measuredIndex, options, p
 			throw new Error(`CPU profile was not written: ${profilePath}`);
 		}
 
-		return { elapsedMs, profilePath, timings: parseStartupTimings(stderr) };
+		return { elapsedMs: readyElapsedMs, profilePath, timings: parseStartupTimings(stderr) };
 	} finally {
 		if (tempRoot) {
 			rmSync(tempRoot, { recursive: true, force: true });

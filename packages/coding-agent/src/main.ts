@@ -819,7 +819,9 @@ export async function main(args: string[], options?: MainOptions) {
 			await interactiveMode.init();
 			time("interactiveMode.init");
 			printTimings();
+			console.error("PI_STARTUP_BENCHMARK_READY");
 			interactiveMode.stop();
+			await runtime.dispose();
 			stopThemeWatcher();
 			if (process.stdout.writableLength > 0) {
 				await new Promise<void>((resolve) => process.stdout.once("drain", resolve));
@@ -827,7 +829,7 @@ export async function main(args: string[], options?: MainOptions) {
 			if (process.stderr.writableLength > 0) {
 				await new Promise<void>((resolve) => process.stderr.once("drain", resolve));
 			}
-			return;
+			process.exit(0);
 		}
 
 		printTimings();

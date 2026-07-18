@@ -316,6 +316,7 @@ export class InteractiveMode {
 	private startupNoticesShown = false;
 	private anthropicSubscriptionWarningShown = false;
 	private readonly indexingService: IndexingService = getIndexingService();
+	private codeIndexingPrompt: Promise<void> | undefined;
 
 	// Status line tracking (for mutating immediately-sequential status updates)
 	private lastStatusSpacer: Spacer | undefined = undefined;
@@ -657,11 +658,6 @@ export class InteractiveMode {
 		// Load changelog (only show new entries, skip for resumed sessions)
 		this.changelogMarkdown = this.getChangelogForDisplay();
 
-		// Ensure fd and rg are available (downloads if missing, adds to PATH via getBinDir)
-		// Both are needed: fd for autocomplete, rg for grep tool and bash commands
-		const [fdPath] = await Promise.all([ensureTool("fd"), ensureTool("rg")]);
-		this.fdPath = fdPath;
-
 		if (this.session.scopedModels.length > 0 && (this.options.verbose || !this.settingsManager.getQuietStartup())) {
 			const modelList = this.session.scopedModels
 				.map((sm) => {
@@ -696,6 +692,23 @@ export class InteractiveMode {
 		// Start the UI before initializing extensions so session_start handlers can use interactive dialogs
 		this.ui.start();
 		this.isInitialized = true;
+		const toolSetupTimer = setTimeout(() => {
+			if (this.shutdownRequested) return;
+			void Promise.all([ensureTool("fd", true), ensureTool("rg", true)])
+				.then(([fdPath]) => {
+					if (this.shutdownRequested || fdPath === this.fdPath) return;
+					this.fdPath = fdPath;
+					this.setupAutocompleteProvider();
+				})
+				.catch((error) => {
+					if (!this.shutdownRequested) {
+						this.showError(
+							`Failed to initialize search tools: ${error instanceof Error ? error.message : String(error)}`,
+						);
+					}
+				});
+		}, 0);
+		toolSetupTimer.unref?.();
 
 		await this.detectThemeIfUnset();
 
@@ -784,9 +797,6 @@ export class InteractiveMode {
 			this.updateQueuedFooterSpinnerTimer();
 			this.ui.requestRender();
 		});
-
-		// Initialize available provider count for footer display
-		await this.updateAvailableProviderCount();
 	}
 
 	/**
@@ -1709,7 +1719,17 @@ export class InteractiveMode {
 		await this.updateAvailableProviderCount();
 		this.updateEditorBorderColor();
 		this.updateTerminalTitle();
-		if (this.isInitialized) await this.promptForCodeIndexingIfNeeded();
+		if (this.isInitialized && !this.codeIndexingPrompt) {
+			const prompt = this.promptForCodeIndexingIfNeeded();
+			this.codeIndexingPrompt = prompt;
+			void prompt
+				.catch((error) => {
+					this.showError(`Code indexing prompt failed: ${error instanceof Error ? error.message : String(error)}`);
+				})
+				.finally(() => {
+					if (this.codeIndexingPrompt === prompt) this.codeIndexingPrompt = undefined;
+				});
+		}
 	}
 
 	private async handleFatalRuntimeError(prefix: string, error: unknown): Promise<never> {

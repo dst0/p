@@ -9,6 +9,8 @@
 
 ### Fixed
 
+- Keep optional search-tool installation and the first-use indexing prompt out of the global interactive startup barrier.
+- Run the TUI startup profiler under a real terminal and terminate it after graceful runtime disposal instead of waiting on background handles.
 - Persist a disabled repository indexing decision when the first-use selector is dismissed, preventing repeated prompts while retaining `/index enable` opt-in.
 - Keep retrying agent turns visibly in their real llm-orchestrator queue position, including server-reported queue duration, instead of replacing the status with local unsent-message counts.
 - Preserve complete provider prompt prefixes until a formal persisted compaction, without live tool-result stubbing or threshold truncation, and compact between tool turns at one visible cache boundary
