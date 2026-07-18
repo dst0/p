@@ -46,6 +46,20 @@ Indexing decisions are independent of project trust. Enabling indexing authorize
 
 Disabling a repository preserves its existing index data. It can be enabled again without discarding the last compatible generation.
 
+## Footer status
+
+The footer shows indexing state for the active repository by default:
+
+| Marker | Meaning |
+|---|---|
+| `IDX ?` | No indexing decision has been saved yet |
+| `IDX OFF` | Indexing is disabled for this repository |
+| `IDX 42%` | Indexing is enabled and a refresh is 42% complete |
+| `IDX ON` | Indexing is enabled and no refresh is active |
+| `IDX ON!` | Indexing is enabled, but the background service or latest refresh has an error |
+
+Open `/settings` and change **Indexing info** to hide or show both the marker and percentage. This setting only controls footer visibility; use `/index enable` or `/index disable` to change whether the repository is indexed.
+
 ## Background behavior
 
 For every enabled repository, the service:
@@ -70,7 +84,7 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 | Path | Purpose |
 |---|---|
 | `indexed-repos.json` | Saved enabled/disabled decision for each repository |
-| `indexing-service-status.json` | Daemon PID, state, repository status, counts, and errors |
+| `indexing-service-status.json` | Daemon PID, state, repository progress, counts, and errors |
 | `code-rag.json` | User-level code-index configuration |
 | `code-rag/<repo-id>/` | Repository manifests and sparse-vocabulary data |
 | `code-rag/qdrant/` | Managed Qdrant configuration and database |
@@ -123,4 +137,4 @@ Start with `/index`. If the background service is not running or reports an erro
 
 Reinstalling is idempotent and migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service.
 
-The current UI exposes status, enable, and disable controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.
+The current UI exposes status, progress, enable, disable, and footer-visibility controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.

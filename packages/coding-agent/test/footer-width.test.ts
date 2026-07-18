@@ -85,6 +85,7 @@ function createFooterData(
 		getSendingProgress: () => progress.sending,
 		getModelSwitchProgress: () => undefined,
 		getLoadingProgress: () => undefined,
+		getIndexingStatus: () => ({ decision: "unknown" as const, indexed: false, serviceRunning: false }),
 		onBranchChange: (callback: () => void) => {
 			void callback;
 			return () => {};

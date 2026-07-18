@@ -2,6 +2,7 @@ import { isAbsolute, relative, resolve, sep } from "node:path";
 import { type Component, truncateToWidth, visibleWidth } from "@dst0/p-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.ts";
+import type { IndexStatus } from "../../../core/indexing-service.ts";
 import { theme } from "../theme/theme.ts";
 
 const QUEUED_SPINNER_FRAMES = ["|", "/", "-", "\\"];
@@ -68,6 +69,25 @@ function formatQueuedSpinner(now = Date.now()): string {
 	return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
 }
 
+function formatIndexingStatus(status: IndexStatus): string {
+	if (status.decision === "disabled") return "IDX OFF";
+	if (status.decision === "unknown") return "IDX ?";
+	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
+		return `IDX ${Math.max(0, Math.min(100, Math.round(status.progress?.percent ?? 0)))}%`;
+	}
+	if (
+		!status.serviceRunning ||
+		status.lastError !== undefined ||
+		status.ragState === "error" ||
+		status.ragState === "partial" ||
+		status.ragState === "unavailable" ||
+		status.ragState === "disabled"
+	) {
+		return "IDX ON!";
+	}
+	return "IDX ON";
+}
+
 export function formatCwdForFooter(cwd: string, home: string | undefined): string {
 	if (!home) return cwd;
 
@@ -90,6 +110,7 @@ export class FooterComponent implements Component {
 	private autoCompactEnabled = true;
 	private showTokenProgress = true;
 	private showTokenStats = true;
+	private showIndexingInfo = true;
 	private showVersion = false;
 	private version: string | undefined;
 	private session: AgentSession;
@@ -115,6 +136,10 @@ export class FooterComponent implements Component {
 
 	setShowTokenStats(enabled: boolean): void {
 		this.showTokenStats = enabled;
+	}
+
+	setShowIndexingInfo(enabled: boolean): void {
+		this.showIndexingInfo = enabled;
 	}
 
 	setShowVersion(enabled: boolean, version: string | undefined): void {
@@ -187,7 +212,8 @@ export class FooterComponent implements Component {
 		}
 
 		// Build stats line
-		const statsParts = [];
+		const statsParts: string[] = [];
+		if (this.showIndexingInfo) statsParts.push(formatIndexingStatus(this.footerData.getIndexingStatus()));
 		if (this.showTokenStats) {
 			if (totalInput) statsParts.push(`↑${formatTokens(totalInput)}`);
 			if (totalOutput) statsParts.push(`↓${formatTokens(totalOutput)}`);

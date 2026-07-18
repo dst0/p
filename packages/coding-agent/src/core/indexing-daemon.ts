@@ -3,6 +3,7 @@ import path from "node:path";
 import {
 	type CodeRagService,
 	EmbeddingServerManager,
+	type IndexingProgress,
 	QdrantServerManager,
 	type RagState,
 	WorkspaceCodeRagService,
@@ -43,6 +44,7 @@ interface RepositoryRuntime {
 	state: RagState | "queued" | "error";
 	indexedFiles: number;
 	indexedChunks: number;
+	progress?: IndexingProgress;
 	lastError?: string;
 	updatedAt: string;
 	debounceTimer?: ReturnType<typeof setTimeout>;
@@ -268,6 +270,7 @@ export class IndexingDaemon {
 			runtime.debounceTimer = undefined;
 			runtime.dirty = true;
 			runtime.state = "queued";
+			delete runtime.progress;
 			runtime.updatedAt = new Date().toISOString();
 			this.writeStatus();
 			this.startDrain();
@@ -291,18 +294,26 @@ export class IndexingDaemon {
 			runtime.dirty = false;
 			runtime.state = "initializing";
 			runtime.updatedAt = new Date().toISOString();
+			delete runtime.progress;
 			delete runtime.lastError;
 			this.writeStatus();
 			try {
 				await this.ensureBackends();
-				await runtime.service.initialize({ checkFreshness: true });
-				const summary = await runtime.service.refresh();
+				const initialized = await runtime.service.initialize({ checkFreshness: true });
+				runtime.state = initialized.state;
+				runtime.indexedFiles = initialized.indexedFiles;
+				runtime.indexedChunks = initialized.indexedChunks;
+				const summary = await runtime.service.refresh({
+					onProgress: (progress) => this.updateRuntimeProgress(runtime, progress),
+				});
 				runtime.state = summary.status.state;
 				runtime.indexedFiles = summary.status.indexedFiles;
 				runtime.indexedChunks = summary.status.indexedChunks;
+				delete runtime.progress;
 				delete runtime.lastError;
 			} catch (error) {
 				runtime.state = "error";
+				delete runtime.progress;
 				runtime.lastError = safeErrorMessage(error);
 				if (!this.disposed && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
 					runtime.retryTimer = setTimeout(() => {
@@ -314,6 +325,18 @@ export class IndexingDaemon {
 			runtime.updatedAt = new Date().toISOString();
 			this.writeStatus();
 		}
+	}
+
+	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
+		const normalized = {
+			phase: progress.phase,
+			percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
+		} satisfies IndexingProgress;
+		if (runtime.progress?.phase === normalized.phase && runtime.progress.percent === normalized.percent) return;
+		runtime.progress = normalized;
+		runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
+		runtime.updatedAt = new Date().toISOString();
+		this.writeStatus();
 	}
 
 	private closeRuntime(runtime: RepositoryRuntime): void {
@@ -332,6 +355,7 @@ export class IndexingDaemon {
 			indexedFiles: runtime.indexedFiles,
 			indexedChunks: runtime.indexedChunks,
 			updatedAt: runtime.updatedAt,
+			progress: runtime.progress,
 			lastError: runtime.lastError,
 		}));
 		const data: IndexingServiceStatusData = {

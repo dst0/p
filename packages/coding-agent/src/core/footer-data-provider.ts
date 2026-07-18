@@ -2,6 +2,8 @@ import { type ExecFileException, execFile, spawnSync } from "child_process";
 import { existsSync, type FSWatcher, readFileSync, type Stats, statSync, unwatchFile, watchFile } from "fs";
 import { dirname, join, resolve } from "path";
 import { closeWatcher, FS_WATCH_RETRY_DELAY_MS, watchWithErrorHandler } from "../utils/fs-watch.ts";
+import { findIndexWorkspaceRoot } from "./indexed-repos.ts";
+import { IndexingService, type IndexStatus } from "./indexing-service.ts";
 
 type GitPaths = {
 	repoDir: string;
@@ -134,6 +136,7 @@ function shouldPollGitHead(repoDir: string): boolean {
 export class FooterDataProvider {
 	private cwd: string;
 	private static readonly WATCH_DEBOUNCE_MS = 500;
+	private static readonly INDEXING_STATUS_POLL_MS = 500;
 
 	private extensionStatuses = new Map<string, string>();
 	private prefillProgress?: PrefillProgress;
@@ -143,6 +146,9 @@ export class FooterDataProvider {
 	private sendingProgress?: SendingProgress;
 	private modelSwitchProgress?: ModelSwitchProgress;
 	private loadingProgress?: LoadingProgress;
+	private readonly indexingService: IndexingService;
+	private indexingStatus: IndexStatus;
+	private indexingStatusTimer: ReturnType<typeof setInterval>;
 	private cachedBranch: string | null | undefined = undefined;
 	private gitPaths: GitPaths | null | undefined = undefined;
 	private headWatcher: FSWatcher | null = null;
@@ -163,7 +169,14 @@ export class FooterDataProvider {
 	constructor(cwd: string) {
 		this.cwd = cwd;
 		this.gitPaths = findGitPaths(cwd);
+		this.indexingService = new IndexingService();
+		this.indexingStatus = this.indexingService.getStatus(this.getIndexingRoot());
 		this.setupGitWatcher();
+		this.indexingStatusTimer = setInterval(
+			() => this.refreshIndexingStatus(),
+			FooterDataProvider.INDEXING_STATUS_POLL_MS,
+		);
+		this.indexingStatusTimer.unref();
 	}
 
 	/** Current git branch, null if not in repo, "detached" if detached HEAD */
@@ -201,6 +214,10 @@ export class FooterDataProvider {
 
 	getLoadingProgress(): LoadingProgress | undefined {
 		return this.loadingProgress;
+	}
+
+	getIndexingStatus(): IndexStatus {
+		return this.indexingStatus;
 	}
 
 	/** Subscribe to git branch changes. Returns unsubscribe function. */
@@ -365,12 +382,14 @@ export class FooterDataProvider {
 		this.cachedBranch = undefined;
 		this.gitPaths = findGitPaths(cwd);
 		this.setupGitWatcher();
+		this.refreshIndexingStatus();
 		this.notifyBranchChange();
 	}
 
 	/** Internal: cleanup */
 	dispose(): void {
 		this.disposed = true;
+		clearInterval(this.indexingStatusTimer);
 		if (this.refreshTimer) {
 			clearTimeout(this.refreshTimer);
 			this.refreshTimer = null;
@@ -382,6 +401,18 @@ export class FooterDataProvider {
 
 	private notifyBranchChange(): void {
 		for (const cb of this.branchChangeCallbacks) cb();
+	}
+
+	private getIndexingRoot(): string {
+		return findIndexWorkspaceRoot(this.cwd);
+	}
+
+	private refreshIndexingStatus(): void {
+		if (this.disposed) return;
+		const nextStatus = this.indexingService.getStatus(this.getIndexingRoot());
+		if (sameIndexingStatus(this.indexingStatus, nextStatus)) return;
+		this.indexingStatus = nextStatus;
+		this.notifyProgressChange();
 	}
 
 	private scheduleRefresh(): void {
@@ -579,6 +610,21 @@ export type ReadonlyFooterDataProvider = Pick<
 	| "getSendingProgress"
 	| "getModelSwitchProgress"
 	| "getLoadingProgress"
+	| "getIndexingStatus"
 	| "onBranchChange"
 	| "onProgressChange"
 >;
+
+function sameIndexingStatus(left: IndexStatus, right: IndexStatus): boolean {
+	return (
+		left.decision === right.decision &&
+		left.indexed === right.indexed &&
+		left.serviceRunning === right.serviceRunning &&
+		left.ragState === right.ragState &&
+		left.ragFiles === right.ragFiles &&
+		left.ragChunks === right.ragChunks &&
+		left.progress?.phase === right.progress?.phase &&
+		left.progress?.percent === right.progress?.percent &&
+		left.lastError === right.lastError
+	);
+}

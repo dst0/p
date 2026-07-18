@@ -5,6 +5,8 @@ import type {
 	CodeRagService,
 	IndexUpdateSummary,
 	RagStatus,
+	RebuildIndexOptions,
+	RefreshIndexOptions,
 	SemanticSearchInput,
 	SemanticSearchResponse,
 } from "@dst0/p-code-index";
@@ -50,11 +52,14 @@ class FakeRagService implements CodeRagService {
 		};
 	}
 
-	async refresh(): Promise<IndexUpdateSummary> {
+	async refresh(options: RefreshIndexOptions = {}): Promise<IndexUpdateSummary> {
 		this.refreshing = true;
 		try {
+			options.onProgress?.({ phase: "scanning", percent: 0 });
+			options.onProgress?.({ phase: "indexing", percent: 37 });
 			await this.refreshGate;
 			this.refreshCount += 1;
+			options.onProgress?.({ phase: "finalizing", percent: 100 });
 			return {
 				status: this.createStatus(),
 				durationMs: 1,
@@ -71,8 +76,8 @@ class FakeRagService implements CodeRagService {
 		}
 	}
 
-	async rebuild(): Promise<IndexUpdateSummary> {
-		return this.refresh();
+	async rebuild(options: RebuildIndexOptions = {}): Promise<IndexUpdateSummary> {
+		return this.refresh({ onProgress: options.onProgress });
 	}
 
 	async dispose(): Promise<void> {
@@ -204,6 +209,10 @@ describe("indexing daemon", () => {
 
 		await daemon.start();
 		await waitFor(() => service?.refreshing === true);
+		expect(client.getStatus(fixture.repo)).toMatchObject({
+			ragState: "updating",
+			progress: { phase: "indexing", percent: 37 },
+		});
 		client.disableIndexing(fixture.repo);
 		await waitFor(() => client.getStatus(fixture.repo).ragState === undefined);
 		expect(service?.disposed).toBe(false);

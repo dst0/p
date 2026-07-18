@@ -5,6 +5,7 @@
 ### Added
 
 - Install a persistent macOS/Linux code-indexing service from `reinstall.sh`, remember repository opt-in decisions, and incrementally reindex watched files in the background.
+- Show the active repository's indexing state and live progress percentage in the footer, with a persisted `/settings` visibility toggle.
 
 ### Fixed
 

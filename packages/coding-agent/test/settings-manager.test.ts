@@ -557,4 +557,18 @@ describe("SettingsManager", () => {
 			expect(manager.getShowVersion()).toBe(false);
 		});
 	});
+
+	describe("showIndexingInfo", () => {
+		it("defaults to true and persists under terminal settings", async () => {
+			const manager = SettingsManager.create(projectDir, agentDir);
+			expect(manager.getShowIndexingInfo()).toBe(true);
+
+			manager.setShowIndexingInfo(false);
+			await manager.flush();
+
+			expect(manager.getShowIndexingInfo()).toBe(false);
+			const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+			expect(savedSettings.terminal.showIndexingInfo).toBe(false);
+		});
+	});
 });

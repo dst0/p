@@ -245,7 +245,11 @@ Strict CI/testing profile:
 | `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
 | `terminal.imageWidthCells` | number | `60` | Preferred inline image width in terminal cells |
 | `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when content shrinks (can cause flicker) |
+| `terminal.showTerminalProgress` | boolean | `false` | Show OSC 9;4 progress indicators in supported terminal tab bars |
 | `terminal.showTokenProgress` | boolean | `true` | Show compact `QUEUED`, `PREFILL`, and `GEN` progress in the footer |
+| `terminal.showTokenStats` | boolean | `true` | Show cumulative token and cache counts in the footer |
+| `terminal.showIndexingInfo` | boolean | `true` | Show the active repository's `IDX` state marker and indexing percentage in the footer |
+| `terminal.showVersion` | boolean | `false` | Show the p agent version in the footer |
 | `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
 | `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
 

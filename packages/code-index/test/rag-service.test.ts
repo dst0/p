@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import {
+	type IndexingProgress,
 	type RagVectorStore,
 	type SparseVector,
 	type VectorPoint,
@@ -188,6 +189,35 @@ describe("WorkspaceCodeRagService", () => {
 		expect(changed.chunksEmbedded).toBe(1);
 		expect(store.allContents().join("\n")).toContain("replacement-auth-token");
 		expect(store.allContents().join("\n")).not.toContain("unique-auth-token");
+	});
+
+	it("reports monotonic progress for full and incremental indexing", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		const rebuildProgress: IndexingProgress[] = [];
+
+		await service.rebuild({ onProgress: (progress) => rebuildProgress.push(progress) });
+		expect(rebuildProgress[0]).toEqual({ phase: "scanning", percent: 0 });
+		expect(rebuildProgress.at(-1)).toEqual({ phase: "finalizing", percent: 100 });
+		expect(
+			rebuildProgress.every(
+				(progress, index) => index === 0 || progress.percent >= rebuildProgress[index - 1].percent,
+			),
+		).toBe(true);
+
+		writeFileSync(join(root, "main.ts"), "export const replacement = 'changed';\n");
+		const refreshProgress: IndexingProgress[] = [];
+		await service.refresh({ onProgress: (progress) => refreshProgress.push(progress) });
+		expect(refreshProgress[0]).toEqual({ phase: "scanning", percent: 0 });
+		expect(refreshProgress.at(-1)).toEqual({ phase: "finalizing", percent: 100 });
+		expect(refreshProgress.some((progress) => progress.phase === "indexing" && progress.percent > 5)).toBe(true);
+		expect(
+			refreshProgress.every(
+				(progress, index) => index === 0 || progress.percent >= refreshProgress[index - 1].percent,
+			),
+		).toBe(true);
 	});
 
 	it("removes deleted files and keeps repositories with the same basename isolated", async () => {

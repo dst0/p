@@ -71,6 +71,7 @@ export interface SettingsConfig {
 	showTerminalProgress: boolean;
 	showTokenProgress: boolean;
 	showTokenStats: boolean;
+	showIndexingInfo: boolean;
 	showVersion: boolean;
 	warnings: WarningSettings;
 }
@@ -104,6 +105,7 @@ export interface SettingsCallbacks {
 	onShowTerminalProgressChange: (enabled: boolean) => void;
 	onShowTokenProgressChange: (enabled: boolean) => void;
 	onShowTokenStatsChange: (enabled: boolean) => void;
+	onShowIndexingInfoChange: (enabled: boolean) => void;
 	onShowVersionChange: (enabled: boolean) => void;
 	onWarningsChange: (warnings: WarningSettings) => void;
 	onCancel: () => void;
@@ -511,9 +513,19 @@ export class SettingsSelectorComponent extends Container {
 			values: ["true", "false"],
 		});
 
-		// Version toggle (insert after token-stats)
+		// Indexing info toggle (insert after token-stats)
 		const tokenStatsIndex = items.findIndex((item) => item.id === "token-stats");
 		items.splice(tokenStatsIndex + 1, 0, {
+			id: "indexing-info",
+			label: "Indexing info",
+			description: "Show repository indexing marker and progress percentage in the footer",
+			currentValue: config.showIndexingInfo ? "true" : "false",
+			values: ["true", "false"],
+		});
+
+		// Version toggle (insert after indexing-info)
+		const indexingInfoIndex = items.findIndex((item) => item.id === "indexing-info");
+		items.splice(indexingInfoIndex + 1, 0, {
 			id: "version",
 			label: "Show version",
 			description: "Show p agent version in the footer",
@@ -615,6 +627,9 @@ export class SettingsSelectorComponent extends Container {
 						break;
 					case "token-stats":
 						callbacks.onShowTokenStatsChange(newValue === "true");
+						break;
+					case "indexing-info":
+						callbacks.onShowIndexingInfoChange(newValue === "true");
 						break;
 					case "version":
 						callbacks.onShowVersionChange(newValue === "true");

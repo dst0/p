@@ -19,6 +19,7 @@ import {
 } from "./manifest.ts";
 import type {
 	CodeRagService,
+	IndexingProgress,
 	IndexManifest,
 	IndexUpdateSummary,
 	InitializeRagOptions,
@@ -310,18 +311,16 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.refreshController = new AbortController();
 		const onAbort = () => this.refreshController?.abort(signal?.reason);
 		signal?.addEventListener("abort", onAbort, { once: true });
-		const operation = this.runRefresh(options.forceSparseRebuild === true, this.refreshController.signal).finally(
-			() => {
-				signal?.removeEventListener("abort", onAbort);
-				this.refreshPromise = undefined;
-				this.refreshController = undefined;
-			},
-		);
+		const operation = this.runRefresh(options, this.refreshController.signal).finally(() => {
+			signal?.removeEventListener("abort", onAbort);
+			this.refreshPromise = undefined;
+			this.refreshController = undefined;
+		});
 		this.refreshPromise = operation;
 		return operation;
 	}
 
-	async rebuild(_options: RebuildIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
+	async rebuild(options: RebuildIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
 		if (this.refreshPromise) return waitForSignal(this.refreshPromise, signal);
 		if (!this.initialized) await this.initialize({ checkFreshness: false });
 		if (this.state === "disabled") return this.emptyUpdateSummary(true);
@@ -329,7 +328,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.refreshController = new AbortController();
 		const onAbort = () => this.refreshController?.abort(signal?.reason);
 		signal?.addEventListener("abort", onAbort, { once: true });
-		const operation = this.runRefresh(true, this.refreshController.signal).finally(() => {
+		const operation = this.runRefresh(
+			{ forceSparseRebuild: true, onProgress: options.onProgress },
+			this.refreshController.signal,
+		).finally(() => {
 			signal?.removeEventListener("abort", onAbort);
 			this.refreshPromise = undefined;
 			this.refreshController = undefined;
@@ -354,18 +356,20 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		await vectorStoreDisposal;
 	}
 
-	private async runRefresh(forceRebuild: boolean, signal: AbortSignal): Promise<IndexUpdateSummary> {
+	private async runRefresh(options: RefreshIndexOptions, signal: AbortSignal): Promise<IndexUpdateSummary> {
 		const startedAt = Date.now();
 		const lock = acquireRepositoryLock(this.repositoryDirectory);
 		this.state = this.manifest ? "updating" : "initializing";
 		try {
+			this.reportProgress(options.onProgress, "scanning", 0);
 			const scanned = this.scanWorkspace(signal);
+			this.reportProgress(options.onProgress, "indexing", 5);
 			const plan = this.createRefreshPlan(scanned);
 			const changedFileCount = plan.added.length + plan.changed.length + plan.deleted.length;
 			const incompatibility = this.manifest
 				? this.manifestIncompatibility(this.manifest)
 				: "Index is not initialized";
-			if (changedFileCount === 0 && this.manifest && !forceRebuild && incompatibility === undefined) {
+			if (changedFileCount === 0 && this.manifest && !options.forceSparseRebuild && incompatibility === undefined) {
 				for (const file of plan.unchanged) {
 					const entry = this.manifest.files[file.path];
 					if (entry) this.manifest.files[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
@@ -377,20 +381,21 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				this.state = "ready";
 				this.staleReason = undefined;
 				this.lastError = undefined;
+				this.reportProgress(options.onProgress, "finalizing", 100);
 				return this.summaryForPlan(plan, startedAt, 0, false);
 			}
 
 			const previousFileCount = Object.keys(this.manifest?.files ?? {}).length;
 			const changeRatio = changedFileCount / Math.max(previousFileCount, 1);
 			if (
-				forceRebuild ||
+				options.forceSparseRebuild ||
 				!this.manifest ||
 				incompatibility !== undefined ||
 				changeRatio > this.settings.fullSparseRebuildChangeRatio
 			) {
-				return await this.performRebuild(scanned, plan, startedAt, signal);
+				return await this.performRebuild(scanned, plan, startedAt, signal, options.onProgress);
 			}
-			return await this.performIncrementalRefresh(plan, startedAt, signal);
+			return await this.performIncrementalRefresh(plan, startedAt, signal, options.onProgress);
 		} catch (error) {
 			const mapped = mapOperationError(error, signal);
 			this.lastError = this.errorInfo(mapped.code, mapped.message);
@@ -420,10 +425,15 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		plan: RefreshPlan,
 		startedAt: number,
 		signal: AbortSignal,
+		onProgress: RefreshIndexOptions["onProgress"],
 	): Promise<IndexUpdateSummary> {
 		const generation = this.createGeneration();
 		const collection = this.collectionName(generation);
-		const preparedFiles = scanned.map((file) => this.prepareFile(file, generation, signal));
+		const preparedFiles: PreparedFile[] = [];
+		for (const [index, file] of scanned.entries()) {
+			preparedFiles.push(this.prepareFile(file, generation, signal));
+			this.reportProgress(onProgress, "indexing", 5 + (10 * (index + 1)) / Math.max(scanned.length, 1));
+		}
 		const vocabulary = new BM25Vocabulary();
 		for (const prepared of preparedFiles) {
 			for (const chunk of prepared.chunks) vocabulary.register(chunk.payload.content);
@@ -434,7 +444,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			await this.vectorStore.createCollection(collection, this.settings.embeddingDimensions);
 			createdCollection = true;
 			const chunks = preparedFiles.flatMap((file) => file.chunks);
-			await this.encodeAndUpsert(collection, chunks, vocabulary, signal);
+			await this.encodeAndUpsert(collection, chunks, vocabulary, signal, (completed, total) => {
+				this.reportProgress(onProgress, "indexing", 15 + (80 * completed) / Math.max(total, 1));
+			});
+			this.reportProgress(onProgress, "finalizing", 95);
 			const now = this.now().toISOString();
 			const vocabularyPath = this.vocabularyPath(generation);
 			vocabulary.save(vocabularyPath);
@@ -494,6 +507,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					}
 				}
 			}
+			this.reportProgress(onProgress, "finalizing", 100);
 			return this.summaryForPlan(plan, startedAt, chunks.length, true);
 		} catch (error) {
 			if (createdCollection) {
@@ -511,6 +525,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		plan: RefreshPlan,
 		startedAt: number,
 		signal: AbortSignal,
+		onProgress: RefreshIndexOptions["onProgress"],
 	): Promise<IndexUpdateSummary> {
 		if (!this.manifest) throw new CodeRagError("RAG_NOT_INITIALIZED", "Code RAG index is not initialized");
 		const status = await this.vectorStore.collectionStatus(this.manifest.collection);
@@ -521,11 +536,27 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		const nextManifest = structuredClone(this.manifest);
 		const indexedAt = this.now().toISOString();
 		let chunksEmbedded = 0;
+		let completedFiles = 0;
+		const changedFiles = [...plan.added, ...plan.changed];
+		const totalFiles = changedFiles.length + plan.deleted.length;
 
-		for (const file of [...plan.added, ...plan.changed]) {
+		for (const file of changedFiles) {
 			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
 			const prepared = this.prepareFile(file, nextManifest.generation, signal);
-			await this.encodeAndUpsert(nextManifest.collection, prepared.chunks, vocabulary, signal);
+			await this.encodeAndUpsert(
+				nextManifest.collection,
+				prepared.chunks,
+				vocabulary,
+				signal,
+				(completed, total) => {
+					const currentFileProgress = total === 0 ? 1 : completed / total;
+					this.reportProgress(
+						onProgress,
+						"indexing",
+						5 + (90 * (completedFiles + currentFileProgress)) / Math.max(totalFiles, 1),
+					);
+				},
+			);
 			await this.vectorStore.deleteFileVersions(
 				nextManifest.collection,
 				this.repoId,
@@ -534,6 +565,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			);
 			nextManifest.files[file.path] = prepared.entry;
 			chunksEmbedded += prepared.chunks.length;
+			completedFiles += 1;
+			this.reportProgress(onProgress, "indexing", 5 + (90 * completedFiles) / Math.max(totalFiles, 1));
 		}
 		for (const deleted of plan.deleted) {
 			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
@@ -543,12 +576,15 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				fileIdFor(this.repoId, deleted.path),
 			);
 			delete nextManifest.files[deleted.path];
+			completedFiles += 1;
+			this.reportProgress(onProgress, "indexing", 5 + (90 * completedFiles) / Math.max(totalFiles, 1));
 		}
 		for (const file of plan.unchanged) {
 			const entry = nextManifest.files[file.path];
 			if (entry) nextManifest.files[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
 		}
 
+		this.reportProgress(onProgress, "finalizing", 95);
 		nextManifest.state = "ready";
 		nextManifest.updatedAt = indexedAt;
 		nextManifest.sourceRevision = getGitInfo(this.workspaceRoot).commit || undefined;
@@ -560,6 +596,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.state = "ready";
 		this.staleReason = undefined;
 		this.lastError = undefined;
+		this.reportProgress(onProgress, "finalizing", 100);
 		return this.summaryForPlan(plan, startedAt, chunksEmbedded, false);
 	}
 
@@ -568,6 +605,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		chunks: PreparedChunk[],
 		vocabulary: BM25Vocabulary,
 		signal: AbortSignal,
+		onProgress?: (completed: number, total: number) => void,
 	): Promise<void> {
 		// Ensure embedding provider is ready (auto-start if needed)
 		if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
@@ -593,6 +631,20 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					points.slice(pointOffset, pointOffset + this.settings.upsertBatchSize),
 				);
 			}
+			onProgress?.(Math.min(offset + batch.length, chunks.length), chunks.length);
+		}
+		if (chunks.length === 0) onProgress?.(0, 0);
+	}
+
+	private reportProgress(
+		onProgress: RefreshIndexOptions["onProgress"],
+		phase: IndexingProgress["phase"],
+		percent: number,
+	): void {
+		try {
+			onProgress?.({ phase, percent: Math.max(0, Math.min(100, Math.round(percent))) });
+		} catch {
+			// Progress reporting must not interrupt indexing.
 		}
 	}
 

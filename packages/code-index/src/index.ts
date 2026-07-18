@@ -22,6 +22,8 @@ export { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } fro
 export { CodeRagError, WorkspaceCodeRagService } from "./rag/service.ts";
 export type {
 	CodeRagService,
+	IndexingProgress,
+	IndexingProgressPhase,
 	IndexManifest,
 	IndexUpdateSummary,
 	InitializeRagOptions,

@@ -1,6 +1,6 @@
 import fs from "node:fs";
 import path from "node:path";
-import type { RagState } from "@dst0/p-code-index";
+import type { IndexingProgress, RagState } from "@dst0/p-code-index";
 import { getAgentDir } from "../config.ts";
 import {
 	disableIndexingForRepo,
@@ -18,6 +18,7 @@ export interface IndexStatus {
 	ragState?: RagState | "queued" | "error";
 	ragFiles?: number;
 	ragChunks?: number;
+	progress?: IndexingProgress;
 	lastError?: string;
 }
 
@@ -27,6 +28,7 @@ export interface RepositoryServiceStatus {
 	indexedFiles: number;
 	indexedChunks: number;
 	updatedAt: string;
+	progress?: IndexingProgress;
 	lastError?: string;
 }
 
@@ -61,6 +63,7 @@ export class IndexingService {
 			ragState: repoStatus?.state,
 			ragFiles: repoStatus?.indexedFiles,
 			ragChunks: repoStatus?.indexedChunks,
+			progress: repoStatus?.progress,
 			lastError: repoStatus?.lastError,
 		};
 	}
@@ -123,8 +126,21 @@ function isServiceStatus(value: unknown): value is IndexingServiceStatusData {
 				typeof entry.indexedFiles === "number" &&
 				typeof entry.indexedChunks === "number" &&
 				typeof entry.updatedAt === "string" &&
-				(entry.lastError === undefined || typeof entry.lastError === "string"),
+				(entry.lastError === undefined || typeof entry.lastError === "string") &&
+				(entry.progress === undefined || isIndexingProgress(entry.progress)),
 		)
+	);
+}
+
+function isIndexingProgress(value: unknown): value is IndexingProgress {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const candidate = value as Partial<IndexingProgress>;
+	return (
+		(candidate.phase === "scanning" || candidate.phase === "indexing" || candidate.phase === "finalizing") &&
+		typeof candidate.percent === "number" &&
+		Number.isFinite(candidate.percent) &&
+		candidate.percent >= 0 &&
+		candidate.percent <= 100
 	);
 }
 

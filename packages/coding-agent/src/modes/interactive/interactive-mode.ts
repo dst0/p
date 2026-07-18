@@ -441,6 +441,7 @@ export class InteractiveMode {
 		this.footer.setAutoCompactEnabled(this.session.autoCompactionEnabled);
 		this.footer.setShowTokenProgress(this.settingsManager.getShowTokenProgress());
 		this.footer.setShowTokenStats(this.settingsManager.getShowTokenStats());
+		this.footer.setShowIndexingInfo(this.settingsManager.getShowIndexingInfo());
 
 		// Load hide thinking block setting
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
@@ -1684,6 +1685,7 @@ export class InteractiveMode {
 		this.footer.setShowTokenProgress(this.settingsManager.getShowTokenProgress());
 		this.footer.setShowVersion(this.settingsManager.getShowVersion(), this.version);
 		this.footer.setShowTokenStats(this.settingsManager.getShowTokenStats());
+		this.footer.setShowIndexingInfo(this.settingsManager.getShowIndexingInfo());
 		this.footerDataProvider.setCwd(this.sessionManager.getCwd());
 		this.hideThinkingBlock = this.settingsManager.getHideThinkingBlock();
 		this.ui.setShowHardwareCursor(this.settingsManager.getShowHardwareCursor());
@@ -4330,6 +4332,7 @@ export class InteractiveMode {
 					showTerminalProgress: this.settingsManager.getShowTerminalProgress(),
 					showTokenProgress: this.settingsManager.getShowTokenProgress(),
 					showTokenStats: this.settingsManager.getShowTokenStats(),
+					showIndexingInfo: this.settingsManager.getShowIndexingInfo(),
 					showVersion: this.settingsManager.getShowVersion(),
 					warnings: this.settingsManager.getWarnings(),
 				},
@@ -4464,6 +4467,11 @@ export class InteractiveMode {
 					onShowTokenStatsChange: (enabled) => {
 						this.settingsManager.setShowTokenStats(enabled);
 						this.footer.setShowTokenStats(enabled);
+						this.ui.requestRender();
+					},
+					onShowIndexingInfoChange: (enabled) => {
+						this.settingsManager.setShowIndexingInfo(enabled);
+						this.footer.setShowIndexingInfo(enabled);
 						this.ui.requestRender();
 					},
 					onShowVersionChange: (enabled) => {

@@ -14,6 +14,7 @@ function createFooterData(): ReadonlyFooterDataProvider {
 		getSendingProgress: () => undefined,
 		getModelSwitchProgress: () => undefined,
 		getLoadingProgress: () => undefined,
+		getIndexingStatus: () => ({ decision: "unknown", indexed: false, serviceRunning: false }),
 		getAvailableProviderCount: () => 1,
 		onBranchChange: () => () => {},
 		onProgressChange: () => () => {},
@@ -54,6 +55,32 @@ describe("FooterComponent", () => {
 		const footer = new FooterComponent(createSession("normal"), createFooterData());
 
 		expect(footer.render(100).join("\n")).not.toContain("PLAN");
+	});
+
+	it("renders live repository indexing progress", () => {
+		const footer = new FooterComponent(createSession("normal"), {
+			...createFooterData(),
+			getIndexingStatus: () => ({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 42 },
+			}),
+		});
+
+		expect(footer.render(100).join("\n")).toContain("IDX 42%");
+	});
+
+	it("shows disabled indexing and can hide indexing information", () => {
+		const footer = new FooterComponent(createSession("normal"), {
+			...createFooterData(),
+			getIndexingStatus: () => ({ decision: "disabled", indexed: false, serviceRunning: true }),
+		});
+
+		expect(footer.render(100).join("\n")).toContain("IDX OFF");
+		footer.setShowIndexingInfo(false);
+		expect(footer.render(100).join("\n")).not.toContain("IDX");
 	});
 
 	it("renders QUEUED badge with elapsed seconds when queuedAt is set", () => {

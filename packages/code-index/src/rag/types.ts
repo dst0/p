@@ -88,12 +88,21 @@ export interface InitializeRagOptions {
 	checkFreshness?: boolean;
 }
 
+export type IndexingProgressPhase = "scanning" | "indexing" | "finalizing";
+
+export interface IndexingProgress {
+	phase: IndexingProgressPhase;
+	percent: number;
+}
+
 export interface RefreshIndexOptions {
 	forceSparseRebuild?: boolean;
+	onProgress?: (progress: IndexingProgress) => void;
 }
 
 export interface RebuildIndexOptions {
 	reason?: string;
+	onProgress?: (progress: IndexingProgress) => void;
 }
 
 export interface IndexUpdateSummary {
