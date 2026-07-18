@@ -1,17 +1,38 @@
 # Agent Intelligence and Code RAG Implementation Plan
 
-> **Status:** Execution-ready engineering handoff  
-> **Primary audience:** Coding agent or engineer implementing the work  
-> **Repository assumed:** `p` monorepo  
-> **Primary packages:** `packages/code-index` and `packages/coding-agent`  
-> **Document role:** Source of truth for scope, sequencing, acceptance criteria, and default decisions  
-> **Important:** File paths and component descriptions below come from the prior repository assessment and must be verified against the current checkout before editing code.
+> **Status:** Managed local indexing foundation shipped on 2026-07-18
+> **Primary audience:** Maintainers extending or operating the implementation
+> **Repository assumed:** `p` monorepo
+> **Primary packages:** `packages/code-index` and `packages/coding-agent`
+> **Document role:** Implementation record, remaining roadmap, and acceptance criteria
+> **Important:** Section 0 describes the shipped implementation. Later phase sections retain the original design rationale and identify work that remains.
+
+---
+
+## 0. Current Implementation Status
+
+The core local indexing path is implemented and shipped in commit `be47eebc`:
+
+| Capability | Status | Current implementation |
+|---|---|---|
+| Repository consent | Complete | Interactive Yes/No prompt with persisted enabled/disabled decisions in `~/.p/agent/indexed-repos.json` |
+| Managed installation | Complete for source checkouts | `./reinstall.sh` installs `com.dst.p.code-index` through launchd on macOS or a systemd user service on Linux |
+| Local backends | Complete | Checksummed Qdrant binary plus a pinned Python virtual environment; Qdrant and embeddings start lazily |
+| Persistent indexing | Complete | The daemon indexes enabled repositories, recursively watches changes, debounces refreshes, retries failures, and periodically reconciles missed events |
+| Incremental correctness | Complete for the implemented policy | Versioned manifests, file hashes, add/change/delete handling, repository isolation, frozen BM25 generations, and safe live-lock handling |
+| Agent integration | Complete | Typed `semantic_search` tool with bounded untrusted-content output, repository opt-in enforcement, and exact-search fallback guidance |
+| User controls | Partial | `/index`, `/index enable`, and `/index disable` are available; dedicated refresh, rebuild, and data-deletion commands remain future work |
+| Default automated tests | Complete for the implemented path | Fake-backed service/tool tests cover consent, file-change refresh, disable, lifecycle races, locks, isolation, failures, and security boundaries |
+| Service-backed evaluation | Outstanding | A reproducible real-backend evaluation corpus, retrieval metrics, and large-repository performance baseline are still required |
+| Proactive retrieval/reranking | Deferred | Explicit `semantic_search` remains the supported retrieval path until evaluation justifies additional behavior |
+
+The user and operator guide is [Code indexing](packages/coding-agent/docs/code-indexing.md). It is the source of truth for installation, commands, data paths, configuration, privacy, and troubleshooting.
 
 ---
 
 ## 1. Executive Summary
 
-The repository appears to contain the main building blocks of a hybrid code-retrieval system:
+The repository now contains an integrated local hybrid code-retrieval system:
 
 - repository-aware file discovery;
 - language-aware code chunking;
@@ -19,12 +40,12 @@ The repository appears to contain the main building blocks of a hybrid code-retr
 - BM25-derived sparse vectors;
 - Qdrant persistence and hybrid retrieval;
 - an indexer orchestration layer;
-- a high-level `CodeIndex` API;
-- a CLI and a partial integration test.
+- a typed `WorkspaceCodeRagService` API;
+- a typed agent tool, persistent indexing daemon, user controls, and automated tests.
 
-The material gap is not another retrieval algorithm. The immediate gap is turning these components into a dependable capability that the coding agent can invoke safely and consistently.
+The remaining gaps are operational evaluation and optional controls, not basic agent integration. The supported path is explicit repository opt-in, managed local services, background incremental refresh, and a failure-tolerant `semantic_search` tool.
 
-The implementation must deliver five outcomes:
+The roadmap has five outcomes. The first four are implemented; the fifth remains the gate for advanced retrieval work:
 
 1. **The agent can call a typed `semantic_search` tool** and receive concise, source-located code results.
 2. **Indexes are workspace-scoped, versioned, and freshness-aware**, including correct handling of changed, added, renamed, and deleted files.
@@ -34,7 +55,7 @@ The implementation must deliver five outcomes:
 
 ### Recommended first-release decisions
 
-Unless repository inspection exposes a blocker, implement with these defaults:
+The shipped implementation uses these defaults:
 
 | Decision | Default |
 |---|---|
@@ -43,19 +64,21 @@ Unless repository inspection exposes a blocker, implement with these defaults:
 | Initial embedding backend | Keep the existing Python embedding server for the first increment |
 | Backend architecture | Hide Qdrant and the embedding server behind stable interfaces so they can be replaced later |
 | Session startup | Validate existing index immediately; refresh non-blockingly when safe; never block the whole agent on RAG |
+| Repository consent | Ask once in interactive mode; persist both Yes and No decisions per canonical repository root |
+| Index lifecycle | Use one per-user daemon to watch all enabled repositories and serialize refresh work |
 | Retrieval mode | Explicit `semantic_search` tool first |
 | Automatic prompt injection | Deferred until evaluation, security controls, and token-budgeting are in place |
 | Reranking | Deferred until a baseline evaluation shows a measurable need |
 | Incremental BM25 behavior | Use versioned/frozen corpus statistics between full sparse rebuilds; do not claim exact incremental BM25 without proving it |
 | Failure behavior | Return structured `unavailable`, `stale`, or `partial` status and fall back to ordinary repository tools |
 
-This ordering deliberately avoids combining agent integration with a vector-store rewrite or an embedding-runtime rewrite. Replacing infrastructure before the existing path is integrated would multiply risk and make regressions harder to diagnose.
+The implementation preserved Qdrant and the Python embedding runtime behind stable interfaces. Future backend changes remain independent of the agent-facing contract and require compatibility checks and evaluation evidence.
 
 ---
 
 ## 2. Target Outcome
 
-After this work, a user should be able to open an unfamiliar repository and ask questions such as:
+With the current implementation, a user can open an unfamiliar repository and ask questions such as:
 
 - “How is authentication initialized?”
 - “Where are tool arguments validated?”
@@ -118,43 +141,35 @@ These remain valid future directions, but they must not delay the first reliable
 
 ## 4. Current-State Assessment
 
-The following state is based on the earlier analysis. Treat it as a strong lead, not as proof. Phase 0 must verify each item in the current checkout.
+This section reflects the implementation shipped on 2026-07-18.
 
-### 4.1 Components that appear to exist
+### 4.1 Implemented components
 
-| Component | Expected path | Expected responsibility | Verification required |
-|---|---|---|---|
-| Core types | `packages/code-index/src/types.ts` | Chunk, result, configuration, embedding, and sparse-vector types | Confirm exported types and consumers |
-| File discovery | `packages/code-index/src/discover.ts` | `.gitignore`-aware repository enumeration | Confirm symlink behavior, default exclusions, binary detection, and root containment |
-| Chunking | `packages/code-index/src/chunk.ts` | Language-aware chunking with fallback windows | Confirm supported languages, line metadata, stable ordering, and oversized-file behavior |
-| BM25 | `packages/code-index/src/bm25.ts` | Tokenization, corpus statistics, sparse-vector construction | Confirm whether IDF is corpus-global and how updates are handled |
-| HTTP embeddings | `packages/code-index/src/embed/http.ts` | Batch requests to an embedding endpoint | Confirm timeout, retries, cancellation, dimensions, and error shape |
-| Embedding server | `packages/code-index/embedding_server.py` | Local FastAPI server using a sentence-transformers model | Confirm startup contract, readiness endpoint, model cache behavior, shutdown, and platform assumptions |
-| Server manager | `packages/code-index/src/embed/server.ts` | Spawn and supervise the Python service | Confirm process ownership, port selection, log capture, readiness, and orphan cleanup |
-| Qdrant store | `packages/code-index/src/qdrant.ts` | Collection management, upsert, deletion, and hybrid search | Confirm collection schema, payload indexes, filters, score semantics, and failure behavior |
-| Index orchestration | `packages/code-index/src/indexer.ts` | Discover → chunk → embed → sparse encode → persist | Confirm atomicity, full-rebuild semantics, duplicate handling, and progress reporting |
-| High-level API | `packages/code-index/src/code_index/code-index.ts` | Lifecycle-managed index/search facade | Confirm package exports and whether it is safe for long-lived agent use |
-| CLI | `packages/code-index/src/cli.ts` | Index, search, config, and status commands | Confirm current behavior and use as a diagnostic reference only |
-| Configuration | `packages/code-index/src/config.ts` | Persisted defaults under the user config directory | Confirm precedence, validation, migration, and repository-local overrides |
-| Tests | `packages/code-index/test/code-index.test.ts` | Unit-like checks and service-backed round trip | Confirm what runs in default CI and what requires external services |
+| Component | Path | Responsibility |
+|---|---|---|
+| Repository registry | `packages/coding-agent/src/core/indexed-repos.ts` | Canonical root detection and persisted tri-state repository decisions |
+| Daemon client/status | `packages/coding-agent/src/core/indexing-service.ts` | Lightweight UI-facing enable/disable/status access without loading backend code |
+| Persistent daemon | `packages/coding-agent/src/core/indexing-daemon.ts` | Registry reconciliation, recursive watching, refresh serialization, retries, and status writes |
+| Service entry point | `packages/coding-agent/src/indexing-service-daemon.ts` | Signal-aware launchd/systemd process entry point |
+| Installer | `scripts/install-indexing-service.js` | Platform detection, checksummed Qdrant install, pinned Python environment, service migration and registration |
+| Agent tool | `packages/coding-agent/src/core/tools/semantic-search.ts` | Consent-gated typed search and bounded untrusted-content formatting |
+| Interactive controls | `packages/coding-agent/src/modes/interactive/interactive-mode.ts` | First-use prompt and `/index` commands |
+| RAG service | `packages/code-index/src/rag/service.ts` | Manifest-aware index/search facade and incremental update orchestration |
+| Manifest/locking | `packages/code-index/src/rag/manifest.ts` | Atomic manifests and live-process-aware repository locks |
+| Qdrant manager | `packages/code-index/src/embed/qdrant-server.ts` | Managed local Qdrant health, startup, configuration, and owned-process shutdown |
+| Embedding manager | `packages/code-index/src/embed/server.ts` | Local embedding server readiness and owned-process lifecycle |
+| Discovery/chunking/sparse retrieval | `packages/code-index/src/discover.ts`, `chunk.ts`, `bm25.ts` | Safe repository enumeration, source-located chunks, and frozen-generation BM25 vectors |
 
-### 4.2 Capabilities that are not yet proven
+### 4.2 Remaining evidence and product work
 
-Do not describe the RAG package as “complete” until these have evidence:
+The implemented path has regression coverage for incremental updates, deletion, repository isolation, manifest compatibility, live-lock safety, daemon watching, lifecycle races, consent enforcement, and retrieved-content boundaries. The following work remains before claiming the broader roadmap is complete:
 
-- stale chunks are removed after file deletion or rename;
-- changed chunk boundaries do not leave duplicates;
-- collections cannot collide across repositories or worktrees;
-- embedding-dimension or model changes trigger migration/rebuild;
-- chunker changes trigger migration/rebuild;
-- partial indexing failures do not publish a mixed or corrupt generation;
-- concurrent sessions do not race or corrupt state;
-- very large files and generated/vendor directories are controlled;
-- BM25 corpus statistics remain coherent after incremental updates;
-- search filters and result line ranges are correct;
-- service unavailability degrades cleanly;
-- secrets and out-of-root symlinks are excluded;
-- retrieval quality is meaningfully better than exact search for semantic questions.
+- build and publish a representative retrieval-evaluation fixture;
+- record real-backend Recall@K, ranking, latency, memory, and disk baselines;
+- add dedicated `/index refresh`, `/index rebuild`, and index-data deletion controls if operator demand justifies them;
+- validate long-running service behavior on representative Linux distributions in addition to unit-rendered systemd configuration;
+- decide whether the managed service should be available outside the source-checkout `reinstall.sh` workflow;
+- evaluate proactive retrieval or reranking only after the explicit-search baseline exists.
 
 ---
 
@@ -312,18 +327,25 @@ Do not optimize against these numbers blindly. Record repository size, machine c
 flowchart LR
     U[User request] --> A[Coding agent]
     A --> T[semantic_search tool]
-    T --> R[RAG service]
+    A --> C[First-use prompt and /index]
+    C --> D[Repository decision registry]
+    T --> G{Repository enabled?}
+    D --> G
+    G -- No --> F[Exact-search fallback guidance]
+    G -- Yes --> R[RAG service]
+    D --> X[Persistent indexing daemon]
+    W[Repository file changes] --> X
+    X --> R
     R --> S[Index status and manifest]
-    R --> C[CodeIndex facade]
-    C --> D[Discovery and chunking]
-    C --> E[Embedding provider]
-    C --> B[Sparse encoder]
-    C --> V[Vector store adapter]
-    V --> Q[Qdrant]
+    R --> H[Discovery and chunking]
+    R --> E[Embedding provider]
+    R --> B[Sparse encoder]
+    R --> V[Vector store adapter]
+    V --> Q[Managed local or configured Qdrant]
     E --> P[Local Python embedding server]
-    R --> F[Fallback guidance]
-    T --> A
 ```
+
+The interactive process owns consent and exposes status; the per-user daemon owns ongoing indexing. The agent tool never initializes the default RAG service before the active repository is enabled.
 
 ### 6.2 Agent-facing service contract
 
@@ -331,7 +353,7 @@ Use the repository’s existing style, but preserve this logical separation:
 
 ```ts
 export interface CodeRagService {
-  initialize(options: InitializeRagOptions): Promise<RagStatus>;
+  initialize(options?: InitializeRagOptions): Promise<RagStatus>;
   status(): Promise<RagStatus>;
   search(
     input: SemanticSearchInput,
@@ -349,20 +371,20 @@ export interface CodeRagService {
 }
 ```
 
-The coding-agent package should depend on this interface or a package export implementing it. It should not construct Qdrant requests or spawn Python directly inside the tool handler.
+The coding-agent package depends on this interface through the code-index package export. It does not construct Qdrant requests or spawn Python directly inside the tool handler.
 
-### 6.3 Proposed tool input
+### 6.3 Implemented tool input
 
-Adapt names to the agent’s tool-schema conventions:
+The agent tool uses the following input contract:
 
 ```ts
 export interface SemanticSearchInput {
   query: string;
-  limit?: number;            // default 8; hard maximum 20
+  limit?: number;             // default 8; hard maximum 20
   pathPrefix?: string;
   languages?: string[];
   symbolTypes?: string[];
-  includeTests?: boolean;    // default true unless product behavior says otherwise
+  includeTests?: boolean;     // default true
   includeGenerated?: boolean; // default false
   freshness?: "allow_stale" | "prefer_fresh" | "require_fresh";
 }
@@ -377,7 +399,7 @@ Validation requirements:
 - unknown language/symbol values are handled consistently;
 - `require_fresh` returns a controlled error if freshness cannot be established in time.
 
-### 6.4 Proposed tool response
+### 6.4 Implemented tool response
 
 ```ts
 export interface SemanticSearchResponse {
@@ -385,11 +407,12 @@ export interface SemanticSearchResponse {
   workspaceRoot: string;
   status: RagStatus;
   results: SemanticSearchHit[];
-  diagnostics?: {
+  diagnostics: {
     durationMs: number;
     candidateCount?: number;
     indexGeneration?: string;
     staleReason?: string;
+    truncated: boolean;
   };
 }
 
@@ -762,16 +785,16 @@ Make the existing backend usable without manual lifecycle choreography while kee
 
 #### P2.2 — Implement non-blocking startup policy
 
-Recommended flow:
+Shipped flow:
 
-1. Resolve workspace and configuration.
-2. Read local manifest/status quickly.
-3. If a compatible ready index exists, make search available immediately.
-4. If stale, allow configured stale reads and start one refresh in the background or at the first suitable lifecycle hook.
-5. If absent, expose `not_initialized`; begin initialization only when policy/configuration permits.
-6. If services are unavailable, mark `unavailable`; do not block normal agent startup.
+1. Resolve the canonical Git root, or use the active directory when no Git root exists.
+2. Read the repository decision from `indexed-repos.json` without loading Qdrant or embedding code.
+3. Ask in interactive mode only when the decision is unknown; persist both enabled and disabled answers.
+4. Let the persistent daemon observe an enabled decision and queue the initial refresh.
+5. Read daemon status from `indexing-service-status.json` for `/index` without blocking agent startup.
+6. Gate `semantic_search` on the enabled decision and return exact-search fallback guidance when disabled or unavailable.
 
-“Background” here means an in-process task owned and observable by the running agent, not work promised after the response or detached without supervision.
+Background work is owned by the supervised per-user daemon, not by a detached promise in the interactive process. Its PID, repository states, counts, timestamps, and errors are observable through the status file and `/index`.
 
 #### P2.3 — Embedding server management
 
@@ -789,24 +812,19 @@ Verify and implement:
 
 #### P2.4 — Qdrant connectivity policy
 
-For the first release:
+The shipped local policy is:
 
-- connect to configured Qdrant;
-- perform a fast health/readiness check;
-- provide clear setup guidance if it is absent;
-- optionally support an existing repository-standard local-start mechanism;
-- do not make Docker an implicit hard dependency unless that is already a product requirement;
-- do not auto-delete or recreate collections without version/identity checks.
+- `reinstall.sh` downloads a pinned Qdrant release for supported macOS/Linux architectures and verifies its SHA-256 digest;
+- the daemon starts managed Qdrant lazily on loopback endpoints and writes configuration/data outside the repository;
+- explicitly allowed remote Qdrant endpoints are connected to without launching a local process;
+- health checks and startup are deduplicated;
+- only processes owned by the manager are terminated;
+- Docker is not required;
+- collections are isolated and versioned through repository identity and manifest metadata.
 
 #### P2.5 — Status and manual commands
 
-Integrate with existing command conventions. Provide:
-
-- `status`;
-- `refresh`;
-- `rebuild`;
-- `enable`/`disable` if configuration supports it;
-- concise diagnostics and next actions.
+The interactive command surface currently provides `/index`, `/index enable`, and `/index disable`, with concise service state, file/chunk counts, errors, and next actions. Normal refresh is automatic through filesystem watching and periodic reconciliation. Dedicated manual refresh/rebuild and data-deletion commands remain explicit follow-up work.
 
 ### Acceptance criteria
 
@@ -1122,67 +1140,50 @@ Keep architectural facts, user preferences, and problem-solving memories separat
 
 ## 9. Configuration Contract
 
-Reuse existing configuration mechanisms. The following is a proposed logical shape, not a demand to replace the current file format:
+The implementation uses a flat, validated `WorkspaceCodeRagSettings` object. User settings live at `~/.p/agent/code-rag.json`; repository overrides live at `<repository>/.p/code-rag.json`.
 
 ```json
 {
-  "rag": {
-    "enabled": true,
-    "indexing": {
-      "onSessionStart": "validate-and-refresh",
-      "allowStaleSearch": true,
-      "backgroundRefresh": true,
-      "maxFileBytes": 1048576,
-      "fullSparseRebuildChangeRatio": 0.05
-    },
-    "retrieval": {
-      "defaultLimit": 8,
-      "maxLimit": 20,
-      "candidateLimit": 40,
-      "maxContextTokens": 4000,
-      "searchTimeoutMs": 5000
-    },
-    "embedding": {
-      "provider": "local-python",
-      "model": "Qwen3-Embedding-0.6B",
-      "startupTimeoutMs": 60000,
-      "requestTimeoutMs": 30000
-    },
-    "vectorStore": {
-      "provider": "qdrant",
-      "url": "http://127.0.0.1:6333"
-    },
-    "security": {
-      "respectGitignore": true,
-      "followSymlinks": false,
-      "includeGenerated": false,
-      "remoteEmbeddingsAllowed": false,
-      "denyGlobs": []
-    }
-  }
+  "enabled": true,
+  "autoRefresh": true,
+  "allowStaleSearch": true,
+  "remoteBackendsAllowed": false,
+  "qdrantUrl": "http://127.0.0.1:6333",
+  "embeddingServerUrl": "http://127.0.0.1:8081",
+  "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
+  "embeddingDimensions": 1024,
+  "defaultLimit": 8,
+  "maxLimit": 20,
+  "maxFileBytes": 1048576,
+  "fullSparseRebuildChangeRatio": 0.05
 }
 ```
 
+The installer also records absolute managed paths for `qdrantBinary`, `qdrantDataDirectory`, and `pythonExecutable` when those fields are absent. It never overwrites explicit user values.
+
+Repository consent is intentionally stored separately in `~/.p/agent/indexed-repos.json`. A configuration value of `enabled: true` does not bypass the per-repository interactive opt-in decision.
+
 ### Configuration precedence
 
-Document and test one clear order, for example:
+Later sources override earlier sources:
 
-1. hard safety constraints;
-2. command/tool invocation overrides;
+1. built-in defaults;
+2. user config;
 3. repository-local config;
-4. user config;
-5. environment variables;
-6. defaults.
+4. supported environment variables;
+5. explicit SDK options.
 
-If the repository already uses another precedence order, follow it but document it. Safety constraints such as out-of-root symlink rejection should not be disableable casually.
+Validation and hard safety constraints apply after merging. Remote backend hosts are rejected unless `remoteBackendsAllowed` is explicitly enabled; repository-root containment and out-of-root symlink rejection remain enforced by discovery.
+
+Supported environment settings include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, and `P_CODE_RAG_PYTHON`.
 
 ### Configuration migration
 
-- Validate config at load time.
-- Reject unknown critical enum values with actionable errors.
-- Preserve backward-compatible defaults where possible.
-- Add a schema/version field if the existing configuration has no migration mechanism.
-- Never silently switch to a remote provider.
+- Config is validated at load time; unknown fields and invalid types are rejected.
+- Index manifests carry their own schema, chunker, embedding, and sparse-generation compatibility metadata.
+- Incompatible indexes become stale and rebuild rather than being searched as compatible.
+- The installer merges managed-path defaults without replacing explicit configuration.
+- Remote providers are never selected silently.
 
 ---
 
@@ -1396,73 +1397,71 @@ Backend-specific details belong in diagnostics/logs, not in the stable agent-fac
 
 ### 13.1 Startup
 
-- Resolve workspace.
-- Load config and manifest.
-- Set state quickly.
-- Make stale-but-compatible search available only if configured.
-- Start at most one supervised refresh.
-- Avoid model downloads or Docker startup as an unexplained blocking side effect.
+- `reinstall.sh` installs and starts the per-user daemon through launchd or systemd.
+- The daemon reads the repository registry and remains lightweight while no repository is enabled.
+- Interactive p resolves the repository and reads the saved decision without loading backend modules.
+- An unknown decision opens the first-use selector; a saved No does not prompt again.
+- Enabling a repository makes the daemon queue its initial refresh.
+- Qdrant, Python, and the embedding model start lazily. `/index` exposes progress and failures while normal agent startup remains usable.
 
 ### 13.2 During edits
 
-The first release does not need a filesystem watcher if session-start/manual refresh is reliable. If a watcher already exists, debounce changes and avoid indexing half-written files.
-
-At minimum, mark the index stale after agent-authored file changes when the agent knows which paths changed. Optionally schedule a debounced refresh.
+The daemon recursively watches every enabled repository, ignores common generated/dependency directories, and debounces bursts of changes before refreshing. Refreshes are serialized across repositories so backend/model resource use remains bounded. A five-minute reconciliation scan recovers from missed filesystem events, and failed refreshes use delayed retry.
 
 ### 13.3 Shutdown
 
-- cancel owned refresh tasks;
-- wait for bounded cleanup;
-- release locks;
-- flush atomic status/manifest updates;
-- stop only owned child processes;
-- preserve last known-good index.
+- launchd/systemd sends a termination signal to the daemon;
+- the daemon stops accepting new work and closes registry/repository watchers;
+- active refresh work is allowed to settle before repository services are disposed;
+- backend processes are stopped only when owned by the daemon;
+- final service status is written with `running: false`;
+- atomic manifests and the last compatible generation are preserved.
 
 ### 13.4 Recovery
 
-On startup, detect:
+On startup or reconciliation, the implementation:
 
-- stale lock files;
-- interrupted temporary manifests;
-- partial generations;
-- missing collections;
-- incompatible metadata;
-- orphaned owned-process records.
-
-Prefer repair or controlled rebuild over silently searching inconsistent data.
+- recovers locks owned by dead PIDs without stealing locks from live indexing processes;
+- ignores invalid registry/status JSON rather than crashing p;
+- detects incompatible manifest schema, chunker, embedding model/dimensions, and sparse generation;
+- reports partial, stale, unavailable, and error states explicitly;
+- retries transient daemon failures and lets the service supervisor restart a crashed daemon;
+- prefers a controlled rebuild or exact-search fallback over silently searching inconsistent data.
 
 ---
 
 ## 14. Rollout Plan
 
-### Stage 1 — Developer opt-in
+### Stage 1 — Repository opt-in (complete)
 
-- feature flag/config off by default if backend setup is not yet seamless;
-- explicit `semantic_search` tool available to developers;
-- collect failures and baseline metrics;
-- verify no agent regression when disabled.
+- interactive Yes/No prompt per canonical repository root;
+- both decisions persist and can be changed through `/index enable` or `/index disable`;
+- `semantic_search` refuses to initialize the default service before opt-in;
+- exact search and normal agent behavior remain available when disabled.
 
-### Stage 2 — Default on for configured local stacks
+### Stage 2 — Managed local service for source checkouts (complete)
 
-- enable when health checks pass and a compatible index exists;
-- keep non-blocking failure behavior;
-- expose status in normal diagnostics.
+- `reinstall.sh` installs launchd/systemd supervision on supported macOS/Linux systems;
+- pinned local backends are installed outside repositories and started lazily;
+- enabled repositories are watched and reconciled persistently;
+- failures remain non-blocking and visible through `/index` and service logs.
 
-### Stage 3 — Managed first-run experience
+### Stage 3 — Operator controls and packaging (partial)
 
-- improve setup for Qdrant and Python/model prerequisites;
-- decide whether product requirements justify automatic local service management;
-- document disk, memory, and privacy implications.
+- current documentation covers setup, platform/Python requirements, local data, model download, privacy, and troubleshooting;
+- dedicated refresh/rebuild/data-deletion commands remain unimplemented;
+- service installation outside the source-checkout `reinstall.sh` path remains a product decision.
 
-### Stage 4 — Quality enhancements
+### Stage 4 — Evaluation and quality enhancements (not started)
 
+- establish the retrieval and performance baseline;
 - metadata/query/chunking tuning;
 - optional reranking if benchmark gate passes;
 - gated proactive retrieval experiment.
 
 ### Rollback
 
-A single configuration switch must disable semantic retrieval without affecting ordinary agent tools. Index data can remain on disk unless the user requests deletion.
+`/index disable` must stop repository watching and semantic retrieval without affecting ordinary agent tools. Existing index data remains on disk so re-enabling can reuse a compatible generation; a future deletion command must be explicit and repository-scoped.
 
 ---
 
@@ -1474,38 +1473,37 @@ A single configuration switch must disable semantic retrieval without affecting 
 | Repository collection collision | Cross-project leakage | Stable repo ID and mandatory metadata filter |
 | Embedding dimension change | Backend errors or corrupt search | Manifest compatibility check and rebuild |
 | Naive incremental BM25 | Incomparable sparse scores | Frozen sparse generation plus drift-triggered rebuild |
-| Session-start indexing blocks agent | Poor startup experience | Fast status read and non-blocking refresh |
+| Initial indexing blocks agent or consumes resources unexpectedly | Poor startup experience | Persisted consent, daemon-owned work, lazy backends, and `/index` status |
 | Qdrant/Python unavailable | Agent unusable | Structured degradation and exact-search fallback |
+| Filesystem watcher misses or coalesces events | Stale index | Debounced watch refresh plus periodic full reconciliation |
 | Prompt injection in source comments | Instruction hijacking | Untrusted-context boundary and tool/system separation |
 | Secrets indexed or logged | Data exposure | Exclusions, symlink controls, redaction, local default |
 | Huge/generated repositories | Excessive cost and latency | Ignores, limits, progress, cancellation |
 | Concurrent refreshes | Corruption or duplicates | Per-repo lock and in-flight operation sharing |
 | Overly broad tool output | Context pollution | Hard result and token budgets; dedupe/diversity |
 | Premature reranker/backend rewrite | Schedule and debugging risk | Phase gates and evidence-based decisions |
-| Hidden model download | Long unexplained startup | Explicit readiness/status and setup messaging |
+| Hidden model download | Long unexplained first index | Document the download, keep it after explicit opt-in, and expose initialization status |
 | Worktree/branch ambiguity | Results from wrong revision | Define identity policy and expose revision metadata |
 
 ---
 
 ## 16. Worktree and Branch Policy
 
-The implementation agent must choose and document one policy based on product behavior:
+### Current policy
 
-### Preferred safe default
-
-Use a distinct index identity per canonical worktree root, with current revision metadata recorded in the manifest. This prevents one worktree from silently overwriting another.
+Each canonical workspace root receives a distinct repository identity derived from its real path and Git remote. Repositories with the same basename remain isolated, and separate worktrees do not overwrite each other. Branch changes inside one worktree reuse that worktree's index; the watcher refreshes the current files and the manifest records the current revision metadata.
 
 ### Possible optimization
 
 Share immutable base embeddings across branches only if the architecture supports content-addressed chunks safely. This is a future optimization, not a first-release requirement.
 
-Search responses should include enough generation/revision metadata to diagnose results from a stale branch state.
+Search responses include generation and revision metadata for diagnosing stale branch state.
 
 ---
 
 ## 17. Definition of Done
 
-### 17.1 MVP integration done
+### 17.1 MVP integration — complete
 
 All of the following are true:
 
@@ -1516,24 +1514,30 @@ All of the following are true:
 - A fake-backed integration test covers the complete tool path.
 - Setup and current limitations are documented.
 
-### 17.2 Production-capable first release done
+### 17.2 Managed local first release — partially complete
 
-All MVP criteria plus:
+Completed beyond the MVP:
 
-- workspace identity and repository isolation are implemented;
-- manifest/version compatibility is implemented;
-- changed, added, renamed, deleted, and newly ignored files are handled;
-- sparse incremental semantics are documented and tested;
-- lifecycle ownership, readiness, timeout, cancellation, and shutdown are tested;
-- security exclusions and out-of-root symlink prevention are implemented;
-- default unit tests require no external service;
-- service-backed integration tests are reproducible;
-- evaluation baseline and latency/resource measurements are recorded;
-- status, refresh, rebuild, and disable controls are available;
-- the last known-good index survives failed updates;
-- normal coding-agent operation works when RAG is disabled or unavailable.
+- workspace identity and repository isolation;
+- manifest/version compatibility;
+- changed, added, renamed, deleted, and newly ignored file handling;
+- documented and tested frozen sparse-generation semantics;
+- persistent watcher, reconciliation, lifecycle ownership, readiness, cancellation, and safe shutdown;
+- security exclusions, path-filter validation, and out-of-root symlink prevention;
+- default tests that require no Qdrant, Python, model download, or network;
+- status and repository enable/disable controls;
+- preservation of the last compatible generation across failed updates;
+- normal coding-agent operation when indexing is disabled or unavailable.
 
-### 17.3 Advanced intelligence done
+Still required for the broader production-capable definition:
+
+- reproducible real-service integration coverage in a documented environment;
+- retrieval-quality and latency/resource baselines;
+- dedicated manual refresh/rebuild controls;
+- an explicit repository-scoped index-data deletion command;
+- representative Linux service smoke coverage.
+
+### 17.3 Advanced intelligence — deferred
 
 Only after the first release:
 
@@ -1562,20 +1566,20 @@ The implementation agent should follow these rules:
 11. **Keep changes reviewable.** Separate integration, lifecycle, incremental indexing, and quality tuning into coherent commits or PRs.
 12. **Run the relevant checks before handoff.** Report commands, results, skipped tests, and remaining risks.
 
-### First implementation session checklist
+### First implementation session checklist — complete
 
-- [ ] Inspect workspace scripts and package graph.
-- [ ] Locate coding-agent tool registration and lifecycle hooks.
-- [ ] Trace `CodeIndex.index()` and `CodeIndex.search()` end to end.
-- [ ] Verify current collection naming and payload metadata.
-- [ ] Verify current reindex/delete behavior in a fixture.
-- [ ] Document BM25 corpus-statistics behavior.
-- [ ] Run current build/tests and record failures.
-- [ ] Define the `CodeRagService` boundary using repository conventions.
-- [ ] Implement fake-backed `semantic_search` tool tests.
-- [ ] Implement the narrow tool integration.
-- [ ] Run typecheck, unit tests, lint, and relevant integration tests.
-- [ ] Produce a concise implementation report using the template below.
+- [x] Inspect workspace scripts and package graph.
+- [x] Locate coding-agent tool registration and lifecycle hooks.
+- [x] Trace the index and search paths end to end.
+- [x] Verify collection naming and payload metadata.
+- [x] Verify reindex/delete behavior in fixtures.
+- [x] Document BM25 corpus-statistics behavior.
+- [x] Run current build/tests and record failures.
+- [x] Define the `CodeRagService` boundary using repository conventions.
+- [x] Implement fake-backed `semantic_search` tool tests.
+- [x] Implement the narrow tool integration.
+- [x] Run typecheck, unit tests, lint, and relevant integration tests.
+- [x] Record the implemented architecture, verification, and remaining work in this document and the user guide.
 
 ### Implementation report template
 
@@ -1612,23 +1616,23 @@ The implementation agent should follow these rules:
 
 ## 19. Suggested Issue Breakdown
 
-| ID | Issue | Depends on | Primary output |
-|---|---|---|---|
-| RAG-001 | Verify code-index behavior and establish baseline | — | Component map, test results, evaluation fixture |
-| RAG-002 | Add agent-facing RAG service interface | RAG-001 | Stable API and fake implementation |
-| RAG-003 | Add `semantic_search` agent tool | RAG-002 | Tool, schema, bounded formatting, tests |
-| RAG-004 | Add status and graceful-degradation behavior | RAG-002 | Typed status/error contract |
-| RAG-005 | Wire workspace lifecycle and embedding supervision | RAG-001, RAG-002 | Initialize/dispose/health behavior |
-| RAG-006 | Add repository identity and index manifest | RAG-001 | Versioned local metadata |
-| RAG-007 | Implement incremental add/change/delete/rename | RAG-006 | Correct refresh planner and updater |
-| RAG-008 | Define and implement sparse-generation policy | RAG-001, RAG-006 | Frozen stats/drift/rebuild behavior |
-| RAG-009 | Add security exclusions and trust boundary | RAG-003, RAG-007 | Safe discovery and tool context |
-| RAG-010 | Add retries, timeouts, cancellation, and locking | RAG-005, RAG-007 | Reliability controls |
-| RAG-011 | Add comprehensive mock and service test suites | RAG-003–010 | Reproducible coverage |
-| RAG-012 | Run retrieval benchmark and tune baseline | RAG-011 | Metrics and evidence-backed tuning |
-| RAG-013 | Evaluate optional reranking | RAG-012 | Go/no-go decision |
-| RAG-014 | Prototype gated proactive retrieval | RAG-012 | Feature-flagged experiment |
-| RAG-015 | Design provenance-backed architecture cache | RAG-012 | Separate future design/ADR |
+| ID | Status | Issue | Depends on | Primary output |
+|---|---|---|---|---|
+| RAG-001 | Partial | Verify code-index behavior and establish baseline | — | Component map and tests complete; evaluation fixture outstanding |
+| RAG-002 | Complete | Add agent-facing RAG service interface | RAG-001 | Stable API and fake implementation |
+| RAG-003 | Complete | Add `semantic_search` agent tool | RAG-002 | Tool, schema, bounded formatting, tests |
+| RAG-004 | Complete | Add status and graceful-degradation behavior | RAG-002 | Typed status/error contract |
+| RAG-005 | Complete | Wire workspace lifecycle and embedding supervision | RAG-001, RAG-002 | Initialize/dispose/health behavior |
+| RAG-006 | Complete | Add repository identity and index manifest | RAG-001 | Versioned local metadata |
+| RAG-007 | Complete | Implement incremental add/change/delete/rename | RAG-006 | Correct refresh planner and updater |
+| RAG-008 | Complete | Define and implement sparse-generation policy | RAG-001, RAG-006 | Frozen stats/drift/rebuild behavior |
+| RAG-009 | Complete | Add security exclusions and trust boundary | RAG-003, RAG-007 | Safe discovery and tool context |
+| RAG-010 | Complete | Add retries, timeouts, cancellation, and locking | RAG-005, RAG-007 | Reliability controls |
+| RAG-011 | Partial | Add comprehensive mock and service test suites | RAG-003–010 | Mock and focused service coverage complete; real-backend evaluation pending |
+| RAG-012 | Planned | Run retrieval benchmark and tune baseline | RAG-011 | Metrics and evidence-backed tuning |
+| RAG-013 | Deferred | Evaluate optional reranking | RAG-012 | Go/no-go decision |
+| RAG-014 | Deferred | Prototype gated proactive retrieval | RAG-012 | Feature-flagged experiment |
+| RAG-015 | Deferred | Design provenance-backed architecture cache | RAG-012 | Separate future design/ADR |
 
 Parallelism is possible after RAG-001, but avoid parallel edits to shared lifecycle/config/type files without coordination.
 
@@ -1644,13 +1648,13 @@ Keep Qdrant behind a `VectorStore` adapter.
 
 #### Rationale
 
-- the current package already appears to implement Qdrant hybrid search;
+- the current package implements Qdrant hybrid search and the installer manages its local runtime;
 - integration behavior can be validated without a simultaneous storage rewrite;
 - backend replacement becomes safer once agent-facing contracts and evaluations exist.
 
 #### Revisit when
 
-- Docker/service setup is unacceptable for the target product;
+- external-process or service setup is unacceptable for the target product;
 - resource use is disproportionate for typical repositories;
 - offline/zero-install is a hard requirement;
 - an embedded candidate matches filtering, persistence, deletion, concurrency, and retrieval quality.
@@ -1675,7 +1679,7 @@ Keep the Python service behind an `EmbeddingProvider` interface.
 
 #### Rationale
 
-- the existing path appears implemented;
+- the existing local path is implemented and managed by the indexing service;
 - model/runtime replacement would confound integration debugging;
 - the interface allows later ONNX or API providers.
 
@@ -1692,25 +1696,21 @@ A provider change must trigger index compatibility checks and generally a rebuil
 
 ## 21. Final Priority Order
 
-1. Verify what actually works.
-2. Add the direct, typed semantic-search tool.
-3. Add status and graceful fallback.
-4. Wire workspace and service lifecycle.
-5. Implement index identity and correct incremental updates.
-6. Resolve sparse-index generation semantics.
-7. Add security, reliability, observability, and comprehensive tests.
-8. Establish and run retrieval evaluation.
-9. Tune metadata, queries, chunking, fusion, and diversity.
-10. Add reranking only if metrics justify it.
-11. Add proactive retrieval only behind gating and feature flags.
-12. Build provenance-backed architecture memory and cross-session learning later.
+1. Establish and run a real-backend retrieval evaluation.
+2. Record retrieval-quality, latency, memory, CPU, disk, and startup baselines.
+3. Validate the managed service on representative Linux distributions.
+4. Add manual rebuild, refresh, or data-deletion controls only if operator needs justify them.
+5. Tune metadata, queries, chunking, fusion, and diversity from evaluation evidence.
+6. Add reranking only if metrics justify it.
+7. Add proactive retrieval only behind gating and feature flags.
+8. Build provenance-backed architecture memory and cross-session learning later.
 
 ---
 
 ## 22. Bottom Line
 
-The repository appears close to having a useful hybrid code-retrieval engine, but it does not yet have a production-ready agent capability. The next step is not to add more retrieval sophistication. It is to prove the existing pipeline, expose it through a typed and bounded agent tool, manage its lifecycle without making the agent fragile, and make index freshness, isolation, security, and failure states explicit.
+The repository now has an opt-in native semantic-search capability backed by a supervised local indexing service. Consent, persistent watching, incremental refresh, repository isolation, manifests, local backend installation, failure fallback, and the agent trust boundary are implemented.
 
-The first release should preserve Qdrant and the local Python embedding path behind replaceable interfaces. It should use direct library integration, a non-blocking freshness-aware startup policy, file-granularity incremental replacement, versioned manifests, and a practical frozen-generation policy for BM25 statistics. Reranking and automatic prompt injection should remain gated until a reproducible evaluation demonstrates their value.
+The implementation preserves Qdrant and the local Python embedding path behind replaceable interfaces. It uses direct library integration, daemon-owned background work, file-granularity incremental replacement, versioned manifests, and frozen-generation BM25 statistics.
 
-When the production-capable definition of done in Section 17 is satisfied, the agent will be able to use semantic code retrieval as a dependable native capability rather than an experimental sidecar.
+The next priority is evidence: a real-backend evaluation corpus, retrieval and resource metrics, representative Linux service validation, and any operator controls justified by use. Reranking, proactive prompt injection, and architecture memory remain gated until that baseline demonstrates their value.

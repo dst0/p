@@ -32,6 +32,10 @@
           "path": "settings.md"
         },
         {
+          "title": "Code Indexing",
+          "path": "code-indexing.md"
+        },
+        {
           "title": "Keybindings",
           "path": "keybindings.md"
         },

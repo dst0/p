@@ -18,6 +18,7 @@ This is the home of the `p` agent harness project, an opinionated fork of the pi
 * **[@dst0/p](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
 * **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
 * **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+* **[@dst0/p-code-index](packages/code-index)**: Local hybrid semantic code indexing with Qdrant and dense/sparse retrieval
 
 To learn more:
 
@@ -36,10 +37,17 @@ Public OSS session data helps improve coding agents with real-world tasks, tool 
 |---------|-------------|
 | **[@dst0/p-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
 | **[@dst0/p-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
+| **[@dst0/p-code-index](packages/code-index)** | Local repository indexing and hybrid semantic retrieval |
 | **[@dst0/p](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
 | **[@dst0/p-tui](packages/tui)** | Terminal UI library with differential rendering |
 
 For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst0/p-chat).
+
+## Local code indexing
+
+Source checkouts can install p's opt-in semantic-indexing service on macOS or Linux with `./reinstall.sh`. On first interactive use in a repository, p asks whether to index it; enabled repositories are refreshed in the background as files change. Use `/index` to inspect status and `/index enable` or `/index disable` to change the saved decision.
+
+See [Code indexing](packages/coding-agent/docs/code-indexing.md) for installation, privacy, configuration, service paths, and troubleshooting.
 
 Source: [github.com/dst0/p](https://github.com/dst0/p)
 
