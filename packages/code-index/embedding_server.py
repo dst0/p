@@ -119,16 +119,6 @@ class Handler(BaseHTTPRequestHandler):
         pass  # silence request logs
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Embedding server for code-index")
-    parser.add_argument("--port", type=int, default=8081)
-    parser.add_argument("--model", default="Qwen/Qwen3-Embedding-0.6B")
-    args = parser.parse_args()
-
-    global server
-    server = EmbeddingServer(args.model)
-    server.load()
-
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
 
@@ -138,6 +128,16 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
         except OSError:
             pass  # Ignore "Cannot assign requested address" on close
 
+
+def main():
+    parser = argparse.ArgumentParser(description="Embedding server for code-index")
+    parser.add_argument("--port", type=int, default=8081)
+    parser.add_argument("--model", default="Qwen/Qwen3-Embedding-0.6B")
+    args = parser.parse_args()
+
+    global server
+    server = EmbeddingServer(args.model)
+    server.load()
 
     addr = ("127.0.0.1", args.port)
     httpd = ThreadedHTTPServer(addr, Handler)
