@@ -5,7 +5,7 @@
 import type { ThinkingLevel } from "@dst0/p-agent-core";
 import { type Api, type KnownProvider, type Model, modelsAreEqual } from "@dst0/p-ai";
 import chalk from "chalk";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { isValidThinkingLevel } from "../cli/args.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ModelRegistry } from "./model-registry.ts";
@@ -278,9 +278,11 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
 
 			// Match against "provider/modelId" format OR just model ID
 			// This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
+			// ⚡ Bolt: Pre-compile Minimatch pattern outside filter loop
+			const matcher = new Minimatch(globPattern, { nocase: true });
 			const matchingModels = availableModels.filter((m) => {
 				const fullId = `${m.provider}/${m.id}`;
-				return minimatch(fullId, globPattern, { nocase: true }) || minimatch(m.id, globPattern, { nocase: true });
+				return matcher.match(fullId) || matcher.match(m.id);
 			});
 
 			if (matchingModels.length === 0) {
