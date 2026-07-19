@@ -221,7 +221,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		await this.initialize({ checkFreshness: true });
 		if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Semantic search was cancelled");
 
-		if (this.state === "disabled" || this.state === "unavailable") {
+		if (this.state === "disabled") {
 			return this.emptySearchResponse(normalized.query, startedAt);
 		}
 		if (!this.manifest) {
@@ -257,9 +257,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			AbortSignal.timeout(this.settings.searchTimeoutMs),
 			...(signal ? [signal] : []),
 		]);
-		// Ensure embedding provider is ready before applying search timeout.
-		// Auto-start can take 10+ seconds, which exceeds the search timeout.
-		if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
 		try {
 			const vocabulary = this.loadVocabulary(this.manifest);
 			const dense = await this.embeddingProvider.encodeQuery(normalized.query, operationSignal);
@@ -295,7 +292,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Semantic search was cancelled");
 			const code: RagErrorCode =
 				error instanceof Error && error.name === "TimeoutError" ? "RAG_TIMEOUT" : "RAG_BACKEND_UNAVAILABLE";
-			this.state = "unavailable";
+			// Record the error but don't permanently brick the service.
+			// Preserve the previous state so subsequent searches can retry.
 			this.lastError = this.errorInfo(code, safeErrorMessage(error));
 			return this.emptySearchResponse(normalized.query, startedAt);
 		}

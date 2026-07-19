@@ -53,7 +53,6 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	}
 
 	async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
-		await this.ensureReady();
 		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
 		const batchSize = 32;
 		const allVectors: Float32Array[] = [];
@@ -69,7 +68,6 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	}
 
 	async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
-		await this.ensureReady();
 		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
 		const vectors = await this.encode([text], signal);
 		if (!vectors[0]) throw new Error("Embedding server returned no query vector");

@@ -19,8 +19,10 @@ API:
 import argparse
 import json
 import sys
+import threading
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from socketserver import ThreadingMixIn
 from typing import List
 
 try:
@@ -56,6 +58,7 @@ class EmbeddingServer:
 
 
 server: EmbeddingServer | None = None
+encode_lock: threading.Lock = threading.Lock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -87,13 +90,14 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(400, {"error": "empty input"})
                 return
 
-            with torch.inference_mode():
-                embeddings = server.model.encode(
-                    texts,
-                    normalize_embeddings=normalize,
-                    batch_size=16,
-                    show_progress_bar=False,
-                )
+            with encode_lock:
+                with torch.inference_mode():
+                    embeddings = server.model.encode(
+                        texts,
+                        normalize_embeddings=normalize,
+                        batch_size=16,
+                        show_progress_bar=False,
+                    )
             self._json(200, {
                 "model": server.model_name,
                 "dim": server.dim,
@@ -125,9 +129,19 @@ def main():
     server = EmbeddingServer(args.model)
     server.load()
 
+class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
+    daemon_threads = True
+
+    def server_close(self):
+        try:
+            super().server_close()
+        except OSError:
+            pass  # Ignore "Cannot assign requested address" on close
+
+
     addr = ("127.0.0.1", args.port)
-    httpd = HTTPServer(addr, Handler)
-    print(f"Embedding server listening on http://{addr[0]}:{addr[1]}", flush=True)
+    httpd = ThreadedHTTPServer(addr, Handler)
+    print(f"Embedding server listening on http://{addr[0]}:{addr[1]} (threaded)", flush=True)
     httpd.serve_forever()
 
 

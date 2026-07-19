@@ -10,7 +10,7 @@ import {
 import { type Static, Type } from "typebox";
 import { getAgentDir } from "../../config.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
-import { isRepoIndexed } from "../indexed-repos.ts";
+import { findIndexWorkspaceRoot, isRepoIndexed } from "../indexed-repos.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const semanticSearchSchema = Type.Object({
@@ -41,7 +41,8 @@ const sharedServices = new Map<string, WorkspaceCodeRagService>();
 let cleanupRegistered = false;
 
 function getSharedService(cwd: string): WorkspaceCodeRagService {
-	const key = path.resolve(cwd);
+	const workspaceRoot = findIndexWorkspaceRoot(cwd);
+	const key = path.resolve(workspaceRoot);
 	const existing = sharedServices.get(key);
 	if (existing) return existing;
 	const service = new WorkspaceCodeRagService({
