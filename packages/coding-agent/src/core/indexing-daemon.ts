@@ -21,6 +21,11 @@ type WatchFactory = (
 	listener: (eventType: string, filename: string | Buffer | null) => void,
 ) => FSWatcher;
 
+interface DrainWorker {
+	stop: boolean;
+	promise: Promise<void>;
+}
+
 export interface IndexingDaemonOptions {
 	agentDir: string;
 	qdrantBinary: string;
@@ -52,6 +57,9 @@ interface RepositoryRuntime {
 	watchRetryTimer?: ReturnType<typeof setTimeout>;
 }
 
+const DRAIN_MAX_CONCURRENCY = 2;
+const DRAIN_REPO_TIMEOUT_MS = 5 * 60_000; // 5 minutes per repo
+
 const IGNORED_WATCH_PATH_SEGMENTS = new Set([
 	".git",
 	".hg",
@@ -81,7 +89,7 @@ export class IndexingDaemon {
 	private registrySyncPromise: Promise<void> | undefined;
 	private registrySyncRequested = false;
 	private reconcileTimer: ReturnType<typeof setInterval> | undefined;
-	private drainPromise: Promise<void> | undefined;
+	private drainWorkers: DrainWorker[] = [];
 	private disposed = false;
 
 	constructor(options: IndexingDaemonOptions) {
@@ -145,8 +153,8 @@ export class IndexingDaemon {
 		if (this.reconcileTimer) clearInterval(this.reconcileTimer);
 		const registrySyncPromise = this.registrySyncPromise;
 		if (registrySyncPromise) await registrySyncPromise;
+		await this.stopDrain();
 		for (const runtime of this.runtimes.values()) this.closeRuntime(runtime);
-		await this.drainPromise;
 		await Promise.allSettled([...this.runtimes.values()].map((runtime) => runtime.service.dispose()));
 		await this.disposeBackends();
 		this.runtimes.clear();
@@ -191,7 +199,7 @@ export class IndexingDaemon {
 		}
 		if (retiredRuntimes.length > 0) {
 			this.writeStatus();
-			await this.drainPromise;
+			await this.stopDrain();
 			await Promise.allSettled(retiredRuntimes.map((runtime) => runtime.service.dispose()));
 		}
 		if (this.disposed) return;
@@ -280,41 +288,63 @@ export class IndexingDaemon {
 	}
 
 	private startDrain(): void {
-		if (this.drainPromise || this.disposed) return;
-		this.drainPromise = this.drain().finally(() => {
-			this.drainPromise = undefined;
-			if (!this.disposed && [...this.runtimes.values()].some((runtime) => runtime.dirty)) this.startDrain();
-		});
+		if (this.disposed) return;
+		// Clean up finished workers
+		this.drainWorkers = this.drainWorkers.filter((w) => !this.isWorkerDone(w));
+
+		// Only spawn if we have dirty repos and under concurrency limit
+		const hasDirty = [...this.runtimes.values()].some((r) => r.dirty);
+		if (!hasDirty) return;
+		if (this.drainWorkers.length >= DRAIN_MAX_CONCURRENCY) return;
+
+		const worker: DrainWorker = { stop: false, promise: Promise.resolve() };
+		this.drainWorkers.push(worker);
+		worker.promise = this.drainWorker(worker);
 	}
 
-	private async drain(): Promise<void> {
-		while (!this.disposed) {
+	private isWorkerDone(w: DrainWorker): boolean {
+		return !w.promise || w.stop;
+	}
+
+	private async drainWorker(w: DrainWorker): Promise<void> {
+		while (!this.disposed && !w.stop) {
 			const runtime = [...this.runtimes.values()].find((candidate) => candidate.dirty);
 			if (!runtime) return;
+
+			// Double-check still dirty (another worker may have grabbed it)
+			if (!runtime.dirty) continue;
 			runtime.dirty = false;
 			runtime.state = "initializing";
 			runtime.updatedAt = new Date().toISOString();
 			delete runtime.progress;
 			delete runtime.lastError;
 			this.writeStatus();
+
 			try {
-				await this.ensureBackends();
-				const initialized = await runtime.service.initialize({ checkFreshness: true });
-				runtime.state = initialized.state;
-				runtime.indexedFiles = initialized.indexedFiles;
-				runtime.indexedChunks = initialized.indexedChunks;
-				const summary = await runtime.service.refresh({
-					onProgress: (progress) => this.updateRuntimeProgress(runtime, progress),
-				});
-				runtime.state = summary.status.state;
-				runtime.indexedFiles = summary.status.indexedFiles;
-				runtime.indexedChunks = summary.status.indexedChunks;
-				delete runtime.progress;
-				delete runtime.lastError;
+				await withTimeout(
+					(async () => {
+						await this.ensureBackends();
+						const initialized = await runtime.service.initialize({ checkFreshness: true });
+						runtime.state = initialized.state;
+						runtime.indexedFiles = initialized.indexedFiles;
+						runtime.indexedChunks = initialized.indexedChunks;
+						const summary = await runtime.service.refresh({
+							onProgress: (progress) => this.updateRuntimeProgress(runtime, progress),
+						});
+						runtime.state = summary.status.state;
+						runtime.indexedFiles = summary.status.indexedFiles;
+						runtime.indexedChunks = summary.status.indexedChunks;
+						delete runtime.progress;
+						delete runtime.lastError;
+					})(),
+					DRAIN_REPO_TIMEOUT_MS,
+					`Indexing ${runtime.root} timed out after ${DRAIN_REPO_TIMEOUT_MS}ms`,
+				);
 			} catch (error) {
 				runtime.state = "error";
 				delete runtime.progress;
 				runtime.lastError = safeErrorMessage(error);
+				this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
 				if (!this.disposed && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
 					runtime.retryTimer = setTimeout(() => {
 						runtime.retryTimer = undefined;
@@ -325,6 +355,15 @@ export class IndexingDaemon {
 			runtime.updatedAt = new Date().toISOString();
 			this.writeStatus();
 		}
+	}
+
+	private async stopDrain(): Promise<void> {
+		for (const w of this.drainWorkers) {
+			w.stop = true;
+		}
+		if (this.drainWorkers.length === 0) return;
+		await Promise.allSettled(this.drainWorkers.map((w) => w.promise));
+		this.drainWorkers = [];
 	}
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
@@ -401,4 +440,13 @@ function isIgnoredWatchPath(filename: string): boolean {
 
 function safeErrorMessage(error: unknown): string {
 	return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ").slice(0, 500);
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+	return new Promise<T>((resolve, reject) => {
+		const timer = setTimeout(() => {
+			reject(new Error(message));
+		}, ms);
+		promise.then(resolve, reject).finally(() => clearTimeout(timer));
+	});
 }

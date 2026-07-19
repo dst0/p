@@ -69,9 +69,13 @@ function formatQueuedSpinner(now = Date.now()): string {
 	return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
 }
 
-function formatIndexingStatus(status: IndexStatus): string {
+export function formatIndexingStatus(status: IndexStatus): string {
 	if (status.decision === "disabled") return "🔎 OFF";
 	if (status.decision === "unknown") return "🔎 ?";
+	// Check service health before queued state to avoid showing stale "queued" when daemon is dead
+	if (!status.serviceRunning) {
+		return "🔎 ON!";
+	}
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
 		const percent = status.progress?.percent;
 		if (percent !== undefined && percent > 0) {
@@ -82,7 +86,6 @@ function formatIndexingStatus(status: IndexStatus): string {
 		return "🔎 updating";
 	}
 	if (
-		!status.serviceRunning ||
 		status.lastError !== undefined ||
 		status.ragState === "error" ||
 		status.ragState === "partial" ||
