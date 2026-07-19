@@ -1,4 +1,13 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+	existsSync,
+	mkdirSync,
+	mkdtempSync,
+	readdirSync,
+	readFileSync,
+	rmSync,
+	symlinkSync,
+	writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -409,8 +418,11 @@ describe("search validation and edge cases", () => {
 		};
 		const response = await service.search({ query: "test" });
 		expect(response.results).toEqual([]);
+		// Search errors record lastError but preserve the prior state so subsequent searches can retry.
 		const status = await service.status();
-		expect(status.state).toBe("unavailable");
+		expect(status.state).toBe("ready");
+		expect(status.lastError?.code).toBe("RAG_BACKEND_UNAVAILABLE");
+		expect(status.lastError?.message).toContain("network error");
 		await service.dispose();
 	});
 
@@ -473,5 +485,72 @@ describe("abort and cancellation", () => {
 		const signal = AbortSignal.abort();
 		await expect(service.rebuild({}, signal)).rejects.toThrow("cancelled");
 		await service.dispose();
+	});
+});
+
+describe("vocabulary persistence", () => {
+	it("searches successfully after service recreation (persisted vocabulary round-trip)", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+
+		const summary = await service.rebuild();
+		expect(summary.fullRebuild).toBe(true);
+
+		// Locate the vocabulary file from manifest
+		const status = await service.status();
+		const repoDir = join(data, status.repoId);
+		const files = readdirSync(repoDir);
+		const vocabFile = files.find((f) => f.startsWith("bm25-"));
+		expect(vocabFile).toBeDefined();
+		expect(existsSync(join(repoDir, vocabFile!))).toBe(true);
+
+		// Dispose and create a fresh service that loads persisted state
+		await service.dispose();
+		const freshService = createService(root, data, embedding, store);
+		const response = await freshService.search({ query: "authentication initialization", freshness: "allow_stale" });
+		expect(response.results[0]).toMatchObject({ path: "main.ts", startLine: 1, endLine: 3 });
+		expect(response.results[0].content).toContain("unique-auth-token");
+		await freshService.dispose();
+	});
+
+	it("deleted vocabulary triggers automatic full rebuild on next refresh", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+		const oldStatus = await service.status();
+		const oldCollection = oldStatus.collection;
+		await service.dispose();
+
+		// Delete vocabulary file to simulate corruption
+		const repoDir = join(data, oldStatus.repoId);
+		const files = readdirSync(repoDir);
+		const vocabFile = files.find((f) => f.startsWith("bm25-"))!;
+		rmSync(join(repoDir, vocabFile));
+		expect(existsSync(join(repoDir, vocabFile))).toBe(false);
+
+		// Fresh service should detect missing vocabulary and force rebuild
+		const freshService = createService(root, data, embedding, store);
+		const initStatus = await freshService.initialize();
+		expect(initStatus.state).toBe("stale");
+		expect(initStatus.lastError?.code).toBe("RAG_INCOMPATIBLE_INDEX");
+
+		const rebuilt = await freshService.refresh();
+		expect(rebuilt.fullRebuild).toBe(true);
+		expect(rebuilt.status.collection).not.toBe(oldCollection);
+
+		// Vocabulary file should be recreated
+		const newRepoDir = join(data, rebuilt.status.repoId);
+		const newFiles = readdirSync(newRepoDir);
+		const newVocabFile = newFiles.find((f) => f.startsWith("bm25-"));
+		expect(newVocabFile).toBeDefined();
+		expect(existsSync(join(newRepoDir, newVocabFile!))).toBe(true);
+
+		const response = await freshService.search({ query: "authentication initialization", freshness: "allow_stale" });
+		expect(response.results[0]).toMatchObject({ path: "main.ts", startLine: 1, endLine: 3 });
+		await freshService.dispose();
 	});
 });

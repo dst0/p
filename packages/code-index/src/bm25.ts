@@ -112,7 +112,13 @@ export class BM25Vocabulary {
 		};
 
 		const temporaryPath = `${path}.${process.pid}.tmp`;
-		fs.writeFileSync(temporaryPath, JSON.stringify(data), { encoding: "utf-8", mode: 0o600 });
+		const file = fs.openSync(temporaryPath, "w", 0o600);
+		try {
+			fs.writeFileSync(file, JSON.stringify(data), "utf-8");
+			fs.fsyncSync(file);
+		} finally {
+			fs.closeSync(file);
+		}
 		fs.renameSync(temporaryPath, path);
 	}
 

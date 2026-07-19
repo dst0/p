@@ -782,6 +782,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			return "Embedding model or dimensions changed";
 		}
 		if (!manifest.sparse.vocabularyFile) return "Sparse vocabulary metadata is missing";
+		const vocabularyPath = path.join(this.repositoryDirectory, manifest.sparse.vocabularyFile);
+		if (!fs.existsSync(vocabularyPath)) return "Sparse vocabulary file is missing";
 		return undefined;
 	}
 
