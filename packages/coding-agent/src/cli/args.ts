@@ -279,7 +279,7 @@ ${chalk.bold("Commands:")}
   ${APP_NAME} install <source> [-l]     Install extension source and add to settings
   ${APP_NAME} remove <source> [-l]      Remove extension source from settings
   ${APP_NAME} uninstall <source> [-l]   Alias for remove
-  ${APP_NAME} update [source|self|pi]   Update pi and installed extensions
+  ${APP_NAME} update [source|self|p]   Update p and installed extensions
   ${APP_NAME} list                      List installed extensions from settings
   ${APP_NAME} config                    Open TUI to enable/disable package resources
   ${APP_NAME} <command> --help          Show help for install/remove/uninstall/update/list
@@ -434,7 +434,7 @@ ${chalk.bold("Environment Variables:")}
   P_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
   P_OFFLINE                       - Disable startup network operations when set to 1/true/yes
   P_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://pi.dev/session/)
+  P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://p.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
   read         - Read file contents

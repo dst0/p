@@ -43,7 +43,7 @@ function getDefaultAttributionHeaders(
 
 	if (isOpenRouterModel(model)) {
 		return {
-			"HTTP-Referer": "https://pi.dev",
+			"HTTP-Referer": "https://p.dev",
 			"X-OpenRouter-Title": "p",
 			"X-OpenRouter-Categories": "cli-agent",
 		};

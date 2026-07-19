@@ -114,7 +114,7 @@ async function callAgentMemory<T>(
 	}
 }
 
-export default function agentmemoryExtension(pi: ExtensionAPI) {
+export default function agentmemoryExtension(p: ExtensionAPI) {
 	if (process.env.AGENTMEMORY_REQUIRE_HTTPS === "1") {
 		guardPlaintextBearerAuth(
 			normalizeBaseUrl(process.env.AGENTMEMORY_URL || DEFAULT_URL),
@@ -136,7 +136,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		ctx.ui.setStatus("agentmemory", lastHealthOk ? "🧠 agentmemory" : "🧠 agentmemory off");
 	}
 
-	pi.registerCommand("agentmemory-status", {
+	p.registerCommand("agentmemory-status", {
 		description: "Check local agentmemory server health",
 		handler: async (_args, ctx) => {
 			const health = await getHealth();
@@ -152,7 +152,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
+	p.registerTool({
 		name: "memory_health",
 		label: "Memory Health",
 		description: "Check whether the local agentmemory server is reachable and healthy",
@@ -178,7 +178,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
+	p.registerTool({
 		name: "memory_search",
 		label: "Memory Search",
 		description: "Search agentmemory for cross-session project memory, prior decisions, bugs, and user preferences",
@@ -198,7 +198,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.registerTool({
+	p.registerTool({
 		name: "memory_save",
 		label: "Memory Save",
 		description: "Save a durable fact, convention, workflow, preference, or bug fix into agentmemory",
@@ -228,7 +228,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		},
 	});
 
-	pi.on("session_start", async (_event, ctx) => {
+	p.on("session_start", async (_event, ctx) => {
 		const sessionFile = ctx.sessionManager.getSessionFile();
 		sessionId = sessionFile
 			? path.basename(sessionFile).replace(/\.[^.]+$/, "")
@@ -237,7 +237,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		await refreshStatus(ctx);
 	});
 
-	pi.on("before_agent_start", async (event, ctx) => {
+	p.on("before_agent_start", async (event, ctx) => {
 		currentProject = event.systemPromptOptions.cwd || process.cwd();
 		lastPrompt = event.prompt?.trim() || "";
 		if (!lastPrompt) return;
@@ -256,7 +256,7 @@ export default function agentmemoryExtension(pi: ExtensionAPI) {
 		};
 	});
 
-	pi.on("agent_end", async (event) => {
+	p.on("agent_end", async (event) => {
 		if (!lastHealthOk || !lastPrompt) return;
 		const assistantText = getLastAssistantText(event.messages as unknown[]);
 		if (!assistantText) return;

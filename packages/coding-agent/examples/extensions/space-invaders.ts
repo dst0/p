@@ -524,8 +524,8 @@ class SpaceInvadersComponent {
 
 const INVADERS_SAVE_TYPE = "space-invaders-save";
 
-export default function (pi: ExtensionAPI) {
-	pi.registerCommand("invaders", {
+export default function (p: ExtensionAPI) {
+	p.registerCommand("invaders", {
 		description: "Play Space Invaders!",
 
 		handler: async (_args, ctx) => {
@@ -550,7 +550,7 @@ export default function (pi: ExtensionAPI) {
 					tui,
 					() => done(undefined),
 					(state) => {
-						pi.appendEntry(INVADERS_SAVE_TYPE, state);
+						p.appendEntry(INVADERS_SAVE_TYPE, state);
 					},
 					savedState,
 				);

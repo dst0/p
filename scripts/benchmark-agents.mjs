@@ -29,7 +29,7 @@ function printHelp() {
 	console.log(`Usage:
   npm run benchmark:agents -- --model <provider/id> [options]
 
-Compare this checkout (p) with the upstream pi-coding-agent package using
+Compare this checkout (p) with the upstream p-coding-agent package using
 the same model and two deterministic, long-form TypeScript coding fixtures.
 
 Options:
@@ -457,6 +457,7 @@ export function selectLargest(tasks: readonly Task[], limit: number): Task[] {
 const tasks = [
 	{
 		id: "typescript-calculator",
+		timeoutSeconds: 300,
 		description: "Build a tested TypeScript calculator library and CLI from a written specification",
 		files: {
 			"requirements.md": `# TypeScript calculator\n\nBuild a small calculator library and CLI.\n\n- Export evaluate(expression: string): number from src/calculator.ts.\n- Support decimal literals, whitespace, binary +, -, *, /, unary minus, and parentheses.\n- Use normal precedence and left associativity.\n- Throw an Error for malformed expressions and division by zero.\n- Add src/cli.ts. npm run calc -- \"2 + 3 * (4 - 1)\" must print 11. Invalid input must exit nonzero and write a useful message to stderr.\n- Add meaningful tests in test/calculator.test.ts without changing the contract test.\n- Run npm test and npm run typecheck before finishing.\n`,
@@ -489,6 +490,7 @@ const tasks = [
 	},
 	{
 		id: "monolith-split",
+		timeoutSeconds: 600,
 		description: "Split a large existing TypeScript module into focused files without changing its public behavior",
 		files: {
 			"README.md": `# Task report repository\n\nThis is an existing TypeScript repository. The public API currently lives in src/monolith.ts, which has grown into a large mixed-responsibility module.\n\nSplit it into focused modules for parsing, querying, and reporting. Keep src/monolith.ts as a compatibility facade so existing consumers do not change their import path. Preserve behavior, exports, and output. Do not change the contract tests. Add tests for the extracted modules and run npm test and npm run typecheck.\n`,
@@ -558,7 +560,7 @@ function runFixtureCommand(workspace, args) {
 }
 
 function createAgentDirs(modelsFile) {
-	const root = mkdtempSync(join(tmpdir(), "pi-agent-benchmark-config-"));
+	const root = mkdtempSync(join(tmpdir(), "p-agent-benchmark-config-"));
 	const dirs = {};
 	for (const agent of ["p", "original"]) {
 		const dir = join(root, agent);
@@ -599,9 +601,9 @@ function commandFor(agent, options, task, configDir, workspace) {
 		args: [
 			"exec",
 			"--yes",
-			`--package=@mariozechner/pi-coding-agent@${options.originalVersion}`,
+			`--package=@mariozechner/p-coding-agent@${options.originalVersion}`,
 			"--",
-			"pi",
+			"p",
 			...commonArgs,
 		],
 		env,
@@ -768,7 +770,7 @@ function createReport(options, results, output, benchmarkTasks = tasks) {
 	let report = `# Agent benchmark report\n\n`;
 	report += `Generated: ${new Date().toISOString()}\n\n`;
 	report += `Model: \`${options.model}\`\n\n`;
-	report += `Upstream: \`@mariozechner/pi-coding-agent@${options.originalVersion}\`\n\n`;
+	report += `Upstream: \`@mariozechner/p-coding-agent@${options.originalVersion}\`\n\n`;
 	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
 	report += `## Summary\n\n`;
 	report += `| Agent | Passed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
@@ -815,7 +817,7 @@ async function main() {
 	const deadline = startedAt + options.maxRuntimeSeconds * 1000;
 	console.log(`Benchmark output: ${output}`);
 	console.log(`Model: ${options.model}`);
-	console.log(`Upstream: @mariozechner/pi-coding-agent@${options.originalVersion}`);
+	console.log(`Upstream: @mariozechner/p-coding-agent@${options.originalVersion}`);
 	try {
 		for (let run = 1; run <= options.runs; run += 1) {
 			for (let taskIndex = 0; taskIndex < benchmarkTasks.length; taskIndex += 1) {
@@ -831,7 +833,8 @@ async function main() {
 					const workspace = createWorkspace(output, agent, run, task);
 					const baseline = createBaseline(task);
 					const command = commandFor(agent, options, task, agentDirs.dirs[agent], workspace);
-					const result = await runCommand(command, Math.min(options.timeoutSeconds * 1000, remainingMs));
+					const taskTimeout = task.timeoutSeconds ?? options.timeoutSeconds;
+				const result = await runCommand(command, Math.min(taskTimeout * 1000, remainingMs));
 					const recordingName = `${agent}-run-${run}-${task.id}.jsonl.gz`;
 					const stderrName = `${agent}-run-${run}-${task.id}.log`;
 					writeFileSync(join(output, "recordings", recordingName), gzipSync(result.stdout), "utf8");

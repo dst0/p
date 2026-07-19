@@ -11,6 +11,7 @@
 
 ### Fixed
 
+- Load legacy `pi` extension manifests and package aliases so existing extensions continue to start after the `p` rebrand.
 - Keep optional search-tool installation and the first-use indexing prompt out of the global interactive startup barrier.
 - Run the TUI startup profiler under a real terminal and terminate it after graceful runtime disposal instead of waiting on background handles.
 - Persist a disabled repository indexing decision when the first-use selector is dismissed, preventing repeated prompts while retaining `/index enable` opt-in.

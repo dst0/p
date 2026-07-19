@@ -10,15 +10,15 @@
  * which can be cheaper/faster than the main conversation model.
  *
  * Usage:
- *   pi --extension examples/extensions/custom-compaction.ts
+ *   p --extension examples/extensions/custom-compaction.ts
  */
 
 import type { ExtensionAPI } from "@dst0/p";
 import { convertToLlm, serializeConversation } from "@dst0/p";
 import { complete } from "@dst0/p-ai";
 
-export default function (pi: ExtensionAPI) {
-	pi.on("session_before_compact", async (event, ctx) => {
+export default function (p: ExtensionAPI) {
+	p.on("session_before_compact", async (event, ctx) => {
 		ctx.ui.notify("Custom compaction extension triggered", "info");
 
 		const { preparation, branchEntries: _, signal } = event;

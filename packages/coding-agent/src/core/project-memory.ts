@@ -380,7 +380,7 @@ function updateManagedMemoryFiles(cwd: string, snapshot: ProjectMemorySnapshot):
 }
 
 function renderManagedBlock(id: string, lines: string[]): string {
-	return [`<!-- pi:${id}:begin -->`, ...lines, `<!-- pi:${id}:end -->`].join("\n");
+	return [`<!-- p:${id}:begin -->`, ...lines, `<!-- p:${id}:end -->`].join("\n");
 }
 
 function replaceManagedBlock(content: string, block: string): string {

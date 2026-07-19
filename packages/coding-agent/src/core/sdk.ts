@@ -69,7 +69,7 @@ export interface CreateAgentSessionOptions {
 	/**
 	 * Optional allowlist of tool names.
 	 *
-	 * When omitted, pi enables the default built-in tools (read, bash, edit, write, sleep, update_session_state)
+	 * When omitted, p enables the default built-in tools (read, bash, edit, write, sleep, update_session_state)
 	 * and leaves extension/custom tools enabled unless `noTools` changes that default.
 	 * When provided, only the listed tool names are enabled.
 	 */

@@ -1,7 +1,7 @@
 /**
  * Commands Extension
  *
- * Demonstrates the pi.getCommands() API by providing a /commands command
+ * Demonstrates the p.getCommands() API by providing a /commands command
  * that lists all available slash commands in the current session.
  *
  * Usage:
@@ -12,8 +12,8 @@
 
 import type { ExtensionAPI, SlashCommandInfo } from "@dst0/p";
 
-export default function commandsExtension(pi: ExtensionAPI) {
-	pi.registerCommand("commands", {
+export default function commandsExtension(p: ExtensionAPI) {
+	p.registerCommand("commands", {
 		description: "List available slash commands",
 		getArgumentCompletions: (prefix) => {
 			const sources = ["extension", "prompt", "skill"];
@@ -21,7 +21,7 @@ export default function commandsExtension(pi: ExtensionAPI) {
 			return filtered.length > 0 ? filtered.map((s) => ({ value: s, label: s })) : null;
 		},
 		handler: async (args, ctx) => {
-			const commands = pi.getCommands();
+			const commands = p.getCommands();
 			const sourceFilter = args.trim() as "extension" | "prompt" | "skill" | "";
 
 			// Filter by source if specified

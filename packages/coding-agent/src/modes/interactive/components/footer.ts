@@ -73,7 +73,13 @@ function formatIndexingStatus(status: IndexStatus): string {
 	if (status.decision === "disabled") return "🔎 OFF";
 	if (status.decision === "unknown") return "🔎 ?";
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
-		return `🔎 ${Math.max(0, Math.min(100, Math.round(status.progress?.percent ?? 0)))}%`;
+		const percent = status.progress?.percent;
+		if (percent !== undefined && percent > 0) {
+			return `🔎 ${Math.min(100, Math.round(percent))}%`;
+		}
+		if (status.ragState === "queued") return "🔎 queued";
+		if (status.ragState === "initializing") return "🔎 init";
+		return "🔎 updating";
 	}
 	if (
 		!status.serviceRunning ||
@@ -84,6 +90,9 @@ function formatIndexingStatus(status: IndexStatus): string {
 		status.ragState === "disabled"
 	) {
 		return "🔎 ON!";
+	}
+	if (status.ragState === "ready") {
+		return "🔎: ✅";
 	}
 	return "🔎 ON";
 }

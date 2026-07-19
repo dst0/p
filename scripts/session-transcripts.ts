@@ -4,7 +4,7 @@
  * optionally spawns subagents to analyze patterns.
  *
  * Usage: node scripts/session-transcripts.ts [--analyze] [--output <dir>] [cwd]
- *   --analyze      Spawn pi subagents to analyze each transcript file
+ *   --analyze      Spawn p subagents to analyze each transcript file
  *   --output <dir> Output directory for transcript files (defaults to ./session-transcripts)
  *   cwd            Working directory to extract sessions for (defaults to current)
  */
@@ -77,7 +77,7 @@ interface JsonEvent {
 
 function runSubagent(prompt: string, cwd: string): Promise<{ success: boolean }> {
 	return new Promise((resolve) => {
-		const child = spawn("pi", ["--mode", "json", "--tools", "read,write", "-p", prompt], {
+		const child = spawn("p", ["--mode", "json", "--tools", "read,write", "-p", prompt], {
 			cwd,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
@@ -134,7 +134,7 @@ function runSubagent(prompt: string, cwd: string): Promise<{ success: boolean }>
 		});
 
 		child.on("error", (err) => {
-			console.error(chalk.red(`  Failed to spawn pi: ${err.message}`));
+			console.error(chalk.red(`  Failed to spawn p: ${err.message}`));
 			resolve({ success: false });
 		});
 	});
@@ -243,7 +243,7 @@ async function main() {
 	console.log(`\nCreated ${outputFiles.length} transcript file(s) in ${outputDir}`);
 
 	if (!analyzeFlag) {
-		console.log("\nRun with --analyze to spawn pi subagents for pattern analysis.");
+		console.log("\nRun with --analyze to spawn p subagents for pattern analysis.");
 		return;
 	}
 

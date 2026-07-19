@@ -12,10 +12,10 @@ import type { ExtensionAPI } from "@dst0/p";
 import type { AssistantMessage } from "@dst0/p-ai";
 import { truncateToWidth, visibleWidth } from "@dst0/p-tui";
 
-export default function (pi: ExtensionAPI) {
+export default function (p: ExtensionAPI) {
 	let enabled = false;
 
-	pi.registerCommand("footer", {
+	p.registerCommand("footer", {
 		description: "Toggle custom footer",
 		handler: async (_args, ctx) => {
 			enabled = !enabled;
