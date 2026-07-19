@@ -277,11 +277,18 @@ export class IndexingDaemon {
 		const queue = () => {
 			runtime.debounceTimer = undefined;
 			runtime.dirty = true;
-			runtime.state = "queued";
-			delete runtime.progress;
-			runtime.updatedAt = new Date().toISOString();
-			this.writeStatus();
-			this.startDrain();
+			// Don't reset state/progress when already actively indexing.
+			// A file change mid-index should trigger a refresh after the current
+			// one completes (via dirty=true) without flickering the display to "queued".
+			if (runtime.state === "updating" || runtime.state === "initializing") {
+				this.writeStatus();
+			} else {
+				runtime.state = "queued";
+				delete runtime.progress;
+				runtime.updatedAt = new Date().toISOString();
+				this.writeStatus();
+				this.startDrain();
+			}
 		};
 		if (debounce) runtime.debounceTimer = setTimeout(queue, this.options.debounceMs);
 		else queue();
@@ -314,7 +321,7 @@ export class IndexingDaemon {
 			// Double-check still dirty (another worker may have grabbed it)
 			if (!runtime.dirty) continue;
 			runtime.dirty = false;
-			runtime.state = "initializing";
+			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
 			delete runtime.progress;
 			delete runtime.lastError;
