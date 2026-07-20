@@ -10,7 +10,7 @@
 - Show the active repository's indexing state and live progress percentage in the footer, with a persisted `/settings` visibility toggle.
 
 ### Fixed
-
+- Fix `semantic_search` tool failure ("fetch failed: invalid onError method") by bypassing the problematic undici dispatcher in the Qdrant client.
 - Load legacy `pi` extension manifests and package aliases so existing extensions continue to start after the `p` rebrand.
 - Keep optional search-tool installation and the first-use indexing prompt out of the global interactive startup barrier.
 - Run the TUI startup profiler under a real terminal and terminate it after graceful runtime disposal instead of waiting on background handles.

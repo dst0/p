@@ -24,7 +24,14 @@ export class QdrantVectorStore implements RagVectorStore {
 	private client: QdrantClientRaw;
 
 	constructor(options: QdrantVectorStoreOptions) {
-		this.client = new QdrantClientRaw({ url: options.url, timeout: options.timeoutMs, checkCompatibility: false });
+		this.client = new QdrantClientRaw({
+			url: options.url,
+			timeout: options.timeoutMs,
+			checkCompatibility: false,
+			// @ts-expect-error - Providing a custom fetch to bypass the problematic undici dispatcher
+			// which causes 'invalid onError method' errors in some Node environments.
+			fetch: (...args: any[]) => (globalThis as any).fetch(...args),
+		});
 	}
 
 	async createCollection(collection: string, denseDimensions: number): Promise<void> {
