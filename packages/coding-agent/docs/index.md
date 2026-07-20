@@ -47,6 +47,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Containerization](containerization.md) - sandbox pi with Gondolin, Docker, or OpenShell.
 - [Settings](settings.md) - global and project settings.
 - [Code indexing](code-indexing.md) - local semantic search, repository opt-in, and background indexing.
+- [Architecture](architecture.md) - high-level overview and background service design.
 - [Keybindings](keybindings.md) - default shortcuts and custom keybindings.
 - [Sessions](sessions.md) - session management, branching, and tree navigation.
 - [Compaction](compaction.md) - context compaction and branch summarization.

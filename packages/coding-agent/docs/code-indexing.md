@@ -4,6 +4,8 @@ p can maintain a local semantic index for repositories that you explicitly enabl
 
 Code indexing is local by default. Repository text is sent to the local embedding server and stored in a local Qdrant database. It is not sent to a remote embedding provider unless you explicitly configure remote backends.
 
+See [Architecture](architecture.md) for a detailed overview of the indexing service and data flow.
+
 ## Install the background service
 
 For a source checkout, run:
@@ -15,6 +17,8 @@ For a source checkout, run:
 On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed Qdrant binary, and creates a Python virtual environment with pinned embedding dependencies.
 
 The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
+
+The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash.
 
 The service installer currently supports:
 
@@ -70,6 +74,22 @@ For every enabled repository, the service:
 4. debounces bursts of writes before refreshing;
 5. retries transient failures;
 6. periodically reconciles the repository to recover from missed filesystem events.
+
+```mermaid
+sequenceDiagram
+    participant Watcher as FS Watcher
+    participant Daemon as Indexing Daemon
+    participant Embed as Embedding Server
+    participant Qdrant as Qdrant DB
+    
+    Watcher->>Daemon: File Changed event
+    Daemon->>Daemon: Debounce (750ms)
+    Daemon->>Daemon: Queue for refresh
+    Daemon->>Embed: Embed new/changed chunks
+    Embed-->>Daemon: Chunks vectors
+    Daemon->>Qdrant: Upsert vectors
+    Daemon->>Daemon: Update indexing-service-status.json
+```
 
 Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old.
 
