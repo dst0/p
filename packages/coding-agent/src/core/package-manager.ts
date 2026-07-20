@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,80 +640,117 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	const rel = toPosixPath(relative(baseDir, filePath));
-	const name = basename(filePath);
-	const filePathPosix = toPosixPath(filePath);
-	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-	const parentName = isSkillFile ? basename(parentDir!) : undefined;
-	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
-
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
-			return true;
-		}
-		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
-	});
-}
-
 function normalizeExactPattern(pattern: string): string {
 	const normalized = pattern.startsWith("./") || pattern.startsWith(".\\") ? pattern.slice(2) : pattern;
 	return toPosixPath(normalized);
 }
 
-function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	if (patterns.length === 0) return false;
-	const rel = toPosixPath(relative(baseDir, filePath));
-	const name = basename(filePath);
-	const filePathPosix = toPosixPath(filePath);
-	const isSkillFile = name === "SKILL.md";
-	const parentDir = isSkillFile ? dirname(filePath) : undefined;
-	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
+class PathMatcher {
+	private matchers: Minimatch[];
 
-	return patterns.some((pattern) => {
-		const normalized = normalizeExactPattern(pattern);
-		if (normalized === rel || normalized === filePathPosix) {
+	constructor(patterns: string[]) {
+		this.matchers = patterns.map((p) => new Minimatch(toPosixPath(p)));
+	}
+
+	matches(filePath: string, baseDir: string): boolean {
+		if (this.matchers.length === 0) return false;
+
+		const rel = toPosixPath(relative(baseDir, filePath));
+		const name = basename(filePath);
+		const filePathPosix = toPosixPath(filePath);
+		const isSkillFile = name === "SKILL.md";
+
+		let parentRel: string | undefined;
+		let parentName: string | undefined;
+		let parentDirPosix: string | undefined;
+
+		if (isSkillFile) {
+			const parentDir = dirname(filePath);
+			parentRel = toPosixPath(relative(baseDir, parentDir));
+			parentName = basename(parentDir);
+			parentDirPosix = toPosixPath(parentDir);
+		}
+
+		for (const matcher of this.matchers) {
+			if (matcher.match(rel) || matcher.match(name) || matcher.match(filePathPosix)) {
+				return true;
+			}
+			if (
+				isSkillFile &&
+				(matcher.match(parentRel!) || matcher.match(parentName!) || matcher.match(parentDirPosix!))
+			) {
+				return true;
+			}
+		}
+		return false;
+	}
+}
+
+class ExactPathMatcher {
+	private exactMatches: Set<string>;
+
+	constructor(patterns: string[]) {
+		this.exactMatches = new Set(patterns.map(normalizeExactPattern));
+	}
+
+	matches(filePath: string, baseDir: string): boolean {
+		if (this.exactMatches.size === 0) return false;
+
+		const rel = toPosixPath(relative(baseDir, filePath));
+		const filePathPosix = toPosixPath(filePath);
+		const isSkillFile = basename(filePath) === "SKILL.md";
+
+		if (this.exactMatches.has(rel) || this.exactMatches.has(filePathPosix)) {
 			return true;
 		}
-		if (!isSkillFile) return false;
-		return normalized === parentRel || normalized === parentDirPosix;
-	});
+
+		if (isSkillFile) {
+			const parentDir = dirname(filePath);
+			const parentRel = toPosixPath(relative(baseDir, parentDir));
+			const parentDirPosix = toPosixPath(parentDir);
+
+			if (this.exactMatches.has(parentRel) || this.exactMatches.has(parentDirPosix)) {
+				return true;
+			}
+		}
+
+		return false;
+	}
 }
 
 function getOverridePatterns(entries: string[]): string[] {
 	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
 }
 
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
-	const overrides = getOverridePatterns(patterns);
-	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+class OverrideMatcher {
+	private excludeMatcher: PathMatcher;
+	private forceIncludeMatcher: ExactPathMatcher;
+	private forceExcludeMatcher: ExactPathMatcher;
 
-	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
-		enabled = false;
+	constructor(patterns: string[]) {
+		const overrides = getOverridePatterns(patterns);
+		const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+		const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
+		const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
+
+		this.excludeMatcher = new PathMatcher(excludes);
+		this.forceIncludeMatcher = new ExactPathMatcher(forceIncludes);
+		this.forceExcludeMatcher = new ExactPathMatcher(forceExcludes);
 	}
-	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
-		enabled = true;
+
+	isEnabled(filePath: string, baseDir: string): boolean {
+		let enabled = true;
+		if (this.excludeMatcher.matches(filePath, baseDir)) {
+			enabled = false;
+		}
+		if (this.forceIncludeMatcher.matches(filePath, baseDir)) {
+			enabled = true;
+		}
+		if (this.forceExcludeMatcher.matches(filePath, baseDir)) {
+			enabled = false;
+		}
+		return enabled;
 	}
-	if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
-		enabled = false;
-	}
-	return enabled;
 }
 
 /**
@@ -742,23 +779,29 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 		}
 	}
 
+	const includeMatcher = new PathMatcher(includes);
+	const excludeMatcher = new PathMatcher(excludes);
+	const forceIncludeMatcher = new ExactPathMatcher(forceIncludes);
+	const forceExcludeMatcher = new ExactPathMatcher(forceExcludes);
+
 	// Step 1: Apply includes (or all if no includes)
 	let result: string[];
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
+		result = allPaths.filter((filePath) => includeMatcher.matches(filePath, baseDir));
 	}
 
 	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
+		result = result.filter((filePath) => !excludeMatcher.matches(filePath, baseDir));
 	}
 
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
 	if (forceIncludes.length > 0) {
+		const resultSet = new Set(result);
 		for (const filePath of allPaths) {
-			if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
+			if (!resultSet.has(filePath) && forceIncludeMatcher.matches(filePath, baseDir)) {
 				result.push(filePath);
 			}
 		}
@@ -766,7 +809,7 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 
 	// Step 4: Force-exclude (remove even if included or force-included)
 	if (forceExcludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir));
+		result = result.filter((filePath) => !forceExcludeMatcher.matches(filePath, baseDir));
 	}
 
 	return new Set(result);
@@ -2297,8 +2340,9 @@ export class DefaultPackageManager implements PackageManager {
 			baseDir: string,
 		) => {
 			const target = this.getTargetMap(accumulator, resourceType);
+			const matcher = new OverrideMatcher(overrides);
 			for (const path of paths) {
-				const enabled = isEnabledByOverrides(path, overrides, baseDir);
+				const enabled = matcher.isEnabled(path, baseDir);
 				this.addResource(target, path, metadata, enabled);
 			}
 		};
