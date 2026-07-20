@@ -55,6 +55,7 @@
   },
   "version": "0.4.24",
   "overrides": {
+    "esbuild": "0.28.1",
     "rimraf": "6.1.2",
     "gaxios": {
       "rimraf": "6.1.2"
