@@ -38,7 +38,12 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 		this.dim = dim;
 		this.options = { ...DEFAULT_HTTP_OPTIONS, ...options };
 		const port = parseInt(baseUrl.match(/:(\d+)/)?.[1] ?? "8081", 10);
-		this.serverManager = autoStart ? new EmbeddingServerManager(port, model, this.options) : null;
+		const isLocal =
+			baseUrl.includes("localhost") ||
+			baseUrl.includes("127.0.0.1") ||
+			baseUrl.includes("0.0.0.0") ||
+			baseUrl.includes("::1");
+		this.serverManager = autoStart && isLocal ? new EmbeddingServerManager(port, model, this.options) : null;
 	}
 
 	/**
@@ -86,6 +91,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	}
 
 	private async request(input: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+		await this.ensureReady(signal);
 		let lastError: Error | undefined;
 		for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
 			try {

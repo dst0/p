@@ -159,7 +159,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			new QdrantVectorStore({ url: this.settings.qdrantUrl, timeoutMs: this.settings.searchTimeoutMs });
 		const qdrantUrl = new URL(this.settings.qdrantUrl);
 		const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
-		const managesLocalQdrant = this.ownsVectorStore && ["localhost", "127.0.0.1"].includes(qdrantUrl.hostname);
+		const managesLocalQdrant =
+			this.ownsVectorStore && ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(qdrantUrl.hostname);
 		this.qdrantServerManager = managesLocalQdrant
 			? new QdrantServerManager(qdrantPort, {
 					qdrantBinary: this.settings.qdrantBinary,

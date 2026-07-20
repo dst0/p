@@ -124,6 +124,8 @@ function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
 	if (process.env.P_CODE_RAG_EMBEDDING_URL) settings.embeddingServerUrl = process.env.P_CODE_RAG_EMBEDDING_URL;
 	if (process.env.P_CODE_RAG_EMBEDDING_MODEL) settings.embeddingModel = process.env.P_CODE_RAG_EMBEDDING_MODEL;
 	if (process.env.P_CODE_RAG_PYTHON) settings.pythonExecutable = process.env.P_CODE_RAG_PYTHON;
+	const remoteBackendsAllowed = parseBooleanEnvironment("P_CODE_RAG_REMOTE_BACKENDS_ALLOWED");
+	if (remoteBackendsAllowed !== undefined) settings.remoteBackendsAllowed = remoteBackendsAllowed;
 	return settings;
 }
 
@@ -161,10 +163,13 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
 			let url: URL;
 			try {
 				url = new URL(value);
+				if (!url.protocol.startsWith("http")) {
+					throw new Error("Invalid protocol");
+				}
 			} catch {
-				throw new Error(`Code RAG ${name} must be a valid URL`);
+				throw new Error(`Code RAG ${name} must be a valid absolute URL (starting with http:// or https://)`);
 			}
-			if (!["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)) {
+			if (!["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(url.hostname)) {
 				throw new Error(`Code RAG ${name} must be local unless remoteBackendsAllowed is explicitly enabled`);
 			}
 		}
