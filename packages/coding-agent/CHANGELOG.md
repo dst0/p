@@ -1,15 +1,25 @@
 # Changelog
 
-## [Unreleased]
+## [0.4.25] - 2026-07-21
 
 ### Added
+- Added JSONC file support for code-index vocabulary recognition, enabling indexing of JSON configuration files with comments.
 - Add a time-bounded same-model benchmark comparing p with upstream pi-coding-agent, including JSONL recordings, fixture quality checks, and a Markdown report.
 - Expand the benchmark to long-form TypeScript calculator and existing-repository monolith-split tasks, with compressed recordings, stronger acceptance checks, and targeted task reruns.
 
 - Install a persistent macOS/Linux code-indexing service from `reinstall.sh`, remember repository opt-in decisions, and incrementally reindex watched files in the background.
 - Show the active repository's indexing state and live progress percentage in the footer, with a persisted `/settings` visibility toggle.
 
+### Changed
+- Updated esbuild from vulnerable version 0.23.1 to 0.28.1 via npm package.json override, addressing a prototype pollution vulnerability in the esbuild binary.
+
 ### Fixed
+- Fix code-index vocabulary error causing indexing failures on certain file content patterns.
+- Fix code-index daemon stalling on large repositories by implementing bounded file queueing with concurrency limits.
+- Fix embedding server auto-start failure during reinstall by ensuring proper service registration before startup.
+- Fix semantic search reliability issues with Qdrant client connection handling and retry logic.
+- Fix structured state compacting to preserve session state fidelity during context window compaction.
+- Resolve semantic search reliability issues with improved error handling and connection stability.
 - Fix `semantic_search` tool failure ("fetch failed: invalid onError method") by bypassing the problematic undici dispatcher in the Qdrant client.
 - Load legacy `pi` extension manifests and package aliases so existing extensions continue to start after the `p` rebrand.
 - Keep optional search-tool installation and the first-use indexing prompt out of the global interactive startup barrier.
