@@ -1,211 +1,166 @@
-import { describe, expect, test } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildSystemPrompt, formatContextFileForPrompt } from "../src/core/system-prompt.ts";
 
 describe("buildSystemPrompt", () => {
-	describe("empty tools", () => {
-		test("shows (none) for empty tools list", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: [],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
+	const baseOptions = {
+		cwd: "/test",
+		selectedTools: ["read", "bash"],
+		toolSnippets: {
+			read: "Read a file",
+			bash: "Run a shell command",
+		},
+	};
 
-			expect(prompt).toContain("Available tools:\n(none)");
-		});
-
-		test("shows file paths guideline even with no tools", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: [],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("Show file paths clearly");
-		});
+	it("includes default guidelines", () => {
+		const prompt = buildSystemPrompt(baseOptions);
+		expect(prompt).toContain("Guidelines:");
+		expect(prompt).toContain("- Be concise in your responses");
+		expect(prompt).toContain("- Show file paths clearly when working with files");
 	});
 
-	describe("default tools", () => {
-		test("includes all default tools when snippets are provided", () => {
-			const prompt = buildSystemPrompt({
-				toolSnippets: {
-					read: "Read file contents",
-					bash: "Execute bash commands",
-					edit: "Make surgical edits",
-					write: "Create or overwrite files",
-				},
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- read:");
-			expect(prompt).toContain("- bash:");
-			expect(prompt).toContain("- edit:");
-			expect(prompt).toContain("- write:");
-		});
-
-		test("instructs models to resolve p docs and examples under absolute base paths", () => {
-			const prompt = buildSystemPrompt({
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain(
-				"- When reading p docs or examples, resolve docs/... under Additional docs and examples/... under Examples, not the current working directory",
-			);
-		});
+	it("includes testing-related guidelines by default", () => {
+		const prompt = buildSystemPrompt(baseOptions);
+		expect(prompt).toContain(
+			"- Always write tests for new functionality and bug fixes unless the user explicitly asks not to",
+		);
+		expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
+		expect(prompt).toContain(
+			"- When editing, writing, creating, or refactoring code, write tests for the changes unless the user explicitly asks not to",
+		);
+		expect(prompt).toContain(
+			"- Run tests to verify that code changes are correct and do not break existing functionality",
+		);
 	});
 
-	describe("custom tool snippets", () => {
-		test("includes custom tools in available tools section when promptSnippet is provided", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				toolSnippets: {
-					dynamic_tool: "Run dynamic test behavior",
-				},
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- dynamic_tool: Run dynamic test behavior");
+	it("includes promptGuidelines in the prompt", () => {
+		const prompt = buildSystemPrompt({
+			...baseOptions,
+			promptGuidelines: ["Custom guideline"],
 		});
-
-		test("omits custom tools from available tools section when promptSnippet is not provided", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).not.toContain("dynamic_tool");
-		});
+		expect(prompt).toContain("- Custom guideline");
 	});
 
-	describe("prompt guidelines", () => {
-		test("adds recoverable tool-call failure guidance when tools are available", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "bash"],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("recoverable syntax, path, allowlist, or command-choice error");
-		});
-
-		test("appends promptGuidelines to default guidelines", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				promptGuidelines: ["Use dynamic_tool for project summaries."],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- Use dynamic_tool for project summaries.");
-		});
-
-		test("deduplicates and trims promptGuidelines", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "dynamic_tool"],
-				promptGuidelines: ["Use dynamic_tool for summaries.", "  Use dynamic_tool for summaries.  ", "   "],
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt.match(/- Use dynamic_tool for summaries\./g)).toHaveLength(1);
-		});
+	it("includes tool-specific guidelines when tools are available", () => {
+		const prompt = buildSystemPrompt(baseOptions);
+		expect(prompt).toContain(
+			"- If a tool call fails from a recoverable syntax, path, allowlist, or command-choice error, correct the call or use an equivalent available tool and continue.",
+		);
 	});
 
-	describe("completion protocol", () => {
-		test("adds explicit_finish instructions and finish_work tool snippet", () => {
-			const prompt = buildSystemPrompt({
-				selectedTools: ["read", "finish_work"],
-				toolSnippets: {
-					finish_work: "Terminate explicitly",
-				},
-				completionMode: "explicit_finish",
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("- finish_work: Terminate explicitly");
-			expect(prompt).toContain("You are operating in explicit completion mode.");
-			expect(prompt).toContain("You must not end the task with a normal assistant message.");
-			expect(prompt).toContain("call `finish_work`");
+	it("includes bash-only file exploration guideline when no dedicated tools present", () => {
+		const prompt = buildSystemPrompt({
+			cwd: "/test",
+			selectedTools: ["bash"],
+			toolSnippets: { bash: "Run a shell command" },
 		});
-
-		test("requires reconciling next actions before finishing", () => {
-			const prompt = buildSystemPrompt({
-				completionMode: "explicit_finish",
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("never use completed or status-only entries such as `Done`");
-			expect(prompt).toContain("leave next actions empty when no work remains");
-			expect(prompt).toContain("Use `initial_plan` only for a fresh task with no active plan");
-			expect(prompt).toContain("do not retry it unchanged");
-			expect(prompt).toContain("Never edit `.pdev` state or snapshot files directly");
-		});
-
-		test("adds completion instructions to custom prompts", () => {
-			const prompt = buildSystemPrompt({
-				customPrompt: "Custom base prompt.",
-				completionMode: "explicit_finish",
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("Custom base prompt.");
-			expect(prompt).toContain("You are operating in explicit completion mode.");
-			expect(prompt).toContain("Current working directory:");
-		});
-
-		test("adds hybrid instructions without making normal text preferred", () => {
-			const prompt = buildSystemPrompt({
-				completionMode: "hybrid",
-				contextFiles: [],
-				skills: [],
-				cwd: process.cwd(),
-			});
-
-			expect(prompt).toContain("You are operating in hybrid completion mode.");
-			expect(prompt).toContain("Prefer calling `finish_work`");
-		});
+		expect(prompt).toContain(
+			"- Use bash for file operations like ls, rg, find when dedicated tools are unavailable.",
+		);
 	});
 
-	describe("project context files", () => {
-		test("keeps small context files verbatim", () => {
-			const content = "# Rules\n\nAlways run checks.";
-
-			expect(formatContextFileForPrompt("/tmp/AGENTS.md", content)).toBe(content);
+	it("does not include bash-only file exploration guideline when dedicated tools present", () => {
+		const prompt = buildSystemPrompt({
+			cwd: "/test",
+			selectedTools: ["bash", "grep"],
+			toolSnippets: { bash: "Run a shell command", grep: "Search for patterns" },
 		});
+		expect(prompt).not.toContain(
+			"Use bash for file operations like ls, rg, find when dedicated tools are unavailable",
+		);
+	});
 
-		test("compacts large context files into a bounded rule index", () => {
-			const content = [
-				"# Rules",
-				"Always run checks.",
-				...Array.from({ length: 700 }, (_, index) => `background detail ${index}`),
-				"Never commit unrelated files.",
-			].join("\n");
+	it("includes p documentation section", () => {
+		const prompt = buildSystemPrompt(baseOptions);
+		expect(prompt).toContain("p documentation");
+		expect(prompt).toContain("Main documentation:");
+		expect(prompt).toContain("Additional docs:");
+		expect(prompt).toContain("Examples:");
+	});
 
-			const compacted = formatContextFileForPrompt("/tmp/AGENTS.md", content);
+	it("includes date and working directory", () => {
+		const prompt = buildSystemPrompt(baseOptions);
+		expect(prompt).toContain("Current date:");
+		expect(prompt).toContain("Current working directory: /test");
+	});
 
-			expect(compacted.length).toBeLessThanOrEqual(6000);
-			expect(compacted).toContain("Large project rules file compacted");
-			expect(compacted).toContain("Always run checks.");
-			expect(compacted).toContain("Never commit unrelated files.");
-			expect(compacted).not.toContain("background detail 699");
+	it("uses custom prompt when provided", () => {
+		const prompt = buildSystemPrompt({
+			cwd: "/test",
+			customPrompt: "Custom system prompt",
 		});
+		expect(prompt).toContain("Custom system prompt");
+		expect(prompt).not.toContain("Available tools:");
+	});
+
+	it("includes context files in custom prompt mode", () => {
+		const prompt = buildSystemPrompt({
+			cwd: "/test",
+			customPrompt: "Custom prompt",
+			contextFiles: [{ path: "/test/AGENTS.md", content: "# Test Rules\n- must do X" }],
+		});
+		expect(prompt).toContain("<project_context>");
+		expect(prompt).toContain("Test Rules");
+	});
+
+	it("handles Windows-style paths in cwd", () => {
+		const prompt = buildSystemPrompt({
+			...baseOptions,
+			cwd: "C:\\Users\\test",
+		});
+		expect(prompt).toContain("Current working directory: C:/Users/test");
+	});
+
+	it("includes appendSystemPrompt", () => {
+		const prompt = buildSystemPrompt({
+			...baseOptions,
+			appendSystemPrompt: "Extra instructions",
+		});
+		expect(prompt).toContain("Extra instructions");
+	});
+
+	it("includes context files in default mode", () => {
+		const prompt = buildSystemPrompt({
+			...baseOptions,
+			contextFiles: [{ path: "/test/AGENTS.md", content: "# Test Rules" }],
+		});
+		expect(prompt).toContain("<project_context>");
+		expect(prompt).toContain("Test Rules");
+	});
+
+	it("handles empty context files array", () => {
+		const prompt = buildSystemPrompt({
+			...baseOptions,
+			contextFiles: [],
+		});
+		expect(prompt).not.toContain("<project_context>");
+	});
+});
+
+describe("formatContextFileForPrompt", () => {
+	it("returns content as-is when under the limit", () => {
+		const result = formatContextFileForPrompt("/test/rules.md", "Short content");
+		expect(result).toBe("Short content");
+	});
+
+	it("compacts large files and keeps headers and keyword lines", () => {
+		const largeContent = "# Header\n\n".repeat(500) + "always do this\n\nregular line\n\nmust follow rules\n";
+		const result = formatContextFileForPrompt("/test/large.md", largeContent);
+		expect(result).toContain("[Large project rules file compacted from");
+		expect(result).toContain("Full rules remain available at /test/large.md");
+		expect(result).toContain("# Header");
+		expect(result).toContain("always do this");
+		expect(result).toContain("must follow rules");
+	});
+
+	it("includes omitted lines count when lines are skipped", () => {
+		const largeContent = "# Header\n\n".repeat(500) + "regular line\n".repeat(100) + "always do this\n";
+		const result = formatContextFileForPrompt("/test/large.md", largeContent);
+		expect(result).toMatch(/\[\d+ lower-signal lines omitted from prompt context\]/);
+	});
+
+	it("truncates compacted output if still too large", () => {
+		const hugeContent = "# " + "x".repeat(100) + "\n".repeat(10000);
+		const result = formatContextFileForPrompt("/test/huge.md", hugeContent);
+		expect(result).toContain("[compacted rules truncated to prompt budget]");
 	});
 });

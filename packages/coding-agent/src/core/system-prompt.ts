@@ -174,10 +174,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// Always include these
 	addGuideline("Be concise in your responses");
 	addGuideline("Show file paths clearly when working with files");
-	addGuideline("After writing or modifying tests, run them immediately to verify they pass before proceeding");
+	addGuideline("Always write tests for new functionality and bug fixes unless the user explicitly asks not to");
+	addGuideline("Run tests after writing or modifying them to verify they pass before proceeding");
 	addGuideline(
 		"When editing, writing, creating, or refactoring code, write tests for the changes unless the user explicitly asks not to",
 	);
+	addGuideline("Run tests to verify that code changes are correct and do not break existing functionality");
 
 	const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
