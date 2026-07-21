@@ -28,6 +28,16 @@ const finishWorkSchema = Type.Object({
 
 export type FinishWorkInput = Static<typeof finishWorkSchema>;
 
+export interface FinishWorkGateCheck {
+	/** Returns null if the gate passes, or an error message string if blocked */
+	check(input: FinishWorkInput): string | null;
+}
+
+export interface FinishWorkToolOptions {
+	/** Optional gate check that can block finish_work execution */
+	gateCheck?: FinishWorkGateCheck;
+}
+
 function validateFinishWorkInput(input: FinishWorkInput): string | null {
 	if (!input.summary || input.summary.trim().length === 0) {
 		return "summary is required and must not be empty";
@@ -106,7 +116,10 @@ function formatFinishWorkResult(payload: FinishWorkPayload, theme: Theme): strin
 	return lines.join("\n");
 }
 
-export function createFinishWorkToolDefinition(): ToolDefinition<typeof finishWorkSchema, FinishWorkPayload> {
+export function createFinishWorkToolDefinition(
+	options?: FinishWorkToolOptions,
+): ToolDefinition<typeof finishWorkSchema, FinishWorkPayload> {
+	const gateCheck = options?.gateCheck;
 	return {
 		name: "finish_work",
 		label: "Finish Work",
@@ -122,6 +135,12 @@ export function createFinishWorkToolDefinition(): ToolDefinition<typeof finishWo
 			const error = validateFinishWorkInput(input);
 			if (error) {
 				throw new Error(`finish_work validation error: ${error}`);
+			}
+			if (gateCheck) {
+				const gateError = gateCheck.check(input);
+				if (gateError) {
+					throw new Error(`finish_work blocked: ${gateError}`);
+				}
 			}
 			return {
 				content: [{ type: "text", text: `Task finished with status: ${input.status}` }],
@@ -139,6 +158,6 @@ export function createFinishWorkToolDefinition(): ToolDefinition<typeof finishWo
 	};
 }
 
-export function createFinishWorkTool() {
-	return wrapToolDefinition(createFinishWorkToolDefinition());
+export function createFinishWorkTool(options?: FinishWorkToolOptions) {
+	return wrapToolDefinition(createFinishWorkToolDefinition(options));
 }

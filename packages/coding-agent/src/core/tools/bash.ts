@@ -76,7 +76,7 @@ export function createLocalBashOperations(options?: { shellPath?: string }): Bas
 				throw new Error("aborted");
 			}
 
-			const child = spawn(shell, [...args, command], {
+			const child = spawn(shell, [...args, `set -o pipefail; ${command}`], {
 				cwd,
 				detached: process.platform !== "win32",
 				env: env ?? getShellEnv(),
@@ -147,6 +147,13 @@ export interface BashToolOptions {
 	shellPath?: string;
 	/** Hook to adjust command, cwd, or env before execution */
 	spawnHook?: BashSpawnHook;
+	/** Callback invoked after command execution completes (for verification ledger recording) */
+	onResult?: (context: {
+		command: string;
+		exitCode: number | null;
+		truncated: boolean;
+		fullOutputPath?: string;
+	}) => void;
 }
 
 const BASH_PREVIEW_LINES = 5;
@@ -273,6 +280,7 @@ export function createBashToolDefinition(
 	const ops = options?.operations ?? createLocalBashOperations({ shellPath: options?.shellPath });
 	const commandPrefix = options?.commandPrefix;
 	const spawnHook = options?.spawnHook;
+	const onResult = options?.onResult;
 	return {
 		name: "bash",
 		label: "bash",
@@ -340,6 +348,16 @@ export function createBashToolDefinition(
 				scheduleOutputUpdate();
 			};
 
+			const recordResult = (exitCode: number | null, snapshot: Awaited<ReturnType<typeof finishOutput>>) => {
+				if (!onResult) return;
+				onResult({
+					command: resolvedCommand,
+					exitCode,
+					truncated: snapshot.truncation.truncated,
+					fullOutputPath: snapshot.fullOutputPath,
+				});
+			};
+
 			const finishOutput = async () => {
 				acceptingOutput = false;
 				output.finish();
@@ -373,7 +391,7 @@ export function createBashToolDefinition(
 			const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
 
 			try {
-				let exitCode: number | null;
+				let exitCode: number | null = null;
 				try {
 					const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
 						onData: handleData,
@@ -384,6 +402,7 @@ export function createBashToolDefinition(
 					exitCode = result.exitCode;
 				} catch (err) {
 					const snapshot = await finishOutput();
+					recordResult(exitCode, snapshot);
 					const { text } = formatOutput(snapshot, "");
 					if (err instanceof Error && err.message === "aborted") {
 						throw new Error(appendStatus(text, "Command aborted"));
@@ -396,6 +415,7 @@ export function createBashToolDefinition(
 				}
 
 				const snapshot = await finishOutput();
+				recordResult(exitCode, snapshot);
 				const { text: outputText, details } = formatOutput(snapshot);
 				if (exitCode !== 0 && exitCode !== null) {
 					throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));

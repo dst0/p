@@ -37,11 +37,31 @@ export interface BashResult {
 	truncated: boolean;
 	/** Path to temp file containing full output (if output exceeded truncation threshold) */
 	fullOutputPath?: string;
+	/** Individual exit codes from each segment of a shell pipeline (populated when pipefail is enabled) */
+	pipelineExitCodes?: number[];
+	/** Semantic interpretation of the result: "success", "failure", or "cancelled" */
+	semanticStatus: "success" | "failure" | "cancelled";
 }
 
 // ============================================================================
 // Implementation
 // ============================================================================
+
+function extractPipelineExitCodes(output: string): number[] | undefined {
+	const lines = output.split("\n");
+	for (let i = lines.length - 1; i >= Math.max(0, lines.length - 5); i--) {
+		const line = lines[i].trim();
+		const match = line.match(/^(\d+(\s+\d+)*)$/);
+		if (match) {
+			const codes = match[1]
+				.split(/\s+/)
+				.map((s) => parseInt(s, 10))
+				.filter((n) => !Number.isNaN(n));
+			if (codes.length > 1) return codes;
+		}
+	}
+	return undefined;
+}
 
 /**
  * Execute a bash command using custom BashOperations.
@@ -119,16 +139,21 @@ export async function executeBashWithOperations(
 			tempFileStream.end();
 		}
 		const cancelled = options?.signal?.aborted ?? false;
+		const rawOutput = outputChunks.join("");
+		const pipelineExitCodes = extractPipelineExitCodes(rawOutput);
+		const semanticStatus = cancelled ? "cancelled" : (result.exitCode ?? 0) === 0 ? "success" : "failure";
 
 		return {
-			output: truncationResult.truncated ? truncationResult.content : fullOutput,
+			output: truncationResult.truncated ? truncationResult.content : rawOutput,
 			exitCode: cancelled ? undefined : (result.exitCode ?? undefined),
 			cancelled,
 			truncated: truncationResult.truncated,
 			fullOutputPath: tempFilePath,
+			pipelineExitCodes,
+			semanticStatus,
 		};
 	} catch (err) {
-		// Check if it was an abort
+		/* Check if it was an abort */
 		if (options?.signal?.aborted) {
 			const fullOutput = outputChunks.join("");
 			const truncationResult = truncateTail(fullOutput);
@@ -138,12 +163,15 @@ export async function executeBashWithOperations(
 			if (tempFileStream) {
 				tempFileStream.end();
 			}
+			const pipelineExitCodes = extractPipelineExitCodes(fullOutput);
 			return {
 				output: truncationResult.truncated ? truncationResult.content : fullOutput,
 				exitCode: undefined,
 				cancelled: true,
 				truncated: truncationResult.truncated,
 				fullOutputPath: tempFilePath,
+				pipelineExitCodes,
+				semanticStatus: "cancelled",
 			};
 		}
 
