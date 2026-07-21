@@ -41,4 +41,7 @@ plans/
 collect.sh
 .antigravitycli/
 .pdev/
+.agentbridge/
+.qdrant-initialized
+p-session-*.html
 /user-updates.md

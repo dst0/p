@@ -29,8 +29,10 @@ export {
 export {
 	createFinishWorkTool,
 	createFinishWorkToolDefinition,
+	type FinishWorkGateCheck,
 	type FinishWorkInput,
 	type FinishWorkPayload,
+	type FinishWorkToolOptions,
 } from "./finish-work.ts";
 export {
 	createGrepTool,

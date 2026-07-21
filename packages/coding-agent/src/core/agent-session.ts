@@ -170,9 +170,14 @@ import {
 import { type BuildSystemPromptOptions, buildSystemPrompt } from "./system-prompt.ts";
 import { createTokenBreakdown, type TokenBreakdown } from "./token-accounting.ts";
 import { type BashOperations, createLocalBashOperations } from "./tools/bash.ts";
-import { createAllToolDefinitions, createSubmitPlanToolDefinition } from "./tools/index.ts";
+import {
+	createAllToolDefinitions,
+	createFinishWorkToolDefinition,
+	createSubmitPlanToolDefinition,
+} from "./tools/index.ts";
 import { createToolDefinitionFromAgentTool } from "./tools/tool-definition-wrapper.ts";
 import { createTurnCheckpointMessages } from "./turn-checkpoint.ts";
+import { createVerificationLedger, type VerificationLedger } from "./verification-ledger.ts";
 
 const RETRYABLE_ERROR_PATTERN =
 	/overloaded|provider.?returned.?error|rate.?limit|too many requests|429|500|502|503|504|service.?unavailable|server.?error|internal.?error|network.?error|connection.?error|connection.?refused|connection.?lost|connection.?reset|econnreset|econnrefused|etimedout|eai_again|enotfound|websocket.?closed|websocket.?error|other side closed|socket.?hang.?up|socket.?closed|fetch failed|upstream.?connect|reset before headers|headers.?timeout|body.?timeout|und_err|request.?aborted|response.?aborted|aborted before response|premature.?close|ended without|stream ended before message_stop|http2 request did not get a response|timed? out|timeout|terminated|retry delay|failed to parse|could not parse|invalid json|unexpected token|unexpected end of json|response body|no response body|body is unusable/i;
@@ -1089,6 +1094,9 @@ export class AgentSession {
 	private _workingStatePromptInsertions: WorkingStatePromptInsertion[] = [];
 	private _lastTokenBreakdown: TokenBreakdown | undefined = undefined;
 
+	// Verification ledger for tracking required pre-commit/pre-push checks
+	private _verificationLedger: VerificationLedger;
+
 	constructor(config: AgentSessionConfig) {
 		this.agent = config.agent;
 		this.sessionManager = config.sessionManager;
@@ -1110,6 +1118,9 @@ export class AgentSession {
 			reason: "startup",
 		};
 		this._completionMode = config.completionMode ?? this.agent.completionMode;
+
+		// Verification ledger for tracking required pre-commit/pre-push checks
+		this._verificationLedger = createVerificationLedger();
 
 		// Always subscribe to agent events for internal handling
 		// (session persistence, extensions, auto-compaction, retry logic)
@@ -5159,7 +5170,16 @@ Plan mode is active because the user invoked /plan.
 				)
 			: createAllToolDefinitions(this._cwd, {
 					read: { autoResizeImages },
-					bash: { commandPrefix: shellCommandPrefix, shellPath },
+					bash: {
+						commandPrefix: shellCommandPrefix,
+						shellPath,
+						onResult: (context) =>
+							this._verificationLedger.record(context.command, {
+								exitCode: context.exitCode ?? undefined,
+								truncated: context.truncated,
+								fullLogPointer: context.fullOutputPath,
+							}),
+					},
 				});
 		const builtInToolDefinitions: Record<string, ToolDefinition> = {
 			...baseToolDefinitions,
@@ -5173,6 +5193,22 @@ Plan mode is active because the user invoked /plan.
 			keep_context: this._createKeepContextToolDefinition() as unknown as ToolDefinition,
 			run_subagent: this._createRunSubagentToolDefinition() as unknown as ToolDefinition,
 			[TOOL_SEARCH_TOOL_NAME]: this._createToolSearchToolDefinition() as unknown as ToolDefinition,
+			finish_work: createFinishWorkToolDefinition({
+				gateCheck: {
+					check: (input) => {
+						if (input.status !== "success") return null;
+						const gate = this._verificationLedger.gate();
+						if (!gate) return null;
+						const failureLines = gate.failures.map((f) => `  - ${f.command} (exit ${f.exitCode})`);
+						return [
+							`Required verification checks failed. Cannot finish with success.`,
+							`Failures:`,
+							...failureLines,
+							`Run the failing commands or use status "partial" / "failed" to proceed.`,
+						].join("\n");
+					},
+				},
+			}) as unknown as ToolDefinition,
 		};
 
 		this._baseToolDefinitions = new Map(
@@ -5440,6 +5476,15 @@ Plan mode is active because the user invoked /plan.
 	 */
 	recordBashResult(command: string, result: BashResult, options?: { excludeFromContext?: boolean }): void {
 		this._rememberBashCommand(command);
+
+		// Record in verification ledger
+		this._verificationLedger.record(command, {
+			exitCode: result.exitCode,
+			signal: result.cancelled ? undefined : undefined,
+			truncated: result.truncated,
+			fullLogPointer: result.fullOutputPath,
+		});
+
 		const bashMessage: BashExecutionMessage = {
 			role: "bashExecution",
 			command,
