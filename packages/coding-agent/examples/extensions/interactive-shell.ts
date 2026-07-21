@@ -129,8 +129,14 @@ function isInteractiveCommand(command: string): boolean {
 }
 
 export default function (p: ExtensionAPI) {
-	p.on("user_bash", async (event, ctx) => {
-		let command = event.command;
+	p.on("input", async (event, ctx) => {
+		let command = event.text;
+
+		if (!command.startsWith("!")) {
+			return { action: "continue" };
+		}
+		command = command.slice(1);
+
 		let forceInteractive = false;
 
 		// Check for !i prefix (command comes without the leading !)
@@ -142,14 +148,13 @@ export default function (p: ExtensionAPI) {
 
 		const shouldBeInteractive = forceInteractive || isInteractiveCommand(command);
 		if (!shouldBeInteractive) {
-			return; // Let normal handling proceed
+			return { action: "continue" }; // Let normal handling proceed
 		}
 
 		// No UI available (print mode, RPC, etc.)
 		if (ctx.mode !== "tui") {
-			return {
-				result: { output: "(interactive commands require TUI)", exitCode: 1, cancelled: false, truncated: false },
-			};
+			ctx.ui.notify("(interactive commands require TUI)", "warning");
+			return { action: "handled" };
 		}
 
 		// Use ctx.ui.custom() to get TUI access, then run the command
@@ -184,13 +189,7 @@ export default function (p: ExtensionAPI) {
 				? "(interactive command completed successfully)"
 				: `(interactive command exited with code ${exitCode})`;
 
-		return {
-			result: {
-				output,
-				exitCode: exitCode ?? 1,
-				cancelled: false,
-				truncated: false,
-			},
-		};
+		ctx.ui.notify(output);
+		return { action: "handled" };
 	});
 }

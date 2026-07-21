@@ -1,0 +1,17 @@
+--- packages/coding-agent/examples/extensions/interactive-shell.ts
++++ packages/coding-agent/examples/extensions/interactive-shell.ts
+@@ -185,11 +185,6 @@
+					: `(interactive command exited with code ${exitCode})`;
+
+-			return {
+-				result: {
+-					output,
+-					exitCode: exitCode ?? 1,
+-					cancelled: false,
+-					truncated: false,
+-				},
+-			};
++			p.print(output);
++			return { action: "handled" };
+		});
+ }

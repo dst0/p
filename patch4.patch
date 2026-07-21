@@ -1,0 +1,49 @@
+--- packages/coding-agent/examples/extensions/interactive-shell.ts
++++ packages/coding-agent/examples/extensions/interactive-shell.ts
+@@ -129,9 +129,13 @@
+ }
+
+ export default function (p: ExtensionAPI) {
+-	p.on("user_bash", async (event, ctx) => {
+-		let command = event.command;
++	p.on("input", async (event, ctx) => {
++		let command = event.text;
++		if (!command.startsWith("!")) {
++			return { action: "continue" };
++		}
++		command = command.slice(1);
+		let forceInteractive = false;
+
+		// Check for !i prefix (command comes without the leading !)
+		// The prefix parsing happens before this event, so we check if command starts with "i "
+@@ -142,12 +146,11 @@
+
+		const shouldBeInteractive = forceInteractive || isInteractiveCommand(command);
+		if (!shouldBeInteractive) {
+-			return; // Let normal handling proceed
++			return { action: "continue" }; // Let normal handling proceed
+		}
+
+		// No UI available (print mode, RPC, etc.)
+		if (ctx.mode !== "tui") {
+-			return {
+-				result: { output: "(interactive commands require TUI)", exitCode: 1, cancelled: false, truncated: false },
+-			};
++			p.print("(interactive commands require TUI)", "warning");
++			return { action: "handled" };
+		}
+@@ -185,11 +188,6 @@
+					: `(interactive command exited with code ${exitCode})`;
+
+-			return {
+-				result: {
+-					output,
+-					exitCode: exitCode ?? 1,
+-					cancelled: false,
+-					truncated: false,
+-				},
+-			};
++			p.print(output);
++			return { action: "handled" };
+		});
+ }

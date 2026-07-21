@@ -1,0 +1,53 @@
+--- packages/coding-agent/examples/extensions/interactive-shell.ts
++++ packages/coding-agent/examples/extensions/interactive-shell.ts
+@@ -129,9 +129,13 @@
+ }
+
+ export default function (p: ExtensionAPI) {
+-	p.on("user_bash", async (event, ctx) => {
+-		let command = event.command;
++	p.on("input", async (event, ctx) => {
++		let command = event.text;
++		if (!command.startsWith("!")) {
++			return;
++		}
++		command = command.slice(1);
+		let forceInteractive = false;
+
+		// Check for !i prefix (command comes without the leading !)
+		// The prefix parsing happens before this event, so we check if command starts with "i "
+@@ -148,8 +152,7 @@
+		if (ctx.mode !== "tui") {
+-			return {
+-				result: {
+-					output: `Interactive command "${command}" cannot be run in this environment.`,
+-					exitCode: 1,
+-					cancelled: false,
+-					truncated: false,
+-				},
+-			};
++			p.print(
++				`Interactive command "${command}" cannot be run in this environment.`,
++				"warning"
++			);
++			return { action: "handled" };
+		}
+
+		ctx.suspendTui();
+@@ -165,11 +168,7 @@
+		} finally {
+			ctx.resumeTui();
+		}
+-		return {
+-			result: {
+-				output: `Command executed interactively with exit code ${result.status ?? 0}. Output is visible in your terminal, not to the agent.`,
+-				exitCode: result.status ?? 0,
+-				cancelled: false,
+-				truncated: false,
+-			},
+-		};
++
++		p.print(`Command executed interactively with exit code ${result.status ?? 0}.`);
++		return { action: "handled" };
+	});
+ }
