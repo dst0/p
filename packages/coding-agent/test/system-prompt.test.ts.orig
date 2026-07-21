@@ -143,7 +143,7 @@ describe("formatContextFileForPrompt", () => {
 	});
 
 	it("compacts large files and keeps headers and keyword lines", () => {
-		const largeContent = `${"# Header\n\n".repeat(500)}always do this\n\n${"regular line\n".repeat(300)}\nmust follow rules\n`;
+		const largeContent = "# Header\n\n".repeat(500) + "always do this\n\n" + "regular line\n".repeat(300) + "\nmust follow rules\n";
 		const result = formatContextFileForPrompt("/test/large.md", largeContent);
 		expect(result).toContain("[Large project rules file compacted from");
 		expect(result).toContain("Full rules remain available at /test/large.md");
@@ -153,13 +153,13 @@ describe("formatContextFileForPrompt", () => {
 	});
 
 	it("includes omitted lines count when lines are skipped", () => {
-		const largeContent = `${"# Header\n\n".repeat(500) + "regular line\n".repeat(300)}always do this\n`;
+		const largeContent = "# Header\n\n".repeat(500) + "regular line\n".repeat(300) + "always do this\n";
 		const result = formatContextFileForPrompt("/test/large.md", largeContent);
-		expect(result).toMatch(/\[\d+ lower-signal lines omitted from prompt context\.\]/);
+		expect(result).toMatch(/\[\d+ lower-signal lines omitted from prompt context\]/);
 	});
 
 	it("truncates compacted output if still too large", () => {
-		const hugeContent = `# ${"x".repeat(6500)}${"\n".repeat(10000)}`;
+		const hugeContent = "# " + "x".repeat(6500) + "\n".repeat(10000);
 		const result = formatContextFileForPrompt("/test/huge.md", hugeContent);
 		expect(result).toContain("[compacted rules truncated to prompt budget]");
 	});

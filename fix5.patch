@@ -1,0 +1,11 @@
+--- packages/coding-agent/test/indexed-repos.test.ts
++++ packages/coding-agent/test/indexed-repos.test.ts
+@@ -41,7 +41,7 @@
+		const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf-8")) as {
+			schemaVersion: number;
+		};
+-		expect(stored.schemaVersion).toBe(1);
++		expect(stored.schemaVersion).toBe(2);
+	});
+
+	it("replaces a disabled decision when indexing is enabled later", () => {

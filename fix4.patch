@@ -1,0 +1,10 @@
+--- packages/coding-agent/src/modes/interactive/components/footer.ts
++++ packages/coding-agent/src/modes/interactive/components/footer.ts
+@@ -79,7 +79,7 @@
+	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
+		const percent = status.progress?.percent;
+-		if (percent !== undefined && percent > 0) {
++		if (percent !== undefined) {
+			return `🔎 ${Math.min(100, Math.round(percent))}%`;
+		}
+		if (status.ragState === "queued") return "🔎 queued";

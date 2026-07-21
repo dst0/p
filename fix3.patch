@@ -1,0 +1,11 @@
+--- packages/coding-agent/test/system-prompt.test.ts
++++ packages/coding-agent/test/system-prompt.test.ts
+@@ -156,7 +156,7 @@
+	it("includes omitted lines count when lines are skipped", () => {
+		const largeContent = "# Header\n\n".repeat(500) + "regular line\n".repeat(300) + "always do this\n";
+		const result = formatContextFileForPrompt("/test/large.md", largeContent);
+-		expect(result).toMatch(/\[\d+ lower-signal lines omitted from prompt context\]/);
++		expect(result).toMatch(/\[\d+ lower-signal lines omitted from prompt context\.\]/);
+	});
+
+	it("truncates compacted output if still too large", () => {

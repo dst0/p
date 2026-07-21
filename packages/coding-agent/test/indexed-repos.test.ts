@@ -41,7 +41,7 @@ describe("indexed repository decisions", () => {
 		const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf-8")) as {
 			schemaVersion: number;
 		};
-		expect(stored.schemaVersion).toBe(1);
+		expect(stored.schemaVersion).toBe(2);
 	});
 
 	it("replaces a disabled decision when indexing is enabled later", () => {
