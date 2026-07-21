@@ -9,7 +9,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 const MAX_FULL_CONTEXT_FILE_CHARS = 6000;
 const MAX_COMPACT_CONTEXT_FILE_CHARS = 6000;
 const RULE_KEYWORD_PATTERN =
-	/\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|no \w+|only|required|rules?|run|should|test|use \w+|verify)\b/i;
+	/\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|no \w+|only|required|rules?|run|should|test|use \w+|verify)\b|^\s*(No |Prefer |Avoid |For |Use )/i;
 
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
@@ -154,7 +154,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
 	// File exploration guidelines
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
-		addGuideline("Use bash for file operations like ls, rg, find");
+		addGuideline(
+			"Use bash for file operations like ls, rg, find when dedicated tools are unavailable. Always prefer dedicated tools (grep, find, ls) when they are available.",
+		);
 	}
 	if (hasBash || hasGrep || hasFind || hasLs || hasRead) {
 		addGuideline(
