@@ -1,7 +1,7 @@
 {
   "name": "p-extension-with-deps",
   "private": true,
-  "version": "0.4.25",
+  "version": "0.4.26",
   "type": "module",
   "scripts": {
     "clean": "echo 'nothing to clean'",

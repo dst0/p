@@ -105,7 +105,7 @@ export class IndexingDaemon {
 			startupTimeoutMs: 30_000,
 			onLog: (level, message) => this.log(level, message),
 		});
-		const embeddingManager = new EmbeddingServerManager(8081, options.embeddingModel, {
+		const embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {
 			pythonExecutable: options.pythonExecutable,
 			startupTimeoutMs: 5 * 60_000,
 			onLog: (level, message) => this.log(level, message),

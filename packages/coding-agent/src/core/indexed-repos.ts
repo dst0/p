@@ -1,10 +1,11 @@
+import { execSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getAgentDir } from "../config.ts";
 
 export const INDEXED_REPOS_FILE = "indexed-repos.json";
-export const INDEXED_REPOS_SCHEMA_VERSION = 1;
+export const INDEXED_REPOS_SCHEMA_VERSION = 2;
 
 export type RepoIndexingDecision = "enabled" | "disabled" | "unknown";
 
@@ -40,7 +41,17 @@ export function loadIndexedRepos(agentDir: string = getAgentDir()): IndexedRepoE
 	if (!fs.existsSync(filePath)) return [];
 	try {
 		const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
-		return isIndexedReposData(parsed) ? parsed.repos : [];
+		if (isIndexedReposData(parsed)) return parsed.repos;
+		if (isV1IndexedReposData(parsed)) {
+			// Migrate v1 -> v2: recompute repoId with git remote
+			const migrated = parsed.repos.map((entry) => ({
+				...entry,
+				repoId: computeRepoId(entry.path),
+			}));
+			saveIndexedRepos(migrated, agentDir);
+			return migrated;
+		}
+		return [];
 	} catch {
 		return [];
 	}
@@ -98,7 +109,20 @@ function canonicalizePath(value: string): string {
 }
 
 function computeRepoId(repoPath: string): string {
-	return createHash("sha256").update(repoPath).digest("hex");
+	const remote = getGitRemote(repoPath);
+	return createHash("sha256").update(`${repoPath}\0${remote}`).digest("hex");
+}
+
+function getGitRemote(repoPath: string): string {
+	try {
+		return execSync("git remote get-url origin", {
+			cwd: repoPath,
+			encoding: "utf-8",
+			stdio: ["pipe", "pipe", "pipe"],
+		}).trim();
+	} catch {
+		return "";
+	}
 }
 
 function saveIndexedRepos(repos: IndexedRepoEntry[], agentDir: string): void {
@@ -118,6 +142,24 @@ function isIndexedReposData(value: unknown): value is IndexedReposData {
 	const candidate = value as Partial<IndexedReposData>;
 	return (
 		candidate.schemaVersion === INDEXED_REPOS_SCHEMA_VERSION &&
+		Array.isArray(candidate.repos) &&
+		candidate.repos.every(
+			(entry) =>
+				typeof entry === "object" &&
+				entry !== null &&
+				typeof entry.path === "string" &&
+				typeof entry.repoId === "string" &&
+				(entry.decision === "enabled" || entry.decision === "disabled") &&
+				typeof entry.updatedAt === "string",
+		)
+	);
+}
+
+function isV1IndexedReposData(value: unknown): value is IndexedReposData {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const candidate = value as Partial<IndexedReposData>;
+	return (
+		candidate.schemaVersion === 1 &&
 		Array.isArray(candidate.repos) &&
 		candidate.repos.every(
 			(entry) =>

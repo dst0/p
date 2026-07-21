@@ -5,6 +5,7 @@ import { BM25Vocabulary } from "../bm25.ts";
 import { chunkFile } from "../chunk.ts";
 import { LANG_MAP } from "../config.ts";
 import { detectLanguage, discoverFilesWithOptions, getGitInfo } from "../discover.ts";
+import { EmbeddingError, VectorStoreError } from "../embed/errors.ts";
 import { EmbeddingProviderHttp } from "../embed/http.ts";
 import type { EmbeddingProvider } from "../embed/provider.ts";
 import { QdrantServerManager } from "../embed/qdrant-server.ts";
@@ -207,7 +208,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			}
 		}
 
-		if (options.checkFreshness ?? true) this.updateFastFreshness();
+		if (options.checkFreshness ?? (true && !this.refreshPromise)) this.updateFastFreshness();
 		return this.snapshotStatus();
 	}
 
@@ -286,16 +287,16 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					candidateCount: candidates.length,
 					indexGeneration: this.manifest.generation,
 					staleReason: this.staleReason,
+					refreshInProgress: !!this.refreshPromise,
 					truncated,
 				},
 			};
 		} catch (error) {
 			if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Semantic search was cancelled");
-			const code: RagErrorCode =
-				error instanceof Error && error.name === "TimeoutError" ? "RAG_TIMEOUT" : "RAG_BACKEND_UNAVAILABLE";
+			const mapped = classifySearchError(error);
 			// Record the error but don't permanently brick the service.
 			// Preserve the previous state so subsequent searches can retry.
-			this.lastError = this.errorInfo(code, safeErrorMessage(error));
+			this.lastError = this.errorInfo(mapped.code, mapped.message);
 			return this.emptySearchResponse(normalized.query, startedAt);
 		}
 	}
@@ -1013,6 +1014,31 @@ function isGeneratedPath(relativePath: string): boolean {
 function safeErrorMessage(error: unknown): string {
 	const message = error instanceof Error ? error.message : String(error);
 	return message.replace(/[\r\n]+/g, " ").slice(0, 500);
+}
+
+function classifySearchError(error: unknown): { code: RagErrorCode; message: string } {
+	if (error instanceof EmbeddingError) {
+		if (error.type === "server_down") {
+			return { code: "RAG_EMBEDDING_SERVER_DOWN", message: error.message };
+		}
+		if (error.type === "server_error") {
+			return { code: "RAG_EMBEDDING_SERVER_ERROR", message: error.message };
+		}
+		return { code: "RAG_EMBEDDING_SERVER_ERROR", message: error.message };
+	}
+	if (error instanceof VectorStoreError) {
+		if (error.type === "qdrant_down") {
+			return { code: "RAG_QDRANT_DOWN", message: error.message };
+		}
+		if (error.type === "network") {
+			return { code: "RAG_NETWORK_ERROR", message: error.message };
+		}
+		return { code: "RAG_QDRANT_ERROR", message: error.message };
+	}
+	if (error instanceof Error && error.name === "TimeoutError") {
+		return { code: "RAG_TIMEOUT", message: "Code RAG search timed out" };
+	}
+	return { code: "RAG_NETWORK_ERROR", message: safeErrorMessage(error) };
 }
 
 function mapOperationError(error: unknown, signal: AbortSignal): CodeRagError {

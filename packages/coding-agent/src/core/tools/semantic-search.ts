@@ -130,5 +130,11 @@ function formatSemanticSearchResponse(response: SemanticSearchResponse): string 
 		);
 	}
 	if (response.diagnostics.truncated) lines.push("\n[Results truncated to the semantic-search output budget]");
+	if (response.diagnostics.refreshInProgress) {
+		lines.push(
+			"\n[WARNING: Index refresh in progress. Results may not reflect recent file changes.",
+			"Verify critical code by reading the files directly before making edits.]",
+		);
+	}
 	return lines.join("\n");
 }

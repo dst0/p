@@ -816,7 +816,6 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 		normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
 		normalizeCanonicalRequest(latestRequest?.summary ?? "") ||
 		createPlainSummaryFallback(input.summary);
-	const planItems = extractPlanItems(input.summary, sourceEntryIds);
 	const decisions = extractDecisions(input.summary);
 	const evidence = createEvidencePointers(input);
 	const touchedFiles = [
@@ -847,7 +846,6 @@ function createStatePatchFromSummary(input: StructuredStateUpdateInput): StatePa
 					originalRequests,
 				}
 			: undefined,
-		plan: planItems.length > 0 ? { add: planItems } : undefined,
 		decisions: decisions.length > 0 ? { add: decisions } : undefined,
 		codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
 		evidence: evidence.length > 0 ? { add: evidence } : undefined,

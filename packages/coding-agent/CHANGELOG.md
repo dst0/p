@@ -3,6 +3,7 @@
 ## [0.4.25] - 2026-07-21
 
 ### Added
+
 - Added JSONC file support for code-index vocabulary recognition, enabling indexing of JSON configuration files with comments.
 - Add a time-bounded same-model benchmark comparing p with upstream pi-coding-agent, including JSONL recordings, fixture quality checks, and a Markdown report.
 - Expand the benchmark to long-form TypeScript calculator and existing-repository monolith-split tasks, with compressed recordings, stronger acceptance checks, and targeted task reruns.
@@ -11,9 +12,11 @@
 - Show the active repository's indexing state and live progress percentage in the footer, with a persisted `/settings` visibility toggle.
 
 ### Changed
+
 - Updated esbuild from vulnerable version 0.23.1 to 0.28.1 via npm package.json override, addressing a prototype pollution vulnerability in the esbuild binary.
 
 ### Fixed
+
 - Fix code-index vocabulary error causing indexing failures on certain file content patterns.
 - Fix code-index daemon stalling on large repositories by implementing bounded file queueing with concurrency limits.
 - Fix embedding server auto-start failure during reinstall by ensuring proper service registration before startup.

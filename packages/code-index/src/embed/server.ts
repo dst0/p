@@ -28,7 +28,7 @@ export class EmbeddingServerManager {
 	private options: EmbeddingServerManagerOptions;
 
 	constructor(
-		port: number = 8081,
+		port: number = 18742,
 		model: string = "Qwen/Qwen3-Embedding-0.6B",
 		options: Partial<EmbeddingServerManagerOptions> = {},
 	) {

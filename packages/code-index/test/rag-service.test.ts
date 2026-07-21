@@ -421,7 +421,7 @@ describe("search validation and edge cases", () => {
 		// Search errors record lastError but preserve the prior state so subsequent searches can retry.
 		const status = await service.status();
 		expect(status.state).toBe("ready");
-		expect(status.lastError?.code).toBe("RAG_BACKEND_UNAVAILABLE");
+		expect(status.lastError?.code).toBe("RAG_NETWORK_ERROR");
 		expect(status.lastError?.message).toContain("network error");
 		await service.dispose();
 	});

@@ -15,6 +15,11 @@ export type RagErrorCode =
 	| "RAG_NOT_INITIALIZED"
 	| "RAG_STALE"
 	| "RAG_BACKEND_UNAVAILABLE"
+	| "RAG_EMBEDDING_SERVER_DOWN"
+	| "RAG_EMBEDDING_SERVER_ERROR"
+	| "RAG_QDRANT_DOWN"
+	| "RAG_QDRANT_ERROR"
+	| "RAG_NETWORK_ERROR"
 	| "RAG_TIMEOUT"
 	| "RAG_CANCELLED"
 	| "RAG_INCOMPATIBLE_INDEX"
@@ -80,6 +85,7 @@ export interface SemanticSearchResponse {
 		candidateCount?: number;
 		indexGeneration?: string;
 		staleReason?: string;
+		refreshInProgress?: boolean;
 		truncated: boolean;
 	};
 }

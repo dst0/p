@@ -1,3 +1,4 @@
+import { EmbeddingError } from "./errors.ts";
 import type { EmbeddingProvider } from "./provider.ts";
 import { EmbeddingServerManager, type EmbeddingServerManagerOptions } from "./server.ts";
 
@@ -37,7 +38,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 		this.baseUrl = baseUrl.replace(/\/+$/, "");
 		this.dim = dim;
 		this.options = { ...DEFAULT_HTTP_OPTIONS, ...options };
-		const port = parseInt(baseUrl.match(/:(\d+)/)?.[1] ?? "8081", 10);
+		const port = parseInt(baseUrl.match(/:(\d+)/)?.[1] ?? "18742", 10);
 		const isLocal =
 			baseUrl.includes("localhost") ||
 			baseUrl.includes("127.0.0.1") ||
@@ -107,7 +108,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 				});
 				if (!response.ok) {
 					const body = (await response.text()).slice(0, 500);
-					const error = new Error(`Embedding server error ${response.status}: ${body}`);
+					const error = new EmbeddingError("server_error", `Embedding server error ${response.status}: ${body}`);
 					if (response.status < 500 || attempt === this.options.maxRetries) throw error;
 					lastError = error;
 				} else {
@@ -115,12 +116,29 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 				}
 			} catch (error) {
 				if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-				lastError = error instanceof Error ? error : new Error(String(error));
-				if (attempt === this.options.maxRetries) throw lastError;
+				if (error instanceof EmbeddingError && error.type === "server_error") {
+					if (attempt === this.options.maxRetries) throw error;
+					lastError = error;
+				} else if (error instanceof Error && error.name === "TimeoutError") {
+					if (attempt === this.options.maxRetries) {
+						throw new EmbeddingError("server_down", "Embedding server request timed out");
+					}
+					lastError = error;
+				} else if (error instanceof EmbeddingError) {
+					throw error;
+				} else {
+					// Network-level failure (ECONNREFUSED, ENETUNREACH, fetch failed)
+					if (attempt === this.options.maxRetries) {
+						const cause =
+							error instanceof Error ? error.message.replace(/[\r\n]+/g, " ").slice(0, 500) : String(error);
+						throw new EmbeddingError("server_down", `Embedding server unreachable: ${cause}`);
+					}
+					lastError = error instanceof Error ? error : new Error(String(error));
+				}
 			}
 			await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt + Math.floor(Math.random() * 50)));
 		}
-		throw lastError ?? new Error("Embedding request failed");
+		throw lastError ?? new EmbeddingError("server_down", "Embedding request failed");
 	}
 
 	private parseResponse(value: unknown, expectedRows: number): Float32Array[] {

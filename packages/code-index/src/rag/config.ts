@@ -12,7 +12,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 	qdrantBinary: "qdrant",
 	qdrantDataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
 	qdrantStartupTimeoutMs: 30_000,
-	embeddingServerUrl: "http://127.0.0.1:8081",
+	embeddingServerUrl: "http://127.0.0.1:18742",
 	embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
 	embeddingDimensions: 1024,
 	pythonExecutable: "python3",

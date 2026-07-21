@@ -155,12 +155,14 @@ describe("structured-state normalization", () => {
 	});
 
 	it("prunes dead evidenceEntryIds from plan items", () => {
+		// Plan items are no longer re-parsed from compaction summaries.
+		// Existing plan items and their evidenceEntryIds are preserved as-is through compaction.
 		const previous = createInitialStructuredSessionState("test");
 		previous.plan = [{ id: "p1", text: "Step one", status: "done", evidenceEntryIds: ["e1", "e2", "e3"] }];
 		previous.evidence = [
 			{ id: "e1", kind: "file", summary: "exists", path: "packages/foo.ts", retrieveWhen: "" },
 			{ id: "e2", kind: "file", summary: "exists", path: "packages/bar.ts", retrieveWhen: "" },
-			// e3 is not in evidence, should be pruned
+			// e3 is not in evidence
 		];
 
 		const state = createStructuredSessionState({
@@ -170,7 +172,8 @@ describe("structured-state normalization", () => {
 			entries: [makeEntry()],
 		});
 
-		expect(state.plan[0]?.evidenceEntryIds).toEqual(["e1", "e2"]);
+		// Plan should be preserved from previous state, including original evidenceEntryIds
+		expect(state.plan[0]?.evidenceEntryIds).toEqual(["e1", "e2", "e3"]);
 	});
 
 	it("preserves previous goal when no new goal is provided", () => {

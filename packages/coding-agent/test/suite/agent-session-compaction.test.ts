@@ -205,10 +205,8 @@ describe("AgentSession compaction characterization", () => {
 		expect(details.structuredState?.canonicalRequest.current).toBe(
 			"Preserve the current goal, plan, and context through compaction.",
 		);
-		expect(details.structuredState?.plan.map((item) => [item.text, item.status])).toEqual([
-			["Reproduce the loss", "done"],
-			["Patch compaction summary state", "in_progress"],
-		]);
+		// Plan is preserved from previous state (empty), not re-parsed from summary
+		expect(details.structuredState?.plan).toEqual([]);
 	});
 
 	it("falls back to deterministic manual compaction when no summarizer is available", async () => {
