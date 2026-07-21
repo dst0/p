@@ -188,7 +188,6 @@ Before executing any semantic refactoring (TypeScript/JavaScript, HTML, Rust), t
    - For TS/JS: Use `ts-js-lsp` (`typescript-language-server`).
    - For HTML: Use `html-lsp` (`vscode-html-language-server`).
    - For Rust: Use `rust-lsp` (`rust-analyzer`) and/or `rust-analyzer-native` (`rust-analyzer-mcp`).
-4. After making edits, run compiler/validation checks:
-   - TS/JS: `npm test`, `npm run typecheck`, `npm run lint` (if available).
-   - Rust: `cargo fmt`, `cargo clippy`, `cargo test`.
+4. After making edits, run `npm run check` (full output, no tail). Fix all errors, warnings, and infos.
+   - Rust: `cargo fmt`, `cargo clippy`, `cargo test` as applicable.
 5. Never perform large cross-module or architectural refactors without creating a plan first.

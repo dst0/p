@@ -9,7 +9,7 @@ import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 const MAX_FULL_CONTEXT_FILE_CHARS = 6000;
 const MAX_COMPACT_CONTEXT_FILE_CHARS = 6000;
 const RULE_KEYWORD_PATTERN =
-	/\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|only|required|rules?|run|should|test|verify)\b/i;
+	/\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|no \w+|only|required|rules?|run|should|test|use \w+|verify)\b/i;
 
 export interface BuildSystemPromptOptions {
 	/** Custom system prompt (replaces default). */
