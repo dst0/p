@@ -19,8 +19,8 @@ if (!validBumps.includes(bump)) {
 	process.exit(1);
 }
 
-// Discover all package.json files (core + example extension workspaces)
-const packagePaths = [
+// Discover all workspace package.json files (core + example extension workspaces)
+const workspacePackagePaths = [
 	'packages/agent/package.json',
 	'packages/ai/package.json',
 	'packages/coding-agent/package.json',
@@ -35,7 +35,7 @@ const packagePaths = [
 const packages = {};
 const versionMap = {};
 
-for (const relPath of packagePaths) {
+for (const relPath of workspacePackagePaths) {
 	const fullPath = join(process.cwd(), relPath);
 	try {
 		const pkg = JSON.parse(readFileSync(fullPath, 'utf8'));
@@ -116,4 +116,17 @@ for (const [name, version] of Object.entries(versionMap)) {
 
 writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2) + '\n');
 
-console.log(`\n✅ Bumped all packages to ${Object.values(versionMap)[0]}`);
+// Bump root package.json to match workspace package version
+const rootPkgPath = join(process.cwd(), 'package.json');
+const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf8'));
+const targetVersion = Object.values(versionMap)[0];
+const oldRootVersion = rootPkg.version;
+if (rootPkg.version !== targetVersion) {
+    rootPkg.version = targetVersion;
+    writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
+    console.log(`p-monorepo (root): ${oldRootVersion} → ${targetVersion}`);
+} else {
+    console.log(`p-monorepo (root): already at ${targetVersion}`);
+}
+
+console.log(`\n✅ Bumped all packages to ${targetVersion}`);
