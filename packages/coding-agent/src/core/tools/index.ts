@@ -26,7 +26,12 @@ export {
 	type FindToolInput,
 	type FindToolOptions,
 } from "./find.ts";
-export { createFinishWorkToolDefinition, type FinishWorkPayload } from "./finish-work.ts";
+export {
+	createFinishWorkTool,
+	createFinishWorkToolDefinition,
+	type FinishWorkInput,
+	type FinishWorkPayload,
+} from "./finish-work.ts";
 export {
 	createGrepTool,
 	createGrepToolDefinition,
@@ -98,7 +103,7 @@ export {
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
-import { createFinishWorkToolDefinition } from "./finish-work.ts";
+import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
 import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
@@ -129,7 +134,8 @@ export type ToolName =
 	| "semantic_search"
 	| "ask_user"
 	| "confirm_user"
-	| "submit_plan";
+	| "submit_plan"
+	| "finish_work";
 export const allToolNames: Set<ToolName> = new Set([
 	"read",
 	"bash",
@@ -143,6 +149,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"ask_user",
 	"confirm_user",
 	"submit_plan",
+	"finish_work",
 ]);
 
 export interface ToolsOptions {
@@ -182,6 +189,8 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createConfirmUserToolDefinition();
 		case "submit_plan":
 			return createSubmitPlanToolDefinition(options?.submitPlan);
+		case "finish_work":
+			return createFinishWorkToolDefinition();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -213,6 +222,8 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createConfirmUserTool();
 		case "submit_plan":
 			return createSubmitPlanTool(options?.submitPlan);
+		case "finish_work":
+			return createFinishWorkTool();
 		default:
 			throw new Error(`Unknown tool name: ${toolName}`);
 	}
@@ -236,10 +247,7 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 	];
 }
 
-export function createAllToolDefinitions(
-	cwd: string,
-	options?: ToolsOptions,
-): Record<ToolName, ToolDef> & { finish_work: ToolDef } {
+export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
 	return {
 		read: createReadToolDefinition(cwd, options?.read),
 		bash: createBashToolDefinition(cwd, options?.bash),
@@ -289,5 +297,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		ask_user: createAskUserTool(),
 		confirm_user: createConfirmUserTool(),
 		submit_plan: createSubmitPlanTool(options?.submitPlan),
+		finish_work: createFinishWorkTool(),
 	};
 }
