@@ -297,6 +297,7 @@ export function createEditToolDefinition(
 		promptSnippet:
 			"Make precise file edits with exact text replacement, including multiple disjoint edits in one call",
 		promptGuidelines: [
+			"Read the file with the read tool before using edit to understand its current contents",
 			"Use edit for precise changes (edits[].oldText must match exactly)",
 			"When changing multiple separate locations in one file, use one edit call with multiple entries in edits[] instead of multiple edit calls",
 			"Each edits[].oldText is matched against the original file, not after earlier edits are applied. Do not emit overlapping or nested edits. Merge nearby changes into one edit.",
