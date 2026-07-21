@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { VerificationLedger, isVerificationCommand } from "../../src/core/verification-ledger.ts";
+import { isVerificationCommand, VerificationLedger } from "../../src/core/verification-ledger.ts";
 
 describe("VerificationLedger", () => {
 	it("records a command and computes status", () => {
