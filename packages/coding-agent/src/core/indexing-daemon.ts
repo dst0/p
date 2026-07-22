@@ -430,14 +430,19 @@ export class IndexingDaemon {
 			this.writeStatus();
 
 			try {
-				await this.runRepositoryOperation(w, async (signal) => {
+				await this.runRepositoryOperation(w, async (signal, reportActivity) => {
 					await this.ensureBackends(signal);
 					const initialized = await runtime.service.initialize({ checkFreshness: true });
 					runtime.state = initialized.state;
 					runtime.indexedFiles = initialized.indexedFiles;
 					runtime.indexedChunks = initialized.indexedChunks;
 					const summary = await runtime.service.refresh(
-						{ onProgress: (progress) => this.updateRuntimeProgress(runtime, progress) },
+						{
+							onProgress: (progress) => {
+								reportActivity();
+								this.updateRuntimeProgress(runtime, progress);
+							},
+						},
 						signal,
 					);
 					runtime.state = summary.status.state;
@@ -504,23 +509,28 @@ export class IndexingDaemon {
 
 	private async runRepositoryOperation(
 		worker: DrainWorker,
-		operation: (signal: AbortSignal) => Promise<void>,
+		operation: (signal: AbortSignal, reportActivity: () => void) => Promise<void>,
 	): Promise<void> {
 		const controller = new AbortController();
 		worker.controller = controller;
-		const message = `Indexing operation timed out after ${this.options.repositoryTimeoutMs}ms`;
+		const message = `Indexing operation timed out after ${this.options.repositoryTimeoutMs}ms without progress`;
 		let timedOut = false;
-		const timer = setTimeout(() => {
-			timedOut = true;
-			controller.abort(new Error(message));
-		}, this.options.repositoryTimeoutMs);
+		let timer: ReturnType<typeof setTimeout> | undefined;
+		const reportActivity = () => {
+			if (timer) clearTimeout(timer);
+			timer = setTimeout(() => {
+				timedOut = true;
+				controller.abort(new Error(message));
+			}, this.options.repositoryTimeoutMs);
+		};
+		reportActivity();
 		try {
-			await operation(controller.signal);
+			await operation(controller.signal, reportActivity);
 		} catch (error) {
 			if (timedOut) throw new Error(message);
 			throw error;
 		} finally {
-			clearTimeout(timer);
+			if (timer) clearTimeout(timer);
 			if (worker.controller === controller) worker.controller = undefined;
 		}
 	}

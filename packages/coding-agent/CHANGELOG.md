@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Keep healthy long-running repository indexing alive while progress continues, instead of aborting and restarting full RAG generations at the fixed daemon timeout.
 - Keep incremental indexing on the latest stable file contents when files change again during a refresh, instead of failing the pass and forcing unnecessary recovery work.
 - Prioritize the current PAgent repository in the system-owned indexing daemon, prevent an active repository from consuming multiple workers, preserve FIFO refresh fairness, and automatically reach missing-collection recovery before subsequent semantic searches.
 - Route semantic-search Qdrant requests through P's configured fetch runtime instead of the Qdrant SDK's incompatible bundled undici dispatcher, cover the PAgent HTTP runtime automatically, allow local query embedding enough time while background indexing is active, and make source reinstalls update and verify every npm-backed `p` command on `PATH`.

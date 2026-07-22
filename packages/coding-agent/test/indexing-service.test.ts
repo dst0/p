@@ -10,7 +10,7 @@ import type {
 	SemanticSearchInput,
 	SemanticSearchResponse,
 } from "@dst0/p-code-index";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { enableIndexingForRepo, getIndexedReposPath } from "../src/core/indexed-repos.ts";
@@ -131,7 +131,7 @@ class FakeRagService implements CodeRagService {
 		});
 	}
 
-	private createStatus(): RagStatus {
+	protected createStatus(): RagStatus {
 		return {
 			state: "ready",
 			workspaceRoot: this.workspaceRoot,
@@ -202,6 +202,49 @@ class AbortAwareRagService extends FakeRagService {
 		} finally {
 			this.refreshing = false;
 		}
+	}
+}
+
+class ProgressingRagService extends FakeRagService {
+	abortObserved = false;
+
+	override async refresh(options: RefreshIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
+		this.refreshing = true;
+		options.onProgress?.({ phase: "indexing", percent: 10 });
+		return new Promise((resolve, reject) => {
+			let percent = 10;
+			const interval = setInterval(() => {
+				percent += 10;
+				options.onProgress?.({ phase: "indexing", percent });
+				if (percent < 70) return;
+				cleanup();
+				this.refreshCount += 1;
+				this.refreshing = false;
+				resolve({
+					status: this.createStatus(),
+					durationMs: 120,
+					filesScanned: 1,
+					filesAdded: 0,
+					filesChanged: 1,
+					filesDeleted: 0,
+					filesUnchanged: 0,
+					chunksEmbedded: 1,
+					fullRebuild: false,
+				});
+			}, 20);
+			const onAbort = () => {
+				this.abortObserved = true;
+				cleanup();
+				this.refreshing = false;
+				reject(signal?.reason ?? new Error("aborted"));
+			};
+			const cleanup = () => {
+				clearInterval(interval);
+				signal?.removeEventListener("abort", onAbort);
+			};
+			if (signal?.aborted) onAbort();
+			else signal?.addEventListener("abort", onAbort, { once: true });
+		});
 	}
 }
 
@@ -565,6 +608,40 @@ describe("indexing daemon", () => {
 		await waitFor(() => new IndexingService(fixture.agentDir).getStatus(fixture.repo).ragState === "error");
 		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).lastError).toContain("timed out");
 		await daemon.stop();
+	});
+
+	it("keeps a repository refresh alive while indexing progress continues", async () => {
+		vi.useFakeTimers();
+		const fixture = createFixture();
+		enableIndexingForRepo(fixture.repo, fixture.agentDir);
+		let service: ProgressingRagService | undefined;
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			repositoryTimeoutMs: 50,
+			retryMs: 60_000,
+			reconcileMs: 60_000,
+			serviceFactory: (workspaceRoot) => {
+				service = new ProgressingRagService(workspaceRoot);
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		try {
+			await daemon.start();
+			await vi.advanceTimersByTimeAsync(200);
+			expect(service?.abortObserved).toBe(false);
+			expect(service?.refreshCount).toBe(1);
+			expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).ragState).toBe("ready");
+		} finally {
+			await daemon.stop();
+			vi.useRealTimers();
+		}
 	});
 
 	it("allows only one daemon to own an agent directory", async () => {
