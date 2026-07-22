@@ -199,6 +199,19 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", incompatibility);
 					return this.snapshotStatus();
 				}
+				try {
+					const exists = await this.vectorStore.collectionExists(this.manifest.collection);
+					if (!exists) {
+						this.state = "stale";
+						this.staleReason = "Qdrant collection is missing";
+						this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", "Qdrant collection is missing");
+						return this.snapshotStatus();
+					}
+				} catch (error) {
+					this.state = "unavailable";
+					this.lastError = this.errorInfo("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
+					return this.snapshotStatus();
+				}
 				this.state = this.manifest.state;
 				this.lastError = this.manifest.lastError;
 			} catch (error) {

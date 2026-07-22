@@ -51,6 +51,10 @@ class FakeVectorStore implements RagVectorStore {
 	createdCollections: string[] = [];
 	deletedCollections: string[] = [];
 
+	async collectionExists(collection: string): Promise<boolean> {
+		return this.collections.has(collection);
+	}
+
 	async createCollection(collection: string, denseDimensions: number): Promise<void> {
 		if (!this.collections.has(collection)) {
 			this.collections.set(collection, new Map());

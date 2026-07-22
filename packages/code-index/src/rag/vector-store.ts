@@ -34,6 +34,11 @@ export class QdrantVectorStore implements RagVectorStore {
 		});
 	}
 
+	async collectionExists(collection: string): Promise<boolean> {
+		const existence = await this.client.collectionExists(collection);
+		return existence.exists;
+	}
+
 	async createCollection(collection: string, denseDimensions: number): Promise<void> {
 		const existence = await this.client.collectionExists(collection);
 		if (existence.exists) {
