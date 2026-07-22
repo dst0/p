@@ -5,7 +5,7 @@ Local embedding server for code-index.
 Uses sentence-transformers to run Qwen3-Embedding-0.6B on CPU/Metal.
 
 Usage:
-    python embedding_server.py [--port 8081] [--model Qwen/Qwen3-Embedding-0.6B]
+    python embedding_server.py [--port 18742] [--model Qwen/Qwen3-Embedding-0.6B]
 
 API:
     POST /embed
@@ -131,7 +131,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 def main():
     parser = argparse.ArgumentParser(description="Embedding server for code-index")
-    parser.add_argument("--port", type=int, default=8081)
+    parser.add_argument("--port", type=int, default=18742)
     parser.add_argument("--model", default="Qwen/Qwen3-Embedding-0.6B")
     args = parser.parse_args()
 

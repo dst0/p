@@ -87,8 +87,8 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 		this.serverManager?.kill();
 	}
 
-	dispose(): void {
-		this.stop();
+	async dispose(): Promise<void> {
+		await this.serverManager?.stop();
 	}
 
 	private async request(input: string[], signal?: AbortSignal): Promise<Float32Array[]> {

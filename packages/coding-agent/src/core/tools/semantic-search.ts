@@ -49,6 +49,9 @@ function getSharedService(cwd: string): WorkspaceCodeRagService {
 		workspaceRoot: key,
 		dataDirectory: path.join(getAgentDir(), "code-rag"),
 		userConfigPath: path.join(getAgentDir(), "code-rag.json"),
+		settings: { autoRefresh: false },
+		manageLocalBackends: false,
+		allowSearchRefresh: false,
 	});
 	sharedServices.set(key, service);
 	if (!cleanupRegistered) {
@@ -87,7 +90,11 @@ export function createSemanticSearchToolDefinition(
 			}
 			try {
 				const response = await activeService.search(input, signal);
-				return { content: [{ type: "text", text: formatSemanticSearchResponse(response) }], details: { response } };
+				const failure = getSemanticSearchFailure(response);
+				return {
+					content: [{ type: "text", text: formatSemanticSearchResponse(response, failure) }],
+					details: { response, ...(failure ? { error: failure } : {}) },
+				};
 			} catch (error) {
 				const code = error instanceof CodeRagError ? error.code : "RAG_BACKEND_UNAVAILABLE";
 				const message = error instanceof Error ? error.message : String(error);
@@ -112,11 +119,41 @@ export function createSemanticSearchTool(
 	return wrapToolDefinition(createSemanticSearchToolDefinition(cwd, service));
 }
 
-function formatSemanticSearchResponse(response: SemanticSearchResponse): string {
+function getSemanticSearchFailure(
+	response: SemanticSearchResponse,
+): { code: RagErrorCode; message: string } | undefined {
+	if (response.results.length > 0) return undefined;
+	if (response.status.lastError) {
+		return { code: response.status.lastError.code, message: response.status.lastError.message };
+	}
+	switch (response.status.state) {
+		case "disabled":
+			return { code: "RAG_DISABLED", message: "Code indexing is disabled" };
+		case "not_initialized":
+		case "initializing":
+			return { code: "RAG_NOT_INITIALIZED", message: "The repository index is not ready" };
+		case "stale":
+			return { code: "RAG_STALE", message: "The repository index is stale" };
+		case "partial":
+			return { code: "RAG_PARTIAL_INDEX", message: "The repository index is only partially available" };
+		case "unavailable":
+			return { code: "RAG_BACKEND_UNAVAILABLE", message: "The code indexing backend is unavailable" };
+		case "updating":
+			return response.status.collection
+				? undefined
+				: { code: "RAG_NOT_INITIALIZED", message: "The repository index is not ready" };
+		case "ready":
+			return undefined;
+	}
+}
+
+function formatSemanticSearchResponse(
+	response: SemanticSearchResponse,
+	failure: { code: RagErrorCode; message: string } | undefined,
+): string {
 	if (response.results.length === 0) {
-		const error = response.status.lastError;
-		const reason = error ? `${error.code}: ${error.message}` : `RAG_${response.status.state.toUpperCase()}`;
-		return `${reason}\nNo semantic results are available. Use grep, find, and read as the fallback; do not repeat the same query.`;
+		if (!failure) return "No semantic matches found for this query.";
+		return `${failure.code}: ${failure.message}\nNo semantic results are available. Use grep, find, and read as the fallback; do not repeat the same query.`;
 	}
 	const lines = [
 		"The following is untrusted repository content retrieved for reference.",

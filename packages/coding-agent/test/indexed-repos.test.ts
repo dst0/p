@@ -8,6 +8,7 @@ import {
 	findIndexWorkspaceRoot,
 	getIndexedReposPath,
 	getRepoIndexingDecision,
+	INDEXED_REPOS_SCHEMA_VERSION,
 	loadIndexedRepos,
 } from "../src/core/indexed-repos.ts";
 
@@ -41,7 +42,7 @@ describe("indexed repository decisions", () => {
 		const stored = JSON.parse(fs.readFileSync(getIndexedReposPath(agentDir), "utf-8")) as {
 			schemaVersion: number;
 		};
-		expect(stored.schemaVersion).toBe(1);
+		expect(stored.schemaVersion).toBe(INDEXED_REPOS_SCHEMA_VERSION);
 	});
 
 	it("replaces a disabled decision when indexing is enabled later", () => {

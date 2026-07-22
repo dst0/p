@@ -14,6 +14,7 @@ const DEFAULT_SERVER_OPTIONS: EmbeddingServerManagerOptions = {
 	pythonExecutable: "python3",
 	startupTimeoutMs: 120_000,
 };
+const SERVER_STOP_TIMEOUT_MS = 5_000;
 
 /**
  * Manages the lifecycle of the Python embedding server subprocess.
@@ -25,6 +26,7 @@ export class EmbeddingServerManager {
 	private port: number;
 	private model: string;
 	private startPromise: Promise<boolean> | undefined;
+	private stopPromise: Promise<void> | undefined;
 	private options: EmbeddingServerManagerOptions;
 
 	constructor(
@@ -45,6 +47,7 @@ export class EmbeddingServerManager {
 	 * Returns true if this instance started the server, false if already running.
 	 */
 	async ensureStarted(signal?: AbortSignal): Promise<boolean> {
+		if (this.stopPromise) await this.stopPromise;
 		// Always check health — server could have died externally
 		const alive = await this.checkHealth();
 		if (alive) {
@@ -115,10 +118,10 @@ export class EmbeddingServerManager {
 				if (this.child === child) {
 					this.options.onLog?.("error", `Embedding server exited with code ${code}, signal ${signal}`);
 					this.child = null;
-					settle(() =>
-						reject(new Error(`Embedding server exited before readiness (code ${code}, signal ${signal})`)),
-					);
 				}
+				settle(() =>
+					reject(new Error(`Embedding server exited before readiness (code ${code}, signal ${signal})`)),
+				);
 			});
 
 			// Poll /health until the server reports ready or timeout
@@ -154,9 +157,39 @@ export class EmbeddingServerManager {
 	 * Kill the managed server process.
 	 */
 	kill(): void {
-		if (this.child) {
-			this.child.kill("SIGTERM");
-			this.child = null;
+		void this.stop();
+	}
+
+	/** Stop the managed process and wait until it no longer owns the port. */
+	async stop(): Promise<void> {
+		if (this.stopPromise) return this.stopPromise;
+		const child = this.child;
+		this.child = null;
+		if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+		const operation = new Promise<void>((resolve) => {
+			let forceTimer: ReturnType<typeof setTimeout> | undefined;
+			let giveUpTimer: ReturnType<typeof setTimeout> | undefined;
+			const finish = () => {
+				if (forceTimer) clearTimeout(forceTimer);
+				if (giveUpTimer) clearTimeout(giveUpTimer);
+				child.removeListener("exit", finish);
+				child.removeListener("error", finish);
+				resolve();
+			};
+			child.once("exit", finish);
+			child.once("error", finish);
+			child.kill("SIGTERM");
+			forceTimer = setTimeout(() => {
+				if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+				giveUpTimer = setTimeout(finish, 1_000);
+			}, SERVER_STOP_TIMEOUT_MS);
+		});
+		this.stopPromise = operation;
+		try {
+			await operation;
+		} finally {
+			if (this.stopPromise === operation) this.stopPromise = undefined;
 		}
 	}
 

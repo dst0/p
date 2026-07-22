@@ -148,6 +148,46 @@ describe("semantic_search tool", () => {
 		expect(result.details).toHaveProperty("error");
 	});
 
+	it("surfaces failures returned in an empty service response", async () => {
+		const service = new FakeRagService({
+			query: "",
+			workspaceRoot: "/workspace",
+			status: {
+				...readyStatus,
+				state: "stale",
+				lastError: {
+					code: "RAG_INCOMPATIBLE_INDEX",
+					message: "Qdrant collection is missing",
+					at: "2026-01-01T00:00:00.000Z",
+				},
+			},
+			results: [],
+			diagnostics: { durationMs: 0, truncated: false },
+		});
+		const tool = createSemanticSearchTool("/workspace", service);
+		const result = await tool.execute("call", { query: "authentication" }, undefined, undefined);
+		expect(result.details).toMatchObject({
+			error: { code: "RAG_INCOMPATIBLE_INDEX", message: "Qdrant collection is missing" },
+		});
+		expect(result.content.find((item) => item.type === "text")?.text).toContain("RAG_INCOMPATIBLE_INDEX");
+	});
+
+	it("reports a successful ready search with no matches without inventing an error", async () => {
+		const service = new FakeRagService({
+			query: "",
+			workspaceRoot: "/workspace",
+			status: readyStatus,
+			results: [],
+			diagnostics: { durationMs: 0, truncated: false },
+		});
+		const tool = createSemanticSearchTool("/workspace", service);
+		const result = await tool.execute("call", { query: "absent concept" }, undefined, undefined);
+		expect(result.details).not.toHaveProperty("error");
+		expect(result.content.find((item) => item.type === "text")?.text).toBe(
+			"No semantic matches found for this query.",
+		);
+	});
+
 	it("provides untrusted-content boundary with multiple results", async () => {
 		const service = new FakeRagService({
 			query: "",

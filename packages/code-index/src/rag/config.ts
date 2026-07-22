@@ -21,7 +21,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 	maxContextCharacters: 16_000,
 	maxResultCharacters: 4_000,
 	searchTimeoutMs: 5_000,
-	embeddingTimeoutMs: 30_000,
+	embeddingTimeoutMs: 5 * 60_000,
 	embeddingStartupTimeoutMs: 120_000,
 	maxFileBytes: 1024 * 1024,
 	defaultChunkLines: 80,

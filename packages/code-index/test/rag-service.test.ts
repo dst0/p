@@ -10,7 +10,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import {
 	type IndexingProgress,
@@ -143,18 +143,19 @@ function createService(
 	data: string,
 	embeddingProvider: FakeEmbeddingProvider,
 	vectorStore: FakeVectorStore,
-	settings: { embeddingModel?: string } = {},
+	options: { embeddingModel?: string; allowSearchRefresh?: boolean } = {},
 ): WorkspaceCodeRagService {
 	return new WorkspaceCodeRagService({
 		workspaceRoot: root,
 		dataDirectory: data,
 		embeddingProvider,
 		vectorStore,
+		allowSearchRefresh: options.allowSearchRefresh,
 		settings: {
 			enabled: true,
 			autoRefresh: false,
 			embeddingDimensions: 3,
-			embeddingModel: settings.embeddingModel ?? "test-embedding-v1",
+			embeddingModel: options.embeddingModel ?? "test-embedding-v1",
 			fullSparseRebuildChangeRatio: 1,
 		},
 	});
@@ -290,6 +291,51 @@ describe("WorkspaceCodeRagService", () => {
 		expect(rebuilt.status.collection).not.toBe(firstCollection);
 	});
 
+	it("rebuilds when the persisted Qdrant collection is missing", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const original = createService(root, data, embedding, store);
+		await original.rebuild();
+		const originalCollection = (await original.status()).collection!;
+		await original.dispose();
+		await store.deleteCollection(originalCollection);
+
+		const recovered = createService(root, data, embedding, store);
+		const stale = await recovered.initialize();
+		expect(stale).toMatchObject({
+			state: "stale",
+			lastError: { code: "RAG_INCOMPATIBLE_INDEX", message: "Qdrant collection is missing" },
+		});
+		const rebuilt = await recovered.refresh();
+		expect(rebuilt.fullRebuild).toBe(true);
+		expect(rebuilt.status.collection).not.toBe(originalCollection);
+		const response = await recovered.search({ query: "authentication initialization", freshness: "allow_stale" });
+		expect(response.results[0]?.content).toContain("unique-auth-token");
+		await recovered.dispose();
+	});
+
+	it("reloads a newer manifest written by another service before searching", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const writer = createService(root, data, embedding, store);
+		await writer.rebuild();
+		const reader = createService(root, data, embedding, store);
+		const originalCollection = (await reader.initialize()).collection;
+
+		writeFileSync(join(root, "main.ts"), "export const replacementGeneration = 'manifest-reload-proof';\n");
+		const rebuilt = await writer.rebuild();
+		expect(rebuilt.status.collection).not.toBe(originalCollection);
+		expect(store.collections.has(originalCollection!)).toBe(false);
+
+		const response = await reader.search({ query: "replacement generation", freshness: "allow_stale" });
+		expect(response.status.collection).toBe(rebuilt.status.collection);
+		expect(response.results[0]?.content).toContain("manifest-reload-proof");
+		await writer.dispose();
+		await reader.dispose();
+	});
+
 	it("does not launch a local Qdrant for an explicitly allowed remote backend", async () => {
 		const { root, data } = createFixture();
 		const service = new WorkspaceCodeRagService({
@@ -396,6 +442,31 @@ describe("search validation and edge cases", () => {
 		const service = createService(root, data, embedding, store);
 		const response = await service.search({ query: "test", freshness: "allow_stale" });
 		expect(response.results).toEqual([]);
+		await service.dispose();
+	});
+
+	it("leaves prefer_fresh and require_fresh maintenance to the daemon when search refresh is disabled", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store, { allowSearchRefresh: false });
+		await service.rebuild();
+		writeFileSync(join(root, "main.ts"), "export const changedForDaemon = true;\n");
+		const refreshSpy = vi.spyOn(service, "refresh");
+
+		const staleResponse = await service.search({ query: "changed daemon code", freshness: "prefer_fresh" });
+		expect(staleResponse.status.state).toBe("stale");
+		expect(refreshSpy).not.toHaveBeenCalled();
+		const encodedAfterStaleSearch = embedding.encodedTexts.length;
+		const response = await service.search({ query: "changed daemon code", freshness: "require_fresh" });
+		expect(response.status.state).toBe("stale");
+		expect(response.results).toEqual([]);
+		expect(refreshSpy).not.toHaveBeenCalled();
+		expect(embedding.encodedTexts).toHaveLength(encodedAfterStaleSearch);
+
+		const refreshed = await service.refresh();
+		expect(refreshSpy).toHaveBeenCalledOnce();
+		expect(refreshed.filesChanged).toBe(1);
 		await service.dispose();
 	});
 

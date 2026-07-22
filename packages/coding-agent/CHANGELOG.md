@@ -1,5 +1,12 @@
 # Changelog
 
+## [Unreleased]
+
+### Fixed
+
+- Keep the code-index daemon draining repositories after workers finish, enforce singleton service and backend ownership, prevent PAgent searches from running foreground refreshes, cancel timed-out refreshes, rebuild missing Qdrant generations, reload manifests written by other processes, report semantic-search backend failures truthfully, and render an explicit 0% footer state when progress has started.
+- Validate source reinstalls with a real temporary-repository semantic-search call, wait for smoke-owned backend processes to release their ports, and safely replace stale launchd, systemd, and managed-backend processes.
+
 ## [0.4.25] - 2026-07-21
 
 ### Added

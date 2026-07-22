@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import fs, { type FSWatcher } from "node:fs";
 import path from "node:path";
 import {
@@ -23,7 +24,15 @@ type WatchFactory = (
 
 interface DrainWorker {
 	stop: boolean;
+	done: boolean;
+	controller?: AbortController;
+	runtime?: RepositoryRuntime;
 	promise: Promise<void>;
+}
+
+interface DaemonLock {
+	path: string;
+	token: string;
 }
 
 export interface IndexingDaemonOptions {
@@ -35,8 +44,9 @@ export interface IndexingDaemonOptions {
 	debounceMs?: number;
 	retryMs?: number;
 	reconcileMs?: number;
+	repositoryTimeoutMs?: number;
 	serviceFactory?: (workspaceRoot: string) => CodeRagService;
-	ensureBackends?: () => Promise<void>;
+	ensureBackends?: (signal?: AbortSignal) => Promise<void>;
 	disposeBackends?: () => Promise<void>;
 	watchFactory?: WatchFactory;
 }
@@ -58,7 +68,8 @@ interface RepositoryRuntime {
 }
 
 const DRAIN_MAX_CONCURRENCY = 2;
-const DRAIN_REPO_TIMEOUT_MS = 5 * 60_000; // 5 minutes per repo
+const DEFAULT_REPOSITORY_TIMEOUT_MS = 30 * 60_000;
+const DAEMON_LOCK_INITIALIZATION_GRACE_MS = 10_000;
 
 const IGNORED_WATCH_PATH_SEGMENTS = new Set([
 	".git",
@@ -76,10 +87,10 @@ const IGNORED_WATCH_PATH_SEGMENTS = new Set([
 
 export class IndexingDaemon {
 	private readonly options: Required<
-		Pick<IndexingDaemonOptions, "agentDir" | "debounceMs" | "retryMs" | "reconcileMs">
+		Pick<IndexingDaemonOptions, "agentDir" | "debounceMs" | "retryMs" | "reconcileMs" | "repositoryTimeoutMs">
 	>;
 	private readonly serviceFactory: (workspaceRoot: string) => CodeRagService;
-	private readonly ensureBackends: () => Promise<void>;
+	private readonly ensureBackends: (signal?: AbortSignal) => Promise<void>;
 	private readonly disposeBackends: () => Promise<void>;
 	private readonly watchFactory: WatchFactory;
 	private readonly runtimes = new Map<string, RepositoryRuntime>();
@@ -90,6 +101,8 @@ export class IndexingDaemon {
 	private registrySyncRequested = false;
 	private reconcileTimer: ReturnType<typeof setInterval> | undefined;
 	private drainWorkers: DrainWorker[] = [];
+	private drainPaused = false;
+	private daemonLock: DaemonLock | undefined;
 	private disposed = false;
 
 	constructor(options: IndexingDaemonOptions) {
@@ -98,6 +111,7 @@ export class IndexingDaemon {
 			debounceMs: options.debounceMs ?? 750,
 			retryMs: options.retryMs ?? 30_000,
 			reconcileMs: options.reconcileMs ?? 5 * 60_000,
+			repositoryTimeoutMs: options.repositoryTimeoutMs ?? DEFAULT_REPOSITORY_TIMEOUT_MS,
 		};
 		const qdrantManager = new QdrantServerManager(6333, {
 			qdrantBinary: options.qdrantBinary,
@@ -117,18 +131,19 @@ export class IndexingDaemon {
 					workspaceRoot,
 					dataDirectory: path.join(options.agentDir, "code-rag"),
 					userConfigPath: path.join(options.agentDir, "code-rag.json"),
+					manageLocalBackends: false,
+					allowSearchRefresh: false,
 				}));
 		this.ensureBackends =
 			options.ensureBackends ??
-			(async () => {
-				await qdrantManager.ensureStarted();
-				await embeddingManager.ensureStarted();
+			(async (signal) => {
+				await qdrantManager.ensureStarted(signal);
+				await embeddingManager.ensureStarted(signal);
 			});
 		this.disposeBackends =
 			options.disposeBackends ??
 			(async () => {
-				embeddingManager.kill();
-				qdrantManager.kill();
+				await Promise.all([embeddingManager.stop(), qdrantManager.stop()]);
 			});
 		this.watchFactory =
 			options.watchFactory ??
@@ -138,10 +153,20 @@ export class IndexingDaemon {
 	async start(): Promise<void> {
 		if (this.disposed) throw new Error("Indexing daemon has been disposed");
 		fs.mkdirSync(this.options.agentDir, { recursive: true, mode: 0o700 });
-		this.watchRegistry();
-		await this.syncRegistry();
-		this.reconcileTimer = setInterval(() => void this.reconcile(), this.options.reconcileMs);
-		this.writeStatus();
+		this.daemonLock = acquireDaemonLock(this.options.agentDir);
+		try {
+			this.watchRegistry();
+			await this.syncRegistry();
+			this.reconcileTimer = setInterval(() => void this.reconcile(), this.options.reconcileMs);
+			this.writeStatus();
+		} catch (error) {
+			try {
+				await this.stop();
+			} catch {
+				// Preserve the startup failure after best-effort cleanup.
+			}
+			throw error;
+		}
 	}
 
 	async stop(): Promise<void> {
@@ -152,13 +177,21 @@ export class IndexingDaemon {
 		if (this.registryWatchRetryTimer) clearTimeout(this.registryWatchRetryTimer);
 		if (this.reconcileTimer) clearInterval(this.reconcileTimer);
 		const registrySyncPromise = this.registrySyncPromise;
-		if (registrySyncPromise) await registrySyncPromise;
-		await this.stopDrain();
-		for (const runtime of this.runtimes.values()) this.closeRuntime(runtime);
-		await Promise.allSettled([...this.runtimes.values()].map((runtime) => runtime.service.dispose()));
-		await this.disposeBackends();
-		this.runtimes.clear();
-		this.writeStatus(false);
+		try {
+			if (registrySyncPromise) await Promise.allSettled([registrySyncPromise]);
+			await this.stopDrain();
+			for (const runtime of this.runtimes.values()) this.closeRuntime(runtime);
+			await Promise.allSettled([...this.runtimes.values()].map((runtime) => runtime.service.dispose()));
+			await this.disposeBackends();
+		} finally {
+			this.runtimes.clear();
+			try {
+				this.writeStatus(false);
+			} finally {
+				if (this.daemonLock) releaseDaemonLock(this.daemonLock);
+				this.daemonLock = undefined;
+			}
+		}
 	}
 
 	private async reconcile(): Promise<void> {
@@ -220,6 +253,7 @@ export class IndexingDaemon {
 			this.requestRefresh(runtime, false);
 		}
 		this.writeStatus();
+		this.startDrain();
 	}
 
 	private watchRegistry(): void {
@@ -295,22 +329,20 @@ export class IndexingDaemon {
 	}
 
 	private startDrain(): void {
-		if (this.disposed) return;
-		// Clean up finished workers
-		this.drainWorkers = this.drainWorkers.filter((w) => !this.isWorkerDone(w));
-
-		// Only spawn if we have dirty repos and under concurrency limit
-		const hasDirty = [...this.runtimes.values()].some((r) => r.dirty);
-		if (!hasDirty) return;
-		if (this.drainWorkers.length >= DRAIN_MAX_CONCURRENCY) return;
-
-		const worker: DrainWorker = { stop: false, promise: Promise.resolve() };
-		this.drainWorkers.push(worker);
-		worker.promise = this.drainWorker(worker);
-	}
-
-	private isWorkerDone(w: DrainWorker): boolean {
-		return !w.promise || w.stop;
+		if (this.disposed || this.drainPaused) return;
+		this.drainWorkers = this.drainWorkers.filter((worker) => !worker.done);
+		while (
+			this.drainWorkers.length < DRAIN_MAX_CONCURRENCY &&
+			[...this.runtimes.values()].some((runtime) => runtime.dirty)
+		) {
+			const worker: DrainWorker = { stop: false, done: false, promise: Promise.resolve() };
+			this.drainWorkers.push(worker);
+			worker.promise = this.drainWorker(worker).finally(() => {
+				worker.done = true;
+				this.drainWorkers = this.drainWorkers.filter((candidate) => candidate !== worker);
+				if (!this.disposed && !this.drainPaused) this.startDrain();
+			});
+		}
 	}
 
 	private async drainWorker(w: DrainWorker): Promise<void> {
@@ -321,6 +353,7 @@ export class IndexingDaemon {
 			// Double-check still dirty (another worker may have grabbed it)
 			if (!runtime.dirty) continue;
 			runtime.dirty = false;
+			w.runtime = runtime;
 			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
 			delete runtime.progress;
@@ -328,26 +361,24 @@ export class IndexingDaemon {
 			this.writeStatus();
 
 			try {
-				await withTimeout(
-					(async () => {
-						await this.ensureBackends();
-						const initialized = await runtime.service.initialize({ checkFreshness: true });
-						runtime.state = initialized.state;
-						runtime.indexedFiles = initialized.indexedFiles;
-						runtime.indexedChunks = initialized.indexedChunks;
-						const summary = await runtime.service.refresh({
-							onProgress: (progress) => this.updateRuntimeProgress(runtime, progress),
-						});
-						runtime.state = summary.status.state;
-						runtime.indexedFiles = summary.status.indexedFiles;
-						runtime.indexedChunks = summary.status.indexedChunks;
-						delete runtime.progress;
-						delete runtime.lastError;
-					})(),
-					DRAIN_REPO_TIMEOUT_MS,
-					`Indexing ${runtime.root} timed out after ${DRAIN_REPO_TIMEOUT_MS}ms`,
-				);
+				await this.runRepositoryOperation(w, async (signal) => {
+					await this.ensureBackends(signal);
+					const initialized = await runtime.service.initialize({ checkFreshness: true });
+					runtime.state = initialized.state;
+					runtime.indexedFiles = initialized.indexedFiles;
+					runtime.indexedChunks = initialized.indexedChunks;
+					const summary = await runtime.service.refresh(
+						{ onProgress: (progress) => this.updateRuntimeProgress(runtime, progress) },
+						signal,
+					);
+					runtime.state = summary.status.state;
+					runtime.indexedFiles = summary.status.indexedFiles;
+					runtime.indexedChunks = summary.status.indexedChunks;
+					delete runtime.progress;
+					delete runtime.lastError;
+				});
 			} catch (error) {
+				if (this.disposed || w.stop) return;
 				runtime.state = "error";
 				delete runtime.progress;
 				runtime.lastError = safeErrorMessage(error);
@@ -358,19 +389,50 @@ export class IndexingDaemon {
 						this.requestRefresh(runtime, false);
 					}, this.options.retryMs);
 				}
+			} finally {
+				if (w.runtime === runtime) w.runtime = undefined;
 			}
 			runtime.updatedAt = new Date().toISOString();
 			this.writeStatus();
 		}
 	}
 
-	private async stopDrain(): Promise<void> {
-		for (const w of this.drainWorkers) {
-			w.stop = true;
+	private async runRepositoryOperation(
+		worker: DrainWorker,
+		operation: (signal: AbortSignal) => Promise<void>,
+	): Promise<void> {
+		const controller = new AbortController();
+		worker.controller = controller;
+		const message = `Indexing operation timed out after ${this.options.repositoryTimeoutMs}ms`;
+		let timedOut = false;
+		const timer = setTimeout(() => {
+			timedOut = true;
+			controller.abort(new Error(message));
+		}, this.options.repositoryTimeoutMs);
+		try {
+			await operation(controller.signal);
+		} catch (error) {
+			if (timedOut) throw new Error(message);
+			throw error;
+		} finally {
+			clearTimeout(timer);
+			if (worker.controller === controller) worker.controller = undefined;
 		}
-		if (this.drainWorkers.length === 0) return;
-		await Promise.allSettled(this.drainWorkers.map((w) => w.promise));
+	}
+
+	private async stopDrain(): Promise<void> {
+		this.drainPaused = true;
+		const workers = [...this.drainWorkers];
+		for (const worker of workers) {
+			worker.stop = true;
+			if (!this.disposed && worker.runtime && this.runtimes.get(worker.runtime.root) === worker.runtime) {
+				worker.runtime.dirty = true;
+			}
+			worker.controller?.abort(new Error("Indexing daemon stopped"));
+		}
+		await Promise.allSettled(workers.map((worker) => worker.promise));
 		this.drainWorkers = [];
+		this.drainPaused = false;
 	}
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
@@ -449,11 +511,68 @@ function safeErrorMessage(error: unknown): string {
 	return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ").slice(0, 500);
 }
 
-function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
-	return new Promise<T>((resolve, reject) => {
-		const timer = setTimeout(() => {
-			reject(new Error(message));
-		}, ms);
-		promise.then(resolve, reject).finally(() => clearTimeout(timer));
-	});
+function acquireDaemonLock(agentDir: string): DaemonLock {
+	const lockPath = path.join(agentDir, "indexing-service", "daemon.lock");
+	fs.mkdirSync(path.dirname(lockPath), { recursive: true, mode: 0o700 });
+	for (;;) {
+		const token = randomUUID();
+		try {
+			const descriptor = fs.openSync(lockPath, "wx", 0o600);
+			try {
+				fs.writeFileSync(
+					descriptor,
+					`${JSON.stringify({ pid: process.pid, token, startedAt: new Date().toISOString() })}\n`,
+				);
+			} finally {
+				fs.closeSync(descriptor);
+			}
+			return { path: lockPath, token };
+		} catch (error) {
+			if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+			const owner = readDaemonLock(lockPath);
+			if (owner && isProcessRunning(owner.pid)) {
+				throw new Error(`Code indexing daemon is already running with pid ${owner.pid}`);
+			}
+			if (!owner) {
+				let ageMs: number;
+				try {
+					ageMs = Date.now() - fs.statSync(lockPath).mtimeMs;
+				} catch (statError) {
+					if (statError instanceof Error && "code" in statError && statError.code === "ENOENT") continue;
+					throw statError;
+				}
+				if (ageMs < DAEMON_LOCK_INITIALIZATION_GRACE_MS) {
+					throw new Error("Code indexing daemon lock is being initialized");
+				}
+			}
+			fs.rmSync(lockPath, { force: true });
+		}
+	}
+}
+
+function releaseDaemonLock(lock: DaemonLock): void {
+	const owner = readDaemonLock(lock.path);
+	if (owner?.token === lock.token) fs.rmSync(lock.path, { force: true });
+}
+
+function readDaemonLock(lockPath: string): { pid: number; token: string } | undefined {
+	try {
+		const value: unknown = JSON.parse(fs.readFileSync(lockPath, "utf-8"));
+		if (typeof value !== "object" || value === null) return undefined;
+		const pid = Reflect.get(value, "pid");
+		const token = Reflect.get(value, "token");
+		if (!Number.isSafeInteger(pid) || typeof token !== "string") return undefined;
+		return { pid: Number(pid), token };
+	} catch {
+		return undefined;
+	}
+}
+
+function isProcessRunning(pid: number): boolean {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error instanceof Error && "code" in error && error.code === "EPERM";
+	}
 }

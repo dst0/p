@@ -15,6 +15,7 @@ const DEFAULT_QDRANT_OPTIONS: QdrantServerManagerOptions = {
 	dataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
 	startupTimeoutMs: 30_000,
 };
+const SERVER_STOP_TIMEOUT_MS = 5_000;
 
 /** Starts and monitors one local Qdrant process. */
 export class QdrantServerManager {
@@ -22,6 +23,7 @@ export class QdrantServerManager {
 	private readonly port: number;
 	private readonly options: QdrantServerManagerOptions;
 	private startPromise: Promise<boolean> | undefined;
+	private stopPromise: Promise<void> | undefined;
 
 	constructor(port: number = 6333, options: Partial<QdrantServerManagerOptions> = {}) {
 		this.port = port;
@@ -29,6 +31,7 @@ export class QdrantServerManager {
 	}
 
 	async ensureStarted(signal?: AbortSignal): Promise<boolean> {
+		if (this.stopPromise) await this.stopPromise;
 		if (await this.checkHealth()) return false;
 		if (this.startPromise) return this.startPromise;
 		this.startPromise = this.start(signal).finally(() => {
@@ -38,9 +41,40 @@ export class QdrantServerManager {
 	}
 
 	kill(): void {
+		void this.stop();
+	}
+
+	/** Stop the managed process and wait until it no longer owns the port. */
+	async stop(): Promise<void> {
+		if (this.stopPromise) return this.stopPromise;
 		const child = this.child;
 		this.child = null;
-		child?.kill("SIGTERM");
+		if (!child || child.exitCode !== null || child.signalCode !== null) return;
+
+		const operation = new Promise<void>((resolve) => {
+			let forceTimer: ReturnType<typeof setTimeout> | undefined;
+			let giveUpTimer: ReturnType<typeof setTimeout> | undefined;
+			const finish = () => {
+				if (forceTimer) clearTimeout(forceTimer);
+				if (giveUpTimer) clearTimeout(giveUpTimer);
+				child.removeListener("exit", finish);
+				child.removeListener("error", finish);
+				resolve();
+			};
+			child.once("exit", finish);
+			child.once("error", finish);
+			child.kill("SIGTERM");
+			forceTimer = setTimeout(() => {
+				if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL");
+				giveUpTimer = setTimeout(finish, 1_000);
+			}, SERVER_STOP_TIMEOUT_MS);
+		});
+		this.stopPromise = operation;
+		try {
+			await operation;
+		} finally {
+			if (this.stopPromise === operation) this.stopPromise = undefined;
+		}
 	}
 
 	private async start(signal?: AbortSignal): Promise<boolean> {
@@ -86,10 +120,11 @@ export class QdrantServerManager {
 				settle(() => reject(new Error(`Failed to start Qdrant: ${error.message}`)));
 			});
 			child.on("exit", (code, exitSignal) => {
-				if (this.child !== child) return;
-				this.child = null;
 				const message = `Qdrant exited with code ${code}, signal ${exitSignal}`;
-				this.options.onLog?.("error", message);
+				if (this.child === child) {
+					this.child = null;
+					this.options.onLog?.("error", message);
+				}
 				settle(() => reject(new Error(`${message} before readiness`)));
 			});
 

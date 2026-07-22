@@ -14,11 +14,11 @@ For a source checkout, run:
 ./reinstall.sh
 ```
 
-On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed Qdrant binary, and creates a Python virtual environment with pinned embedding dependencies.
+On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed Qdrant binary, creates a Python virtual environment with pinned embedding dependencies, and finishes with a real end-to-end semantic-search smoke test against a temporary repository.
 
 The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
 
-The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash.
+The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash. A per-agent-directory daemon lock prevents manual, launchd, and systemd starts from running overlapping index writers. Reinstall also stops validated stale daemon and managed-backend processes left by an older service installation before running its smoke test.
 
 The service installer currently supports:
 
@@ -58,8 +58,10 @@ The footer shows indexing state for the active repository by default:
 |---|---|
 | `🔎 ?` | No indexing decision has been saved yet |
 | `🔎 OFF` | Indexing is disabled for this repository |
+| `🔎 queued`, `🔎 init`, or `🔎 updating` | The enabled repository is waiting or active, but no numeric progress is available yet |
 | `🔎 42%` | Indexing is enabled and a refresh is 42% complete |
-| `🔎 ON` | Indexing is enabled and no refresh is active |
+| `🔎: ✅` | The repository has a ready index |
+| `🔎 ON` | Indexing is enabled and waiting for a detailed repository state |
 | `🔎 ON!` | Indexing is enabled, but the background service or latest refresh has an error |
 
 Open `/settings` and change **Indexing info** to hide or show both the marker and percentage. This setting only controls footer visibility; use `/index enable` or `/index disable` to change whether the repository is indexed.
@@ -91,11 +93,13 @@ sequenceDiagram
     Daemon->>Daemon: Update indexing-service-status.json
 ```
 
-Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old.
+Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry.
+
+The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 
 Common generated and dependency directories such as `.git`, `node_modules`, `dist`, `build`, `coverage`, `target`, and `storage` are ignored by the watcher. Repository discovery also applies `.gitignore`, secret-file exclusions, binary and file-size limits, and out-of-root symlink protection.
 
-The `semantic_search` tool checks the repository opt-in registry before accessing the index. When indexing is disabled or has not been approved, it returns `RAG_DISABLED` and directs the agent to exact search and file reads.
+The `semantic_search` tool checks the repository opt-in registry before accessing the index. When indexing is disabled or has not been approved, it returns `RAG_DISABLED` and directs the agent to exact search and file reads. Backend failures returned with an empty result are exposed as tool errors; a healthy ready index with no matching chunks is reported as a successful no-match result.
 
 ## Local files and processes
 
@@ -105,6 +109,7 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 |---|---|
 | `indexed-repos.json` | Saved enabled/disabled decision for each repository |
 | `indexing-service-status.json` | Daemon PID, state, repository progress, counts, and errors |
+| `indexing-service/daemon.lock` | Singleton ownership for the active daemon process |
 | `code-rag.json` | User-level code-index configuration |
 | `code-rag/<repo-id>/` | Repository manifests and sparse-vocabulary data |
 | `code-rag/qdrant/` | Managed Qdrant configuration and database |
@@ -132,7 +137,7 @@ Important fields include:
   "autoRefresh": true,
   "allowStaleSearch": true,
   "qdrantUrl": "http://127.0.0.1:6333",
-  "embeddingServerUrl": "http://127.0.0.1:8081",
+  "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
   "embeddingDimensions": 1024,
   "defaultLimit": 8,
@@ -155,6 +160,6 @@ Start with `/index`. If the background service is not running or reports an erro
 4. check available disk space for the model cache and Qdrant database;
 5. use exact search and file reads while the index is initializing or unavailable.
 
-Reinstalling is idempotent and migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service.
+Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 
 The current UI exposes status, progress, enable, disable, and footer-visibility controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.

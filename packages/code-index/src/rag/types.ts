@@ -278,6 +278,8 @@ export interface WorkspaceCodeRagServiceOptions {
 	userConfigPath?: string;
 	repositoryConfigPath?: string;
 	settings?: Partial<WorkspaceCodeRagSettings>;
+	manageLocalBackends?: boolean;
+	allowSearchRefresh?: boolean;
 	embeddingProvider?: EmbeddingProvider;
 	vectorStore?: RagVectorStore;
 	now?: () => Date;

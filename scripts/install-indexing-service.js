@@ -11,13 +11,18 @@ const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
 const CODE_INDEX_DIR = path.join(ROOT, "packages", "code-index");
 const DAEMON = path.join(ROOT, "packages", "coding-agent", "dist", "indexing-service-daemon.js");
+const SMOKE_SCRIPT = path.join(SCRIPT_DIR, "smoke-code-index.mjs");
 const REQUIREMENTS = path.join(CODE_INDEX_DIR, "requirements.txt");
 const AGENT_DIR = process.env.P_CODING_AGENT_DIR ?? path.join(os.homedir(), ".p", "agent");
 const SERVICE_ROOT = path.join(AGENT_DIR, "indexing-service");
 const BIN_DIR = path.join(SERVICE_ROOT, "bin");
 const VENV_DIR = path.join(SERVICE_ROOT, "venv");
 const QDRANT_DATA_DIR = path.join(AGENT_DIR, "code-rag", "qdrant");
+const QDRANT_CONFIG_PATH = path.join(QDRANT_DATA_DIR, "config.yaml");
+const EMBEDDING_SCRIPT = path.join(CODE_INDEX_DIR, "embedding_server.py");
+const EMBEDDING_PORT = 18742;
 const LOG_DIR = path.join(SERVICE_ROOT, "logs");
+const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const QDRANT_VERSION = "1.18.3";
@@ -44,6 +49,49 @@ const QDRANT_ASSETS = {
 
 export function getQdrantAsset(platform = process.platform, architecture = process.arch) {
 	return QDRANT_ASSETS[`${platform}-${architecture}`];
+}
+
+export function isIndexingDaemonCommand(command, daemonPath = "indexing-service-daemon.js") {
+	const executable = command.trim().split(/\s+/, 1)[0];
+	if (!/^node(?:js)?(?:\.exe)?$/.test(path.basename(executable))) return false;
+	const daemonOffset = command.indexOf(daemonPath);
+	if (daemonOffset < 0) return false;
+	const suffix = command.slice(daemonOffset + daemonPath.length);
+	return suffix.length === 0 || /^\s/.test(suffix);
+}
+
+export function selectIndexingDaemonPids(processTable, options) {
+	const selected = new Set();
+	for (const line of processTable.split("\n")) {
+		const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+		if (!match) continue;
+		const pid = Number(match[1]);
+		const command = match[2];
+		if (!Number.isSafeInteger(pid) || !isIndexingDaemonCommand(command)) continue;
+		const workingDirectory = options.cwdForPid(pid);
+		if (pid === options.statusPid || command.includes(options.daemonPath) || workingDirectory === options.rootPath) {
+			selected.add(pid);
+		}
+	}
+	return [...selected];
+}
+
+export function isManagedBackendCommand(command, options) {
+	return (
+		hasArgumentSequence(command, [options.qdrantBinary, "--config-path", options.qdrantConfigPath]) ||
+		hasArgumentSequence(command, [options.embeddingScript, "--port", String(options.embeddingPort)])
+	);
+}
+
+export function selectManagedBackendPids(processTable, options) {
+	const selected = new Set();
+	for (const line of processTable.split("\n")) {
+		const match = /^\s*(\d+)\s+(.+)$/.exec(line);
+		if (!match) continue;
+		const pid = Number(match[1]);
+		if (Number.isSafeInteger(pid) && isManagedBackendCommand(match[2], options)) selected.add(pid);
+	}
+	return [...selected];
 }
 
 export function renderLaunchdPlist(values) {
@@ -145,7 +193,7 @@ async function main() {
 	});
 
 	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values));
-	else installLinux(renderSystemdUnit(values));
+	else await installLinux(renderSystemdUnit(values));
 	console.log(`Code indexing service installed (${SERVICE_LABEL})`);
 }
 
@@ -219,6 +267,7 @@ function mergeCodeRagConfig(defaults) {
 async function installDarwin(plist) {
 	const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 	if (uid === undefined) throw new Error("Unable to determine the current user id for launchd");
+	const knownDaemonPid = readStatusDaemonPid();
 	const launchAgentsDir = path.join(os.homedir(), "Library", "LaunchAgents");
 	const plistPath = path.join(launchAgentsDir, `${SERVICE_LABEL}.plist`);
 	const legacyPlistPath = path.join(launchAgentsDir, `${LEGACY_SERVICE_LABEL}.plist`);
@@ -228,7 +277,10 @@ async function installDarwin(plist) {
 	if (fs.existsSync(legacyPlistPath)) fs.rmSync(legacyPlistPath);
 	run("launchctl", ["bootout", `gui/${uid}/${SERVICE_LABEL}`], { allowFailure: true });
 	await waitForLaunchdRemoval(uid, SERVICE_LABEL);
+	await stopStaleDaemons(knownDaemonPid);
+	await stopStaleBackends();
 	writeFileAtomic(plistPath, plist);
+	runRealSemanticSearchSmoke();
 	run("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
 	run("launchctl", ["kickstart", "-k", `gui/${uid}/${SERVICE_LABEL}`]);
 }
@@ -242,17 +294,128 @@ async function waitForLaunchdRemoval(uid, label) {
 	}
 }
 
-function installLinux(unit) {
+async function installLinux(unit) {
+	const knownDaemonPid = readStatusDaemonPid();
 	const unitDirectory = path.join(os.homedir(), ".config", "systemd", "user");
 	const unitPath = path.join(unitDirectory, `${SERVICE_LABEL}.service`);
 	const legacyUnitPath = path.join(unitDirectory, `${LEGACY_SERVICE_LABEL}.service`);
 	fs.mkdirSync(unitDirectory, { recursive: true });
 	run("systemctl", ["--user", "disable", "--now", `${LEGACY_SERVICE_LABEL}.service`], { allowFailure: true });
 	if (fs.existsSync(legacyUnitPath)) fs.rmSync(legacyUnitPath);
+	run("systemctl", ["--user", "stop", `${SERVICE_LABEL}.service`], { allowFailure: true });
+	await stopStaleDaemons(knownDaemonPid);
+	await stopStaleBackends();
 	writeFileAtomic(unitPath, unit);
 	run("systemctl", ["--user", "daemon-reload"]);
+	runRealSemanticSearchSmoke();
 	run("systemctl", ["--user", "enable", "--now", `${SERVICE_LABEL}.service`]);
 	run("systemctl", ["--user", "is-active", "--quiet", `${SERVICE_LABEL}.service`]);
+}
+
+async function stopStaleDaemons(statusPid) {
+	const processTable = capture("ps", ["-axo", "pid=,command="], { allowFailure: true });
+	const pids = selectIndexingDaemonPids(processTable, {
+		daemonPath: DAEMON,
+		rootPath: ROOT,
+		statusPid,
+		cwdForPid: getProcessWorkingDirectory,
+	}).filter((pid) => pid !== process.pid);
+	for (const pid of pids) await stopStaleDaemon(pid);
+}
+
+async function stopStaleDaemon(pid) {
+	await stopValidatedProcess(pid, "stale code indexing daemon", isIndexingDaemonProcess);
+}
+
+async function stopStaleBackends() {
+	const processTable = capture("ps", ["-axo", "pid=,command="], { allowFailure: true });
+	const options = managedBackendOptions();
+	const pids = selectManagedBackendPids(processTable, options).filter((pid) => pid !== process.pid);
+	for (const pid of pids) {
+		await stopValidatedProcess(pid, "stale code indexing backend", (candidate) =>
+			isManagedBackendProcess(candidate, options),
+		);
+	}
+}
+
+async function stopValidatedProcess(pid, description, isExpectedProcess) {
+	if (!isProcessRunning(pid) || !isExpectedProcess(pid)) return;
+	console.log(`Stopping ${description} ${pid}`);
+	try {
+		process.kill(pid, "SIGTERM");
+	} catch (error) {
+		if (!(error instanceof Error && "code" in error && error.code === "ESRCH")) throw error;
+		return;
+	}
+	const deadline = Date.now() + 10_000;
+	while (isProcessRunning(pid) && Date.now() < deadline) {
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	if (!isProcessRunning(pid)) return;
+	if (!isExpectedProcess(pid)) {
+		throw new Error(`Refusing to stop pid ${pid}: it is no longer the ${description}`);
+	}
+	process.kill(pid, "SIGKILL");
+	const killDeadline = Date.now() + 5_000;
+	while (isProcessRunning(pid) && Date.now() < killDeadline) {
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+	if (isProcessRunning(pid)) throw new Error(`Timed out stopping ${description} ${pid}`);
+}
+
+function runRealSemanticSearchSmoke() {
+	console.log("Running real semantic-search verification");
+	run(process.execPath, [SMOKE_SCRIPT]);
+}
+
+function readStatusDaemonPid() {
+	try {
+		const status = JSON.parse(fs.readFileSync(STATUS_PATH, "utf-8"));
+		return Number.isSafeInteger(status?.pid) && status.pid > 0 ? status.pid : undefined;
+	} catch {
+		return undefined;
+	}
+}
+
+function isIndexingDaemonProcess(pid) {
+	return isIndexingDaemonCommand(capture("ps", ["-p", String(pid), "-o", "command="], { allowFailure: true }));
+}
+
+function isManagedBackendProcess(pid, options) {
+	return isManagedBackendCommand(
+		capture("ps", ["-p", String(pid), "-o", "command="], { allowFailure: true }),
+		options,
+	);
+}
+
+function managedBackendOptions() {
+	return {
+		qdrantBinary: path.join(BIN_DIR, "qdrant"),
+		qdrantConfigPath: QDRANT_CONFIG_PATH,
+		embeddingScript: EMBEDDING_SCRIPT,
+		embeddingPort: EMBEDDING_PORT,
+	};
+}
+
+function getProcessWorkingDirectory(pid) {
+	if (process.platform === "linux") {
+		return capture("readlink", [`/proc/${pid}/cwd`], { allowFailure: true }).trim() || undefined;
+	}
+	if (process.platform === "darwin") {
+		const output = capture("lsof", ["-a", "-p", String(pid), "-d", "cwd", "-Fn"], { allowFailure: true });
+		const pathLine = output.split("\n").find((line) => line.startsWith("n"));
+		return pathLine?.slice(1);
+	}
+	return undefined;
+}
+
+function isProcessRunning(pid) {
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch (error) {
+		return error instanceof Error && "code" in error && error.code === "EPERM";
+	}
 }
 
 function findCompatiblePython() {
@@ -320,6 +483,15 @@ function readFileIfPresent(filePath) {
 	} catch {
 		return undefined;
 	}
+}
+
+function hasArgumentSequence(command, args) {
+	const pattern = args.map((argument) => escapeRegExp(argument)).join("\\s+");
+	return new RegExp(`(?:^|\\s)${pattern}(?=\\s|$)`).test(command);
+}
+
+function escapeRegExp(value) {
+	return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 function escapeXml(value) {

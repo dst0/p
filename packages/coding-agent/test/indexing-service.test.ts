@@ -109,6 +109,28 @@ class FakeRagService implements CodeRagService {
 	}
 }
 
+class AbortAwareRagService extends FakeRagService {
+	abortObserved = false;
+
+	override async refresh(options: RefreshIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
+		this.refreshing = true;
+		options.onProgress?.({ phase: "indexing", percent: 10 });
+		try {
+			await new Promise<void>((_resolve, reject) => {
+				const onAbort = () => {
+					this.abortObserved = true;
+					reject(signal?.reason ?? new Error("aborted"));
+				};
+				if (signal?.aborted) onAbort();
+				else signal?.addEventListener("abort", onAbort, { once: true });
+			});
+			throw new Error("unreachable");
+		} finally {
+			this.refreshing = false;
+		}
+	}
+}
+
 describe("indexing daemon", () => {
 	it("indexes enabled repositories and refreshes after file changes", async () => {
 		const fixture = createFixture();
@@ -150,6 +172,96 @@ describe("indexing daemon", () => {
 		await daemon.stop();
 		expect(service?.disposed).toBe(true);
 		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).serviceRunning).toBe(false);
+	});
+
+	it("continues draining file changes after the initial workers finish", async () => {
+		const fixture = createFixture();
+		const repositories = [fixture.repo, path.join(fixture.root, "repo-two"), path.join(fixture.root, "repo-three")];
+		for (const repository of repositories) {
+			fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+			fs.writeFileSync(path.join(repository, "index.ts"), "export const initial = true;\n");
+			enableIndexingForRepo(repository, fixture.agentDir);
+		}
+		const services = new Map<string, FakeRagService>();
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			debounceMs: 10,
+			retryMs: 50,
+			reconcileMs: 60_000,
+			serviceFactory: (workspaceRoot) => {
+				const service = new FakeRagService(workspaceRoot);
+				services.set(workspaceRoot, service);
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		await daemon.start();
+		await waitFor(
+			() => services.size === repositories.length && [...services.values()].every((s) => s.refreshCount >= 1),
+		);
+		await new Promise((resolve) => setTimeout(resolve, 50));
+		const changedRepository = fs.realpathSync(repositories[2]);
+		fs.writeFileSync(path.join(changedRepository, "index.ts"), "export const changedAfterDrain = true;\n");
+		await waitFor(() => (services.get(changedRepository)?.refreshCount ?? 0) >= 2);
+
+		await daemon.stop();
+	});
+
+	it("aborts a repository refresh when its indexing deadline expires", async () => {
+		const fixture = createFixture();
+		enableIndexingForRepo(fixture.repo, fixture.agentDir);
+		let service: AbortAwareRagService | undefined;
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			repositoryTimeoutMs: 25,
+			retryMs: 60_000,
+			reconcileMs: 60_000,
+			serviceFactory: (workspaceRoot) => {
+				service = new AbortAwareRagService(workspaceRoot);
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		await daemon.start();
+		await waitFor(() => service?.abortObserved === true);
+		await waitFor(() => new IndexingService(fixture.agentDir).getStatus(fixture.repo).ragState === "error");
+		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).lastError).toContain("timed out");
+		await daemon.stop();
+	});
+
+	it("allows only one daemon to own an agent directory", async () => {
+		const fixture = createFixture();
+		const options = {
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			reconcileMs: 60_000,
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		};
+		const first = new IndexingDaemon(options);
+		const second = new IndexingDaemon(options);
+		await first.start();
+		await expect(second.start()).rejects.toThrow(`already running with pid ${process.pid}`);
+		await first.stop();
+
+		const replacement = new IndexingDaemon(options);
+		await expect(replacement.start()).resolves.toBeUndefined();
+		await replacement.stop();
 	});
 
 	it("removes a repository after indexing is disabled", async () => {

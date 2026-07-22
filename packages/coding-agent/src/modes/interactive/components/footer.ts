@@ -78,7 +78,7 @@ export function formatIndexingStatus(status: IndexStatus): string {
 	}
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
 		const percent = status.progress?.percent;
-		if (percent !== undefined && percent > 0) {
+		if (percent !== undefined) {
 			return `🔎 ${Math.min(100, Math.round(percent))}%`;
 		}
 		if (status.ragState === "queued") return "🔎 queued";

@@ -97,7 +97,7 @@ Usage:
 Options:
   --batch-size <n>                    Batch upload size (default: 64)
   --limit <n>                         Max search results (default: 10)
-  --embedding-server <url>            Embedding server URL (default: http://127.0.0.1:8081)
+  --embedding-server <url>            Embedding server URL (default: http://127.0.0.1:18742)
   --help, -h                          Show this help message
 `);
 }

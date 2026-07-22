@@ -371,7 +371,7 @@ export interface CodeRagService {
 }
 ```
 
-The coding-agent package depends on this interface through the code-index package export. It does not construct Qdrant requests or spawn Python directly inside the tool handler.
+The coding-agent package depends on this interface through the code-index package export. The PAgent tool handler does not construct Qdrant requests, spawn Python, or refresh an index. It only reads generations committed by the system indexing daemon.
 
 ### 6.3 Implemented tool input
 
@@ -397,7 +397,7 @@ Validation requirements:
 - path filters are normalized repository-relative paths;
 - path traversal and absolute paths are rejected;
 - unknown language/symbol values are handled consistently;
-- `require_fresh` returns a controlled error if freshness cannot be established in time.
+- `require_fresh` returns a controlled stale or not-ready error until the system indexing daemon commits a fresh generation; it never transfers refresh ownership to PAgent.
 
 ### 6.4 Implemented tool response
 
@@ -834,6 +834,7 @@ The interactive command surface currently provides `/index`, `/index enable`, an
 - Owned embedding processes are terminated; external processes are not.
 - Status reports the current generation, freshness, backend health, and last error.
 - Lifecycle tests cover startup, cancellation, shutdown, and duplicate-initialization races.
+- PAgent search services never start local backends or run foreground repository refreshes.
 
 ---
 
@@ -1149,7 +1150,7 @@ The implementation uses a flat, validated `WorkspaceCodeRagSettings` object. Use
   "allowStaleSearch": true,
   "remoteBackendsAllowed": false,
   "qdrantUrl": "http://127.0.0.1:6333",
-  "embeddingServerUrl": "http://127.0.0.1:8081",
+  "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
   "embeddingDimensions": 1024,
   "defaultLimit": 8,

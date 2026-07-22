@@ -108,6 +108,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 	private qdrantServerManager: QdrantServerManager | null;
 	private ownsEmbeddingProvider: boolean;
 	private ownsVectorStore: boolean;
+	private allowSearchRefresh: boolean;
 	private now: () => Date;
 	private manifest: IndexManifest | undefined;
 	private state: RagState = "not_initialized";
@@ -130,6 +131,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.repositoryDirectory = path.join(options.dataDirectory, this.repoId);
 		this.manifestPath = path.join(this.repositoryDirectory, "manifest.json");
 		this.now = options.now ?? (() => new Date());
+		const manageLocalBackends = options.manageLocalBackends ?? true;
+		this.allowSearchRefresh = options.allowSearchRefresh ?? true;
 
 		try {
 			this.settings = loadWorkspaceCodeRagSettings(options);
@@ -146,7 +149,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			new EmbeddingProviderHttp(
 				this.settings.embeddingServerUrl,
 				this.settings.embeddingDimensions,
-				true,
+				manageLocalBackends,
 				this.settings.embeddingModel,
 				{
 					pythonExecutable: this.settings.pythonExecutable,
@@ -161,7 +164,9 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		const qdrantUrl = new URL(this.settings.qdrantUrl);
 		const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
 		const managesLocalQdrant =
-			this.ownsVectorStore && ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(qdrantUrl.hostname);
+			manageLocalBackends &&
+			this.ownsVectorStore &&
+			["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(qdrantUrl.hostname);
 		this.qdrantServerManager = managesLocalQdrant
 			? new QdrantServerManager(qdrantPort, {
 					qdrantBinary: this.settings.qdrantBinary,
@@ -182,47 +187,27 @@ export class WorkspaceCodeRagService implements CodeRagService {
 
 		await this.qdrantServerManager?.ensureStarted();
 
-		if (!this.initialized) {
-			this.state = "initializing";
+		if (!this.refreshPromise) {
+			if (!this.initialized) this.state = "initializing";
 			try {
-				fs.mkdirSync(this.repositoryDirectory, { recursive: true, mode: 0o700 });
-				this.manifest = loadManifest(this.manifestPath);
-				this.initialized = true;
+				await this.reloadPersistedState();
 				if (!this.manifest) {
-					this.state = "not_initialized";
 					return this.snapshotStatus();
 				}
-				const incompatibility = this.manifestIncompatibility(this.manifest);
-				if (incompatibility) {
-					this.state = "stale";
-					this.staleReason = incompatibility;
-					this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", incompatibility);
-					return this.snapshotStatus();
-				}
-				try {
-					const exists = await this.vectorStore.collectionExists(this.manifest.collection);
-					if (!exists) {
-						this.state = "stale";
-						this.staleReason = "Qdrant collection is missing";
-						this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", "Qdrant collection is missing");
-						return this.snapshotStatus();
-					}
-				} catch (error) {
-					this.state = "unavailable";
-					this.lastError = this.errorInfo("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
-					return this.snapshotStatus();
-				}
-				this.state = this.manifest.state;
-				this.lastError = this.manifest.lastError;
+				if (this.lastError?.code === "RAG_INCOMPATIBLE_INDEX") return this.snapshotStatus();
 			} catch (error) {
 				this.initialized = true;
 				this.state = "unavailable";
-				this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", safeErrorMessage(error));
+				const mapped =
+					error instanceof CodeRagError
+						? error
+						: new CodeRagError("RAG_INCOMPATIBLE_INDEX", safeErrorMessage(error));
+				this.lastError = this.errorInfo(mapped.code, mapped.message);
 				return this.snapshotStatus();
 			}
 		}
 
-		if (options.checkFreshness ?? (true && !this.refreshPromise)) this.updateFastFreshness();
+		if (options.checkFreshness ?? !this.refreshPromise) this.updateFastFreshness();
 		return this.snapshotStatus();
 	}
 
@@ -242,13 +227,14 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		}
 		if (!this.manifest) {
 			if (normalized.freshness === "require_fresh") {
+				if (!this.allowSearchRefresh) return this.emptySearchResponse(normalized.query, startedAt);
 				try {
 					await this.refresh({}, signal);
 				} catch {
 					return this.emptySearchResponse(normalized.query, startedAt);
 				}
 			} else if (normalized.freshness === "prefer_fresh") {
-				this.startBackgroundRefresh();
+				if (this.allowSearchRefresh) this.startBackgroundRefresh();
 				return this.emptySearchResponse(normalized.query, startedAt);
 			} else {
 				return this.emptySearchResponse(normalized.query, startedAt);
@@ -256,12 +242,17 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		}
 
 		if ((this.state === "stale" || this.state === "partial") && normalized.freshness === "require_fresh") {
+			if (!this.allowSearchRefresh) return this.emptySearchResponse(normalized.query, startedAt);
 			try {
 				await this.refresh({}, signal);
 			} catch {
 				return this.emptySearchResponse(normalized.query, startedAt);
 			}
-		} else if ((this.state === "stale" || this.state === "partial") && normalized.freshness === "prefer_fresh") {
+		} else if (
+			this.allowSearchRefresh &&
+			(this.state === "stale" || this.state === "partial") &&
+			normalized.freshness === "prefer_fresh"
+		) {
 			this.startBackgroundRefresh();
 		}
 		if ((this.state === "stale" || this.state === "partial") && !this.settings.allowStaleSearch) {
@@ -274,12 +265,19 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			...(signal ? [signal] : []),
 		]);
 		try {
-			const vocabulary = this.loadVocabulary(this.manifest);
+			const manifest = this.manifest;
+			if (!(await this.vectorStore.collectionExists(manifest.collection))) {
+				this.state = "stale";
+				this.staleReason = "Qdrant collection is missing";
+				this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", this.staleReason);
+				return this.emptySearchResponse(normalized.query, startedAt);
+			}
+			const vocabulary = this.loadVocabulary(manifest);
 			const dense = await this.embeddingProvider.encodeQuery(normalized.query, operationSignal);
 			const sparse = vocabulary.encode(normalized.query);
 			const candidateLimit = Math.max(normalized.limit * 5, 40);
 			const candidates = await this.vectorStore.search(
-				this.manifest.collection,
+				manifest.collection,
 				dense,
 				sparse,
 				{
@@ -299,7 +297,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				diagnostics: {
 					durationMs: Date.now() - startedAt,
 					candidateCount: candidates.length,
-					indexGeneration: this.manifest.generation,
+					indexGeneration: manifest.generation,
 					staleReason: this.staleReason,
 					refreshInProgress: !!this.refreshPromise,
 					truncated,
@@ -358,7 +356,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		if (this.disposed) return;
 		this.disposed = true;
 		this.refreshController?.abort(new Error("Code RAG service disposed"));
-		this.qdrantServerManager?.kill();
+		const qdrantDisposal = this.qdrantServerManager?.stop();
 		const embeddingDisposal = this.ownsEmbeddingProvider ? this.embeddingProvider.dispose?.() : undefined;
 		const vectorStoreDisposal = this.ownsVectorStore ? this.vectorStore.dispose?.() : undefined;
 		try {
@@ -366,22 +364,24 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		} catch {
 			// Cancellation during disposal is expected.
 		}
-		await embeddingDisposal;
-		await vectorStoreDisposal;
+		await Promise.all([qdrantDisposal, embeddingDisposal, vectorStoreDisposal]);
 	}
 
 	private async runRefresh(options: RefreshIndexOptions, signal: AbortSignal): Promise<IndexUpdateSummary> {
 		const startedAt = Date.now();
 		const lock = acquireRepositoryLock(this.repositoryDirectory);
-		this.state = this.manifest ? "updating" : "initializing";
 		try {
+			await this.reloadPersistedState();
+			this.state = this.manifest ? "updating" : "initializing";
 			this.reportProgress(options.onProgress, "scanning", 0);
 			const scanned = this.scanWorkspace(signal);
 			this.reportProgress(options.onProgress, "indexing", 5);
 			const plan = this.createRefreshPlan(scanned);
 			const changedFileCount = plan.added.length + plan.changed.length + plan.deleted.length;
 			const incompatibility = this.manifest
-				? this.manifestIncompatibility(this.manifest)
+				? this.lastError?.code === "RAG_INCOMPATIBLE_INDEX"
+					? this.lastError.message
+					: this.manifestIncompatibility(this.manifest)
 				: "Index is not initialized";
 			if (changedFileCount === 0 && this.manifest && !options.forceSparseRebuild && incompatibility === undefined) {
 				for (const file of plan.unchanged) {
@@ -777,6 +777,44 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			this.state = "unavailable";
 			this.lastError = this.errorInfo("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
 		}
+	}
+
+	private async reloadPersistedState(): Promise<void> {
+		fs.mkdirSync(this.repositoryDirectory, { recursive: true, mode: 0o700 });
+		const persisted = loadManifest(this.manifestPath);
+		if (persisted?.generation !== this.manifest?.generation) {
+			this.cachedVocabulary = undefined;
+			this.cachedVocabularyGeneration = undefined;
+		}
+		this.manifest = persisted;
+		this.initialized = true;
+		this.staleReason = undefined;
+		if (!persisted) {
+			this.state = "not_initialized";
+			this.lastError = undefined;
+			return;
+		}
+		const incompatibility = this.manifestIncompatibility(persisted);
+		if (incompatibility) {
+			this.state = "stale";
+			this.staleReason = incompatibility;
+			this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", incompatibility);
+			return;
+		}
+		let collectionExists: boolean;
+		try {
+			collectionExists = await this.vectorStore.collectionExists(persisted.collection);
+		} catch (error) {
+			throw new CodeRagError("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
+		}
+		if (!collectionExists) {
+			this.state = "stale";
+			this.staleReason = "Qdrant collection is missing";
+			this.lastError = this.errorInfo("RAG_INCOMPATIBLE_INDEX", this.staleReason);
+			return;
+		}
+		this.state = persisted.state;
+		this.lastError = persisted.lastError;
 	}
 
 	private manifestIncompatibility(manifest: IndexManifest): string | undefined {
