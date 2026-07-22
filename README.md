@@ -15,15 +15,15 @@
 
 This is the home of the `p` agent harness project, an opinionated fork of the [pi coding agent](https://github.com/badlogic/pi-mono).
 
-* **[@dst0/p](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
-* **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
-* **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
-* **[@dst0/p-code-index](packages/code-index)**: Local hybrid semantic code indexing with Qdrant and dense/sparse retrieval
+- **[@dst0/p](packages/coding-agent)**: Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection
+- **[@dst0/p-agent-core](packages/agent)**: Agent runtime with tool calling and state management
+- **[@dst0/p-ai](packages/ai)**: Unified multi-provider LLM API (OpenAI, Anthropic, Google, …)
+- **[@dst0/p-code-index](packages/code-index)**: Local hybrid semantic code indexing with Qdrant and dense/sparse retrieval
 
 To learn more:
 
-* [Visit p.pages.dev](https://p.pages.dev), the project website
-* [Read the documentation](https://p.pages.dev/docs/latest), or ask the agent to explain itself
+- [Visit p.pages.dev](https://p.pages.dev), the project website
+- [Read the documentation](https://p.pages.dev/docs/latest), or ask the agent to explain itself
 
 ## Share your OSS coding agent sessions
 
@@ -33,13 +33,13 @@ Public OSS session data helps improve coding agents with real-world tasks, tool 
 
 ## All Packages
 
-| Package | Description |
-|---------|-------------|
-| **[@dst0/p-ai](packages/ai)** | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.) |
-| **[@dst0/p-agent-core](packages/agent)** | Agent runtime with tool calling and state management |
-| **[@dst0/p-code-index](packages/code-index)** | Local repository indexing and hybrid semantic retrieval |
-| **[@dst0/p](packages/coding-agent)** | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
-| **[@dst0/p-tui](packages/tui)** | Terminal UI library with differential rendering |
+| Package                                       | Description                                                                                |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **[@dst0/p-ai](packages/ai)**                 | Unified multi-provider LLM API (OpenAI, Anthropic, Google, etc.)                           |
+| **[@dst0/p-agent-core](packages/agent)**      | Agent runtime with tool calling and state management                                       |
+| **[@dst0/p-code-index](packages/code-index)** | Local repository indexing and hybrid semantic retrieval                                    |
+| **[@dst0/p](packages/coding-agent)**          | Interactive coding agent CLI with automatic context, memory, rules, and repo-map injection |
+| **[@dst0/p-tui](packages/tui)**               | Terminal UI library with differential rendering                                            |
 
 For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst0/p-chat).
 
