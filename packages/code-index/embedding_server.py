@@ -48,6 +48,12 @@ class EmbeddingServer:
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
+        if hasattr(os, "cpu_count") and os.cpu_count():
+            try:
+                torch.set_num_threads(os.cpu_count() or 4)
+            except Exception:
+                pass
+
         device = None
         if torch.cuda.is_available():
             device = "cuda"
@@ -104,7 +110,7 @@ class Handler(BaseHTTPRequestHandler):
                     embeddings = server.model.encode(
                         texts,
                         normalize_embeddings=normalize,
-                        batch_size=16,
+                        batch_size=64,
                         show_progress_bar=False,
                     )
             self._json(200, {

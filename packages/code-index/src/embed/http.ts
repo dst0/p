@@ -60,7 +60,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
 	async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
 		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-		const batchSize = 32;
+		const batchSize = 64;
 		const allVectors: Float32Array[] = [];
 
 		for (let i = 0; i < texts.length; i += batchSize) {
