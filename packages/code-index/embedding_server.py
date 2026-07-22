@@ -18,12 +18,15 @@ API:
 
 import argparse
 import json
+import os
 import sys
 import threading
 import traceback
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from socketserver import ThreadingMixIn
 from typing import List
+
+os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 
 try:
     import torch
@@ -45,7 +48,13 @@ class EmbeddingServer:
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
-        self.model = SentenceTransformer(self.model_name)
+        device = None
+        if torch.cuda.is_available():
+            device = "cuda"
+        elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+            device = "mps"
+
+        self.model = SentenceTransformer(self.model_name, device=device) if device else SentenceTransformer(self.model_name)
         # Bound memory use across Metal, CUDA, and CPU environments.
         self.model.max_seq_length = 512
         # Sample encode to determine dim
