@@ -27,6 +27,7 @@ from socketserver import ThreadingMixIn
 from typing import List
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
 
 try:
     import torch
@@ -50,7 +51,9 @@ class EmbeddingServer:
         print(f"Loading model: {self.model_name}", flush=True)
         if hasattr(os, "cpu_count") and os.cpu_count():
             try:
-                torch.set_num_threads(os.cpu_count() or 4)
+                # Cap at 4: using all cores spawns too many threads and
+                # pushes unified memory into swap on 24 GB machines.
+                torch.set_num_threads(min(4, os.cpu_count() or 4))
             except Exception:
                 pass
 
@@ -63,6 +66,13 @@ class EmbeddingServer:
         self.model = SentenceTransformer(self.model_name, device=device) if device else SentenceTransformer(self.model_name)
         # Bound memory use across Metal, CUDA, and CPU environments.
         self.model.max_seq_length = 512
+        # Limit MPS memory pool to 50% of system RAM to avoid VA bloat
+        # that pushes other processes into swap on unified-memory machines.
+        if device == "mps" and hasattr(torch.mps, "set_per_process_memory_fraction"):
+            try:
+                torch.mps.set_per_process_memory_fraction(0.5)
+            except Exception:
+                pass
         # Sample encode to determine dim
         sample = self.model.encode(["probe"])
         self.dim = sample.shape[-1]
@@ -110,23 +120,36 @@ class Handler(BaseHTTPRequestHandler):
                     embeddings = server.model.encode(
                         texts,
                         normalize_embeddings=normalize,
-                        batch_size=64,
+                        batch_size=16,
                         show_progress_bar=False,
                     )
+                    # Reclaim GPU/Metal memory after encode
+                    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
+                        torch.mps.empty_cache()
+                    elif hasattr(torch, "cuda") and torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
             self._json(200, {
                 "model": server.model_name,
                 "dim": server.dim,
                 "embeddings": embeddings.tolist(),
             })
+        except (BrokenPipeError, ConnectionResetError):
+            # Client disconnected — don't crash the server
+            self.close_connection = True
         except Exception as e:
             traceback.print_exc()
-            self._json(500, {"error": str(e)})
+            try:
+                self._json(500, {"error": str(e)})
+            except (BrokenPipeError, ConnectionResetError):
+                self.close_connection = True
 
     def _json(self, code: int, data: dict):
         body = json.dumps(data).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
+        self.send_header("Connection", "keep-alive")
         self.end_headers()
         self.wfile.write(body)
 

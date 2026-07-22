@@ -95,7 +95,11 @@ export class EmbeddingServerManager {
 				{
 					stdio: ["ignore", "pipe", "pipe"],
 					detached: false,
-					env: { ...process.env, PYTORCH_ENABLE_MPS_FALLBACK: "1" },
+					env: {
+						...process.env,
+						PYTORCH_ENABLE_MPS_FALLBACK: "1",
+						PYTORCH_MPS_HIGH_WATERMARK_RATIO: "0.0",
+					},
 				},
 			);
 			this.child = child;
