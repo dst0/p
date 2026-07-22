@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -279,7 +279,10 @@ function hasGlobPattern(s: string): boolean {
 	return s.includes("*") || s.includes("?");
 }
 
-function splitPatterns(entries: string[]): { plain: string[]; patterns: string[] } {
+function splitPatterns(entries: string[]): {
+	plain: string[];
+	patterns: string[];
+} {
 	const plain: string[] = [];
 	const patterns: string[] = [];
 	for (const entry of entries) {
@@ -640,7 +643,7 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+function matchesAnyPattern(filePath: string, patterns: Minimatch[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
 	const filePathPosix = toPosixPath(filePath);
@@ -650,21 +653,12 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 	const parentName = isSkillFile ? basename(parentDir!) : undefined;
 	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
+	return patterns.some((matcher) => {
+		if (matcher.match(rel) || matcher.match(name) || matcher.match(filePathPosix)) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
+		return matcher.match(parentRel!) || matcher.match(parentName!) || matcher.match(parentDirPosix!);
 	});
 }
 
@@ -673,8 +667,8 @@ function normalizeExactPattern(pattern: string): string {
 	return toPosixPath(normalized);
 }
 
-function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-	if (patterns.length === 0) return false;
+function matchesAnyExactPattern(filePath: string, preNormalizedPatterns: string[], baseDir: string): boolean {
+	if (preNormalizedPatterns.length === 0) return false;
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
 	const filePathPosix = toPosixPath(filePath);
@@ -683,8 +677,7 @@ function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: s
 	const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
 	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-	return patterns.some((pattern) => {
-		const normalized = normalizeExactPattern(pattern);
+	return preNormalizedPatterns.some((normalized) => {
 		if (normalized === rel || normalized === filePathPosix) {
 			return true;
 		}
@@ -697,12 +690,13 @@ function getOverridePatterns(entries: string[]): string[] {
 	return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
 }
 
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
-	const overrides = getOverridePatterns(patterns);
-	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
-
+function isEnabledByOverrides(
+	filePath: string,
+	excludes: Minimatch[],
+	forceIncludes: string[],
+	forceExcludes: string[],
+	baseDir: string,
+): boolean {
 	let enabled = true;
 	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
 		enabled = false;
@@ -725,20 +719,20 @@ function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: str
  * - `-path`: force-exclude exact path (overrides force-includes)
  */
 function applyPatterns(allPaths: string[], patterns: string[], baseDir: string): Set<string> {
-	const includes: string[] = [];
-	const excludes: string[] = [];
+	const includes: Minimatch[] = [];
+	const excludes: Minimatch[] = [];
 	const forceIncludes: string[] = [];
 	const forceExcludes: string[] = [];
 
 	for (const p of patterns) {
 		if (p.startsWith("+")) {
-			forceIncludes.push(p.slice(1));
+			forceIncludes.push(normalizeExactPattern(p.slice(1)));
 		} else if (p.startsWith("-")) {
-			forceExcludes.push(p.slice(1));
+			forceExcludes.push(normalizeExactPattern(p.slice(1)));
 		} else if (p.startsWith("!")) {
-			excludes.push(p.slice(1));
+			excludes.push(new Minimatch(toPosixPath(p.slice(1))));
 		} else {
-			includes.push(p);
+			includes.push(new Minimatch(toPosixPath(p)));
 		}
 	}
 
@@ -873,7 +867,12 @@ export class DefaultPackageManager implements PackageManager {
 			this.emitProgress({ type: "complete", action, source });
 		} catch (error) {
 			const errorMessage = error instanceof Error ? error.message : String(error);
-			this.emitProgress({ type: "error", action, source, message: errorMessage });
+			this.emitProgress({
+				type: "error",
+				action,
+				source,
+				message: errorMessage,
+			});
 			throw error;
 		}
 	}
@@ -938,7 +937,10 @@ export class DefaultPackageManager implements PackageManager {
 	): Promise<ResolvedPaths> {
 		const accumulator = this.createAccumulator();
 		const scope: SourceScope = options?.temporary ? "temporary" : options?.local ? "project" : "user";
-		const packageSources = sources.map((source) => ({ pkg: source as PackageSource, scope }));
+		const packageSources = sources.map((source) => ({
+			pkg: source as PackageSource,
+			scope,
+		}));
 		await this.resolvePackageSources(packageSources, accumulator);
 		return this.toResolvedPaths(accumulator);
 	}
@@ -1170,8 +1172,12 @@ export class DefaultPackageManager implements PackageManager {
 		const packageSources = this.dedupePackages(allPackages);
 		const checks = packageSources
 			.filter(
-				(entry): entry is { pkg: PackageSource; scope: Exclude<SourceScope, "temporary"> } =>
-					entry.scope !== "temporary",
+				(
+					entry,
+				): entry is {
+					pkg: PackageSource;
+					scope: Exclude<SourceScope, "temporary">;
+				} => entry.scope !== "temporary",
 			)
 			.map((entry) => async (): Promise<PackageUpdate | undefined> => {
 				const source = typeof entry.pkg === "string" ? entry.pkg : entry.pkg.source;
@@ -1226,7 +1232,11 @@ export class DefaultPackageManager implements PackageManager {
 			const sourceStr = typeof pkg === "string" ? pkg : pkg.source;
 			const filter = typeof pkg === "object" ? pkg : undefined;
 			const parsed = this.parseSource(sourceStr);
-			const metadata: PathMetadata = { source: sourceStr, scope, origin: "package" };
+			const metadata: PathMetadata = {
+				source: sourceStr,
+				scope,
+				origin: "package",
+			};
 
 			if (parsed.type === "local") {
 				const baseDir = this.getBaseDirForScope(scope);
@@ -1549,7 +1559,9 @@ export class DefaultPackageManager implements PackageManager {
 				],
 			};
 		} catch {
-			await this.runCommand("git", ["remote", "set-head", "origin", "-a"], { cwd: installedPath }).catch(() => {});
+			await this.runCommand("git", ["remote", "set-head", "origin", "-a"], {
+				cwd: installedPath,
+			}).catch(() => {});
 			const head = await this.runCommandCapture("git", ["rev-parse", "origin/HEAD"], {
 				cwd: installedPath,
 				timeoutMs: NETWORK_TIMEOUT_MS,
@@ -1794,11 +1806,15 @@ export class DefaultPackageManager implements PackageManager {
 
 		await this.runCommand("git", ["clone", source.repo, targetDir]);
 		if (source.ref) {
-			await this.runCommand("git", ["checkout", source.ref], { cwd: targetDir });
+			await this.runCommand("git", ["checkout", source.ref], {
+				cwd: targetDir,
+			});
 		}
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runNpmCommand(this.getGitDependencyInstallArgs(), {
+				cwd: targetDir,
+			});
 		}
 	}
 
@@ -1835,14 +1851,18 @@ export class DefaultPackageManager implements PackageManager {
 			return;
 		}
 
-		await this.runCommand("git", ["reset", "--hard", commitRef], { cwd: targetDir });
+		await this.runCommand("git", ["reset", "--hard", commitRef], {
+			cwd: targetDir,
+		});
 
 		// Clean untracked files (extensions should be pristine)
 		await this.runCommand("git", ["clean", "-fdx"], { cwd: targetDir });
 
 		const packageJsonPath = join(targetDir, "package.json");
 		if (existsSync(packageJsonPath)) {
-			await this.runNpmCommand(this.getGitDependencyInstallArgs(), { cwd: targetDir });
+			await this.runNpmCommand(this.getGitDependencyInstallArgs(), {
+				cwd: targetDir,
+			});
 		}
 	}
 
@@ -1944,7 +1964,9 @@ export class DefaultPackageManager implements PackageManager {
 		}
 
 		const output = this.runNpmCommandSync(["list", "-g", "--depth", "0", "--json"]);
-		const entries = JSON.parse(output) as Array<{ dependencies?: Record<string, { path?: string }> }>;
+		const entries = JSON.parse(output) as Array<{
+			dependencies?: Record<string, { path?: string }>;
+		}>;
 		for (const entry of entries) {
 			const path = entry.dependencies?.[packageName]?.path;
 			if (path) return path;
@@ -2296,9 +2318,20 @@ export class DefaultPackageManager implements PackageManager {
 			overrides: string[],
 			baseDir: string,
 		) => {
+			const overridePatterns = getOverridePatterns(overrides);
+			const excludes = overridePatterns
+				.filter((pattern) => pattern.startsWith("!"))
+				.map((pattern) => new Minimatch(toPosixPath(pattern.slice(1))));
+			const forceIncludes = overridePatterns
+				.filter((pattern) => pattern.startsWith("+"))
+				.map((pattern) => normalizeExactPattern(pattern.slice(1)));
+			const forceExcludes = overridePatterns
+				.filter((pattern) => pattern.startsWith("-"))
+				.map((pattern) => normalizeExactPattern(pattern.slice(1)));
+
 			const target = this.getTargetMap(accumulator, resourceType);
 			for (const path of paths) {
-				const enabled = isEnabledByOverrides(path, overrides, baseDir);
+				const enabled = isEnabledByOverrides(path, excludes, forceIncludes, forceExcludes, baseDir);
 				this.addResource(target, path, metadata, enabled);
 			}
 		};
@@ -2516,7 +2549,11 @@ export class DefaultPackageManager implements PackageManager {
 	private runCommandCapture(
 		command: string,
 		args: string[],
-		options?: { cwd?: string; timeoutMs?: number; env?: Record<string, string> },
+		options?: {
+			cwd?: string;
+			timeoutMs?: number;
+			env?: Record<string, string>;
+		},
 	): Promise<string> {
 		return new Promise((resolvePromise, reject) => {
 			const child = this.spawnCaptureCommand(command, args, options);
