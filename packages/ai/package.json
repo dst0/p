@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-ai",
-  "version": "0.4.27",
+  "version": "0.4.29",
   "description": "Unified LLM API with automatic model discovery and provider configuration",
   "type": "module",
   "main": "./dist/index.js",

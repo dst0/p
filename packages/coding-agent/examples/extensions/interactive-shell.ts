@@ -21,7 +21,7 @@
  */
 
 import { spawnSync } from "node:child_process";
-import type { ExtensionAPI } from "@dst0/p";
+import type { ExtensionAPI, UserBashEventResult } from "@dst0/p";
 
 // Default interactive commands - editors, pagers, git ops, TUIs
 const DEFAULT_INTERACTIVE_COMMANDS = [
@@ -129,7 +129,7 @@ function isInteractiveCommand(command: string): boolean {
 }
 
 export default function (p: ExtensionAPI) {
-	p.on("user_bash", async (event, ctx) => {
+	p.on("user_bash", async (event, ctx): Promise<UserBashEventResult | undefined> => {
 		let command = event.command;
 		let forceInteractive = false;
 
@@ -148,7 +148,13 @@ export default function (p: ExtensionAPI) {
 		// No UI available (print mode, RPC, etc.)
 		if (ctx.mode !== "tui") {
 			return {
-				result: { output: "(interactive commands require TUI)", exitCode: 1, cancelled: false, truncated: false },
+				result: {
+					output: "(interactive commands require TUI)",
+					exitCode: 1,
+					cancelled: false,
+					truncated: false,
+					semanticStatus: "failure",
+				},
 			};
 		}
 
@@ -190,6 +196,7 @@ export default function (p: ExtensionAPI) {
 				exitCode: exitCode ?? 1,
 				cancelled: false,
 				truncated: false,
+				semanticStatus: exitCode === 0 ? "success" : "failure",
 			},
 		};
 	});

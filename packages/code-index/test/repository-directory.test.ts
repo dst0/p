@@ -29,7 +29,9 @@ class FakeEmbeddingProvider implements EmbeddingProvider {
 }
 
 class FakeVectorStore implements RagVectorStore {
-	async collectionExists(): Promise<boolean> { return true; }
+	async collectionExists(): Promise<boolean> {
+		return true;
+	}
 	async createCollection(): Promise<void> {}
 	async deleteCollection(): Promise<void> {}
 	async collectionStatus(): Promise<{ points: number; dimensions: number | undefined }> {
