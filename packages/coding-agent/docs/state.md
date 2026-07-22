@@ -1,8 +1,8 @@
 # Agent State Mechanism
 
-Pi maintains structured session state to preserve context across compaction, turns, and sessions. This page covers how state is tracked, persisted, and injected into LLM context.
+P maintains structured session state to preserve context across compaction, turns, and sessions. This page covers how state is tracked, persisted, and injected into LLM context.
 
-**Source files** ([pi-mono](https://github.com/dst0/p-mono)):
+**Source files** ([p-mono](https://github.com/dst0/p-mono)):
 
 - [`packages/coding-agent/src/core/compaction/structured-state.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/compaction/structured-state.ts) – Core state types, parsing, merging, and rendering
 - [`packages/coding-agent/src/core/turn-checkpoint.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/turn-checkpoint.ts) – Turn checkpoint messages for tool result tracking
@@ -65,7 +65,7 @@ The state file format includes:
 
 ## State Persistence via Custom Entries
 
-In addition to the state file, state is also persisted in the session file as custom entries with type `pi.structured-session-state`. This provides a backup and allows state recovery even if the state file is missing.
+In addition to the state file, state is also persisted in the session file as custom entries with type `p.structured-session-state`. This provides a backup and allows state recovery even if the state file is missing.
 
 ## State Update Tool
 
@@ -181,7 +181,7 @@ When the working state was refreshed by `update_session_state` or `mark_session_
 
 ## Periodic Plan-State Reminder
 
-After 90 seconds of sustained ordinary tool work without a successful state update, pi appends one hidden `<session_state_reminder>` at the next tool-turn boundary. The reminder asks the model to compare completed work with Goal, Plan, Decisions, Files, and Risks, then update only what changed. It is a persisted append-only message, so it does not rewrite an earlier provider prefix. A successful `update_session_state` or `mark_session_progress` call, or a formal compaction, restarts the interval. Sleep-only turns and sessions whose plan is already complete do not trigger it.
+After 90 seconds of sustained ordinary tool work without a successful state update, p appends one hidden `<session_state_reminder>` at the next tool-turn boundary. The reminder asks the model to compare completed work with Goal, Plan, Decisions, Files, and Risks, then update only what changed. It is a persisted append-only message, so it does not rewrite an earlier provider prefix. A successful `update_session_state` or `mark_session_progress` call, or a formal compaction, restarts the interval. Sleep-only turns and sessions whose plan is already complete do not trigger it.
 
 ## State Reconstruction
 

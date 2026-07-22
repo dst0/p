@@ -17,7 +17,7 @@ Run from source:
 /path/to/p/p-test.sh
 ```
 
-The script can be run from any directory. Pi keeps the caller's current working directory.
+The script can be run from any directory. P keeps the caller's current working directory.
 
 For a quicker alias during local development, add to `~/.zshrc`:
 
@@ -34,7 +34,7 @@ Configure via `package.json`:
 ```json
 {
   "piConfig": {
-    "name": "pi",
+    "name": "p",
     "configDir": ".p"
   }
 }
@@ -56,7 +56,7 @@ Never use `__dirname` directly for package assets.
 
 ## Debug Command
 
-`/debug` (hidden) writes to `~/.p/agent/pi-debug.log`:
+`/debug` (hidden) writes to `~/.p/agent/p-debug.log`:
 
 - Rendered TUI lines with ANSI codes
 - Last messages sent to the LLM

@@ -1,10 +1,11 @@
-> pi can help you use the SDK. Ask it to build an integration for your use case.
+> p can help you use the SDK. Ask it to build an integration for your use case.
 
 # SDK
 
-The SDK provides programmatic access to pi's agent capabilities. Use it to embed pi in other applications, build custom interfaces, or integrate with automated workflows.
+The SDK provides programmatic access to p's agent capabilities. Use it to embed p in other applications, build custom interfaces, or integrate with automated workflows.
 
 **Example use cases:**
+
 - Build a custom UI (web, desktop, mobile)
 - Integrate agent capabilities into existing applications
 - Create automated pipelines with agent reasoning
@@ -16,7 +17,12 @@ See [examples/sdk/](../examples/sdk/) for working examples from minimal to full 
 ## Quick Start
 
 ```typescript
-import { AuthStorage, createAgentSession, ModelRegistry, SessionManager } from "@dst0/p";
+import {
+  AuthStorage,
+  createAgentSession,
+  ModelRegistry,
+  SessionManager,
+} from "@dst0/p";
 
 // Set up credential storage and model registry
 const authStorage = AuthStorage.create();
@@ -29,7 +35,10 @@ const { session } = await createAgentSession({
 });
 
 session.subscribe((event) => {
-  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+  if (
+    event.type === "message_update" &&
+    event.assistantMessageEvent.type === "text_delta"
+  ) {
     process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
@@ -101,7 +110,15 @@ interface AgentSession {
   isStreaming: boolean;
 
   // In-place tree navigation within the current session file
-  navigateTree(targetId: string, options?: { summarize?: boolean; customInstructions?: string; replaceInstructions?: boolean; label?: string }): Promise<{ editorText?: string; cancelled: boolean }>;
+  navigateTree(
+    targetId: string,
+    options?: {
+      summarize?: boolean;
+      customInstructions?: string;
+      replaceInstructions?: boolean;
+      label?: string;
+    },
+  ): Promise<{ editorText?: string; cancelled: boolean }>;
 
   // Compaction
   compact(customInstructions?: string): Promise<CompactionResult>;
@@ -134,7 +151,11 @@ import {
   SessionManager,
 } from "@dst0/p";
 
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
     ...(await createAgentSessionFromServices({
@@ -210,16 +231,26 @@ await session.prompt("What files are here?");
 
 // With images
 await session.prompt("What's in this image?", {
-  images: [{ type: "image", source: { type: "base64", mediaType: "image/png", data: "..." } }]
+  images: [
+    {
+      type: "image",
+      source: { type: "base64", mediaType: "image/png", data: "..." },
+    },
+  ],
 });
 
 // During streaming: must specify how to queue the message
-await session.prompt("Stop and do this instead", { streamingBehavior: "steer" });
-await session.prompt("After you're done, also check X", { streamingBehavior: "followUp" });
+await session.prompt("Stop and do this instead", {
+  streamingBehavior: "steer",
+});
+await session.prompt("After you're done, also check X", {
+  streamingBehavior: "followUp",
+});
 ```
 
 **Behavior:**
-- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `pi.sendMessage()`.
+
+- **Extension commands** (e.g., `/mycommand`): Execute immediately, even during streaming. They manage their own LLM interaction via `p.sendMessage()`.
 - **File-based prompt templates** (from `.md` files): Expanded to their content before sending or queueing.
 - **During streaming without `streamingBehavior`**: Throws an error. Use `steer()` or `followUp()` directly, or specify the option.
 - **`preflightResult(true)`**: Means the prompt was accepted, queued, or handled immediately.
@@ -279,7 +310,7 @@ session.subscribe((event) => {
         // Thinking output (if thinking enabled)
       }
       break;
-    
+
     // Tool execution
     case "tool_execution_start":
       console.log(`Tool: ${event.toolName}`);
@@ -290,7 +321,7 @@ session.subscribe((event) => {
     case "tool_execution_end":
       console.log(`Result: ${event.isError ? "error" : "success"}`);
       break;
-    
+
     // Message lifecycle
     case "message_start":
       // New message starting
@@ -298,7 +329,7 @@ session.subscribe((event) => {
     case "message_end":
       // Message complete
       break;
-    
+
     // Agent lifecycle
     case "agent_start":
       // Agent started processing prompt
@@ -306,7 +337,7 @@ session.subscribe((event) => {
     case "agent_end":
       // Agent finished (event.messages contains new messages)
       break;
-    
+
     // Turn lifecycle (one LLM response + tool calls)
     case "turn_start":
       break;
@@ -314,7 +345,7 @@ session.subscribe((event) => {
       // event.message: assistant response
       // event.toolResults: tool results from this turn
       break;
-    
+
     // Session events (queue, compaction, retry)
     case "queue_update":
       console.log(event.steering, event.followUp);
@@ -336,13 +367,14 @@ session.subscribe((event) => {
 const { session } = await createAgentSession({
   // Working directory for DefaultResourceLoader discovery
   cwd: process.cwd(), // default
-  
+
   // Global config directory
   agentDir: "~/.p/agent", // default (expands ~)
 });
 ```
 
 `cwd` is used by `DefaultResourceLoader` for:
+
 - Project extensions (`.p/extensions/`)
 - Project skills:
   - `.p/skills/`
@@ -352,6 +384,7 @@ const { session } = await createAgentSession({
 - Session directory naming
 
 `agentDir` is used by `DefaultResourceLoader` for:
+
 - Global extensions (`extensions/`)
 - Global skills:
   - `skills/` under `agentDir` (for example `~/.p/agent/skills/`)
@@ -388,19 +421,20 @@ const available = await modelRegistry.getAvailable();
 const { session } = await createAgentSession({
   model: opus,
   thinkingLevel: "medium", // off, minimal, low, medium, high, xhigh
-  
+
   // Models for cycling (Ctrl+P in interactive mode)
   scopedModels: [
     { model: opus, thinkingLevel: "high" },
     { model: haiku, thinkingLevel: "off" },
   ],
-  
+
   authStorage,
   modelRegistry,
 });
 ```
 
 If no model is provided:
+
 1. Tries to restore from session (if continuing)
 2. Uses default from settings
 3. Falls back to first available model
@@ -410,6 +444,7 @@ If no model is provided:
 ### API Keys and OAuth
 
 API key resolution priority (handled by AuthStorage):
+
 1. Runtime overrides (via `setRuntimeApiKey`, not persisted)
 2. Stored credentials in `auth.json` (API keys or OAuth tokens)
 3. Environment variables (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, etc.)
@@ -479,7 +514,7 @@ Specify which built-in tools to enable:
 
 Interactive `/plan` temporarily enables `submit_plan`, adds plan-mode instructions to the system prompt, and restores the previous tool set after the user approves the submitted plan.
 
-The `edit` tool returns `details.diff` for Pi's TUI display and `details.patch` as a standard unified patch for SDK consumers.
+The `edit` tool returns `details.diff` for P's TUI display and `details.patch` as a standard unified patch for SDK consumers.
 
 ```typescript
 import { createAgentSession } from "@dst0/p";
@@ -551,9 +586,9 @@ const { session } = await createAgentSession({
 });
 ```
 
-Use `defineTool()` for standalone definitions and arrays like `customTools: [myTool]`. Inline `pi.registerTool({ ... })` already infers parameter types correctly.
+Use `defineTool()` for standalone definitions and arrays like `customTools: [myTool]`. Inline `p.registerTool({ ... })` already infers parameter types correctly.
 
-Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `pi.registerTool()`.
+Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `p.registerTool()`.
 
 If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
 
@@ -569,8 +604,8 @@ import { createAgentSession, DefaultResourceLoader } from "@dst0/p";
 const loader = new DefaultResourceLoader({
   additionalExtensionPaths: ["/path/to/my-extension.ts"],
   extensionFactories: [
-    (pi) => {
-      pi.on("agent_start", () => {
+    (p) => {
+      p.on("agent_start", () => {
         console.log("[Inline Extension] Agent starting");
       });
     },
@@ -583,7 +618,7 @@ const { session } = await createAgentSession({ resourceLoader: loader });
 
 Extensions can register tools, subscribe to events, add commands, and more. See [extensions.md](extensions.md) for the full API.
 
-**Event Bus:** Extensions can communicate via `pi.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
+**Event Bus:** Extensions can communicate via `p.events`. Pass a shared `eventBus` to `DefaultResourceLoader` if you need to emit or listen from outside:
 
 ```typescript
 import { createEventBus, DefaultResourceLoader } from "@dst0/p";
@@ -602,11 +637,7 @@ eventBus.on("my-extension:status", (data) => console.log(data));
 ### Skills
 
 ```typescript
-import {
-  createAgentSession,
-  DefaultResourceLoader,
-  type Skill,
-} from "@dst0/p";
+import { createAgentSession, DefaultResourceLoader, type Skill } from "@dst0/p";
 
 const customSkill: Skill = {
   name: "my-skill",
@@ -721,7 +752,11 @@ const currentProjectSessions = await SessionManager.list(process.cwd());
 const allSessions = await SessionManager.listAll(process.cwd());
 
 // Session replacement API for /new, /resume, /fork, /clone, and import flows.
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
     ...(await createAgentSessionFromServices({
@@ -763,21 +798,21 @@ const currentProjectSessions = await SessionManager.list(process.cwd());
 const allSessions = await SessionManager.listAll(process.cwd());
 
 // Tree traversal
-const entries = sm.getEntries();        // All entries (excludes header)
-const tree = sm.getTree();              // Full tree structure
-const path = sm.getPath();              // Path from root to current leaf
-const leaf = sm.getLeafEntry();         // Current leaf entry
-const entry = sm.getEntry(id);          // Get entry by ID
-const children = sm.getChildren(id);    // Direct children of entry
+const entries = sm.getEntries(); // All entries (excludes header)
+const tree = sm.getTree(); // Full tree structure
+const path = sm.getPath(); // Path from root to current leaf
+const leaf = sm.getLeafEntry(); // Current leaf entry
+const entry = sm.getEntry(id); // Get entry by ID
+const children = sm.getChildren(id); // Direct children of entry
 
 // Labels
-const label = sm.getLabel(id);          // Get label for entry
+const label = sm.getLabel(id); // Get label for entry
 sm.appendLabelChange(id, "checkpoint"); // Set label
 
 // Branching
-sm.branch(entryId);                     // Move leaf to earlier entry
-sm.branchWithSummary(id, "Summary...");  // Branch with context summary
-sm.createBranchedSession(leafId);       // Extract path to new file
+sm.branch(entryId); // Move leaf to earlier entry
+sm.branchWithSummary(id, "Summary..."); // Branch with context summary
+sm.createBranchedSession(leafId); // Extract path to new file
 ```
 
 > See [examples/sdk/11-sessions.ts](../examples/sdk/11-sessions.ts) and [Session Format](session-format.md)
@@ -813,12 +848,14 @@ const { session } = await createAgentSession({
 ```
 
 **Static factories:**
+
 - `SettingsManager.create(cwd?, agentDir?)` - Load from files
 - `SettingsManager.inMemory(settings?)` - No file I/O
 
 **Project-specific settings:**
 
 Settings load from two locations and merge:
+
 1. Global: `~/.p/agent/settings.json`
 2. Project: `<cwd>/.p/settings.json`
 
@@ -838,10 +875,7 @@ Project overrides global. Nested objects merge keys. Setters modify global setti
 Use `DefaultResourceLoader` to discover extensions, skills, prompts, themes, and context files.
 
 ```typescript
-import {
-  DefaultResourceLoader,
-  getAgentDir,
-} from "@dst0/p";
+import { DefaultResourceLoader, getAgentDir } from "@dst0/p";
 
 const loader = new DefaultResourceLoader({
   cwd,
@@ -864,10 +898,10 @@ const contextFiles = loader.getAgentsFiles().agentsFiles;
 interface CreateAgentSessionResult {
   // The session
   session: AgentSession;
-  
+
   // Extensions result (for runner setup)
   extensionsResult: LoadExtensionsResult;
-  
+
   // Warning if session model couldn't be restored
   modelFallbackMessage?: string;
 }
@@ -952,7 +986,10 @@ const { session } = await createAgentSession({
 });
 
 session.subscribe((event) => {
-  if (event.type === "message_update" && event.assistantMessageEvent.type === "text_delta") {
+  if (
+    event.type === "message_update" &&
+    event.assistantMessageEvent.type === "text_delta"
+  ) {
     process.stdout.write(event.assistantMessageEvent.delta);
   }
 });
@@ -979,10 +1016,18 @@ import {
   SessionManager,
 } from "@dst0/p";
 
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
-    ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
+    ...(await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+    })),
     services,
     diagnostics: services.diagnostics,
   };
@@ -1019,10 +1064,18 @@ import {
   SessionManager,
 } from "@dst0/p";
 
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
-    ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
+    ...(await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+    })),
     services,
     diagnostics: services.diagnostics,
   };
@@ -1056,10 +1109,18 @@ import {
   SessionManager,
 } from "@dst0/p";
 
-const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+const createRuntime: CreateAgentSessionRuntimeFactory = async ({
+  cwd,
+  sessionManager,
+  sessionStartEvent,
+}) => {
   const services = await createAgentSessionServices({ cwd });
   return {
-    ...(await createAgentSessionFromServices({ services, sessionManager, sessionStartEvent })),
+    ...(await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+    })),
     services,
     diagnostics: services.diagnostics,
   };
@@ -1080,18 +1141,20 @@ See [RPC documentation](rpc.md) for the JSON protocol.
 For subprocess-based integration without building with the SDK, use the CLI directly:
 
 ```bash
-pi --mode rpc --no-session
+p --mode rpc --no-session
 ```
 
 See [RPC documentation](rpc.md) for the JSON protocol.
 
 The SDK is preferred when:
+
 - You want type safety
 - You're in the same Node.js process
 - You need direct access to agent state
 - You want to customize tools/extensions programmatically
 
 RPC mode is preferred when:
+
 - You're integrating from another language
 - You want process isolation
 - You're building a language-agnostic client

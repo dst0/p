@@ -1,37 +1,37 @@
 # Settings
 
-Pi uses JSON settings files with project settings overriding global settings.
+p uses JSON settings files with project settings overriding global settings.
 
-| Location | Scope |
-|----------|-------|
-| `~/.p/agent/settings.json` | Global (all projects) |
-| `.p/settings.json` | Project (current directory) |
+| Location                   | Scope                       |
+| -------------------------- | --------------------------- |
+| `~/.p/agent/settings.json` | Global (all projects)       |
+| `.p/settings.json`         | Project (current directory) |
 
 Edit directly or use `/settings` for common options.
 
 ## Project Trust
 
-On interactive startup, pi asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.p/agent/trust.json`. Trusting a project allows pi to load `.p/settings.json` and `.pi` resources, install missing project packages, and execute project extensions.
+On interactive startup, p asks before trusting a project folder that contains project-local settings, resources, or project `.agents/skills` and has no saved decision for the folder or a parent folder in `~/.p/agent/trust.json`. Trusting a project allows p to load `.p/settings.json` and `.p` resources, install missing project packages, and execute project extensions.
 
 Non-interactive modes (`-p`, `--mode json`, and `--mode rpc`) do not show a trust prompt. Without an applicable saved trust decision, they use `defaultProjectTrust` from global settings: `ask` (default) and `never` ignore those project resources, while `always` trusts them. Pass `--approve`/`-a` or `--no-approve`/`-na` to override project trust for one run.
 
 If no extension or saved decision applies, `defaultProjectTrust` controls the fallback behavior. Set it to `"ask"`, `"always"`, or `"never"` in `~/.p/agent/settings.json`, or change it with `/settings`.
 
-`pi config` and package commands use the same project trust flow, except `pi update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
+`p config` and package commands use the same project trust flow, except `p update` never prompts. Pass `--approve` to trust project-local settings for one command or `--no-approve` to ignore them.
 
-Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.p/agent/trust.json` only; the current session is not reloaded, so restart pi for changes to take effect.
+Use `/trust` in interactive mode to save a project trust decision for future sessions, including trust for the immediate parent folder. It writes `~/.p/agent/trust.json` only; the current session is not reloaded, so restart p for changes to take effect.
 
 ## All Settings
 
 ### Model & Thinking
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `defaultProvider` | string | - | Default provider (e.g., `"anthropic"`, `"openai"`) |
-| `defaultModel` | string | - | Default model ID |
-| `defaultThinkingLevel` | string | - | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
-| `hideThinkingBlock` | boolean | `false` | Hide thinking blocks in output |
-| `thinkingBudgets` | object | - | Custom token budgets per thinking level |
+| Setting                | Type    | Default | Description                                                    |
+| ---------------------- | ------- | ------- | -------------------------------------------------------------- |
+| `defaultProvider`      | string  | -       | Default provider (e.g., `"anthropic"`, `"openai"`)             |
+| `defaultModel`         | string  | -       | Default model ID                                               |
+| `defaultThinkingLevel` | string  | -       | `"off"`, `"minimal"`, `"low"`, `"medium"`, `"high"`, `"xhigh"` |
+| `hideThinkingBlock`    | boolean | `false` | Hide thinking blocks in output                                 |
+| `thinkingBudgets`      | object  | -       | Custom token budgets per thinking level                        |
 
 #### thinkingBudgets
 
@@ -52,18 +52,18 @@ Service tasks such as compaction, memory extraction, and the fast responder can 
 
 The fast responder emits a short generated acknowledgement before large uncached prompts finish prefill. It runs only when `fastResponder.enabled` is not `false`, a responder or service model is configured, the prompt estimate is at least `fastResponder.minContextTokens`, and the previous assistant response did not report a prompt-cache read.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `serviceProvider` | string | - | Provider for service-model work |
-| `serviceModel` | string | - | Model ID for service-model work |
-| `serviceThinkingLevel` | string | - | Thinking level for service-model work |
-| `fastResponder.enabled` | boolean | `true` | Enable generated fast-responder messages when a responder or service model is configured |
-| `fastResponder.provider` | string | `serviceProvider` | Provider override for the fast responder |
-| `fastResponder.model` | string | `serviceModel` | Model override for the fast responder |
-| `fastResponder.thinkingLevel` | string | `serviceThinkingLevel` | Thinking level override for the fast responder |
-| `fastResponder.minContextTokens` | number | `1000` | Minimum estimated prompt size before the responder runs |
-| `fastResponder.timeoutMs` | number | `2000` | Maximum time to wait for the responder model |
-| `fastResponder.maxTokens` | number | `120` | Maximum responder output tokens |
+| Setting                          | Type    | Default                | Description                                                                              |
+| -------------------------------- | ------- | ---------------------- | ---------------------------------------------------------------------------------------- |
+| `serviceProvider`                | string  | -                      | Provider for service-model work                                                          |
+| `serviceModel`                   | string  | -                      | Model ID for service-model work                                                          |
+| `serviceThinkingLevel`           | string  | -                      | Thinking level for service-model work                                                    |
+| `fastResponder.enabled`          | boolean | `true`                 | Enable generated fast-responder messages when a responder or service model is configured |
+| `fastResponder.provider`         | string  | `serviceProvider`      | Provider override for the fast responder                                                 |
+| `fastResponder.model`            | string  | `serviceModel`         | Model override for the fast responder                                                    |
+| `fastResponder.thinkingLevel`    | string  | `serviceThinkingLevel` | Thinking level override for the fast responder                                           |
+| `fastResponder.minContextTokens` | number  | `1000`                 | Minimum estimated prompt size before the responder runs                                  |
+| `fastResponder.timeoutMs`        | number  | `2000`                 | Maximum time to wait for the responder model                                             |
+| `fastResponder.maxTokens`        | number  | `120`                  | Maximum responder output tokens                                                          |
 
 ```json
 {
@@ -80,32 +80,32 @@ The fast responder emits a short generated acknowledgement before large uncached
 
 ### UI & Display
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `theme` | string | `"dark"` | Theme name (`"dark"`, `"light"`, or custom) |
-| `quietStartup` | boolean | `false` | Hide startup header |
-| `defaultProjectTrust` | string | `"ask"` | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only |
-| `collapseChangelog` | boolean | `false` | Show condensed changelog after updates |
-| `enableInstallTelemetry` | boolean | `true` | Send an anonymous install/update version ping after first install or changelog-detected updates. This does not control update checks |
-| `enableAnalytics` | boolean | `false` | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`PI_EXPERIMENTAL=1`) |
-| `trackingId` | string | - | Analytics tracking identifier, generated when `enableAnalytics` is turned on |
-| `doubleEscapeAction` | string | `"tree"` | Action for double-escape: `"tree"`, `"fork"`, or `"none"` |
-| `treeFilterMode` | string | `"default"` | Default filter for `/tree`: `"default"`, `"no-tools"`, `"user-only"`, `"labeled-only"`, `"all"` |
-| `editorPaddingX` | number | `0` | Horizontal padding for input editor (0-3) |
-| `autocompleteMaxVisible` | number | `5` | Max visible items in autocomplete dropdown (3-20) |
-| `showHardwareCursor` | boolean | `false` | Show the terminal cursor while TUI positions it for IME support |
+| Setting                  | Type    | Default     | Description                                                                                                                          |
+| ------------------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `theme`                  | string  | `"dark"`    | Theme name (`"dark"`, `"light"`, or custom)                                                                                          |
+| `quietStartup`           | boolean | `false`     | Hide startup header                                                                                                                  |
+| `defaultProjectTrust`    | string  | `"ask"`     | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only                                              |
+| `collapseChangelog`      | boolean | `false`     | Show condensed changelog after updates                                                                                               |
+| `enableInstallTelemetry` | boolean | `true`      | Send an anonymous install/update version ping after first install or changelog-detected updates. This does not control update checks |
+| `enableAnalytics`        | boolean | `false`     | Opt-in analytics data sharing. Currently only asked for during the experimental first-time setup (`PI_EXPERIMENTAL=1`)               |
+| `trackingId`             | string  | -           | Analytics tracking identifier, generated when `enableAnalytics` is turned on                                                         |
+| `doubleEscapeAction`     | string  | `"tree"`    | Action for double-escape: `"tree"`, `"fork"`, or `"none"`                                                                            |
+| `treeFilterMode`         | string  | `"default"` | Default filter for `/tree`: `"default"`, `"no-tools"`, `"user-only"`, `"labeled-only"`, `"all"`                                      |
+| `editorPaddingX`         | number  | `0`         | Horizontal padding for input editor (0-3)                                                                                            |
+| `autocompleteMaxVisible` | number  | `5`         | Max visible items in autocomplete dropdown (3-20)                                                                                    |
+| `showHardwareCursor`     | boolean | `false`     | Show the terminal cursor while TUI positions it for IME support                                                                      |
 
 ### Telemetry and update checks
 
 `enableInstallTelemetry` only controls the anonymous install/update ping to `https://p.pages.dev/api/report-install`. Opting out of telemetry does not disable update checks; p can still fetch `https://p.pages.dev/api/latest-version` to look for the latest version.
 
-Set `P_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
+Set `P_SKIP_VERSION_CHECK=1` to disable the p version update check. Use `--offline` or `P_OFFLINE=1` to disable all startup network operations described here, including update checks, package update checks, and install/update telemetry.
 
 ### Warnings
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `warnings.anthropicExtraUsage` | boolean | `true` | Show a warning when Anthropic subscription auth may use paid extra usage |
+| Setting                        | Type    | Default | Description                                                              |
+| ------------------------------ | ------- | ------- | ------------------------------------------------------------------------ |
+| `warnings.anthropicExtraUsage` | boolean | `true`  | Show a warning when Anthropic subscription auth may use paid extra usage |
 
 ```json
 {
@@ -117,14 +117,14 @@ Set `P_SKIP_VERSION_CHECK=1` to disable the Pi version update check. Use `--offl
 
 ### Compaction
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `compaction.enabled` | boolean | `true` | Enable auto-compaction |
-| `compaction.triggerReserveTokens` | number | `12000` | Trigger compaction when fewer than this many tokens remain in the loaded model context window |
-| `compaction.triggerRatio` | number | `1.0` | Trigger compaction when context reaches this fraction of the loaded model context window |
-| `compaction.keepRecentMinTokens` | number | `2000` | Minimum recent tokens to keep after compaction |
-| `compaction.keepRecentMaxTokens` | number | `8000` | Maximum recent tokens to keep after compaction |
-| `compaction.targetContextTokens` | number | `12000` | Preferred post-compaction target size |
+| Setting                           | Type    | Default | Description                                                                                   |
+| --------------------------------- | ------- | ------- | --------------------------------------------------------------------------------------------- |
+| `compaction.enabled`              | boolean | `true`  | Enable auto-compaction                                                                        |
+| `compaction.triggerReserveTokens` | number  | `12000` | Trigger compaction when fewer than this many tokens remain in the loaded model context window |
+| `compaction.triggerRatio`         | number  | `1.0`   | Trigger compaction when context reaches this fraction of the loaded model context window      |
+| `compaction.keepRecentMinTokens`  | number  | `2000`  | Minimum recent tokens to keep after compaction                                                |
+| `compaction.keepRecentMaxTokens`  | number  | `8000`  | Maximum recent tokens to keep after compaction                                                |
+| `compaction.targetContextTokens`  | number  | `12000` | Preferred post-compaction target size                                                         |
 
 ```json
 {
@@ -143,25 +143,25 @@ Legacy `reserveTokens` and `keepRecentTokens` are still accepted. If only legacy
 
 ### Branch Summary
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `branchSummary.reserveTokens` | number | `16384` | Tokens reserved for branch summarization |
-| `branchSummary.skipPrompt` | boolean | `false` | Skip "Summarize branch?" prompt on `/tree` navigation (defaults to no summary) |
+| Setting                       | Type    | Default | Description                                                                    |
+| ----------------------------- | ------- | ------- | ------------------------------------------------------------------------------ |
+| `branchSummary.reserveTokens` | number  | `16384` | Tokens reserved for branch summarization                                       |
+| `branchSummary.skipPrompt`    | boolean | `false` | Skip "Summarize branch?" prompt on `/tree` navigation (defaults to no summary) |
 
 ### Retry
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `retry.enabled` | boolean | `true` | Enable automatic agent-level retry on transient errors |
-| `retry.maxRetries` | number | `3` | Maximum agent-level retry attempts |
-| `retry.baseDelayMs` | number | `500` | Base delay for agent-level exponential backoff (0.5s, 1s, 2s) |
-| `retry.provider.timeoutMs` | number | SDK default | Provider/SDK request timeout in milliseconds |
-| `retry.provider.maxRetries` | number | `0` | Provider/SDK retry attempts |
-| `retry.provider.maxRetryDelayMs` | number | `60000` | Max server-requested delay before failing (60s) |
+| Setting                          | Type    | Default     | Description                                                   |
+| -------------------------------- | ------- | ----------- | ------------------------------------------------------------- |
+| `retry.enabled`                  | boolean | `true`      | Enable automatic agent-level retry on transient errors        |
+| `retry.maxRetries`               | number  | `3`         | Maximum agent-level retry attempts                            |
+| `retry.baseDelayMs`              | number  | `500`       | Base delay for agent-level exponential backoff (0.5s, 1s, 2s) |
+| `retry.provider.timeoutMs`       | number  | SDK default | Provider/SDK request timeout in milliseconds                  |
+| `retry.provider.maxRetries`      | number  | `0`         | Provider/SDK retry attempts                                   |
+| `retry.provider.maxRetryDelayMs` | number  | `60000`     | Max server-requested delay before failing (60s)               |
 
 When a provider requests a retry delay longer than `retry.provider.maxRetryDelayMs` (e.g., Google's "quota will reset after 5h"), the request fails immediately with an informative error instead of waiting silently. Set to `0` to disable the cap.
 
-Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before Pi sees them, which may block the agent until the provider quota resets in some circumstances.
+Keep `retry.provider.maxRetries` at `0` unless provider-level retries are explicitly needed. Setting it above `0` can make SDK/provider retries handle out-of-usage-limit errors before p sees them, which may block the agent until the provider quota resets in some circumstances.
 
 Model-loading and LLM-orchestrator worker-unavailable errors use an extended recovery profile regardless of `retry.maxRetries`: at least 15 retries with linear delays from 1s to 15s, for about two minutes of recovery time before failing.
 
@@ -190,7 +190,7 @@ Model-loading and LLM-orchestrator worker-unavailable errors use an extended rec
 | `completionLimits.maxEmptyAssistantRetries` | number | `3` | Maximum empty assistant retries |
 | `completionLimits.maxMissingFinishRetries` | number | `3` in hybrid, bounded by `maxTurns` in strict mode | Missing `finish_work` retries before hybrid fallback |
 
-Pi defaults to `explicit_finish`: the model must call the terminal tool `finish_work` before the run is complete. `finish_reason: "stop"` and assistant text without tool calls are not completion proof in this mode.
+p defaults to `explicit_finish`: the model must call the terminal tool `finish_work` before the run is complete. `finish_reason: "stop"` and assistant text without tool calls are not completion proof in this mode.
 
 Use this strict mode for local or quantized models that may stop after planning text without emitting a tool call:
 
@@ -230,36 +230,36 @@ Strict CI/testing profile:
 
 ### Message Delivery
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `steeringMode` | string | `"one-at-a-time"` | How steering messages are sent: `"all"` or `"one-at-a-time"` |
-| `followUpMode` | string | `"one-at-a-time"` | How follow-up messages are sent: `"all"` or `"one-at-a-time"` |
-| `transport` | string | `"auto"` | Preferred transport for providers that support multiple transports: `"sse"`, `"websocket"`, `"websocket-cached"`, or `"auto"` |
-| `httpIdleTimeoutMs` | number | `300000` | HTTP header/body idle timeout in milliseconds, also used by providers with explicit stream idle timeouts. Set to `0` to disable. |
-| `websocketConnectTimeoutMs` | number | `15000` | WebSocket connect/open handshake timeout in milliseconds for providers that support WebSocket transports. Set to `0` to disable. |
+| Setting                     | Type   | Default           | Description                                                                                                                      |
+| --------------------------- | ------ | ----------------- | -------------------------------------------------------------------------------------------------------------------------------- |
+| `steeringMode`              | string | `"one-at-a-time"` | How steering messages are sent: `"all"` or `"one-at-a-time"`                                                                     |
+| `followUpMode`              | string | `"one-at-a-time"` | How follow-up messages are sent: `"all"` or `"one-at-a-time"`                                                                    |
+| `transport`                 | string | `"auto"`          | Preferred transport for providers that support multiple transports: `"sse"`, `"websocket"`, `"websocket-cached"`, or `"auto"`    |
+| `httpIdleTimeoutMs`         | number | `300000`          | HTTP header/body idle timeout in milliseconds, also used by providers with explicit stream idle timeouts. Set to `0` to disable. |
+| `websocketConnectTimeoutMs` | number | `15000`           | WebSocket connect/open handshake timeout in milliseconds for providers that support WebSocket transports. Set to `0` to disable. |
 
 ### Terminal & Images
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `terminal.showImages` | boolean | `true` | Show images in terminal (if supported) |
-| `terminal.imageWidthCells` | number | `60` | Preferred inline image width in terminal cells |
-| `terminal.clearOnShrink` | boolean | `false` | Clear empty rows when content shrinks (can cause flicker) |
-| `terminal.showTerminalProgress` | boolean | `false` | Show OSC 9;4 progress indicators in supported terminal tab bars |
-| `terminal.showTokenProgress` | boolean | `true` | Show compact `QUEUED`, `PREFILL`, and `GEN` progress in the footer |
-| `terminal.showTokenStats` | boolean | `true` | Show cumulative token and cache counts in the footer |
-| `terminal.showIndexingInfo` | boolean | `true` | Show the active repository's `🔎` state marker and indexing percentage in the footer |
-| `terminal.showVersion` | boolean | `false` | Show the p agent version in the footer |
-| `images.autoResize` | boolean | `true` | Resize images to 2000x2000 max |
-| `images.blockImages` | boolean | `false` | Block all images from being sent to LLM |
+| Setting                         | Type    | Default | Description                                                                          |
+| ------------------------------- | ------- | ------- | ------------------------------------------------------------------------------------ |
+| `terminal.showImages`           | boolean | `true`  | Show images in terminal (if supported)                                               |
+| `terminal.imageWidthCells`      | number  | `60`    | Preferred inline image width in terminal cells                                       |
+| `terminal.clearOnShrink`        | boolean | `false` | Clear empty rows when content shrinks (can cause flicker)                            |
+| `terminal.showTerminalProgress` | boolean | `false` | Show OSC 9;4 progress indicators in supported terminal tab bars                      |
+| `terminal.showTokenProgress`    | boolean | `true`  | Show compact `QUEUED`, `PREFILL`, and `GEN` progress in the footer                   |
+| `terminal.showTokenStats`       | boolean | `true`  | Show cumulative token and cache counts in the footer                                 |
+| `terminal.showIndexingInfo`     | boolean | `true`  | Show the active repository's `🔎` state marker and indexing percentage in the footer |
+| `terminal.showVersion`          | boolean | `false` | Show the p agent version in the footer                                               |
+| `images.autoResize`             | boolean | `true`  | Resize images to 2000x2000 max                                                       |
+| `images.blockImages`            | boolean | `false` | Block all images from being sent to LLM                                              |
 
 ### Shell
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `shellPath` | string | - | Custom shell path (e.g., for Cygwin on Windows) |
-| `shellCommandPrefix` | string | - | Prefix for every bash command (e.g., `"shopt -s expand_aliases"`) |
-| `npmCommand` | string[] | - | Command argv used for npm package lookup/install operations (e.g., `["mise", "exec", "node@20", "--", "npm"]`) |
+| Setting              | Type     | Default | Description                                                                                                    |
+| -------------------- | -------- | ------- | -------------------------------------------------------------------------------------------------------------- |
+| `shellPath`          | string   | -       | Custom shell path (e.g., for Cygwin on Windows)                                                                |
+| `shellCommandPrefix` | string   | -       | Prefix for every bash command (e.g., `"shopt -s expand_aliases"`)                                              |
+| `npmCommand`         | string[] | -       | Command argv used for npm package lookup/install operations (e.g., `["mise", "exec", "node@20", "--", "npm"]`) |
 
 ```json
 {
@@ -271,9 +271,9 @@ Strict CI/testing profile:
 
 ### Sessions
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `sessionDir` | string | - | Directory where session files are stored. Accepts absolute or relative paths, plus `~`. |
+| Setting      | Type   | Default | Description                                                                             |
+| ------------ | ------ | ------- | --------------------------------------------------------------------------------------- |
+| `sessionDir` | string | -       | Directory where session files are stored. Accepts absolute or relative paths, plus `~`. |
 
 ```json
 { "sessionDir": ".p/sessions" }
@@ -283,9 +283,9 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 
 ### Model Cycling
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `enabledModels` | string[] | - | Model patterns for Ctrl+P cycling (same format as `--models` CLI flag) |
+| Setting         | Type     | Default | Description                                                            |
+| --------------- | -------- | ------- | ---------------------------------------------------------------------- |
+| `enabledModels` | string[] | -       | Model patterns for Ctrl+P cycling (same format as `--models` CLI flag) |
 
 ```json
 {
@@ -295,24 +295,24 @@ When multiple sources specify a session directory, precedence is `--session-dir`
 
 ### Markdown
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `markdown.codeBlockIndent` | string | `"  "` | Indentation for code blocks |
+| Setting                    | Type   | Default | Description                 |
+| -------------------------- | ------ | ------- | --------------------------- |
+| `markdown.codeBlockIndent` | string | `"  "`  | Indentation for code blocks |
 
 ### Resources
 
 These settings define where to load extensions, skills, prompts, and themes from.
 
-Paths in `~/.p/agent/settings.json` resolve relative to `~/.p/agent`. Paths in `.p/settings.json` resolve relative to `.pi`. Absolute paths and `~` are supported.
+Paths in `~/.p/agent/settings.json` resolve relative to `~/.p/agent`. Paths in `.p/settings.json` resolve relative to `.p`. Absolute paths and `~` are supported.
 
-| Setting | Type | Default | Description |
-|---------|------|---------|-------------|
-| `packages` | array | `[]` | npm/git packages to load resources from |
-| `extensions` | string[] | `[]` | Local extension file paths or directories |
-| `skills` | string[] | `[]` | Local skill file paths or directories |
-| `prompts` | string[] | `[]` | Local prompt template paths or directories |
-| `themes` | string[] | `[]` | Local theme file paths or directories |
-| `enableSkillCommands` | boolean | `true` | Register skills as `/skill:name` commands |
+| Setting               | Type     | Default | Description                                |
+| --------------------- | -------- | ------- | ------------------------------------------ |
+| `packages`            | array    | `[]`    | npm/git packages to load resources from    |
+| `extensions`          | string[] | `[]`    | Local extension file paths or directories  |
+| `skills`              | string[] | `[]`    | Local skill file paths or directories      |
+| `prompts`             | string[] | `[]`    | Local prompt template paths or directories |
+| `themes`              | string[] | `[]`    | Local theme file paths or directories      |
+| `enableSkillCommands` | boolean  | `true`  | Register skills as `/skill:name` commands  |
 
 Arrays support glob patterns and exclusions. Use `!pattern` to exclude. Use `+path` to force-include an exact path and `-path` to force-exclude an exact path.
 
@@ -322,7 +322,7 @@ String form loads all resources from a package:
 
 ```json
 {
-  "packages": ["pi-skills", "@org/my-extension"]
+  "packages": ["p-skills", "@org/my-extension"]
 }
 ```
 
@@ -332,7 +332,7 @@ Object form filters which resources to load:
 {
   "packages": [
     {
-      "source": "pi-skills",
+      "source": "p-skills",
       "skills": ["brave-search", "transcribe"],
       "extensions": []
     }
@@ -363,7 +363,7 @@ See [packages.md](packages.md) for package management details.
   "warnings": {
     "anthropicExtraUsage": true
   },
-  "packages": ["pi-skills"]
+  "packages": ["p-skills"]
 }
 ```
 

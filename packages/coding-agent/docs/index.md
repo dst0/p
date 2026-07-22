@@ -6,13 +6,13 @@ For a repeatable fork-versus-upstream comparison, see [Agent benchmarking](bench
 
 ## Quick start
 
-Install Pi with npm:
+Install p with npm:
 
 ```bash
 npm install -g --ignore-scripts @dst0/p
 ```
 
-`--ignore-scripts` disables dependency lifecycle scripts during install. Pi does not require install scripts for normal npm installs.
+`--ignore-scripts` disables dependency lifecycle scripts during install. p does not require install scripts for normal npm installs.
 
 On Linux or macOS, you can also use the installer:
 
@@ -20,7 +20,7 @@ On Linux or macOS, you can also use the installer:
 curl -fsSL https://p.pages.dev/install.sh | sh
 ```
 
-To uninstall pi itself, use npm for curl and npm installs:
+To uninstall p itself, use npm for curl and npm installs:
 
 ```bash
 npm uninstall -g @dst0/p
@@ -31,20 +31,20 @@ For pnpm, Yarn, or Bun installs, use the matching global remove command: `pnpm r
 Then run it in a project directory:
 
 ```bash
-pi
+p
 ```
 
-Authenticate with `/login` for subscription providers, or set an API key such as `ANTHROPIC_API_KEY` before starting pi.
+Authenticate with `/login` for subscription providers, or set an API key such as `ANTHROPIC_API_KEY` before starting p.
 
 For the full first-run flow, see [Quickstart](quickstart.md).
 
 ## Start here
 
 - [Quickstart](quickstart.md) - install, authenticate, and run a first session.
-- [Using Pi](usage.md) - interactive mode, slash commands, context files, and CLI reference.
+- [Using p](usage.md) - interactive mode, slash commands, context files, and CLI reference.
 - [Providers](providers.md) - subscription and API-key setup for built-in providers.
 - [Security](security.md) - project trust, sandbox boundaries, and vulnerability reporting.
-- [Containerization](containerization.md) - sandbox pi with Gondolin, Docker, or OpenShell.
+- [Containerization](containerization.md) - sandbox p with Gondolin, Docker, or OpenShell.
 - [Settings](settings.md) - global and project settings.
 - [Code indexing](code-indexing.md) - local semantic search, repository opt-in, and background indexing.
 - [Architecture](architecture.md) - high-level overview and background service design.
@@ -58,13 +58,13 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Skills](skills.md) - Agent Skills for reusable on-demand capabilities.
 - [Prompt templates](prompt-templates.md) - reusable prompts that expand from slash commands.
 - [Themes](themes.md) - built-in and custom terminal themes.
-- [Pi packages](packages.md) - bundle and share extensions, skills, prompts, and themes.
+- [p packages](packages.md) - bundle and share extensions, skills, prompts, and themes.
 - [Custom models](models.md) - add model entries for supported provider APIs.
 - [Custom providers](custom-provider.md) - implement custom APIs and OAuth flows.
 
 ## Programmatic usage
 
-- [SDK](sdk.md) - embed pi in Node.js applications.
+- [SDK](sdk.md) - embed p in Node.js applications.
 - [RPC mode](rpc.md) - integrate over stdin/stdout JSONL.
 - [JSON event stream mode](json.md) - print mode with structured events.
 - [TUI components](tui.md) - build custom terminal UI for extensions.

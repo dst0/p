@@ -1,4 +1,4 @@
-> pi can create themes. Ask it to build one for your setup.
+> p can create themes. Ask it to build one for your setup.
 
 # Themes
 
@@ -16,12 +16,12 @@ Themes are JSON files that define colors for the TUI.
 
 ## Locations
 
-Pi loads themes from:
+P loads themes from:
 
 - Built-in: `dark`, `light`
 - Global: `~/.p/agent/themes/*.json`
 - Project: `.p/themes/*.json` (only after the project is trusted)
-- Packages: `themes/` directories or `pi.themes` entries in `package.json`
+- Packages: `themes/` directories or `p.themes` entries in `package.json`
 - Settings: `themes` array with files or directories
 - CLI: `--theme <path>` (repeatable)
 
@@ -37,7 +37,7 @@ Select a theme via `/settings` or in `settings.json`:
 }
 ```
 
-On first run, pi detects your terminal background and defaults to `dark` or `light`.
+On first run, p detects your terminal background and defaults to `dark` or `light`.
 
 ## Creating a Custom Theme
 
@@ -116,7 +116,7 @@ vim ~/.p/agent/themes/my-theme.json
 
 3. Select the theme via `/settings`.
 
-**Hot reload:** When you edit the currently active custom theme file, pi reloads it automatically for immediate visual feedback.
+**Hot reload:** When you edit the currently active custom theme file, p reloads it automatically for immediate visual feedback.
 
 ## Theme Format
 
@@ -268,7 +268,7 @@ Four formats are supported:
 
 ### Terminal Compatibility
 
-Pi uses 24-bit RGB colors. Most modern terminals support this (iTerm2, Kitty, WezTerm, Windows Terminal, VS Code). For older terminals with only 256-color support, pi falls back to the nearest approximation.
+P uses 24-bit RGB colors. Most modern terminals support this (iTerm2, Kitty, WezTerm, Windows Terminal, VS Code). For older terminals with only 256-color support, p falls back to the nearest approximation.
 
 Check truecolor support:
 

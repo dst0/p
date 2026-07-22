@@ -14,7 +14,7 @@ npm run build
 
 VERSION=$("$SCRIPT_DIR/packages/coding-agent/dist/cli.js" --version)
 
-echo "=== Globally Relinking Pi CLI ==="
+echo "=== Globally Relinking P CLI ==="
 # Relink every npm-backed p visible on PATH. Different shell startup paths can
 # otherwise select different global prefixes and keep invoking an old checkout.
 NPM_BIN=$(command -v npm)

@@ -1,4 +1,4 @@
-> pi can create TUI components. Ask it to build one for your use case.
+> p can create TUI components. Ask it to build one for your use case.
 
 # TUI Components
 
@@ -89,18 +89,18 @@ Without this propagation, typing with an IME (Chinese, Japanese, Korean, etc.) w
 **In extensions** via `ctx.ui.custom()`:
 
 ```typescript
-pi.on("session_start", async (_event, ctx) => {
+p.on("session_start", async (_event, ctx) => {
   const handle = ctx.ui.custom(myComponent);
   // handle.requestRender() - trigger re-render
   // handle.close() - restore normal UI
 });
 ```
 
-**In custom tools** via `pi.ui.custom()`:
+**In custom tools** via `p.ui.custom()`:
 
 ```typescript
 async execute(toolCallId, params, onUpdate, ctx, signal) {
-  const handle = pi.ui.custom(myComponent);
+  const handle = p.ui.custom(myComponent);
   // ...
   handle.close();
 }
@@ -372,7 +372,7 @@ class MySelector {
 Usage in an extension:
 
 ```typescript
-pi.registerCommand("pick", {
+p.registerCommand("pick", {
   description: "Pick an item",
   handler: async (args, ctx) => {
     const items = ["Option A", "Option B", "Option C"];
@@ -603,7 +603,7 @@ import type { ExtensionAPI } from "@dst0/p";
 import { DynamicBorder } from "@dst0/p";
 import { Container, type SelectItem, SelectList, Text } from "@dst0/p-tui";
 
-pi.registerCommand("pick", {
+p.registerCommand("pick", {
   handler: async (_args, ctx) => {
     const items: SelectItem[] = [
       { value: "opt1", label: "Option 1", description: "First option" },
@@ -661,7 +661,7 @@ For operations that take time and should be cancellable. `BorderedLoader` shows 
 ```typescript
 import { BorderedLoader } from "@dst0/p";
 
-pi.registerCommand("fetch", {
+p.registerCommand("fetch", {
   handler: async (_args, ctx) => {
     const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
       const loader = new BorderedLoader(tui, theme, "Fetching data...");
@@ -694,7 +694,7 @@ For toggling multiple settings. Use `SettingsList` from `@dst0/p-tui` with `getS
 import { getSettingsListTheme } from "@dst0/p";
 import { Container, type SettingItem, SettingsList, Text } from "@dst0/p-tui";
 
-pi.registerCommand("settings", {
+p.registerCommand("settings", {
   handler: async (_args, ctx) => {
     const items: SettingItem[] = [
       { id: "verbose", label: "Verbose mode", currentValue: "off", values: ["on", "off"] },
@@ -746,7 +746,7 @@ ctx.ui.setStatus("my-ext", undefined);
 
 ### Pattern 4b: Working Indicator Customization
 
-Customize the inline working indicator shown while pi is streaming a response.
+Customize the inline working indicator shown while p is streaming a response.
 
 ```typescript
 // Static indicator
@@ -766,7 +766,7 @@ ctx.ui.setWorkingIndicator({
 // Hide the indicator entirely
 ctx.ui.setWorkingIndicator({ frames: [] });
 
-// Restore pi's default spinner
+// Restore p's default spinner
 ctx.ui.setWorkingIndicator();
 ```
 
@@ -883,8 +883,8 @@ class VimEditor extends CustomEditor {
   }
 }
 
-export default function (pi: ExtensionAPI) {
-  pi.on("session_start", (_event, ctx) => {
+export default function (p: ExtensionAPI) {
+  p.on("session_start", (_event, ctx) => {
     // Factory receives theme and keybindings from the app
     ctx.ui.setEditorComponent((tui, theme, keybindings) =>
       new VimEditor(theme, keybindings)

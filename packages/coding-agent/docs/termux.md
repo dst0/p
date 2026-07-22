@@ -1,6 +1,6 @@
 # Termux (Android) Setup
 
-Pi runs on Android via [Termux](https://termux.dev/), a terminal emulator and Linux environment for Android.
+P runs on Android via [Termux](https://termux.dev/), a terminal emulator and Linux environment for Android.
 
 ## Prerequisites
 
@@ -16,14 +16,14 @@ pkg update && pkg upgrade
 # Install dependencies
 pkg install nodejs termux-api git
 
-# Install pi
+# Install p
 npm install -g --ignore-scripts @dst0/p
 
 # Create config directory
 mkdir -p ~/.p/agent
 
-# Run pi
-pi
+# Run p
+p
 ```
 
 ## Clipboard Support

@@ -1,8 +1,9 @@
 # Compaction & Branch Summarization
 
-LLMs have limited context windows. When conversations grow too long, pi uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
+LLMs have limited context windows. When conversations grow too long, p uses compaction to summarize older content while preserving recent work. This page covers both auto-compaction and branch summarization.
 
-**Source files** ([pi-mono](https://github.com/dst0/p-mono)):
+**Source files** ([p-mono](https://github.com/dst0/p-mono)):
+
 - [`packages/coding-agent/src/core/compaction/compaction.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/compaction/compaction.ts) - Auto-compaction logic
 - [`packages/coding-agent/src/core/compaction/branch-summarization.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/compaction/branch-summarization.ts) - Branch summarization
 - [`packages/coding-agent/src/core/compaction/utils.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/compaction/utils.ts) - Shared utilities (file tracking, serialization)
@@ -13,12 +14,12 @@ For TypeScript definitions in your project, inspect `node_modules/@dst0/p/dist/`
 
 ## Overview
 
-Pi has two summarization mechanisms:
+p has two summarization mechanisms:
 
-| Mechanism | Trigger | Purpose |
-|-----------|---------|---------|
-| Compaction | Context exceeds threshold, or `/compact` | Summarize old messages to free up context |
-| Branch summarization | `/tree` navigation | Preserve context when switching branches |
+| Mechanism            | Trigger                                  | Purpose                                   |
+| -------------------- | ---------------------------------------- | ----------------------------------------- |
+| Compaction           | Context exceeds threshold, or `/compact` | Summarize old messages to free up context |
+| Branch summarization | `/tree` navigation                       | Preserve context when switching branches  |
 
 Both use the same structured summary format and track file operations cumulatively.
 
@@ -37,7 +38,7 @@ Both limits are evaluated when present, and the lower threshold wins. By default
 
 The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`.
 
-Provider prompt-cache reuse is separate from compaction. During normal turns, provider-visible history is append-only: completed text and image tool results are never replaced by live stubs, and threshold pressure does not truncate the prompt. The between-turn hook checks pressure after ordinary tool-use turns and, when required, persists formal compaction before the next provider request. This produces one explicit cache reset at the compaction boundary, followed by append-only reuse from the rebuilt context. Tool-result stubbing remains limited to the one-shot compaction-summary request and is recorded in the compaction audit. If formal compaction fails, pi leaves live history unchanged and uses the explicit overflow-recovery path.
+Provider prompt-cache reuse is separate from compaction. During normal turns, provider-visible history is append-only: completed text and image tool results are never replaced by live stubs, and threshold pressure does not truncate the prompt. The between-turn hook checks pressure after ordinary tool-use turns and, when required, persists formal compaction before the next provider request. This produces one explicit cache reset at the compaction boundary, followed by append-only reuse from the rebuilt context. Tool-result stubbing remains limited to the one-shot compaction-summary request and is recorded in the compaction audit. If formal compaction fails, p leaves live history unchanged and uses the explicit overflow-recovery path.
 
 Interrupted provider streams do not resume. After a dropped connection or killed p process, the next prompt with the same session id is a fresh provider request. Prompt-cache reuse depends on the saved provider-visible prefix and any intermediary checkpoint restore, not on continuing the previous stream. Cache-stability tests should therefore verify that post-interruption turns reuse or restore cache on the next request and that no non-compaction turn falls back to full prompt prefill.
 
@@ -83,7 +84,7 @@ What the LLM sees:
     prompt   from cmp          messages from firstKeptEntryId
 ```
 
-On repeated compactions, the summarized span starts at the previous compaction's kept boundary (`firstKeptEntryId`), not at the compaction entry itself, falling back to the entry after the previous compaction if that kept entry cannot be found in the path. This preserves messages that survived the earlier compaction by including them in the next summarization pass as well. Pi also recalculates `tokensBefore` from the rebuilt session context before writing the new `CompactionEntry`, so the token count reflects the actual pre-compaction context being replaced.
+On repeated compactions, the summarized span starts at the previous compaction's kept boundary (`firstKeptEntryId`), not at the compaction entry itself, falling back to the entry after the previous compaction if that kept entry cannot be found in the path. This preserves messages that survived the earlier compaction by including them in the next summarization pass as well. p also recalculates `tokensBefore` from the rebuilt session context before writing the new `CompactionEntry`, so the token count reflects the actual pre-compaction context being replaced.
 
 ### Split Turns
 
@@ -109,13 +110,15 @@ Split turn (one huge turn exceeds budget):
   turnPrefixMessages = [usr, ass, tool, ass, tool, tool]
 ```
 
-For split turns, pi generates two summaries and merges them:
+For split turns, p generates two summaries and merges them:
+
 1. **History summary**: Previous context (if any)
 2. **Turn prefix summary**: The early part of the split turn
 
 ### Cut Point Rules
 
 Valid cut points are:
+
 - User messages
 - Assistant messages
 - BashExecution messages
@@ -136,8 +139,8 @@ interface CompactionEntry<T = unknown> {
   summary: string;
   firstKeptEntryId: string;
   tokensBefore: number;
-  fromHook?: boolean;  // true if provided by extension (legacy field name)
-  details?: T;         // implementation-specific data
+  fromHook?: boolean; // true if provided by extension (legacy field name)
+  details?: T; // implementation-specific data
 }
 
 // Default compaction uses this for details (from compaction.ts):
@@ -155,7 +158,7 @@ See [`prepareCompaction()`](https://github.com/dst0/p-mono/blob/main/packages/co
 
 ### When It Triggers
 
-When you use `/tree` to navigate to a different branch, pi offers to summarize the work you're leaving. This injects context from the left branch into the new branch.
+When you use `/tree` to navigate to a different branch, p offers to summarize the work you're leaving. This injects context from the left branch into the new branch.
 
 ### How It Works
 
@@ -184,7 +187,8 @@ After navigation with summary:
 
 ### Cumulative File Tracking
 
-Both compaction and branch summarization track files cumulatively. When generating a summary, pi extracts file operations from:
+Both compaction and branch summarization track files cumulatively. When generating a summary, p extracts file operations from:
+
 - Tool calls in the messages being summarized
 - Previous compaction or branch summary `details` (if any)
 
@@ -201,9 +205,9 @@ interface BranchSummaryEntry<T = unknown> {
   parentId: string;
   timestamp: number;
   summary: string;
-  fromId: string;      // Entry we navigated from
-  fromHook?: boolean;  // true if provided by extension (legacy field name)
-  details?: T;         // implementation-specific data
+  fromId: string; // Entry we navigated from
+  fromHook?: boolean; // true if provided by extension (legacy field name)
+  details?: T; // implementation-specific data
 }
 
 // Default branch summarization uses this for details (from branch-summarization.ts):
@@ -223,9 +227,11 @@ Compaction and branch summarization use the same plan-only status format:
 
 ```markdown
 ## Goal
+
 [What the user is trying to accomplish]
 
 ## Plan
+
 - [ ] [Not started]
 - [.] [In progress]
 - [v] [Done]
@@ -233,12 +239,15 @@ Compaction and branch summarization use the same plan-only status format:
 - [!] [Blocked]
 
 ## Decisions
+
 - **[Decision]**: [Rationale]
 
 ## Files
+
 - [read|modified|created|deleted]: [Exact path] - [Summary]
 
 ## Risks
+
 - [Unresolved failure, blocker, warning, or `(none)`]
 
 <read-files>
@@ -276,7 +285,7 @@ Extensions can intercept and customize both compaction and branch summarization.
 Fired before auto-compaction or `/compact`. Can cancel or provide custom summary. See `SessionBeforeCompactEvent` and `CompactionPreparation` in the types file.
 
 ```typescript
-pi.on("session_before_compact", async (event, ctx) => {
+p.on("session_before_compact", async (event, ctx) => {
   const { preparation, branchEntries, customInstructions, signal } = event;
 
   // preparation.messagesToSummarize - messages to summarize
@@ -299,8 +308,8 @@ pi.on("session_before_compact", async (event, ctx) => {
       summary: "Your summary...",
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
-      details: { /* custom data */ },
-    }
+      details: {/* custom data */},
+    },
   };
 });
 ```
@@ -312,12 +321,12 @@ To generate a summary with your own model, convert messages to text using `seria
 ```typescript
 import { convertToLlm, serializeConversation } from "@dst0/p";
 
-pi.on("session_before_compact", async (event, ctx) => {
+p.on("session_before_compact", async (event, ctx) => {
   const { preparation } = event;
-  
+
   // Convert AgentMessage[] to Message[], then serialize to text
   const conversationText = serializeConversation(
-    convertToLlm(preparation.messagesToSummarize)
+    convertToLlm(preparation.messagesToSummarize),
   );
   // Returns:
   // [User]: message text
@@ -328,13 +337,13 @@ pi.on("session_before_compact", async (event, ctx) => {
 
   // Now send to your model for summarization
   const summary = await myModel.summarize(conversationText);
-  
+
   return {
     compaction: {
       summary,
       firstKeptEntryId: preparation.firstKeptEntryId,
       tokensBefore: preparation.tokensBefore,
-    }
+    },
   };
 });
 ```
@@ -346,7 +355,7 @@ See [custom-compaction.ts](../examples/extensions/custom-compaction.ts) for a co
 Fired before `/tree` navigation. Always fires regardless of whether user chose to summarize. Can cancel navigation or provide custom summary.
 
 ```typescript
-pi.on("session_before_tree", async (event, ctx) => {
+p.on("session_before_tree", async (event, ctx) => {
   const { preparation, signal } = event;
 
   // preparation.targetId - where we're navigating to
@@ -363,8 +372,8 @@ pi.on("session_before_tree", async (event, ctx) => {
     return {
       summary: {
         summary: "Your summary...",
-        details: { /* custom data */ },
-      }
+        details: {/* custom data */},
+      },
     };
   }
 });
@@ -386,10 +395,10 @@ Configure compaction in `~/.p/agent/settings.json` or `<project-dir>/.p/settings
 }
 ```
 
-| Setting | Default | Description |
-|---------|---------|-------------|
-| `enabled` | `true` | Enable auto-compaction |
-| `reserveTokens` | `16384` | Tokens to reserve for LLM response |
+| Setting            | Default | Description                            |
+| ------------------ | ------- | -------------------------------------- |
+| `enabled`          | `true`  | Enable auto-compaction                 |
+| `reserveTokens`    | `16384` | Tokens to reserve for LLM response     |
 | `keepRecentTokens` | `20000` | Recent tokens to keep (not summarized) |
 
 Disable auto-compaction with `"enabled": false`. You can still compact manually with `/compact`.
