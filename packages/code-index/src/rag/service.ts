@@ -185,6 +185,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		if (!this.initialized) {
 			this.state = "initializing";
 			try {
+				fs.mkdirSync(this.repositoryDirectory, { recursive: true, mode: 0o700 });
 				this.manifest = loadManifest(this.manifestPath);
 				this.initialized = true;
 				if (!this.manifest) {
