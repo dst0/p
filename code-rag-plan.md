@@ -21,7 +21,7 @@ The core local indexing path is implemented and shipped in commit `be47eebc`:
 | Persistent indexing | Complete | The daemon indexes enabled repositories, recursively watches changes, debounces refreshes, retries failures, and periodically reconciles missed events |
 | Incremental correctness | Complete for the implemented policy | Versioned manifests, file hashes, add/change/delete handling, repository isolation, frozen BM25 generations, and safe live-lock handling |
 | Agent integration | Complete | Typed `semantic_search` tool with bounded untrusted-content output, repository opt-in enforcement, and exact-search fallback guidance |
-| User controls | Partial | `/index`, `/index enable`, and `/index disable` are available; dedicated refresh, rebuild, and data-deletion commands remain future work |
+| User controls | Partial | `/index`, `/index enable`, `/index disable`, and preemptive `/index up` queue promotion are available; dedicated refresh, rebuild, and data-deletion commands remain future work |
 | Default automated tests | Complete for the implemented path | Fake-backed service/tool tests cover consent, file-change refresh, disable, lifecycle races, locks, isolation, failures, and security boundaries |
 | Service-backed evaluation | Outstanding | A reproducible real-backend evaluation corpus, retrieval metrics, and large-repository performance baseline are still required |
 | Proactive retrieval/reranking | Deferred | Explicit `semantic_search` remains the supported retrieval path until evaluation justifies additional behavior |
@@ -824,7 +824,7 @@ The shipped local policy is:
 
 #### P2.5 — Status and manual commands
 
-The interactive command surface currently provides `/index`, `/index enable`, and `/index disable`, with concise service state, file/chunk counts, errors, and next actions. Normal refresh is automatic through filesystem watching and periodic reconciliation. Dedicated manual refresh/rebuild and data-deletion commands remain explicit follow-up work.
+The interactive command surface currently provides `/index`, `/index enable`, `/index disable`, and `/index up`, with concise service state, file/chunk counts, errors, and next actions. `/index up` persists a one-shot request and lets the daemon preempt lower-priority background work so the active repository can begin immediately. Normal refresh is automatic through filesystem watching and periodic reconciliation. Dedicated manual refresh/rebuild and data-deletion commands remain explicit follow-up work.
 
 ### Acceptance criteria
 

@@ -47,8 +47,11 @@ Indexing decisions are independent of project trust. Enabling indexing authorize
 | `/index` | Show the repository decision, background-service state, index state, file/chunk counts, and last error |
 | `/index enable` | Enable indexing for the active repository |
 | `/index disable` | Stop watching and refreshing the active repository |
+| `/index up` | Move the active repository to the top of the daemon queue and show its progress in the footer |
 
 Disabling a repository preserves its existing index data. It can be enabled again without discarding the last compatible generation.
+
+`/index up` requires indexing to be enabled. If both daemon workers are busy with less-prioritized maintenance, the daemon cancels one refresh, keeps that repository queued for resumption, and starts the requested repository. The one-shot request is stored in `indexed-repos.json` until the daemon activates or recognizes an already active repository, so it survives a service restart without becoming a permanent priority.
 
 ## Footer status
 
@@ -76,7 +79,8 @@ For every enabled repository, the service:
 4. debounces bursts of writes before refreshing;
 5. retries transient failures;
 6. periodically reconciles the repository to recover from missed filesystem events;
-7. prioritizes an enabled repository when PAgent opens its `semantic_search` tool while preserving FIFO order for ordinary file-change refreshes.
+7. prioritizes an enabled repository when PAgent opens its `semantic_search` tool while preserving FIFO order for ordinary file-change refreshes;
+8. honors `/index up` as an explicit higher-priority request and safely preempts lower-priority background work when all workers are occupied.
 
 ```mermaid
 sequenceDiagram
@@ -94,7 +98,7 @@ sequenceDiagram
     Daemon->>Daemon: Update indexing-service-status.json
 ```
 
-Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry. An active repository cannot be assigned to a second worker; changes that arrive during its refresh are queued behind older work instead of consuming both workers or starving other repositories.
+Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry. An active repository cannot be assigned to a second worker; changes that arrive during its refresh are queued behind older work instead of consuming both workers or starving other repositories. Explicit `/index up` preemption also preserves the interrupted repository as queued work rather than treating cancellation as an indexing failure.
 
 The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. Creating the real `semantic_search` tool for an already enabled repository only refreshes that repository's request timestamp in `indexed-repos.json`; the daemon observes the registry change and performs the prioritized work. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 
@@ -108,7 +112,7 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 
 | Path | Purpose |
 |---|---|
-| `indexed-repos.json` | Saved enabled/disabled decision for each repository |
+| `indexed-repos.json` | Saved enabled/disabled decision and any unacknowledged one-shot priority request for each repository |
 | `indexing-service-status.json` | Daemon PID, state, repository progress, counts, and errors |
 | `indexing-service/daemon.lock` | Singleton ownership for the active daemon process |
 | `code-rag.json` | User-level code-index configuration |
@@ -164,4 +168,4 @@ Start with `/index`. If the background service is not running or reports an erro
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 
-The current UI exposes status, progress, enable, disable, and footer-visibility controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.
+The current UI exposes status, progress, queue promotion, enable, disable, and footer-visibility controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.

@@ -6063,7 +6063,24 @@ export class InteractiveMode {
 				`Indexing ${theme.fg("error", "disabled")} for ${theme.fg("dim", resolvedPath)}\n`
 			);
 		}
-		if (args) return `Usage: ${theme.fg("dim", "/index | /index enable | /index disable")}`;
+		if (args === "up") {
+			const status = this.indexingService.getStatus(resolvedPath);
+			if (!this.indexingService.prioritizeIndexing(resolvedPath)) {
+				return (
+					`${theme.bold("Code Indexing")}\n\n` +
+					`Indexing is not enabled for ${theme.fg("dim", resolvedPath)}. Run /index enable first.\n`
+				);
+			}
+			const alreadyActive = status.ragState === "initializing" || status.ragState === "updating";
+			return (
+				`${theme.bold("Code Indexing")}\n\n` +
+				(alreadyActive
+					? `This repository is already actively indexing: ${theme.fg("dim", resolvedPath)}\n`
+					: `Moved this repository to the top of the indexing queue: ${theme.fg("dim", resolvedPath)}\n` +
+						"The background service is activating it now; progress will appear in the footer.\n")
+			);
+		}
+		if (args) return `Usage: ${theme.fg("dim", "/index | /index enable | /index disable | /index up")}`;
 
 		const status = this.indexingService.getStatus(resolvedPath);
 		let text = `${theme.bold("Code Indexing")}\n\n`;
@@ -6086,7 +6103,7 @@ export class InteractiveMode {
 		}
 		if (status.lastError) text += `Last error: ${status.lastError}\n`;
 
-		text += `\nUsage: ${theme.fg("dim", "/index | /index enable | /index disable")}`;
+		text += `\nUsage: ${theme.fg("dim", "/index | /index enable | /index disable | /index up")}`;
 
 		return text;
 	}

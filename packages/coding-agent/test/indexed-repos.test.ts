@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+	acknowledgeIndexingPriorityForRepo,
 	disableIndexingForRepo,
 	enableIndexingForRepo,
 	findIndexWorkspaceRoot,
@@ -10,6 +11,7 @@ import {
 	getRepoIndexingDecision,
 	INDEXED_REPOS_SCHEMA_VERSION,
 	loadIndexedRepos,
+	prioritizeIndexingForRepo,
 	requestIndexingForRepo,
 } from "../src/core/indexed-repos.ts";
 
@@ -71,6 +73,21 @@ describe("indexed repository decisions", () => {
 		const requested = requestIndexingForRepo(repo, agentDir);
 		expect(requested?.repoId).toBe(enabled.repoId);
 		expect(requested?.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
+	});
+
+	it("persists and acknowledges a one-shot indexing priority request", () => {
+		const { agentDir, repo } = createFixture();
+		expect(prioritizeIndexingForRepo(repo, agentDir)).toBeUndefined();
+
+		const enabled = enableIndexingForRepo(repo, agentDir);
+		const prioritized = prioritizeIndexingForRepo(repo, agentDir);
+
+		expect(prioritized?.updatedAt).toBe(enabled.updatedAt);
+		expect(prioritized?.priorityRequest?.id).toBeTruthy();
+		expect(prioritized?.priorityRequest?.requestedAt).toBeTruthy();
+		expect(acknowledgeIndexingPriorityForRepo(repo, prioritized?.priorityRequest?.id ?? "", agentDir)).toBe(true);
+		expect(loadIndexedRepos(agentDir)[0]?.priorityRequest).toBeUndefined();
+		expect(acknowledgeIndexingPriorityForRepo(repo, prioritized?.priorityRequest?.id ?? "", agentDir)).toBe(false);
 	});
 
 	it("uses a non-repository folder as its own indexing root", () => {

@@ -1,11 +1,11 @@
 import { execSync } from "node:child_process";
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import { getAgentDir } from "../config.ts";
 
 export const INDEXED_REPOS_FILE = "indexed-repos.json";
-export const INDEXED_REPOS_SCHEMA_VERSION = 2;
+export const INDEXED_REPOS_SCHEMA_VERSION = 3;
 
 export type RepoIndexingDecision = "enabled" | "disabled" | "unknown";
 
@@ -14,6 +14,10 @@ export interface IndexedRepoEntry {
 	repoId: string;
 	decision: Exclude<RepoIndexingDecision, "unknown">;
 	updatedAt: string;
+	priorityRequest?: {
+		id: string;
+		requestedAt: string;
+	};
 }
 
 interface IndexedReposData {
@@ -43,13 +47,17 @@ export function loadIndexedRepos(agentDir: string = getAgentDir()): IndexedRepoE
 		const parsed = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
 		if (isIndexedReposData(parsed)) return parsed.repos;
 		if (isV1IndexedReposData(parsed)) {
-			// Migrate v1 -> v2: recompute repoId with git remote
+			// Migrate v1 -> v3: recompute repoId with git remote.
 			const migrated = parsed.repos.map((entry) => ({
 				...entry,
 				repoId: computeRepoId(entry.path),
 			}));
 			saveIndexedRepos(migrated, agentDir);
 			return migrated;
+		}
+		if (isV2IndexedReposData(parsed)) {
+			saveIndexedRepos(parsed.repos, agentDir);
+			return parsed.repos;
 		}
 		return [];
 	} catch {
@@ -96,8 +104,60 @@ export function enableIndexingForRepo(cwd: string, agentDir: string = getAgentDi
 }
 
 export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-	if (!isRepoIndexed(cwd, agentDir)) return undefined;
-	return setRepoIndexingDecision(cwd, "enabled", agentDir);
+	const canonical = findIndexWorkspaceRoot(cwd);
+	const repoId = computeRepoId(canonical);
+	const repos = loadIndexedRepos(agentDir);
+	const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+	if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
+	const entry: IndexedRepoEntry = {
+		...repos[index],
+		path: canonical,
+		repoId,
+		updatedAt: new Date().toISOString(),
+	};
+	repos[index] = entry;
+	saveIndexedRepos(repos, agentDir);
+	return entry;
+}
+
+export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+	const canonical = findIndexWorkspaceRoot(cwd);
+	const repoId = computeRepoId(canonical);
+	const repos = loadIndexedRepos(agentDir);
+	const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+	if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
+	const requestedAt = new Date().toISOString();
+	const entry: IndexedRepoEntry = {
+		...repos[index],
+		path: canonical,
+		repoId,
+		priorityRequest: { id: randomUUID(), requestedAt },
+	};
+	repos[index] = entry;
+	saveIndexedRepos(repos, agentDir);
+	return entry;
+}
+
+export function acknowledgeIndexingPriorityForRepo(
+	cwd: string,
+	requestId: string,
+	agentDir: string = getAgentDir(),
+): boolean {
+	const canonical = findIndexWorkspaceRoot(cwd);
+	const repoId = computeRepoId(canonical);
+	const repos = loadIndexedRepos(agentDir);
+	const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+	const existing = repos[index];
+	if (!existing || existing.priorityRequest?.id !== requestId) return false;
+	const entry: IndexedRepoEntry = {
+		path: existing.path,
+		repoId: existing.repoId,
+		decision: existing.decision,
+		updatedAt: existing.updatedAt,
+	};
+	repos[index] = entry;
+	saveIndexedRepos(repos, agentDir);
+	return true;
 }
 
 export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
@@ -150,30 +210,35 @@ function isIndexedReposData(value: unknown): value is IndexedReposData {
 		Array.isArray(candidate.repos) &&
 		candidate.repos.every(
 			(entry) =>
-				typeof entry === "object" &&
-				entry !== null &&
-				typeof entry.path === "string" &&
-				typeof entry.repoId === "string" &&
-				(entry.decision === "enabled" || entry.decision === "disabled") &&
-				typeof entry.updatedAt === "string",
+				isIndexedRepoEntry(entry) &&
+				(entry.priorityRequest === undefined ||
+					(typeof entry.priorityRequest === "object" &&
+						entry.priorityRequest !== null &&
+						typeof entry.priorityRequest.id === "string" &&
+						typeof entry.priorityRequest.requestedAt === "string")),
 		)
 	);
+}
+
+function isV2IndexedReposData(value: unknown): value is IndexedReposData {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const candidate = value as Partial<IndexedReposData>;
+	return candidate.schemaVersion === 2 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
 }
 
 function isV1IndexedReposData(value: unknown): value is IndexedReposData {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const candidate = value as Partial<IndexedReposData>;
+	return candidate.schemaVersion === 1 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
+}
+
+function isIndexedRepoEntry(entry: unknown): entry is IndexedRepoEntry {
+	if (typeof entry !== "object" || entry === null) return false;
+	const candidate = entry as Partial<IndexedRepoEntry>;
 	return (
-		candidate.schemaVersion === 1 &&
-		Array.isArray(candidate.repos) &&
-		candidate.repos.every(
-			(entry) =>
-				typeof entry === "object" &&
-				entry !== null &&
-				typeof entry.path === "string" &&
-				typeof entry.repoId === "string" &&
-				(entry.decision === "enabled" || entry.decision === "disabled") &&
-				typeof entry.updatedAt === "string",
-		)
+		typeof candidate.path === "string" &&
+		typeof candidate.repoId === "string" &&
+		(candidate.decision === "enabled" || candidate.decision === "disabled") &&
+		typeof candidate.updatedAt === "string"
 	);
 }

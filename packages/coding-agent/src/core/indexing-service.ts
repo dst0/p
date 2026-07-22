@@ -6,6 +6,7 @@ import {
 	disableIndexingForRepo,
 	enableIndexingForRepo,
 	getRepoIndexingDecision,
+	prioritizeIndexingForRepo,
 	type RepoIndexingDecision,
 } from "./indexed-repos.ts";
 
@@ -74,6 +75,10 @@ export class IndexingService {
 
 	disableIndexing(workspaceRoot: string): void {
 		disableIndexingForRepo(workspaceRoot, this.agentDir);
+	}
+
+	prioritizeIndexing(workspaceRoot: string): boolean {
+		return prioritizeIndexingForRepo(workspaceRoot, this.agentDir) !== undefined;
 	}
 
 	isEnabled(workspaceRoot: string): boolean {

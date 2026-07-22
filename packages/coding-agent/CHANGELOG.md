@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Add `/index up` to move the active repository to the top of the system indexing queue, safely preempt lower-priority background work, and surface progress in the existing footer indicator.
+
 ### Fixed
 
 - Keep incremental indexing on the latest stable file contents when files change again during a refresh, instead of failing the pass and forcing unnecessary recovery work.

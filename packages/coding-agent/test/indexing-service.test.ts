@@ -30,13 +30,16 @@ class FakeRagService implements CodeRagService {
 	disposed = false;
 	disposedDuringRefresh = false;
 	refreshing = false;
+	abortCount = 0;
 	private refreshGate: Promise<void> | undefined;
 	private releaseRefreshGate: (() => void) | undefined;
 	private readonly onRefreshStart: ((workspaceRoot: string) => void) | undefined;
+	private readonly abortable: boolean;
 
-	constructor(workspaceRoot: string, onRefreshStart?: (workspaceRoot: string) => void) {
+	constructor(workspaceRoot: string, onRefreshStart?: (workspaceRoot: string) => void, abortable: boolean = false) {
 		this.workspaceRoot = workspaceRoot;
 		this.onRefreshStart = onRefreshStart;
+		this.abortable = abortable;
 	}
 
 	async initialize(): Promise<RagStatus> {
@@ -57,13 +60,14 @@ class FakeRagService implements CodeRagService {
 		};
 	}
 
-	async refresh(options: RefreshIndexOptions = {}): Promise<IndexUpdateSummary> {
+	async refresh(options: RefreshIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
 		this.refreshing = true;
 		this.onRefreshStart?.(this.workspaceRoot);
 		try {
 			options.onProgress?.({ phase: "scanning", percent: 0 });
 			options.onProgress?.({ phase: "indexing", percent: 37 });
-			await this.refreshGate;
+			if (this.abortable) await this.waitForRefreshGate(signal);
+			else await this.refreshGate;
 			this.refreshCount += 1;
 			options.onProgress?.({ phase: "finalizing", percent: 100 });
 			return {
@@ -101,6 +105,30 @@ class FakeRagService implements CodeRagService {
 		this.releaseRefreshGate?.();
 		this.refreshGate = undefined;
 		this.releaseRefreshGate = undefined;
+	}
+
+	private async waitForRefreshGate(signal?: AbortSignal): Promise<void> {
+		const gate = this.refreshGate;
+		if (!gate) return;
+		if (!signal) {
+			await gate;
+			return;
+		}
+		await new Promise<void>((resolve, reject) => {
+			const onAbort = () => {
+				this.abortCount += 1;
+				reject(signal.reason ?? new Error("aborted"));
+			};
+			const onRelease = () => {
+				signal.removeEventListener("abort", onAbort);
+				resolve();
+			};
+			if (signal.aborted) onAbort();
+			else {
+				signal.addEventListener("abort", onAbort, { once: true });
+				void gate.then(onRelease);
+			}
+		});
 	}
 
 	private createStatus(): RagStatus {
@@ -299,6 +327,64 @@ describe("indexing daemon", () => {
 
 		expect(starts[2]).not.toBe(firstActive);
 		expect(starts[2]).not.toBe(secondActive);
+		for (const service of services.values()) service.releaseRefresh();
+		await daemon.stop();
+	});
+
+	it("preempts background work when a queued repository is moved to the top", async () => {
+		const fixture = createFixture();
+		const repositories = [fixture.repo, path.join(fixture.root, "repo-two"), path.join(fixture.root, "current-repo")];
+		for (const repository of repositories) {
+			fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+			fs.writeFileSync(path.join(repository, "index.ts"), "export const initial = true;\n");
+			enableIndexingForRepo(repository, fixture.agentDir);
+		}
+		const registryPath = getIndexedReposPath(fixture.agentDir);
+		const registry = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+			repos: Array<{ updatedAt: string }>;
+		};
+		for (const entry of registry.repos) entry.updatedAt = "2026-01-01T00:00:00.000Z";
+		fs.writeFileSync(registryPath, `${JSON.stringify(registry, undefined, 2)}\n`);
+
+		const currentRepository = fs.realpathSync(repositories[2]);
+		const starts: string[] = [];
+		const services = new Map<string, FakeRagService>();
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			retryMs: 60_000,
+			reconcileMs: 60_000,
+			serviceFactory: (workspaceRoot) => {
+				const service = new FakeRagService(workspaceRoot, (root) => starts.push(root), true);
+				service.blockRefresh();
+				services.set(workspaceRoot, service);
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		await daemon.start();
+		await waitFor(() => starts.length === 2);
+		expect(starts).not.toContain(currentRepository);
+
+		const client = new IndexingService(fixture.agentDir);
+		expect(client.prioritizeIndexing(currentRepository)).toBe(true);
+		await waitFor(() => starts.includes(currentRepository));
+
+		expect([...services.values()].filter((service) => service.abortCount > 0)).toHaveLength(1);
+		expect(client.getStatus(currentRepository)).toMatchObject({
+			ragState: "updating",
+			progress: { phase: "indexing", percent: 37 },
+		});
+		const acknowledged = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+			repos: Array<{ path: string; priorityRequest?: unknown }>;
+		};
+		expect(acknowledged.repos.find((entry) => entry.path === currentRepository)?.priorityRequest).toBeUndefined();
+
 		for (const service of services.values()) service.releaseRefresh();
 		await daemon.stop();
 	});

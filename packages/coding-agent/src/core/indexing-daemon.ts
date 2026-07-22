@@ -9,7 +9,7 @@ import {
 	type RagState,
 	WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
-import { INDEXED_REPOS_FILE, loadIndexedRepos } from "./indexed-repos.ts";
+import { acknowledgeIndexingPriorityForRepo, INDEXED_REPOS_FILE, loadIndexedRepos } from "./indexed-repos.ts";
 import {
 	type IndexingServiceStatusData,
 	type RepositoryServiceStatus,
@@ -25,6 +25,7 @@ type WatchFactory = (
 interface DrainWorker {
 	stop: boolean;
 	done: boolean;
+	preemptedRuntime?: RepositoryRuntime;
 	controller?: AbortController;
 	runtime?: RepositoryRuntime;
 	promise: Promise<void>;
@@ -59,7 +60,9 @@ interface RepositoryRuntime {
 	active: boolean;
 	queueOrder: number;
 	queuePriority: number;
+	activePriority: number;
 	registryUpdatedAt: string;
+	registryPriorityRequestId?: string;
 	state: RagState | "queued" | "error";
 	indexedFiles: number;
 	indexedChunks: number;
@@ -72,6 +75,7 @@ interface RepositoryRuntime {
 }
 
 const DRAIN_MAX_CONCURRENCY = 2;
+const MANUAL_PRIORITY_OFFSET = 1_000_000_000_000_000;
 const DEFAULT_REPOSITORY_TIMEOUT_MS = 30 * 60_000;
 const DAEMON_LOCK_INITIALIZATION_GRACE_MS = 10_000;
 
@@ -244,6 +248,20 @@ export class IndexingDaemon {
 			const root = entry.root;
 			const existing = this.runtimes.get(root);
 			if (existing) {
+				if (entry.priorityRequest && existing.registryPriorityRequestId !== entry.priorityRequest.id) {
+					existing.registryPriorityRequestId = entry.priorityRequest.id;
+					if (existing.active) {
+						this.acknowledgePriorityRequest(existing, entry.priorityRequest.id);
+					} else {
+						this.requestRefresh(
+							existing,
+							false,
+							parseManualRequestPriority(entry.priorityRequest.requestedAt),
+							false,
+						);
+						this.preemptFor(existing);
+					}
+				}
 				if (existing.registryUpdatedAt !== entry.updatedAt) {
 					existing.registryUpdatedAt = entry.updatedAt;
 					this.requestRefresh(existing, false, parseRequestPriority(entry.updatedAt), false);
@@ -258,7 +276,9 @@ export class IndexingDaemon {
 				active: false,
 				queueOrder: 0,
 				queuePriority: 0,
+				activePriority: 0,
 				registryUpdatedAt: entry.updatedAt,
+				registryPriorityRequestId: entry.priorityRequest?.id,
 				state: "queued",
 				indexedFiles: 0,
 				indexedChunks: 0,
@@ -266,7 +286,14 @@ export class IndexingDaemon {
 			};
 			this.runtimes.set(root, runtime);
 			this.watchRepository(runtime);
-			this.requestRefresh(runtime, false, parseRequestPriority(entry.updatedAt), false);
+			this.requestRefresh(
+				runtime,
+				false,
+				entry.priorityRequest
+					? parseManualRequestPriority(entry.priorityRequest.requestedAt)
+					: parseRequestPriority(entry.updatedAt),
+				false,
+			);
 		}
 		this.writeStatus();
 		this.startDrain();
@@ -386,11 +413,16 @@ export class IndexingDaemon {
 
 			// Double-check still available (another worker may have grabbed it).
 			if (!runtime.dirty || runtime.active) continue;
+			const activePriority = runtime.queuePriority;
 			runtime.dirty = false;
 			runtime.active = true;
 			runtime.queueOrder = 0;
 			runtime.queuePriority = 0;
+			runtime.activePriority = activePriority;
 			w.runtime = runtime;
+			if (runtime.registryPriorityRequestId) {
+				this.acknowledgePriorityRequest(runtime, runtime.registryPriorityRequestId);
+			}
 			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
 			delete runtime.progress;
@@ -416,23 +448,58 @@ export class IndexingDaemon {
 				});
 			} catch (error) {
 				if (this.disposed || w.stop) return;
-				runtime.state = "error";
-				delete runtime.progress;
-				runtime.lastError = safeErrorMessage(error);
-				this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
-				if (!this.disposed && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
-					runtime.retryTimer = setTimeout(() => {
-						runtime.retryTimer = undefined;
-						this.requestRefresh(runtime, false);
-					}, this.options.retryMs);
+				if (w.preemptedRuntime === runtime) {
+					runtime.state = "queued";
+					delete runtime.progress;
+					delete runtime.lastError;
+				} else {
+					runtime.state = "error";
+					delete runtime.progress;
+					runtime.lastError = safeErrorMessage(error);
+					this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
+					if (!this.disposed && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
+						runtime.retryTimer = setTimeout(() => {
+							runtime.retryTimer = undefined;
+							this.requestRefresh(runtime, false);
+						}, this.options.retryMs);
+					}
 				}
 			} finally {
+				if (w.preemptedRuntime === runtime) w.preemptedRuntime = undefined;
 				runtime.active = false;
+				runtime.activePriority = 0;
 				if (w.runtime === runtime) w.runtime = undefined;
 			}
 			runtime.updatedAt = new Date().toISOString();
 			this.writeStatus();
 		}
+	}
+
+	private preemptFor(runtime: RepositoryRuntime): void {
+		if (runtime.active || !runtime.dirty) return;
+		let victim: DrainWorker | undefined;
+		for (const worker of this.drainWorkers) {
+			if (
+				worker.stop ||
+				worker.preemptedRuntime ||
+				!worker.controller ||
+				!worker.runtime ||
+				worker.runtime === runtime
+			)
+				continue;
+			if (!victim || worker.runtime.activePriority < (victim.runtime?.activePriority ?? Number.POSITIVE_INFINITY)) {
+				victim = worker;
+			}
+		}
+		if (!victim?.runtime || runtime.queuePriority <= victim.runtime.activePriority) return;
+		this.requestRefresh(victim.runtime, false, victim.runtime.activePriority, false);
+		victim.preemptedRuntime = victim.runtime;
+		victim.controller?.abort(new Error(`Indexing preempted for ${runtime.root}`));
+	}
+
+	private acknowledgePriorityRequest(runtime: RepositoryRuntime, requestId: string): void {
+		acknowledgeIndexingPriorityForRepo(runtime.root, requestId, this.options.agentDir);
+		if (runtime.registryPriorityRequestId === requestId) runtime.registryPriorityRequestId = undefined;
 	}
 
 	private async runRepositoryOperation(
@@ -495,6 +562,7 @@ export class IndexingDaemon {
 		runtime.active = false;
 		runtime.queueOrder = 0;
 		runtime.queuePriority = 0;
+		runtime.activePriority = 0;
 	}
 
 	private writeStatus(running: boolean = !this.disposed): void {
@@ -555,6 +623,10 @@ function safeErrorMessage(error: unknown): string {
 function parseRequestPriority(updatedAt: string): number {
 	const parsed = Date.parse(updatedAt);
 	return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function parseManualRequestPriority(requestedAt: string): number {
+	return MANUAL_PRIORITY_OFFSET + parseRequestPriority(requestedAt);
 }
 
 function acquireDaemonLock(agentDir: string): DaemonLock {

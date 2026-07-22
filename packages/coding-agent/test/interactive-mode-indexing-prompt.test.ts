@@ -1,10 +1,11 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { getIndexedReposPath } from "../src/core/indexed-repos.ts";
 import { IndexingService } from "../src/core/indexing-service.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
 type IndexingPromptContext = {
 	sessionManager: { getCwd: () => string };
@@ -14,6 +15,7 @@ type IndexingPromptContext = {
 };
 
 type InteractiveModePrototype = {
+	buildIndexStatusText(this: { indexingService: IndexingService }, resolvedPath: string, args: string): string;
 	promptForCodeIndexingIfNeeded(this: IndexingPromptContext): Promise<void>;
 	rebindCurrentSession(this: RebindContext): Promise<void>;
 };
@@ -40,6 +42,26 @@ afterEach(() => {
 });
 
 describe("InteractiveMode code-indexing prompt", () => {
+	beforeAll(() => initTheme("dark"));
+
+	it("moves an enabled repository to the top with /index up", () => {
+		const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-command-"));
+		temporaryDirectories.push(root);
+		const agentDir = path.join(root, "agent");
+		const repository = path.join(root, "repository");
+		fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+		const indexingService = new IndexingService(agentDir);
+		const context = { indexingService };
+
+		expect(interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
+			"Indexing is not enabled",
+		);
+		indexingService.enableIndexing(repository);
+		expect(interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
+			"top of the indexing queue",
+		);
+	});
+
 	it("does not block session readiness while waiting for the indexing decision", async () => {
 		let resolvePrompt: (() => void) | undefined;
 		const prompt = new Promise<void>((resolve) => {
