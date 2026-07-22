@@ -95,6 +95,11 @@ export function enableIndexingForRepo(cwd: string, agentDir: string = getAgentDi
 	return setRepoIndexingDecision(cwd, "enabled", agentDir);
 }
 
+export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+	if (!isRepoIndexed(cwd, agentDir)) return undefined;
+	return setRepoIndexingDecision(cwd, "enabled", agentDir);
+}
+
 export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
 	return setRepoIndexingDecision(cwd, "disabled", agentDir);
 }

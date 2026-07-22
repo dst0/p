@@ -56,6 +56,10 @@ interface RepositoryRuntime {
 	service: CodeRagService;
 	watcher: FSWatcher | null;
 	dirty: boolean;
+	active: boolean;
+	queueOrder: number;
+	queuePriority: number;
+	registryUpdatedAt: string;
 	state: RagState | "queued" | "error";
 	indexedFiles: number;
 	indexedChunks: number;
@@ -102,6 +106,7 @@ export class IndexingDaemon {
 	private reconcileTimer: ReturnType<typeof setInterval> | undefined;
 	private drainWorkers: DrainWorker[] = [];
 	private drainPaused = false;
+	private nextQueueOrder = 0;
 	private daemonLock: DaemonLock | undefined;
 	private disposed = false;
 
@@ -216,12 +221,11 @@ export class IndexingDaemon {
 
 	private async runRegistrySync(): Promise<void> {
 		if (this.disposed) return;
-		const enabledRoots = new Set(
-			loadIndexedRepos(this.options.agentDir)
-				.filter((entry) => entry.decision === "enabled")
-				.map((entry) => canonicalizePath(entry.path))
-				.filter((root) => isDirectory(root)),
-		);
+		const enabledEntries = loadIndexedRepos(this.options.agentDir)
+			.filter((entry) => entry.decision === "enabled")
+			.map((entry) => ({ ...entry, root: canonicalizePath(entry.path) }))
+			.filter((entry) => isDirectory(entry.root));
+		const enabledRoots = new Set(enabledEntries.map((entry) => entry.root));
 
 		const retiredRuntimes: RepositoryRuntime[] = [];
 		for (const [root, runtime] of this.runtimes) {
@@ -236,13 +240,25 @@ export class IndexingDaemon {
 			await Promise.allSettled(retiredRuntimes.map((runtime) => runtime.service.dispose()));
 		}
 		if (this.disposed) return;
-		for (const root of enabledRoots) {
-			if (this.runtimes.has(root)) continue;
+		for (const entry of enabledEntries) {
+			const root = entry.root;
+			const existing = this.runtimes.get(root);
+			if (existing) {
+				if (existing.registryUpdatedAt !== entry.updatedAt) {
+					existing.registryUpdatedAt = entry.updatedAt;
+					this.requestRefresh(existing, false, parseRequestPriority(entry.updatedAt), false);
+				}
+				continue;
+			}
 			const runtime: RepositoryRuntime = {
 				root,
 				service: this.serviceFactory(root),
 				watcher: null,
 				dirty: false,
+				active: false,
+				queueOrder: 0,
+				queuePriority: 0,
+				registryUpdatedAt: entry.updatedAt,
 				state: "queued",
 				indexedFiles: 0,
 				indexedChunks: 0,
@@ -250,7 +266,7 @@ export class IndexingDaemon {
 			};
 			this.runtimes.set(root, runtime);
 			this.watchRepository(runtime);
-			this.requestRefresh(runtime, false);
+			this.requestRefresh(runtime, false, parseRequestPriority(entry.updatedAt), false);
 		}
 		this.writeStatus();
 		this.startDrain();
@@ -305,23 +321,31 @@ export class IndexingDaemon {
 		}, this.options.retryMs);
 	}
 
-	private requestRefresh(runtime: RepositoryRuntime, debounce: boolean): void {
+	private requestRefresh(
+		runtime: RepositoryRuntime,
+		debounce: boolean,
+		priority: number = 0,
+		startDrain: boolean = true,
+	): void {
 		if (this.disposed || this.runtimes.get(runtime.root) !== runtime) return;
 		if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
 		const queue = () => {
 			runtime.debounceTimer = undefined;
+			const wasDirty = runtime.dirty;
 			runtime.dirty = true;
+			if (!wasDirty) runtime.queueOrder = ++this.nextQueueOrder;
+			runtime.queuePriority = Math.max(runtime.queuePriority, priority);
 			// Don't reset state/progress when already actively indexing.
 			// A file change mid-index should trigger a refresh after the current
 			// one completes (via dirty=true) without flickering the display to "queued".
-			if (runtime.state === "updating" || runtime.state === "initializing") {
+			if (runtime.active) {
 				this.writeStatus();
 			} else {
 				runtime.state = "queued";
 				delete runtime.progress;
 				runtime.updatedAt = new Date().toISOString();
 				this.writeStatus();
-				this.startDrain();
+				if (startDrain) this.startDrain();
 			}
 		};
 		if (debounce) runtime.debounceTimer = setTimeout(queue, this.options.debounceMs);
@@ -333,7 +357,7 @@ export class IndexingDaemon {
 		this.drainWorkers = this.drainWorkers.filter((worker) => !worker.done);
 		while (
 			this.drainWorkers.length < DRAIN_MAX_CONCURRENCY &&
-			[...this.runtimes.values()].some((runtime) => runtime.dirty)
+			[...this.runtimes.values()].some((runtime) => runtime.dirty && !runtime.active)
 		) {
 			const worker: DrainWorker = { stop: false, done: false, promise: Promise.resolve() };
 			this.drainWorkers.push(worker);
@@ -347,12 +371,25 @@ export class IndexingDaemon {
 
 	private async drainWorker(w: DrainWorker): Promise<void> {
 		while (!this.disposed && !w.stop) {
-			const runtime = [...this.runtimes.values()].find((candidate) => candidate.dirty);
+			let runtime: RepositoryRuntime | undefined;
+			for (const candidate of this.runtimes.values()) {
+				if (!candidate.dirty || candidate.active) continue;
+				if (
+					!runtime ||
+					candidate.queuePriority > runtime.queuePriority ||
+					(candidate.queuePriority === runtime.queuePriority && candidate.queueOrder < runtime.queueOrder)
+				) {
+					runtime = candidate;
+				}
+			}
 			if (!runtime) return;
 
-			// Double-check still dirty (another worker may have grabbed it)
-			if (!runtime.dirty) continue;
+			// Double-check still available (another worker may have grabbed it).
+			if (!runtime.dirty || runtime.active) continue;
 			runtime.dirty = false;
+			runtime.active = true;
+			runtime.queueOrder = 0;
+			runtime.queuePriority = 0;
 			w.runtime = runtime;
 			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
@@ -390,6 +427,7 @@ export class IndexingDaemon {
 					}, this.options.retryMs);
 				}
 			} finally {
+				runtime.active = false;
 				if (w.runtime === runtime) w.runtime = undefined;
 			}
 			runtime.updatedAt = new Date().toISOString();
@@ -454,6 +492,9 @@ export class IndexingDaemon {
 		if (runtime.retryTimer) clearTimeout(runtime.retryTimer);
 		if (runtime.watchRetryTimer) clearTimeout(runtime.watchRetryTimer);
 		runtime.dirty = false;
+		runtime.active = false;
+		runtime.queueOrder = 0;
+		runtime.queuePriority = 0;
 	}
 
 	private writeStatus(running: boolean = !this.disposed): void {
@@ -509,6 +550,11 @@ function isIgnoredWatchPath(filename: string): boolean {
 
 function safeErrorMessage(error: unknown): string {
 	return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ").slice(0, 500);
+}
+
+function parseRequestPriority(updatedAt: string): number {
+	const parsed = Date.parse(updatedAt);
+	return Number.isFinite(parsed) ? parsed : 0;
 }
 
 function acquireDaemonLock(agentDir: string): DaemonLock {

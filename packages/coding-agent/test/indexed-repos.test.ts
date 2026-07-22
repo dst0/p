@@ -10,6 +10,7 @@ import {
 	getRepoIndexingDecision,
 	INDEXED_REPOS_SCHEMA_VERSION,
 	loadIndexedRepos,
+	requestIndexingForRepo,
 } from "../src/core/indexed-repos.ts";
 
 const temporaryDirectories: string[] = [];
@@ -52,6 +53,24 @@ describe("indexed repository decisions", () => {
 
 		expect(getRepoIndexingDecision(repo, agentDir)).toBe("enabled");
 		expect(loadIndexedRepos(agentDir)).toHaveLength(1);
+	});
+
+	it("refreshes the request timestamp only for an enabled repository", () => {
+		const { agentDir, repo } = createFixture();
+		expect(requestIndexingForRepo(repo, agentDir)).toBeUndefined();
+
+		const enabled = enableIndexingForRepo(repo, agentDir);
+		const registryPath = getIndexedReposPath(agentDir);
+		const stored = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+			schemaVersion: number;
+			repos: Array<{ path: string; repoId: string; decision: "enabled"; updatedAt: string }>;
+		};
+		stored.repos[0].updatedAt = "2026-01-01T00:00:00.000Z";
+		fs.writeFileSync(registryPath, `${JSON.stringify(stored, undefined, 2)}\n`);
+
+		const requested = requestIndexingForRepo(repo, agentDir);
+		expect(requested?.repoId).toBe(enabled.repoId);
+		expect(requested?.updatedAt).not.toBe("2026-01-01T00:00:00.000Z");
 	});
 
 	it("uses a non-repository folder as its own indexing root", () => {

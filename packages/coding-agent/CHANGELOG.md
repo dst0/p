@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Prioritize the current PAgent repository in the system-owned indexing daemon, prevent an active repository from consuming multiple workers, preserve FIFO refresh fairness, and automatically reach missing-collection recovery before subsequent semantic searches.
 - Route semantic-search Qdrant requests through P's configured fetch runtime instead of the Qdrant SDK's incompatible bundled undici dispatcher, cover the PAgent HTTP runtime automatically, allow local query embedding enough time while background indexing is active, and make source reinstalls update and verify every npm-backed `p` command on `PATH`.
 - Keep the code-index daemon draining repositories after workers finish, enforce singleton service and backend ownership, prevent PAgent searches from running foreground refreshes, cancel timed-out refreshes, rebuild missing Qdrant generations, reload manifests written by other processes, report semantic-search backend failures truthfully, and render an explicit 0% footer state when progress has started.
 - Validate source reinstalls with a real temporary-repository semantic-search call, wait for smoke-owned backend processes to release their ports, and safely replace stale launchd, systemd, and managed-backend processes.

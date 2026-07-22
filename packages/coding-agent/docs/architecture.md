@@ -20,9 +20,9 @@ flowchart LR
 
 The first-use selector and `/index enable` or `/index disable` update `~/.p/agent/indexed-repos.json`. The indexing daemon watches that registry and creates one runtime per enabled repository. A daemon lock under `~/.p/agent/indexing-service/` allows only one daemon to own the agent directory, even if a manual process overlaps launchd or systemd.
 
-Each repository runtime has a recursive watcher, a debounce timer, retry state, and a `WorkspaceCodeRagService`. The daemon uses a bounded worker pool and removes completed workers before accepting later file-change work. Repository deadlines abort in-flight embedding or refresh work before retrying. Periodic reconciliation catches changes missed by the operating-system watcher.
+Each repository runtime has a recursive watcher, a debounce timer, retry state, and a `WorkspaceCodeRagService`. The daemon uses a bounded worker pool, never assigns one active runtime to two workers, and drains ordinary file-change work in FIFO order. Registering the real `semantic_search` tool refreshes the enabled current repository's registry timestamp, which promotes that daemon-owned refresh ahead of ordinary queued maintenance without moving indexing into PAgent. Repository deadlines abort in-flight embedding or refresh work before retrying. Periodic reconciliation catches changes missed by the operating-system watcher.
 
-`./reinstall.sh` builds and relinks p, installs or updates Qdrant and the pinned Python environment, stops validated stale daemons and managed local backends from the same installation, and runs a real temporary-repository indexing and tool-call smoke test before starting the replacement launchd or systemd service.
+`./reinstall.sh` builds and relinks p, installs or updates the native Qdrant binary and pinned Python environment, stops validated stale daemons and managed local backends from the same installation, and runs a real temporary-repository indexing and tool-call smoke test before starting the replacement launchd or systemd service. Docker is not part of the managed backend path.
 
 ## Index generation
 
