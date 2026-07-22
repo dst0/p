@@ -47,6 +47,7 @@ For Slack/chat automation and workflows see [dst0/p-chat](https://github.com/dst
 
 Source checkouts can install p's opt-in semantic-indexing service on macOS or Linux with `./reinstall.sh`. Reinstall replaces stale service processes and verifies a real semantic retrieval before succeeding. On first interactive use in a repository, p asks whether to index it; enabled repositories are refreshed in the background as files change. Use `/index` to inspect status, `/index up` to move the active repository to the front of the daemon queue, and `/index enable` or `/index disable` to change the saved decision.
 
+See [Architecture](packages/coding-agent/docs/architecture.md) for an overview of the p system design.
 See [Code indexing](packages/coding-agent/docs/code-indexing.md) for installation, privacy, configuration, service paths, and troubleshooting.
 
 Source: [github.com/dst0/p](https://github.com/dst0/p)
