@@ -575,7 +575,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				nextManifest.collection,
 				this.repoId,
 				fileIdFor(this.repoId, file.path),
-				prepared.chunks.length > 0 ? file.hash : undefined,
+				prepared.chunks.length > 0 ? prepared.file.hash : undefined,
 			);
 			nextManifest.files[file.path] = prepared.entry;
 			chunksEmbedded += prepared.chunks.length;
@@ -663,56 +663,79 @@ export class WorkspaceCodeRagService implements CodeRagService {
 	}
 
 	private prepareFile(file: ScannedFile, generation: string, signal: AbortSignal): PreparedFile {
-		if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-		const content = fs.readFileSync(file.absPath, "utf-8");
-		if (hashText(content) !== file.hash) throw new Error(`File changed while indexing: ${file.path}`);
-		const chunks = chunkFile(content, file.language, this.settings.defaultChunkLines, this.settings.maxChunkLines);
+		const { content, file: stableFile } = this.readStableFile(file, signal);
+		const chunks = chunkFile(
+			content,
+			stableFile.language,
+			this.settings.defaultChunkLines,
+			this.settings.maxChunkLines,
+		);
 		if (chunks.length > MAX_CHUNKS_PER_FILE) {
-			throw new CodeRagError("RAG_SECURITY_BLOCK", `File produced too many chunks: ${file.path}`);
+			throw new CodeRagError("RAG_SECURITY_BLOCK", `File produced too many chunks: ${stableFile.path}`);
 		}
 		const indexedAt = this.now().toISOString();
-		const fileId = fileIdFor(this.repoId, file.path);
+		const fileId = fileIdFor(this.repoId, stableFile.path);
 		const preparedChunks = chunks.map((chunk, ordinal) => {
 			const chunkHash = hashText(chunk.text);
 			const payload: StoredChunkPayload = {
 				repoId: this.repoId,
 				fileId,
-				path: file.path,
-				language: file.language,
+				path: stableFile.path,
+				language: stableFile.language,
 				symbolName: chunk.symbol,
 				symbolType: chunk.chunkType,
 				startLine: chunk.startLine,
 				endLine: chunk.endLine,
-				fileHash: file.hash,
+				fileHash: stableFile.hash,
 				chunkHash,
 				chunkOrdinal: ordinal,
 				chunkerVersion: CHUNKER_VERSION,
 				indexGeneration: generation,
-				isTest: file.isTest,
-				isGenerated: file.isGenerated,
+				isTest: stableFile.isTest,
+				isGenerated: stableFile.isGenerated,
 				content: chunk.text,
 				indexedAt,
 			};
 			return {
-				id: chunkPointId(this.repoId, fileId, file.hash, ordinal, chunkHash),
+				id: chunkPointId(this.repoId, fileId, stableFile.hash, ordinal, chunkHash),
 				embeddingText: chunk.text.slice(0, this.settings.maxEncodeCharacters),
 				payload,
 			};
 		});
 		return {
-			file,
+			file: stableFile,
 			entry: {
-				hash: file.hash,
-				size: file.size,
-				mtimeMs: file.mtimeMs,
+				hash: stableFile.hash,
+				size: stableFile.size,
+				mtimeMs: stableFile.mtimeMs,
 				chunkCount: preparedChunks.length,
 				indexedAt,
-				language: file.language,
-				isTest: file.isTest,
-				isGenerated: file.isGenerated,
+				language: stableFile.language,
+				isTest: stableFile.isTest,
+				isGenerated: stableFile.isGenerated,
 			},
 			chunks: preparedChunks,
 		};
+	}
+
+	private readStableFile(file: ScannedFile, signal: AbortSignal): { content: string; file: ScannedFile } {
+		for (let attempt = 0; attempt < 3; attempt += 1) {
+			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
+			const before = fs.statSync(file.absPath);
+			const content = fs.readFileSync(file.absPath, "utf-8");
+			const after = fs.statSync(file.absPath);
+			if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) continue;
+			return {
+				content,
+				file: {
+					...file,
+					hash: hashText(content),
+					size: after.size,
+					mtimeMs: after.mtimeMs,
+				},
+			};
+		}
+		throw new Error(`File kept changing while indexing: ${file.path}`);
 	}
 
 	private scanWorkspace(signal: AbortSignal): ScannedFile[] {

@@ -31,9 +31,13 @@ afterEach(() => {
 class FakeEmbeddingProvider implements EmbeddingProvider {
 	dim = 3;
 	encodedTexts: string[] = [];
+	onEncode: (() => void) | undefined;
 
 	async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
 		if (signal?.aborted) throw signal.reason;
+		const onEncode = this.onEncode;
+		this.onEncode = undefined;
+		onEncode?.();
 		this.encodedTexts.push(...texts);
 		return texts.map((text) => vectorFor(text));
 	}
@@ -203,6 +207,27 @@ describe("WorkspaceCodeRagService", () => {
 		expect(changed.chunksEmbedded).toBe(1);
 		expect(store.allContents().join("\n")).toContain("replacement-auth-token");
 		expect(store.allContents().join("\n")).not.toContain("unique-auth-token");
+	});
+
+	it("indexes the latest stable contents when a changed file changes again during refresh", async () => {
+		const { root, data } = createFixture();
+		const secondPath = join(root, "second.ts");
+		writeFileSync(secondPath, "export const second = 'initial';\n");
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+
+		writeFileSync(join(root, "main.ts"), "export const first = 'changed';\n");
+		writeFileSync(secondPath, "export const second = 'intermediate';\n");
+		embedding.onEncode = () => writeFileSync(secondPath, "export const second = 'latest';\n");
+
+		const summary = await service.refresh();
+		expect(summary.fullRebuild).toBe(false);
+		expect(summary.filesChanged).toBe(2);
+		expect(store.allContents().join("\n")).toContain("second = 'latest'");
+		expect(store.allContents().join("\n")).not.toContain("second = 'intermediate'");
+		expect((await service.status()).state).toBe("ready");
 	});
 
 	it("reports monotonic progress for full and incremental indexing", async () => {
