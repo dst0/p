@@ -158,6 +158,83 @@ describe("formatIndexingStatus", () => {
 			}),
 		).toBe("🔎 ON!");
 	});
+
+	it("shows ETA when startedAt is provided and percent > 0", () => {
+		const startedAt = new Date(Date.now() - 30_000).toISOString();
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 50, startedAt },
+			}),
+		).toMatch(/🔎 50%\s+\(ETA: 30s\)/);
+	});
+
+	it("shows decimal minutes ETA for longer runs", () => {
+		const startedAt = new Date(Date.now() - 120_000).toISOString();
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 20, startedAt },
+			}),
+		).toMatch(/🔎 20%\s+\(ETA: 8\.0m\)/);
+	});
+
+	it("shows decimal minutes with fractional part", () => {
+		const startedAt = new Date(Date.now() - 125_000).toISOString();
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 20, startedAt },
+			}),
+		).toMatch(/🔎 20%\s+\(ETA: 8\.3m\)/);
+	});
+
+	it("omits ETA when percent is 0", () => {
+		const startedAt = new Date(Date.now() - 10_000).toISOString();
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 0, startedAt },
+			}),
+		).toBe("🔎 0%");
+	});
+
+	it("omits ETA when startedAt is not provided", () => {
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 50 },
+			}),
+		).toBe("🔎 50%");
+	});
+
+	it("omits ETA when eta exceeds 1 hour", () => {
+		const startedAt = new Date(Date.now() - 120_000).toISOString();
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 1, startedAt },
+			}),
+		).toBe("🔎 1%");
+	});
 });
 
 describe("FooterComponent indexing progress display", () => {

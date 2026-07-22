@@ -99,6 +99,8 @@ export type IndexingProgressPhase = "scanning" | "indexing" | "finalizing";
 export interface IndexingProgress {
 	phase: IndexingProgressPhase;
 	percent: number;
+	/** Timestamp when this indexing run started. */
+	startedAt?: string;
 }
 
 export interface RefreshIndexOptions {

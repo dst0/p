@@ -69,6 +69,17 @@ function formatQueuedSpinner(now = Date.now()): string {
 	return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
 }
 
+/**
+ * Format a duration in seconds as a compact human-readable string.
+ * Shows seconds when under 2 minutes, otherwise decimal minutes (e.g., 5.1m).
+ */
+function formatEta(seconds: number): string {
+	const rounded = Math.max(0, Math.round(seconds));
+	if (rounded < 120) return `${rounded}s`;
+	const minutes = rounded / 60;
+	return `${minutes.toFixed(1)}m`;
+}
+
 export function formatIndexingStatus(status: IndexStatus): string {
 	if (status.decision === "disabled") return "🔎 OFF";
 	if (status.decision === "unknown") return "🔎 ?";
@@ -79,7 +90,18 @@ export function formatIndexingStatus(status: IndexStatus): string {
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
 		const percent = status.progress?.percent;
 		if (percent !== undefined) {
-			return `🔎 ${Math.min(100, Math.round(percent))}%`;
+			const percentStr = `${Math.min(100, Math.round(percent))}%`;
+			// Compute ETA from startedAt timestamp and current progress
+			let etaStr = "";
+			if (status.progress?.startedAt && percent > 0) {
+				const elapsedSeconds = (Date.now() - Date.parse(status.progress.startedAt)) / 1000;
+				const remainingPercent = 100 - percent;
+				const etaSeconds = (elapsedSeconds / percent) * remainingPercent;
+				if (etaSeconds > 0 && etaSeconds < 3600) {
+					etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
+				}
+			}
+			return `🔎 ${percentStr}${etaStr}`;
 		}
 		if (status.ragState === "queued") return "🔎 queued";
 		if (status.ragState === "initializing") return "🔎 init";

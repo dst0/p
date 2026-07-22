@@ -67,6 +67,8 @@ interface RepositoryRuntime {
 	indexedFiles: number;
 	indexedChunks: number;
 	progress?: IndexingProgress;
+	/** Timestamp when the current indexing run started. */
+	indexingStartedAt?: string;
 	lastError?: string;
 	updatedAt: string;
 	debounceTimer?: ReturnType<typeof setTimeout>;
@@ -425,6 +427,7 @@ export class IndexingDaemon {
 			}
 			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
+			runtime.indexingStartedAt = runtime.updatedAt;
 			delete runtime.progress;
 			delete runtime.lastError;
 			this.writeStatus();
@@ -551,10 +554,11 @@ export class IndexingDaemon {
 	}
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
-		const normalized = {
+		const normalized: IndexingProgress = {
 			phase: progress.phase,
 			percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
-		} satisfies IndexingProgress;
+			startedAt: runtime.indexingStartedAt,
+		};
 		if (runtime.progress?.phase === normalized.phase && runtime.progress.percent === normalized.percent) return;
 		runtime.progress = normalized;
 		runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
