@@ -140,6 +140,7 @@ Important fields include:
   "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
   "embeddingDimensions": 1024,
+  "searchTimeoutMs": 30000,
   "defaultLimit": 8,
   "maxLimit": 20,
   "maxFileBytes": 1048576

@@ -25,7 +25,7 @@ For a quicker alias during local development, add to `~/.zshrc`:
 alias p='/path/to/p/packages/coding-agent/dist/cli.js'
 ```
 
-After making code changes, run `./reinstall.sh` from the repo root to rebuild and relink. This is the correct way to install — do not use `npm run build` + `npm link` manually.
+After making code changes, run `./reinstall.sh` from the repo root to rebuild and relink. The script updates every npm-backed `p` command visible on `PATH` and verifies that each reports the newly built version, so another global checkout cannot silently shadow the reinstall in a different shell. This is the correct way to install — do not use `npm run build` + `npm link` manually.
 
 ## Forking / Rebranding
 

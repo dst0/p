@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { BM25Vocabulary, chunkFile, discoverFiles } from "../src/index.ts";
+import { BM25Vocabulary, chunkFile, DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, discoverFiles } from "../src/index.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -24,6 +24,12 @@ describe("BM25Vocabulary", () => {
 		vocabulary.register("four five six");
 		vocabulary.finalize();
 		expect(vocabulary.avgDl).toBe(2);
+	});
+});
+
+describe("workspace RAG defaults", () => {
+	it("allows enough time for a local embedding query while indexing is active", () => {
+		expect(DEFAULT_WORKSPACE_CODE_RAG_SETTINGS.searchTimeoutMs).toBe(30_000);
 	});
 });
 

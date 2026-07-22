@@ -1,4 +1,3 @@
-import { QdrantClient as QdrantClientRaw, type Schemas } from "@qdrant/js-client-rest";
 import type {
 	RagVectorStore,
 	SparseVector,
@@ -11,6 +10,158 @@ import type {
 export interface QdrantVectorStoreOptions {
 	url: string;
 	timeoutMs: number;
+	fetch?: typeof fetch;
+}
+
+type QdrantPointId = string | number;
+type QdrantPayloadSchema = "bool" | "keyword";
+
+interface QdrantFilterCondition {
+	key: string;
+	match: { value: string | boolean } | { any: string[] };
+}
+
+interface QdrantFilter {
+	must: QdrantFilterCondition[];
+	must_not?: QdrantFilterCondition[];
+}
+
+interface QdrantCreateCollectionRequest {
+	vectors: { dense: { size: number; distance: "Cosine" } };
+	sparse_vectors: { sparse: Record<string, never> };
+	on_disk_payload: true;
+	hnsw_config: { m: number; ef_construction: number };
+	quantization_config: { scalar: { type: "int8" } };
+}
+
+interface QdrantCollectionInfo {
+	points_count?: number;
+	config?: { params?: { vectors?: unknown } };
+}
+
+interface QdrantSearchRequest {
+	vector: { name: "dense"; vector: number[] } | { name: "sparse"; vector: SparseVector };
+	filter: QdrantFilter;
+	limit: number;
+	with_payload: true;
+	params: { hnsw_ef: number; quantization?: { rescore: true } };
+}
+
+interface QdrantScoredPoint {
+	id: QdrantPointId;
+	payload?: Record<string, unknown>;
+}
+
+interface QdrantRestClient {
+	collectionExists(collection: string): Promise<{ exists: boolean }>;
+	createCollection(collection: string, request: QdrantCreateCollectionRequest): Promise<void>;
+	deleteCollection(collection: string): Promise<void>;
+	getCollection(collection: string): Promise<QdrantCollectionInfo>;
+	createPayloadIndex(
+		collection: string,
+		request: { field_name: string; field_schema: QdrantPayloadSchema },
+	): Promise<void>;
+	upsert(
+		collection: string,
+		request: {
+			wait: true;
+			points: Array<{ id: string; vector: VectorPoint["vectors"]; payload: Record<string, unknown> }>;
+		},
+	): Promise<void>;
+	delete(collection: string, request: { wait: true; filter: QdrantFilter }): Promise<void>;
+	search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]>;
+}
+
+class FetchQdrantRestClient implements QdrantRestClient {
+	private readonly baseUrl: string;
+	private readonly timeoutMs: number;
+	private readonly fetchImpl: typeof fetch;
+
+	constructor(options: QdrantVectorStoreOptions) {
+		this.baseUrl = options.url.replace(/\/+$/, "");
+		this.timeoutMs = options.timeoutMs;
+		this.fetchImpl = options.fetch ?? globalThis.fetch;
+	}
+
+	async collectionExists(collection: string): Promise<{ exists: boolean }> {
+		return this.request("GET", `${this.collectionPath(collection)}/exists`);
+	}
+
+	async createCollection(collection: string, request: QdrantCreateCollectionRequest): Promise<void> {
+		await this.request("PUT", this.collectionPath(collection), request);
+	}
+
+	async deleteCollection(collection: string): Promise<void> {
+		await this.request("DELETE", this.collectionPath(collection));
+	}
+
+	async getCollection(collection: string): Promise<QdrantCollectionInfo> {
+		return this.request("GET", this.collectionPath(collection));
+	}
+
+	async createPayloadIndex(
+		collection: string,
+		request: { field_name: string; field_schema: QdrantPayloadSchema },
+	): Promise<void> {
+		await this.request("PUT", `${this.collectionPath(collection)}/index`, request);
+	}
+
+	async upsert(
+		collection: string,
+		request: {
+			wait: true;
+			points: Array<{ id: string; vector: VectorPoint["vectors"]; payload: Record<string, unknown> }>;
+		},
+	): Promise<void> {
+		const { wait, ...body } = request;
+		await this.request("PUT", `${this.collectionPath(collection)}/points?wait=${wait}`, body);
+	}
+
+	async delete(collection: string, request: { wait: true; filter: QdrantFilter }): Promise<void> {
+		const { wait, ...body } = request;
+		await this.request("POST", `${this.collectionPath(collection)}/points/delete?wait=${wait}`, body);
+	}
+
+	async search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]> {
+		return this.request("POST", `${this.collectionPath(collection)}/points/search`, request);
+	}
+
+	private collectionPath(collection: string): string {
+		return `/collections/${encodeURIComponent(collection)}`;
+	}
+
+	private async request<T>(method: string, requestPath: string, body?: unknown): Promise<T> {
+		let response: Response;
+		try {
+			response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
+				method,
+				headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+				body: body === undefined ? undefined : JSON.stringify(body),
+				signal: AbortSignal.timeout(this.timeoutMs),
+			});
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`Qdrant ${method} ${requestPath} failed: ${message}`, { cause: error });
+		}
+
+		const responseText = await response.text();
+		if (!response.ok) {
+			throw new Error(
+				`Qdrant ${method} ${requestPath} returned HTTP ${response.status}: ${responseText.slice(0, 500)}`,
+			);
+		}
+
+		let decoded: unknown;
+		try {
+			decoded = JSON.parse(responseText);
+		} catch (error) {
+			throw new Error(`Qdrant ${method} ${requestPath} returned invalid JSON`, { cause: error });
+		}
+		if (!decoded || typeof decoded !== "object" || Array.isArray(decoded) || !("result" in decoded)) {
+			throw new Error(`Qdrant ${method} ${requestPath} returned a response without a result`);
+		}
+		return (decoded as { result: T }).result;
+	}
 }
 
 /** HNSW query beam width — lower than default 100 for faster traversal. */
@@ -21,17 +172,10 @@ const HNSW_M = 10;
 const HNSW_EF_CONSTRUCTION = 128;
 
 export class QdrantVectorStore implements RagVectorStore {
-	private client: QdrantClientRaw;
+	private client: QdrantRestClient;
 
 	constructor(options: QdrantVectorStoreOptions) {
-		this.client = new QdrantClientRaw({
-			url: options.url,
-			timeout: options.timeoutMs,
-			checkCompatibility: false,
-			// @ts-expect-error - Providing a custom fetch to bypass the problematic undici dispatcher
-			// which causes 'invalid onError method' errors in some Node environments.
-			fetch: (...args: any[]) => (globalThis as any).fetch(...args),
-		});
+		this.client = new FetchQdrantRestClient(options);
 	}
 
 	async collectionExists(collection: string): Promise<boolean> {
@@ -80,7 +224,7 @@ export class QdrantVectorStore implements RagVectorStore {
 	}
 
 	async createPayloadIndexes(collection: string): Promise<void> {
-		const indexes: Array<{ field_name: string; field_schema: Schemas["PayloadSchemaType"] }> = [
+		const indexes: Array<{ field_name: string; field_schema: QdrantPayloadSchema }> = [
 			{ field_name: "repoId", field_schema: "keyword" },
 			{ field_name: "language", field_schema: "keyword" },
 			{ field_name: "isTest", field_schema: "bool" },
@@ -111,7 +255,7 @@ export class QdrantVectorStore implements RagVectorStore {
 	}
 
 	async deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void> {
-		const filter: Schemas["Filter"] = {
+		const filter: QdrantFilter = {
 			must: [
 				{ key: "repoId", match: { value: repoId } },
 				{ key: "fileId", match: { value: fileId } },
@@ -172,9 +316,9 @@ export class QdrantVectorStore implements RagVectorStore {
 	}
 }
 
-function createSearchFilter(filters: VectorSearchFilters): Schemas["Filter"] {
-	const must: Schemas["Condition"][] = [{ key: "repoId", match: { value: filters.repoId } }];
-	const mustNot: Schemas["Condition"][] = [];
+function createSearchFilter(filters: VectorSearchFilters): QdrantFilter {
+	const must: QdrantFilterCondition[] = [{ key: "repoId", match: { value: filters.repoId } }];
+	const mustNot: QdrantFilterCondition[] = [];
 	if (filters.languages && filters.languages.length > 0) {
 		must.push({ key: "language", match: { any: filters.languages } });
 	}

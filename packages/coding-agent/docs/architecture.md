@@ -48,6 +48,8 @@ The query is encoded twice:
 
 Qdrant runs separate dense and sparse searches. `QdrantVectorStore` fuses those ranked lists in Node with reciprocal-rank fusion, then the RAG service applies path, language, symbol, test, generated-file, deduplication, and output-budget filters. Qdrant does not perform the fusion itself.
 
+PAgent sends Qdrant REST requests through the same process-wide fetch implementation configured by p. The vector store does not inject a second undici dispatcher, avoiding cross-version dispatcher failures inside the agent process.
+
 The tool does not refresh repositories or own local backend processes; the daemon owns all normal maintenance and backend lifecycle. A `require_fresh` request returns a not-ready or stale error until the daemon has committed a fresh generation. If retrieval cannot run, the service returns a stable `RAG_*` error in status and the tool exposes it as an error with exact-search fallback guidance. A ready search with no hits is not an error.
 
 ## Persistent state
