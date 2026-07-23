@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
 
 jobs:
   apply:
@@ -19,13 +20,35 @@ jobs:
           fetch-depth: 0
 
       - name: Apply reviewed fix
+        id: apply
+        continue-on-error: true
         run: |
-          python scripts/apply-finish-work-reconciliation-fix.py
+          python scripts/apply-finish-work-reconciliation-fix.py > /tmp/apply-finish-work.log 2>&1
+
+      - name: Report patch failure
+        if: steps.apply.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo 'Temporary patch bootstrap failed with:'
+            echo
+            echo '```text'
+            cat /tmp/apply-finish-work.log
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md
+          exit 1
+
+      - name: Remove bootstrap files
+        if: steps.apply.outcome == 'success'
+        run: |
           rm scripts/apply-finish-work-reconciliation-fix.py
           rm .github/workflows/apply-finish-work-reconciliation-fix.yml
           rm .github/workflows/apply-finish-work-reconciliation-on-pr.yml
 
       - name: Commit fix
+        if: steps.apply.outcome == 'success'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
