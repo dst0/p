@@ -737,6 +737,104 @@ describe("indexing daemon", () => {
 		expect(service?.disposedDuringRefresh).toBe(false);
 		await daemon.stop();
 	});
+
+	it("reconcile() skips requestRefresh for ready and partial runtimes", async () => {
+		const fixture = createFixture();
+		const client = new IndexingService(fixture.agentDir);
+		client.enableIndexing(fixture.repo);
+		let service: FakeRagService | undefined;
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			debounceMs: 10,
+			retryMs: 50,
+			reconcileMs: 100,
+			serviceFactory: (workspaceRoot) => {
+				service = new FakeRagService(workspaceRoot);
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		await daemon.start();
+		await waitFor(() => service?.refreshCount === 1);
+		expect(client.getStatus(fixture.repo)).toMatchObject({
+			ragState: "ready",
+		});
+		const initialRefreshCount = service!.refreshCount;
+
+		// Wait for reconcile to fire (every 100ms)
+		await new Promise((resolve) => setTimeout(resolve, 300));
+
+		expect(service!.refreshCount).toBe(initialRefreshCount);
+		expect(client.getStatus(fixture.repo)).toMatchObject({
+			ragState: "ready",
+		});
+
+		await daemon.stop();
+	});
+
+	it("runRegistrySync() preserves persisted service state for new runtimes", async () => {
+		const fixture = createFixture();
+		const client = new IndexingService(fixture.agentDir);
+		client.enableIndexing(fixture.repo);
+
+		class PreIndexedService extends FakeRagService {
+			protected createStatus(): RagStatus {
+				return {
+					state: "ready",
+					workspaceRoot: this.workspaceRoot,
+					repoId: "pre-indexed-repo",
+					indexedFiles: 42,
+					indexedChunks: 137,
+					sparse: { exact: true, driftFileCount: 0 },
+				};
+			}
+		}
+
+		let service: PreIndexedService | undefined;
+		const daemon = new IndexingDaemon({
+			agentDir: fixture.agentDir,
+			qdrantBinary: "unused",
+			qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+			pythonExecutable: "unused",
+			embeddingModel: "unused",
+			debounceMs: 10,
+			retryMs: 50,
+			reconcileMs: 60_000,
+			serviceFactory: (workspaceRoot) => {
+				service = new PreIndexedService(workspaceRoot);
+				service.blockRefresh();
+				return service;
+			},
+			ensureBackends: async () => {},
+			disposeBackends: async () => {},
+		});
+
+		await daemon.start();
+		// The drain worker is running but blocked on refresh.
+		// During this phase the runtime should show "updating" (not "initializing")
+		// because indexedFiles > 0 from the persisted service state.
+		const status = client.getStatus(fixture.repo);
+		expect(status.ragState).toBe("updating");
+		expect(status.ragFiles).toBe(42);
+		expect(status.ragChunks).toBe(137);
+
+		// Release the refresh and wait for it to complete.
+		service?.releaseRefresh();
+		await waitFor(() => client.getStatus(fixture.repo).ragState === "ready");
+		expect(client.getStatus(fixture.repo)).toMatchObject({
+			ragState: "ready",
+			ragFiles: 42,
+			ragChunks: 137,
+		});
+
+		await daemon.stop();
+	});
 });
 
 function createFixture(): { root: string; agentDir: string; repo: string } {

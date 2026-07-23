@@ -208,7 +208,13 @@ export class IndexingDaemon {
 
 	private async reconcile(): Promise<void> {
 		await this.syncRegistry();
-		for (const runtime of this.runtimes.values()) this.requestRefresh(runtime, false);
+		for (const runtime of this.runtimes.values()) {
+			// Don't reset healthy runtimes to "queued" on every reconcile tick.
+			// syncRegistry() already calls requestRefresh for runtimes with
+			// registry-level changes (updatedAt, priority requests).
+			if (runtime.state === "ready" || runtime.state === "partial") continue;
+			this.requestRefresh(runtime, false);
+		}
 	}
 
 	private syncRegistry(): Promise<void> {
@@ -289,6 +295,19 @@ export class IndexingDaemon {
 			};
 			this.runtimes.set(root, runtime);
 			this.watchRepository(runtime);
+
+			// Load persisted state from the service so the UI shows the correct
+			// file/chunk counts and state (e.g. "ready" or "partial") immediately
+			// instead of resetting to "queued" with zero counts.
+			// Skip the expensive file freshness check at startup; the drain worker
+			// will run the full check when it picks up the repo for indexing.
+			const initializedStatus = await runtime.service.initialize({ checkFreshness: false });
+			runtime.state = initializedStatus.state;
+			runtime.indexedFiles = initializedStatus.indexedFiles;
+			runtime.indexedChunks = initializedStatus.indexedChunks;
+			if (initializedStatus.lastError) runtime.lastError = initializedStatus.lastError.message;
+
+			// Queue the new runtime for initial indexing.
 			this.requestRefresh(
 				runtime,
 				false,
