@@ -69,6 +69,7 @@ interface RepositoryRuntime {
 	progress?: IndexingProgress;
 	/** Timestamp when the current indexing run started. */
 	indexingStartedAt?: string;
+	progressSamples?: Array<{ timestamp: number; percent: number }>;
 	lastError?: string;
 	updatedAt: string;
 	debounceTimer?: ReturnType<typeof setTimeout>;
@@ -428,6 +429,7 @@ export class IndexingDaemon {
 			runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 			runtime.updatedAt = new Date().toISOString();
 			runtime.indexingStartedAt = runtime.updatedAt;
+			runtime.progressSamples = [];
 			delete runtime.progress;
 			delete runtime.lastError;
 			this.writeStatus();
@@ -554,12 +556,52 @@ export class IndexingDaemon {
 	}
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
+		const now = Date.now();
+		const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+		runtime.progressSamples ??= [];
+		runtime.progressSamples.push({ timestamp: now, percent });
+		// Keep last 60 seconds of samples
+		const cutoff = now - 60_000;
+		runtime.progressSamples = runtime.progressSamples.filter((s) => s.timestamp >= cutoff);
+
+		let etaSeconds: number | undefined;
+		if (percent > 0 && percent < 100) {
+			const samples = runtime.progressSamples;
+			const oldest = samples[0];
+			const newest = samples[samples.length - 1];
+			if (oldest && newest && newest.timestamp - oldest.timestamp >= 5_000) {
+				const deltaPercent = newest.percent - oldest.percent;
+				const deltaSec = (newest.timestamp - oldest.timestamp) / 1000;
+				if (deltaPercent > 0 && deltaSec > 0) {
+					const percentPerSec = deltaPercent / deltaSec;
+					etaSeconds = Math.max(0, Math.round((100 - percent) / percentPerSec));
+				}
+			}
+			// Fallback to overall startedAt if sliding window isn't warm yet
+			if (etaSeconds === undefined && runtime.indexingStartedAt) {
+				const elapsedSec = (now - Date.parse(runtime.indexingStartedAt)) / 1000;
+				if (elapsedSec > 3) {
+					const overallPercentPerSec = percent / elapsedSec;
+					if (overallPercentPerSec > 0) {
+						etaSeconds = Math.max(0, Math.round((100 - percent) / overallPercentPerSec));
+					}
+				}
+			}
+		}
+
 		const normalized: IndexingProgress = {
 			phase: progress.phase,
-			percent: Math.max(0, Math.min(100, Math.round(progress.percent))),
+			percent,
 			startedAt: runtime.indexingStartedAt,
+			...(etaSeconds !== undefined ? { etaSeconds } : {}),
 		};
-		if (runtime.progress?.phase === normalized.phase && runtime.progress.percent === normalized.percent) return;
+		if (
+			runtime.progress?.phase === normalized.phase &&
+			runtime.progress.percent === normalized.percent &&
+			runtime.progress.etaSeconds === normalized.etaSeconds
+		) {
+			return;
+		}
 		runtime.progress = normalized;
 		runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
 		runtime.updatedAt = new Date().toISOString();

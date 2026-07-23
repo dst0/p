@@ -146,7 +146,9 @@ function isIndexingProgress(value: unknown): value is IndexingProgress {
 		Number.isFinite(candidate.percent) &&
 		candidate.percent >= 0 &&
 		candidate.percent <= 100 &&
-		(candidate.startedAt === undefined || typeof candidate.startedAt === "string")
+		(candidate.startedAt === undefined || typeof candidate.startedAt === "string") &&
+		(candidate.etaSeconds === undefined ||
+			(typeof candidate.etaSeconds === "number" && Number.isFinite(candidate.etaSeconds)))
 	);
 }
 

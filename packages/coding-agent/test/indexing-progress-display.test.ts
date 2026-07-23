@@ -235,6 +235,18 @@ describe("formatIndexingStatus", () => {
 			}),
 		).toBe("🔎 1%");
 	});
+
+	it("uses explicit etaSeconds from progress when present", () => {
+		expect(
+			formatIndexingStatus({
+				decision: "enabled",
+				indexed: true,
+				serviceRunning: true,
+				ragState: "updating",
+				progress: { phase: "indexing", percent: 50, etaSeconds: 90 },
+			}),
+		).toBe("🔎 50% (ETA: 90s)");
+	});
 });
 
 describe("FooterComponent indexing progress display", () => {

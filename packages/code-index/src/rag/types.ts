@@ -101,6 +101,8 @@ export interface IndexingProgress {
 	percent: number;
 	/** Timestamp when this indexing run started. */
 	startedAt?: string;
+	/** Estimated remaining seconds to completion based on recent processing speed. */
+	etaSeconds?: number;
 }
 
 export interface RefreshIndexOptions {

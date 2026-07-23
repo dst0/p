@@ -91,15 +91,15 @@ export function formatIndexingStatus(status: IndexStatus): string {
 		const percent = status.progress?.percent;
 		if (percent !== undefined) {
 			const percentStr = `${Math.min(100, Math.round(percent))}%`;
-			// Compute ETA from startedAt timestamp and current progress
+			// Compute ETA from progress.etaSeconds (recent speed) or startedAt timestamp
 			let etaStr = "";
-			if (status.progress?.startedAt && percent > 0) {
-				const elapsedSeconds = (Date.now() - Date.parse(status.progress.startedAt)) / 1000;
-				const remainingPercent = 100 - percent;
-				const etaSeconds = (elapsedSeconds / percent) * remainingPercent;
-				if (etaSeconds > 0 && etaSeconds < 3600) {
-					etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
-				}
+			const etaSeconds =
+				status.progress?.etaSeconds ??
+				(status.progress?.startedAt && percent > 0
+					? ((Date.now() - Date.parse(status.progress.startedAt)) / 1000 / percent) * (100 - percent)
+					: undefined);
+			if (etaSeconds !== undefined && etaSeconds > 0 && etaSeconds < 3600) {
+				etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
 			}
 			return `🔎 ${percentStr}${etaStr}`;
 		}
