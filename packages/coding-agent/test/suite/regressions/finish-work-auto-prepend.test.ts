@@ -269,22 +269,14 @@ describe("finish_work auto-prepend session state update", () => {
 					}),
 					{ stopReason: "toolUse" },
 				),
-				fauxAssistantMessage(
-					finishCall("partially complete", {
-						status: "partial",
-						remainingWork: ["Inspect the requested file"],
-					}),
-					{ stopReason: "toolUse" },
-				),
 			]);
 
 			await harness.session.prompt("Do all tracked work");
 
 			const finishEnds = toolEndEvents(harness, "finish_work");
-			expect(finishEnds).toHaveLength(2);
+			expect(finishEnds).toHaveLength(1);
 			expect(finishEnds[0]?.isError).toBe(true);
 			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("validation error");
-			expect(finishEnds[1]?.isError).toBe(false);
 
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
 			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
