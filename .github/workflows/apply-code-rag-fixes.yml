@@ -26,8 +26,20 @@ jobs:
 
       - name: Apply patch
         run: |
-          git apply --check .github/patches/fix-code-rag-retrieval.patch
-          git apply .github/patches/fix-code-rag-retrieval.patch
+          set +e
+          git apply --verbose --recount .github/patches/fix-code-rag-retrieval.patch > .github/code-rag-patch-diagnostics.log 2>&1
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ]; then
+            cat .github/code-rag-patch-diagnostics.log
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add .github/code-rag-patch-diagnostics.log
+            git commit -m "chore: capture code RAG patch diagnostics"
+            git push origin HEAD
+            exit "$status"
+          fi
+          rm .github/code-rag-patch-diagnostics.log
           rm .github/patches/fix-code-rag-retrieval.patch
           rm .github/workflows/apply-code-rag-fixes.yml
 
