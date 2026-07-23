@@ -31,6 +31,15 @@ jobs:
       - name: Apply deterministic migration
         run: |
           python3 .github/scripts/apply-code-rag-fixes.py
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path("packages/code-index/src/rag/service.ts")
+          text = path.read_text()
+          duplicate = "\tprivate refreshSettingsSilently(): void {\n\tprivate refreshSettingsSilently(): void {"
+          if text.count(duplicate) != 1:
+              raise RuntimeError("expected duplicated refreshSettingsSilently marker")
+          path.write_text(text.replace(duplicate, "\tprivate refreshSettingsSilently(): void {", 1))
+          PY
           rm .github/patches/fix-code-rag-retrieval.patch
           rm .github/scripts/apply-code-rag-fixes.py
           rm .github/workflows/apply-code-rag-fixes.yml
