@@ -36,6 +36,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 	public dim: number;
 	private serverManager: EmbeddingServerManager | null;
 	private options: EmbeddingProviderHttpOptions;
+	private queryInstruction: string | undefined;
 
 	constructor(
 		baseUrl: string,
@@ -47,6 +48,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 		this.baseUrl = baseUrl.replace(/\/+$/, "");
 		this.dim = dim;
 		this.options = { ...DEFAULT_HTTP_OPTIONS, ...options };
+		this.queryInstruction = queryInstructionForModel(model);
 		const port = parseInt(baseUrl.match(/:(\d+)/)?.[1] ?? "18742", 10);
 		const isLocal =
 			baseUrl.includes("localhost") ||
@@ -84,8 +86,8 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
 	async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
 		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-		const instructQuery = `${QUERY_INSTRUCTION}\nQuery: ${text}`;
-		const vectors = await this.encode([instructQuery], signal);
+		const queryText = this.queryInstruction ? `Instruct: ${this.queryInstruction}\nQuery: ${text}` : text;
+		const vectors = await this.encode([queryText], signal);
 		if (!vectors[0]) throw new Error("Embedding server returned no query vector");
 		return vectors[0];
 	}
@@ -172,6 +174,10 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 			return new Float32Array(row);
 		});
 	}
+}
+
+function queryInstructionForModel(model: string): string | undefined {
+	return model.toLowerCase().includes("qwen3-embedding") ? QUERY_INSTRUCTION : undefined;
 }
 
 /**

@@ -1,8 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { BM25Vocabulary, chunkFile, DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, discoverFiles } from "../src/index.ts";
+import { CHUNKER_VERSION } from "../src/rag/manifest.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -44,6 +45,57 @@ describe("chunkFile", () => {
 			{ startLine: 1, endLine: 3, symbol: "function alpha" },
 			{ startLine: 4, endLine: 6, symbol: "function beta" },
 		]);
+	});
+
+	it("keeps multiline JSDoc, decorators, and trailing comments in the correct chunks", () => {
+		const chunks = chunkFile(
+			[
+				"export const before = true;",
+				"",
+				"/**",
+				" * Register an LLM-callable tool with a TypeBox schema.",
+				" */",
+				"@sealed",
+				"export function defineTool() {}",
+				"// trailing implementation note",
+			].join("\n"),
+			"typescript",
+		);
+
+		expect(chunks).toHaveLength(2);
+		expect(chunks[1]).toMatchObject({ startLine: 3, endLine: 8, symbol: "function defineTool" });
+		expect(chunks[1].text).toContain("Register an LLM-callable tool");
+		expect(chunks[1].text).toContain("@sealed");
+		expect(chunks[1].text).toContain("trailing implementation note");
+	});
+
+	it("keeps consecutive line comments with the declaration they document", () => {
+		const chunks = chunkFile(
+			[
+				"export const before = true;",
+				"// Tool definition contract.",
+				"// Parameters use TypeBox.",
+				"export interface ToolDefinition {}",
+			].join("\n"),
+			"typescript",
+		);
+
+		expect(chunks).toHaveLength(2);
+		expect(chunks[1]).toMatchObject({ startLine: 2, endLine: 4, symbol: "interface ToolDefinition" });
+		expect(chunks[1].text).toContain("Parameters use TypeBox");
+	});
+});
+
+describe("semantic retrieval compatibility", () => {
+	it("invalidates indexes created before retrieval metadata and JSDoc-aware chunks", () => {
+		expect(CHUNKER_VERSION).toBe("2");
+	});
+
+	it("configures the embedding server beyond the old 512-token truncation", () => {
+		const source = readFileSync(new URL("../embedding_server.py", import.meta.url), "utf-8");
+		expect(source).toContain('P_CODE_RAG_MAX_SEQUENCE_LENGTH", "2048"');
+		expect(source).not.toContain("self.model.max_seq_length = 512");
+		expect(source).toContain("max_seq: {self.model.max_seq_length}");
 	});
 });
 

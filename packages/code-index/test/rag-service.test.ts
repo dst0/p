@@ -147,7 +147,11 @@ function createService(
 	data: string,
 	embeddingProvider: FakeEmbeddingProvider,
 	vectorStore: FakeVectorStore,
-	options: { embeddingModel?: string; allowSearchRefresh?: boolean } = {},
+	options: {
+		embeddingModel?: string;
+		allowSearchRefresh?: boolean;
+		sparseRebuildDriftRatio?: number;
+	} = {},
 ): WorkspaceCodeRagService {
 	return new WorkspaceCodeRagService({
 		workspaceRoot: root,
@@ -161,6 +165,7 @@ function createService(
 			embeddingDimensions: 3,
 			embeddingModel: options.embeddingModel ?? "test-embedding-v1",
 			fullSparseRebuildChangeRatio: 1,
+			sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
 		},
 	});
 }
@@ -178,6 +183,10 @@ describe("WorkspaceCodeRagService", () => {
 		expect(summary.status.indexedFiles).toBe(1);
 		expect(summary.status.indexedChunks).toBe(1);
 		expect(summary.status.collection).toContain(summary.status.repoId.slice(0, 16));
+		expect(embedding.encodedTexts[0]).toContain("file: main.ts");
+		expect(embedding.encodedTexts[0]).toContain("language: typescript");
+		expect(embedding.encodedTexts[0]).toContain("symbol: function initializeAuth");
+		expect(embedding.encodedTexts[0]).toContain("kind: function");
 
 		const response = await service.search({ query: "authentication initialization", freshness: "allow_stale" });
 		expect(response.results[0]).toMatchObject({ path: "main.ts", startLine: 1, endLine: 3 });
@@ -207,6 +216,23 @@ describe("WorkspaceCodeRagService", () => {
 		expect(changed.chunksEmbedded).toBe(1);
 		expect(store.allContents().join("\n")).toContain("replacement-auth-token");
 		expect(store.allContents().join("\n")).not.toContain("unique-auth-token");
+	});
+
+	it("performs a full rebuild when sparse vocabulary drift exceeds its threshold", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const service = createService(root, data, embedding, store, { sparseRebuildDriftRatio: 0.2 });
+		await service.rebuild();
+		const originalCollection = (await service.status()).collection;
+
+		writeFileSync(join(root, "main.ts"), "export const replacement = 'sparse-drift-rebuild';\n");
+		const refreshed = await service.refresh();
+
+		expect(refreshed.fullRebuild).toBe(true);
+		expect(refreshed.status.collection).not.toBe(originalCollection);
+		expect(refreshed.status.sparse.exact).toBe(true);
+		expect(store.allContents().join("\n")).toContain("sparse-drift-rebuild");
 	});
 
 	it("indexes the latest stable contents when a changed file changes again during refresh", async () => {
@@ -343,6 +369,35 @@ describe("WorkspaceCodeRagService", () => {
 		const rebuilt = await secondService.refresh();
 		expect(rebuilt.fullRebuild).toBe(true);
 		expect(rebuilt.status.collection).not.toBe(firstCollection);
+	});
+
+	it("invalidates and rebuilds an index created with the previous chunker version", async () => {
+		const { root, data } = createFixture();
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const original = createService(root, data, embedding, store);
+		await original.rebuild();
+		const originalStatus = await original.status();
+		await original.dispose();
+
+		const manifestPath = join(data, originalStatus.repoId, "manifest.json");
+		const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+			chunker: { version: string };
+		};
+		manifest.chunker.version = "1";
+		writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+		const migrated = createService(root, data, embedding, store);
+		const stale = await migrated.initialize();
+		expect(stale).toMatchObject({
+			state: "stale",
+			lastError: { code: "RAG_INCOMPATIBLE_INDEX", message: "Chunker version changed" },
+		});
+
+		const rebuilt = await migrated.refresh();
+		expect(rebuilt.fullRebuild).toBe(true);
+		expect(rebuilt.status.collection).not.toBe(originalStatus.collection);
+		await migrated.dispose();
 	});
 
 	it("rebuilds when the persisted Qdrant collection is missing", async () => {

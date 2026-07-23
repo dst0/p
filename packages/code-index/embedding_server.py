@@ -64,8 +64,15 @@ class EmbeddingServer:
             device = "mps"
 
         self.model = SentenceTransformer(self.model_name, device=device) if device else SentenceTransformer(self.model_name)
-        # Bound memory use across Metal, CUDA, and CPU environments.
-        self.model.max_seq_length = 512
+        # Keep enough context for metadata-enriched code chunks while retaining a
+        # conservative default for CPU and unified-memory machines.
+        max_sequence_length = int(os.environ.get("P_CODE_RAG_MAX_SEQUENCE_LENGTH", "2048"))
+        if max_sequence_length <= 0:
+            raise ValueError("P_CODE_RAG_MAX_SEQUENCE_LENGTH must be a positive integer")
+        tokenizer_limit = getattr(self.model.tokenizer, "model_max_length", max_sequence_length)
+        if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 10_000_000:
+            max_sequence_length = min(max_sequence_length, tokenizer_limit)
+        self.model.max_seq_length = max_sequence_length
         # Limit MPS memory pool to 50% of system RAM to avoid VA bloat
         # that pushes other processes into swap on unified-memory machines.
         if device == "mps" and hasattr(torch.mps, "set_per_process_memory_fraction"):
@@ -77,7 +84,7 @@ class EmbeddingServer:
         sample = self.model.encode(["probe"])
         self.dim = sample.shape[-1]
         print(
-            f"Model loaded. Dim: {self.dim}, max_seq: 512, device: {self.model.device}",
+            f"Model loaded. Dim: {self.dim}, max_seq: {self.model.max_seq_length}, device: {self.model.device}",
             flush=True,
         )
 

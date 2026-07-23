@@ -5,7 +5,6 @@
 export * from "./branch-summarization.ts";
 export * from "./compaction.ts";
 export * from "./session-state-file.ts";
-export * from "./structured-state.ts";
 export {
 	createLiveStructuredSessionState,
 	createStructuredSessionState,
@@ -16,4 +15,5 @@ export {
 	renderWorkingSessionState,
 	sanitizeStructuredSessionState,
 } from "./session-state-risk-filter.ts";
+export * from "./structured-state.ts";
 export * from "./utils.ts";
