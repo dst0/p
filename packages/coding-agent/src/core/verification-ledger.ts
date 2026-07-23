@@ -131,10 +131,20 @@ export class VerificationLedger {
 
 	/**
 	 * Evaluate the ledger. Returns whether all required verifications passed.
+	 *
+	 * Only the most-recent execution of each required command is consulted:
+	 * if a command failed on an earlier run but passed on a subsequent retry,
+	 * the latest passing result clears the failure.
 	 */
 	public evaluate(): LedgerEvaluation {
-		const requiredRecords = this.records.filter((r) => r.required);
-		const failures = requiredRecords.filter((r) => r.status === "failed");
+		// Build a map of command -> latest record for each required command.
+		const latestRequired = new Map<string, VerificationRecord>();
+		for (const record of this.records) {
+			if (record.required) {
+				latestRequired.set(record.command, record);
+			}
+		}
+		const failures = Array.from(latestRequired.values()).filter((r) => r.status === "failed");
 
 		return {
 			allPassed: failures.length === 0,

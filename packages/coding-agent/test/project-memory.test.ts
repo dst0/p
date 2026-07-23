@@ -168,4 +168,45 @@ describe("project memory", () => {
 		expect(pin.id).toMatch(/^pin-/);
 		expect(forget.removed).toBeGreaterThan(0);
 	});
+
+	it("capLine clamps goal to at most 360 chars when there are no word breaks", () => {
+		const cwd = createTempProject();
+		const state = createInitialStructuredSessionState("session-1");
+		// A goal with no spaces that exceeds the 360-char cap.
+		state.canonicalRequest.current = "A".repeat(500);
+
+		updateProjectMemorySnapshot({
+			cwd,
+			sessionId: "session-1",
+			checkpoint: "Goal: overflow test",
+			state,
+		});
+
+		const activeContext = readFileSync(join(cwd, ".pdev/memory/active-context.md"), "utf8");
+		// The goal line should be capped; extract just the Goal: line.
+		const goalLine = activeContext.split("\n").find((line) => line.startsWith("Goal:")) ?? "";
+		// "Goal: " prefix is 6 chars; value must be <= 360.
+		expect(goalLine.length).toBeLessThanOrEqual("Goal: ".length + 360);
+	});
+
+	it("capLine clamps goal to at most 360 chars when there are late word breaks", () => {
+		const cwd = createTempProject();
+		const state = createInitialStructuredSessionState("session-1");
+		// A goal where the only space is well past the cap boundary.
+		state.canonicalRequest.current = `Fix ${"x".repeat(400)}`;
+
+		updateProjectMemorySnapshot({
+			cwd,
+			sessionId: "session-1",
+			checkpoint: "Goal: overflow test",
+			state,
+		});
+
+		const activeContext = readFileSync(join(cwd, ".pdev/memory/active-context.md"), "utf8");
+		const goalLine = activeContext.split("\n").find((line) => line.startsWith("Goal:")) ?? "";
+		// The value portion after "Goal: " must not exceed 360 chars.
+		const goalValue = goalLine.slice("Goal: ".length);
+		expect(goalValue.length).toBeLessThanOrEqual(360);
+		expect(goalValue.endsWith("...")).toBe(true);
+	});
 });

@@ -83,4 +83,33 @@ describe("VerificationLedger", () => {
 		ledger.clear();
 		expect(ledger.gate()).toBeNull();
 	});
+
+	it("gate clears failure when the same command passes on a retry", () => {
+		const ledger = new VerificationLedger();
+		ledger.record("./test.sh", { exitCode: 1, truncated: false }); // first run: fail
+		expect(ledger.gate()).not.toBeNull();
+		ledger.record("./test.sh", { exitCode: 0, truncated: false }); // retry: pass
+		expect(ledger.gate()).toBeNull();
+	});
+
+	it("gate keeps failure when latest run of a command still fails", () => {
+		const ledger = new VerificationLedger();
+		ledger.record("./test.sh", { exitCode: 0, truncated: false }); // earlier run: pass
+		ledger.record("./test.sh", { exitCode: 1, truncated: false }); // latest run: fail
+		const gate = ledger.gate();
+		expect(gate).not.toBeNull();
+		expect(gate!.failures).toHaveLength(1);
+		expect(gate!.failures[0]!.command).toBe("./test.sh");
+	});
+
+	it("gate uses latest record per command, not all records", () => {
+		const ledger = new VerificationLedger();
+		// Both commands fail initially, then both pass on retry.
+		ledger.record("./test.sh", { exitCode: 1, truncated: false });
+		ledger.record("npm run check", { exitCode: 1, truncated: false });
+		expect(ledger.gate()!.failures).toHaveLength(2);
+		ledger.record("./test.sh", { exitCode: 0, truncated: false });
+		ledger.record("npm run check", { exitCode: 0, truncated: false });
+		expect(ledger.gate()).toBeNull();
+	});
 });

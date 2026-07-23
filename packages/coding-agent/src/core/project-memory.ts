@@ -477,9 +477,13 @@ function capText(text: string, maxTokens: number): string {
 function capLine(text: string, maxChars: number): string {
 	const compacted = text.replace(/\s+/g, " ").trim();
 	if (compacted.length <= maxChars) return compacted;
-	const prefix = compacted.slice(0, Math.max(20, maxChars - 1));
+	// Reserve 3 chars for the '...' suffix so the total never exceeds maxChars.
+	const prefixMax = Math.max(0, maxChars - 3);
+	const prefix = compacted.slice(0, Math.max(20, prefixMax));
 	const wordBreak = prefix.lastIndexOf(" ");
-	const cutAt = wordBreak > Math.floor(maxChars * 0.4) ? wordBreak : prefix.length;
+	const rawCutAt = wordBreak > Math.floor(maxChars * 0.4) ? wordBreak : Math.min(prefix.length, prefixMax);
+	// Clamp to prefixMax in case wordBreak exceeds it (small maxChars edge case).
+	const cutAt = Math.min(rawCutAt, prefixMax);
 	return `${prefix.slice(0, cutAt).trimEnd()}...`;
 }
 
