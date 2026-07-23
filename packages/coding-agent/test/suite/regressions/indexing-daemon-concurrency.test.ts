@@ -43,7 +43,7 @@ describe("indexing regressions", () => {
 				ragState: "updating",
 				progress: { phase: "indexing", percent: 42 },
 			};
-			expect(formatIndexingStatus(status)).toBe("🔎 42%");
+			expect(formatIndexingStatus(status)).toBe("🔎 42.0%");
 		});
 
 		it("shows init when daemon is running and status is initializing", () => {

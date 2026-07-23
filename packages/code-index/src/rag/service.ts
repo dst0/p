@@ -375,7 +375,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			this.state = this.manifest ? "updating" : "initializing";
 			this.reportProgress(options.onProgress, "scanning", 0);
 			const scanned = this.scanWorkspace(signal);
-			this.reportProgress(options.onProgress, "indexing", 5);
+			this.reportProgress(options.onProgress, "indexing", 0.1);
 			const plan = this.createRefreshPlan(scanned);
 			const changedFileCount = plan.added.length + plan.changed.length + plan.deleted.length;
 			const incompatibility = this.manifest
@@ -446,7 +446,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		const preparedFiles: PreparedFile[] = [];
 		for (const [index, file] of scanned.entries()) {
 			preparedFiles.push(this.prepareFile(file, generation, signal));
-			this.reportProgress(onProgress, "indexing", 5 + (10 * (index + 1)) / Math.max(scanned.length, 1));
+			this.reportProgress(onProgress, "indexing", (0.1 * (index + 1)) / Math.max(scanned.length, 1), {
+				processedFiles: index + 1,
+				totalFiles: scanned.length,
+			});
 		}
 		const vocabulary = new BM25Vocabulary();
 		for (const prepared of preparedFiles) {
@@ -459,9 +462,21 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			createdCollection = true;
 			const chunks = preparedFiles.flatMap((file) => file.chunks);
 			await this.encodeAndUpsert(collection, chunks, vocabulary, signal, (completed, total) => {
-				this.reportProgress(onProgress, "indexing", 15 + (80 * completed) / Math.max(total, 1));
+				this.reportProgress(
+					onProgress,
+					"indexing",
+					0.1 + (99.8 * completed) / Math.max(total, 1),
+					{ processedFiles: scanned.length, totalFiles: scanned.length },
+					{ processedChunks: completed, totalChunks: total },
+				);
 			});
-			this.reportProgress(onProgress, "finalizing", 95);
+			this.reportProgress(
+				onProgress,
+				"finalizing",
+				99.9,
+				{ processedFiles: scanned.length, totalFiles: scanned.length },
+				{ processedChunks: chunks.length, totalChunks: chunks.length },
+			);
 			const now = this.now().toISOString();
 			const vocabularyPath = this.vocabularyPath(generation);
 			vocabulary.save(vocabularyPath);
@@ -567,7 +582,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					this.reportProgress(
 						onProgress,
 						"indexing",
-						5 + (90 * (completedFiles + currentFileProgress)) / Math.max(totalFiles, 1),
+						(99.8 * (completedFiles + currentFileProgress)) / Math.max(totalFiles, 1),
+						{ processedFiles: completedFiles, totalFiles },
 					);
 				},
 			);
@@ -580,7 +596,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			nextManifest.files[file.path] = prepared.entry;
 			chunksEmbedded += prepared.chunks.length;
 			completedFiles += 1;
-			this.reportProgress(onProgress, "indexing", 5 + (90 * completedFiles) / Math.max(totalFiles, 1));
+			this.reportProgress(onProgress, "indexing", (99.8 * completedFiles) / Math.max(totalFiles, 1), {
+				processedFiles: completedFiles,
+				totalFiles,
+			});
 		}
 		for (const deleted of plan.deleted) {
 			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
@@ -591,14 +610,17 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			);
 			delete nextManifest.files[deleted.path];
 			completedFiles += 1;
-			this.reportProgress(onProgress, "indexing", 5 + (90 * completedFiles) / Math.max(totalFiles, 1));
+			this.reportProgress(onProgress, "indexing", (99.8 * completedFiles) / Math.max(totalFiles, 1), {
+				processedFiles: completedFiles,
+				totalFiles,
+			});
 		}
 		for (const file of plan.unchanged) {
 			const entry = nextManifest.files[file.path];
 			if (entry) nextManifest.files[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
 		}
 
-		this.reportProgress(onProgress, "finalizing", 95);
+		this.reportProgress(onProgress, "finalizing", 99.9);
 		nextManifest.state = "ready";
 		nextManifest.updatedAt = indexedAt;
 		nextManifest.sourceRevision = getGitInfo(this.workspaceRoot).commit || undefined;
@@ -654,9 +676,19 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		onProgress: RefreshIndexOptions["onProgress"],
 		phase: IndexingProgress["phase"],
 		percent: number,
+		filesInfo?: { processedFiles?: number; totalFiles?: number },
+		chunksInfo?: { processedChunks?: number; totalChunks?: number },
 	): void {
 		try {
-			onProgress?.({ phase, percent: Math.max(0, Math.min(100, Math.round(percent))) });
+			const roundedPercent = Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
+			onProgress?.({
+				phase,
+				percent: roundedPercent,
+				processedFiles: filesInfo?.processedFiles,
+				totalFiles: filesInfo?.totalFiles,
+				processedChunks: chunksInfo?.processedChunks,
+				totalChunks: chunksInfo?.totalChunks,
+			});
 		} catch {
 			// Progress reporting must not interrupt indexing.
 		}

@@ -16,7 +16,7 @@ export const DEFAULT_CONFIG: IndexConfig = {
 	maxChunkLines: 300,
 	maxFileSize: 2 * 1024 * 1024,
 	batchSize: 32,
-	encodeBatchSize: 32,
+	encodeBatchSize: 16,
 	maxEncodeChars: 2048,
 	vocabPath: path.join(os.homedir(), ".local", "share", "qdrant", "bm25_vocab.json"),
 	embeddingServerUrl: "http://127.0.0.1:18742",

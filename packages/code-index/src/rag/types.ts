@@ -99,6 +99,10 @@ export type IndexingProgressPhase = "scanning" | "indexing" | "finalizing";
 export interface IndexingProgress {
 	phase: IndexingProgressPhase;
 	percent: number;
+	totalFiles?: number;
+	processedFiles?: number;
+	totalChunks?: number;
+	processedChunks?: number;
 	/** Timestamp when this indexing run started. */
 	startedAt?: string;
 	/** Estimated remaining seconds to completion based on recent processing speed. */

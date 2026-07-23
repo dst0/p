@@ -69,7 +69,7 @@ describe("FooterComponent", () => {
 			}),
 		});
 
-		expect(footer.render(100).join("\n")).toContain("🔎 42%");
+		expect(footer.render(100).join("\n")).toContain("🔎 42.0%");
 	});
 
 	it("shows disabled indexing and can hide indexing information", () => {
@@ -138,6 +138,14 @@ describe("FooterComponent", () => {
 
 			const output = footer.render(100).join("\n");
 			expect(output).toContain("v0.4.9");
+		});
+
+		it("renders version on first line before cwd", () => {
+			const footer = new FooterComponent(createSession("normal"), createFooterData());
+			footer.setShowVersion(true, "0.4.9");
+
+			const lines = footer.render(100);
+			expect(lines[0]).toContain("v0.4.9 /tmp/project");
 		});
 
 		it("removes version when showVersion is disabled", () => {

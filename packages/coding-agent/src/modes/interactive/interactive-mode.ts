@@ -6097,9 +6097,13 @@ export class InteractiveMode {
 		if (status.ragState) {
 			text += `Service state: ${status.ragState}\n`;
 			if (status.ragFiles !== undefined) {
-				text += `Files indexed: ${status.ragFiles}\n`;
+				const totalFiles = status.totalFiles ?? status.ragFiles;
+				text += `Files indexed: ${status.ragFiles} out of ${totalFiles}\n`;
 			}
-			if (status.ragChunks !== undefined) text += `Chunks indexed: ${status.ragChunks}\n`;
+			if (status.ragChunks !== undefined) {
+				const totalChunks = status.totalChunks ?? status.ragChunks;
+				text += `Chunks indexed: ${status.ragChunks} out of ${totalChunks}\n`;
+			}
 		}
 		if (status.lastError) text += `Last error: ${status.lastError}\n`;
 

@@ -120,4 +120,24 @@ describe("InteractiveMode code-indexing prompt", () => {
 		indexingService.enableIndexing(repository);
 		expect(indexingService.getDecision(repository)).toBe("enabled");
 	});
+
+	it("formats files indexed and chunks indexed with out of X", () => {
+		const indexingService = {
+			getStatus: () => ({
+				decision: "enabled" as const,
+				indexed: true,
+				serviceRunning: true,
+				ragState: "ready" as const,
+				ragFiles: 1041,
+				ragChunks: 58072,
+				totalFiles: 1041,
+				totalChunks: 58072,
+			}),
+		} as unknown as IndexingService;
+		const context = { indexingService };
+
+		const text = interactiveModePrototype.buildIndexStatusText.call(context, "/repository", "");
+		expect(text).toContain("Files indexed: 1041 out of 1041");
+		expect(text).toContain("Chunks indexed: 58072 out of 58072");
+	});
 });

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Display version before repository path on the first line of the TUI footer instead of stats line.
+
 ### Added
 
 - Add `/index up` to move the active repository to the top of the system indexing queue, safely preempt lower-priority background work, and surface progress in the existing footer indicator.

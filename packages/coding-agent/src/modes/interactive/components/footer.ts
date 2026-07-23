@@ -245,6 +245,10 @@ export class FooterComponent implements Component {
 			pwd = `${pwd} • ${sessionName}`;
 		}
 
+		if (this.showVersion && this.version) {
+			pwd = `v${this.version} ${pwd}`;
+		}
+
 		// Build stats line
 		const statsParts: string[] = [];
 		if (this.showIndexingInfo) statsParts.push(formatIndexingStatus(this.footerData.getIndexingStatus()));
@@ -287,10 +291,6 @@ export class FooterComponent implements Component {
 
 		if (this.session.interactionMode === "plan") {
 			statsParts.push(theme.fg("accent", theme.bold("PLAN")));
-		}
-
-		if (this.showVersion && this.version) {
-			statsParts.push(`v${this.version}`);
 		}
 
 		if (this.showTokenProgress) {

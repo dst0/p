@@ -238,8 +238,8 @@ describe("WorkspaceCodeRagService", () => {
 		const rebuildProgress: IndexingProgress[] = [];
 
 		await service.rebuild({ onProgress: (progress) => rebuildProgress.push(progress) });
-		expect(rebuildProgress[0]).toEqual({ phase: "scanning", percent: 0 });
-		expect(rebuildProgress.at(-1)).toEqual({ phase: "finalizing", percent: 100 });
+		expect(rebuildProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
+		expect(rebuildProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
 		expect(
 			rebuildProgress.every(
 				(progress, index) => index === 0 || progress.percent >= rebuildProgress[index - 1].percent,
@@ -249,9 +249,9 @@ describe("WorkspaceCodeRagService", () => {
 		writeFileSync(join(root, "main.ts"), "export const replacement = 'changed';\n");
 		const refreshProgress: IndexingProgress[] = [];
 		await service.refresh({ onProgress: (progress) => refreshProgress.push(progress) });
-		expect(refreshProgress[0]).toEqual({ phase: "scanning", percent: 0 });
-		expect(refreshProgress.at(-1)).toEqual({ phase: "finalizing", percent: 100 });
-		expect(refreshProgress.some((progress) => progress.phase === "indexing" && progress.percent > 5)).toBe(true);
+		expect(refreshProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
+		expect(refreshProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
+		expect(refreshProgress.some((progress) => progress.phase === "indexing" && progress.percent > 0.1)).toBe(true);
 		expect(
 			refreshProgress.every(
 				(progress, index) => index === 0 || progress.percent >= refreshProgress[index - 1].percent,

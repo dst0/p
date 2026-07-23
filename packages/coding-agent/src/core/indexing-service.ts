@@ -19,6 +19,8 @@ export interface IndexStatus {
 	ragState?: RagState | "queued" | "error";
 	ragFiles?: number;
 	ragChunks?: number;
+	totalFiles?: number;
+	totalChunks?: number;
 	progress?: IndexingProgress;
 	lastError?: string;
 }
@@ -64,6 +66,8 @@ export class IndexingService {
 			ragState: repoStatus?.state,
 			ragFiles: repoStatus?.indexedFiles,
 			ragChunks: repoStatus?.indexedChunks,
+			totalFiles: repoStatus?.progress?.totalFiles ?? repoStatus?.indexedFiles,
+			totalChunks: repoStatus?.progress?.totalChunks ?? repoStatus?.indexedChunks,
 			progress: repoStatus?.progress,
 			lastError: repoStatus?.lastError,
 		};
