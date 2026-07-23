@@ -1,5 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { sanitizeStructuredSessionState } from "./session-state-risk-filter.ts";
 import type { StructuredSessionState } from "./structured-state.ts";
 
 const STATE_DIR = ".pdev/state";
@@ -23,7 +24,7 @@ export function readSessionStateFile(cwd: string, sessionId: string): Structured
 		const raw = readFileSync(path, "utf8");
 		const parsed = JSON.parse(raw);
 		if (isStructuredSessionState(parsed)) {
-			return parsed;
+			return sanitizeStructuredSessionState(parsed);
 		}
 		return undefined;
 	} catch {
@@ -36,9 +37,10 @@ export function readSessionStateFile(cwd: string, sessionId: string): Structured
  * Creates the .pdev/state directory if it does not exist.
  */
 export function writeSessionStateFile(cwd: string, state: StructuredSessionState): void {
-	const path = getSessionStateFilePath(cwd, state.sessionId);
+	const sanitizedState = sanitizeStructuredSessionState(state);
+	const path = getSessionStateFilePath(cwd, sanitizedState.sessionId);
 	mkdirSync(join(cwd, STATE_DIR), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(state, undefined, 2)}\n`);
+	writeFileSync(path, `${JSON.stringify(sanitizedState, undefined, 2)}\n`);
 }
 
 /**
