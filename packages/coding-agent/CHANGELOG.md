@@ -7,7 +7,7 @@
 - Auto-reconcile session state when the agent calls `finish_work(status: 'success')`: automatically transition `not_started` and `in_progress` plan items to `done` so the consistency gate passes without a protocol-repair turn.
 - Strengthen system prompt completion protocol: require the agent to examine `<working_state>` before calling `finish_work`, verify all plan items are genuinely done, complete remaining work if not, and repeat until all tasks are complete before calling `finish_work` with status `success`.
 
-## [Unreleased]
+## [0.4.41] - 2026-07-23
 
 ### Fixed
 
