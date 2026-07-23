@@ -72,6 +72,8 @@ interface RepositoryRuntime {
 	state: RagState | "queued" | "error";
 	indexedFiles: number;
 	indexedChunks: number;
+	/** True after a persisted ready index was verified or a refresh completed. */
+	readyValidated: boolean;
 	progress?: IndexingProgress;
 	/** Timestamp when the current indexing run started. */
 	indexingStartedAt?: string;
@@ -235,7 +237,7 @@ export class IndexingDaemon {
 			try {
 				const status = await runtime.service.initialize({ checkFreshness: true });
 				this.applyRuntimeStatus(runtime, status);
-				if (shouldRefreshState(status.state)) this.requestRefresh(runtime, false);
+				if (shouldRefreshRuntime(runtime, status)) this.requestRefresh(runtime, false);
 			} catch (error) {
 				runtime.state = "error";
 				runtime.lastError = safeErrorMessage(error);
@@ -324,6 +326,7 @@ export class IndexingDaemon {
 				state: "queued",
 				indexedFiles: 0,
 				indexedChunks: 0,
+				readyValidated: false,
 				updatedAt: new Date().toISOString(),
 			};
 			this.runtimes.set(root, runtime);
@@ -332,7 +335,8 @@ export class IndexingDaemon {
 			try {
 				const initializedStatus = await runtime.service.initialize({ checkFreshness: true });
 				this.applyRuntimeStatus(runtime, initializedStatus);
-				if (entry.priorityRequest || shouldRefreshState(initializedStatus.state)) {
+				runtime.readyValidated = isReusableReadyStatus(initializedStatus);
+				if (entry.priorityRequest || shouldRefreshRuntime(runtime, initializedStatus)) {
 					this.requestRefresh(
 						runtime,
 						false,
@@ -500,6 +504,7 @@ export class IndexingDaemon {
 						signal,
 					);
 					this.applyRuntimeStatus(runtime, summary.status);
+					runtime.readyValidated = summary.status.state === "ready";
 					delete runtime.progress;
 					delete runtime.lastError;
 				});
@@ -592,7 +597,12 @@ export class IndexingDaemon {
 		const workers = [...this.drainWorkers];
 		for (const worker of workers) {
 			worker.stop = true;
-			if (!this.disposed && worker.runtime && this.runtimes.get(worker.runtime.root) === worker.runtime) {
+			if (
+				resume &&
+				!this.disposed &&
+				worker.runtime &&
+				this.runtimes.get(worker.runtime.root) === worker.runtime
+			) {
 				worker.runtime.dirty = true;
 			}
 			if (abortActive) worker.controller?.abort(new Error("Indexing daemon stopped"));
@@ -724,8 +734,14 @@ export class IndexingDaemon {
 	}
 }
 
-function shouldRefreshState(state: RagState): boolean {
-	return state !== "ready" && state !== "disabled";
+function isReusableReadyStatus(status: RagStatus): boolean {
+	return status.state === "ready" && typeof status.collection === "string" && typeof status.generation === "string";
+}
+
+function shouldRefreshRuntime(runtime: RepositoryRuntime, status: RagStatus): boolean {
+	if (status.state === "disabled") return false;
+	if (status.state !== "ready") return true;
+	return !runtime.readyValidated;
 }
 
 function isDirectory(value: string): boolean {
