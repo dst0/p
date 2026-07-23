@@ -258,82 +258,82 @@ describe("finish_work auto-prepend session state update", () => {
 		}
 	});
 
-\tit("does not reconcile when a success payload fails validation", async () => {
-\t\tconst harness = await createHarness();
-\t\ttry {
-\t\t\tharness.setResponses([
-\t\t\t\tfauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
-\t\t\t\tfauxAssistantMessage(
-\t\t\t\t\tfinishCall("invalid success", {
-\t\t\t\t\t\tremainingWork: ["Inspect the requested file"],
-\t\t\t\t\t}),
-\t\t\t\t\t{ stopReason: "toolUse" },
-\t\t\t\t),
-\t\t\t\tfauxAssistantMessage(
-\t\t\t\t\tfinishCall("partially complete", {
-\t\t\t\t\t\tstatus: "partial",
-\t\t\t\t\t\tremainingWork: ["Inspect the requested file"],
-\t\t\t\t\t}),
-\t\t\t\t\t{ stopReason: "toolUse" },
-\t\t\t\t),
-\t\t\t]);
+	it("does not reconcile when a success payload fails validation", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("invalid success", {
+						remainingWork: ["Inspect the requested file"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(
+					finishCall("partially complete", {
+						status: "partial",
+						remainingWork: ["Inspect the requested file"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
 
-\t\t\tawait harness.session.prompt("Do all tracked work");
+			await harness.session.prompt("Do all tracked work");
 
-\t\t\tconst finishEnds = toolEndEvents(harness, "finish_work");
-\t\t\texpect(finishEnds).toHaveLength(2);
-\t\t\texpect(finishEnds[0]?.isError).toBe(true);
-\t\t\texpect(JSON.stringify(finishEnds[0]?.result.content)).toContain("validation error");
-\t\t\texpect(finishEnds[1]?.isError).toBe(false);
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(2);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("validation error");
+			expect(finishEnds[1]?.isError).toBe(false);
 
-\t\t\tconst state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-\t\t\texpect(state?.plan.map((item) => [item.text, item.status])).toEqual([
-\t\t\t\t["Inspect the requested file", "in_progress"],
-\t\t\t]);
-\t\t} finally {
-\t\t\tharness.cleanup();
-\t\t}
-\t});
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
+				["Inspect the requested file", "in_progress"],
+			]);
+		} finally {
+			harness.cleanup();
+		}
+	});
 
-\tit("does not reconcile auto-completable items when another item blocks success", async () => {
-\t\tconst harness = await createHarness();
-\t\ttry {
-\t\t\tharness.setResponses([
-\t\t\t\tfauxAssistantMessage(
-\t\t\t\t\tfauxToolCall(UPDATE_TOOL, {
-\t\t\t\t\t\taction: "initial_plan",
-\t\t\t\t\t\tgoal: "Do all tracked work",
-\t\t\t\t\t\tplan: [
-\t\t\t\t\t\t\t{ text: "Implement the change", status: "in_progress" },
-\t\t\t\t\t\t\t{ text: "Run verification", status: "failed" },
-\t\t\t\t\t\t],
-\t\t\t\t\t}),
-\t\t\t\t\t{ stopReason: "toolUse" },
-\t\t\t\t),
-\t\t\t\tfauxAssistantMessage(finishCall("done anyway"), { stopReason: "toolUse" }),
-\t\t\t\tfauxAssistantMessage(
-\t\t\t\t\tfinishCall("partially complete", {
-\t\t\t\t\t\tstatus: "partial",
-\t\t\t\t\t\tremainingWork: ["Implement the change", "Run verification"],
-\t\t\t\t\t}),
-\t\t\t\t\t{ stopReason: "toolUse" },
-\t\t\t\t),
-\t\t\t]);
+	it("does not reconcile auto-completable items when another item blocks success", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Do all tracked work",
+						plan: [
+							{ text: "Implement the change", status: "in_progress" },
+							{ text: "Run verification", status: "failed" },
+						],
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(finishCall("done anyway"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("partially complete", {
+						status: "partial",
+						remainingWork: ["Implement the change", "Run verification"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
 
-\t\t\tawait harness.session.prompt("Do all tracked work");
+			await harness.session.prompt("Do all tracked work");
 
-\t\t\tconst finishEnds = toolEndEvents(harness, "finish_work");
-\t\t\texpect(finishEnds).toHaveLength(2);
-\t\t\texpect(finishEnds[0]?.isError).toBe(true);
-\t\t\texpect(finishEnds[1]?.isError).toBe(false);
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(2);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(finishEnds[1]?.isError).toBe(false);
 
-\t\t\tconst state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-\t\t\texpect(state?.plan.map((item) => [item.text, item.status])).toEqual([
-\t\t\t\t["Implement the change", "in_progress"],
-\t\t\t\t["Run verification", "failed"],
-\t\t\t]);
-\t\t} finally {
-\t\t\tharness.cleanup();
-\t\t}
-\t});
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
+				["Implement the change", "in_progress"],
+				["Run verification", "failed"],
+			]);
+		} finally {
+			harness.cleanup();
+		}
+	});
 });
