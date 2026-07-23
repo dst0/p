@@ -4,10 +4,10 @@ import {
 	createStructuredSessionState as createStructuredSessionStateRaw,
 	getLatestStructuredSessionState as getLatestStructuredSessionStateRaw,
 	hasMeaningfulStructuredSessionState as hasMeaningfulStructuredSessionStateRaw,
+	type LiveStructuredStateInput,
 	mergeStructuredSessionState as mergeStructuredSessionStateRaw,
 	renderStructuredSessionCheckpoint as renderStructuredSessionCheckpointRaw,
 	renderWorkingSessionState as renderWorkingSessionStateRaw,
-	type LiveStructuredStateInput,
 	type StatePatch,
 	type StructuredSessionState,
 	type StructuredStateUpdateInput,
@@ -22,8 +22,9 @@ function isIgnoredSessionStateRisk(risk: string): boolean {
 
 /** Remove internal diagnostics that are not actionable session risks. */
 export function sanitizeStructuredSessionState(state: StructuredSessionState): StructuredSessionState {
-	const knownRisks = (state.audit.knownRisks ?? []).filter((risk) => !isIgnoredSessionStateRisk(risk));
-	if (knownRisks.length === state.audit.knownRisks.length) {
+	const original = state.audit.knownRisks ?? [];
+	const knownRisks = original.filter((risk) => !isIgnoredSessionStateRisk(risk));
+	if (knownRisks.length === original.length) {
 		return state;
 	}
 	return {

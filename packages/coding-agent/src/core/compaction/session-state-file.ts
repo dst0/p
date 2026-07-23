@@ -49,10 +49,12 @@ export function writeSessionStateFile(cwd: string, state: StructuredSessionState
 function isStructuredSessionState(value: unknown): value is StructuredSessionState {
 	if (!value || typeof value !== "object") return false;
 	const obj = value as Record<string, unknown>;
+	const audit = obj.audit as Record<string, unknown> | undefined;
 	return (
 		typeof obj.version === "number" &&
 		typeof obj.sessionId === "string" &&
 		typeof obj.canonicalRequest === "object" &&
-		Array.isArray(obj.plan)
+		Array.isArray(obj.plan) &&
+		Array.isArray(audit?.knownRisks)
 	);
 }
