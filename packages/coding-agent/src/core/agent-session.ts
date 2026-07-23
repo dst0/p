@@ -1580,11 +1580,7 @@ export class AgentSession {
 				this._progressUpdateRequiredBeforeFinish = true;
 			}
 
-			if (
-				toolCall.name === FINISH_WORK_TOOL_NAME &&
-				getFinishWorkStatus(args) === "success" &&
-				!nextIsError
-			) {
+			if (toolCall.name === FINISH_WORK_TOOL_NAME && getFinishWorkStatus(args) === "success" && !nextIsError) {
 				this._reconcileSuccessfulFinishWorkState();
 			}
 

@@ -32,9 +32,7 @@ describe("finish_work completion protocol tool", () => {
 				undefined,
 				undefined,
 			),
-		).rejects.toThrow(
-			'finish_work validation error: status "success" is incompatible with non-empty remaining_work',
-		);
+		).rejects.toThrow('finish_work validation error: status "success" is incompatible with non-empty remaining_work');
 	});
 
 	it("allows partial completion with remaining work", async () => {
