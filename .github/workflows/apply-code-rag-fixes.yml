@@ -17,25 +17,22 @@ jobs:
     if: github.actor != 'github-actions[bot]' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    env:
+      HEAD_REF: ${{ github.event.pull_request.head.ref }}
+      GH_TOKEN: ${{ github.token }}
     steps:
-      - name: Check out pull request branch
-        uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.pull_request.head.ref }}
-          fetch-depth: 1
-          show-progress: false
+      - name: Fetch pull request branch
+        run: |
+          git init -q
+          git remote add origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git fetch -q --depth=1 origin "${HEAD_REF}"
+          git checkout -q -B "${HEAD_REF}" FETCH_HEAD
 
       - name: Apply patch
         run: |
           git apply --verbose --recount .github/patches/fix-code-rag-retrieval.patch
           rm .github/patches/fix-code-rag-retrieval.patch
           rm .github/workflows/apply-code-rag-fixes.yml
-
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: 22.19.0
-          cache: npm
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
