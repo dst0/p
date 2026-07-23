@@ -7,6 +7,7 @@ import {
 	type IndexingProgress,
 	QdrantServerManager,
 	type RagState,
+	type RagStatus,
 	WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
 import { acknowledgeIndexingPriorityForRepo, INDEXED_REPOS_FILE, loadIndexedRepos } from "./indexed-repos.ts";
@@ -50,6 +51,11 @@ export interface IndexingDaemonOptions {
 	ensureBackends?: (signal?: AbortSignal) => Promise<void>;
 	disposeBackends?: () => Promise<void>;
 	watchFactory?: WatchFactory;
+}
+
+export interface IndexingDaemonStopOptions {
+	/** Allow active repository refreshes to finish before resources are disposed. */
+	graceful?: boolean;
 }
 
 interface RepositoryRuntime {
@@ -115,6 +121,7 @@ export class IndexingDaemon {
 	private drainPaused = false;
 	private nextQueueOrder = 0;
 	private daemonLock: DaemonLock | undefined;
+	private quiescing = false;
 	private disposed = false;
 
 	constructor(options: IndexingDaemonOptions) {
@@ -181,17 +188,30 @@ export class IndexingDaemon {
 		}
 	}
 
-	async stop(): Promise<void> {
+	/**
+	 * Stop accepting new refresh requests and let currently active repository
+	 * operations finish. The process remains alive so an installer can stop the
+	 * service immediately afterwards without interrupting index writes.
+	 */
+	async prepareForRestart(): Promise<void> {
+		if (this.disposed || this.quiescing) return;
+		this.quiescing = true;
+		this.pauseIntake();
+		const registrySyncPromise = this.registrySyncPromise;
+		if (registrySyncPromise) await Promise.allSettled([registrySyncPromise]);
+		await this.stopDrain(false, false);
+		this.writeStatus();
+	}
+
+	async stop(options: IndexingDaemonStopOptions = {}): Promise<void> {
 		if (this.disposed) return;
 		this.disposed = true;
-		this.registryWatcher?.close();
-		this.registryWatcher = null;
-		if (this.registryWatchRetryTimer) clearTimeout(this.registryWatchRetryTimer);
-		if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+		this.quiescing = true;
+		this.pauseIntake();
 		const registrySyncPromise = this.registrySyncPromise;
 		try {
 			if (registrySyncPromise) await Promise.allSettled([registrySyncPromise]);
-			await this.stopDrain();
+			await this.stopDrain(!options.graceful, false);
 			for (const runtime of this.runtimes.values()) this.closeRuntime(runtime);
 			await Promise.allSettled([...this.runtimes.values()].map((runtime) => runtime.service.dispose()));
 			await this.disposeBackends();
@@ -207,14 +227,23 @@ export class IndexingDaemon {
 	}
 
 	private async reconcile(): Promise<void> {
+		if (this.disposed || this.quiescing) return;
 		await this.syncRegistry();
+		if (this.disposed || this.quiescing) return;
 		for (const runtime of this.runtimes.values()) {
-			// Don't reset healthy runtimes to "queued" on every reconcile tick.
-			// syncRegistry() already calls requestRefresh for runtimes with
-			// registry-level changes (updatedAt, priority requests).
-			if (runtime.state === "ready" || runtime.state === "partial") continue;
-			this.requestRefresh(runtime, false);
+			if (runtime.active || runtime.dirty || runtime.debounceTimer) continue;
+			try {
+				const status = await runtime.service.initialize({ checkFreshness: true });
+				this.applyRuntimeStatus(runtime, status);
+				if (shouldRefreshState(status.state)) this.requestRefresh(runtime, false);
+			} catch (error) {
+				runtime.state = "error";
+				runtime.lastError = safeErrorMessage(error);
+				runtime.updatedAt = new Date().toISOString();
+				this.requestRefresh(runtime, false);
+			}
 		}
+		this.writeStatus();
 	}
 
 	private syncRegistry(): Promise<void> {
@@ -224,7 +253,7 @@ export class IndexingDaemon {
 		}
 		this.registrySyncPromise = this.runRegistrySync().finally(() => {
 			this.registrySyncPromise = undefined;
-			if (this.registrySyncRequested && !this.disposed) {
+			if (this.registrySyncRequested && !this.disposed && !this.quiescing) {
 				this.registrySyncRequested = false;
 				void this.syncRegistry();
 			}
@@ -233,7 +262,7 @@ export class IndexingDaemon {
 	}
 
 	private async runRegistrySync(): Promise<void> {
-		if (this.disposed) return;
+		if (this.disposed || this.quiescing) return;
 		const enabledEntries = loadIndexedRepos(this.options.agentDir)
 			.filter((entry) => entry.decision === "enabled")
 			.map((entry) => ({ ...entry, root: canonicalizePath(entry.path) }))
@@ -249,10 +278,14 @@ export class IndexingDaemon {
 		}
 		if (retiredRuntimes.length > 0) {
 			this.writeStatus();
-			await this.stopDrain();
+			await this.stopDrain(true, true);
 			await Promise.allSettled(retiredRuntimes.map((runtime) => runtime.service.dispose()));
 		}
-		if (this.disposed) return;
+		if (this.disposed || this.quiescing) return;
+
+		const hasNewRuntimes = enabledEntries.some((entry) => !this.runtimes.has(entry.root));
+		if (hasNewRuntimes) await this.ensureBackends();
+
 		for (const entry of enabledEntries) {
 			const root = entry.root;
 			const existing = this.runtimes.get(root);
@@ -296,33 +329,31 @@ export class IndexingDaemon {
 			this.runtimes.set(root, runtime);
 			this.watchRepository(runtime);
 
-			// Load persisted state from the service so the UI shows the correct
-			// file/chunk counts and state (e.g. "ready" or "partial") immediately
-			// instead of resetting to "queued" with zero counts.
-			// Skip the expensive file freshness check at startup; the drain worker
-			// will run the full check when it picks up the repo for indexing.
-			const initializedStatus = await runtime.service.initialize({ checkFreshness: false });
-			runtime.state = initializedStatus.state;
-			runtime.indexedFiles = initializedStatus.indexedFiles;
-			runtime.indexedChunks = initializedStatus.indexedChunks;
-			if (initializedStatus.lastError) runtime.lastError = initializedStatus.lastError.message;
-
-			// Queue the new runtime for initial indexing.
-			this.requestRefresh(
-				runtime,
-				false,
-				entry.priorityRequest
-					? parseManualRequestPriority(entry.priorityRequest.requestedAt)
-					: parseRequestPriority(entry.updatedAt),
-				false,
-			);
+			try {
+				const initializedStatus = await runtime.service.initialize({ checkFreshness: true });
+				this.applyRuntimeStatus(runtime, initializedStatus);
+				if (entry.priorityRequest || shouldRefreshState(initializedStatus.state)) {
+					this.requestRefresh(
+						runtime,
+						false,
+						entry.priorityRequest
+							? parseManualRequestPriority(entry.priorityRequest.requestedAt)
+							: parseRequestPriority(entry.updatedAt),
+						false,
+					);
+				}
+			} catch (error) {
+				runtime.state = "error";
+				runtime.lastError = safeErrorMessage(error);
+				this.requestRefresh(runtime, false, parseRequestPriority(entry.updatedAt), false);
+			}
 		}
 		this.writeStatus();
 		this.startDrain();
 	}
 
 	private watchRegistry(): void {
-		if (this.disposed || this.registryWatcher) return;
+		if (this.disposed || this.quiescing || this.registryWatcher) return;
 		try {
 			const watcher = this.watchFactory(this.options.agentDir, { recursive: false }, (_eventType, filename) => {
 				const name = filename === null ? undefined : String(filename);
@@ -339,7 +370,7 @@ export class IndexingDaemon {
 	private handleRegistryWatchError(): void {
 		this.registryWatcher?.close();
 		this.registryWatcher = null;
-		if (this.disposed || this.registryWatchRetryTimer) return;
+		if (this.disposed || this.quiescing || this.registryWatchRetryTimer) return;
 		this.registryWatchRetryTimer = setTimeout(() => {
 			this.registryWatchRetryTimer = undefined;
 			this.watchRegistry();
@@ -347,7 +378,7 @@ export class IndexingDaemon {
 	}
 
 	private watchRepository(runtime: RepositoryRuntime): void {
-		if (this.disposed || runtime.watcher) return;
+		if (this.disposed || this.quiescing || runtime.watcher) return;
 		try {
 			const watcher = this.watchFactory(runtime.root, { recursive: true }, (_eventType, filename) => {
 				if (filename !== null && isIgnoredWatchPath(String(filename))) return;
@@ -363,7 +394,7 @@ export class IndexingDaemon {
 	private handleRepositoryWatchError(runtime: RepositoryRuntime): void {
 		runtime.watcher?.close();
 		runtime.watcher = null;
-		if (this.disposed || runtime.watchRetryTimer) return;
+		if (this.disposed || this.quiescing || runtime.watchRetryTimer) return;
 		runtime.watchRetryTimer = setTimeout(() => {
 			runtime.watchRetryTimer = undefined;
 			if (this.runtimes.get(runtime.root) === runtime) this.watchRepository(runtime);
@@ -376,10 +407,11 @@ export class IndexingDaemon {
 		priority: number = 0,
 		startDrain: boolean = true,
 	): void {
-		if (this.disposed || this.runtimes.get(runtime.root) !== runtime) return;
+		if (this.disposed || this.quiescing || this.runtimes.get(runtime.root) !== runtime) return;
 		if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
 		const queue = () => {
 			runtime.debounceTimer = undefined;
+			if (this.disposed || this.quiescing || this.runtimes.get(runtime.root) !== runtime) return;
 			const wasDirty = runtime.dirty;
 			runtime.dirty = true;
 			if (!wasDirty) runtime.queueOrder = ++this.nextQueueOrder;
@@ -402,7 +434,7 @@ export class IndexingDaemon {
 	}
 
 	private startDrain(): void {
-		if (this.disposed || this.drainPaused) return;
+		if (this.disposed || this.quiescing || this.drainPaused) return;
 		this.drainWorkers = this.drainWorkers.filter((worker) => !worker.done);
 		while (
 			this.drainWorkers.length < DRAIN_MAX_CONCURRENCY &&
@@ -413,13 +445,13 @@ export class IndexingDaemon {
 			worker.promise = this.drainWorker(worker).finally(() => {
 				worker.done = true;
 				this.drainWorkers = this.drainWorkers.filter((candidate) => candidate !== worker);
-				if (!this.disposed && !this.drainPaused) this.startDrain();
+				if (!this.disposed && !this.quiescing && !this.drainPaused) this.startDrain();
 			});
 		}
 	}
 
 	private async drainWorker(w: DrainWorker): Promise<void> {
-		while (!this.disposed && !w.stop) {
+		while (!this.disposed && !this.quiescing && !w.stop) {
 			let runtime: RepositoryRuntime | undefined;
 			for (const candidate of this.runtimes.values()) {
 				if (!candidate.dirty || candidate.active) continue;
@@ -457,9 +489,7 @@ export class IndexingDaemon {
 				await this.runRepositoryOperation(w, async (signal, reportActivity) => {
 					await this.ensureBackends(signal);
 					const initialized = await runtime.service.initialize({ checkFreshness: true });
-					runtime.state = initialized.state;
-					runtime.indexedFiles = initialized.indexedFiles;
-					runtime.indexedChunks = initialized.indexedChunks;
+					this.applyRuntimeStatus(runtime, initialized);
 					const summary = await runtime.service.refresh(
 						{
 							onProgress: (progress) => {
@@ -469,14 +499,12 @@ export class IndexingDaemon {
 						},
 						signal,
 					);
-					runtime.state = summary.status.state;
-					runtime.indexedFiles = summary.status.indexedFiles;
-					runtime.indexedChunks = summary.status.indexedChunks;
+					this.applyRuntimeStatus(runtime, summary.status);
 					delete runtime.progress;
 					delete runtime.lastError;
 				});
 			} catch (error) {
-				if (this.disposed || w.stop) return;
+				if (this.disposed || this.quiescing || w.stop) return;
 				if (w.preemptedRuntime === runtime) {
 					runtime.state = "queued";
 					delete runtime.progress;
@@ -486,7 +514,7 @@ export class IndexingDaemon {
 					delete runtime.progress;
 					runtime.lastError = safeErrorMessage(error);
 					this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
-					if (!this.disposed && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
+					if (!this.disposed && !this.quiescing && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
 						runtime.retryTimer = setTimeout(() => {
 							runtime.retryTimer = undefined;
 							this.requestRefresh(runtime, false);
@@ -559,7 +587,7 @@ export class IndexingDaemon {
 		}
 	}
 
-	private async stopDrain(): Promise<void> {
+	private async stopDrain(abortActive: boolean = true, resume: boolean = true): Promise<void> {
 		this.drainPaused = true;
 		const workers = [...this.drainWorkers];
 		for (const worker of workers) {
@@ -567,11 +595,40 @@ export class IndexingDaemon {
 			if (!this.disposed && worker.runtime && this.runtimes.get(worker.runtime.root) === worker.runtime) {
 				worker.runtime.dirty = true;
 			}
-			worker.controller?.abort(new Error("Indexing daemon stopped"));
+			if (abortActive) worker.controller?.abort(new Error("Indexing daemon stopped"));
 		}
 		await Promise.allSettled(workers.map((worker) => worker.promise));
 		this.drainWorkers = [];
-		this.drainPaused = false;
+		this.drainPaused = !resume;
+		if (resume && !this.disposed && !this.quiescing) this.startDrain();
+	}
+
+	private applyRuntimeStatus(runtime: RepositoryRuntime, status: RagStatus): void {
+		runtime.state = status.state;
+		runtime.indexedFiles = status.indexedFiles;
+		runtime.indexedChunks = status.indexedChunks;
+		if (status.lastError) runtime.lastError = status.lastError.message;
+		else delete runtime.lastError;
+		runtime.updatedAt = new Date().toISOString();
+	}
+
+	private pauseIntake(): void {
+		this.registryWatcher?.close();
+		this.registryWatcher = null;
+		if (this.registryWatchRetryTimer) clearTimeout(this.registryWatchRetryTimer);
+		this.registryWatchRetryTimer = undefined;
+		if (this.reconcileTimer) clearInterval(this.reconcileTimer);
+		this.reconcileTimer = undefined;
+		for (const runtime of this.runtimes.values()) {
+			runtime.watcher?.close();
+			runtime.watcher = null;
+			if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
+			runtime.debounceTimer = undefined;
+			if (runtime.retryTimer) clearTimeout(runtime.retryTimer);
+			runtime.retryTimer = undefined;
+			if (runtime.watchRetryTimer) clearTimeout(runtime.watchRetryTimer);
+			runtime.watchRetryTimer = undefined;
+		}
 	}
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
@@ -665,6 +722,10 @@ export class IndexingDaemon {
 		if (level === "error") console.error(line);
 		else console.log(line);
 	}
+}
+
+function shouldRefreshState(state: RagState): boolean {
+	return state !== "ready" && state !== "disabled";
 }
 
 function isDirectory(value: string): boolean {
