@@ -1499,16 +1499,9 @@ export class AgentSession {
 				this._autoExecuteUpdateSessionStateForFinishWork();
 			}
 			if (toolCall.name === FINISH_WORK_TOOL_NAME) {
-				const status = getFinishWorkStatus(args);
-				if (status === "success") {
-					this._reconcileSuccessfulFinishWorkState();
-				}
 				const blockReason = this._getFinishWorkSessionStateBlockReason(args);
 				if (blockReason) {
 					this._autoExecuteUpdateSessionStateForFinishWork();
-					if (status === "success") {
-						this._reconcileSuccessfulFinishWorkState();
-					}
 					const updatedBlockReason = this._getFinishWorkSessionStateBlockReason(args);
 					if (updatedBlockReason) {
 						return { block: true, reason: updatedBlockReason };
@@ -1587,6 +1580,14 @@ export class AgentSession {
 				this._progressUpdateRequiredBeforeFinish = true;
 			}
 
+			if (
+				toolCall.name === FINISH_WORK_TOOL_NAME &&
+				getFinishWorkStatus(args) === "success" &&
+				!nextIsError
+			) {
+				this._reconcileSuccessfulFinishWorkState();
+			}
+
 			if (!changed) {
 				return undefined;
 			}
@@ -1606,12 +1607,18 @@ export class AgentSession {
 		if (!state) {
 			return undefined;
 		}
-		const openItems = getOpenSessionStateItems(state);
+
+		const status = getFinishWorkStatus(args);
+		const openItems =
+			status === "success"
+				? state.plan
+						.filter((item) => item.status === "failed" || item.status === "blocked")
+						.map((item) => `${item.text} (${item.status})`)
+				: getOpenSessionStateItems(state);
 		if (openItems.length === 0) {
 			return undefined;
 		}
 
-		const status = getFinishWorkStatus(args);
 		const remainingWork = getFinishWorkRemainingWork(args);
 		if ((status === "partial" || status === "failed") && remainingWork.length > 0) {
 			return undefined;
