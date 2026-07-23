@@ -19,11 +19,11 @@ jobs:
           ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
-      - name: Apply reviewed fix
+      - name: Finalize reviewed fix
         id: apply
         continue-on-error: true
         run: |
-          python scripts/apply-finish-work-reconciliation-fix.py > /tmp/apply-finish-work.log 2>&1
+          python scripts/finalize-finish-work-reconciliation-fix.py > /tmp/apply-finish-work.log 2>&1
 
       - name: Report patch failure
         if: steps.apply.outcome == 'failure'
@@ -44,6 +44,7 @@ jobs:
         if: steps.apply.outcome == 'success'
         run: |
           rm scripts/apply-finish-work-reconciliation-fix.py
+          rm scripts/finalize-finish-work-reconciliation-fix.py
           rm .github/workflows/apply-finish-work-reconciliation-fix.yml
           rm .github/workflows/apply-finish-work-reconciliation-on-pr.yml
 
