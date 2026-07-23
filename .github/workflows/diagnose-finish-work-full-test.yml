@@ -1,4 +1,4 @@
-name: Diagnose finish_work coding-agent tests
+name: Diagnose finish_work event result
 
 on:
   pull_request:
@@ -26,24 +26,37 @@ jobs:
       - name: Build monorepo
         run: npm run build
 
-      - name: Run coding-agent test suite
+      - name: Instrument focused regression
+        run: |
+          python <<'PY'
+          from pathlib import Path
+          path = Path('packages/coding-agent/test/suite/regressions/finish-work-auto-prepend.test.ts')
+          text = path.read_text()
+          old = '''\t\t\tconst finishEnds = toolEndEvents(harness, "finish_work");
+\t\t\texpect(finishEnds).toHaveLength(1);'''
+          new = '''\t\t\tconst finishEnds = toolEndEvents(harness, "finish_work");
+\t\t\tconsole.error("FINISH_ENDS_DEBUG", JSON.stringify(finishEnds, null, 2));
+\t\t\texpect(finishEnds).toHaveLength(1);'''
+          if text.count(old) < 1:
+              raise SystemExit('instrumentation target not found')
+          path.write_text(text.replace(old, new, 1))
+          PY
+
+      - name: Run focused regression test
         id: test
         continue-on-error: true
-        run: npm --prefix packages/coding-agent test > /tmp/coding-agent-test.log 2>&1
+        run: npx vitest --run packages/coding-agent/test/suite/regressions/finish-work-auto-prepend.test.ts > /tmp/finish-work-debug.log 2>&1
 
-      - name: Report coding-agent result
+      - name: Report event payload
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo 'Coding-agent test failure summary:'
+            echo 'Instrumented finish_work event result:'
             echo
             echo '```text'
-            grep -n -E 'FAIL|Failed Tests|Failed Suites|AssertionError|Error:|Test Files|Tests ' /tmp/coding-agent-test.log | tail -n 240 || true
-            echo
-            echo '--- final output ---'
-            tail -n 120 /tmp/coding-agent-test.log
+            sed -n '/FINISH_ENDS_DEBUG/,$p' /tmp/finish-work-debug.log | tail -n 180
             echo '```'
           } > /tmp/comment.md
           gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md
