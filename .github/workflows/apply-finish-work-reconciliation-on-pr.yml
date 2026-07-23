@@ -20,12 +20,8 @@ jobs:
 
       - name: Apply reviewed fix
         run: |
-          awk '
-            /^          python <<'"'"'PY'"'"'$/ { capture = 1; next }
-            /^          PY$/ { capture = 0 }
-            capture { sub(/^          /, ""); print }
-          ' .github/workflows/apply-finish-work-reconciliation-fix.yml > /tmp/apply-finish-work-fix.py
-          python /tmp/apply-finish-work-fix.py
+          python scripts/apply-finish-work-reconciliation-fix.py
+          rm scripts/apply-finish-work-reconciliation-fix.py
           rm .github/workflows/apply-finish-work-reconciliation-fix.yml
           rm .github/workflows/apply-finish-work-reconciliation-on-pr.yml
 
