@@ -90,7 +90,7 @@ export function formatIndexingStatus(status: IndexStatus): string {
 	if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
 		const percent = status.progress?.percent;
 		if (percent !== undefined) {
-			const percentStr = `${Math.min(100, Math.round(percent))}%`;
+			const percentStr = `${Math.min(100, Math.max(0, percent)).toFixed(1)}%`;
 			// Compute ETA from progress.etaSeconds (recent speed) or startedAt timestamp
 			let etaStr = "";
 			const etaSeconds =

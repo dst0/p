@@ -557,7 +557,7 @@ export class IndexingDaemon {
 
 	private updateRuntimeProgress(runtime: RepositoryRuntime, progress: IndexingProgress): void {
 		const now = Date.now();
-		const percent = Math.max(0, Math.min(100, Math.round(progress.percent)));
+		const percent = Math.max(0, Math.min(100, Math.round(progress.percent * 10) / 10));
 		runtime.progressSamples ??= [];
 		runtime.progressSamples.push({ timestamp: now, percent });
 		// Keep last 60 seconds of samples
