@@ -1,6 +1,9 @@
 name: Refine release changelog validation
 
 on:
+  push:
+    branches:
+      - agent/fix-release-changelog-order
   pull_request:
     branches:
       - main
@@ -10,7 +13,7 @@ permissions:
 
 jobs:
   apply:
-    if: github.head_ref == 'agent/fix-release-changelog-order' && github.actor != 'github-actions[bot]'
+    if: (github.event_name == 'push' || github.head_ref == 'agent/fix-release-changelog-order') && github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
