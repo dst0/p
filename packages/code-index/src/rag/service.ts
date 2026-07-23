@@ -122,7 +122,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
 	private cachedVocabulary: BM25Vocabulary | undefined;
 	private cachedVocabularyGeneration: string | undefined;
 
+	private serviceOptions: WorkspaceCodeRagServiceOptions;
+
 	constructor(options: WorkspaceCodeRagServiceOptions) {
+		this.serviceOptions = options;
 		this.workspaceRoot = fs.realpathSync(options.workspaceRoot);
 		const workspaceStat = fs.statSync(this.workspaceRoot);
 		if (!workspaceStat.isDirectory()) throw new Error(`Code RAG workspace is not a directory: ${this.workspaceRoot}`);
@@ -636,6 +639,14 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		return this.summaryForPlan(plan, startedAt, chunksEmbedded, false);
 	}
 
+	private refreshSettingsSilently(): void {
+		try {
+			this.settings = loadWorkspaceCodeRagSettings(this.serviceOptions);
+		} catch {
+			// Best-effort settings reload; keep existing settings if config reading fails.
+		}
+	}
+
 	private async encodeAndUpsert(
 		collection: string,
 		chunks: PreparedChunk[],
@@ -645,9 +656,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
 	): Promise<void> {
 		// Ensure embedding provider is ready (auto-start if needed)
 		if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
-		for (let offset = 0; offset < chunks.length; offset += this.settings.encodeBatchSize) {
+		let offset = 0;
+		while (offset < chunks.length) {
 			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-			const batch = chunks.slice(offset, offset + this.settings.encodeBatchSize);
+			this.refreshSettingsSilently();
+			const encodeBatchSize = Math.max(1, this.settings.encodeBatchSize);
+			const upsertBatchSize = Math.max(1, this.settings.upsertBatchSize);
+			const batch = chunks.slice(offset, offset + encodeBatchSize);
 			const denseVectors = await this.embeddingProvider.encode(
 				batch.map((chunk) => chunk.embeddingText),
 				signal,
@@ -661,13 +676,11 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				},
 				payload: chunk.payload,
 			}));
-			for (let pointOffset = 0; pointOffset < points.length; pointOffset += this.settings.upsertBatchSize) {
-				await this.vectorStore.upsert(
-					collection,
-					points.slice(pointOffset, pointOffset + this.settings.upsertBatchSize),
-				);
+			for (let pointOffset = 0; pointOffset < points.length; pointOffset += upsertBatchSize) {
+				await this.vectorStore.upsert(collection, points.slice(pointOffset, pointOffset + upsertBatchSize));
 			}
-			onProgress?.(Math.min(offset + batch.length, chunks.length), chunks.length);
+			offset += batch.length;
+			onProgress?.(Math.min(offset, chunks.length), chunks.length);
 		}
 		if (chunks.length === 0) onProgress?.(0, 0);
 	}

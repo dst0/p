@@ -259,6 +259,35 @@ describe("WorkspaceCodeRagService", () => {
 		).toBe(true);
 	});
 
+	it("dynamically reloads batch size configuration during an active rebuild", async () => {
+		const { root, data } = createFixture();
+		// Create multiple files to produce several chunks
+		for (let i = 0; i < 10; i++) {
+			writeFileSync(join(root, `file_${i}.ts`), `export const x${i} = ${i};\n`.repeat(20));
+		}
+		const configPath = join(data, "..", "code-rag.json");
+		writeFileSync(configPath, JSON.stringify({ encodeBatchSize: 10, upsertBatchSize: 10 }));
+
+		const embedding = new FakeEmbeddingProvider();
+		const store = new FakeVectorStore();
+		const batchSizesSeen: number[] = [];
+
+		const origEncode = embedding.encode.bind(embedding);
+		embedding.encode = async (texts, signal) => {
+			batchSizesSeen.push(texts.length);
+			// After first batch, update dynamic config file to smaller batch size 2
+			writeFileSync(configPath, JSON.stringify({ encodeBatchSize: 2, upsertBatchSize: 2 }));
+			return origEncode(texts, signal);
+		};
+
+		const service = createService(root, data, embedding, store);
+		await service.rebuild();
+
+		// First batch should be 10, subsequent batches should be 2
+		expect(batchSizesSeen[0]).toBe(10);
+		expect(batchSizesSeen.slice(1).every((size) => size <= 2)).toBe(true);
+	});
+
 	it("removes deleted files and keeps repositories with the same basename isolated", async () => {
 		const first = createFixture();
 		const secondParent = mkdtempSync(join(tmpdir(), "p-code-rag-second-"));
