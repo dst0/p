@@ -1,0 +1,75 @@
+name: Refine release changelog validation
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.head_ref == 'agent/fix-release-changelog-order' && github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: agent/fix-release-changelog-order
+          fetch-depth: 0
+
+      - name: Refine validation invariant
+        run: |
+          node - <<'EOF'
+          const { readFileSync, writeFileSync, unlinkSync } = require('node:fs');
+
+          function replaceExact(path, before, after) {
+            const content = readFileSync(path, 'utf8');
+            if (!content.includes(before)) throw new Error(`Anchor missing in ${path}`);
+            writeFileSync(path, content.replace(before, after));
+          }
+
+          replaceExact(
+            'AGENTS.md',
+            '- Released version sections must remain in strictly descending semantic-version order directly below `[Unreleased]`.',
+            '- Each new release section must be inserted immediately below `[Unreleased]` and must have a greater semantic version than the previously topmost released section; do not reorder historical legacy sections.',
+          );
+          replaceExact(
+            'AGENTS.md',
+            'Before any version bump, verify every changelog has exactly one topmost `[Unreleased]` section, released versions are strictly descending, and all release dates are UTC dates.',
+            'Before any version bump, verify every changelog has exactly one topmost `[Unreleased]` section, the newest released version is greater than the previously topmost release, and all release dates are UTC dates.',
+          );
+          replaceExact(
+            'scripts/release.mjs',
+            `\t\tconst versions = [...content.matchAll(RELEASE_HEADING_RE)].map((match) => match[1]);
+\t\tfor (let index = 1; index < versions.length; index++) {
+\t\t\tif (compareVersions(versions[index - 1], versions[index]) <= 0) {
+\t\t\t\tthrow new Error(\`\${changelog}: released versions must be strictly descending (\${versions[index - 1]} before \${versions[index]})\`);
+\t\t\t}
+\t\t}`,
+            `\t\tconst versions = [...content.matchAll(RELEASE_HEADING_RE)].map((match) => match[1]);
+\t\tif (versions.length >= 2 && compareVersions(versions[0], versions[1]) <= 0) {
+\t\t\tthrow new Error(\`\${changelog}: newest release \${versions[0]} must be greater than previous release \${versions[1]}\`);
+\t\t}`,
+          );
+          replaceExact(
+            'packages/coding-agent/CHANGELOG.md',
+            '- Validate changelog structure before release, require descending release versions, and document UTC release dates.',
+            '- Validate changelog structure before release, require each new release to precede the previous release, and document UTC release dates.',
+          );
+
+          unlinkSync('.github/workflows/refine-release-changelog-validation.yml');
+          EOF
+
+      - name: Validate
+        run: |
+          node --check scripts/release.mjs
+          git diff --check
+
+      - name: Commit result
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add AGENTS.md scripts/release.mjs packages/coding-agent/CHANGELOG.md .github/workflows/refine-release-changelog-validation.yml
+          git commit -m "fix: scope changelog ordering validation"
+          git push origin HEAD:agent/fix-release-changelog-order
