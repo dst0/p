@@ -38,6 +38,16 @@ export const FINISH_WORK_SCHEMA = Type.Object({
 
 type FinishWorkInput = Static<typeof FINISH_WORK_SCHEMA>;
 
+function validateFinishWorkInput(input: FinishWorkInput): string | undefined {
+	if (input.summary.trim().length === 0) {
+		return "summary is required and must not be empty";
+	}
+	if (input.status === "success" && input.remaining_work?.length) {
+		return 'status "success" is incompatible with non-empty remaining_work';
+	}
+	return undefined;
+}
+
 function normalizeOptionalList(values: string[] | undefined): string[] | undefined {
 	if (!values || values.length === 0) {
 		return undefined;
@@ -66,6 +76,10 @@ export function createFinishWorkTool(): AgentTool<typeof FINISH_WORK_SCHEMA, Fin
 		parameters: FINISH_WORK_SCHEMA,
 		executionMode: "sequential",
 		async execute(_toolCallId, params) {
+			const error = validateFinishWorkInput(params);
+			if (error) {
+				throw new Error(`finish_work validation error: ${error}`);
+			}
 			const payload = normalizeFinishWorkPayload(params);
 			return {
 				content: [{ type: "text", text: payload.result ?? payload.summary }],
