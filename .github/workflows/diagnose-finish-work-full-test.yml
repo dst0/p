@@ -1,0 +1,50 @@
+name: Diagnose finish_work full test failure
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build monorepo
+        run: npm run build
+
+      - name: Run full test suite
+        id: test
+        continue-on-error: true
+        run: npm test > /tmp/full-test.log 2>&1
+
+      - name: Report full-suite result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo 'Full test-suite output tail:'
+            echo
+            echo '```text'
+            tail -n 500 /tmp/full-test.log
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md
+
+      - name: Preserve failure status
+        if: steps.test.outcome == 'failure'
+        run: exit 1
