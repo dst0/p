@@ -156,6 +156,7 @@ export default function agentmemoryExtension(p: ExtensionAPI) {
 		name: "memory_health",
 		label: "Memory Health",
 		description: "Check whether the local agentmemory server is reachable and healthy",
+		promptSnippet: "memory_health(): check if the local agentmemory server is reachable and healthy",
 		parameters: Type.Object({}),
 		async execute() {
 			const health = await getHealth();
@@ -182,6 +183,8 @@ export default function agentmemoryExtension(p: ExtensionAPI) {
 		name: "memory_search",
 		label: "Memory Search",
 		description: "Search agentmemory for cross-session project memory, prior decisions, bugs, and user preferences",
+		promptSnippet:
+			"memory_search(query, limit?): search agentmemory for cross-session project memory, prior decisions, bugs, and user preferences",
 		parameters: Type.Object({
 			query: Type.String({ description: "What to search for in memory" }),
 			limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 10, default: 5, description: "Maximum results" })),
@@ -202,6 +205,8 @@ export default function agentmemoryExtension(p: ExtensionAPI) {
 		name: "memory_save",
 		label: "Memory Save",
 		description: "Save a durable fact, convention, workflow, preference, or bug fix into agentmemory",
+		promptSnippet:
+			"memory_save(content, type?): save a durable fact, convention, workflow, preference, or bug fix into agentmemory",
 		parameters: Type.Object({
 			content: Type.String({ description: "What should be remembered" }),
 			type: Type.Optional(

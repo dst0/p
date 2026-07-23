@@ -5198,9 +5198,18 @@ Plan mode is active because the user invoked /plan.
 					nextActiveToolNames.push(toolName);
 				}
 			}
-		} else if (options?.includeAllExtensionTools) {
+		} else {
+			// Always activate extension tools that have promptSnippet —
+			// providing a promptSnippet signals the tool should be visible in the system prompt's tool listing.
 			for (const tool of wrappedExtensionTools) {
-				nextActiveToolNames.push(tool.name);
+				if (this._toolPromptSnippets.has(tool.name)) {
+					nextActiveToolNames.push(tool.name);
+				}
+			}
+			if (options?.includeAllExtensionTools) {
+				for (const tool of wrappedExtensionTools) {
+					nextActiveToolNames.push(tool.name);
+				}
 			}
 		}
 

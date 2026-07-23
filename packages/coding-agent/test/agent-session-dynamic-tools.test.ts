@@ -114,15 +114,16 @@ describe("AgentSession dynamic tool registration", () => {
 			origin: "top-level",
 		});
 		expect(session.getActiveToolNames()).toContain("tool_search");
-		expect(session.getActiveToolNames()).not.toContain("dynamic_tool");
-		expect(session.systemPrompt).not.toContain("- dynamic_tool: Run dynamic test behavior");
-
-		const toolSearch = session.agent.state.tools.find((tool) => tool.name === "tool_search");
-		const searchResult = await toolSearch?.execute("search-1", { query: "dynamic behavior", limit: 1 });
-		expect(searchResult?.details).toMatchObject({ activated: ["dynamic_tool"] });
+		// dynamic_tool has promptSnippet so it's auto-activated by default
 		expect(session.getActiveToolNames()).toContain("dynamic_tool");
 		expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
 		expect(session.systemPrompt).toContain("- Use dynamic_tool when the user asks for dynamic behavior tests.");
+
+		// tool_search should still work for activating tools that are already active (no-op)
+		const toolSearch = session.agent.state.tools.find((tool) => tool.name === "tool_search");
+		const searchResult = await toolSearch?.execute("search-1", { query: "dynamic behavior", limit: 1 });
+		// dynamic_tool is already active, so tool_search finds nothing new to activate
+		expect(searchResult?.details).toMatchObject({ activated: [] });
 
 		session.dispose();
 	});
