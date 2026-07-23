@@ -257,4 +257,75 @@ describe("finish_work auto-prepend session state update", () => {
 			harness.cleanup();
 		}
 	});
+
+	it("does not reconcile when a success payload fails validation", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("invalid success", {
+						remainingWork: ["Inspect the requested file"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("validation error");
+
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
+				["Inspect the requested file", "in_progress"],
+			]);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("does not reconcile auto-completable items when another item blocks success", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Do all tracked work",
+						plan: [
+							{ text: "Implement the change", status: "in_progress" },
+							{ text: "Run verification", status: "failed" },
+						],
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(finishCall("done anyway"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("partially complete", {
+						status: "partial",
+						remainingWork: ["Implement the change", "Run verification"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(2);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(finishEnds[1]?.isError).toBe(false);
+
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
+				["Implement the change", "in_progress"],
+				["Run verification", "failed"],
+			]);
+		} finally {
+			harness.cleanup();
+		}
+	});
 });

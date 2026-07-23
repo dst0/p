@@ -36,9 +36,7 @@ function formatCompletionProtocolInstructions(mode: CompletionMode | undefined):
 	const sessionStateInstructions = [
 		`Before calling \`${FINISH_WORK_TOOL_NAME}\`, reconcile the visible working state.`,
 		`Examine the <working_state> block to check current plan items and their statuses.`,
-		"Only call finish_work with status 'success' when all plan items are genuinely done — if any item is still not_started, in_progress, failed, or blocked, complete the remaining work first or use status 'partial'/'failed' with remaining_work explained.",
-		"If plan items are incomplete, do the remaining work, update session state to reflect progress, then reconsider finish_work.",
-		"Repeat this check — review state, do remaining work, update state — until all tasks are genuinely complete before calling finish_work with status 'success'.",
+		"Call finish_work with status 'success' only when the requested work is genuinely complete. A successful call automatically reconciles stale not_started or in_progress plan statuses; failed or blocked items must be resolved, or reported with status 'partial'/'failed' and remaining_work.",
 		"A next action must be a specific unfinished action; never use completed or status-only entries such as `Done`, `Complete`, or `All done`. Record completed work as progress, and leave next actions empty when no work remains.",
 		"Use `initial_plan` only for a fresh task with no active plan; otherwise use `replan` to replace the complete current plan.",
 		`If \`${FINISH_WORK_TOOL_NAME}\` is rejected for unresolved state, do not retry it unchanged: first update or replan the state, or finish as partial/failed with remaining work.`,
