@@ -30,6 +30,7 @@ jobs:
 
       - name: Apply patch
         run: |
+          printf '\n' >> .github/patches/fix-code-rag-retrieval.patch
           git apply --verbose --recount .github/patches/fix-code-rag-retrieval.patch
           rm .github/patches/fix-code-rag-retrieval.patch
           rm .github/workflows/apply-code-rag-fixes.yml
