@@ -1,4 +1,4 @@
-name: Diagnose finish_work full test failure
+name: Diagnose finish_work coding-agent tests
 
 on:
   pull_request:
@@ -26,21 +26,24 @@ jobs:
       - name: Build monorepo
         run: npm run build
 
-      - name: Run full test suite
+      - name: Run coding-agent test suite
         id: test
         continue-on-error: true
-        run: npm test > /tmp/full-test.log 2>&1
+        run: npm --prefix packages/coding-agent test > /tmp/coding-agent-test.log 2>&1
 
-      - name: Report full-suite result
+      - name: Report coding-agent result
         if: always()
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           {
-            echo 'Full test-suite output tail:'
+            echo 'Coding-agent test failure summary:'
             echo
             echo '```text'
-            tail -n 500 /tmp/full-test.log
+            grep -n -E 'FAIL|Failed Tests|Failed Suites|AssertionError|Error:|Test Files|Tests ' /tmp/coding-agent-test.log | tail -n 240 || true
+            echo
+            echo '--- final output ---'
+            tail -n 120 /tmp/coding-agent-test.log
             echo '```'
           } > /tmp/comment.md
           gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md
