@@ -76,3 +76,5 @@ jobs:
           git add AGENTS.md scripts/release.mjs packages/coding-agent/CHANGELOG.md .github/workflows/refine-release-changelog-validation.yml
           git commit -m "fix: scope changelog ordering validation"
           git push origin HEAD:agent/fix-release-changelog-order
+
+# Triggered after the workflow existed on the branch.
