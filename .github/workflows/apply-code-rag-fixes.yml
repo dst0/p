@@ -28,11 +28,11 @@ jobs:
           git fetch -q --depth=1 origin "${HEAD_REF}"
           git checkout -q -B "${HEAD_REF}" FETCH_HEAD
 
-      - name: Apply patch
+      - name: Apply deterministic migration
         run: |
-          printf '\n' >> .github/patches/fix-code-rag-retrieval.patch
-          git apply --verbose --recount .github/patches/fix-code-rag-retrieval.patch
+          python3 .github/scripts/apply-code-rag-fixes.py
           rm .github/patches/fix-code-rag-retrieval.patch
+          rm .github/scripts/apply-code-rag-fixes.py
           rm .github/workflows/apply-code-rag-fixes.yml
 
       - name: Install dependencies
