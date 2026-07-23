@@ -154,7 +154,14 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
 
+	const hasSemanticSearch = tools.includes("semantic_search");
+
 	// File exploration guidelines
+	if (hasSemanticSearch) {
+		addGuideline(
+			"Prioritize semantic_search over bash, read, rg, grep, and find for code discovery. Use semantic_search to locate code by concept when identifiers or paths are unknown, then inspect the cited files. Reserve grep/find for exact identifiers and literals.",
+		);
+	}
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {
 		addGuideline(
 			"Use bash for file operations like ls, rg, find when dedicated tools are unavailable. Always prefer dedicated tools (grep, find, ls) when they are available.",

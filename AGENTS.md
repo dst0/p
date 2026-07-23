@@ -36,7 +36,7 @@
 
 ## Version Bump
 
-- Run `node scripts/version-bump.mjs patch` to bump all workspace packages, then bump the root `package.json` version manually. Do this before running `./reinstall.sh` so the installed CLI reports the correct version.
+- When a feature, fix, or improvement is finished, run the version bump before pushing changes. Run `node scripts/version-bump.mjs patch` to bump all workspace packages and root `package.json`. Do this before running `./reinstall.sh` so the installed CLI reports the correct version.
 - Include the version bump in the same commit as the changes.
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
