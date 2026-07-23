@@ -55,7 +55,7 @@ interface ScannedFile {
 
 interface PreparedChunk {
 	id: string;
-	embeddingText: string;
+	retrievalText: string;
 	payload: StoredChunkPayload;
 }
 
@@ -527,7 +527,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		}
 		const vocabulary = new BM25Vocabulary();
 		for (const prepared of preparedFiles) {
-			for (const chunk of prepared.chunks) vocabulary.register(chunk.payload.content);
+			for (const chunk of prepared.chunks) vocabulary.register(chunk.retrievalText);
 		}
 		vocabulary.finalize();
 		let createdCollection = false;
@@ -733,14 +733,24 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			const absPath = path.join(this.workspaceRoot, relPath);
 			try {
 				const fileContent = fs.readFileSync(absPath, "utf-8");
+				const language = detectLanguage(absPath);
 				const chunks = chunkFile(
 					fileContent,
-					detectLanguage(absPath),
+					language,
 					this.settings.defaultChunkLines,
 					this.settings.maxChunkLines,
 				);
 				for (const chunk of chunks) {
-					vocabulary.register(chunk.text);
+					vocabulary.register(
+						buildRetrievalText(
+							relPath,
+							language,
+							chunk.symbol,
+							chunk.chunkType,
+							chunk.text,
+							this.settings.maxEncodeCharacters,
+						),
+					);
 				}
 			} catch {
 				// File may have been deleted or is unreadable; skip without failing
@@ -779,7 +789,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			const upsertBatchSize = Math.max(1, this.settings.upsertBatchSize);
 			const batch = chunks.slice(offset, offset + encodeBatchSize);
 			const denseVectors = await this.embeddingProvider.encode(
-				batch.map((chunk) => chunk.embeddingText),
+				batch.map((chunk) => chunk.retrievalText),
 				signal,
 			);
 			if (denseVectors.length !== batch.length) throw new Error("Embedding provider returned an incomplete batch");
@@ -787,7 +797,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				id: chunk.id,
 				vectors: {
 					dense: Array.from(denseVectors[index]),
-					sparse: vocabulary.encode(chunk.payload.content),
+					sparse: vocabulary.encode(chunk.retrievalText),
 				},
 				payload: chunk.payload,
 			}));
@@ -858,7 +868,14 @@ export class WorkspaceCodeRagService implements CodeRagService {
 			};
 			return {
 				id: chunkPointId(this.repoId, fileId, stableFile.hash, ordinal, chunkHash),
-				embeddingText: chunk.text.slice(0, this.settings.maxEncodeCharacters),
+				retrievalText: buildRetrievalText(
+					stableFile.path,
+					stableFile.language,
+					chunk.symbol,
+					chunk.chunkType,
+					chunk.text,
+					this.settings.maxEncodeCharacters,
+				),
 				payload,
 			};
 		});
@@ -1246,6 +1263,26 @@ function isGeneratedPath(relativePath: string): boolean {
 	return (
 		/(^|\/)(generated|gen)(\/|$)/i.test(relativePath) || /(^|\.)generated\./i.test(path.posix.basename(relativePath))
 	);
+}
+
+/**
+ * Build structured retrieval text with file path and symbol metadata.
+ * This provides context to the embedding model about where the code lives
+ * and what it represents, improving retrieval precision.
+ */
+function buildRetrievalText(
+	path: string,
+	language: string,
+	symbolName: string,
+	symbolType: string,
+	code: string,
+	maxChars: number,
+): string {
+	const header = `file: ${path}\nlanguage: ${language}\nsymbol: ${symbolName}\nkind: ${symbolType}\n\n`;
+	const headerLen = header.length;
+	const maxCodeChars = Math.max(0, maxChars - headerLen);
+	const truncatedCode = code.length > maxCodeChars ? code.slice(0, maxCodeChars) : code;
+	return header + truncatedCode;
 }
 
 function safeErrorMessage(error: unknown): string {

@@ -7,6 +7,15 @@ export interface EmbeddingProviderHttpOptions extends EmbeddingServerManagerOpti
 	maxRetries: number;
 }
 
+/**
+ * Task instruction prepended to queries before dense encoding.
+ * Aligns query representation with code-document space per Qwen recommendations.
+ */
+const QUERY_INSTRUCTION =
+	"Given a natural-language description of software behaviour, " +
+	"retrieve the relevant source-code functions, types, interfaces, " +
+	"modules, and tool definitions.";
+
 const DEFAULT_HTTP_OPTIONS: EmbeddingProviderHttpOptions = {
 	requestTimeoutMs: 30_000,
 	maxRetries: 2,
@@ -75,7 +84,8 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
 	async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
 		if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-		const vectors = await this.encode([text], signal);
+		const instructQuery = `${QUERY_INSTRUCTION}\nQuery: ${text}`;
+		const vectors = await this.encode([instructQuery], signal);
 		if (!vectors[0]) throw new Error("Embedding server returned no query vector");
 		return vectors[0];
 	}

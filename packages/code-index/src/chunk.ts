@@ -57,6 +57,46 @@ function detectChunkType(text: string, _language: string): string {
 }
 
 /**
+ * From a symbol-start line index, walk backward over contiguous
+ * comment lines (single-line, block, JSDoc) and blank lines to include
+ * leading JSDoc in the chunk.
+ */
+function skipLeadingComments(lines: string[], startLine: number): number {
+	let i = startLine;
+	while (i > 0) {
+		const prev = lines[i - 1];
+		if (prev.trim() === "") {
+			i -= 1;
+			continue;
+		}
+		if (commentLineRe.test(prev)) {
+			i -= 1;
+			continue;
+		}
+		break;
+	}
+	return i;
+}
+
+const commentLineRe = /^\s*(\/\/|\/\*|\*\s*?|\/\*\*|\*\/)$/;
+
+/**
+ * Given the first line of a chunk (which may be a comment), find the line
+ * that contains the actual symbol declaration by skipping leading comments/blanks.
+ */
+function findDeclarationLine(lines: string[], startLine: number): number {
+	let i = startLine;
+	while (i < lines.length) {
+		if (lines[i].trim() === "" || commentLineRe.test(lines[i])) {
+			i += 1;
+			continue;
+		}
+		return i;
+	}
+	return startLine;
+}
+
+/**
  * Chunk a file's content into semantic pieces.
  *
  * Uses language-aware symbol boundaries when possible,
@@ -93,17 +133,22 @@ function chunkBySymbols(
 	defaultChunkLines: number,
 	maxChunkLines: number,
 ): Chunk[] {
-	// Find symbol boundaries
-	const boundaries = [0];
+	// Find raw symbol boundaries, then backtrack each over leading comments/JSDoc
+	const rawBoundaries = [0];
 
 	const matches = content.matchAll(pattern);
 	for (const match of matches) {
 		const lineIndex = content.slice(0, match.index).split("\n").length - 1;
 		if (lineIndex > 0 && lineIndex < totalLines) {
-			boundaries.push(lineIndex);
+			rawBoundaries.push(lineIndex);
 		}
 	}
-	boundaries.push(totalLines);
+	rawBoundaries.push(totalLines);
+
+	const boundaries: number[] = [rawBoundaries[0]];
+	for (let i = 1; i < rawBoundaries.length; i++) {
+		boundaries.push(skipLeadingComments(lines, rawBoundaries[i]));
+	}
 
 	const chunks: Chunk[] = [];
 
@@ -119,11 +164,12 @@ function chunkBySymbols(
 				const chunkText = lines.slice(s, e).join("\n");
 
 				if (chunkText.trim()) {
+					const declLine = findDeclarationLine(lines, s);
 					chunks.push({
 						text: chunkText,
 						startLine: s + 1,
 						endLine: e,
-						symbol: extractSymbol(lines[s].trim(), language),
+						symbol: extractSymbol(lines[declLine].trim(), language),
 						chunkType: chunkLines.length < 200 ? "function" : "section",
 					});
 				}
@@ -132,11 +178,12 @@ function chunkBySymbols(
 			const chunkText = chunkLines.join("\n");
 
 			if (chunkText.trim()) {
+				const declLine = findDeclarationLine(lines, start);
 				chunks.push({
 					text: chunkText,
 					startLine: start + 1,
 					endLine: end,
-					symbol: extractSymbol(lines[start].trim(), language),
+					symbol: extractSymbol(lines[declLine].trim(), language),
 					chunkType: detectChunkType(chunkText, language),
 				});
 			}
