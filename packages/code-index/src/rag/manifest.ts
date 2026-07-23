@@ -4,7 +4,7 @@ import type { IndexManifest } from "./types.ts";
 
 export const INDEX_MANIFEST_SCHEMA_VERSION = 1;
 export const CHUNKER_NAME = "p-symbol-lines";
-export const CHUNKER_VERSION = "1";
+export const CHUNKER_VERSION = "2";
 
 function isManifest(value: unknown): value is IndexManifest {
 	if (!value || typeof value !== "object" || Array.isArray(value)) return false;

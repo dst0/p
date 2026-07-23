@@ -56,38 +56,60 @@ function detectChunkType(text: string, _language: string): string {
 	return "text";
 }
 
-/**
- * From a symbol-start line index, walk backward over contiguous
- * comment lines (single-line, block, JSDoc) and blank lines to include
- * leading JSDoc in the chunk.
- */
-function skipLeadingComments(lines: string[], startLine: number): number {
+function skipBlankLinesBackward(lines: string[], startLine: number): number {
 	let i = startLine;
-	while (i > 0) {
-		const prev = lines[i - 1];
-		if (prev.trim() === "") {
-			i -= 1;
-			continue;
-		}
-		if (commentLineRe.test(prev)) {
-			i -= 1;
-			continue;
-		}
-		break;
-	}
+	while (i > 0 && lines[i - 1].trim() === "") i -= 1;
 	return i;
 }
 
-const commentLineRe = /^\s*(\/\/|\/\*|\*\s*?|\/\*\*|\*\/)$/;
+/**
+ * From a symbol-start line index, walk backward over contiguous comments,
+ * decorators, and blank lines so documentation remains attached to the
+ * declaration it describes.
+ */
+function skipLeadingComments(lines: string[], startLine: number): number {
+	let i = skipBlankLinesBackward(lines, startLine);
+
+	while (i > 0 && lines[i - 1].trimStart().startsWith("@")) {
+		i = skipBlankLinesBackward(lines, i - 1);
+	}
+
+	const previous = lines[i - 1]?.trim();
+	if (previous?.startsWith("//")) {
+		while (i > 0 && lines[i - 1].trimStart().startsWith("//")) i -= 1;
+		return i;
+	}
+
+	if (previous?.endsWith("*/")) {
+		for (let blockStart = i - 1; blockStart >= 0; blockStart -= 1) {
+			if (lines[blockStart].trimStart().startsWith("/*")) return blockStart;
+		}
+	}
+
+	return i;
+}
 
 /**
  * Given the first line of a chunk (which may be a comment), find the line
- * that contains the actual symbol declaration by skipping leading comments/blanks.
+ * that contains the actual symbol declaration by skipping comments, blanks,
+ * and decorators.
  */
 function findDeclarationLine(lines: string[], startLine: number): number {
 	let i = startLine;
+	let inBlockComment = false;
 	while (i < lines.length) {
-		if (lines[i].trim() === "" || commentLineRe.test(lines[i])) {
+		const trimmed = lines[i].trim();
+		if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("@")) {
+			i += 1;
+			continue;
+		}
+		if (inBlockComment) {
+			if (trimmed.includes("*/")) inBlockComment = false;
+			i += 1;
+			continue;
+		}
+		if (trimmed.startsWith("/*")) {
+			inBlockComment = !trimmed.includes("*/");
 			i += 1;
 			continue;
 		}
@@ -146,9 +168,12 @@ function chunkBySymbols(
 	rawBoundaries.push(totalLines);
 
 	const boundaries: number[] = [rawBoundaries[0]];
-	for (let i = 1; i < rawBoundaries.length; i++) {
-		boundaries.push(skipLeadingComments(lines, rawBoundaries[i]));
+	for (let i = 1; i < rawBoundaries.length - 1; i++) {
+		const boundary = skipLeadingComments(lines, rawBoundaries[i]);
+		if (boundary > boundaries[boundaries.length - 1]) boundaries.push(boundary);
 	}
+	// The EOF sentinel must never move backward, otherwise trailing comments disappear.
+	if (boundaries[boundaries.length - 1] !== totalLines) boundaries.push(totalLines);
 
 	const chunks: Chunk[] = [];
 

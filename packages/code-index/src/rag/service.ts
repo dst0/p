@@ -426,32 +426,19 @@ export class WorkspaceCodeRagService implements CodeRagService {
 					: this.manifestIncompatibility(this.manifest)
 				: "Index is not initialized";
 
-			// Compute drift early so we can decide whether to rebuild vocabulary even on no-change turns
+			// Sparse vocabulary changes require a new generation so stored and query token indices stay aligned
 			const previousFileCount = Object.keys(this.manifest?.files ?? {}).length;
 			const currentDriftCount = (this.manifest?.sparse.driftFileCount ?? 0) + changedFileCount;
 			const driftRatio = currentDriftCount / Math.max(previousFileCount, 1);
 			const sparseDriftExceeded = driftRatio > this.settings.sparseRebuildDriftRatio;
 
-			if (changedFileCount === 0 && this.manifest && !options.forceSparseRebuild && incompatibility === undefined) {
-				if (sparseDriftExceeded) {
-					// No file changes but vocabulary has drifted — rebuild vocabulary without re-embedding
-					const nextManifest = structuredClone(this.manifest);
-					await this.rebuildSparseVocabulary(nextManifest, signal);
-					for (const file of plan.unchanged) {
-						const entry = nextManifest.files[file.path];
-						if (entry) nextManifest.files[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
-					}
-					nextManifest.state = "ready";
-					nextManifest.updatedAt = this.now().toISOString();
-					delete nextManifest.lastError;
-					writeManifestAtomic(this.manifestPath, nextManifest);
-					this.manifest = nextManifest;
-					this.state = "ready";
-					this.staleReason = undefined;
-					this.lastError = undefined;
-					this.reportProgress(options.onProgress, "finalizing", 100);
-					return this.summaryForPlan(plan, startedAt, 0, false);
-				}
+			if (
+				changedFileCount === 0 &&
+				this.manifest &&
+				!options.forceSparseRebuild &&
+				incompatibility === undefined &&
+				!sparseDriftExceeded
+			) {
 				for (const file of plan.unchanged) {
 					const entry = this.manifest.files[file.path];
 					if (entry) this.manifest.files[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
@@ -473,15 +460,12 @@ export class WorkspaceCodeRagService implements CodeRagService {
 				options.forceSparseRebuild ||
 				!this.manifest ||
 				incompatibility !== undefined ||
+				sparseDriftExceeded ||
 				changeRatio > this.settings.fullSparseRebuildChangeRatio
 			) {
 				return await this.performRebuild(scanned, plan, startedAt, signal, options.onProgress);
 			}
 
-			// When drift is high but change ratio is low, do incremental refresh then rebuild vocabulary
-			if (sparseDriftExceeded) {
-				return await this.performIncrementalRefresh(plan, startedAt, signal, options.onProgress, true);
-			}
 			return await this.performIncrementalRefresh(plan, startedAt, signal, options.onProgress);
 		} catch (error) {
 			const mapped = mapOperationError(error, signal);
@@ -624,16 +608,12 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		}
 	}
 
-	/**
-	 * Incremental refresh: embed only changed files, delete removed ones, update manifest.
-	 * Optionally rebuilds the sparse vocabulary when drift exceeds the threshold.
-	 */
+	/** Incremental refresh: embed only changed files, delete removed ones, and update the manifest. */
 	private async performIncrementalRefresh(
 		plan: RefreshPlan,
 		startedAt: number,
 		signal: AbortSignal,
 		onProgress: RefreshIndexOptions["onProgress"],
-		rebuildVocabulary = false,
 	): Promise<IndexUpdateSummary> {
 		if (!this.manifest) throw new CodeRagError("RAG_NOT_INITIALIZED", "Code RAG index is not initialized");
 		const status = await this.vectorStore.collectionStatus(this.manifest.collection);
@@ -706,10 +686,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		nextManifest.chunkCount = Object.values(nextManifest.files).reduce((total, file) => total + file.chunkCount, 0);
 		nextManifest.sparse.driftFileCount += plan.added.length + plan.changed.length + plan.deleted.length;
 
-		if (rebuildVocabulary) {
-			await this.rebuildSparseVocabulary(nextManifest, signal);
-		}
-
 		delete nextManifest.lastError;
 		writeManifestAtomic(this.manifestPath, nextManifest);
 		this.manifest = nextManifest;
@@ -718,49 +694,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
 		this.lastError = undefined;
 		this.reportProgress(onProgress, "finalizing", 100);
 		return this.summaryForPlan(plan, startedAt, chunksEmbedded, false);
-	}
-
-	/**
-	 * Rebuild the BM25 sparse vocabulary from current workspace files without re-encoding dense vectors.
-	 * This corrects sparse weight drift when many files have changed since the vocabulary was frozen.
-	 */
-	private async rebuildSparseVocabulary(manifest: IndexManifest, signal: AbortSignal): Promise<void> {
-		// Rebuild sparse vocabulary from workspace files without re-embedding vectors
-		const vocabulary = new BM25Vocabulary();
-		const files = Object.entries(manifest.files);
-		for (const [relPath, _entry] of files) {
-			if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-			const absPath = path.join(this.workspaceRoot, relPath);
-			try {
-				const fileContent = fs.readFileSync(absPath, "utf-8");
-				const language = detectLanguage(absPath);
-				const chunks = chunkFile(
-					fileContent,
-					language,
-					this.settings.defaultChunkLines,
-					this.settings.maxChunkLines,
-				);
-				for (const chunk of chunks) {
-					vocabulary.register(
-						buildRetrievalText(
-							relPath,
-							language,
-							chunk.symbol,
-							chunk.chunkType,
-							chunk.text,
-							this.settings.maxEncodeCharacters,
-						),
-					);
-				}
-			} catch {
-				// File may have been deleted or is unreadable; skip without failing
-			}
-		}
-		vocabulary.finalize();
-		const vocabularyPath = this.vocabularyPath(manifest.sparse.generation);
-		vocabulary.save(vocabularyPath);
-		this.cachedVocabulary = vocabulary;
-		this.cachedVocabularyGeneration = manifest.sparse.generation;
 	}
 
 	private refreshSettingsSilently(): void {
