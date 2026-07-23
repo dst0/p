@@ -2,12 +2,15 @@
 
 ## [Unreleased]
 
+## [0.4.38] - 2026-07-23
+
 ### Changed
 
 - Display version before repository path on the first line of the TUI footer instead of stats line.
 
 ### Added
 
+- Add `install.sh` for cross-platform (Ubuntu/macOS) dependency detection and installation, including Node.js, and update README with installation instructions.
 - Add `/index up` to move the active repository to the top of the system indexing queue, safely preempt lower-priority background work, and surface progress in the existing footer indicator.
 
 ### Fixed

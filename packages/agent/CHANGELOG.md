@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.38] - 2026-07-23
+
 ### Fixed
 
 - Preserve cache-stable next-turn checkpoint messages and only reset completion progress after successful tool execution

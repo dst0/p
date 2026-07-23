@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.4.38] - 2026-07-23
+
 ### Fixed
 
 - Kept generated model catalogs stable during ordinary builds; refresh them explicitly with `npm run generate`.
