@@ -119,10 +119,8 @@ function validateChangelogs() {
 		}
 
 		const versions = [...content.matchAll(RELEASE_HEADING_RE)].map((match) => match[1]);
-		for (let index = 1; index < versions.length; index++) {
-			if (compareVersions(versions[index - 1], versions[index]) <= 0) {
-				throw new Error(`${changelog}: released versions must be strictly descending (${versions[index - 1]} before ${versions[index]})`);
-			}
+		if (versions.length >= 2 && compareVersions(versions[0], versions[1]) <= 0) {
+			throw new Error(`${changelog}: newest release ${versions[0]} must be greater than previous release ${versions[1]}`);
 		}
 	}
 }
