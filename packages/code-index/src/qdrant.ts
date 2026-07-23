@@ -117,7 +117,7 @@ export class QdrantClient {
 
 		const scores = new Map<string | number, number>();
 		const payloads = new Map<string | number, Record<string, unknown> | null | undefined>();
-		const k = 60;
+		const k = 15;
 
 		denseResults.forEach((r, i) => {
 			scores.set(r.id, (scores.get(r.id) ?? 0) + 1 / (k + i + 1));

@@ -297,7 +297,7 @@ export class QdrantVectorStore implements RagVectorStore {
 
 		const scores = new Map<string | number, number>();
 		const payloads = new Map<string | number, StoredChunkPayload>();
-		const rrfK = 60;
+		const rrfK = 15;
 		for (const [rank, result] of denseResults.entries()) {
 			scores.set(result.id, (scores.get(result.id) ?? 0) + 1 / (rrfK + rank + 1));
 			if (result.payload) payloads.set(result.id, result.payload as unknown as StoredChunkPayload);

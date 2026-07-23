@@ -277,6 +277,7 @@ export interface WorkspaceCodeRagSettings {
 	upsertBatchSize: number;
 	maxEncodeCharacters: number;
 	fullSparseRebuildChangeRatio: number;
+	sparseRebuildDriftRatio: number;
 	collectionPrefix: string;
 }
 

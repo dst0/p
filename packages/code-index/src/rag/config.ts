@@ -16,7 +16,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 	embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
 	embeddingDimensions: 1024,
 	pythonExecutable: "python3",
-	defaultLimit: 8,
+	defaultLimit: 15,
 	maxLimit: 20,
 	maxContextCharacters: 16_000,
 	maxResultCharacters: 4_000,
@@ -26,10 +26,11 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 	maxFileBytes: 1024 * 1024,
 	defaultChunkLines: 80,
 	maxChunkLines: 300,
-	encodeBatchSize: 32,
-	upsertBatchSize: 64,
-	maxEncodeCharacters: 2048,
+	encodeBatchSize: 64,
+	upsertBatchSize: 128,
+	maxEncodeCharacters: 4096,
 	fullSparseRebuildChangeRatio: 0.05,
+	sparseRebuildDriftRatio: 0.2,
 	collectionPrefix: "p_code_chunks",
 };
 
@@ -56,6 +57,7 @@ const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
 	"upsertBatchSize",
 	"maxEncodeCharacters",
 	"fullSparseRebuildChangeRatio",
+	"sparseRebuildDriftRatio",
 ]);
 const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
 	"qdrantUrl",
@@ -138,6 +140,9 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
 	}
 	if (settings.fullSparseRebuildChangeRatio < 0 || settings.fullSparseRebuildChangeRatio > 1) {
 		throw new Error("Code RAG fullSparseRebuildChangeRatio must be between 0 and 1");
+	}
+	if (settings.sparseRebuildDriftRatio < 0 || settings.sparseRebuildDriftRatio > 1) {
+		throw new Error("Code RAG sparseRebuildDriftRatio must be between 0 and 1");
 	}
 	for (const value of [
 		settings.qdrantStartupTimeoutMs,
