@@ -1,0 +1,48 @@
+name: Diagnose finish_work regression test
+
+on:
+  pull_request:
+    branches:
+      - main
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  diagnose:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run focused regression test
+        id: test
+        continue-on-error: true
+        run: |
+          npx vitest --run packages/coding-agent/test/suite/regressions/finish-work-auto-prepend.test.ts > /tmp/finish-work-test.log 2>&1
+
+      - name: Report focused result
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          {
+            echo 'Focused finish_work regression test output:'
+            echo
+            echo '```text'
+            tail -n 240 /tmp/finish-work-test.log
+            echo '```'
+          } > /tmp/comment.md
+          gh pr comment ${{ github.event.pull_request.number }} --body-file /tmp/comment.md
+
+      - name: Preserve failure status
+        if: steps.test.outcome == 'failure'
+        run: exit 1
