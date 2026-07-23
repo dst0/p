@@ -2,13 +2,13 @@
 
 ## [Unreleased]
 
-## [0.4.40] - 2026-07-24
-
 ## [0.4.41] - 2026-07-23
 
 ### Fixed
 
 - Validate `finish_work` payloads in the completion protocol: reject empty summaries and block `status: 'success'` with non-empty `remaining_work`.
+
+## [0.4.40] - 2026-07-24
 
 ## [0.4.38] - 2026-07-23
 

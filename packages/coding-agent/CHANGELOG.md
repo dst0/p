@@ -2,18 +2,22 @@
 
 ## [Unreleased]
 
-## [0.4.40] - 2026-07-24
+### Fixed
 
-### Added
-
-- Auto-reconcile session state when the agent calls `finish_work(status: 'success')`: automatically transition `not_started` and `in_progress` plan items to `done` so the consistency gate passes without a protocol-repair turn.
-- Strengthen system prompt completion protocol: require the agent to examine `<working_state>` before calling `finish_work`, verify all plan items are genuinely done, complete remaining work if not, and repeat until all tasks are complete before calling `finish_work` with status `success`.
+- Validate changelog structure before release, require descending release versions, and document UTC release dates.
 
 ## [0.4.41] - 2026-07-23
 
 ### Fixed
 
 - Fix `finish_work` reconciliation timing: auto-reconcile only after confirming the next tool call is not an error, so validation failures preserve plan state for agent repair.
+
+## [0.4.40] - 2026-07-24
+
+### Added
+
+- Auto-reconcile session state when the agent calls `finish_work(status: 'success')`: automatically transition `not_started` and `in_progress` plan items to `done` so the consistency gate passes without a protocol-repair turn.
+- Strengthen system prompt completion protocol: require the agent to examine `<working_state>` before calling `finish_work`, verify all plan items are genuinely done, complete remaining work if not, and repeat until all tasks are complete before calling `finish_work` with status `success`.
 
 ## [0.4.38] - 2026-07-23
 
