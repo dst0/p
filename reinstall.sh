@@ -81,6 +81,10 @@ if (settings.triggerReserveTokens !== 2000) { console.error('ERROR: triggerReser
 console.log('Compaction settings verified OK');
 "
 
+# Stop accepting new indexing work and let active repository operations finish
+# before the service manager replaces the daemon and its managed backends.
+node scripts/prepare-indexing-service-reinstall.mjs
+
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js
 
