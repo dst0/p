@@ -500,6 +500,28 @@ function getFinishWorkStatus(args: unknown): string | undefined {
 	return isRecord(args) && typeof args.status === "string" ? args.status : undefined;
 }
 
+/**
+ * Transition not_started and in_progress plan items to done.
+ * Does NOT touch failed or blocked items — those remain suspicious.
+ */
+function reconcilePlanItemsForSuccessFinish(state: StructuredSessionState): StructuredSessionState | undefined {
+	let changed = false;
+	const plan = state.plan.map((item) => {
+		if (item.status === "not_started" || item.status === "in_progress") {
+			changed = true;
+			return { ...item, status: "done" as const };
+		}
+		return item;
+	});
+	if (!changed) {
+		return undefined;
+	}
+	return {
+		...state,
+		plan,
+	};
+}
+
 function getFinishWorkRemainingWork(args: unknown): string[] {
 	if (!isRecord(args) || !Array.isArray(args.remaining_work)) {
 		return [];
@@ -1477,9 +1499,16 @@ export class AgentSession {
 				this._autoExecuteUpdateSessionStateForFinishWork();
 			}
 			if (toolCall.name === FINISH_WORK_TOOL_NAME) {
+				const status = getFinishWorkStatus(args);
+				if (status === "success") {
+					this._reconcileSuccessfulFinishWorkState();
+				}
 				const blockReason = this._getFinishWorkSessionStateBlockReason(args);
 				if (blockReason) {
 					this._autoExecuteUpdateSessionStateForFinishWork();
+					if (status === "success") {
+						this._reconcileSuccessfulFinishWorkState();
+					}
 					const updatedBlockReason = this._getFinishWorkSessionStateBlockReason(args);
 					if (updatedBlockReason) {
 						return { block: true, reason: updatedBlockReason };
@@ -3574,6 +3603,28 @@ Plan mode is active because the user invoked /plan.
 		this._applyUpdateSessionState(params);
 		this._progressUpdateRequiredBeforeFinish = false;
 		this._stateUpdateRequiredForCurrentUserTurn = false;
+	}
+
+	/**
+	 * When finish_work(status: "success") is called, treat it as the authoritative
+	 * final declaration and auto-transition not_started / in_progress plan items
+	 * to done so the consistency gate passes without a protocol-repair turn.
+	 * Does NOT touch failed or blocked items — those remain suspicious.
+	 */
+	private _reconcileSuccessfulFinishWorkState(): void {
+		const branchEntries = this.sessionManager.getBranch();
+		const state =
+			getLatestStructuredSessionState(branchEntries) ??
+			readSessionStateFile(this._cwd, this.sessionManager.getSessionId());
+		if (!state) {
+			return;
+		}
+		const reconciled = reconcilePlanItemsForSuccessFinish(state);
+		if (!reconciled) {
+			return;
+		}
+		this.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, reconciled);
+		writeSessionStateFile(this._cwd, reconciled);
 	}
 
 	private _createStatePatchFromUpdateSessionStateInput(

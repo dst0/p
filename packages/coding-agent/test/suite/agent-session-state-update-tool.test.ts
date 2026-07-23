@@ -55,8 +55,6 @@ describe("AgentSession default session-state tool", () => {
 				fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
 				fauxAssistantMessage(updateStateCall("Read note.txt and report the result"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
-				fauxAssistantMessage(finishCall("premature finish"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(finishCall("read note"), { stopReason: "toolUse" }),
 			]);
 
@@ -68,11 +66,10 @@ describe("AgentSession default session-state tool", () => {
 			expect(JSON.stringify(readEnds[0]?.result.content)).toContain(UPDATE_TOOL);
 			expect(readEnds[1]?.isError).toBe(false);
 			expect(toolEndEvents(harness, UPDATE_TOOL)[0]?.isError).toBe(false);
+			// Auto-reconciliation: finish_work('success') auto-transitions in_progress items to done, succeeds in one call
 			const finishEnds = toolEndEvents(harness, "finish_work");
-			expect(finishEnds).toHaveLength(2);
-			expect(finishEnds[0]?.isError).toBe(true);
-			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain(PROGRESS_TOOL);
-			expect(finishEnds[1]?.isError).toBe(false);
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(false);
 			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
 			expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
 			expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
@@ -165,16 +162,26 @@ describe("AgentSession default session-state tool", () => {
 		}
 	});
 
-	it("blocks successful finish_work while session state has unresolved plan items", async () => {
+	it("blocks successful finish_work while session state has failed/blocked plan items", async () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([
-				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Do all tracked work",
+						plan: [
+							{ text: "Completed task", status: "done" },
+							{ text: "Failed task", status: "failed" },
+						],
+					}),
+					{ stopReason: "toolUse" },
+				),
 				fauxAssistantMessage(finishCall("done too early"), { stopReason: "toolUse" }),
 				fauxAssistantMessage(
 					finishCall("partially complete", {
 						status: "partial",
-						remainingWork: ["Inspect the requested file"],
+						remainingWork: ["Failed task"],
 					}),
 					{ stopReason: "toolUse" },
 				),

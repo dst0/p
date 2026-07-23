@@ -123,12 +123,44 @@ describe("finish_work auto-prepend session state update", () => {
 		}
 	});
 
-	it("finish_work still fails when auto-update cannot resolve unresolved plan items", async () => {
+	it("auto-completes unresolved plan items on successful finish_work", async () => {
 		const harness = await createHarness();
 		try {
 			harness.setResponses([
 				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
-				fauxAssistantMessage(finishCall("done too early"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(finishCall("completed"), { stopReason: "toolUse" }),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(false);
+
+			const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+
+			expect(state?.plan).toEqual([
+				expect.objectContaining({
+					text: "Inspect the requested file",
+					status: "done",
+				}),
+			]);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("partial with empty remaining_work remains blocked when work is unresolved", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("partially complete", {
+						status: "partial",
+					}),
+					{ stopReason: "toolUse" },
+				),
 				fauxAssistantMessage(
 					finishCall("partially complete", {
 						status: "partial",
@@ -145,6 +177,82 @@ describe("finish_work auto-prepend session state update", () => {
 			expect(finishEnds[0]?.isError).toBe(true);
 			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("unresolved work");
 			expect(finishEnds[1]?.isError).toBe(false);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("partial with populated remaining_work succeeds", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(updateStateCall("Do all tracked work"), { stopReason: "toolUse" }),
+				fauxAssistantMessage(
+					finishCall("partially complete", {
+						status: "partial",
+						remainingWork: ["Inspect the requested file"],
+					}),
+					{ stopReason: "toolUse" },
+				),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(false);
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("success with failed plan items remains blocked", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Do all tracked work",
+						plan: [{ text: "Inspect the requested file", status: "failed" }],
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(finishCall("done anyway"), { stopReason: "toolUse" }),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("unresolved work");
+		} finally {
+			harness.cleanup();
+		}
+	});
+
+	it("success with blocked plan items remains blocked", async () => {
+		const harness = await createHarness();
+		try {
+			harness.setResponses([
+				fauxAssistantMessage(
+					fauxToolCall(UPDATE_TOOL, {
+						action: "initial_plan",
+						goal: "Do all tracked work",
+						plan: [{ text: "Inspect the requested file", status: "blocked" }],
+					}),
+					{ stopReason: "toolUse" },
+				),
+				fauxAssistantMessage(finishCall("done anyway"), { stopReason: "toolUse" }),
+			]);
+
+			await harness.session.prompt("Do all tracked work");
+
+			const finishEnds = toolEndEvents(harness, "finish_work");
+			expect(finishEnds).toHaveLength(1);
+			expect(finishEnds[0]?.isError).toBe(true);
+			expect(JSON.stringify(finishEnds[0]?.result.content)).toContain("unresolved work");
 		} finally {
 			harness.cleanup();
 		}
