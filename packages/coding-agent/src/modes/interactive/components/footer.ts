@@ -77,7 +77,9 @@ function formatEta(seconds: number): string {
 	const rounded = Math.max(0, Math.round(seconds));
 	if (rounded < 120) return `${rounded}s`;
 	const minutes = rounded / 60;
-	return `${minutes.toFixed(1)}m`;
+	if (minutes < 60) return `${minutes.toFixed(1)}m`;
+	const hours = minutes / 60;
+	return `${hours.toFixed(1)}h`;
 }
 
 export function formatIndexingStatus(status: IndexStatus): string {
@@ -98,7 +100,7 @@ export function formatIndexingStatus(status: IndexStatus): string {
 				(status.progress?.startedAt && percent > 0
 					? ((Date.now() - Date.parse(status.progress.startedAt)) / 1000 / percent) * (100 - percent)
 					: undefined);
-			if (etaSeconds !== undefined && etaSeconds > 0 && etaSeconds < 3600) {
+			if (etaSeconds !== undefined && etaSeconds > 0) {
 				etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
 			}
 			return `🔎 ${percentStr}${etaStr}`;

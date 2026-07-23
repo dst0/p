@@ -222,8 +222,8 @@ describe("formatIndexingStatus", () => {
 		).toBe("🔎 50.0%");
 	});
 
-	it("omits ETA when eta exceeds 1 hour", () => {
-		const startedAt = new Date(Date.now() - 120_000).toISOString();
+	it("formats ETA in hours when eta exceeds 1 hour", () => {
+		const startedAt = new Date(Date.now() - 120_000).toISOString(); // 2 minutes to do 1% means 200 minutes total (3.3 hours)
 		expect(
 			formatIndexingStatus({
 				decision: "enabled",
@@ -232,7 +232,7 @@ describe("formatIndexingStatus", () => {
 				ragState: "updating",
 				progress: { phase: "indexing", percent: 1, startedAt },
 			}),
-		).toBe("🔎 1.0%");
+		).toBe("🔎 1.0% (ETA: 3.3h)");
 	});
 
 	it("uses explicit etaSeconds from progress when present", () => {
