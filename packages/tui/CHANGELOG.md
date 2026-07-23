@@ -11,6 +11,7 @@
 ## [0.2.0] - 2026-06-28
 
 ### Changed
+
 - Bumped all packages to 0.2.0
 
 ## [0.79.4] - 2026-06-15
@@ -304,7 +305,6 @@
 - Fixed slash-command Tab completion from immediately chaining into argument autocomplete after completing the command name, restoring flows like `/model` that submit into a selector dialog ([#2577](https://github.com/badlogic/pi-mono/issues/2577))
 - Fixed stale content and incorrect viewport tracking after TUI content shrinks or transient components inflate the working area ([#2126](https://github.com/badlogic/pi-mono/pull/2126) by [@Perlence](https://github.com/Perlence))
 - Fixed `@` autocomplete to debounce editor-triggered searches, cancel in-flight `fd` lookups cleanly, and keep suggestions visible while results refresh ([#1278](https://github.com/badlogic/pi-mono/issues/1278))
-
 
 ## [0.62.0] - 2026-03-23
 
