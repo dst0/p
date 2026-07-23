@@ -62,6 +62,22 @@ If you need stronger boundaries, containerize or sandbox p. See [packages/coding
 - **Plain Docker**: run the whole `p` process in a local container for simple isolation.
 - **OpenShell**: run the whole `p` process in a policy-controlled sandbox.
 
+## Installation
+
+On a fresh Ubuntu or macOS system, run:
+
+```bash
+./install.sh
+```
+
+This detects your OS, installs any missing dependencies (Node.js >= 22.19.0, Python 3.12+, curl, git, build tools), and then builds p locally. On macOS it uses Homebrew (installs it automatically if absent).
+
+After installation verify with:
+
+```bash
+p --version
+```
+
 ## Contributing
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for contribution guidelines and [AGENTS.md](AGENTS.md) for project-specific rules (for both humans and agents).
