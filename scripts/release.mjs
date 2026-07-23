@@ -25,6 +25,8 @@ import { join } from "path";
 const RELEASE_TARGET = process.argv[2];
 const BUMP_TYPES = new Set(["major", "minor", "patch"]);
 const SEMVER_RE = /^\d+\.\d+\.\d+$/;
+const CHANGELOG_HEADER = "# Changelog\n\n## [Unreleased]\n\n";
+const RELEASE_HEADING_RE = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/gm;
 
 if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
 	console.error("Usage: node scripts/release.mjs <major|minor|patch|x.y.z>");
@@ -96,6 +98,10 @@ function bumpOrSetVersion(target) {
 	return getVersion();
 }
 
+function getUtcDate() {
+	return new Date().toISOString().slice(0, 10);
+}
+
 function getChangelogs() {
 	const packagesDir = "packages";
 	const packages = readdirSync(packagesDir);
@@ -104,21 +110,30 @@ function getChangelogs() {
 		.filter((path) => existsSync(path));
 }
 
+function validateChangelogs() {
+	for (const changelog of getChangelogs()) {
+		const content = readFileSync(changelog, "utf-8");
+		const unreleasedCount = content.match(/^## \[Unreleased\]$/gm)?.length ?? 0;
+		if (unreleasedCount !== 1 || !content.startsWith(CHANGELOG_HEADER)) {
+			throw new Error(`${changelog}: [Unreleased] must appear exactly once as the first section after # Changelog`);
+		}
+
+		const versions = [...content.matchAll(RELEASE_HEADING_RE)].map((match) => match[1]);
+		if (versions.length >= 2 && compareVersions(versions[0], versions[1]) <= 0) {
+			throw new Error(`${changelog}: newest release ${versions[0]} must be greater than previous release ${versions[1]}`);
+		}
+	}
+}
+
 function updateChangelogsForRelease(version) {
-	const date = new Date().toISOString().split("T")[0];
+	const date = getUtcDate();
 	const changelogs = getChangelogs();
 
 	for (const changelog of changelogs) {
 		const content = readFileSync(changelog, "utf-8");
-
-		if (!content.includes("## [Unreleased]")) {
-			console.log(`  Skipping ${changelog}: no [Unreleased] section`);
-			continue;
-		}
-
 		const updated = content.replace(
-			"## [Unreleased]",
-			`## [${version}] - ${date}`
+			CHANGELOG_HEADER,
+			`# Changelog\n\n## [${version}] - ${date}\n\n`,
 		);
 		writeFileSync(changelog, updated);
 		console.log(`  Updated ${changelog}`);
@@ -155,46 +170,51 @@ if (status && status.trim()) {
 }
 console.log("  Working directory clean\n");
 
-// 2. Bump or set version
+// 2. Validate changelogs before mutating versions
+console.log("Validating changelogs...");
+validateChangelogs();
+console.log("  Changelog structure valid\n");
+
+// 3. Bump or set version
 const version = bumpOrSetVersion(RELEASE_TARGET);
 console.log(`  New version: ${version}\n`);
 
-// 3. Update changelogs
+// 4. Update changelogs
 console.log("Updating CHANGELOG.md files...");
 updateChangelogsForRelease(version);
 console.log();
 
-// 4. Regenerate release artifacts
+// 5. Regenerate release artifacts
 console.log("Regenerating release artifacts...");
 run("npm --prefix packages/ai run generate-models");
 run("npm --prefix packages/ai run generate-image-models");
 run("npm run shrinkwrap:coding-agent");
 console.log();
 
-// 5. Run checks
+// 6. Run checks
 console.log("Running checks...");
 run("npm run check");
 console.log();
 
-// 6. Commit and tag
+// 7. Commit and tag
 console.log("Committing and tagging...");
 stageChangedFiles();
 run(`git commit -m "Release v${version}"`);
 run(`git tag v${version}`);
 console.log();
 
-// 7. Add new [Unreleased] sections
+// 8. Add new [Unreleased] sections
 console.log("Adding [Unreleased] sections for next cycle...");
 addUnreleasedSection();
 console.log();
 
-// 8. Commit
+// 9. Commit
 console.log("Committing changelog updates...");
 stageChangedFiles();
 run(`git commit -m "Add [Unreleased] section for next cycle"`);
 console.log();
 
-// 9. Push
+// 10. Push
 console.log("Pushing to remote...");
 run("git push origin main");
 run(`git push origin v${version}`);

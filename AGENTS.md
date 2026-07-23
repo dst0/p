@@ -122,8 +122,11 @@ Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring 
 
 Rules:
 
+- `## [Unreleased]` must appear exactly once and must be the first level-two section immediately after `# Changelog`.
 - All new entries go under `## [Unreleased]`. Read the full section first and append to existing subsections; never duplicate them.
-- Released version sections (e.g. `## [0.12.2]`) are immutable; never modify them.
+- Each new release section must be inserted immediately below `[Unreleased]` and must have a greater semantic version than the previously topmost released section; do not reorder historical legacy sections.
+- Release dates use the UTC calendar date in `YYYY-MM-DD` format, derived from `new Date().toISOString().slice(0, 10)`; never substitute a local timezone date.
+- Released version sections (e.g. `## [0.12.2]`) are immutable except when correcting ordering or release metadata errors; never move entries between released versions.
 
 Attribution:
 
@@ -134,7 +137,7 @@ Attribution:
 
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
-1. **Update CHANGELOGs**: ask the user whether they ran the `/cl` prompt on the latest commit on `main`. If not, they must run `/cl` first to audit and update each package's `[Unreleased]` section before releasing.
+1. **Update and validate CHANGELOGs**: ask the user whether they ran the `/cl` prompt on the latest commit on `main`. If not, they must run `/cl` first to audit and update each package's `[Unreleased]` section before releasing. Before any version bump, verify every changelog has exactly one topmost `[Unreleased]` section, the newest released version is greater than the previously topmost release, and all release dates are UTC dates.
 
 2. **Local smoke test**: build an unpublished release and smoke test from outside the repo (so it can't resolve workspace files):
 
