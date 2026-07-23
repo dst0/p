@@ -52,7 +52,7 @@
     }
   },
   "bin": {
-    "p-ai": "./dist/cli.js"
+    "p-ai": "dist/cli.js"
   },
   "files": [
     "dist",
