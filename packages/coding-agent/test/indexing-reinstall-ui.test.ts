@@ -46,7 +46,7 @@ describe("indexing reinstall UI continuity", () => {
 		});
 	});
 
-	it("does not hide a real outage behind a stale or unrelated reinstall marker", () => {
+	it("does not hide a real outage behind an invalid reinstall marker", () => {
 		const fixture = createFixture();
 		const daemonPid = 99_999_999;
 		enableIndexingForRepo(fixture.repo, fixture.agentDir);
@@ -70,6 +70,9 @@ describe("indexing reinstall UI continuity", () => {
 		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).serviceRunning).toBe(false);
 
 		writeReinstallMarker(fixture.agentDir, daemonPid + 1, new Date().toISOString());
+		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).serviceRunning).toBe(false);
+
+		writeReinstallMarker(fixture.agentDir, daemonPid, new Date(Date.now() + 60_000).toISOString());
 		expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).serviceRunning).toBe(false);
 	});
 });
