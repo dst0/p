@@ -1,0 +1,37 @@
+name: Temporary cleanup indexing reinstall experiment
+
+on:
+  push:
+    branches: [agent/semantic-verification-gates]
+    paths:
+      - .github/workflows/temp-clean-indexing-reinstall-experiment.yml
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/semantic-verification-gates
+          fetch-depth: 0
+      - name: Restore unrelated indexing files
+        run: |
+          git checkout 92b5c7a23d35c887e421ccdc24e84a1dee7d7e7b -- \
+            packages/coding-agent/src/core/indexing-daemon.ts \
+            packages/coding-agent/test/indexing-reinstall-lifecycle.test.ts \
+            packages/coding-agent/test/indexing-reinstall-ui.test.ts
+          rm -f packages/coding-agent/src/core/indexing-reinstall-progress.ts
+      - name: Commit cleanup
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add \
+            packages/coding-agent/src/core/indexing-daemon.ts \
+            packages/coding-agent/test/indexing-reinstall-lifecycle.test.ts \
+            packages/coding-agent/test/indexing-reinstall-ui.test.ts
+          git add -u packages/coding-agent/src/core/indexing-reinstall-progress.ts
+          git diff --cached --quiet || git commit -m "chore(coding-agent): remove unrelated indexing reinstall experiment"
+          git push origin HEAD:agent/semantic-verification-gates
