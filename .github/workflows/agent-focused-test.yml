@@ -1,9 +1,8 @@
 name: Agent focused reinstall test
 
 on:
-  push:
-    branches:
-      - agent/fix-reinstall-indexing-hang
+  pull_request:
+    branches: [main]
 
 permissions:
   contents: read
