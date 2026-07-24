@@ -46,9 +46,9 @@ while IFS= read -r P_COMMAND; do
     fi
 done < <(type -a -p p 2>/dev/null || true)
 for LINK_PREFIX in "${LINK_PREFIXES[@]}"; do
-    if ! npm_config_prefix="$LINK_PREFIX" "$NPM_BIN" link -w @dst0/p --ignore-scripts; then
+    if ! npm_config_prefix="$LINK_PREFIX" "$NPM_BIN" link -w @dst0/p --ignore-scripts --no-audit --no-fund --loglevel=error; then
         if sudo -n true 2>/dev/null; then
-            sudo env npm_config_prefix="$LINK_PREFIX" "$NPM_BIN" link -w @dst0/p --ignore-scripts
+            sudo env npm_config_prefix="$LINK_PREFIX" "$NPM_BIN" link -w @dst0/p --ignore-scripts --no-audit --no-fund --loglevel=error
         else
             echo "Unable to relink p in $LINK_PREFIX without elevated permissions." >&2
             exit 1
@@ -89,8 +89,8 @@ if (settings.triggerReserveTokens !== 2000) { console.error('ERROR: triggerReser
 console.log('Compaction settings verified OK');
 "
 
-# Stop accepting new indexing work and let active repository operations finish
-# before the service manager replaces the daemon and its managed backends.
+# Give the indexing daemon a bounded opportunity to quiesce. If active work cannot
+# settle promptly, stop the validated daemon before replacing its managed service.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
 node scripts/prepare-indexing-service-reinstall.mjs
 

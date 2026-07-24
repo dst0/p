@@ -8,6 +8,8 @@
 
 ### Fixed
 
+- Bound code-index reinstall quiescence waits, stop a validated daemon that cannot settle promptly, and defer service-manager restarts until the reinstall marker is cleared.
+- Keep global `p` relinking quiet by disabling npm audit/funding summaries while preserving command failures.
 - Validate changelog structure before release, require descending release versions, and document UTC release dates.
 
 ## [0.4.41] - 2026-07-23
