@@ -38,6 +38,21 @@ jobs:
         run: npm run check
 
       - name: Test
+        id: test
+        continue-on-error: true
         run: |
           mkdir -p "$RUNNER_TEMP/p-ci-home"
-          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh
+          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh > "$RUNNER_TEMP/test.log" 2>&1
+
+      - name: Upload test diagnostics
+        if: steps.test.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: final-integration-test-diagnostics
+          path: ${{ runner.temp }}/test.log
+
+      - name: Fail failed tests
+        if: steps.test.outcome == 'failure'
+        run: |
+          tail -300 "$RUNNER_TEMP/test.log"
+          exit 1
