@@ -1,3 +1,4 @@
+import { isAbsolute, resolve } from "node:path";
 import type {
 	AfterToolCallContext,
 	AfterToolCallResult,
@@ -33,6 +34,8 @@ export interface TaskVerificationState {
 		conclusion?: string;
 		method?: BaselineMethod;
 		evidenceRefs: string[];
+		authorizedTestPaths: string[];
+		testSetupChanged: boolean;
 	};
 	final: {
 		status: "pending" | "passed" | "failed";
@@ -80,12 +83,14 @@ const FinalMethodSchema = Type.Union([
 const VerificationSchema = Type.Object({
 	action: Type.Union([
 		Type.Literal("declare_task"),
+		Type.Literal("authorize_baseline_test"),
 		Type.Literal("record_baseline"),
 		Type.Literal("record_final"),
 		Type.Literal("status"),
 	]),
 	task_kind: Type.Optional(TaskKindSchema),
 	task_summary: Type.Optional(Type.String()),
+	test_paths: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
 	hypothesis: Type.Optional(Type.String()),
 	conclusion: Type.Optional(Type.String()),
 	baseline_method: Type.Optional(BaselineMethodSchema),
@@ -116,12 +121,19 @@ const GENERIC_CHECK_PATTERN = /^\s*(?:npm\s+run\s+check|pnpm\s+run\s+check|yarn\
 const READ_ONLY_PATTERN = /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|git\s+(?:status|diff|show|log)\b)/iu;
 const TEST_PATTERN = /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+test|npm\s+test|pnpm\s+test|yarn\s+test|\.\/test\.sh)\b/iu;
 const FOCUSED_TEST_PATTERN = /(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
+const TEST_PATH_PATTERN = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[^/]+$/iu;
 
 function emptyState(): TaskVerificationState {
 	return {
 		version: 1,
 		mutationRevision: 0,
-		baseline: { required: false, status: "not_required", evidenceRefs: [] },
+		baseline: {
+			required: false,
+			status: "not_required",
+			evidenceRefs: [],
+			authorizedTestPaths: [],
+			testSetupChanged: false,
+		},
 		final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
 		updatedAt: new Date().toISOString(),
 	};
@@ -146,7 +158,15 @@ function isFinalMethod(value: unknown): value is FinalMethod {
 	return typeof value === "string" && (FINAL_METHODS as readonly string[]).includes(value);
 }
 function validState(value: unknown): value is TaskVerificationState {
-	return isRecord(value) && value.version === 1 && typeof value.mutationRevision === "number" && isRecord(value.baseline) && isRecord(value.final);
+	return (
+		isRecord(value) &&
+		value.version === 1 &&
+		typeof value.mutationRevision === "number" &&
+		isRecord(value.baseline) &&
+		Array.isArray(value.baseline.authorizedTestPaths) &&
+		typeof value.baseline.testSetupChanged === "boolean" &&
+		isRecord(value.final)
+	);
 }
 function validEvidence(value: unknown): value is TaskVerificationEvidence {
 	return isRecord(value) && value.version === 1 && typeof value.ref === "string" && typeof value.toolCallId === "string" && typeof value.toolName === "string" && typeof value.descriptor === "string" && typeof value.outputSummary === "string" && typeof value.isError === "boolean" && typeof value.mutationRevision === "number" && typeof value.timestamp === "string";
@@ -166,6 +186,10 @@ function isMutation(name: string, args: unknown): boolean {
 	if (name !== "bash" || isPublish(name, args)) return false;
 	const value = command(args);
 	return BASH_MUTATION_PATTERN.test(value) || WRITE_REDIRECT_PATTERN.test(value);
+}
+function pathArgument(args: unknown): string | undefined {
+	const value = argsRecord(args).path;
+	return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 function descriptor(name: string, args: unknown): string {
 	if (name === "bash") return command(args) || "bash";
@@ -229,18 +253,20 @@ export class TaskVerificationController {
 			name: TASK_VERIFICATION_TOOL_NAME,
 			label: "Task Verification",
 			description: "Record evidence-backed baseline and final semantic verification for mutating tasks.",
-			promptSnippet: "record_task_verification(action, ...): declare mutation intent, prove baseline behavior, and prove final behavior after the last mutation.",
+			promptSnippet: "record_task_verification(action, ...): declare mutation intent, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
 			promptGuidelines: [
 				`Before edit, write, or mutating bash, call ${TASK_VERIFICATION_TOOL_NAME} with action \"declare_task\".`,
-				"Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before mutation.",
+				"Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
+				"To create a failing regression test before implementation, first authorize exact test paths with action \"authorize_baseline_test\"; only those test files may be edited until the failing focused test is recorded.",
 				"Signal, restart, persistence, recovery, transaction, concurrency, migration, and indexing tasks require runtime reproduction or a failing focused regression test.",
-				"After the last mutation, record fresh behavior-specific verification. Generic check/lint output is not semantic proof.",
+				"After the last production mutation, record fresh behavior-specific verification. Generic check/lint output is not semantic proof.",
 				"Successful finish_work and git commit/push are blocked until final verification passes for the current mutation revision.",
 			],
 			parameters: VerificationSchema,
 			executionMode: "sequential",
 			execute: async (_id, params) => {
 				const result = this.apply(params);
+				if (result.status === "rejected") throw new Error(result.message);
 				return { content: [{ type: "text", text: result.message }], details: result };
 			},
 		};
@@ -252,13 +278,25 @@ export class TaskVerificationController {
 		if (name === "finish_work" && argsRecord(context.args).status !== "partial" && argsRecord(context.args).status !== "failed") return this.gate("finish successfully");
 		if (!isMutation(name, context.args)) return undefined;
 		if (!this.state.taskKind) return { block: true, reason: `Call ${TASK_VERIFICATION_TOOL_NAME} with action \"declare_task\" before mutating code.` };
-		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") return { block: true, reason: `Collect baseline evidence and call ${TASK_VERIFICATION_TOOL_NAME} with action \"record_baseline\" before implementation.` };
+		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
+			if (this.isAuthorizedBaselineTestMutation(name, context.args)) return undefined;
+			return { block: true, reason: `Collect baseline evidence or authorize exact regression-test paths before implementation.` };
+		}
 		return undefined;
 	}
 
 	private async after(context: AfterToolCallContext, prior: AfterToolCallResult | undefined): Promise<AfterToolCallResult | undefined> {
 		const isError = prior?.isError ?? context.isError;
 		if (!isError && isMutation(context.toolCall.name, context.args)) {
+			if (this.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
+				this.state = {
+					...this.state,
+					baseline: { ...this.state.baseline, testSetupChanged: true },
+					updatedAt: new Date().toISOString(),
+				};
+				this.persistState();
+				return prior;
+			}
 			this.state = { ...this.state, mutationRevision: this.state.mutationRevision + 1, final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] }, updatedAt: new Date().toISOString() };
 			this.persistState();
 			return prior;
@@ -287,6 +325,7 @@ export class TaskVerificationController {
 
 	private apply(input: VerificationInput): VerificationResult {
 		if (input.action === "declare_task") return this.declareTask(input);
+		if (input.action === "authorize_baseline_test") return this.authorizeBaselineTest(input);
 		if (input.action === "record_baseline") return this.recordBaseline(input);
 		if (input.action === "record_final") return this.recordFinal(input);
 		return this.ok(this.status());
@@ -297,9 +336,49 @@ export class TaskVerificationController {
 		if (this.state.mutationRevision > 0) return this.no("Cannot replace the task declaration after mutation; finish the current task first.");
 		const summary = text(input.task_summary);
 		const required = needsBaseline(input.task_kind, `${this.latestUserPrompt}\n${summary}`);
-		this.state = { ...emptyState(), taskKind: input.task_kind, taskSummary: summary, baseline: { required, status: required ? "pending" : "not_required", evidenceRefs: [] }, updatedAt: new Date().toISOString() };
+		this.state = {
+			...emptyState(),
+			taskKind: input.task_kind,
+			taskSummary: summary,
+			baseline: {
+				required,
+				status: required ? "pending" : "not_required",
+				evidenceRefs: [],
+				authorizedTestPaths: [],
+				testSetupChanged: false,
+			},
+			updatedAt: new Date().toISOString(),
+		};
 		this.persistState();
-		return this.ok(required ? "Task declared; baseline verification is required before mutation." : "Task declared; final verification is required after mutation.");
+		return this.ok(required ? "Task declared; baseline verification is required before production mutation." : "Task declared; final verification is required after mutation.");
+	}
+
+	private authorizeBaselineTest(input: VerificationInput): VerificationResult {
+		if (!this.state.taskKind || !this.state.baseline.required || this.state.baseline.status !== "pending") {
+			return this.no("Test-only baseline authorization requires a declared task with pending baseline verification.");
+		}
+		if (this.state.mutationRevision !== 0) return this.no("Cannot authorize baseline test edits after production mutation.");
+		const requested = strings(input.test_paths);
+		if (!requested.length) return this.no("authorize_baseline_test requires test_paths.");
+		const normalized: string[] = [];
+		for (const path of requested) {
+			const portable = path.replaceAll("\\", "/").replace(/^\.\//u, "");
+			if (isAbsolute(path) || portable.split("/").includes("..") || !TEST_PATH_PATTERN.test(portable)) {
+				return this.no(`Only explicit repository-relative test files may be authorized: ${path}`);
+			}
+			normalized.push(portable);
+		}
+		this.state = {
+			...this.state,
+			baseline: {
+				...this.state.baseline,
+				authorizedTestPaths: [...new Set(normalized)],
+				testSetupChanged: false,
+			},
+			updatedAt: new Date().toISOString(),
+		};
+		this.persistState();
+		return this.ok(`Authorized test-only baseline setup for: ${this.state.baseline.authorizedTestPaths.join(", ")}`);
 	}
 
 	private recordBaseline(input: VerificationInput): VerificationResult {
@@ -315,14 +394,30 @@ export class TaskVerificationController {
 			if (evidence.filter((item) => !item.isError && STATIC_TOOLS.has(item.toolName)).length < 2) return this.no("static_trace requires two non-error inspection evidence handles.");
 		}
 		if (input.baseline_method === "runtime_reproduction" && !evidence.some((item) => item.toolName === "bash" && !item.isError && !GENERIC_CHECK_PATTERN.test(item.descriptor) && !READ_ONLY_PATTERN.test(item.descriptor))) return this.no("runtime_reproduction requires successful non-generic bash evidence exercising the behavior.");
-		if (input.baseline_method === "failing_regression_test" && !evidence.some((item) => item.toolName === "bash" && item.isError && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor))) return this.no("failing_regression_test requires a failing focused-test evidence handle.");
-		this.state = { ...this.state, baseline: { required: this.state.baseline.required, status: "satisfied", hypothesis: text(input.hypothesis), conclusion: text(input.conclusion), method: input.baseline_method, evidenceRefs: evidence.map((item) => item.ref) }, updatedAt: new Date().toISOString() };
+		if (input.baseline_method === "failing_regression_test") {
+			if (this.state.baseline.authorizedTestPaths.length > 0 && !this.state.baseline.testSetupChanged) {
+				return this.no("The authorized regression test was not created or modified before running it.");
+			}
+			if (!evidence.some((item) => item.toolName === "bash" && item.isError && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor))) return this.no("failing_regression_test requires a failing focused-test evidence handle.");
+		}
+		this.state = {
+			...this.state,
+			baseline: {
+				...this.state.baseline,
+				status: "satisfied",
+				hypothesis: text(input.hypothesis),
+				conclusion: text(input.conclusion),
+				method: input.baseline_method,
+				evidenceRefs: evidence.map((item) => item.ref),
+			},
+			updatedAt: new Date().toISOString(),
+		};
 		this.persistState();
-		return this.ok("Baseline verification recorded; mutation is unblocked.");
+		return this.ok("Baseline verification recorded; production mutation is unblocked.");
 	}
 
 	private recordFinal(input: VerificationInput): VerificationResult {
-		if (!this.state.taskKind || !this.state.taskSummary || this.state.mutationRevision === 0) return this.no("Final verification requires a declared task and at least one mutation.");
+		if (!this.state.taskKind || !this.state.taskSummary || this.state.mutationRevision === 0) return this.no("Final verification requires a declared task and at least one production mutation.");
 		if (!isFinalMethod(input.final_method) || (input.final_status !== "passed" && input.final_status !== "failed")) return this.no("record_final requires final_method and final_status.");
 		const expected = text(input.expected_behavior);
 		const observed = text(input.observed_behavior);
@@ -346,6 +441,22 @@ export class TaskVerificationController {
 		this.state = { ...this.state, final: { status: "passed", expectedBehavior: expected, observedBehavior: observed, method: input.final_method, evidenceRefs: evidence.map((item) => item.ref), unresolvedFailures: [], verifiedMutationRevision: this.state.mutationRevision }, updatedAt: new Date().toISOString() };
 		this.persistState();
 		return this.ok("Final semantic verification passed for the current mutation revision.");
+	}
+
+	private isAuthorizedBaselineTestMutation(name: string, args: unknown): boolean {
+		if (
+			this.state.baseline.status !== "pending" ||
+			this.state.baseline.authorizedTestPaths.length === 0 ||
+			!MUTATING_TOOLS.has(name)
+		) {
+			return false;
+		}
+		const path = pathArgument(args);
+		if (!path) return false;
+		const absolute = resolve(this.sessionManager.getCwd(), path);
+		return this.state.baseline.authorizedTestPaths.some(
+			(authorized) => resolve(this.sessionManager.getCwd(), authorized) === absolute,
+		);
 	}
 
 	private resolve(refs: readonly string[] | undefined): TaskVerificationEvidence[] | string {
@@ -379,7 +490,14 @@ export class TaskVerificationController {
 	}
 	private status(): string {
 		const recent = [...this.evidence.values()].slice(-8).map((item) => `${item.ref}: ${item.toolName} at revision ${item.mutationRevision}${item.isError ? " (failed)" : ""}`);
-		return [`Task: ${this.state.taskKind ?? "undeclared"}${this.state.taskSummary ? ` — ${this.state.taskSummary}` : ""}`, `Mutation revision: ${this.state.mutationRevision}`, `Baseline: ${this.state.baseline.status}`, `Final: ${this.state.final.status}`, recent.length ? `Evidence:\n- ${recent.join("\n- ")}` : "Evidence: none"].join("\n");
+		return [
+			`Task: ${this.state.taskKind ?? "undeclared"}${this.state.taskSummary ? ` — ${this.state.taskSummary}` : ""}`,
+			`Mutation revision: ${this.state.mutationRevision}`,
+			`Baseline: ${this.state.baseline.status}`,
+			`Authorized baseline tests: ${this.state.baseline.authorizedTestPaths.join(", ") || "none"}`,
+			`Final: ${this.state.final.status}`,
+			recent.length ? `Evidence:\n- ${recent.join("\n- ")}` : "Evidence: none",
+		].join("\n");
 	}
 	private ok(message: string): VerificationResult {
 		return { status: "updated", message, state: this.currentState };
