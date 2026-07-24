@@ -48,7 +48,8 @@ export class BashExecutionComponent extends Container {
     this.addChild(this.contentContainer);
 
     // Command header
-    const header = new Text(theme.fg(colorKey, theme.bold(`$ ${command}`)), 1, 0);
+    const statusIcon = "\x1b[36m⚡\x1b[0m";
+    const header = new Text(`${statusIcon} ${theme.fg(colorKey, theme.bold(`$ ${command}`))}`, 1, 0);
     this.contentContainer.addChild(header);
 
     // Loader
@@ -135,7 +136,17 @@ export class BashExecutionComponent extends Container {
     this.contentContainer.clear();
 
     // Command header
-    const header = new Text(theme.fg("bashMode", theme.bold(`$ ${this.command}`)), 1, 0);
+    let statusIcon = "";
+    if (this.status === "running") {
+      statusIcon = "\x1b[36m⚡\x1b[0m";
+    } else if (this.status === "error") {
+      statusIcon = "\x1b[31m✖\x1b[0m";
+    } else if (this.status === "cancelled") {
+      statusIcon = "\x1b[31m✖\x1b[0m";
+    } else {
+      statusIcon = "\x1b[32m✔\x1b[0m";
+    }
+    const header = new Text(`${statusIcon} ${theme.fg("bashMode", theme.bold(`$ ${this.command}`))}`, 1, 0);
     this.contentContainer.addChild(header);
 
     // Output
@@ -143,11 +154,11 @@ export class BashExecutionComponent extends Container {
       if (this.expanded) {
         // Show all lines
         const displayText = availableLines.map((line) => theme.fg("muted", line)).join("\n");
-        this.contentContainer.addChild(new Text(`\n${displayText}`, 1, 0));
+        this.contentContainer.addChild(new Text(`\n\x1b[90m↳\x1b[0m\n${displayText}`, 1, 0));
       } else {
         // Use shared visual truncation utility with width-aware caching
         const styledOutput = previewLogicalLines.map((line) => theme.fg("muted", line)).join("\n");
-        const styledInput = `\n${styledOutput}`;
+        const styledInput = `\n\x1b[90m↳\x1b[0m\n${styledOutput}`;
         let cachedWidth: number | undefined;
         let cachedLines: string[] | undefined;
         this.contentContainer.addChild({

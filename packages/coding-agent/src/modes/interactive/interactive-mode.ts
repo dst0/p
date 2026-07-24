@@ -125,6 +125,7 @@ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./c
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
+import { PlanPanel, PlanStatusTracker } from "./components/plan-panel.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -298,6 +299,11 @@ export class InteractiveMode {
   private loadingAnimation: Loader | undefined = undefined;
   private workingMessage: string | undefined = undefined;
   private workingVisible = true;
+
+  private planStatusTracker = new PlanStatusTracker();
+  private planPanel = new PlanPanel(this.planStatusTracker);
+  private planPanelHandle?: OverlayHandle;
+  private planPanelVisible = false;
   private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
   private readonly defaultWorkingMessage = "Working...";
   private readonly defaultHiddenThinkingLabel = "Thinking...";
@@ -2589,6 +2595,7 @@ export class InteractiveMode {
     this.defaultEditor.onAction("app.session.fork", () => this.showUserMessageSelector());
     this.defaultEditor.onAction("app.session.resume", () => this.showSessionSelector());
 
+    this.defaultEditor.onAction("app.plan.toggle", () => this.togglePlanPanel());
     this.defaultEditor.onChange = (text: string) => {
       const wasBashMode = this.isBashMode;
       this.isBashMode = text.trimStart().startsWith("!");
@@ -3055,6 +3062,7 @@ export class InteractiveMode {
         break;
 
       case "message_end":
+        this.syncPlanTracker();
         if (event.message.role === "user") break;
         if (this.streamingComponent && event.message.role === "assistant") {
           this.streamingMessage = event.message;
@@ -3108,6 +3116,13 @@ export class InteractiveMode {
         if (event.toolName === SLEEP_TOOL_NAME) {
           break;
         }
+        this.planStatusTracker.addToolEvent({
+          id: event.toolCallId,
+          name: event.toolName,
+          status: "running",
+          argsSummary: "args" in event ? JSON.stringify(event.args).slice(0, 30) : "",
+        });
+        this.syncPlanTracker();
         let component = this.pendingTools.get(event.toolCallId);
         if (!component) {
           component = new ToolExecutionComponent(
@@ -3145,6 +3160,10 @@ export class InteractiveMode {
           this.pendingTools.delete(event.toolCallId);
           break;
         }
+        this.planStatusTracker.updateToolEvent(event.toolCallId, {
+          status: event.isError ? "error" : "success",
+        });
+        this.syncPlanTracker();
         const component = this.pendingTools.get(event.toolCallId);
         if (component) {
           component.updateResult({ ...event.result, isError: event.isError });
@@ -3325,6 +3344,38 @@ export class InteractiveMode {
    * If multiple status messages are emitted back-to-back (without anything else being added to the chat),
    * we update the previous status line instead of appending new ones to avoid log spam.
    */
+  private togglePlanPanel(): void {
+    if (this.planPanelVisible) {
+      this.planPanelHandle?.hide();
+      this.planPanelHandle = undefined;
+      this.planPanelVisible = false;
+    } else {
+      this.planPanelVisible = true;
+      this.planStatusTracker.onUpdate = () => {
+        if (this.planPanelVisible) {
+          this.ui.requestRender();
+        }
+      };
+      this.syncPlanTracker();
+      this.planPanelHandle = this.ui.showOverlay(this.planPanel, {
+        anchor: "top-right",
+        width: 50,
+        margin: 1,
+      });
+      this.ui.requestRender();
+    }
+  }
+
+  private syncPlanTracker(): void {
+    const state = this.session.getSessionStateSnapshot().state;
+    this.planStatusTracker.steps = state.plan.map((p, i) => ({
+      id: `step-${i}`,
+      description: p.text,
+      status: (p.status === "done" ? "completed" : p.status) || "pending",
+    }));
+    this.planStatusTracker.onUpdate?.();
+  }
+
   private showStatus(message: string): void {
     const children = this.chatContainer.children;
     const last = children.length > 0 ? children[children.length - 1] : undefined;

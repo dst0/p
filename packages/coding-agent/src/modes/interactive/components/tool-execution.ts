@@ -134,8 +134,18 @@ export class ToolExecutionComponent extends Container {
     };
   }
 
+  private getStatusIcon(): string {
+    if (this.isPartial) {
+      return "\x1b[36m⚡\x1b[0m";
+    }
+    if (this.result?.isError) {
+      return "\x1b[31m✖\x1b[0m";
+    }
+    return "\x1b[32m✔\x1b[0m";
+  }
+
   private createCallFallback(): Component {
-    return new Text(theme.fg("toolTitle", theme.bold(this.toolName)), 0, 0);
+    return new Text(`${this.getStatusIcon()} ${theme.fg("toolTitle", theme.bold(this.toolName))}`, 0, 0);
   }
 
   private createResultFallback(): Component | undefined {
@@ -143,7 +153,7 @@ export class ToolExecutionComponent extends Container {
     if (!output) {
       return undefined;
     }
-    return new Text(theme.fg("toolOutput", output), 0, 0);
+    return new Text(`\n\x1b[90m↳\x1b[0m ${theme.fg("toolOutput", output)}`, 0, 0);
   }
 
   updateArgs(args: any): void {
@@ -365,14 +375,14 @@ export class ToolExecutionComponent extends Container {
   }
 
   private formatToolExecution(): string {
-    let text = theme.fg("toolTitle", theme.bold(this.toolName));
+    let text = `${this.getStatusIcon()} ${theme.fg("toolTitle", theme.bold(this.toolName))}`;
     const content = JSON.stringify(this.args, null, 2);
     if (content) {
       text += `\n\n${content}`;
     }
     const output = this.getTextOutput();
     if (output) {
-      text += `\n${output}`;
+      text += `\n\n\x1b[90m↳\x1b[0m ${output}`;
     }
     return text;
   }
