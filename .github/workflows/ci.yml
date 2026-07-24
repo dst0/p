@@ -32,7 +32,8 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          python - <<'PY'
+          set +e
+          python - <<'PY' > /tmp/task-verification-patch.log 2>&1
           from pathlib import Path
           import subprocess
 
@@ -45,10 +46,7 @@ jobs:
 
           for target in targets:
               marker = f'      - name: {target}'
-              try:
-                  start = workflow.index(marker)
-              except ValueError as error:
-                  raise SystemExit(f'Missing temporary workflow step: {target}') from error
+              start = workflow.index(marker)
               run_index = next(
                   index for index in range(start + 1, len(workflow)) if workflow[index] == '        run: |'
               )
@@ -57,28 +55,22 @@ jobs:
                   if line.startswith('      - name:'):
                       break
                   if line and not line.startswith('          '):
-                      raise SystemExit(f'Unexpected indentation in temporary workflow step {target}: {line!r}')
+                      raise RuntimeError(f'Unexpected indentation in temporary workflow step {target}: {line!r}')
                   lines.append(line[10:] if line else '')
               script = '\n'.join(lines) + '\n'
-              result = subprocess.run(
-                  ['bash', '-euxo', 'pipefail', '-c', script],
-                  text=True,
-                  stdout=subprocess.PIPE,
-                  stderr=subprocess.STDOUT,
-              )
-              print(result.stdout, end='')
-              if result.returncode != 0:
-                  Path('.patch-error.txt').write_text(
-                      f'Failed temporary step: {target}\nExit code: {result.returncode}\n\n{result.stdout}'
-                  )
-                  subprocess.run(['git', 'add', '.patch-error.txt'], check=True)
-                  subprocess.run(['git', 'commit', '-m', 'chore: capture task verification patch failure'], check=True)
-                  subprocess.run(
-                      ['git', 'push', 'origin', 'HEAD:fix/task-verification-guidance'],
-                      check=True,
-                  )
-                  raise SystemExit(result.returncode)
+              print(f'=== {target} ===', flush=True)
+              subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
           PY
+          PATCH_STATUS=$?
+          set -e
+          cat /tmp/task-verification-patch.log
+          if [[ $PATCH_STATUS -ne 0 ]]; then
+            cp /tmp/task-verification-patch.log .patch-error.txt
+            git add .patch-error.txt
+            git commit -m "chore: capture task verification patch failure"
+            git push origin HEAD:fix/task-verification-guidance
+            exit $PATCH_STATUS
+          fi
           git checkout origin/main -- .github/workflows/ci.yml
           rm -f .github/workflows/temp-task-verification-guidance.yml .patch-error.txt
           git add -A
