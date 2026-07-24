@@ -5,9 +5,9 @@
 export * from "./branch-summarization.ts";
 export * from "./compaction.ts";
 export {
-	compact,
 	type CompactionPreparation,
 	type CompactionPreparationResult,
+	compact,
 	prepareCompaction,
 	renderMinimalCompactionCheckpoint,
 	selectKeepRecentTokensForTarget,

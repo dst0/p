@@ -4369,15 +4369,15 @@ Plan mode is active because the user invoked /plan.
 				modelDetails?.structuredState && isStructuredSessionState(modelDetails.structuredState)
 					? modelDetails.structuredState
 					: createStructuredSessionState({
-						sessionId: this.sessionManager.getSessionId(),
-						previous: baseState,
-						summary: modelResult.summary,
-						entries: pathEntries,
-						readFiles,
-						modifiedFiles,
-						audit,
-						timestamp: new Date().toISOString(),
-					});
+							sessionId: this.sessionManager.getSessionId(),
+							previous: baseState,
+							summary: modelResult.summary,
+							entries: pathEntries,
+							readFiles,
+							modifiedFiles,
+							audit,
+							timestamp: new Date().toISOString(),
+						});
 			return {
 				...modelResult,
 				details: {

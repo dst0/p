@@ -2,12 +2,12 @@ import type { AgentMessage, StreamFn, ThinkingLevel } from "@dst0/p-agent-core";
 import type { AssistantMessage, Model, ToolResultMessage } from "@dst0/p-ai";
 import type { SessionEntry } from "../session-manager.ts";
 import {
-	compact as compactBase,
-	type CompactionDetails,
 	type CompactionPreparation as BaseCompactionPreparation,
 	type CompactionPreparationResult as BaseCompactionPreparationResult,
+	type CompactionDetails,
 	type CompactionResult,
 	type CompactionSettings,
+	compact as compactBase,
 	estimateTokens,
 	prepareCompaction as prepareCompactionBase,
 	resolveCompactionSettings,
@@ -136,10 +136,7 @@ export function renderMinimalCompactionCheckpoint(state: StructuredSessionState,
 	const activeConstraints = state.constraints
 		.filter((constraint) => constraint.status === "active")
 		.slice(0, 10)
-		.map(
-			(constraint) =>
-				`[${constraint.source}/${constraint.enforceability}] ${compactLine(constraint.text, 220)}`,
-		);
+		.map((constraint) => `[${constraint.source}/${constraint.enforceability}] ${compactLine(constraint.text, 220)}`);
 	const plan = selectPlanItems(state.plan, 12).map(
 		(item) => `[${planStatusCode(item.status)}] ${compactLine(item.text, 220)}`,
 	);
@@ -159,9 +156,7 @@ export function renderMinimalCompactionCheckpoint(state: StructuredSessionState,
 	const files = state.codebase.touchedFiles
 		.slice(-12)
 		.map((file) => `${file.status}: ${file.path} - ${compactLine(file.summary, 160)}`);
-	const evidence = state.evidence
-		.slice(-4)
-		.map((pointer) => `${pointer.id}: ${compactLine(pointer.summary, 180)}`);
+	const evidence = state.evidence.slice(-4).map((pointer) => `${pointer.id}: ${compactLine(pointer.summary, 180)}`);
 
 	const mandatory = [
 		"<session_checkpoint>",
@@ -348,10 +343,7 @@ function messageText(message: AgentMessage): string | undefined {
 	}
 }
 
-function replaceFirstTextBlock<T extends { type: string; text?: string }>(
-	blocks: T[],
-	text: string,
-): T[] {
+function replaceFirstTextBlock<T extends { type: string; text?: string }>(blocks: T[], text: string): T[] {
 	let replaced = false;
 	const result: T[] = [];
 	for (const block of blocks) {

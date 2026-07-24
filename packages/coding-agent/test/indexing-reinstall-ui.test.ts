@@ -88,8 +88,5 @@ function createFixture(): { repo: string; agentDir: string } {
 
 function writeReinstallMarker(agentDir: string, pid: number, startedAt: string): void {
 	fs.mkdirSync(agentDir, { recursive: true });
-	fs.writeFileSync(
-		path.join(agentDir, INDEXING_SERVICE_REINSTALL_FILE),
-		`${JSON.stringify({ pid, startedAt })}\n`,
-	);
+	fs.writeFileSync(path.join(agentDir, INDEXING_SERVICE_REINSTALL_FILE), `${JSON.stringify({ pid, startedAt })}\n`);
 }

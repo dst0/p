@@ -2,9 +2,9 @@ import type { AgentMessage } from "@dst0/p-agent-core";
 import type { AssistantMessage, Model, Usage } from "@dst0/p-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
-	compact,
 	type CompactionDetails,
 	type CompactionPreparation,
+	compact,
 	createInitialStructuredSessionState,
 	estimateContextTokens,
 	mergeStructuredSessionState,
@@ -254,9 +254,7 @@ describe("minimal loss-resistant compaction", () => {
 		expect(result.ok).toBe(true);
 		if (!result.ok) return;
 		expect(result.preparation.keepRecentTokens).toBeLessThanOrEqual(2000);
-		expect(result.preparation.structuredState?.constraints.map((item) => item.id)).toContain(
-			"constraint-budget",
-		);
+		expect(result.preparation.structuredState?.constraints.map((item) => item.id)).toContain("constraint-budget");
 		expect(result.preparation.tokensToSummarize).toBeGreaterThan(20_000);
 	});
 
@@ -269,9 +267,8 @@ describe("minimal loss-resistant compaction", () => {
 		expect(checkpoint).toContain("session_recall");
 		expect(checkpoint).not.toContain("Historical completed item 0");
 		expect(
-			estimateContextTokens([
-				{ role: "compactionSummary", summary: checkpoint, tokensBefore: 64_000, timestamp: 0 },
-			]).tokens,
+			estimateContextTokens([{ role: "compactionSummary", summary: checkpoint, tokensBefore: 64_000, timestamp: 0 }])
+				.tokens,
 		).toBeLessThan(1200);
 	});
 
