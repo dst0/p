@@ -26,7 +26,22 @@ jobs:
         run: npm ci --ignore-scripts
 
       - name: Build
-        run: npm run build
+        id: build
+        continue-on-error: true
+        run: npm run build > "$RUNNER_TEMP/build.log" 2>&1
+
+      - name: Upload build diagnostics
+        if: steps.build.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-diagnostics
+          path: ${{ runner.temp }}/build.log
+
+      - name: Fail failed build
+        if: steps.build.outcome == 'failure'
+        run: |
+          tail -200 "$RUNNER_TEMP/build.log"
+          exit 1
 
       - name: Install system dependencies
         run: |
