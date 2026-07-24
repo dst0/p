@@ -11,6 +11,8 @@ import {
 } from "./indexed-repos.ts";
 
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
+export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
+const INDEXING_SERVICE_REINSTALL_GRACE_MS = 5 * 60_000;
 
 export interface IndexStatus {
 	decision: RepoIndexingDecision;
@@ -41,6 +43,11 @@ export interface IndexingServiceStatusData {
 	startedAt: string;
 	updatedAt: string;
 	repos: RepositoryServiceStatus[];
+}
+
+interface IndexingServiceReinstallData {
+	pid: number;
+	startedAt: string;
 }
 
 export class IndexingService {
@@ -110,10 +117,23 @@ function readServiceStatus(agentDir: string): IndexingServiceStatusData | undefi
 	try {
 		const value = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
 		if (!isServiceStatus(value)) return undefined;
+		if (isReinstallingService(agentDir, value.pid)) return { ...value, running: true };
 		if (value.running && !isProcessAlive(value.pid)) return { ...value, running: false };
 		return value;
 	} catch {
 		return undefined;
+	}
+}
+
+function isReinstallingService(agentDir: string, pid: number): boolean {
+	const filePath = path.join(agentDir, INDEXING_SERVICE_REINSTALL_FILE);
+	try {
+		const value = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
+		if (!isReinstallData(value) || value.pid !== pid) return false;
+		const startedAt = Date.parse(value.startedAt);
+		return Number.isFinite(startedAt) && Date.now() - startedAt <= INDEXING_SERVICE_REINSTALL_GRACE_MS;
+	} catch {
+		return false;
 	}
 }
 
@@ -141,6 +161,12 @@ function isServiceStatus(value: unknown): value is IndexingServiceStatusData {
 	);
 }
 
+function isReinstallData(value: unknown): value is IndexingServiceReinstallData {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+	const candidate = value as Partial<IndexingServiceReinstallData>;
+	return Number.isSafeInteger(candidate.pid) && typeof candidate.startedAt === "string";
+}
+
 function isIndexingProgress(value: unknown): value is IndexingProgress {
 	if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
 	const candidate = value as Partial<IndexingProgress>;
@@ -160,8 +186,8 @@ function isProcessAlive(pid: number): boolean {
 	try {
 		process.kill(pid, 0);
 		return true;
-	} catch {
-		return false;
+	} catch (error) {
+		return error instanceof Error && "code" in error && error.code === "EPERM";
 	}
 }
 
