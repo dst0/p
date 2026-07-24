@@ -4,9 +4,9 @@ import { join } from "node:path";
 import { getModel } from "@dst0/p-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
-	type CreateAgentSessionFromServicesOptions,
 	createAgentSessionFromServices,
 	createAgentSessionServices,
+	type CreateAgentSessionFromServicesOptions,
 } from "../src/core/agent-session-services.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
