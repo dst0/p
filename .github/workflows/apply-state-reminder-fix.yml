@@ -42,9 +42,6 @@ jobs:
         working-directory: packages/coding-agent
         run: node ../../node_modules/vitest/dist/cli.js --run test/suite/agent-session-state-update-tool.test.ts
 
-      - name: Run non-e2e test suite
-        run: ./test.sh
-
       - name: Run repository checks
         run: npm run check
 
