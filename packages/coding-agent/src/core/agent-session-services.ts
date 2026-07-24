@@ -100,10 +100,7 @@ function addToolName(toolNames: string[] | undefined, toolName: string): string[
 	return toolNames.includes(toolName) ? toolNames : [...toolNames, toolName];
 }
 
-function addToolDefinition(
-	tools: ToolDefinition[] | undefined,
-	verificationTool: ToolDefinition,
-): ToolDefinition[] {
+function addToolDefinition(tools: ToolDefinition[] | undefined, verificationTool: ToolDefinition): ToolDefinition[] {
 	if (tools?.some((tool) => tool.name === TASK_VERIFICATION_TOOL_NAME)) {
 		throw new Error(`${TASK_VERIFICATION_TOOL_NAME} is reserved by the built-in verification controller`);
 	}
@@ -244,10 +241,7 @@ export async function createAgentSessionFromServices(
 		maxTokens: options.maxTokens,
 	});
 	if (verificationController) {
-		result.session.setActiveToolsByName([
-			...result.session.getActiveToolNames(),
-			TASK_VERIFICATION_TOOL_NAME,
-		]);
+		result.session.setActiveToolsByName([...result.session.getActiveToolNames(), TASK_VERIFICATION_TOOL_NAME]);
 		verificationController.install(result.session.agent);
 	}
 	return result;

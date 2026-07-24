@@ -113,15 +113,22 @@ interface VerificationResult {
 const EVIDENCE_TOOLS = new Set(["read", "bash", "grep", "find", "ls", "semantic_search"]);
 const STATIC_TOOLS = new Set(["read", "grep", "find", "ls", "semantic_search"]);
 const DIRECT_MUTATION_TOOLS = new Set(["edit", "write"]);
-const BUG_PATTERN = /\b(bug|fix|broken|regression|incorrect|wrong|failure|lost|crash|race|issue|repair)\b|(?:ошиб|баг|слом|невер|неправ|теря|паден|исправ)/iu;
-const HIGH_RISK_PATTERN = /\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;
-const BASH_MUTATION_PATTERN = /(?:^|[;&|]\s*)(?:sed\s+-i|perl\s+-[a-z]*i|patch\b|git\s+(?:apply|am|cherry-pick|merge|rebase|checkout|switch|reset|restore)\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|truncate\b|tee\b|npm\s+(?:install|uninstall|update)\b|pnpm\s+(?:add|remove|install|update)\b|yarn\s+(?:add|remove|install|upgrade)\b|bun\s+(?:add|remove|install|update)\b|cargo\s+(?:add|remove|update)\b|node\s+scripts\/version-bump\.mjs\b|\.\/reinstall\.sh\b)/iu;
+const BUG_PATTERN =
+	/\b(bug|fix|broken|regression|incorrect|wrong|failure|lost|crash|race|issue|repair)\b|(?:ошиб|баг|слом|невер|неправ|теря|паден|исправ)/iu;
+const HIGH_RISK_PATTERN =
+	/\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;
+const BASH_MUTATION_PATTERN =
+	/(?:^|[;&|]\s*)(?:sed\s+-i|perl\s+-[a-z]*i|patch\b|git\s+(?:apply|am|cherry-pick|merge|rebase|checkout|switch|reset|restore)\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|truncate\b|tee\b|npm\s+(?:install|uninstall|update)\b|pnpm\s+(?:add|remove|install|update)\b|yarn\s+(?:add|remove|install|upgrade)\b|bun\s+(?:add|remove|install|update)\b|cargo\s+(?:add|remove|update)\b|node\s+scripts\/version-bump\.mjs\b|\.\/reinstall\.sh\b)/iu;
 const WRITE_REDIRECT_PATTERN = /(?:^|[;&|]\s*)(?:echo|printf|cat)\b[^\n;]*(?:>|>>)\s*(?!\/dev\/null\b)/iu;
 const PUBLISH_PATTERN = /(?:^|[;&|]\s*)git\s+(?:commit|push)\b/iu;
-const GENERIC_CHECK_PATTERN = /^\s*(?:npm\s+run\s+check|pnpm\s+run\s+check|yarn\s+check|tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
-const READ_ONLY_PATTERN = /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|git\s+(?:status|diff|show|log)\b)/iu;
-const TEST_PATTERN = /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+test|npm\s+test|pnpm\s+test|yarn\s+test|\.\/test\.sh)\b/iu;
-const FOCUSED_TEST_PATTERN = /(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
+const GENERIC_CHECK_PATTERN =
+	/^\s*(?:npm\s+run\s+check|pnpm\s+run\s+check|yarn\s+check|tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
+const READ_ONLY_PATTERN =
+	/^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|git\s+(?:status|diff|show|log)\b)/iu;
+const TEST_PATTERN =
+	/\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+test|npm\s+test|pnpm\s+test|yarn\s+test|\.\/test\.sh)\b/iu;
+const FOCUSED_TEST_PATTERN =
+	/(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
 const TEST_PATH_PATTERN = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[^/]+$/iu;
 
 function emptyState(): TaskVerificationState {
@@ -313,9 +320,9 @@ export class TaskVerificationController {
 			promptSnippet:
 				"record_task_verification(action, ...): declare mutation intent, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
 			promptGuidelines: [
-				`Before edit, write, or mutating bash, call ${TASK_VERIFICATION_TOOL_NAME} with action \"declare_task\".`,
+				`Before edit, write, or mutating bash, call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task".`,
 				"Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
-				"To create a failing regression test before implementation, authorize exact test paths with action \"authorize_baseline_test\"; only those test files may be edited until the failing focused test is recorded.",
+				'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
 				"Signal, restart, persistence, recovery, transaction, concurrency, migration, and indexing tasks require runtime reproduction or a failing focused regression test.",
 				"Final verification must rerun the same reproduction command or focused regression test that established the baseline.",
 				"After the last production mutation, record fresh behavior-specific verification. Generic check/lint output is not semantic proof.",
@@ -345,7 +352,7 @@ export class TaskVerificationController {
 		if (!this.state.taskKind) {
 			return {
 				block: true,
-				reason: `Call ${TASK_VERIFICATION_TOOL_NAME} with action \"declare_task\" before mutating code.`,
+				reason: `Call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" before mutating code.`,
 			};
 		}
 		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
@@ -479,7 +486,9 @@ export class TaskVerificationController {
 
 	private authorizeBaselineTest(input: VerificationInput): VerificationResult {
 		if (!this.state.taskKind || !this.state.baseline.required || this.state.baseline.status !== "pending") {
-			return this.rejected("Test-only baseline authorization requires a declared task with pending baseline verification.");
+			return this.rejected(
+				"Test-only baseline authorization requires a declared task with pending baseline verification.",
+			);
 		}
 		if (this.state.mutationRevision !== 0) {
 			return this.rejected("Cannot authorize baseline test edits after production mutation.");
@@ -505,14 +514,20 @@ export class TaskVerificationController {
 			updatedAt: new Date().toISOString(),
 		};
 		this.persistState();
-		return this.updated(`Authorized test-only baseline setup for: ${this.state.baseline.authorizedTestPaths.join(", ")}`);
+		return this.updated(
+			`Authorized test-only baseline setup for: ${this.state.baseline.authorizedTestPaths.join(", ")}`,
+		);
 	}
 
 	private recordBaseline(input: VerificationInput): VerificationResult {
 		if (!this.state.taskKind || !this.state.taskSummary) {
 			return this.rejected("Declare the task before baseline verification.");
 		}
-		if (!isBaselineMethod(input.baseline_method) || !normalizeText(input.hypothesis) || !normalizeText(input.conclusion)) {
+		if (
+			!isBaselineMethod(input.baseline_method) ||
+			!normalizeText(input.hypothesis) ||
+			!normalizeText(input.conclusion)
+		) {
 			return this.rejected("record_baseline requires baseline_method, hypothesis, and conclusion.");
 		}
 		if (normalizeStrings(input.unresolved_assumptions).length > 0) {
@@ -527,7 +542,9 @@ export class TaskVerificationController {
 		const taskText = `${this.latestUserPrompt}\n${this.state.taskSummary}`;
 		if (input.baseline_method === "static_trace") {
 			if (HIGH_RISK_PATTERN.test(taskText)) {
-				return this.rejected("Static trace is insufficient for signal/restart/persistence/recovery/concurrency/indexing work.");
+				return this.rejected(
+					"Static trace is insufficient for signal/restart/persistence/recovery/concurrency/indexing work.",
+				);
 			}
 			if (evidence.filter((item) => !item.isError && STATIC_TOOLS.has(item.toolName)).length < 2) {
 				return this.rejected("static_trace requires two non-error inspection evidence handles.");
@@ -543,7 +560,9 @@ export class TaskVerificationController {
 					!READ_ONLY_PATTERN.test(item.descriptor),
 			)
 		) {
-			return this.rejected("runtime_reproduction requires successful non-generic bash evidence exercising the behavior.");
+			return this.rejected(
+				"runtime_reproduction requires successful non-generic bash evidence exercising the behavior.",
+			);
 		}
 		if (input.baseline_method === "failing_regression_test") {
 			if (this.state.baseline.authorizedTestPaths.length > 0 && !this.state.baseline.testSetupChanged) {
@@ -626,12 +645,17 @@ export class TaskVerificationController {
 			input.final_method === "static_review" &&
 			(behavioral || evidence.filter((item) => STATIC_TOOLS.has(item.toolName)).length < 2)
 		) {
-			return this.rejected("static_review cannot prove behavioral code changes and otherwise requires two inspection handles.");
+			return this.rejected(
+				"static_review cannot prove behavioral code changes and otherwise requires two inspection handles.",
+			);
 		}
 		if (
 			input.final_method === "focused_test" &&
 			!evidence.some(
-				(item) => item.toolName === "bash" && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor),
+				(item) =>
+					item.toolName === "bash" &&
+					TEST_PATTERN.test(item.descriptor) &&
+					FOCUSED_TEST_PATTERN.test(item.descriptor),
 			)
 		) {
 			return this.rejected("focused_test requires evidence from a specific test file or test name.");
@@ -653,7 +677,9 @@ export class TaskVerificationController {
 					!READ_ONLY_PATTERN.test(item.descriptor),
 			)
 		) {
-			return this.rejected("manual_reproduction requires non-generic bash evidence exercising the changed behavior.");
+			return this.rejected(
+				"manual_reproduction requires non-generic bash evidence exercising the changed behavior.",
+			);
 		}
 
 		const baselineEvidence = this.state.baseline.evidenceRefs
@@ -664,7 +690,9 @@ export class TaskVerificationController {
 				baselineEvidence.filter((item) => item.toolName === "bash" && !item.isError).map((item) => item.descriptor),
 			);
 			if (!evidence.some((item) => item.toolName === "bash" && baselineCommands.has(item.descriptor))) {
-				return this.rejected("Final verification must rerun the same command that established the runtime baseline.");
+				return this.rejected(
+					"Final verification must rerun the same command that established the runtime baseline.",
+				);
 			}
 		}
 		if (this.state.baseline.method === "failing_regression_test") {
@@ -739,16 +767,10 @@ export class TaskVerificationController {
 	private restore(): void {
 		for (const entry of this.sessionManager.getBranch()) {
 			if (entry.type !== "custom") continue;
-			if (
-				entry.customType === TASK_VERIFICATION_STATE_CUSTOM_TYPE &&
-				isTaskVerificationState(entry.data)
-			) {
+			if (entry.customType === TASK_VERIFICATION_STATE_CUSTOM_TYPE && isTaskVerificationState(entry.data)) {
 				this.state = entry.data;
 			}
-			if (
-				entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE &&
-				isTaskVerificationEvidence(entry.data)
-			) {
+			if (entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE && isTaskVerificationEvidence(entry.data)) {
 				this.evidence.set(entry.data.ref, entry.data);
 				const numericRef = Number.parseInt(entry.data.ref.replace(/^verification-evidence-/, ""), 10);
 				if (Number.isFinite(numericRef)) this.nextEvidence = Math.max(this.nextEvidence, numericRef + 1);
@@ -773,9 +795,7 @@ export class TaskVerificationController {
 			`Baseline: ${this.state.baseline.status}`,
 			`Authorized baseline tests: ${this.state.baseline.authorizedTestPaths.join(", ") || "none"}`,
 			`Final: ${this.state.final.status}`,
-			recentEvidence.length > 0
-				? `Evidence:\n- ${recentEvidence.join("\n- ")}`
-				: "Evidence: none",
+			recentEvidence.length > 0 ? `Evidence:\n- ${recentEvidence.join("\n- ")}` : "Evidence: none",
 		].join("\n");
 	}
 

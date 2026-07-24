@@ -84,7 +84,9 @@ async function afterTool(
 		context: {} as never,
 	});
 	return result?.content
-		?.filter((part): part is Extract<NonNullable<typeof result.content>[number], { type: "text" }> => part.type === "text")
+		?.filter(
+			(part): part is Extract<NonNullable<typeof result.content>[number], { type: "text" }> => part.type === "text",
+		)
 		.map((part) => part.text)
 		.join("\n");
 }
@@ -143,9 +145,9 @@ describe("task verification controller", () => {
 			test_paths: ["test/completion-regression.test.ts"],
 		});
 		expect(authorized.isError).toBe(false);
-		expect((await beforeTool(agent, "edit", { path: "test/completion-regression.test.ts", edits: [] }))?.block).not.toBe(
-			true,
-		);
+		expect(
+			(await beforeTool(agent, "edit", { path: "test/completion-regression.test.ts", edits: [] }))?.block,
+		).not.toBe(true);
 		expect((await beforeTool(agent, "write", { path: "src/not-a-test.ts", content: "" }))?.block).toBe(true);
 
 		await afterTool(agent, "edit", {

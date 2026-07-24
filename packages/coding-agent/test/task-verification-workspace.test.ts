@@ -6,10 +6,7 @@ import { promisify } from "node:util";
 import { Agent } from "@dst0/p-agent-core";
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
-import {
-	createTaskVerificationController,
-	type TaskVerificationController,
-} from "../src/core/task-verification.ts";
+import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
 
 const execFileAsync = promisify(execFile);
 
@@ -77,7 +74,9 @@ async function runHookedTool(
 		context: {} as never,
 	});
 	return result?.content
-		?.filter((part): part is Extract<NonNullable<typeof result.content>[number], { type: "text" }> => part.type === "text")
+		?.filter(
+			(part): part is Extract<NonNullable<typeof result.content>[number], { type: "text" }> => part.type === "text",
+		)
 		.map((part) => part.text)
 		.join("\n");
 }
