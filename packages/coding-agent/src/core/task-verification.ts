@@ -27,6 +27,8 @@ export interface TaskVerificationState {
 	version: 1;
 	taskKind?: TaskKind;
 	taskSummary?: string;
+	/** Original user task context retained across compaction/session restore. */
+	taskContext?: string;
 	mutationRevision: number;
 	baseline: {
 		required: boolean;
@@ -316,10 +318,12 @@ export class TaskVerificationController {
 		return {
 			name: TASK_VERIFICATION_TOOL_NAME,
 			label: "Task Verification",
-			description: "Record evidence-backed baseline and final semantic verification for mutating tasks.",
+			description:
+				'Record or inspect evidence-backed baseline and final semantic verification for mutating tasks. Use action "status" whenever the required next step is unclear, especially after compaction or session restore.',
 			promptSnippet:
-				"record_task_verification(action, ...): declare mutation intent, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
+				"record_task_verification(action, ...): declare mutation intent, inspect exact next requirements with action status, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
 			promptGuidelines: [
+				`Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
 				`Before edit, write, or mutating bash, call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task".`,
 				"Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
 				'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
@@ -332,7 +336,7 @@ export class TaskVerificationController {
 			executionMode: "sequential",
 			execute: async (_id, params) => {
 				const result = this.applyInput(params);
-				if (result.status === "rejected") throw new Error(result.message);
+				if (result.status === "rejected") throw new Error(this.withGuidance(result.message));
 				return { content: [{ type: "text", text: result.message }], details: result };
 			},
 		};
@@ -350,18 +354,14 @@ export class TaskVerificationController {
 		}
 		if (!isPotentialMutationTool(toolName, context.args)) return undefined;
 		if (!this.state.taskKind) {
-			return {
-				block: true,
-				reason: `Call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" before mutating code.`,
-			};
+			return this.blocked(`Call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" before mutating code.`);
 		}
 		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
 			if (toolName === "bash") return undefined;
 			if (this.isAuthorizedBaselineTestMutation(toolName, context.args)) return undefined;
-			return {
-				block: true,
-				reason: "Collect baseline evidence or authorize exact regression-test paths before implementation.",
-			};
+			return this.blocked(
+				"Collect baseline evidence or authorize exact regression-test paths before implementation.",
+			);
 		}
 		return undefined;
 	}
@@ -450,7 +450,7 @@ export class TaskVerificationController {
 			case "record_final":
 				return this.recordFinal(input);
 			case "status":
-				return this.updated(this.formatStatus());
+				return this.updated(this.formatStatus(), false);
 		}
 	}
 
@@ -467,6 +467,7 @@ export class TaskVerificationController {
 			...emptyState(),
 			taskKind: input.task_kind,
 			taskSummary,
+			taskContext: normalizeText(this.latestUserPrompt).slice(0, 2_000) || undefined,
 			baseline: {
 				required,
 				status: required ? "pending" : "not_required",
@@ -539,7 +540,7 @@ export class TaskVerificationController {
 			return this.rejected("Baseline evidence must come from mutation revision 0.");
 		}
 
-		const taskText = `${this.latestUserPrompt}\n${this.state.taskSummary}`;
+		const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary}`;
 		if (input.baseline_method === "static_trace") {
 			if (HIGH_RISK_PATTERN.test(taskText)) {
 				return this.rejected(
@@ -639,7 +640,7 @@ export class TaskVerificationController {
 			return this.rejected("Passed final verification cannot contain unresolved failures or failed evidence.");
 		}
 
-		const taskText = `${this.latestUserPrompt}\n${this.state.taskSummary}`;
+		const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary}`;
 		const behavioral = behavioralFinalRequired(this.state.taskKind, taskText);
 		if (
 			input.final_method === "static_review" &&
@@ -750,16 +751,15 @@ export class TaskVerificationController {
 	private finalGate(action: string): BeforeToolCallResult | undefined {
 		if (this.state.mutationRevision === 0) return undefined;
 		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
-			return { block: true, reason: `Cannot ${action}: baseline verification is incomplete.` };
+			return this.blocked(`Cannot ${action}: baseline verification is incomplete.`);
 		}
 		if (
 			this.state.final.status !== "passed" ||
 			this.state.final.verifiedMutationRevision !== this.state.mutationRevision
 		) {
-			return {
-				block: true,
-				reason: `Cannot ${action}: semantic verification has not passed after mutation revision ${this.state.mutationRevision}.`,
-			};
+			return this.blocked(
+				`Cannot ${action}: semantic verification has not passed after mutation revision ${this.state.mutationRevision}.`,
+			);
 		}
 		return undefined;
 	}
@@ -787,7 +787,7 @@ export class TaskVerificationController {
 			.slice(-8)
 			.map(
 				(item) =>
-					`${item.ref}: ${item.toolName} at revision ${item.mutationRevision}${item.isError ? " (failed)" : ""}`,
+					`${item.ref}: ${item.isError ? "FAILED" : "passed"} ${item.toolName} at revision ${item.mutationRevision} — ${item.descriptor}${item.outputSummary ? ` — ${item.outputSummary}` : ""}`,
 			);
 		return [
 			`Task: ${this.state.taskKind ?? "undeclared"}${this.state.taskSummary ? ` — ${this.state.taskSummary}` : ""}`,
@@ -795,12 +795,285 @@ export class TaskVerificationController {
 			`Baseline: ${this.state.baseline.status}`,
 			`Authorized baseline tests: ${this.state.baseline.authorizedTestPaths.join(", ") || "none"}`,
 			`Final: ${this.state.final.status}`,
+			this.state.final.unresolvedFailures.length > 0
+				? `Unresolved failures: ${this.state.final.unresolvedFailures.join("; ")}`
+				: undefined,
 			recentEvidence.length > 0 ? `Evidence:\n- ${recentEvidence.join("\n- ")}` : "Evidence: none",
+			this.formatNextRequirement(),
+		]
+			.filter((line): line is string => line !== undefined)
+			.join("\n");
+	}
+
+	private formatNextRequirement(): string {
+		if (!this.state.taskKind || !this.state.taskSummary) {
+			return [
+				"NEXT REQUIRED ACTION: declare the task before any mutation.",
+				`Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
+				'Allowed task_kind values: "bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation".',
+				'{"action":"declare_task","task_kind":"bug_fix","task_summary":"concrete task scope and behavior"}',
+			].join("\n");
+		}
+
+		if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
+			const failingEvidence = this.findEvidence(
+				(item) =>
+					item.mutationRevision === 0 &&
+					item.toolName === "bash" &&
+					item.isError &&
+					TEST_PATTERN.test(item.descriptor) &&
+					FOCUSED_TEST_PATTERN.test(item.descriptor),
+			);
+			const runtimeEvidence = this.findEvidence(
+				(item) =>
+					item.mutationRevision === 0 &&
+					item.toolName === "bash" &&
+					!item.isError &&
+					!GENERIC_CHECK_PATTERN.test(item.descriptor) &&
+					!READ_ONLY_PATTERN.test(item.descriptor),
+			);
+			const staticEvidence = [...this.evidence.values()].filter(
+				(item) => item.mutationRevision === 0 && !item.isError && STATIC_TOOLS.has(item.toolName),
+			);
+
+			if (failingEvidence) {
+				return [
+					"NEXT REQUIRED ACTION: record the already-observed failing focused regression test as the baseline.",
+					`Exact baseline test command: ${failingEvidence.descriptor}`,
+					`Use evidence_refs: ["${failingEvidence.ref}"]`,
+					`Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
+					`{"action":"record_baseline","baseline_method":"failing_regression_test","hypothesis":"why the current implementation causes this failure","conclusion":"what the failed test proves","evidence_refs":["${failingEvidence.ref}"],"unresolved_assumptions":[]}`,
+				].join("\n");
+			}
+
+			if (runtimeEvidence) {
+				return [
+					"NEXT REQUIRED ACTION: record the already-observed runtime reproduction as the baseline.",
+					`Exact reproduction command: ${runtimeEvidence.descriptor}`,
+					`Use evidence_refs: ["${runtimeEvidence.ref}"]`,
+					`Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
+					`{"action":"record_baseline","baseline_method":"runtime_reproduction","hypothesis":"causal explanation for the current behavior","conclusion":"what the reproduction proves","evidence_refs":["${runtimeEvidence.ref}"],"unresolved_assumptions":[]}`,
+				].join("\n");
+			}
+
+			const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary}`;
+			const highRisk = HIGH_RISK_PATTERN.test(taskText);
+			if (!highRisk && staticEvidence.length >= 2) {
+				const refs = staticEvidence.slice(-2).map((item) => item.ref);
+				return [
+					"NEXT REQUIRED ACTION: record the collected static trace as the baseline.",
+					`Use evidence_refs: ${JSON.stringify(refs)}`,
+					`Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
+					`{"action":"record_baseline","baseline_method":"static_trace","hypothesis":"causal explanation supported by the inspected paths","conclusion":"what the two independent inspections prove","evidence_refs":${JSON.stringify(refs)},"unresolved_assumptions":[]}`,
+				].join("\n");
+			}
+
+			if (this.state.baseline.authorizedTestPaths.length > 0) {
+				if (!this.state.baseline.testSetupChanged) {
+					return [
+						"NEXT REQUIRED ACTION: create or modify the authorized regression test before touching production code.",
+						`Only these paths are currently writable: ${this.state.baseline.authorizedTestPaths.join(", ")}.`,
+						"Then run a focused command targeting that exact test and confirm it fails for the intended behavioral reason.",
+					].join("\n");
+				}
+				return [
+					"NEXT REQUIRED ACTION: run the authorized regression test in isolation and obtain a FAILED evidence handle.",
+					`Authorized test paths: ${this.state.baseline.authorizedTestPaths.join(", ")}.`,
+					"The command must target a specific test file or test name; a broad suite does not satisfy this baseline.",
+					"After the failing run, call action status again to receive the exact record_baseline payload.",
+				].join("\n");
+			}
+
+			return [
+				"NEXT REQUIRED ACTION: establish the pre-change behavior before production mutation.",
+				highRisk
+					? "This lifecycle/durability task requires either a runtime reproduction or a failing focused regression test; static inspection is not accepted."
+					: "Use a runtime reproduction, a failing focused regression test, or two independent static inspection handles.",
+				`For a regression test, first call ${TASK_VERIFICATION_TOOL_NAME} with {"action":"authorize_baseline_test","test_paths":["exact/repository-relative.test.ts"]}.`,
+				"For runtime reproduction, run the concrete scenario now; its bash result will receive an evidence handle. Then call action status again.",
+			].join("\n");
+		}
+
+		if (this.state.mutationRevision === 0) {
+			return [
+				"NEXT REQUIRED ACTION: implement the production change; the baseline gate is satisfied.",
+				this.baselineReplayInstruction(),
+				"After the final production mutation, rerun the required behavior and call action status again before record_final.",
+			].join("\n");
+		}
+
+		if (
+			this.state.final.status === "passed" &&
+			this.state.final.verifiedMutationRevision === this.state.mutationRevision
+		) {
+			return "NEXT REQUIRED ACTION: none. Final semantic verification is current; successful finish_work and git commit/push are unblocked.";
+		}
+
+		const replayDescriptor = this.requiredBaselineReplayDescriptor();
+		if (replayDescriptor) {
+			const replayEvidence = this.findEvidence(
+				(item) =>
+					item.mutationRevision === this.state.mutationRevision &&
+					item.toolName === "bash" &&
+					item.descriptor === replayDescriptor,
+			);
+
+			if (replayEvidence?.isError) {
+				return [
+					"NEXT REQUIRED ACTION: the required baseline replay still fails; repair the implementation before recording final success.",
+					`Failed replay command: ${replayEvidence.descriptor}`,
+					`Failed evidence: ${replayEvidence.ref} — ${replayEvidence.outputSummary || "no output summary"}`,
+					"After the next production mutation, rerun the same command and call action status again.",
+				].join("\n");
+			}
+
+			if (!replayEvidence) {
+				return [
+					"NEXT REQUIRED ACTION: rerun the exact scenario that established the baseline.",
+					`Required exact replay command: ${replayDescriptor}`,
+					`Only evidence from mutation revision ${this.state.mutationRevision} is eligible.`,
+					"Do not substitute another focused test, broad suite, lint, or typecheck for this replay.",
+					"After the successful replay, call action status again to receive the exact record_final payload.",
+				].join("\n");
+			}
+
+			return this.formatFinalRecordGuidance(
+				[replayEvidence],
+				this.state.baseline.method === "failing_regression_test" ? "focused_test" : "manual_reproduction",
+			);
+		}
+
+		const eligibleEvidence = this.findEligibleFinalEvidence();
+		if (eligibleEvidence) return this.formatFinalRecordGuidance(eligibleEvidence);
+
+		return [
+			"NEXT REQUIRED ACTION: collect fresh semantic evidence for the current mutation revision before completion.",
+			this.baselineReplayInstruction(),
+			`Only evidence from mutation revision ${this.state.mutationRevision} is eligible.`,
+			"After the successful run, call action status again to receive the exact record_final payload and evidence handle.",
 		].join("\n");
 	}
 
-	private updated(message: string): VerificationResult {
-		return { status: "updated", message, state: this.currentState };
+	private baselineReplayInstruction(): string {
+		const descriptor = this.requiredBaselineReplayDescriptor();
+		if (!descriptor)
+			return "Run a focused behavior-specific test or manual reproduction; generic lint/typecheck output is not sufficient.";
+		return `Required exact replay command: ${descriptor}`;
+	}
+
+	private requiredBaselineReplayDescriptor(): string | undefined {
+		if (this.state.baseline.method === "runtime_reproduction") {
+			return this.state.baseline.evidenceRefs
+				.map((ref) => this.evidence.get(ref))
+				.find((item) => item?.toolName === "bash" && !item.isError)?.descriptor;
+		}
+		if (this.state.baseline.method === "failing_regression_test") {
+			return this.state.baseline.evidenceRefs
+				.map((ref) => this.evidence.get(ref))
+				.find((item) => item?.toolName === "bash" && item.isError && TEST_PATTERN.test(item.descriptor))
+				?.descriptor;
+		}
+		return undefined;
+	}
+
+	private findEligibleFinalEvidence(): TaskVerificationEvidence[] | undefined {
+		const current = [...this.evidence.values()].filter(
+			(item) => item.mutationRevision === this.state.mutationRevision && !item.isError,
+		);
+		const newestFirst = current.slice().reverse();
+		const focusedTest = newestFirst.find(
+			(item) =>
+				item.toolName === "bash" &&
+				TEST_PATTERN.test(item.descriptor) &&
+				FOCUSED_TEST_PATTERN.test(item.descriptor),
+		);
+		if (focusedTest) return [focusedTest];
+
+		const manualReproduction = newestFirst.find(
+			(item) =>
+				item.toolName === "bash" &&
+				!TEST_PATTERN.test(item.descriptor) &&
+				!GENERIC_CHECK_PATTERN.test(item.descriptor) &&
+				!READ_ONLY_PATTERN.test(item.descriptor),
+		);
+		if (manualReproduction) return [manualReproduction];
+
+		const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary ?? ""}`;
+		const behavioral = this.state.taskKind ? behavioralFinalRequired(this.state.taskKind, taskText) : true;
+		const highRisk = HIGH_RISK_PATTERN.test(taskText);
+		if (!behavioral && !highRisk) {
+			const testSuite = newestFirst.find((item) => item.toolName === "bash" && TEST_PATTERN.test(item.descriptor));
+			if (testSuite) return [testSuite];
+		}
+
+		if (!behavioral) {
+			const staticEvidence = current.filter((item) => STATIC_TOOLS.has(item.toolName));
+			if (staticEvidence.length >= 2) return staticEvidence.slice(-2);
+		}
+		return undefined;
+	}
+
+	private finalMethodForEvidence(evidence: readonly TaskVerificationEvidence[]): FinalMethod {
+		if (evidence.length >= 2 && evidence.every((item) => STATIC_TOOLS.has(item.toolName))) {
+			return "static_review";
+		}
+		const primary = evidence[0];
+		if (!primary) return "manual_reproduction";
+		if (
+			primary.toolName === "bash" &&
+			TEST_PATTERN.test(primary.descriptor) &&
+			FOCUSED_TEST_PATTERN.test(primary.descriptor)
+		) {
+			return "focused_test";
+		}
+		if (primary.toolName === "bash" && TEST_PATTERN.test(primary.descriptor)) return "test_suite";
+		return "manual_reproduction";
+	}
+
+	private formatFinalRecordGuidance(
+		evidence: readonly TaskVerificationEvidence[],
+		method: FinalMethod = this.finalMethodForEvidence(evidence),
+	): string {
+		const refs = evidence.map((item) => item.ref);
+		const evidenceLines = evidence.map((item) => `- ${item.ref}: ${item.descriptor}`);
+		const payload = JSON.stringify({
+			action: "record_final",
+			final_method: method,
+			final_status: "passed",
+			expected_behavior: "the behavior that must now hold",
+			observed_behavior: "what this evidence demonstrated",
+			evidence_refs: refs,
+			unresolved_failures: [],
+		});
+		return [
+			"NEXT REQUIRED ACTION: record final verification using the successful semantic evidence already collected for the current mutation revision.",
+			`Eligible evidence:\n${evidenceLines.join("\n")}`,
+			`Use evidence_refs: ${JSON.stringify(refs)}`,
+			`Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
+			payload,
+		].join("\n");
+	}
+
+	private findEvidence(
+		predicate: (evidence: TaskVerificationEvidence) => boolean,
+	): TaskVerificationEvidence | undefined {
+		return [...this.evidence.values()].reverse().find(predicate);
+	}
+
+	private withGuidance(message: string): string {
+		return `${message}\n\n${this.formatNextRequirement()}\n\nTo inspect the complete durable verification state at any time, call ${TASK_VERIFICATION_TOOL_NAME} with {"action":"status"}.`;
+	}
+
+	private blocked(message: string): BeforeToolCallResult {
+		return { block: true, reason: this.withGuidance(message) };
+	}
+
+	private updated(message: string, includeGuidance: boolean = true): VerificationResult {
+		return {
+			status: "updated",
+			message: includeGuidance ? `${message}\n\n${this.formatNextRequirement()}` : message,
+			state: this.currentState,
+		};
 	}
 
 	private rejected(message: string): VerificationResult {

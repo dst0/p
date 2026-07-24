@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Make task-verification gates self-explanatory after compaction: expose exact next actions, eligible evidence, required replay commands, and ready-to-use verification payloads through proactive status and every rejection.
+
 ### Added
 
 - Enforce evidence-backed task verification in mutating coding-agent sessions: require baseline proof before bug fixes and fresh semantic verification of the original failing scenario before successful completion or publishing.
