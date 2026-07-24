@@ -1,0 +1,33 @@
+name: Apply agent compaction patch
+
+on:
+  push:
+    branches:
+      - agent/minimal-lossless-compaction
+    paths:
+      - .p-agent-patch/minimal-lossless-compaction.patch
+
+permissions:
+  contents: write
+
+jobs:
+  apply:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/minimal-lossless-compaction
+          fetch-depth: 0
+      - name: Apply patch
+        run: git apply --index --whitespace=fix .p-agent-patch/minimal-lossless-compaction.patch
+      - name: Remove temporary applicator
+        run: |
+          git rm .p-agent-patch/minimal-lossless-compaction.patch
+          git rm .github/workflows/apply-agent-compaction-patch.yml
+      - name: Commit and push
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m "fix(coding-agent): make compaction minimal and loss-resistant"
+          git push origin HEAD:agent/minimal-lossless-compaction
