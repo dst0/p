@@ -33,7 +33,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           set +e
-          python - <<'PY' > /tmp/task-verification-patch.log 2>&1
+          python3 - <<'PY' > /tmp/task-verification-patch.log 2>&1
           from pathlib import Path
           import subprocess
 
@@ -57,7 +57,7 @@ jobs:
                   if line and not line.startswith('          '):
                       raise RuntimeError(f'Unexpected indentation in temporary workflow step {target}: {line!r}')
                   lines.append(line[10:] if line else '')
-              script = '\n'.join(lines) + '\n'
+              script = ('\n'.join(lines) + '\n').replace("python - <<'PY'", "python3 - <<'PY'")
               print(f'=== {target} ===', flush=True)
               subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
           PY
