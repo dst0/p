@@ -45,7 +45,7 @@ describe("TruncatedText component", () => {
 
     // Should contain ellipsis
     const stripped = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-    assert.ok(stripped.includes("..."));
+    assert.ok(stripped.includes("…"));
   });
 
   it("preserves ANSI codes in output and pads correctly", () => {
@@ -73,7 +73,7 @@ describe("TruncatedText component", () => {
     assert.strictEqual(visibleWidth(lines[0]), 20);
 
     // Should contain reset code before ellipsis
-    assert.ok(lines[0].includes("\x1b[0m..."));
+    assert.ok(lines[0].includes("\x1b[0m…"));
   });
 
   it("handles text that fits exactly", () => {
@@ -87,7 +87,7 @@ describe("TruncatedText component", () => {
 
     // Should NOT contain ellipsis
     const stripped = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-    assert.ok(!stripped.includes("..."));
+    assert.ok(!stripped.includes("…"));
   });
 
   it("handles empty text", () => {
@@ -123,7 +123,7 @@ describe("TruncatedText component", () => {
 
     // Should contain ellipsis and not second line
     const stripped = lines[0].replace(/\x1b\[[0-9;]*m/g, "");
-    assert.ok(stripped.includes("..."));
+    assert.ok(stripped.includes("…"));
     assert.ok(!stripped.includes("Second line"));
   });
 });

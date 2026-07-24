@@ -20,9 +20,9 @@ describe("tab width accounting", () => {
     assert.strictEqual(segments.beforeWidth, 8);
     assert.strictEqual(visibleWidth(segments.before), segments.beforeWidth);
 
-    const tabFits = extractSegments(text, 11, 13, 10, true);
+    const tabFits = extractSegments(text, 12, 14, 10, true);
     assert.strictEqual(tabFits.before, "out 192M\t");
-    assert.strictEqual(tabFits.beforeWidth, 11);
+    assert.strictEqual(tabFits.beforeWidth, 12);
     assert.strictEqual(visibleWidth(tabFits.before), tabFits.beforeWidth);
   });
 });

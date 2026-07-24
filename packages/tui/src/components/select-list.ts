@@ -1,3 +1,4 @@
+import { fuzzyFilter } from "../fuzzy.ts";
 import { getKeybindings } from "../keybindings.ts";
 import type { Component } from "../tui.ts";
 import { truncateToWidth, visibleWidth } from "../utils.ts";
@@ -58,8 +59,11 @@ export class SelectList implements Component {
   }
 
   setFilter(filter: string): void {
-    const filterLower = filter.toLowerCase();
-    this.filteredItems = this.items.filter((item) => item.value.toLowerCase().startsWith(filterLower));
+    if (!filter) {
+      this.filteredItems = this.items;
+    } else {
+      this.filteredItems = fuzzyFilter(this.items, filter, (item) => item.label || item.value);
+    }
     // Reset selection when filter changes
     this.selectedIndex = 0;
   }
@@ -177,8 +181,12 @@ export class SelectList implements Component {
   }
 
   private getPrimaryColumnWidth(): number {
+    if (this.filteredItems.length === 0) {
+      return DEFAULT_PRIMARY_COLUMN_WIDTH;
+    }
+
     const { min, max } = this.getPrimaryColumnBounds();
-    const widestPrimary = this.filteredItems.reduce((widest, item) => {
+    const widestPrimary = this.items.reduce((widest, item) => {
       return Math.max(widest, visibleWidth(this.getDisplayValue(item)) + PRIMARY_COLUMN_GAP);
     }, 0);
 

@@ -19,6 +19,7 @@ interface InputState {
 export class Input implements Component, Focusable {
   private value: string = "";
   private cursor: number = 0; // Cursor position in the value
+  private scrollOffset: number = 0;
   public onSubmit?: (value: string) => void;
   public onEscape?: () => void;
 
@@ -43,6 +44,7 @@ export class Input implements Component, Focusable {
   setValue(value: string): void {
     this.value = value;
     this.cursor = Math.min(this.cursor, value.length);
+    this.scrollOffset = 0;
     if (this.cursor > 0 && this.cursor < value.length) {
       let pos = 0;
       for (const { segment } of segmenter.segment(value)) {
@@ -402,28 +404,30 @@ export class Input implements Component, Focusable {
       // Everything fits (leave room for cursor at end)
       visibleText = this.value;
     } else {
-      // Need horizontal scrolling
-      // Reserve one column for cursor if it's at the end
+      // Need horizontal scrolling - use edge-based scrolling to avoid jitter
       const scrollWidth = this.cursor === this.value.length ? availableWidth - 1 : availableWidth;
       const cursorCol = visibleWidth(this.value.slice(0, this.cursor));
+      const scrollMargin = Math.min(5, Math.floor(scrollWidth / 4));
 
       if (scrollWidth > 0) {
-        const halfWidth = Math.floor(scrollWidth / 2);
-        let startCol = 0;
-
-        if (cursorCol < halfWidth) {
-          // Cursor near start
-          startCol = 0;
-        } else if (cursorCol > totalWidth - halfWidth) {
-          // Cursor near end
-          startCol = Math.max(0, totalWidth - scrollWidth);
-        } else {
-          // Cursor in middle
-          startCol = Math.max(0, cursorCol - halfWidth);
+        // Adjust scroll offset only when cursor would go off-screen
+        if (cursorCol < this.scrollOffset + scrollMargin) {
+          // Cursor too far left — scroll left
+          this.scrollOffset = Math.max(0, cursorCol - scrollMargin);
+        } else if (cursorCol >= this.scrollOffset + scrollWidth - scrollMargin) {
+          // Cursor too far right — scroll right
+          this.scrollOffset = Math.max(0, cursorCol - scrollWidth + scrollMargin + 1);
         }
+        // Clamp scroll offset to valid range
+        this.scrollOffset = Math.min(this.scrollOffset, Math.max(0, totalWidth - scrollWidth));
 
-        visibleText = sliceByColumn(this.value, startCol, scrollWidth, true);
-        const beforeCursor = sliceByColumn(this.value, startCol, Math.max(0, cursorCol - startCol), true);
+        visibleText = sliceByColumn(this.value, this.scrollOffset, scrollWidth, true);
+        const beforeCursor = sliceByColumn(
+          this.value,
+          this.scrollOffset,
+          Math.max(0, cursorCol - this.scrollOffset),
+          true,
+        );
         cursorDisplay = beforeCursor.length;
       } else {
         visibleText = "";

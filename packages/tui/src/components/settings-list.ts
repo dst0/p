@@ -182,16 +182,12 @@ export class SettingsList implements Component {
     } else if (kb.matches(data, "tui.select.down")) {
       if (displayItems.length === 0) return;
       this.selectedIndex = this.selectedIndex === displayItems.length - 1 ? 0 : this.selectedIndex + 1;
-    } else if (kb.matches(data, "tui.select.confirm") || data === " ") {
+    } else if (kb.matches(data, "tui.select.confirm") || (!this.searchEnabled && data === " ")) {
       this.activateItem();
     } else if (kb.matches(data, "tui.select.cancel")) {
       this.onCancel();
     } else if (this.searchEnabled && this.searchInput) {
-      const sanitized = data.replace(/ /g, "");
-      if (!sanitized) {
-        return;
-      }
-      this.searchInput.handleInput(sanitized);
+      this.searchInput.handleInput(data);
       this.applyFilter(this.searchInput.getValue());
     }
   }

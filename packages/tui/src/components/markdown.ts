@@ -140,8 +140,8 @@ export class Markdown implements Component {
       return result;
     }
 
-    // Replace tabs with 3 spaces for consistent rendering
-    const normalizedText = this.text.replace(/\t/g, "   ");
+    // Replace tabs with 4 spaces for consistent rendering
+    const normalizedText = this.text.replace(/\t/g, "    ");
 
     // Parse markdown to HTML-like tokens
     const tokens = markdownParser.lexer(normalizedText);

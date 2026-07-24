@@ -77,7 +77,7 @@ describe("Text component", () => {
 
     const lines = text.render(10);
     assert.equal(lines.length, 3); // 1 top pad, 1 content, 1 bottom pad
-    assert.equal(lines[1].includes("A   B"), true);
+    assert.equal(lines[1].includes("A    B"), true);
 
     // Test cache hit
     const cached = text.render(10);

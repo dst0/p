@@ -278,6 +278,8 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
   private pasteMode: boolean = false;
   private pasteBuffer: string = "";
   private pendingKittyPrintableCodepoint: number | undefined;
+  private pasteTimeout: ReturnType<typeof setTimeout> | null = null;
+  private readonly pasteTimeoutMs: number = 5000;
 
   constructor(options: StdinBufferOptions = {}) {
     super();
@@ -322,6 +324,10 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
         const remaining = this.pasteBuffer.slice(endIndex + BRACKETED_PASTE_END.length);
 
         this.pasteMode = false;
+        if (this.pasteTimeout) {
+          clearTimeout(this.pasteTimeout);
+          this.pasteTimeout = null;
+        }
         this.pasteBuffer = "";
         this.pendingKittyPrintableCodepoint = undefined;
 
@@ -347,6 +353,9 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
       this.pendingKittyPrintableCodepoint = undefined;
       this.buffer = this.buffer.slice(startIndex + BRACKETED_PASTE_START.length);
       this.pasteMode = true;
+      this.pasteTimeout = setTimeout(() => {
+        this.forcePasteEnd();
+      }, this.pasteTimeoutMs);
       this.pasteBuffer = this.buffer;
       this.buffer = "";
 
@@ -356,6 +365,10 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
         const remaining = this.pasteBuffer.slice(endIndex + BRACKETED_PASTE_END.length);
 
         this.pasteMode = false;
+        if (this.pasteTimeout) {
+          clearTimeout(this.pasteTimeout);
+          this.pasteTimeout = null;
+        }
         this.pasteBuffer = "";
         this.pendingKittyPrintableCodepoint = undefined;
 
@@ -397,6 +410,14 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
     this.emit("data", sequence);
   }
 
+  private forcePasteEnd(): void {
+    this.pasteMode = false;
+    this.emit("paste", this.pasteBuffer);
+    this.pasteBuffer = "";
+    this.pendingKittyPrintableCodepoint = undefined;
+    this.pasteTimeout = null;
+  }
+
   flush(): string[] {
     if (this.timeout) {
       clearTimeout(this.timeout);
@@ -417,6 +438,10 @@ export class StdinBuffer extends EventEmitter<StdinBufferEventMap> {
     if (this.timeout) {
       clearTimeout(this.timeout);
       this.timeout = null;
+    }
+    if (this.pasteTimeout) {
+      clearTimeout(this.pasteTimeout);
+      this.pasteTimeout = null;
     }
     this.buffer = "";
     this.pasteMode = false;

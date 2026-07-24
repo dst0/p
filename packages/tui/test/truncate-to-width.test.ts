@@ -51,13 +51,13 @@ describe("truncateToWidth", () => {
 
   it("keeps a contiguous prefix instead of skipping a wide grapheme and resuming later", () => {
     const truncated = truncateToWidth("🙂\t界 \x1b_abc\x07", 7, "…", true);
-    assert.strictEqual(truncated, "🙂\t\x1b[0m…\x1b[0m ");
+    assert.strictEqual(truncated, "🙂\t\x1b[0m…\x1b[0m");
   });
 });
 
 describe("visibleWidth", () => {
   it("counts tabs inline and skips ANSI inline", () => {
-    assert.strictEqual(visibleWidth("\t\x1b[31m界\x1b[0m"), 5);
+    assert.strictEqual(visibleWidth("\t\x1b[31m界\x1b[0m"), 6);
   });
 
   it("keeps Thai and Lao AM clusters at their normal cell width", () => {

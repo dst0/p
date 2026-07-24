@@ -98,7 +98,7 @@ function truncateFragmentToWidth(text: string, maxWidth: number): { text: string
     }
 
     if (text[i] === "\t") {
-      if (width + 3 > maxWidth) {
+      if (width + 4 > maxWidth) {
         break;
       }
       if (pendingAnsi) {
@@ -106,7 +106,7 @@ function truncateFragmentToWidth(text: string, maxWidth: number): { text: string
         pendingAnsi = "";
       }
       result += "\t";
-      width += 3;
+      width += 4;
       i++;
       continue;
     }
@@ -166,7 +166,7 @@ function finalizeTruncatedResult(
  */
 function graphemeWidth(segment: string): number {
   if (segment === "\t") {
-    return 3;
+    return 4;
   }
 
   // Zero-width clusters
@@ -229,10 +229,10 @@ export function visibleWidth(str: string): number {
     return cached;
   }
 
-  // Normalize: tabs to 3 spaces, strip ANSI escape codes
+  // Normalize: tabs to 4 spaces, strip ANSI escape codes
   let clean = str;
   if (str.includes("\t")) {
-    clean = clean.replace(/\t/g, "   ");
+    clean = clean.replace(/\t/g, "    ");
   }
   if (clean.includes("\x1b")) {
     // Strip supported ANSI/OSC/APC escape sequences in one pass.
@@ -908,16 +908,11 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
  *
  * @param text - Text to truncate (may contain ANSI codes)
  * @param maxWidth - Maximum visible width
- * @param ellipsis - Ellipsis string to append when truncating (default: "...")
+ * @param ellipsis - Ellipsis string to append when truncating (default: "…")
  * @param pad - If true, pad result with spaces to exactly maxWidth (default: false)
  * @returns Truncated text, optionally padded to exactly maxWidth
  */
-export function truncateToWidth(
-  text: string,
-  maxWidth: number,
-  ellipsis: string = "...",
-  pad: boolean = false,
-): string {
+export function truncateToWidth(text: string, maxWidth: number, ellipsis: string = "…", pad: boolean = false): string {
   if (maxWidth <= 0) {
     return "";
   }
@@ -986,18 +981,18 @@ export function truncateToWidth(
       }
 
       if (text[i] === "\t") {
-        if (keepContiguousPrefix && keptWidth + 3 <= targetWidth) {
+        if (keepContiguousPrefix && keptWidth + 4 <= targetWidth) {
           if (pendingAnsi) {
             result += pendingAnsi;
             pendingAnsi = "";
           }
           result += "\t";
-          keptWidth += 3;
+          keptWidth += 4;
         } else {
           keepContiguousPrefix = false;
           pendingAnsi = "";
         }
-        visibleSoFar += 3;
+        visibleSoFar += 4;
         if (visibleSoFar > maxWidth) {
           overflowed = true;
           break;

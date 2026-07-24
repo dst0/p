@@ -6,9 +6,19 @@
 
 - Expanded unit test coverage for Box, Text, Spacer, Loader, CancellableLoader, SettingsList, and native-modifiers components.
 
+### Changed
+
+- Standardized tab expansion from 3 spaces to 4 spaces across all components (`utils.ts`, `markdown.ts`, `text.ts`).
+- `SelectList.setFilter()` now uses fuzzy matching (via `fuzzyFilter`) against both label and value instead of prefix-only matching on value.
+- `SelectList` primary column width is now computed from all items, not just filtered items, preventing column jumps during scrolling.
+- `truncateToWidth()` default ellipsis changed from `...` (3 columns) to `…` (1 column).
+
 ### Fixed
 
 - Prevented surrogate pair splitting in `Input.setValue` by aligning cursor to grapheme boundaries.
+- Fixed `SettingsList` space key hijacking search input when `enableSearch` is true: space now inserts into the search box instead of activating the selected item, and multi-word searches are supported.
+- Added 5-second timeout recovery for bracketed paste mode in `StdinBuffer` to prevent permanent input freeze when the paste end marker is lost.
+- Fixed `Input` horizontal scroll jitter by replacing center-based scrolling with edge-based scrolling that only shifts the viewport when the cursor approaches the edges.
 
 ## [0.4.40] - 2026-07-24
 

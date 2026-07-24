@@ -60,7 +60,7 @@ describe("truncateToWidth", () => {
 
     const truncated = truncateToWidth(message, maxMsgWidth);
 
-    expect(truncated).toContain("...");
+    expect(truncated).toContain("…");
     expect(visibleWidth(truncated)).toBeLessThanOrEqual(maxMsgWidth);
   });
 

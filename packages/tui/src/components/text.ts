@@ -57,8 +57,8 @@ export class Text implements Component {
       return result;
     }
 
-    // Replace tabs with 3 spaces
-    const normalizedText = this.text.replace(/\t/g, "   ");
+    // Replace tabs with 4 spaces
+    const normalizedText = this.text.replace(/\t/g, "    ");
 
     // Calculate content width (subtract left/right margins)
     const contentWidth = Math.max(1, width - this.paddingX * 2);
