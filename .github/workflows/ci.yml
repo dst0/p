@@ -54,4 +54,11 @@ jobs:
       - name: Test
         run: |
           mkdir -p "$RUNNER_TEMP/p-ci-home"
-          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh
+          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh > test.log 2>&1
+
+      - name: Upload test diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-log
+          path: test.log
