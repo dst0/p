@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import re
 from pathlib import Path
 
 SOURCE_PATH = Path("packages/coding-agent/src/core/agent-session.ts")
@@ -13,14 +12,18 @@ REMINDER = (
 )
 
 source = SOURCE_PATH.read_text()
-source_pattern = re.compile(
-    r"Before calling \$\{[^}\n]+\}, call update_session_state first to record or revise "
-    r"the goal, plan, and next action for the latest user message\."
+old_source = (
+    "`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +\n"
+    '\t\t\t\t\t\t\t"record or revise the goal, plan, and next action for the latest user message.",'
 )
-source, replacements = source_pattern.subn(REMINDER, source)
-if replacements != 1:
-    raise RuntimeError(f"Expected one session-state reminder replacement, found {replacements}")
-SOURCE_PATH.write_text(source)
+new_source = (
+    "`After receiving the latest user message, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +\n"
+    '\t\t\t\t\t\t\t"record or revise the goal, plan, and next action before attempting any other tool call.",'
+)
+source_count = source.count(old_source)
+if source_count != 1:
+    raise RuntimeError(f"Expected one constructed session-state reminder, found {source_count}")
+SOURCE_PATH.write_text(source.replace(old_source, new_source, 1))
 
 test = TEST_PATH.read_text()
 constant_anchor = 'const PROGRESS_TOOL = "mark_session_progress";\n'
@@ -52,5 +55,4 @@ changelog_entry = (
 )
 if changelog_anchor not in changelog:
     raise RuntimeError("Could not find top Unreleased Fixed changelog anchor")
-changelog = changelog.replace(changelog_anchor, changelog_anchor + changelog_entry, 1)
-CHANGELOG_PATH.write_text(changelog)
+CHANGELOG_PATH.write_text(changelog.replace(changelog_anchor, changelog_anchor + changelog_entry, 1))
