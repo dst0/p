@@ -8,6 +8,7 @@ import { IndexingDaemon } from "./core/indexing-daemon.ts";
 
 const REINSTALL_CONTROL_FILE = "reinstall-control.json";
 const REINSTALL_READY_FILE = "reinstall-ready.json";
+const REINSTALL_STOP_LEASE_MS = 60_000;
 
 export function getIndexingReinstallControlPath(agentDir: string): string {
 	return path.join(agentDir, "indexing-service", REINSTALL_CONTROL_FILE);
@@ -42,6 +43,15 @@ export async function runIndexingService(): Promise<void> {
 			let stopping = false;
 			let preparedForRestart = false;
 			let preparePromise: Promise<void> | undefined;
+			let restartLeaseTimer: ReturnType<typeof setTimeout> | undefined;
+			const stop = () => {
+				if (stopping) return;
+				stopping = true;
+				if (restartLeaseTimer) clearTimeout(restartLeaseTimer);
+				process.off("SIGUSR1", prepareForRestart);
+				const prepared = preparePromise ?? Promise.resolve();
+				void prepared.then(() => daemon.stop({ graceful: preparedForRestart })).finally(resolve);
+			};
 			const prepareForRestart = () => {
 				if (stopping || preparePromise) return;
 				preparePromise = daemon
@@ -53,19 +63,17 @@ export async function runIndexingService(): Promise<void> {
 							{ mode: 0o600 },
 						);
 						preparedForRestart = true;
+						restartLeaseTimer = setTimeout(() => {
+							console.error("Indexing reinstall did not stop the prepared daemon; restarting it safely");
+							stop();
+						}, REINSTALL_STOP_LEASE_MS);
+						restartLeaseTimer.unref();
 					})
 					.catch((error: unknown) => {
 						console.error(
 							`Failed to prepare code indexing service for reinstall: ${error instanceof Error ? error.message : String(error)}`,
 						);
 					});
-			};
-			const stop = () => {
-				if (stopping) return;
-				stopping = true;
-				process.off("SIGUSR1", prepareForRestart);
-				const prepared = preparePromise ?? Promise.resolve();
-				void prepared.then(() => daemon.stop({ graceful: preparedForRestart })).finally(resolve);
 			};
 			process.on("SIGUSR1", prepareForRestart);
 			process.once("SIGINT", stop);
