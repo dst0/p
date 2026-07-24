@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: write
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -19,71 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: fix/task-verification-guidance
-          fetch-depth: 0
-
-      - name: Apply pending task-verification guidance patch
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/task-verification-guidance'
-        run: |
-          if [[ -f .patch-error.txt ]]; then
-            cat .patch-error.txt
-            exit 1
-          fi
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          npm install --ignore-scripts
-          set +e
-          python3 - <<'PY' > /tmp/task-verification-patch.log 2>&1
-          from pathlib import Path
-          import subprocess
-
-          workflow = Path('.github/workflows/temp-task-verification-guidance.yml').read_text().splitlines()
-          targets = [
-              'Apply task-verification guidance changes',
-              'Add changelog and patch version',
-              'Format and run focused tests',
-          ]
-
-          for target in targets:
-              marker = f'      - name: {target}'
-              start = workflow.index(marker)
-              run_index = next(
-                  index for index in range(start + 1, len(workflow)) if workflow[index] == '        run: |'
-              )
-              lines = []
-              for line in workflow[run_index + 1:]:
-                  if line.startswith('      - name:'):
-                      break
-                  lines.append(line[10:] if line.startswith('          ') else line)
-              script = ('\n'.join(lines) + '\n').replace("python - <<'PY'", "python3 - <<'PY'")
-              script = script.replace(r'\t\t\t\texecute: async', r'\t\t\texecute: async')
-              script = script.replace(
-                  r'\t\t\t\t\tconst result = this.applyInput(params);',
-                  r'\t\t\t\tconst result = this.applyInput(params);',
-              )
-              script = script.replace(
-                  r'\t\t\t\t\tif (result.status === "rejected")',
-                  r'\t\t\t\tif (result.status === "rejected")',
-              )
-              print(f'=== {target} ===', flush=True)
-              subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
-          PY
-          PATCH_STATUS=$?
-          set -e
-          cat /tmp/task-verification-patch.log
-          if [[ $PATCH_STATUS -ne 0 ]]; then
-            cp /tmp/task-verification-patch.log .patch-error.txt
-            git add .patch-error.txt
-            git commit -m "chore: capture task verification patch failure"
-            git push origin HEAD:fix/task-verification-guidance
-            exit $PATCH_STATUS
-          fi
-          git checkout origin/main -- .github/workflows/ci.yml
-          rm -f .github/workflows/temp-task-verification-guidance.yml .patch-error.txt
-          git add -A
-          git commit -m "fix(coding-agent): explain verification recovery steps"
-          git push origin HEAD:fix/task-verification-guidance
 
       - name: Setup Node.js
         uses: actions/setup-node@v5

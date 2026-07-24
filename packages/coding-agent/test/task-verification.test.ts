@@ -301,4 +301,83 @@ describe("task verification controller", () => {
 				.some((entry) => entry.type === "custom" && entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE),
 		).toBe(true);
 	});
+	it("explains the exact next regression step proactively and in blocked gate errors", async () => {
+		const { agent, controller } = createInstalledController();
+		await callVerificationTool(controller, {
+			action: "declare_task",
+			task_kind: "bug_fix",
+			task_summary: "Fix completion regression after compaction",
+		});
+		await callVerificationTool(controller, {
+			action: "authorize_baseline_test",
+			test_paths: ["test/completion-compaction.test.ts"],
+		});
+
+		const proactive = await callVerificationTool(controller, { action: "status" });
+		expect(proactive.text).toContain("NEXT REQUIRED ACTION");
+		expect(proactive.text).toContain("test/completion-compaction.test.ts");
+		expect(proactive.text).toContain("Only these paths are currently writable");
+
+		const blocked = await beforeTool(agent, "edit", { path: "src/completion.ts", edits: [] });
+		expect(blocked?.block).toBe(true);
+		expect(blocked?.reason).toContain("NEXT REQUIRED ACTION");
+		expect(blocked?.reason).toContain("test/completion-compaction.test.ts");
+		expect(blocked?.reason).toContain('{"action":"status"}');
+	});
+
+	it("restores exact regression commands and repair payloads after session reconstruction", async () => {
+		const sessionManager = SessionManager.inMemory();
+		const firstAgent = new Agent();
+		const first = createTaskVerificationController(sessionManager);
+		first.install(firstAgent);
+		await callVerificationTool(first, {
+			action: "declare_task",
+			task_kind: "bug_fix",
+			task_summary: "Fix restored regression guidance",
+		});
+		await callVerificationTool(first, {
+			action: "authorize_baseline_test",
+			test_paths: ["test/restored-regression.test.ts"],
+		});
+		await afterTool(firstAgent, "edit", {
+			path: "test/restored-regression.test.ts",
+			edits: [{ oldText: "old", newText: "failing regression" }],
+		});
+		const command = "vitest --run test/restored-regression.test.ts";
+		const failedHandle = evidenceHandle(
+			await afterTool(firstAgent, "bash", { command }, { isError: true, text: "expected failure" }),
+		);
+
+		const restoredBaseline = createTaskVerificationController(sessionManager);
+		const baselineStatus = await callVerificationTool(restoredBaseline, { action: "status" });
+		expect(baselineStatus.text).toContain(command);
+		expect(baselineStatus.text).toContain(failedHandle);
+		expect(baselineStatus.text).toContain('"baseline_method":"failing_regression_test"');
+
+		await callVerificationTool(restoredBaseline, {
+			action: "record_baseline",
+			baseline_method: "failing_regression_test",
+			hypothesis: "The old behavior violates the completion contract",
+			conclusion: "The focused test reproduces the regression",
+			evidence_refs: [failedHandle],
+			unresolved_assumptions: [],
+		});
+		const secondAgent = new Agent();
+		restoredBaseline.install(secondAgent);
+		await afterTool(secondAgent, "edit", {
+			path: "src/completion.ts",
+			edits: [{ oldText: "old", newText: "new" }],
+		});
+
+		const restoredFinal = createTaskVerificationController(sessionManager);
+		const finalStatus = await callVerificationTool(restoredFinal, { action: "status" });
+		expect(finalStatus.text).toContain(`Required exact replay command: ${command}`);
+		expect(finalStatus.text).toContain("mutation revision 1");
+
+		const finalAgent = new Agent();
+		restoredFinal.install(finalAgent);
+		const blockedFinish = await beforeTool(finalAgent, "finish_work", { status: "success" });
+		expect(blockedFinish?.reason).toContain(command);
+		expect(blockedFinish?.reason).toContain('{"action":"status"}');
+	});
 });
