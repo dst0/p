@@ -2,9 +2,9 @@ export const DEFAULT_COMPACTION_SETTINGS = {
 	enabled: true,
 	triggerReserveTokens: 2000,
 	triggerRatio: 1.0,
-	keepRecentMinTokens: 2000,
-	keepRecentMaxTokens: 8000,
+	keepRecentMinTokens: 1200,
+	keepRecentMaxTokens: 4000,
 	summaryMaxTokens: 1200,
-	renderedStateMaxTokens: 1500,
-	targetContextTokens: 12000,
+	renderedStateMaxTokens: 1000,
+	targetContextTokens: 8000,
 } as const;

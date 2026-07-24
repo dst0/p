@@ -71,6 +71,7 @@ import {
 	parseSessionStateUpdateBlock,
 	prepareCompaction,
 	readSessionStateFile,
+	renderMinimalCompactionCheckpoint,
 	renderStructuredSessionCheckpoint,
 	renderWorkingSessionState,
 	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
@@ -4304,7 +4305,7 @@ Plan mode is active because the user invoked /plan.
 				knownRisks: risks,
 			},
 		});
-		const summary = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
+		const summary = renderMinimalCompactionCheckpoint(state, settings.renderedStateMaxTokens);
 		const summaryTokens = Math.ceil(summary.length / 4);
 		const afterTokens = preparation.systemPromptTokens + summaryTokens + preparation.recentRawTokens;
 		const audit = {
@@ -4364,23 +4365,26 @@ Plan mode is active because the user invoked /plan.
 			const modifiedFiles = modelDetails?.modifiedFiles ?? deterministic.details?.modifiedFiles ?? [];
 			const audit = modelDetails?.audit ?? deterministic.details?.audit;
 			const baseState = this._getCurrentStructuredSessionState(pathEntries);
-			const state = createStructuredSessionState({
-				sessionId: this.sessionManager.getSessionId(),
-				previous: baseState,
-				summary: modelResult.summary,
-				entries: pathEntries,
-				readFiles,
-				modifiedFiles,
-				audit,
-				timestamp: new Date().toISOString(),
-			});
+			const state =
+				modelDetails?.structuredState && isStructuredSessionState(modelDetails.structuredState)
+					? modelDetails.structuredState
+					: createStructuredSessionState({
+						sessionId: this.sessionManager.getSessionId(),
+						previous: baseState,
+						summary: modelResult.summary,
+						entries: pathEntries,
+						readFiles,
+						modifiedFiles,
+						audit,
+						timestamp: new Date().toISOString(),
+					});
 			return {
 				...modelResult,
 				details: {
 					readFiles,
 					modifiedFiles,
 					audit,
-					markdownSummary: modelResult.summary,
+					markdownSummary: modelDetails?.markdownSummary ?? modelResult.summary,
 					structuredState: state,
 				},
 				state,
