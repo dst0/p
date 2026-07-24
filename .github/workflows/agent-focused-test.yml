@@ -1,4 +1,4 @@
-name: Agent focused reinstall test
+name: Agent full test diagnostics
 
 on:
   pull_request:
@@ -8,7 +8,7 @@ permissions:
   contents: read
 
 jobs:
-  focused-test:
+  full-test-diagnostics:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout branch
@@ -27,19 +27,19 @@ jobs:
       - name: Build
         run: npm run build
 
-      - name: Capture focused test output
+      - name: Capture full test output
         run: |
           set +e
-          cd packages/coding-agent
-          node ../../node_modules/vitest/dist/cli.js --run test/indexing-reinstall-script.test.ts > "$RUNNER_TEMP/focused-test.log" 2>&1
-          echo "$?" > "$RUNNER_TEMP/focused-test-exit.txt"
+          mkdir -p "$RUNNER_TEMP/p-ci-home"
+          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh > "$RUNNER_TEMP/full-test.log" 2>&1
+          echo "$?" > "$RUNNER_TEMP/full-test-exit.txt"
           set -e
 
-      - name: Upload focused test output
+      - name: Upload full test output
         uses: actions/upload-artifact@v4
         with:
-          name: focused-reinstall-test
+          name: full-test-diagnostics
           path: |
-            ${{ runner.temp }}/focused-test.log
-            ${{ runner.temp }}/focused-test-exit.txt
+            ${{ runner.temp }}/full-test.log
+            ${{ runner.temp }}/full-test-exit.txt
           if-no-files-found: error
