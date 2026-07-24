@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { createFindToolDefinition } from "../src/core/tools/find.ts";
 import { createGrepToolDefinition } from "../src/core/tools/grep.ts";
+import { createTool, createToolDefinition } from "../src/core/tools/index.ts";
 
 const dummyTheme: any = {
 	fg: (_name: string, text: string) => text,
@@ -92,5 +93,14 @@ describe("grep tool custom operations validation", () => {
 			dummyContext,
 		);
 		expect(resRender).toBeDefined();
+	});
+
+	it("supports rg tool name alias", () => {
+		const rgDef = createToolDefinition("rg", "/test");
+		expect(rgDef.name).toBe("rg");
+		expect(rgDef.label).toBe("rg");
+
+		const rgTool = createTool("rg", "/test");
+		expect(rgTool.name).toBe("rg");
 	});
 });

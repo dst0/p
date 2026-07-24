@@ -37,6 +37,8 @@ export {
 export {
 	createGrepTool,
 	createGrepToolDefinition,
+	createRgTool,
+	createRgToolDefinition,
 	type GrepOperations,
 	type GrepToolDetails,
 	type GrepToolInput,
@@ -106,7 +108,13 @@ import { type BashToolOptions, createBashTool, createBashToolDefinition } from "
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
-import { createGrepTool, createGrepToolDefinition, type GrepToolOptions } from "./grep.ts";
+import {
+	createGrepTool,
+	createGrepToolDefinition,
+	createRgTool,
+	createRgToolDefinition,
+	type GrepToolOptions,
+} from "./grep.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import { createSemanticSearchTool, createSemanticSearchToolDefinition } from "./semantic-search.ts";
@@ -130,6 +138,7 @@ export type ToolName =
 	| "edit"
 	| "write"
 	| "grep"
+	| "rg"
 	| "find"
 	| "ls"
 	| "sleep"
@@ -144,6 +153,7 @@ export const allToolNames: Set<ToolName> = new Set([
 	"edit",
 	"write",
 	"grep",
+	"rg",
 	"find",
 	"ls",
 	"sleep",
@@ -160,6 +170,7 @@ export interface ToolsOptions {
 	write?: WriteToolOptions;
 	edit?: EditToolOptions;
 	grep?: GrepToolOptions;
+	rg?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
 	submitPlan?: SubmitPlanToolOptions;
@@ -176,7 +187,9 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 		case "write":
 			return createWriteToolDefinition(cwd, options?.write);
 		case "grep":
-			return createGrepToolDefinition(cwd, options?.grep);
+			return createGrepToolDefinition(cwd, options?.grep, "grep");
+		case "rg":
+			return createRgToolDefinition(cwd, options?.rg ?? options?.grep);
 		case "find":
 			return createFindToolDefinition(cwd, options?.find);
 		case "ls":
@@ -209,7 +222,9 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 		case "write":
 			return createWriteTool(cwd, options?.write);
 		case "grep":
-			return createGrepTool(cwd, options?.grep);
+			return createGrepTool(cwd, options?.grep, "grep");
+		case "rg":
+			return createRgTool(cwd, options?.rg ?? options?.grep);
 		case "find":
 			return createFindTool(cwd, options?.find);
 		case "ls":
@@ -255,7 +270,8 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 		bash: createBashToolDefinition(cwd, options?.bash),
 		edit: createEditToolDefinition(cwd, options?.edit),
 		write: createWriteToolDefinition(cwd, options?.write),
-		grep: createGrepToolDefinition(cwd, options?.grep),
+		grep: createGrepToolDefinition(cwd, options?.grep, "grep"),
+		rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		sleep: createSleepToolDefinition(),
@@ -291,7 +307,8 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
 		bash: createBashTool(cwd, options?.bash),
 		edit: createEditTool(cwd, options?.edit),
 		write: createWriteTool(cwd, options?.write),
-		grep: createGrepTool(cwd, options?.grep),
+		grep: createGrepTool(cwd, options?.grep, "grep"),
+		rg: createRgTool(cwd, options?.rg ?? options?.grep),
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		sleep: createSleepTool(),
