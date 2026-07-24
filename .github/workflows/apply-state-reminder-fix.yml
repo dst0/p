@@ -1,9 +1,8 @@
 name: Apply state reminder fix
 
 on:
-  push:
-    branches:
-      - agent/clarify-session-state-reminder
+  pull_request:
+    types: [opened]
 
 permissions:
   contents: write
@@ -14,11 +13,13 @@ concurrency:
 
 jobs:
   apply:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.head.ref == 'agent/clarify-session-state-reminder'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ github.event.pull_request.head.ref }}
           fetch-depth: 0
 
       - uses: actions/setup-node@v4
@@ -44,6 +45,11 @@ jobs:
 
       - name: Run repository checks
         run: npm run check
+
+      - name: Reinstall and smoke the CLI
+        run: |
+          ./reinstall.sh
+          p --version
 
       - name: Validate patch and commit final changes
         run: |
