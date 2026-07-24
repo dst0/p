@@ -131,9 +131,10 @@ class Handler(BaseHTTPRequestHandler):
                         show_progress_bar=False,
                     )
                     # Reclaim GPU/Metal memory after encode
-                    if hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
-                        torch.mps.empty_cache()
-                    elif hasattr(torch, "cuda") and torch.cuda.is_available():
+                    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                        if hasattr(torch.mps, "empty_cache"):
+                            torch.mps.empty_cache()
+                    elif torch.cuda.is_available():
                         torch.cuda.empty_cache()
 
             self._json(200, {
