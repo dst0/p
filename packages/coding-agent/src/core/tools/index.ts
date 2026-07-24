@@ -35,16 +35,6 @@ export {
 	type FinishWorkToolOptions,
 } from "./finish-work.ts";
 export {
-	createGrepTool,
-	createGrepToolDefinition,
-	createRgTool,
-	createRgToolDefinition,
-	type GrepOperations,
-	type GrepToolDetails,
-	type GrepToolInput,
-	type GrepToolOptions,
-} from "./grep.ts";
-export {
 	createLsTool,
 	createLsToolDefinition,
 	type LsOperations,
@@ -60,6 +50,16 @@ export {
 	type ReadToolInput,
 	type ReadToolOptions,
 } from "./read.ts";
+export {
+	createGrepTool,
+	createGrepToolDefinition,
+	createRgTool,
+	createRgToolDefinition,
+	type GrepOperations,
+	type GrepToolDetails,
+	type GrepToolInput,
+	type GrepToolOptions,
+} from "./rg.ts";
 export {
 	createSemanticSearchTool,
 	createSemanticSearchToolDefinition,
@@ -108,15 +108,15 @@ import { type BashToolOptions, createBashTool, createBashToolDefinition } from "
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
+import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
+import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import {
 	createGrepTool,
 	createGrepToolDefinition,
 	createRgTool,
 	createRgToolDefinition,
 	type GrepToolOptions,
-} from "./grep.ts";
-import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
-import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
+} from "./rg.ts";
 import { createSemanticSearchTool, createSemanticSearchToolDefinition } from "./semantic-search.ts";
 import { createSleepTool, createSleepToolDefinition } from "./sleep.ts";
 import {
@@ -133,31 +133,31 @@ import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } fro
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
 export type ToolName =
+	| "semantic_search"
+	| "rg"
+	| "grep"
 	| "read"
 	| "bash"
 	| "edit"
 	| "write"
-	| "grep"
-	| "rg"
 	| "find"
 	| "ls"
 	| "sleep"
-	| "semantic_search"
 	| "ask_user"
 	| "confirm_user"
 	| "submit_plan"
 	| "finish_work";
 export const allToolNames: Set<ToolName> = new Set([
+	"semantic_search",
+	"rg",
+	"grep",
 	"read",
 	"bash",
 	"edit",
 	"write",
-	"grep",
-	"rg",
 	"find",
 	"ls",
 	"sleep",
-	"semantic_search",
 	"ask_user",
 	"confirm_user",
 	"submit_plan",
@@ -169,8 +169,8 @@ export interface ToolsOptions {
 	bash?: BashToolOptions;
 	write?: WriteToolOptions;
 	edit?: EditToolOptions;
-	grep?: GrepToolOptions;
 	rg?: GrepToolOptions;
+	grep?: GrepToolOptions;
 	find?: FindToolOptions;
 	ls?: LsToolOptions;
 	submitPlan?: SubmitPlanToolOptions;
@@ -178,6 +178,12 @@ export interface ToolsOptions {
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
 	switch (toolName) {
+		case "semantic_search":
+			return createSemanticSearchToolDefinition(cwd);
+		case "rg":
+			return createRgToolDefinition(cwd, options?.rg ?? options?.grep);
+		case "grep":
+			return createGrepToolDefinition(cwd, options?.grep ?? options?.rg, "grep");
 		case "read":
 			return createReadToolDefinition(cwd, options?.read);
 		case "bash":
@@ -186,18 +192,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 			return createEditToolDefinition(cwd, options?.edit);
 		case "write":
 			return createWriteToolDefinition(cwd, options?.write);
-		case "grep":
-			return createGrepToolDefinition(cwd, options?.grep, "grep");
-		case "rg":
-			return createRgToolDefinition(cwd, options?.rg ?? options?.grep);
 		case "find":
 			return createFindToolDefinition(cwd, options?.find);
 		case "ls":
 			return createLsToolDefinition(cwd, options?.ls);
 		case "sleep":
 			return createSleepToolDefinition();
-		case "semantic_search":
-			return createSemanticSearchToolDefinition(cwd);
 		case "ask_user":
 			return createAskUserToolDefinition();
 		case "confirm_user":
@@ -213,6 +213,12 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
 	switch (toolName) {
+		case "semantic_search":
+			return createSemanticSearchTool(cwd);
+		case "rg":
+			return createRgTool(cwd, options?.rg ?? options?.grep);
+		case "grep":
+			return createGrepTool(cwd, options?.grep ?? options?.rg, "grep");
 		case "read":
 			return createReadTool(cwd, options?.read);
 		case "bash":
@@ -221,18 +227,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 			return createEditTool(cwd, options?.edit);
 		case "write":
 			return createWriteTool(cwd, options?.write);
-		case "grep":
-			return createGrepTool(cwd, options?.grep, "grep");
-		case "rg":
-			return createRgTool(cwd, options?.rg ?? options?.grep);
 		case "find":
 			return createFindTool(cwd, options?.find);
 		case "ls":
 			return createLsTool(cwd, options?.ls);
 		case "sleep":
 			return createSleepTool();
-		case "semantic_search":
-			return createSemanticSearchTool(cwd);
 		case "ask_user":
 			return createAskUserTool();
 		case "confirm_user":
@@ -257,8 +257,9 @@ export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions)
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
 	return [
+		createSemanticSearchToolDefinition(cwd),
 		createReadToolDefinition(cwd, options?.read),
-		createGrepToolDefinition(cwd, options?.grep),
+		createRgToolDefinition(cwd, options?.rg ?? options?.grep),
 		createFindToolDefinition(cwd, options?.find),
 		createLsToolDefinition(cwd, options?.ls),
 	];
@@ -266,16 +267,16 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
 	return {
+		semantic_search: createSemanticSearchToolDefinition(cwd),
+		rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
+		grep: createGrepToolDefinition(cwd, options?.grep ?? options?.rg, "grep"),
 		read: createReadToolDefinition(cwd, options?.read),
 		bash: createBashToolDefinition(cwd, options?.bash),
 		edit: createEditToolDefinition(cwd, options?.edit),
 		write: createWriteToolDefinition(cwd, options?.write),
-		grep: createGrepToolDefinition(cwd, options?.grep, "grep"),
-		rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
 		find: createFindToolDefinition(cwd, options?.find),
 		ls: createLsToolDefinition(cwd, options?.ls),
 		sleep: createSleepToolDefinition(),
-		semantic_search: createSemanticSearchToolDefinition(cwd),
 		ask_user: createAskUserToolDefinition(),
 		confirm_user: createConfirmUserToolDefinition(),
 		submit_plan: createSubmitPlanToolDefinition(options?.submitPlan),
@@ -294,8 +295,9 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
 
 export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[] {
 	return [
+		createSemanticSearchTool(cwd),
 		createReadTool(cwd, options?.read),
-		createGrepTool(cwd, options?.grep),
+		createRgTool(cwd, options?.rg ?? options?.grep),
 		createFindTool(cwd, options?.find),
 		createLsTool(cwd, options?.ls),
 	];
@@ -303,16 +305,16 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
 	return {
+		semantic_search: createSemanticSearchTool(cwd),
+		rg: createRgTool(cwd, options?.rg ?? options?.grep),
+		grep: createGrepTool(cwd, options?.grep ?? options?.rg, "grep"),
 		read: createReadTool(cwd, options?.read),
 		bash: createBashTool(cwd, options?.bash),
 		edit: createEditTool(cwd, options?.edit),
 		write: createWriteTool(cwd, options?.write),
-		grep: createGrepTool(cwd, options?.grep, "grep"),
-		rg: createRgTool(cwd, options?.rg ?? options?.grep),
 		find: createFindTool(cwd, options?.find),
 		ls: createLsTool(cwd, options?.ls),
 		sleep: createSleepTool(),
-		semantic_search: createSemanticSearchTool(cwd),
 		ask_user: createAskUserTool(),
 		confirm_user: createConfirmUserTool(),
 		submit_plan: createSubmitPlanTool(options?.submitPlan),

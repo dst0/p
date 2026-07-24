@@ -112,8 +112,8 @@ interface VerificationResult {
 	state: TaskVerificationState;
 }
 
-const EVIDENCE_TOOLS = new Set(["read", "bash", "grep", "find", "ls", "semantic_search"]);
-const STATIC_TOOLS = new Set(["read", "grep", "find", "ls", "semantic_search"]);
+const EVIDENCE_TOOLS = new Set(["read", "bash", "rg", "grep", "find", "ls", "semantic_search"]);
+const STATIC_TOOLS = new Set(["read", "rg", "grep", "find", "ls", "semantic_search"]);
 const DIRECT_MUTATION_TOOLS = new Set(["edit", "write"]);
 const BUG_PATTERN =
 	/\b(bug|fix|broken|regression|incorrect|wrong|failure|lost|crash|race|issue|repair)\b|(?:ошиб|баг|слом|невер|неправ|теря|паден|исправ)/iu;

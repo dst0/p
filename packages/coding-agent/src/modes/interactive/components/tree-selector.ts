@@ -876,10 +876,11 @@ class TreeList implements Component {
 					.slice(0, 50);
 				return `[bash: ${cmd}${rawCmd.length > 50 ? "..." : ""}]`;
 			}
+			case "rg":
 			case "grep": {
 				const pattern = String(args.pattern || "");
 				const path = shortenPath(String(args.path || "."));
-				return `[grep: /${pattern}/ in ${path}]`;
+				return `[${name}: /${pattern}/ in ${path}]`;
 			}
 			case "find": {
 				const pattern = String(args.pattern || "");

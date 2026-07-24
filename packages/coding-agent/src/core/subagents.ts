@@ -12,7 +12,7 @@ export type SubagentPermission = "allow" | "deny" | "ask";
 /** Mapping from permission key to base tool names allowed by that permission */
 const PERMISSION_TO_TOOL: Record<string, string[]> = {
 	read: ["read"],
-	grep: ["grep"],
+	grep: ["rg", "grep"],
 	list: ["ls", "find"],
 	edit: ["edit", "write"],
 	bash: ["bash"],

@@ -149,7 +149,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	};
 
 	const hasBash = tools.includes("bash");
-	const hasGrep = tools.includes("grep");
+	const hasGrep = tools.includes("grep") || tools.includes("rg");
 	const hasFind = tools.includes("find");
 	const hasLs = tools.includes("ls");
 	const hasRead = tools.includes("read");
@@ -159,7 +159,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 	// File exploration guidelines
 	if (hasSemanticSearch) {
 		addGuideline(
-			"Prioritize semantic_search over bash, read, rg, grep, and find for code discovery. Use semantic_search to locate code by concept when identifiers or paths are unknown, then inspect the cited files. Reserve grep/find for exact identifiers and literals.",
+			"Prioritize semantic_search over bash, read, rg, and find for code discovery. Use semantic_search to locate code by concept when identifiers or paths are unknown, then inspect the cited files. Reserve rg/find for exact identifiers and literals.",
 		);
 	}
 	if (hasBash && !hasGrep && !hasFind && !hasLs) {

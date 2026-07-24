@@ -848,9 +848,10 @@ export interface WriteToolCallEvent extends ToolCallEventBase {
 }
 
 export interface GrepToolCallEvent extends ToolCallEventBase {
-	toolName: "grep";
+	toolName: "grep" | "rg";
 	input: GrepToolInput;
 }
+export type RgToolCallEvent = GrepToolCallEvent;
 
 export interface FindToolCallEvent extends ToolCallEventBase {
 	toolName: "find";
@@ -912,9 +913,10 @@ export interface WriteToolResultEvent extends ToolResultEventBase {
 }
 
 export interface GrepToolResultEvent extends ToolResultEventBase {
-	toolName: "grep";
+	toolName: "grep" | "rg";
 	details: GrepToolDetails | undefined;
 }
+export type RgToolResultEvent = GrepToolResultEvent;
 
 export interface FindToolResultEvent extends ToolResultEventBase {
 	toolName: "find";
@@ -956,7 +958,10 @@ export function isWriteToolResult(e: ToolResultEvent): e is WriteToolResultEvent
 	return e.toolName === "write";
 }
 export function isGrepToolResult(e: ToolResultEvent): e is GrepToolResultEvent {
-	return e.toolName === "grep";
+	return e.toolName === "grep" || e.toolName === "rg";
+}
+export function isRgToolResult(e: ToolResultEvent): e is RgToolResultEvent {
+	return e.toolName === "grep" || e.toolName === "rg";
 }
 export function isFindToolResult(e: ToolResultEvent): e is FindToolResultEvent {
 	return e.toolName === "find";
@@ -990,6 +995,7 @@ export function isToolCallEventType(toolName: "read", event: ToolCallEvent): eve
 export function isToolCallEventType(toolName: "edit", event: ToolCallEvent): event is EditToolCallEvent;
 export function isToolCallEventType(toolName: "write", event: ToolCallEvent): event is WriteToolCallEvent;
 export function isToolCallEventType(toolName: "grep", event: ToolCallEvent): event is GrepToolCallEvent;
+export function isToolCallEventType(toolName: "rg", event: ToolCallEvent): event is RgToolCallEvent;
 export function isToolCallEventType(toolName: "find", event: ToolCallEvent): event is FindToolCallEvent;
 export function isToolCallEventType(toolName: "ls", event: ToolCallEvent): event is LsToolCallEvent;
 export function isToolCallEventType<TName extends string, TInput extends Record<string, unknown>>(

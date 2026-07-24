@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { createFindToolDefinition } from "../src/core/tools/find.ts";
-import { createGrepToolDefinition } from "../src/core/tools/grep.ts";
 import { createTool, createToolDefinition } from "../src/core/tools/index.ts";
+import { createGrepToolDefinition } from "../src/core/tools/rg.ts";
 
 const dummyTheme: any = {
 	fg: (_name: string, text: string) => text,
