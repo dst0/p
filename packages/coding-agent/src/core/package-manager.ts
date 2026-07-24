@@ -26,7 +26,7 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import type { Readable } from "node:stream";
 import { globSync } from "glob";
 import ignore from "ignore";
-import { minimatch } from "minimatch";
+import { Minimatch } from "minimatch";
 import { maxSatisfying, rcompare, satisfies, valid, validRange } from "semver";
 import { CONFIG_DIR_NAME } from "../config.ts";
 import { spawnProcess, spawnProcessSync } from "../utils/child-process.ts";
@@ -640,7 +640,7 @@ function collectResourceFiles(dir: string, resourceType: ResourceType): string[]
 	return collectFiles(dir, FILE_PATTERNS[resourceType]);
 }
 
-function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string): boolean {
+function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[], baseDir: string): boolean {
 	const rel = toPosixPath(relative(baseDir, filePath));
 	const name = basename(filePath);
 	const filePathPosix = toPosixPath(filePath);
@@ -650,21 +650,12 @@ function matchesAnyPattern(filePath: string, patterns: string[], baseDir: string
 	const parentName = isSkillFile ? basename(parentDir!) : undefined;
 	const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-	return patterns.some((pattern) => {
-		const normalizedPattern = toPosixPath(pattern);
-		if (
-			minimatch(rel, normalizedPattern) ||
-			minimatch(name, normalizedPattern) ||
-			minimatch(filePathPosix, normalizedPattern)
-		) {
+	return compiledPatterns.some((compiled) => {
+		if (compiled.match(rel) || compiled.match(name) || compiled.match(filePathPosix)) {
 			return true;
 		}
 		if (!isSkillFile) return false;
-		return (
-			minimatch(parentRel!, normalizedPattern) ||
-			minimatch(parentName!, normalizedPattern) ||
-			minimatch(parentDirPosix!, normalizedPattern)
-		);
+		return compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!);
 	});
 }
 
@@ -700,11 +691,12 @@ function getOverridePatterns(entries: string[]): string[] {
 function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
 	const overrides = getOverridePatterns(patterns);
 	const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+	const compiledExcludes = excludes.map((pattern) => new Minimatch(toPosixPath(pattern)));
 	const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
 	const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
 
 	let enabled = true;
-	if (excludes.length > 0 && matchesAnyPattern(filePath, excludes, baseDir)) {
+	if (excludes.length > 0 && matchesAnyPattern(filePath, compiledExcludes, baseDir)) {
 		enabled = false;
 	}
 	if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
@@ -742,17 +734,21 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
 		}
 	}
 
+	// ⚡ Bolt: Pre-compile Minimatch instances outside of tight per-file loops
+	const compiledIncludes = includes.map((pattern) => new Minimatch(toPosixPath(pattern)));
+	const compiledExcludes = excludes.map((pattern) => new Minimatch(toPosixPath(pattern)));
+
 	// Step 1: Apply includes (or all if no includes)
 	let result: string[];
 	if (includes.length === 0) {
 		result = [...allPaths];
 	} else {
-		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, includes, baseDir));
+		result = allPaths.filter((filePath) => matchesAnyPattern(filePath, compiledIncludes, baseDir));
 	}
 
 	// Step 2: Apply excludes
 	if (excludes.length > 0) {
-		result = result.filter((filePath) => !matchesAnyPattern(filePath, excludes, baseDir));
+		result = result.filter((filePath) => !matchesAnyPattern(filePath, compiledExcludes, baseDir));
 	}
 
 	// Step 3: Force-include (add back from allPaths, overriding exclusions)
