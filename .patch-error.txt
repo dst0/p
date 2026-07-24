@@ -1,3 +1,0 @@
-Traceback (most recent call last):
-  File "<stdin>", line 22, in <module>
-RuntimeError: Unexpected indentation in temporary workflow step Apply task-verification guidance changes: '\\t\\tconst recentEvidence = [...this.evidence.values()]'
