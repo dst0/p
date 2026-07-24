@@ -2,14 +2,14 @@ name: Apply state reminder fix
 
 on:
   pull_request:
-    types: [opened]
+    types: [opened, synchronize]
 
 permissions:
   contents: write
 
 concurrency:
   group: apply-state-reminder-fix
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   apply:
