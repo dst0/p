@@ -35,7 +35,13 @@ async function callVerificationTool(
 		.filter((part): part is Extract<(typeof result.content)[number], { type: "text" }> => part.type === "text")
 		.map((part) => part.text)
 		.join("\n");
-	return { isError: result.isError === true, text };
+	const details = result.details;
+	const isError =
+		typeof details === "object" &&
+		details !== null &&
+		"status" in details &&
+		(details as { status?: unknown }).status === "rejected";
+	return { isError, text };
 }
 
 function createToolCall(name: string, args: Record<string, unknown>) {
@@ -75,7 +81,6 @@ async function afterTool(
 		result: {
 			content: [{ type: "text", text: options.text ?? "ok" }],
 			details: undefined,
-			isError: options.isError ?? false,
 		},
 		isError: options.isError ?? false,
 		context: {} as never,
@@ -145,7 +150,7 @@ describe("task verification controller", () => {
 			unresolved_assumptions: [],
 		});
 		expect(staticBaseline.isError).toBe(true);
-		expect(staticBaseline.text).toContain("Static trace cannot satisfy");
+		expect(staticBaseline.text).toContain("Static trace is insufficient");
 	});
 
 	it("requires fresh semantic evidence after the final mutation", async () => {
