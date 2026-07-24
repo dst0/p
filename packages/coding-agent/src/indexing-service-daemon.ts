@@ -40,6 +40,7 @@ export async function runIndexingService(): Promise<void> {
 
 		await new Promise<void>((resolve) => {
 			let stopping = false;
+			let preparedForRestart = false;
 			let preparePromise: Promise<void> | undefined;
 			const prepareForRestart = () => {
 				if (stopping || preparePromise) return;
@@ -51,6 +52,7 @@ export async function runIndexingService(): Promise<void> {
 							`${JSON.stringify({ pid: process.pid, readyAt: new Date().toISOString() })}\n`,
 							{ mode: 0o600 },
 						);
+						preparedForRestart = true;
 					})
 					.catch((error: unknown) => {
 						console.error(
@@ -63,7 +65,7 @@ export async function runIndexingService(): Promise<void> {
 				stopping = true;
 				process.off("SIGUSR1", prepareForRestart);
 				const prepared = preparePromise ?? Promise.resolve();
-				void prepared.then(() => daemon.stop({ graceful: true })).finally(resolve);
+				void prepared.then(() => daemon.stop({ graceful: preparedForRestart })).finally(resolve);
 			};
 			process.on("SIGUSR1", prepareForRestart);
 			process.once("SIGINT", stop);
