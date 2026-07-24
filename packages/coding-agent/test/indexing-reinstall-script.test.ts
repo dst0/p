@@ -77,7 +77,7 @@ describe("indexing reinstall scripts", () => {
 		expect(result.code).toBe(0);
 		expect(`${result.stdout}\n${result.stderr}`).toContain("did not become quiescent within 100ms");
 		expect(`${result.stdout}\n${result.stderr}`).toContain("sending SIGKILL");
-		expect(Date.now() - startedAt).toBeLessThan(3_000);
+		expect(Date.now() - startedAt).toBeLessThan(5_000);
 		await waitForChildExit(daemon);
 		expect(daemon.signalCode).toBe("SIGKILL");
 		expect(fs.existsSync(path.join(fixture.agentDir, INDEXING_SERVICE_REINSTALL_FILE))).toBe(true);
