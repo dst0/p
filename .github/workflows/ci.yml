@@ -54,9 +54,7 @@ jobs:
               for line in workflow[run_index + 1:]:
                   if line.startswith('      - name:'):
                       break
-                  if line and not line.startswith('          '):
-                      raise RuntimeError(f'Unexpected indentation in temporary workflow step {target}: {line!r}')
-                  lines.append(line[10:] if line else '')
+                  lines.append(line[10:] if line.startswith('          ') else line)
               script = ('\n'.join(lines) + '\n').replace("python - <<'PY'", "python3 - <<'PY'")
               print(f'=== {target} ===', flush=True)
               subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
