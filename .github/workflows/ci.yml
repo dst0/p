@@ -56,6 +56,7 @@ jobs:
                       break
                   lines.append(line[10:] if line.startswith('          ') else line)
               script = ('\n'.join(lines) + '\n').replace("python - <<'PY'", "python3 - <<'PY'")
+              script = script.replace(r'\t\t\t\texecute: async', r'\t\t\texecute: async')
               print(f'=== {target} ===', flush=True)
               subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
           PY
