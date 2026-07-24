@@ -519,7 +519,12 @@ export class IndexingDaemon {
 					delete runtime.progress;
 					runtime.lastError = safeErrorMessage(error);
 					this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
-					if (!this.disposed && !this.quiescing && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
+					if (
+						!this.disposed &&
+						!this.quiescing &&
+						this.runtimes.get(runtime.root) === runtime &&
+						!runtime.retryTimer
+					) {
 						runtime.retryTimer = setTimeout(() => {
 							runtime.retryTimer = undefined;
 							this.requestRefresh(runtime, false);
@@ -597,12 +602,7 @@ export class IndexingDaemon {
 		const workers = [...this.drainWorkers];
 		for (const worker of workers) {
 			worker.stop = true;
-			if (
-				resume &&
-				!this.disposed &&
-				worker.runtime &&
-				this.runtimes.get(worker.runtime.root) === worker.runtime
-			) {
+			if (resume && !this.disposed && worker.runtime && this.runtimes.get(worker.runtime.root) === worker.runtime) {
 				worker.runtime.dirty = true;
 			}
 			if (abortActive) worker.controller?.abort(new Error("Indexing daemon stopped"));

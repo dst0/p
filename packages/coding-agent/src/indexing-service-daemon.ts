@@ -70,12 +70,9 @@ export async function runIndexingService(): Promise<void> {
 				stopping = true;
 				if (restartLeaseTimer) clearTimeout(restartLeaseTimer);
 				process.off("SIGUSR1", prepareForRestart);
-				void stopIndexingDaemonAfterSignal(
-					daemon,
-					preparePromise,
-					preparedForRestart,
-					waitForPreparation,
-				).finally(resolve);
+				void stopIndexingDaemonAfterSignal(daemon, preparePromise, preparedForRestart, waitForPreparation).finally(
+					resolve,
+				);
 			};
 			const prepareForRestart = () => {
 				if (stopping || preparePromise) return;

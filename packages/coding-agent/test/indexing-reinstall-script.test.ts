@@ -1,15 +1,15 @@
-import { spawn, type ChildProcess } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { INDEXING_SERVICE_REINSTALL_FILE } from "../src/core/indexing-service.ts";
 import {
 	getIndexingReinstallControlPath,
 	isIndexingReinstallMarkerActive,
 	stopIndexingDaemonAfterSignal,
 	waitForIndexingReinstallMarkerClear,
 } from "../src/indexing-service-daemon.ts";
-import { INDEXING_SERVICE_REINSTALL_FILE } from "../src/core/indexing-service.ts";
 
 const temporaryDirectories: string[] = [];
 const childProcesses: ChildProcess[] = [];
@@ -122,10 +122,7 @@ describe("indexing reinstall scripts", () => {
 		const fixture = createFixture();
 		const markerPath = path.join(fixture.agentDir, INDEXING_SERVICE_REINSTALL_FILE);
 		fs.mkdirSync(fixture.agentDir, { recursive: true });
-		fs.writeFileSync(
-			markerPath,
-			`${JSON.stringify({ pid: 123, startedAt: new Date().toISOString() })}\n`,
-		);
+		fs.writeFileSync(markerPath, `${JSON.stringify({ pid: 123, startedAt: new Date().toISOString() })}\n`);
 
 		let resolved = false;
 		const waiting = waitForIndexingReinstallMarkerClear(fixture.agentDir).then(() => {
@@ -140,9 +137,7 @@ describe("indexing reinstall scripts", () => {
 
 	it("keeps global npm relinking quiet without hiding failures", () => {
 		const reinstall = fs.readFileSync(path.join(repositoryRoot, "reinstall.sh"), "utf8");
-		const linkCommands = reinstall
-			.split("\n")
-			.filter((line) => line.includes('"$NPM_BIN" link -w @dst0/p'));
+		const linkCommands = reinstall.split("\n").filter((line) => line.includes('"$NPM_BIN" link -w @dst0/p'));
 
 		expect(linkCommands).toHaveLength(2);
 		for (const command of linkCommands) {
@@ -189,9 +184,7 @@ async function runProcess(
 	return { code, signal, stdout, stderr };
 }
 
-async function waitForChildExit(
-	child: ChildProcess,
-): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
+async function waitForChildExit(child: ChildProcess): Promise<{ code: number | null; signal: NodeJS.Signals | null }> {
 	if (child.exitCode !== null || child.signalCode !== null) {
 		return { code: child.exitCode, signal: child.signalCode as NodeJS.Signals | null };
 	}
