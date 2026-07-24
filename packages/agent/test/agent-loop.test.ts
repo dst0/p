@@ -2354,4 +2354,67 @@ describe("Explicit Completion Protocol", () => {
     );
     expect(retryEvents.length).toBe(3);
   });
+
+  it("handles non-Error tool execution exceptions and afterToolCall throwing errors", async () => {
+    const stringThrowTool: AgentTool = {
+      name: "string_throw",
+      label: "String Throw",
+      description: "Throws a string",
+      parameters: Type.Object({}),
+      async execute() {
+        throw "string error thrown";
+      },
+    };
+
+    const normalTool: AgentTool = {
+      name: "normal_tool",
+      label: "Normal",
+      description: "Normal tool",
+      parameters: Type.Object({}),
+      async execute() {
+        return { content: [{ type: "text", text: "ok" }], details: {} };
+      },
+    };
+
+    // 1. Tool throws non-Error (string)
+    const responses1 = [
+      createAssistantMessage([{ type: "toolCall", id: "c1", name: "string_throw", arguments: {} }], "toolUse"),
+      createAssistantMessage([{ type: "text", text: "done" }], "stop"),
+    ];
+
+    const res1 = await runScriptedAgentLoop(responses1, {
+      context: { systemPrompt: "", messages: [createUserMessage("hi")], tools: [stringThrowTool] },
+      config: { completionMode: "implicit" },
+    });
+
+    const toolResult1 = res1.messages.find((m) => m.role === "toolResult");
+    expect(toolResult1).toMatchObject({
+      role: "toolResult",
+      isError: true,
+      content: [{ type: "text", text: "string error thrown" }],
+    });
+
+    // 2. afterToolCall hook throws error
+    const responses2 = [
+      createAssistantMessage([{ type: "toolCall", id: "c2", name: "normal_tool", arguments: {} }], "toolUse"),
+      createAssistantMessage([{ type: "text", text: "done" }], "stop"),
+    ];
+
+    const res2 = await runScriptedAgentLoop(responses2, {
+      context: { systemPrompt: "", messages: [createUserMessage("hi")], tools: [normalTool] },
+      config: {
+        completionMode: "implicit",
+        afterToolCall: async () => {
+          throw new Error("afterToolCall hook failed");
+        },
+      },
+    });
+
+    const toolResult2 = res2.messages.find((m) => m.role === "toolResult");
+    expect(toolResult2).toMatchObject({
+      role: "toolResult",
+      isError: true,
+      content: [{ type: "text", text: "afterToolCall hook failed" }],
+    });
+  });
 });

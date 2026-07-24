@@ -190,4 +190,36 @@ describe("executeShellWithCapture", () => {
       }),
     );
   });
+
+  it("should capture errors thrown inside onChunk callback", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      options?.onStdout?.("chunk");
+      return { ok: true, value: { exitCode: 0 } };
+    });
+    const result = await executeShellWithCapture(env, "cmd", {
+      onChunk: () => {
+        throw new Error("chunk handler failed");
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toBe("chunk handler failed");
+    }
+  });
+
+  it("should return error if temp file append fails", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    env.appendFile = vi.fn().mockResolvedValue({ ok: false, error: { code: "storage", message: "disk full" } });
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      const largeChunk = "x".repeat(DEFAULT_MAX_BYTES + 100);
+      options?.onStdout?.(largeChunk);
+      return { ok: true, value: { exitCode: 0 } };
+    });
+    const result = await executeShellWithCapture(env, "cmd");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("disk full");
+    }
+  });
 });

@@ -47,4 +47,38 @@ describe("OAuth device-code polling", () => {
     controller.abort();
     await expect(resultPromise).rejects.toThrow("Login cancelled");
   });
+
+  it("handles pre-aborted signal, poll failure, and slow_down timeout", async () => {
+    // Pre-aborted signal
+    const controller = new AbortController();
+    controller.abort();
+
+    await expect(
+      pollOAuthDeviceCodeFlow({
+        intervalSeconds: 1,
+        poll: async () => ({ status: "pending" }),
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Login cancelled");
+
+    // Failed poll result
+    await expect(
+      pollOAuthDeviceCodeFlow({
+        intervalSeconds: 1,
+        poll: async () => ({ status: "failed", message: "Device code expired" }),
+      }),
+    ).rejects.toThrow("Device code expired");
+
+    // Slow down timeout
+    vi.useFakeTimers();
+    const slowDownPromise = pollOAuthDeviceCodeFlow({
+      intervalSeconds: 1,
+      expiresInSeconds: 2,
+      poll: async () => ({ status: "slow_down" }),
+    });
+
+    const slowDownExpect = expect(slowDownPromise).rejects.toThrow(/clock drift/i);
+    await vi.advanceTimersByTimeAsync(3000);
+    await slowDownExpect;
+  });
 });

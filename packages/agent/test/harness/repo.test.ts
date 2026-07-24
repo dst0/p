@@ -1,4 +1,5 @@
 import { existsSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
 import { JsonlSessionRepo } from "../../src/harness/session/jsonl-repo.ts";
@@ -64,5 +65,24 @@ describe("JsonlSessionRepo", () => {
     await repo.delete(sourceMetadata);
     expect(existsSync(sourceMetadata.path)).toBe(false);
     await expect(repo.open(sourceMetadata)).rejects.toThrow("Session not found");
+  });
+
+  it("handles missing session root, missing cwd dir, and corrupt jsonl header during list", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const emptySessionsRoot = join(root, "empty-root");
+    const repo = new JsonlSessionRepo({ fs: env, sessionsRoot: emptySessionsRoot });
+
+    // 1. Missing sessions root -> returns []
+    expect(await repo.list()).toEqual([]);
+
+    // 2. Missing cwd directory -> returns []
+    expect(await repo.list({ cwd: "/tmp/non-existent-cwd" })).toEqual([]);
+
+    // 3. Create corrupt .jsonl file in session dir
+    await env.createDir(join(emptySessionsRoot, "--tmp-corrupt--"), { recursive: true });
+    await env.writeFile(join(emptySessionsRoot, "--tmp-corrupt--/corrupt.jsonl"), "not json header\n");
+
+    expect(await repo.list()).toEqual([]);
   });
 });

@@ -166,4 +166,20 @@ describe("truncate utilities", () => {
       assertMatchesBufferTail(input, sampledByteLimits(input));
     }
   });
+
+  it("formats byte sizes with formatSize", async () => {
+    const { formatSize } = await import("../../src/harness/utils/truncate.ts");
+    expect(formatSize(500)).toBe("500B");
+    expect(formatSize(2048)).toBe("2.0KB");
+    expect(formatSize(5 * 1024 * 1024)).toBe("5.0MB");
+  });
+
+  it("truncates lines with truncateLine", async () => {
+    const { truncateLine } = await import("../../src/harness/utils/truncate.ts");
+    expect(truncateLine("short line", 20)).toEqual({ text: "short line", wasTruncated: false });
+    expect(truncateLine("a very long line that exceeds limit", 10)).toEqual({
+      text: "a very lon... [truncated]",
+      wasTruncated: true,
+    });
+  });
 });

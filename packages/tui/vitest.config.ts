@@ -1,7 +1,9 @@
-import { defineConfig } from "vitest/config";
+import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
-	test: {
-		include: ["test/wrap-ansi.test.ts"],
-	},
+  test: {
+    globals: true,
+    environment: 'node',
+    testTimeout: 30000, // 30 seconds for API calls
+  }
 });

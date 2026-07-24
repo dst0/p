@@ -157,4 +157,113 @@ describe("branch-summarization unit tests", () => {
       expect(res.value.summary).toContain("## Goal\nTest goal");
     }
   });
+
+  it("handles replaceInstructions and completeSimple error/aborted responses", async () => {
+    const { completeSimple } = await import("@dst0/p-ai");
+    const mockModel: Model<any> = {
+      id: "mock-model",
+      name: "Mock Model",
+      api: "openai-completions" as any,
+      provider: "openai" as any,
+      baseUrl: "",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 4096,
+    };
+    const entries: SessionTreeEntry[] = [
+      {
+        id: "e1",
+        parentId: null,
+        type: "message",
+        message: { role: "user", content: "Explore" },
+      } as any,
+    ];
+
+    // 1. replaceInstructions: true
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      role: "assistant",
+      content: [{ type: "text", text: "Replaced summary" }],
+      api: "openai-completions" as any,
+      provider: "openai" as any,
+      model: "mock-model",
+      stopReason: "stop",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      timestamp: Date.now(),
+    });
+    const resReplace = await generateBranchSummary(entries, {
+      model: mockModel,
+      apiKey: "fake-key",
+      signal: new AbortController().signal,
+      customInstructions: "Replaced prompt",
+      replaceInstructions: true,
+    });
+    expect(resReplace.ok).toBe(true);
+
+    // 2. Aborted response
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      role: "assistant",
+      content: [],
+      api: "openai-completions" as any,
+      provider: "openai" as any,
+      model: "mock-model",
+      stopReason: "aborted",
+      errorMessage: "Request cancelled",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      timestamp: Date.now(),
+    });
+    const resAborted = await generateBranchSummary(entries, {
+      model: mockModel,
+      apiKey: "fake-key",
+      signal: new AbortController().signal,
+    });
+    expect(resAborted.ok).toBe(false);
+    if (!resAborted.ok) {
+      expect(resAborted.error.code).toBe("aborted");
+    }
+
+    // 3. Error response
+    vi.mocked(completeSimple).mockResolvedValueOnce({
+      role: "assistant",
+      content: [],
+      api: "openai-completions" as any,
+      provider: "openai" as any,
+      model: "mock-model",
+      stopReason: "error",
+      errorMessage: "Provider error",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      timestamp: Date.now(),
+    });
+    const resErr = await generateBranchSummary(entries, {
+      model: mockModel,
+      apiKey: "fake-key",
+      signal: new AbortController().signal,
+    });
+    expect(resErr.ok).toBe(false);
+    if (!resErr.ok) {
+      expect(resErr.error.code).toBe("summarization_failed");
+    }
+  });
 });

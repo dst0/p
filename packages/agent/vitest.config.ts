@@ -9,6 +9,12 @@ export default defineConfig({
 		globals: true,
 		environment: "node",
 		testTimeout: 30000, // 30 seconds for API calls
+		coverage: {
+			provider: "v8",
+			reporter: ["text", "html", "lcov", "json-summary"],
+			include: ["src/**/*.ts"],
+			exclude: ["src/**/*.d.ts", "src/index.ts", "src/types.ts", "src/node.ts"],
+		},
 	},
 	resolve: {
 		alias: [

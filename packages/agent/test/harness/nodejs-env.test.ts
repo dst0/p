@@ -285,4 +285,44 @@ describe("NodeExecutionEnv", () => {
     expect(fullOutput.split("\n").length).toBeGreaterThan(10000);
     expect(result.output.length).toBeLessThan(fullOutput.length);
   });
+
+  it("handles permission_denied and exists error propagation", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const noAccessDir = join(root, "no_access");
+    getOrThrow(await env.createDir("no_access"));
+    getOrThrow(await env.writeFile("no_access/secret.txt", "shh"));
+    chmodRestorePaths.push(noAccessDir);
+    await chmod(noAccessDir, 0o000);
+
+    const info = await env.fileInfo("no_access/secret.txt");
+    expect(info.ok).toBe(false);
+    if (!info.ok) {
+      expect(info.error.code).toBe("permission_denied");
+    }
+
+    const existsRes = await env.exists("no_access/secret.txt");
+    expect(existsRes.ok).toBe(false);
+    if (!existsRes.ok) {
+      expect(existsRes.error.code).toBe("permission_denied");
+    }
+  });
+
+  it("handles createTempFile write error", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const origCreateTempDir = env.createTempDir.bind(env);
+    env.createTempDir = async () => {
+      const dir = getOrThrow(await origCreateTempDir("node-test-"));
+      await chmod(dir, 0o000);
+      chmodRestorePaths.push(dir);
+      return { ok: true, value: dir };
+    };
+
+    const res = await env.createTempFile({ prefix: "f-" });
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.code).toBe("permission_denied");
+    }
+  });
 });

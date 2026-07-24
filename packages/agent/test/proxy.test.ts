@@ -151,4 +151,80 @@ describe("streamProxy", () => {
     const result = await stream.result();
     expect(result.stopReason).toBe("aborted");
   });
+
+  it("handles proxy error events and unexpected delta events", async () => {
+    const sseEvents = [
+      {
+        type: "error",
+        reason: "error",
+        errorMessage: "Stream error from server",
+        usage: {
+          input: 0,
+          output: 0,
+          cacheRead: 0,
+          cacheWrite: 0,
+          totalTokens: 0,
+          cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+        },
+      },
+    ];
+
+    const sseBody = sseEvents.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let readDone = false;
+          return {
+            read: async () => {
+              if (readDone) return { done: true, value: undefined };
+              readDone = true;
+              return { done: false, value: new TextEncoder().encode(sseBody) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret-token",
+    });
+
+    const result = await stream.result();
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toBe("Stream error from server");
+  });
+
+  it("handles unknown SSE proxy event types gracefully", async () => {
+    const sseEvents = [{ type: "unknown_type" as any }, { type: "done", reason: "stop" }];
+    const sseBody = sseEvents.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let readDone = false;
+          return {
+            read: async () => {
+              if (readDone) return { done: true, value: undefined };
+              readDone = true;
+              return { done: false, value: new TextEncoder().encode(sseBody) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret-token",
+    });
+
+    const result = await stream.result();
+    expect(result.stopReason).toBe("stop");
+  });
 });

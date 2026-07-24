@@ -3062,7 +3062,7 @@ export class InteractiveMode {
         break;
 
       case "message_end":
-        this.syncPlanTracker();
+        this.syncPlanTracker?.();
         if (event.message.role === "user") break;
         if (this.streamingComponent && event.message.role === "assistant") {
           this.streamingMessage = event.message;
@@ -3160,10 +3160,10 @@ export class InteractiveMode {
           this.pendingTools.delete(event.toolCallId);
           break;
         }
-        this.planStatusTracker.updateToolEvent(event.toolCallId, {
+        this.planStatusTracker?.updateToolEvent(event.toolCallId, {
           status: event.isError ? "error" : "success",
         });
-        this.syncPlanTracker();
+        this.syncPlanTracker?.();
         const component = this.pendingTools.get(event.toolCallId);
         if (component) {
           component.updateResult({ ...event.result, isError: event.isError });

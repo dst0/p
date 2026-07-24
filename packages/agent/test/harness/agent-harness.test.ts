@@ -603,7 +603,6 @@ describe("AgentHarness", () => {
         });
       }
     });
-
     await harness.setResources(resources);
     await harness.setResources(resources);
     const resolved = harness.getResources();
@@ -616,5 +615,68 @@ describe("AgentHarness", () => {
     expect(resolved.promptTemplates?.[0]?.source).toBe("user");
     expect(resolved.skills).not.toBe(resources.skills);
     expect(resolved.promptTemplates).not.toBe(resources.promptTemplates);
+  });
+
+  it("handles promptFromTemplate, streamOptions, compact, and navigateTree edge cases", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("template response")]);
+
+    const session = new Session(new InMemorySessionStorage());
+    const env = new NodeExecutionEnv({ cwd: process.cwd() });
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env,
+      session,
+      model: registration.getModel(),
+      resources: {
+        promptTemplates: [{ name: "greet", description: "greet user", content: "Hello $1!" }],
+      },
+      getApiKeyAndHeaders: async () => ({ apiKey: "test-key" }),
+    });
+
+    // 1. streamOptions getters & setters
+    const streamOpts = { timeoutMs: 5000, maxRetries: 2 };
+    await harness.setStreamOptions(streamOpts);
+    expect(harness.getStreamOptions()).toEqual(streamOpts);
+
+    // 2. promptFromTemplate success
+    const res = await harness.promptFromTemplate("greet", ["Alice"], { completionMode: "implicit" });
+    expect(res).toMatchObject({ role: "assistant" });
+
+    // 3. promptFromTemplate unknown template
+    await expect(harness.promptFromTemplate("unknown")).rejects.toMatchObject({ code: "invalid_argument" });
+
+    // 4. compact failure without auth
+    const noAuthHarness = new AgentHarness({
+      completionMode: "implicit",
+      env,
+      session: new Session(new InMemorySessionStorage()),
+      model: registration.getModel(),
+    });
+    await expect(noAuthHarness.compact()).rejects.toMatchObject({ code: "auth" });
+
+    // 5. navigateTree cancellation hook
+    const treeSession = new Session(new InMemorySessionStorage());
+    const entry1 = await treeSession.appendMessage({
+      role: "user",
+      content: "hi 1",
+      timestamp: Date.now(),
+    });
+    const _entry2 = await treeSession.appendMessage({
+      role: "user",
+      content: "hi 2",
+      timestamp: Date.now(),
+    });
+    const treeHarness = new AgentHarness({
+      completionMode: "implicit",
+      env,
+      session: treeSession,
+      model: registration.getModel(),
+    });
+    treeHarness.on("session_before_tree", () => ({ cancel: true }));
+
+    const navResult = await treeHarness.navigateTree(entry1);
+    expect(navResult.cancelled).toBe(true);
   });
 });
