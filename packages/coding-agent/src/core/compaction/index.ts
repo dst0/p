@@ -4,6 +4,15 @@
 
 export * from "./branch-summarization.ts";
 export * from "./compaction.ts";
+export {
+	compact,
+	type CompactionPreparation,
+	type CompactionPreparationResult,
+	prepareCompaction,
+	renderMinimalCompactionCheckpoint,
+	selectKeepRecentTokensForTarget,
+	truncateKeptMessages,
+} from "./minimal-compaction.ts";
 export * from "./session-state-file.ts";
 export {
 	createLiveStructuredSessionState,
