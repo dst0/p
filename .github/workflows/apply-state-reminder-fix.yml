@@ -1,0 +1,60 @@
+name: Apply state reminder fix
+
+on:
+  push:
+    branches:
+      - agent/clarify-session-state-reminder
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apply-state-reminder-fix
+  cancel-in-progress: false
+
+jobs:
+  apply:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22.19.0
+          cache: npm
+
+      - name: Apply source, regression, and changelog changes
+        run: python3 scripts/apply-state-reminder-fix.py
+
+      - name: Bump lockstep patch version
+        run: node scripts/version-bump.mjs patch
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Run focused session-state regression suite
+        working-directory: packages/coding-agent
+        run: node ../../node_modules/vitest/dist/cli.js --run test/suite/agent-session-state-update-tool.test.ts
+
+      - name: Run non-e2e test suite
+        run: ./test.sh
+
+      - name: Run repository checks
+        run: npm run check
+
+      - name: Validate patch and commit final changes
+        run: |
+          git diff --check
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git rm .github/workflows/apply-state-reminder-fix.yml scripts/apply-state-reminder-fix.py
+          git add packages/coding-agent/src/core/agent-session.ts
+          git add packages/coding-agent/test/suite/agent-session-state-update-tool.test.ts
+          git add packages/coding-agent/CHANGELOG.md
+          git add package.json package-lock.json packages/*/package.json packages/coding-agent/npm-shrinkwrap.json
+          git status --short
+          git commit -m "fix(coding-agent): clarify session-state reminder timing"
+          git push origin HEAD
