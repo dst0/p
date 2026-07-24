@@ -152,8 +152,11 @@ export function sanitizeBinaryOutput(str: string): string {
 			// Allow tab, newline, carriage return
 			if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
 
-			// Filter out control characters (0x00-0x1F, except 0x09, 0x0a, 0x0x0d)
-			if (code <= 0x1f) return false;
+			// Filter out control characters (0x00-0x1F except \t \n \r, 0x7F, 0x80-0x9F)
+			if (code <= 0x1f || code === 0x7f || (code >= 0x80 && code <= 0x9f)) return false;
+
+			// Filter out lone surrogates (0xD800-0xDFFF)
+			if (code >= 0xd800 && code <= 0xdfff) return false;
 
 			// Filter out Unicode format characters
 			if (code >= 0xfff9 && code <= 0xfffb) return false;

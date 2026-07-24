@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Expanded unit test coverage for Box, Text, Spacer, Loader, CancellableLoader, SettingsList, and native-modifiers components.
+
+### Fixed
+
+- Prevented surrogate pair splitting in `Input.setValue` by aligning cursor to grapheme boundaries.
+
 ## [0.4.40] - 2026-07-24
 
 ## [0.4.38] - 2026-07-23

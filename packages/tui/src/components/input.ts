@@ -43,6 +43,16 @@ export class Input implements Component, Focusable {
 	setValue(value: string): void {
 		this.value = value;
 		this.cursor = Math.min(this.cursor, value.length);
+		if (this.cursor > 0 && this.cursor < value.length) {
+			let pos = 0;
+			for (const { segment } of segmenter.segment(value)) {
+				if (pos + segment.length > this.cursor) {
+					this.cursor = pos;
+					break;
+				}
+				pos += segment.length;
+			}
+		}
 	}
 
 	handleInput(data: string): void {

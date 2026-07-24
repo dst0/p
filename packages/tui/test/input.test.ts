@@ -34,6 +34,22 @@ describe("Input component", () => {
 		assert.strictEqual(input.getValue(), "\\x");
 	});
 
+	it("aligns cursor safely when setValue receives surrogate pairs", () => {
+		const input = new Input();
+		input.setValue("Hello World");
+		input.handleInput("\x1b[C"); // Move cursor right 5 times
+		input.handleInput("\x1b[C");
+		input.handleInput("\x1b[C");
+		input.handleInput("\x1b[C");
+		input.handleInput("\x1b[C"); // Cursor at 5
+
+		// Set value to emoji string where index 5 would be mid-surrogate
+		input.setValue("😀😀😀"); // Length 6 (3 graphemes of length 2)
+		// Cursor should be aligned to index 4 (start of 3rd emoji) instead of 5
+		input.handleInput("\x7f"); // Backspace should delete 2nd emoji safely
+		assert.strictEqual(input.getValue(), "😀😀");
+	});
+
 	describe("render", () => {
 		it("does not overflow with wide CJK and fullwidth text", () => {
 			const width = 93;

@@ -97,10 +97,21 @@ describe("parseOsc11BackgroundColor", () => {
 		assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#000000\x07"), { r: 0, g: 0, b: 0 });
 	});
 
+	it("parses 12-digit hex OSC 11 responses", () => {
+		assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#00008000ffff\x07"), {
+			r: 0,
+			g: 128,
+			b: 255,
+		});
+	});
+
 	it("rejects non-strict OSC 11 responses", () => {
 		assert.strictEqual(parseOsc11BackgroundColor(`x\x1b]11;#ffffff\x07`), undefined);
 		assert.strictEqual(parseOsc11BackgroundColor("\x1b]10;#ffffff\x07"), undefined);
 		assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#ffffff\x07x"), undefined);
+		assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#invalid\x07"), undefined);
+		assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:invalid/0000/0000\x07"), undefined);
+		assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:0000\x07"), undefined);
 	});
 });
 

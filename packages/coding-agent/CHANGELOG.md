@@ -4,10 +4,13 @@
 
 ### Fixed
 
+- Filtered out lone surrogates (0xD800-0xDFFF), DEL, and C1 control characters in `sanitizeBinaryOutput`.
 - Make task-verification gates self-explanatory after compaction: expose exact next actions, eligible evidence, required replay commands, and ready-to-use verification payloads through proactive status and every rejection.
 - Clarify the session-state guard reminder around user-message timing instead of framing it as a prerequisite for the attempted tool call.
 
 ### Added
+
+- Added unit tests for find, grep, sleep, finish_work tools and shell/changelog/html utilities.
 
 - Enforce evidence-backed task verification in mutating coding-agent sessions: require baseline proof before bug fixes and fresh semantic verification of the original failing scenario before successful completion or publishing.
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added unit test coverage for `streamProxy` and branch summarization.
+
 ## [0.4.41] - 2026-07-23
 
 ### Fixed
