@@ -241,7 +241,7 @@ export class TaskVerificationController {
 			executionMode: "sequential",
 			execute: async (_id, params) => {
 				const result = this.apply(params);
-				return { content: [{ type: "text", text: result.message }], details: result, isError: result.status === "rejected" };
+				return { content: [{ type: "text", text: result.message }], details: result };
 			},
 		};
 	}
@@ -286,13 +286,13 @@ export class TaskVerificationController {
 	}
 
 	private apply(input: VerificationInput): VerificationResult {
-		if (input.action === "declare_task") return this.declare(input);
-		if (input.action === "record_baseline") return this.baseline(input);
-		if (input.action === "record_final") return this.final(input);
+		if (input.action === "declare_task") return this.declareTask(input);
+		if (input.action === "record_baseline") return this.recordBaseline(input);
+		if (input.action === "record_final") return this.recordFinal(input);
 		return this.ok(this.status());
 	}
 
-	private declare(input: VerificationInput): VerificationResult {
+	private declareTask(input: VerificationInput): VerificationResult {
 		if (!isKind(input.task_kind) || !text(input.task_summary)) return this.no("declare_task requires task_kind and a concrete task_summary.");
 		if (this.state.mutationRevision > 0) return this.no("Cannot replace the task declaration after mutation; finish the current task first.");
 		const summary = text(input.task_summary);
@@ -302,7 +302,7 @@ export class TaskVerificationController {
 		return this.ok(required ? "Task declared; baseline verification is required before mutation." : "Task declared; final verification is required after mutation.");
 	}
 
-	private baseline(input: VerificationInput): VerificationResult {
+	private recordBaseline(input: VerificationInput): VerificationResult {
 		if (!this.state.taskKind || !this.state.taskSummary) return this.no("Declare the task before baseline verification.");
 		if (!isBaselineMethod(input.baseline_method) || !text(input.hypothesis) || !text(input.conclusion)) return this.no("record_baseline requires baseline_method, hypothesis, and conclusion.");
 		if (strings(input.unresolved_assumptions).length) return this.no("Baseline verification cannot pass with unresolved assumptions.");
@@ -321,7 +321,7 @@ export class TaskVerificationController {
 		return this.ok("Baseline verification recorded; mutation is unblocked.");
 	}
 
-	private final(input: VerificationInput): VerificationResult {
+	private recordFinal(input: VerificationInput): VerificationResult {
 		if (!this.state.taskKind || !this.state.taskSummary || this.state.mutationRevision === 0) return this.no("Final verification requires a declared task and at least one mutation.");
 		if (!isFinalMethod(input.final_method) || (input.final_status !== "passed" && input.final_status !== "failed")) return this.no("record_final requires final_method and final_status.");
 		const expected = text(input.expected_behavior);
