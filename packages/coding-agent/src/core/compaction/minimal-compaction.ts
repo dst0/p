@@ -263,8 +263,11 @@ export async function compact(
 			summary,
 			tokensAfter: preparation.systemPromptTokens + summaryTokens + preparation.recentRawTokens,
 			details: {
-				...rawDetails,
+				readFiles: rawDetails?.readFiles ?? [],
+				modifiedFiles: rawDetails?.modifiedFiles ?? [],
+				audit: rawDetails?.audit,
 				markdownSummary: raw.summary,
+				structuredState: rawDetails?.structuredState,
 			} satisfies CompactionDetails,
 		};
 	}
@@ -345,56 +348,49 @@ function messageText(message: AgentMessage): string | undefined {
 	}
 }
 
+function replaceFirstTextBlock<T extends { type: string; text?: string }>(
+	blocks: T[],
+	text: string,
+): T[] {
+	let replaced = false;
+	const result: T[] = [];
+	for (const block of blocks) {
+		if (block.type !== "text") {
+			result.push(block);
+			continue;
+		}
+		if (replaced) continue;
+		replaced = true;
+		result.push({ ...block, text });
+	}
+	return result;
+}
+
 function replaceText(message: AgentMessage, text: string): AgentMessage {
 	switch (message.role) {
 		case "user":
-		case "custom": {
-			if (typeof message.content === "string") return { ...message, content: text };
-			let replaced = false;
+		case "custom":
+			if (typeof message.content === "string") return { ...message, content: text } as AgentMessage;
 			return {
 				...message,
-				content: message.content
-					.filter((block) => block.type !== "text" || !replaced)
-					.map((block) => {
-						if (block.type !== "text") return block;
-						replaced = true;
-						return { ...block, text };
-					}),
-			};
-		}
-		case "toolResult": {
-			let replaced = false;
+				content: replaceFirstTextBlock(message.content, text),
+			} as AgentMessage;
+		case "toolResult":
 			return {
 				...message,
-				content: message.content
-					.filter((block) => block.type !== "text" || !replaced)
-					.map((block) => {
-						if (block.type !== "text") return block;
-						replaced = true;
-						return { ...block, text };
-					}),
+				content: replaceFirstTextBlock(message.content, text),
 			} as ToolResultMessage;
-		}
-		case "assistant": {
-			let replaced = false;
+		case "assistant":
 			return {
 				...message,
-				content: message.content
-					.filter((block) => block.type !== "text" || !replaced)
-					.map((block) => {
-						if (block.type !== "text") return block;
-						replaced = true;
-						return { ...block, text };
-					}),
+				content: replaceFirstTextBlock(message.content, text),
 			} as AssistantMessage;
-		}
 		case "bashExecution":
 			return { ...message, output: text };
 		default:
 			return message;
 	}
 }
-
 function truncateHeadAndTail(text: string, maxLines: number, maxChars: number): string {
 	const lines = text.split("\n");
 	if (text.length <= maxChars && lines.length <= maxLines) return text;
@@ -403,7 +399,8 @@ function truncateHeadAndTail(text: string, maxLines: number, maxChars: number): 
 	}
 	const headCount = Math.ceil(maxLines / 2);
 	const tailCount = Math.floor(maxLines / 2);
-	let result = [...lines.slice(0, headCount), ...lines.slice(-tailCount)].join("\n");
+	const tail = tailCount > 0 ? lines.slice(-tailCount) : [];
+	let result = [...lines.slice(0, headCount), ...tail].join("\n");
 	if (result.length > maxChars) {
 		const separator = "\n... [middle omitted] ...\n";
 		const available = Math.max(0, maxChars - separator.length);
@@ -451,6 +448,7 @@ export function truncateKeptMessages(
 	for (const [maxTokens, maxLines, maxChars] of [
 		[500, 10, 4000],
 		[50, 4, 800],
+		[0, 2, 240],
 		[0, 0, 0],
 	] as const) {
 		if (totalTokens(messages, systemPromptTokens) <= targetContextTokens) break;
