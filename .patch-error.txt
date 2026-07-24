@@ -1,0 +1,29 @@
+=== Apply task-verification guidance changes ===
++ python3 -
+=== Add changelog and patch version ===
++ python3 -
++ node scripts/version-bump.mjs patch
+node:internal/modules/package_json_reader:301
+  throw new ERR_MODULE_NOT_FOUND(packageName, fileURLToPath(base), null);
+        ^
+
+Error [ERR_MODULE_NOT_FOUND]: Cannot find package 'semver' imported from /home/dst/actions-runner-dst0-p/_work/p/p/scripts/version-bump.mjs
+    at Object.getPackageJSONURL (node:internal/modules/package_json_reader:301:9)
+    at packageResolve (node:internal/modules/esm/resolve:768:81)
+    at moduleResolve (node:internal/modules/esm/resolve:859:18)
+    at defaultResolve (node:internal/modules/esm/resolve:991:11)
+    at #cachedDefaultResolve (node:internal/modules/esm/loader:719:20)
+    at #resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:736:38)
+    at ModuleLoader.resolveSync (node:internal/modules/esm/loader:765:52)
+    at #resolve (node:internal/modules/esm/loader:701:17)
+    at ModuleLoader.getOrCreateModuleJob (node:internal/modules/esm/loader:621:35)
+    at ModuleJob.syncLink (node:internal/modules/esm/module_job:160:33) {
+  code: 'ERR_MODULE_NOT_FOUND'
+}
+
+Node.js v24.14.1
+Traceback (most recent call last):
+  File "<stdin>", line 33, in <module>
+  File "/usr/lib/python3.12/subprocess.py", line 571, in run
+    raise CalledProcessError(retcode, process.args,
+subprocess.CalledProcessError: Command '['bash', '-euxo', 'pipefail', '-c', 'python3 - <<\'PY\'\nfrom pathlib import Path\npath = Path("packages/coding-agent/CHANGELOG.md")\ntext = path.read_text()\nanchor = "## [Unreleased]\\n\\n### Added\\n"\nreplacement = (\n    "## [Unreleased]\\n\\n"\n    "### Fixed\\n\\n"\n    "- Make task-verification gates self-explanatory after compaction: expose exact next actions, eligible evidence, required replay commands, and ready-to-use verification payloads through proactive status and every rejection.\\n\\n"\n    "### Added\\n"\n)\nif text.count(anchor) != 1:\n    raise SystemExit(f"Expected one changelog anchor, found {text.count(anchor)}")\npath.write_text(text.replace(anchor, replacement, 1))\nPY\nnode scripts/version-bump.mjs patch\n\n']' returned non-zero exit status 1.
