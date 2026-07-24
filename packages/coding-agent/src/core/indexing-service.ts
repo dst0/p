@@ -131,7 +131,9 @@ function isReinstallingService(agentDir: string, pid: number): boolean {
 		const value = JSON.parse(fs.readFileSync(filePath, "utf-8")) as unknown;
 		if (!isReinstallData(value) || value.pid !== pid) return false;
 		const startedAt = Date.parse(value.startedAt);
-		return Number.isFinite(startedAt) && Date.now() - startedAt <= INDEXING_SERVICE_REINSTALL_GRACE_MS;
+		if (!Number.isFinite(startedAt)) return false;
+		const ageMs = Date.now() - startedAt;
+		return ageMs >= 0 && ageMs <= INDEXING_SERVICE_REINSTALL_GRACE_MS;
 	} catch {
 		return false;
 	}
