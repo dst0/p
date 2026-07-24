@@ -8,17 +8,23 @@ import {
 	getIndexingReinstallControlPath,
 	getIndexingReinstallReadyPath,
 } from "../packages/coding-agent/dist/indexing-service-daemon.js";
+import { INDEXING_SERVICE_REINSTALL_FILE } from "../packages/coding-agent/dist/core/indexing-service.js";
 
 const AGENT_DIR = process.env.P_CODING_AGENT_DIR ?? path.join(os.homedir(), ".p", "agent");
 const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
 const CONTROL_PATH = getIndexingReinstallControlPath(AGENT_DIR);
 const READY_PATH = getIndexingReinstallReadyPath(AGENT_DIR);
+const REINSTALL_PATH = path.join(AGENT_DIR, INDEXING_SERVICE_REINSTALL_FILE);
 const DEFAULT_WAIT_MS = 35 * 60_000;
 const LEGACY_IDLE_STABILITY_MS = 1_000;
 const POLL_MS = 200;
 const ACTIVE_STATES = new Set(["queued", "initializing", "updating"]);
 
-await prepareForReinstall();
+if (process.argv.includes("--clear")) {
+	fs.rmSync(REINSTALL_PATH, { force: true });
+} else {
+	await prepareForReinstall();
+}
 
 async function prepareForReinstall() {
 	const status = readJson(STATUS_PATH);
@@ -35,6 +41,7 @@ async function prepareForReinstall() {
 	const control = readJson(CONTROL_PATH);
 	const supportsQuiesce = control?.pid === pid && control?.protocolVersion === 1;
 	fs.rmSync(READY_PATH, { force: true });
+	writeReinstallMarker(pid);
 
 	if (supportsQuiesce) {
 		console.log(`Preparing code indexing service ${pid} for a safe reinstall...`);
@@ -87,6 +94,17 @@ async function waitForLegacyIdle(pid, timeoutMs) {
 	throw new Error(
 		`Timed out waiting for legacy code indexing service ${pid} to become idle; reinstall was not allowed to interrupt it`,
 	);
+}
+
+function writeReinstallMarker(pid) {
+	fs.mkdirSync(path.dirname(REINSTALL_PATH), { recursive: true, mode: 0o700 });
+	const temporaryPath = `${REINSTALL_PATH}.${process.pid}.tmp`;
+	fs.writeFileSync(
+		temporaryPath,
+		`${JSON.stringify({ pid, startedAt: new Date().toISOString() })}\n`,
+		{ mode: 0o600 },
+	);
+	fs.renameSync(temporaryPath, REINSTALL_PATH);
 }
 
 function isIndexingDaemonProcess(pid) {
