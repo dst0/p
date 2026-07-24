@@ -105,25 +105,25 @@ export class PlanPanel implements Component {
         switch (step.status) {
           case "completed":
           case "done":
-            icon = `[${C.green}✔${C.reset}]`;
+            icon = "✅";
             break;
           case "in_progress":
-            icon = `[${C.cyan}▶${C.reset}]`;
+            icon = "⏳";
             break;
           case "failed":
-            icon = `[${C.red}✖${C.reset}]`;
+            icon = "❌";
             break;
           case "checkpoint":
-            icon = `[${C.magenta}🚩${C.reset}]`;
+            icon = "💎";
             break;
           case "blocked":
-            icon = `[${C.yellow}⛔${C.reset}]`;
+            icon = "🔒";
             break;
           case "cancelled":
-            icon = `[${C.gray}🚫${C.reset}]`;
+            icon = "🚫";
             break;
           default:
-            icon = `[${C.gray}○${C.reset}]`;
+            icon = `${C.gray}⬜${C.reset}`;
             break;
         }
 
