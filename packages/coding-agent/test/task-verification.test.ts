@@ -24,24 +24,22 @@ async function callVerificationTool(
 	controller: TaskVerificationController,
 	params: Record<string, unknown>,
 ): Promise<{ isError: boolean; text: string }> {
-	const result = await controller.toolDefinition.execute(
-		"verification-call",
-		params as never,
-		undefined,
-		undefined,
-		{} as never,
-	);
-	const text = result.content
-		.filter((part): part is Extract<(typeof result.content)[number], { type: "text" }> => part.type === "text")
-		.map((part) => part.text)
-		.join("\n");
-	const details = result.details;
-	const isError =
-		typeof details === "object" &&
-		details !== null &&
-		"status" in details &&
-		(details as { status?: unknown }).status === "rejected";
-	return { isError, text };
+	try {
+		const result = await controller.toolDefinition.execute(
+			"verification-call",
+			params as never,
+			undefined,
+			undefined,
+			{} as never,
+		);
+		const text = result.content
+			.filter((part): part is Extract<(typeof result.content)[number], { type: "text" }> => part.type === "text")
+			.map((part) => part.text)
+			.join("\n");
+		return { isError: false, text };
+	} catch (error) {
+		return { isError: true, text: error instanceof Error ? error.message : String(error) };
+	}
 }
 
 function createToolCall(name: string, args: Record<string, unknown>) {
@@ -129,6 +127,52 @@ describe("task verification controller", () => {
 		});
 		expect(baseline.isError).toBe(false);
 		expect((await beforeTool(agent, "edit", { path: "a.ts", edits: [] }))?.block).not.toBe(true);
+	});
+
+	it("allows only explicitly authorized regression-test edits before baseline", async () => {
+		const { agent, controller } = createInstalledController();
+		await callVerificationTool(controller, {
+			action: "declare_task",
+			task_kind: "bug_fix",
+			task_summary: "Fix completion without semantic verification",
+		});
+
+		expect((await beforeTool(agent, "edit", { path: "src/completion.ts", edits: [] }))?.block).toBe(true);
+		const authorized = await callVerificationTool(controller, {
+			action: "authorize_baseline_test",
+			test_paths: ["test/completion-regression.test.ts"],
+		});
+		expect(authorized.isError).toBe(false);
+		expect((await beforeTool(agent, "edit", { path: "test/completion-regression.test.ts", edits: [] }))?.block).not.toBe(
+			true,
+		);
+		expect((await beforeTool(agent, "write", { path: "src/not-a-test.ts", content: "" }))?.block).toBe(true);
+
+		await afterTool(agent, "edit", {
+			path: "test/completion-regression.test.ts",
+			edits: [{ oldText: "old", newText: "failing regression" }],
+		});
+		expect(controller.currentState.mutationRevision).toBe(0);
+		expect(controller.currentState.baseline.testSetupChanged).toBe(true);
+
+		const failingTest = evidenceHandle(
+			await afterTool(
+				agent,
+				"bash",
+				{ command: "vitest --run test/completion-regression.test.ts" },
+				{ isError: true, text: "expected failure" },
+			),
+		);
+		const baseline = await callVerificationTool(controller, {
+			action: "record_baseline",
+			baseline_method: "failing_regression_test",
+			hypothesis: "Successful completion accepts generic checks without behavioral evidence",
+			conclusion: "The focused regression fails against the current implementation",
+			evidence_refs: [failingTest],
+			unresolved_assumptions: [],
+		});
+		expect(baseline.isError).toBe(false);
+		expect((await beforeTool(agent, "edit", { path: "src/completion.ts", edits: [] }))?.block).not.toBe(true);
 	});
 
 	it("rejects static baseline evidence for lifecycle and persistence work", async () => {
