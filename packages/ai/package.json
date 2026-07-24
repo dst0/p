@@ -65,6 +65,7 @@
     "generate": "npm run generate-models && npm run generate-image-models",
     "build": "tsgo -p tsconfig.build.json",
     "test": "vitest --run",
+    "test:coverage": "vitest --run --coverage",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "dependencies": {

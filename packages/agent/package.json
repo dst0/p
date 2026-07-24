@@ -24,6 +24,7 @@
     "clean": "shx rm -rf dist",
     "build": "tsgo -p tsconfig.build.json",
     "test": "vitest --run",
+    "test:coverage": "vitest --run --coverage",
     "test:harness": "vitest --run --config vitest.harness.config.ts",
     "coverage:harness": "vitest --run --config vitest.harness.config.ts --coverage",
     "prepublishOnly": "npm run clean && npm run build"

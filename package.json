@@ -21,6 +21,7 @@
     "profile:rpc": "node scripts/profile-coding-agent-node.mjs --mode rpc",
     "benchmark:agents": "node scripts/benchmark-agents.mjs",
     "test": "npm run test --workspaces --if-present",
+    "test:coverage": "npm run test:coverage --workspaces --if-present",
     "version:patch": "node scripts/version-bump.mjs patch",
     "version:minor": "node scripts/version-bump.mjs minor",
     "version:major": "node scripts/version-bump.mjs major",
