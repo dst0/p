@@ -1,1 +1,0 @@
-/home/dst/actions-runner-dst0-p/_work/_temp/a78f21b3-8a47-4643-9427-43d9991f6015.sh: line 8: python: command not found
