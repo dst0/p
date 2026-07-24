@@ -1,0 +1,762 @@
+diff --git a/packages/coding-agent/src/core/compaction/compaction.ts b/packages/coding-agent/src/core/compaction/compaction.ts
+index ad2238b0..00000000 100644
+--- a/packages/coding-agent/src/core/compaction/compaction.ts
++++ b/packages/coding-agent/src/core/compaction/compaction.ts
+@@ -25,7 +25,15 @@ import {
+ 	createCustomMessage,
+ } from "../messages.ts";
+ import { buildSessionContext, type CompactionEntry, type SessionEntry } from "../session-manager.ts";
+-import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE, type StructuredSessionState } from "./structured-state.ts";
++import {
++	createStructuredSessionState,
++	getLatestStructuredSessionState,
++	hasMeaningfulStructuredSessionState,
++	mergeStructuredSessionState,
++	renderStructuredSessionCheckpoint,
++	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
++	type StructuredSessionState,
++} from "./structured-state.ts";
+ import {
+ 	computeFileLists,
+ 	createFileOps,
+@@ -432,6 +440,27 @@ export function selectKeepRecentTokens(contextTokens: number, settings: Compacti
+ 	return Math.round(maxTokens - (maxTokens - minTokens) * pressure);
+ }
+ 
++const MIN_TARGET_AWARE_RECENT_TOKENS = 512;
++
++/**
++ * Select the recent raw suffix after reserving space for the static prompt and
++ * the rendered durable checkpoint. The configured target is authoritative:
++ * raw history is the expendable layer because exact discarded content remains
++ * available through session_recall.
++ */
++export function selectKeepRecentTokensForTarget(
++	contextTokens: number,
++	settings: CompactionSettings,
++	systemPromptTokens: number,
++): number {
++	const resolved = resolveCompactionSettings(settings);
++	const adaptiveTokens = selectKeepRecentTokens(contextTokens, settings);
++	const availableForRecent = Math.floor(
++		resolved.targetContextTokens - Math.max(0, systemPromptTokens) - resolved.renderedStateMaxTokens,
++	);
++	return Math.min(adaptiveTokens, Math.max(MIN_TARGET_AWARE_RECENT_TOKENS, availableForRecent));
++}
++
+ // ============================================================================
+ // Cut point detection
+ // ============================================================================
+@@ -749,7 +777,7 @@ function getMessageText(message: AgentMessage): string | undefined {
+ }
+ 
+ /**
+- * Truncate text to its last N lines, with a max character limit.
++ * Truncate text to its first and last N lines, with a max character limit.
+  * Returns the truncated text, or the original if it's already within limits.
+  */
+ function truncateToLastLines(text: string, maxLines: number, maxChars: number): string {
+@@ -759,18 +787,27 @@ function truncateToLastLines(text: string, maxLines: number, maxChars: number): s
+ 	}
+ 
+ 	const lines = text.split("\n");
+-	const kept = lines.slice(-maxLines);
++	const headCount = Math.ceil(maxLines / 2);
++	const tailCount = Math.floor(maxLines / 2);
++	const head = headCount > 0 ? lines.slice(0, headCount) : [];
++	const tail = tailCount > 0 ? lines.slice(-tailCount) : [];
++	const kept = [...head, ...tail];
+ 	let result = kept.join("\n");
+ 
+-	// Further truncate if still over character limit
++	// Preserve both the request/setup at the start and the latest outcome at the end.
+ 	if (result.length > maxChars) {
+-		result = result.slice(-maxChars);
+-		// Clean up to start at a line boundary
+-		const firstNewline = result.indexOf("\n");
+-		if (firstNewline > 0 && firstNewline < result.length - 1) {
+-			result = result.slice(firstNewline + 1);
+-		}
++		const separator = "\n... [middle omitted] ...\n";
++		const availableChars = Math.max(0, maxChars - separator.length);
++		const headChars = Math.ceil(availableChars / 2);
++		const tailChars = Math.floor(availableChars / 2);
++		result = `${result.slice(0, headChars)}${separator}${tailChars > 0 ? result.slice(-tailChars) : ""}`;
+ 	}
+ 
+-	return `[...truncated, showing last ${kept.length} lines...]\n${result}`;
++	const rangeDescription =
++		maxLines <= 0
++			? "content omitted"
++			: tailCount > 0
++				? `showing first ${head.length} and last ${tail.length} lines`
++				: `showing first ${head.length} lines`;
++	return `[...truncated, ${rangeDescription}; use session_recall for exact compacted content...]\n${result}`;
+ }
+@@ -1361,4 +1399,6 @@ export interface CompactionPreparation {
+ 	droppedEntryIds: string[];
+ 	/** Estimated tokens from static prompt context. */
+ 	systemPromptTokens: number;
++	/** Durable state captured before summarization; authoritative across compactions. */
++	structuredState?: StructuredSessionState;
+ }
+@@ -1429,6 +1469,7 @@ export function prepareCompaction(
+ 
+ 	const systemPromptTokens = systemPrompt ? Math.ceil(systemPrompt.length / 4) : 0;
+ 	const tokensBefore = estimateContextTokens(buildSessionContext(pathEntries).messages, systemPrompt).tokens;
+-	const keepRecentTokens = selectKeepRecentTokens(tokensBefore, settings);
++	const keepRecentTokens = selectKeepRecentTokensForTarget(tokensBefore, settings, systemPromptTokens);
++	const structuredState = getLatestStructuredSessionState(pathEntries);
+ 
+ 	const cutPoint = findCutPoint(pathEntries, boundaryStart, boundaryEnd, keepRecentTokens);
+@@ -1518,5 +1559,6 @@ export function prepareCompaction(
+ 			droppedEntryIds,
+ 			systemPromptTokens,
++			structuredState,
+ 		},
+ 	};
+ }
+@@ -1747,32 +1789,75 @@ export async function compact(
+ 	}
+ 
+ 	// Compute file lists and append to summary
+ 	const { readFiles, modifiedFiles } = computeFileLists(fileOps);
+ 	summary += formatFileOperations(readFiles, modifiedFiles);
+-	const summaryTokens = Math.ceil(summary.length / 4);
+-	const afterTokens = systemPromptTokens + summaryTokens + recentRawTokens;
+-	const audit: CompactionAudit = {
++	const markdownSummary = summary;
++	const markdownSummaryTokens = Math.ceil(markdownSummary.length / 4);
++	const draftAfterTokens = systemPromptTokens + markdownSummaryTokens + recentRawTokens;
++	const draftAudit: CompactionAudit = {
+ 		beforeTokens: tokensBefore,
+-		afterTokens,
+-		savedTokens: Math.max(0, tokensBefore - afterTokens),
+-		summaryTokens,
+-		renderedStateTokens: Math.min(summaryTokens, resolvedSettings.renderedStateMaxTokens),
++		afterTokens: draftAfterTokens,
++		savedTokens: Math.max(0, tokensBefore - draftAfterTokens),
++		summaryTokens: markdownSummaryTokens,
++		renderedStateTokens: Math.min(markdownSummaryTokens, resolvedSettings.renderedStateMaxTokens),
+ 		recentRawTokens,
+ 		toolRawTokens,
+ 		toolStubTokens,
+ 		droppedEntries: droppedEntryIds,
+ 		stubbedToolResults,
+-		risks: afterTokens > resolvedSettings.targetContextTokens ? ["post-compaction context exceeds target"] : [],
++		risks: draftAfterTokens > resolvedSettings.targetContextTokens ? ["post-compaction context exceeds target"] : [],
+ 	};
+ 
++	let structuredState = createStructuredSessionState({
++		sessionId: preparation.structuredState?.sessionId ?? "compaction",
++		previous: preparation.structuredState,
++		summary: markdownSummary,
++		entries: [],
++		readFiles,
++		modifiedFiles,
++		// Internal budget diagnostics belong in the audit, not in user-visible session risks.
++		audit: { ...draftAudit, risks: [] },
++		timestamp: new Date().toISOString(),
++	});
++	const stubbedPointers = [
++		...historyPromptContext.stubs.map((stub) => stub.rawPointer),
++		...turnPrefixPromptContext.stubs.map((stub) => stub.rawPointer),
++	];
++	if (stubbedPointers.length > 0) {
++		structuredState = mergeStructuredSessionState(structuredState, {
++			evidence: { add: stubbedPointers },
++		});
++	}
++
++	const checkpointSummary = hasMeaningfulStructuredSessionState(structuredState)
++		? renderStructuredSessionCheckpoint(structuredState, resolvedSettings.renderedStateMaxTokens)
++		: markdownSummary;
++	const checkpointTokens = Math.ceil(checkpointSummary.length / 4);
++	const afterTokens = systemPromptTokens + checkpointTokens + recentRawTokens;
++	const audit: CompactionAudit = {
++		...draftAudit,
++		afterTokens,
++		savedTokens: Math.max(0, tokensBefore - afterTokens),
++		summaryTokens: checkpointTokens,
++		renderedStateTokens: checkpointTokens,
++		risks: afterTokens > resolvedSettings.targetContextTokens ? ["post-compaction context exceeds target"] : [],
++	};
++
+ 	if (!firstKeptEntryId) {
+ 		throw new Error("First kept entry has no UUID - session may need migration");
+ 	}
+ 
+ 	return {
+-		summary,
++		summary: checkpointSummary,
+ 		firstKeptEntryId,
+ 		tokensBefore,
+-		details: { readFiles, modifiedFiles, audit } as CompactionDetails,
++		tokensAfter: afterTokens,
++		details: {
++			readFiles,
++			modifiedFiles,
++			audit,
++			markdownSummary,
++			structuredState,
++		} as CompactionDetails,
+ 	};
+ }
+diff --git a/packages/coding-agent/src/core/agent-session.ts b/packages/coding-agent/src/core/agent-session.ts
+index a7042678..00000000 100644
+--- a/packages/coding-agent/src/core/agent-session.ts
++++ b/packages/coding-agent/src/core/agent-session.ts
+@@ -4361,24 +4361,40 @@ export class AgentSession {
+ 			const readFiles = modelDetails?.readFiles ?? deterministic.details?.readFiles ?? [];
+ 			const modifiedFiles = modelDetails?.modifiedFiles ?? deterministic.details?.modifiedFiles ?? [];
+ 			const audit = modelDetails?.audit ?? deterministic.details?.audit;
+-			const baseState = this._getCurrentStructuredSessionState(pathEntries);
+-			const state = createStructuredSessionState({
+-				sessionId: this.sessionManager.getSessionId(),
+-				previous: baseState,
+-				summary: modelResult.summary,
+-				entries: pathEntries,
+-				readFiles,
+-				modifiedFiles,
+-				audit,
+-				timestamp: new Date().toISOString(),
+-			});
++			const state =
++				modelDetails?.structuredState && isStructuredSessionState(modelDetails.structuredState)
++					? modelDetails.structuredState
++					: createStructuredSessionState({
++							sessionId: this.sessionManager.getSessionId(),
++							previous: this._getCurrentStructuredSessionState(pathEntries),
++							summary: modelResult.summary,
++							entries: pathEntries,
++							readFiles,
++							modifiedFiles,
++							audit,
++							timestamp: new Date().toISOString(),
++						});
++			const summary = renderStructuredSessionCheckpoint(state, settings.renderedStateMaxTokens);
++			const summaryTokens = Math.ceil(summary.length / 4);
++			const tokensAfter = preparation.systemPromptTokens + summaryTokens + preparation.recentRawTokens;
++			const normalizedAudit = audit
++				? {
++						...audit,
++						afterTokens: tokensAfter,
++						savedTokens: Math.max(0, preparation.tokensBefore - tokensAfter),
++						summaryTokens,
++						renderedStateTokens: summaryTokens,
++					}
++				: audit;
+ 			return {
+ 				...modelResult,
++				summary,
++				tokensAfter,
+ 				details: {
+ 					readFiles,
+ 					modifiedFiles,
+-					audit,
+-					markdownSummary: modelResult.summary,
++					audit: normalizedAudit,
++					markdownSummary: modelDetails?.markdownSummary ?? modelResult.summary,
+ 					structuredState: state,
+ 				},
+ 				state,
+diff --git a/packages/coding-agent/src/core/compaction/default-settings.ts b/packages/coding-agent/src/core/compaction/default-settings.ts
+index d6c63613..00000000 100644
+--- a/packages/coding-agent/src/core/compaction/default-settings.ts
++++ b/packages/coding-agent/src/core/compaction/default-settings.ts
+@@ -4,9 +4,9 @@ export const DEFAULT_COMPACTION_SETTINGS = {
+ 	enabled: true,
+ 	triggerReserveTokens: 2000,
+ 	triggerRatio: 1.0,
+-	keepRecentMinTokens: 2000,
+-	keepRecentMaxTokens: 8000,
+-	summaryMaxTokens: 1200,
+-	renderedStateMaxTokens: 1500,
+-	targetContextTokens: 12000,
++	keepRecentMinTokens: 1200,
++	keepRecentMaxTokens: 4000,
++	summaryMaxTokens: 1000,
++	renderedStateMaxTokens: 1000,
++	targetContextTokens: 8000,
+ } as const;
+diff --git a/packages/coding-agent/src/core/compaction/structured-state.ts b/packages/coding-agent/src/core/compaction/structured-state.ts
+index 08b12729..00000000 100644
+--- a/packages/coding-agent/src/core/compaction/structured-state.ts
++++ b/packages/coding-agent/src/core/compaction/structured-state.ts
+@@ -309,72 +309,121 @@
+-export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem | undefined {
+-	return findPlanItemByIdOrText(plan, undefined, text);
+-}
+-
+-export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
+-	const plan = state.plan
+-		.slice(0, 12)
+-		.map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
+-	const decisions = state.decisions
+-		.filter((decision) => decision.status === "active")
+-		.slice(-8)
+-		.map((decision) =>
+-			capPromptLine(`${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`, 240),
+-		);
+-	const touchedFiles = state.codebase.touchedFiles
+-		.slice(-20)
+-		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
+-	const knownRisks = state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${capPromptLine(risk, 220)}`);
+-	const lines = [
+-		"<session_checkpoint>",
+-		`${STATE_RENDER_MARKERS.goal} Goal: ${
+-			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
+-			"(no user request recorded yet)"
+-		}`,
+-		"Plan:",
+-		...(plan.length > 0 ? plan : [`${STATE_RENDER_MARKERS.notStarted} (none)`]),
+-		"Decisions:",
+-		...renderList(decisions),
+-		"Files:",
+-		...renderList(touchedFiles),
+-		"Risks:",
+-		...renderList(knownRisks),
+-		"</session_checkpoint>",
+-	];
+-	return capCheckpoint(lines.join("\n"), maxTokens);
+-}
+-
+-export function renderWorkingSessionState(state: StructuredSessionState, maxTokens: number): string | undefined {
+-	if (!hasMeaningfulStructuredSessionState(state)) {
+-		return undefined;
+-	}
+-	const plan = state.plan
+-		.slice(0, 12)
+-		.map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
+-	const touchedFiles = state.codebase.touchedFiles
+-		.slice(-16)
+-		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
+-	const risks = state.audit.knownRisks.map((risk) => `${STATE_RENDER_MARKERS.risk} ${capPromptLine(risk, 220)}`);
+-	const decisions = state.decisions
+-		.filter((decision) => decision.status === "active")
+-		.slice(-8)
+-		.map((decision) =>
+-			capPromptLine(`${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`, 240),
+-		);
+-	const lines = [
+-		"<working_state>",
+-		`${STATE_RENDER_MARKERS.goal} Goal: ${
+-			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
+-			"(no user request recorded yet)"
+-		}`,
+-		"Plan:",
+-		...(plan.length > 0 ? plan : [`${STATE_RENDER_MARKERS.notStarted} (none)`]),
+-		"Decisions:",
+-		...renderList(decisions),
+-		"Files:",
+-		...renderList(touchedFiles),
+-		"Risks:",
+-		...renderList(risks),
+-		"</working_state>",
+-	];
+-	return capWorkingState(lines.join("\n"), maxTokens);
+-}
++export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem | undefined {
++	return findPlanItemByIdOrText(plan, undefined, text);
++}
++
++function renderPlanStatusCode(status: PlanStatus): string {
++	switch (status) {
++		case "in_progress":
++			return ".";
++		case "done":
++			return "x";
++		case "failed":
++			return "-";
++		case "blocked":
++			return "!";
++		case "not_started":
++			return " ";
++	}
++}
++
++function selectPlanItemsForPrompt(plan: PlanItem[], limit: number): PlanItem[] {
++	const open = plan.filter((item) => item.status !== "done");
++	const done = plan.filter((item) => item.status === "done");
++	const selectedOpen = open.slice(0, limit);
++	const remaining = Math.max(0, limit - selectedOpen.length);
++	return [...selectedOpen, ...done.slice(-remaining)];
++}
++
++function selectOriginalRequestsForPrompt(
++	requests: OriginalUserRequest[] | undefined,
++	limit: number,
++): OriginalUserRequest[] {
++	if (!requests || requests.length <= limit) return requests ?? [];
++	const selected = [requests[0], ...requests.slice(-(limit - 1))];
++	const seen = new Set<string>();
++	return selected.filter((request) => {
++		if (seen.has(request.id)) return false;
++		seen.add(request.id);
++		return true;
++	});
++}
++
++function renderPromptStateSections(
++	state: StructuredSessionState,
++	options: { planLimit: number; fileLimit: number; evidenceLimit: number },
++): string[] {
++	const constraints = state.constraints
++		.filter((constraint) => constraint.status === "active")
++		.slice(0, 12)
++		.map(
++			(constraint) =>
++				`[${constraint.source}/${constraint.enforceability}] ${capPromptLine(constraint.text, 220)}`,
++		);
++	const plan = selectPlanItemsForPrompt(state.plan, options.planLimit).map(
++		(item) =>
++			`- [${renderPlanStatusCode(item.status)}] ${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`,
++	);
++	const knownRisks = state.audit.knownRisks.map(
++		(risk) => `${STATE_RENDER_MARKERS.risk} ${capPromptLine(risk, 220)}`,
++	);
++	const requests = selectOriginalRequestsForPrompt(state.canonicalRequest.originalRequests, 4).map(
++		(request) => `${request.kind}: ${capPromptLine(request.summary, 200)}`,
++	);
++	const decisions = state.decisions
++		.filter((decision) => decision.status === "active")
++		.slice(-8)
++		.map((decision) =>
++			capPromptLine(`${decision.decision}${decision.rationale ? `: ${decision.rationale}` : ""}`, 240),
++		);
++	const touchedFiles = state.codebase.touchedFiles
++		.slice(-options.fileLimit)
++		.map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
++	const evidence = state.evidence
++		.slice(-options.evidenceLimit)
++		.map((pointer) => `${pointer.id}: ${capPromptLine(pointer.summary, 180)}`);
++	return [
++		"Constraints:",
++		...renderList(constraints),
++		"Plan:",
++		...(plan.length > 0 ? plan : [`- [ ] ${STATE_RENDER_MARKERS.notStarted} (none)`]),
++		"Risks:",
++		...renderList(knownRisks),
++		"Requests:",
++		...renderList(requests),
++		"Decisions:",
++		...renderList(decisions),
++		"Files:",
++		...renderList(touchedFiles),
++		"Recall:",
++		"- Exact compacted messages and tool outputs remain outside the prompt. Use session_recall with specific keywords before guessing.",
++		...(evidence.length > 0 ? renderList(evidence) : []),
++	];
++}
++
++export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
++	const lines = [
++		"<session_checkpoint>",
++		`${STATE_RENDER_MARKERS.goal} Goal: ${
++			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
++			"(no user request recorded yet)"
++		}`,
++		...renderPromptStateSections(state, { planLimit: 12, fileLimit: 16, evidenceLimit: 4 }),
++		"</session_checkpoint>",
++	];
++	return capCheckpoint(lines.join("\n"), maxTokens);
++}
++
++export function renderWorkingSessionState(state: StructuredSessionState, maxTokens: number): string | undefined {
++	if (!hasMeaningfulStructuredSessionState(state)) {
++		return undefined;
++	}
++	const lines = [
++		"<working_state>",
++		`${STATE_RENDER_MARKERS.goal} Goal: ${
++			capPromptLine(normalizeCanonicalRequest(state.canonicalRequest.current), 520) ||
++			"(no user request recorded yet)"
++		}`,
++		...renderPromptStateSections(state, { planLimit: 12, fileLimit: 12, evidenceLimit: 3 }),
++		"</working_state>",
++	];
++	return capWorkingState(lines.join("\n"), maxTokens);
++}
+diff --git a/packages/coding-agent/docs/compaction.md b/packages/coding-agent/docs/compaction.md
+index eadcc5b1..00000000 100644
+--- a/packages/coding-agent/docs/compaction.md
++++ b/packages/coding-agent/docs/compaction.md
+@@ -36,5 +36,5 @@ contextTokens > contextWindow * triggerRatio
+ ```
+ 
+-Both limits are evaluated when present, and the lower threshold wins. By default, `triggerRatio` is `1.0` and `triggerReserveTokens` is `12000`, so compaction starts only when the loaded model's context window is effectively full or within 12k tokens of full, whichever comes first. For example, a 64k-token local model compacts near 53,536 tokens by the reserve rule, not at the older 75% mark.
++Both limits are evaluated when present, and the lower threshold wins. By default, `triggerRatio` is `1.0` and `triggerReserveTokens` is `2000`, so compaction starts when the loaded model is close to its real context limit. For a 64k-token local model, the reserve threshold is 63,536 tokens.
+ 
+ The defaults live in `DEFAULT_COMPACTION_SETTINGS` and are shared by SettingsManager and the compaction engine. Configure them in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`.
+@@ -48,7 +48,13 @@ You can also trigger manually with `/compact [instructions]`, where optional ins
+ 
+ ### How It Works
+ 
+-1. **Find cut point**: Walk backwards from newest message, accumulating token estimates until `keepRecentTokens` (default 20k, configurable in `~/.p/agent/settings.json` or `<project-dir>/.p/settings.json`) is reached
++1. **Reserve the target budget**: Subtract the static system/tool prompt and the durable checkpoint budget from `targetContextTokens` (default 8k). The remaining space is the maximum recent raw suffix.
++2. **Find cut point**: Walk backwards from the newest message and keep an adaptive recent suffix (normally 1.2k–4k tokens, and smaller when the static prompt needs more room).
++3. **Extract messages**: Collect messages from the previous kept boundary (or session start) up to the cut point.
+-3. **Generate summary**: Call LLM to summarize with structured format, passing the previous summary as iterative context when present
+-4. **Append entry**: Save `CompactionEntry` with summary and `firstKeptEntryId`
+-5. **Reload**: Session reloads, using summary + messages from `firstKeptEntryId` onwards
++4. **Generate a delta summary**: Call the service model to extract new decisions, progress, files, and risks.
++5. **Reconcile durable state**: Merge the delta into the non-context structured session state. The durable state—not free-form model prose—is authoritative across repeated compactions.
++6. **Render a bounded checkpoint**: Put only the current goal, active constraints, open plan, real risks, recent decisions/files, and recall pointers back into the prompt.
++7. **Keep exact history retrievable**: Discarded messages and tool outputs remain in the session log and can be loaded on demand with `session_recall`.
++8. **Append entry and reload**: Save `CompactionEntry` with the checkpoint and `firstKeptEntryId`, then reload checkpoint + recent suffix.
++
++The default post-compaction target is 8k tokens. Static prompt size can make the final prompt larger, but a normal 64k session should remain comfortably below 20k without sacrificing exact-history access.
+diff --git a/packages/coding-agent/test/compaction-retention.test.ts b/packages/coding-agent/test/compaction-retention.test.ts
+new file mode 100644
+index 00000000..00000000
+--- /dev/null
++++ b/packages/coding-agent/test/compaction-retention.test.ts
+@@ -0,0 +1,248 @@
++import type { AgentMessage } from "@dst0/p-agent-core";
++import type { AssistantMessage, Model } from "@dst0/p-ai";
++import { beforeEach, describe, expect, it, vi } from "vitest";
++import {
++	type CompactionDetails,
++	type CompactionPreparation,
++	compact,
++	createInitialStructuredSessionState,
++	estimateContextTokens,
++	mergeStructuredSessionState,
++	renderStructuredSessionCheckpoint,
++	selectKeepRecentTokensForTarget,
++	truncateKeptMessages,
++} from "../src/core/compaction/index.ts";
++
++const { completeSimpleMock } = vi.hoisted(() => ({
++	completeSimpleMock: vi.fn(),
++}));
++
++vi.mock("@dst0/p-ai", async (importOriginal) => {
++	const actual = await importOriginal<typeof import("@dst0/p-ai")>();
++	return {
++		...actual,
++		completeSimple: completeSimpleMock,
++	};
++});
++
++function createModel(): Model<"anthropic-messages"> {
++	return {
++		id: "compaction-test",
++		name: "Compaction Test",
++		api: "anthropic-messages",
++		provider: "anthropic",
++		baseUrl: "https://api.anthropic.com",
++		reasoning: false,
++		input: ["text"],
++		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
++		contextWindow: 64_000,
++		maxTokens: 8192,
++	};
++}
++
++function summaryResponse(text: string): AssistantMessage {
++	return {
++		role: "assistant",
++		content: [{ type: "text", text }],
++		api: "anthropic-messages",
++		provider: "anthropic",
++		model: "compaction-test",
++		usage: {
++			input: 100,
++			output: 100,
++			cacheRead: 0,
++			cacheWrite: 0,
++			totalTokens: 200,
++			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
++		},
++		stopReason: "stop",
++		timestamp: Date.now(),
++	};
++}
++
++function createDurableState() {
++	let state = createInitialStructuredSessionState("retention-session");
++	state = mergeStructuredSessionState(state, {
++		canonicalRequest: {
++			current:
++				"Fix session compaction so a 64k coding session resumes fully functional with a minimal prompt.",
++			sourceEntryIds: ["user-original"],
++			originalRequests: [
++				{
++					id: "req-1",
++					entryId: "user-original",
++					timestamp: "2026-07-24T00:00:00.000Z",
++					kind: "request",
++					text: "Preserve all requirements and keep post-compaction context below 20k.",
++					summary: "Preserve all requirements and keep post-compaction context below 20k.",
++				},
++			],
++		},
++		constraints: {
++			add: [
++				{
++					id: "constraint-budget",
++					text: "Post-compaction prompt must remain below 20k tokens for a normal 64k-model session.",
++					source: "user",
++					status: "active",
++					enforceability: "test",
++				},
++			],
++		},
++		plan: {
++			add: [
++				...Array.from({ length: 16 }, (_, index) => ({
++					id: `done-${index}`,
++					text: `Historical completed item ${index}`,
++					status: "done" as const,
++					evidenceEntryIds: [],
++				})),
++				{
++					id: "open-implementation",
++					text: "Make durable state authoritative after compaction",
++					status: "in_progress",
++					evidenceEntryIds: [],
++				},
++				{
++					id: "open-tests",
++					text: "Run comprehensive retention and budget tests",
++					status: "not_started",
++					evidenceEntryIds: [],
++				},
++			],
++		},
++		evidence: {
++			add: [
++				{
++					id: "tool-result:large-log",
++					kind: "tool_result",
++					summary: "Exact large tool output retained outside prompt",
++					retrieveWhen: "Need exact diagnostics from the compacted tool output.",
++				},
++			],
++		},
++	});
++	return state;
++}
++
++function createPreparation(structuredState = createDurableState()): CompactionPreparation {
++	const messages: AgentMessage[] = [
++		{
++			role: "user",
++			content: "A newer turn whose model-generated summary may omit older requirements.",
++			timestamp: Date.now(),
++		},
++	];
++	return {
++		firstKeptEntryId: "kept-entry",
++		messagesToSummarize: messages,
++		turnPrefixMessages: [],
++		isSplitTurn: false,
++		tokensBefore: 64_000,
++		previousSummary: "A stale free-form summary.",
++		fileOps: { read: new Set(), written: new Set(), edited: new Set() },
++		settings: {
++			enabled: true,
++			triggerReserveTokens: 2000,
++			triggerRatio: 1,
++			keepRecentMinTokens: 1200,
++			keepRecentMaxTokens: 4000,
++			summaryMaxTokens: 1000,
++			renderedStateMaxTokens: 1000,
++			targetContextTokens: 8000,
++		},
++		keepRecentTokens: 1200,
++		tokensToSummarize: 1000,
++		recentRawTokens: 1200,
++		droppedEntryIds: ["dropped-entry"],
++		systemPromptTokens: 5000,
++		structuredState,
++	};
++}
++
++describe("minimal loss-resistant compaction", () => {
++	beforeEach(() => {
++		completeSimpleMock.mockReset();
++		completeSimpleMock.mockResolvedValue(
++			summaryResponse("## Goal\nDo something vague.\n\n## Plan\n- [ ] Continue somehow."),
++		);
++	});
++
++	it("reserves target space for static prompt and checkpoint before keeping raw history", () => {
++		const selected = selectKeepRecentTokensForTarget(
++			64_000,
++			{
++				enabled: true,
++				keepRecentMinTokens: 2000,
++				keepRecentMaxTokens: 8000,
++				renderedStateMaxTokens: 1500,
++				targetContextTokens: 12_000,
++			},
++			6000,
++		);
++
++		expect(selected).toBe(4500);
++	});
++
++	it("renders active constraints and open work before old completed items", () => {
++		const checkpoint = renderStructuredSessionCheckpoint(createDurableState(), 1000);
++
++		expect(checkpoint).toContain("Post-compaction prompt must remain below 20k");
++		expect(checkpoint).toContain("Make durable state authoritative after compaction");
++		expect(checkpoint).toContain("Run comprehensive retention and budget tests");
++		expect(checkpoint).toContain("session_recall");
++		expect(checkpoint).not.toContain("Historical completed item 0");
++		expect(estimateContextTokens([{ role: "compactionSummary", summary: checkpoint, tokensBefore: 64_000, timestamp: 0 }]).tokens).toBeLessThan(1200);
++	});
++
++	it("uses durable state as the authoritative checkpoint when the model omits requirements", async () => {
++		const result = await compact(createPreparation(), createModel(), "test-key");
++		const details = result.details as CompactionDetails;
++
++		expect(result.summary).toContain("Fix session compaction so a 64k coding session resumes fully functional");
++		expect(result.summary).toContain("Post-compaction prompt must remain below 20k");
++		expect(result.summary).toContain("Make durable state authoritative after compaction");
++		expect(result.summary).toContain("session_recall");
++		expect(details.markdownSummary).toContain("Do something vague");
++		expect(details.structuredState?.constraints.map((constraint) => constraint.id)).toContain("constraint-budget");
++		expect(result.tokensAfter).toBeLessThan(20_000);
++	});
++
++	it("preserves durable requirements across repeated lossy model summaries", async () => {
++		let state = createDurableState();
++		let previousSummary: string | undefined;
++
++		for (let index = 0; index < 8; index++) {
++			const preparation = createPreparation(state);
++			preparation.previousSummary = previousSummary;
++			const result = await compact(preparation, createModel(), "test-key");
++			const details = result.details as CompactionDetails;
++			state = details.structuredState!;
++			previousSummary = result.summary;
++		}
++
++		expect(state.canonicalRequest.current).toContain("Fix session compaction");
++		expect(state.constraints.find((constraint) => constraint.id === "constraint-budget")?.status).toBe("active");
++		expect(state.plan.find((item) => item.id === "open-implementation")?.status).toBe("in_progress");
++		expect(previousSummary).toContain("session_recall");
++	});
++
++	it("preserves both the beginning and end when an oversized kept message must be truncated", () => {
++		const content = [
++			"ORIGINAL REQUEST: retain this exact requirement",
++			...Array.from({ length: 100 }, (_, index) => `middle ${index} ${"x".repeat(100)}`),
++			"LATEST RESULT: retain this exact outcome",
++		].join("\n");
++		const messages: AgentMessage[] = [{ role: "user", content, timestamp: Date.now() }];
++
++		truncateKeptMessages(messages, {
++			keepRecentTokens: 100,
++			targetContextTokens: 100,
++		});
++
++		const truncated = (messages[0] as { content: string }).content;
++		expect(truncated).toContain("ORIGINAL REQUEST");
++		expect(truncated).toContain("LATEST RESULT");
++		expect(truncated).toContain("session_recall");
++	});
++});
