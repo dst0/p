@@ -15,9 +15,11 @@ const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
 const CONTROL_PATH = getIndexingReinstallControlPath(AGENT_DIR);
 const READY_PATH = getIndexingReinstallReadyPath(AGENT_DIR);
 const REINSTALL_PATH = path.join(AGENT_DIR, INDEXING_SERVICE_REINSTALL_FILE);
-const DEFAULT_WAIT_MS = 35 * 60_000;
+const DEFAULT_WAIT_MS = 10_000;
+const DEFAULT_STOP_WAIT_MS = 5_000;
+const KILL_WAIT_MS = 5_000;
 const LEGACY_IDLE_STABILITY_MS = 1_000;
-const POLL_MS = 200;
+const POLL_MS = 100;
 const ACTIVE_STATES = new Set(["queued", "initializing", "updating"]);
 
 if (process.argv.includes("--clear")) {
@@ -37,48 +39,83 @@ async function prepareForReinstall() {
 		throw new Error(`Refusing to signal pid ${pid}: it is not the code indexing daemon`);
 	}
 
-	const timeoutMs = readPositiveInteger(process.env.P_INDEXING_REINSTALL_WAIT_MS) ?? DEFAULT_WAIT_MS;
+	const timeoutMs =
+		readPositiveInteger(process.env.P_INDEXING_REINSTALL_WAIT_MS, "P_INDEXING_REINSTALL_WAIT_MS") ??
+		DEFAULT_WAIT_MS;
+	const stopWaitMs =
+		readPositiveInteger(process.env.P_INDEXING_REINSTALL_STOP_WAIT_MS, "P_INDEXING_REINSTALL_STOP_WAIT_MS") ??
+		DEFAULT_STOP_WAIT_MS;
 	const control = readJson(CONTROL_PATH);
 	const supportsQuiesce = control?.pid === pid && control?.protocolVersion === 1;
 	fs.rmSync(READY_PATH, { force: true });
 	writeReinstallMarker(pid);
 
 	if (supportsQuiesce) {
-		console.log(`Preparing code indexing service ${pid} for a safe reinstall...`);
+		console.log(
+			`Preparing code indexing service ${pid} for a safe reinstall (waiting up to ${formatDuration(timeoutMs)})...`,
+		);
 		process.kill(pid, "SIGUSR1");
-		await waitForQuiesceMarker(pid, timeoutMs);
+		const result = await waitForQuiesceMarker(pid, timeoutMs);
+		if (result === "ready") {
+			writeReinstallMarker(pid);
+			console.log("Active indexing completed and the daemon is quiescent.");
+			return;
+		}
+		if (result === "exited") {
+			writeReinstallMarker(pid);
+			console.log("Code indexing service stopped before the quiesce handshake completed; reinstall can continue.");
+			return;
+		}
+		console.warn(
+			`Code indexing service ${pid} did not become quiescent within ${formatDuration(timeoutMs)}; stopping it so reinstall can continue.`,
+		);
+		await stopDaemonForReinstall(pid, stopWaitMs);
 		writeReinstallMarker(pid);
-		console.log("Active indexing completed and the daemon is quiescent.");
+		console.log("Code indexing service stopped; reinstall can continue.");
 		return;
 	}
 
-	// The currently running daemon predates the quiesce protocol. Do not kill it:
-	// wait for its public status to remain idle before allowing the installer to
-	// replace it. This path is only needed for the first upgrade to this version.
-	console.log(`Waiting for legacy code indexing service ${pid} to become idle...`);
-	await waitForLegacyIdle(pid, timeoutMs);
+	// The currently running daemon predates the quiesce protocol. Give it a short
+	// opportunity to become idle, then stop it rather than blocking reinstall for
+	// the duration of a long indexing pass.
+	console.log(
+		`Waiting up to ${formatDuration(timeoutMs)} for legacy code indexing service ${pid} to become idle...`,
+	);
+	const result = await waitForLegacyIdle(pid, timeoutMs);
+	if (result === "idle") {
+		writeReinstallMarker(pid);
+		console.log("Legacy code indexing service is idle; reinstall can continue.");
+		return;
+	}
+	if (result === "exited") {
+		writeReinstallMarker(pid);
+		console.log("Legacy code indexing service stopped; reinstall can continue.");
+		return;
+	}
+	console.warn(
+		`Legacy code indexing service ${pid} did not become idle within ${formatDuration(timeoutMs)}; stopping it so reinstall can continue.`,
+	);
+	await stopDaemonForReinstall(pid, stopWaitMs);
 	writeReinstallMarker(pid);
-	console.log("Legacy code indexing service is idle; reinstall can continue.");
+	console.log("Legacy code indexing service stopped; reinstall can continue.");
 }
 
 async function waitForQuiesceMarker(pid, timeoutMs) {
 	const deadline = Date.now() + timeoutMs;
 	while (Date.now() < deadline) {
-		if (!isProcessRunning(pid)) return;
+		if (!isProcessRunning(pid)) return "exited";
 		const marker = readJson(READY_PATH);
-		if (marker?.pid === pid) return;
+		if (marker?.pid === pid) return "ready";
 		await sleep(POLL_MS);
 	}
-	throw new Error(
-		`Timed out waiting for code indexing service ${pid} to finish active work; reinstall was not allowed to interrupt it`,
-	);
+	return "timeout";
 }
 
 async function waitForLegacyIdle(pid, timeoutMs) {
 	const deadline = Date.now() + timeoutMs;
 	let idleSince;
 	while (Date.now() < deadline) {
-		if (!isProcessRunning(pid)) return;
+		if (!isProcessRunning(pid)) return "exited";
 		const status = readJson(STATUS_PATH);
 		const belongsToProcess = status?.pid === pid && status?.running !== false;
 		const hasActiveWork =
@@ -89,13 +126,42 @@ async function waitForLegacyIdle(pid, timeoutMs) {
 			idleSince = undefined;
 		} else {
 			idleSince ??= Date.now();
-			if (Date.now() - idleSince >= LEGACY_IDLE_STABILITY_MS) return;
+			if (Date.now() - idleSince >= LEGACY_IDLE_STABILITY_MS) return "idle";
 		}
 		await sleep(POLL_MS);
 	}
-	throw new Error(
-		`Timed out waiting for legacy code indexing service ${pid} to become idle; reinstall was not allowed to interrupt it`,
-	);
+	return "timeout";
+}
+
+async function stopDaemonForReinstall(pid, stopWaitMs) {
+	if (!isProcessRunning(pid)) return;
+	if (!isIndexingDaemonProcess(pid)) {
+		throw new Error(`Refusing to stop pid ${pid}: it is no longer the code indexing daemon`);
+	}
+	try {
+		process.kill(pid, "SIGTERM");
+	} catch (error) {
+		if (error instanceof Error && "code" in error && error.code === "ESRCH") return;
+		throw error;
+	}
+	if (await waitForProcessExit(pid, stopWaitMs)) return;
+	if (!isIndexingDaemonProcess(pid)) {
+		throw new Error(`Refusing to force-stop pid ${pid}: it is no longer the code indexing daemon`);
+	}
+	console.warn(`Code indexing service ${pid} did not stop after SIGTERM; sending SIGKILL.`);
+	process.kill(pid, "SIGKILL");
+	if (!(await waitForProcessExit(pid, KILL_WAIT_MS))) {
+		throw new Error(`Timed out stopping code indexing service ${pid}`);
+	}
+}
+
+async function waitForProcessExit(pid, timeoutMs) {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		if (!isProcessRunning(pid)) return true;
+		await sleep(POLL_MS);
+	}
+	return !isProcessRunning(pid);
 }
 
 function writeReinstallMarker(pid) {
@@ -132,13 +198,18 @@ function readJson(filePath) {
 	}
 }
 
-function readPositiveInteger(value) {
+function readPositiveInteger(value, name) {
 	if (value === undefined) return undefined;
 	const parsed = Number(value);
 	if (!Number.isSafeInteger(parsed) || parsed <= 0) {
-		throw new Error("P_INDEXING_REINSTALL_WAIT_MS must be a positive integer");
+		throw new Error(`${name} must be a positive integer`);
 	}
 	return parsed;
+}
+
+function formatDuration(milliseconds) {
+	if (milliseconds < 1_000) return `${milliseconds}ms`;
+	return `${Math.ceil(milliseconds / 1_000)}s`;
 }
 
 function sleep(milliseconds) {
