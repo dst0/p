@@ -1,0 +1,43 @@
+name: Temporary task verification changelog patch
+
+on:
+  push:
+    branches: [agent/semantic-verification-gates]
+    paths:
+      - .github/workflows/temp-task-verification-changelog.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch-changelog:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: agent/semantic-verification-gates
+      - name: Add unreleased changelog entry
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          path = Path("packages/coding-agent/CHANGELOG.md")
+          text = path.read_text()
+          anchor = "## [Unreleased]\n\n### Fixed\n"
+          replacement = (
+              "## [Unreleased]\n\n"
+              "### Added\n\n"
+              "- Enforce evidence-backed task verification in mutating coding-agent sessions: require baseline proof before bug fixes and fresh semantic verification of the original failing scenario before successful completion or publishing.\n\n"
+              "### Fixed\n"
+          )
+          if text.count(anchor) != 1:
+              raise SystemExit(f"Expected exactly one changelog anchor, found {text.count(anchor)}")
+          path.write_text(text.replace(anchor, replacement, 1))
+          PY
+      - name: Commit changelog
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add packages/coding-agent/CHANGELOG.md
+          git commit -m "docs(coding-agent): document task verification protocol"
+          git push origin HEAD:agent/semantic-verification-gates
