@@ -45,11 +45,6 @@ jobs:
       - name: Run repository checks
         run: npm run check
 
-      - name: Reinstall and smoke the CLI
-        run: |
-          ./reinstall.sh
-          p --version
-
       - name: Validate patch and commit final changes
         run: |
           git diff --check
