@@ -16,7 +16,10 @@ import { afterEach, describe, expect, it } from "vitest";
 import { enableIndexingForRepo } from "../src/core/indexed-repos.ts";
 import { IndexingDaemon } from "../src/core/indexing-daemon.ts";
 import { IndexingService } from "../src/core/indexing-service.ts";
-import { getIndexingReinstallControlPath, getIndexingReinstallReadyPath } from "../src/indexing-service-daemon.ts";
+import {
+	getIndexingReinstallControlPath,
+	getIndexingReinstallReadyPath,
+} from "../src/indexing-service-daemon.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -151,19 +154,14 @@ describe("indexing reinstall lifecycle", () => {
 		enableIndexingForRepo(fixture.repo, fixture.agentDir);
 		let service: LifecycleRagService | undefined;
 		let backendStarts = 0;
-		const daemon = createDaemon(
-			fixture.agentDir,
-			fixture.repo,
-			(root) => {
-				service = new LifecycleRagService(root, "ready", true);
-				return service;
+		const daemon = createDaemon(fixture.agentDir, fixture.repo, (root) => {
+			service = new LifecycleRagService(root, "ready", true);
+			return service;
+		}, {
+			ensureBackends: async () => {
+				backendStarts += 1;
 			},
-			{
-				ensureBackends: async () => {
-					backendStarts += 1;
-				},
-			},
-		);
+		});
 
 		try {
 			await daemon.start();
@@ -203,15 +201,10 @@ describe("indexing reinstall lifecycle", () => {
 		const fixture = createFixture();
 		enableIndexingForRepo(fixture.repo, fixture.agentDir);
 		let service: LifecycleRagService | undefined;
-		const daemon = createDaemon(
-			fixture.agentDir,
-			fixture.repo,
-			(root) => {
-				service = new LifecycleRagService(root, "ready", true);
-				return service;
-			},
-			{ reconcileMs: 25 },
-		);
+		const daemon = createDaemon(fixture.agentDir, fixture.repo, (root) => {
+			service = new LifecycleRagService(root, "ready", true);
+			return service;
+		}, { reconcileMs: 25 });
 
 		try {
 			await daemon.start();
