@@ -67,7 +67,6 @@ export async function runIndexingService(): Promise<void> {
 							console.error("Indexing reinstall did not stop the prepared daemon; restarting it safely");
 							stop();
 						}, REINSTALL_STOP_LEASE_MS);
-						restartLeaseTimer.unref();
 					})
 					.catch((error: unknown) => {
 						console.error(
