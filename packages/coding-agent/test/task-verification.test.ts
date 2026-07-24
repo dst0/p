@@ -4,6 +4,7 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import {
 	createTaskVerificationController,
 	TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
+	TASK_VERIFICATION_STATE_CUSTOM_TYPE,
 	TASK_VERIFICATION_TOOL_NAME,
 	type TaskVerificationController,
 } from "../src/core/task-verification.ts";
@@ -379,5 +380,125 @@ describe("task verification controller", () => {
 		const blockedFinish = await beforeTool(finalAgent, "finish_work", { status: "success" });
 		expect(blockedFinish?.reason).toContain(command);
 		expect(blockedFinish?.reason).toContain('{"action":"status"}');
+	});
+
+	it("does not suggest unrelated passing evidence when an exact baseline replay is required", async () => {
+		const sessionManager = SessionManager.inMemory();
+		const baselineAgent = new Agent();
+		const baselineController = createTaskVerificationController(sessionManager);
+		baselineController.install(baselineAgent);
+		await callVerificationTool(baselineController, {
+			action: "declare_task",
+			task_kind: "bug_fix",
+			task_summary: "Fix exact replay recovery after compaction",
+		});
+		await callVerificationTool(baselineController, {
+			action: "authorize_baseline_test",
+			test_paths: ["test/exact-replay.test.ts"],
+		});
+		await afterTool(baselineAgent, "edit", {
+			path: "test/exact-replay.test.ts",
+			edits: [{ oldText: "old", newText: "failing" }],
+		});
+		const replayCommand = "vitest --run test/exact-replay.test.ts";
+		const baselineHandle = evidenceHandle(
+			await afterTool(
+				baselineAgent,
+				"bash",
+				{ command: replayCommand },
+				{ isError: true, text: "expected failure" },
+			),
+		);
+		await callVerificationTool(baselineController, {
+			action: "record_baseline",
+			baseline_method: "failing_regression_test",
+			hypothesis: "The existing implementation violates the required behavior",
+			conclusion: "The focused regression reproduces the defect",
+			evidence_refs: [baselineHandle],
+			unresolved_assumptions: [],
+		});
+		await afterTool(baselineAgent, "edit", {
+			path: "src/exact-replay.ts",
+			edits: [{ oldText: "old", newText: "new" }],
+		});
+		const unrelatedHandle = evidenceHandle(
+			await afterTool(baselineAgent, "bash", { command: "vitest --run test/unrelated.test.ts" }, { text: "passed" }),
+		);
+
+		const restored = createTaskVerificationController(sessionManager);
+		const beforeReplay = await callVerificationTool(restored, { action: "status" });
+		expect(beforeReplay.text).toContain(`Required exact replay command: ${replayCommand}`);
+		expect(beforeReplay.text).toContain("Do not substitute another focused test");
+		expect(beforeReplay.text).not.toContain(`Use evidence_refs: ["${unrelatedHandle}"]`);
+		expect(beforeReplay.text).not.toContain('"action":"record_final"');
+
+		const restoredAgent = new Agent();
+		restored.install(restoredAgent);
+		const replayHandle = evidenceHandle(
+			await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "passed" }),
+		);
+		const afterReplay = await callVerificationTool(restored, { action: "status" });
+		expect(afterReplay.text).toContain(`Use evidence_refs: ["${replayHandle}"]`);
+		expect(afterReplay.text).toContain('"final_method":"focused_test"');
+		expect(afterReplay.text).toContain('"action":"record_final"');
+	});
+
+	it("offers a valid two-handle static-review payload for non-behavioral work", async () => {
+		const { agent, controller } = createInstalledController();
+		await callVerificationTool(controller, {
+			action: "declare_task",
+			task_kind: "docs",
+			task_summary: "Clarify verification documentation",
+		});
+		await afterTool(agent, "edit", {
+			path: "docs/verification.md",
+			edits: [{ oldText: "old", newText: "new" }],
+		});
+		const first = evidenceHandle(await afterTool(agent, "read", { path: "docs/verification.md" }));
+		const second = evidenceHandle(await afterTool(agent, "read", { path: "README.md" }));
+
+		const status = await callVerificationTool(controller, { action: "status" });
+		expect(status.text).toContain('"final_method":"static_review"');
+		expect(status.text).toContain(`"evidence_refs":["${first}","${second}"]`);
+
+		const final = await callVerificationTool(controller, {
+			action: "record_final",
+			final_method: "static_review",
+			final_status: "passed",
+			expected_behavior: "The documentation accurately describes verification recovery",
+			observed_behavior: "Both relevant documents were inspected after the edit",
+			evidence_refs: [first, second],
+			unresolved_failures: [],
+		});
+		expect(final.isError).toBe(false);
+	});
+
+	it("uses persisted task context to preserve high-risk baseline guidance after restoration", async () => {
+		const sessionManager = SessionManager.inMemory();
+		sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+			version: 1,
+			taskKind: "bug_fix",
+			taskSummary: "Fix the reported issue",
+			taskContext: "The daemon restart loses persisted indexing state and recovery repeats work",
+			mutationRevision: 0,
+			baseline: {
+				required: true,
+				status: "pending",
+				evidenceRefs: [],
+				authorizedTestPaths: [],
+				testSetupChanged: false,
+			},
+			final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
+			updatedAt: new Date().toISOString(),
+		});
+		const agent = new Agent();
+		const controller = createTaskVerificationController(sessionManager);
+		controller.install(agent);
+		await afterTool(agent, "read", { path: "src/daemon.ts" });
+		await afterTool(agent, "read", { path: "src/manifest.ts" });
+
+		const status = await callVerificationTool(controller, { action: "status" });
+		expect(status.text).toContain("lifecycle/durability task");
+		expect(status.text).not.toContain('"baseline_method":"static_trace"');
 	});
 });

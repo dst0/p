@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [main]
 
-permissions:
-  contents: write
-
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -19,29 +16,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
-        with:
-          ref: fix/task-verification-guidance
-          fetch-depth: 0
-
-      - name: Apply verification guidance correctness patch
-        if: github.event_name == 'pull_request' && github.head_ref == 'fix/task-verification-guidance'
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          npm install --ignore-scripts
-          python3 scripts/temp-fix-verification-guidance-correctness.py
-          npx biome check --write \
-            packages/coding-agent/src/core/task-verification.ts \
-            packages/coding-agent/test/task-verification.test.ts
-          npm run build
-          cd packages/coding-agent
-          npx vitest run test/task-verification.test.ts
-          cd ../..
-          git checkout origin/main -- .github/workflows/ci.yml
-          rm -f scripts/temp-fix-verification-guidance-correctness.py
-          git add -A
-          git commit -m "fix(coding-agent): keep verification guidance executable"
-          git push origin HEAD:fix/task-verification-guidance
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
