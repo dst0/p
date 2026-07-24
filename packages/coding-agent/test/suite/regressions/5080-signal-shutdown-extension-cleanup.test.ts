@@ -17,16 +17,16 @@ import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode
 // the final TUI frame.
 
 type ShutdownThis = {
-	isShuttingDown: boolean;
-	unregisterSignalHandlers: () => void;
-	runtimeHost: { dispose: () => Promise<void> };
-	ui: { terminal: { drainInput: (ms: number) => Promise<void> } };
-	stop: () => void;
-	sessionManager: SessionManager;
+  isShuttingDown: boolean;
+  unregisterSignalHandlers: () => void;
+  runtimeHost: { dispose: () => Promise<void> };
+  ui: { terminal: { drainInput: (ms: number) => Promise<void> } };
+  stop: () => void;
+  sessionManager: SessionManager;
 };
 
 type InteractiveModePrototypeWithShutdown = {
-	shutdown(this: ShutdownThis, options?: { fromSignal?: boolean }): Promise<void>;
+  shutdown(this: ShutdownThis, options?: { fromSignal?: boolean }): Promise<void>;
 };
 
 const interactiveModePrototype = InteractiveMode.prototype as unknown;
@@ -36,148 +36,148 @@ const originalStdoutIsTTY = Object.getOwnPropertyDescriptor(process.stdout, "isT
 class ProcessExitError extends Error {}
 
 function createSessionManager(options: { sessionFile?: string } = {}): SessionManager {
-	return {
-		isPersisted: () => options.sessionFile !== undefined,
-		getSessionFile: () => options.sessionFile,
-		getSessionId: () => "test-session",
-		getSessionDir: () => "/tmp/pi-sessions",
-		usesDefaultSessionDir: () => true,
-	} as unknown as SessionManager;
+  return {
+    isPersisted: () => options.sessionFile !== undefined,
+    getSessionFile: () => options.sessionFile,
+    getSessionId: () => "test-session",
+    getSessionDir: () => "/tmp/pi-sessions",
+    usesDefaultSessionDir: () => true,
+  } as unknown as SessionManager;
 }
 
 function createTempFile(): string {
-	const dir = mkdtempSync(join(tmpdir(), "pi-shutdown-resume-hint-"));
-	tempDirs.push(dir);
-	const file = join(dir, "session.jsonl");
-	writeFileSync(file, "\n");
-	return file;
+  const dir = mkdtempSync(join(tmpdir(), "pi-shutdown-resume-hint-"));
+  tempDirs.push(dir);
+  const file = join(dir, "session.jsonl");
+  writeFileSync(file, "\n");
+  return file;
 }
 
 function setStdoutIsTTY(value: boolean): void {
-	Object.defineProperty(process.stdout, "isTTY", { configurable: true, value });
+  Object.defineProperty(process.stdout, "isTTY", { configurable: true, value });
 }
 
 function restoreStdoutIsTTY(): void {
-	if (originalStdoutIsTTY) {
-		Object.defineProperty(process.stdout, "isTTY", originalStdoutIsTTY);
-	} else {
-		Reflect.deleteProperty(process.stdout, "isTTY");
-	}
+  if (originalStdoutIsTTY) {
+    Object.defineProperty(process.stdout, "isTTY", originalStdoutIsTTY);
+  } else {
+    Reflect.deleteProperty(process.stdout, "isTTY");
+  }
 }
 
 function createContext(order: string[], sessionManager = createSessionManager()): ShutdownThis {
-	return {
-		isShuttingDown: false,
-		unregisterSignalHandlers: vi.fn(),
-		runtimeHost: {
-			dispose: vi.fn(async () => {
-				order.push("dispose");
-			}),
-		},
-		ui: {
-			terminal: {
-				drainInput: vi.fn(async () => {
-					order.push("drainInput");
-				}),
-			},
-		},
-		stop: vi.fn(() => {
-			order.push("stop");
-		}),
-		sessionManager,
-	};
+  return {
+    isShuttingDown: false,
+    unregisterSignalHandlers: vi.fn(),
+    runtimeHost: {
+      dispose: vi.fn(async () => {
+        order.push("dispose");
+      }),
+    },
+    ui: {
+      terminal: {
+        drainInput: vi.fn(async () => {
+          order.push("drainInput");
+        }),
+      },
+    },
+    stop: vi.fn(() => {
+      order.push("stop");
+    }),
+    sessionManager,
+  };
 }
 
 async function callShutdown(context: ShutdownThis, options?: { fromSignal?: boolean }): Promise<void> {
-	try {
-		await (interactiveModePrototype as InteractiveModePrototypeWithShutdown).shutdown.call(context, options);
-	} catch (error) {
-		if (!(error instanceof ProcessExitError)) throw error;
-	}
+  try {
+    await (interactiveModePrototype as InteractiveModePrototypeWithShutdown).shutdown.call(context, options);
+  } catch (error) {
+    if (!(error instanceof ProcessExitError)) throw error;
+  }
 }
 
 describe("InteractiveMode.shutdown ordering (#5080)", () => {
-	afterEach(() => {
-		vi.restoreAllMocks();
-		restoreStdoutIsTTY();
-		for (const dir of tempDirs.splice(0)) {
-			rmSync(dir, { recursive: true, force: true });
-		}
-	});
+  afterEach(() => {
+    vi.restoreAllMocks();
+    restoreStdoutIsTTY();
+    for (const dir of tempDirs.splice(0)) {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
 
-	test("signal-triggered shutdown emits session_shutdown before terminal writes", async () => {
-		vi.spyOn(process, "exit").mockImplementation((() => {
-			throw new ProcessExitError();
-		}) as typeof process.exit);
-		const order: string[] = [];
-		const context = createContext(order);
+  test("signal-triggered shutdown emits session_shutdown before terminal writes", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new ProcessExitError();
+    }) as typeof process.exit);
+    const order: string[] = [];
+    const context = createContext(order);
 
-		await callShutdown(context, { fromSignal: true });
+    await callShutdown(context, { fromSignal: true });
 
-		expect(order).toEqual(["dispose", "drainInput", "stop"]);
-		expect(context.isShuttingDown).toBe(true);
-	});
+    expect(order).toEqual(["dispose", "drainInput", "stop"]);
+    expect(context.isShuttingDown).toBe(true);
+  });
 
-	test("interactive quit stops the TUI before emitting session_shutdown", async () => {
-		vi.spyOn(process, "exit").mockImplementation((() => {
-			throw new ProcessExitError();
-		}) as typeof process.exit);
-		const order: string[] = [];
-		const context = createContext(order);
+  test("interactive quit stops the TUI before emitting session_shutdown", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new ProcessExitError();
+    }) as typeof process.exit);
+    const order: string[] = [];
+    const context = createContext(order);
 
-		await callShutdown(context);
+    await callShutdown(context);
 
-		expect(order).toEqual(["drainInput", "stop", "dispose"]);
-	});
+    expect(order).toEqual(["drainInput", "stop", "dispose"]);
+  });
 
-	test("interactive quit prints a resume hint for persisted sessions", async () => {
-		vi.spyOn(process, "exit").mockImplementation((() => {
-			throw new ProcessExitError();
-		}) as typeof process.exit);
-		const stdoutWrite = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation((() => true) as typeof process.stdout.write);
-		setStdoutIsTTY(true);
-		const order: string[] = [];
-		const context = createContext(order, createSessionManager({ sessionFile: createTempFile() }));
+  test("interactive quit prints a resume hint for persisted sessions", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new ProcessExitError();
+    }) as typeof process.exit);
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((() => true) as typeof process.stdout.write);
+    setStdoutIsTTY(true);
+    const order: string[] = [];
+    const context = createContext(order, createSessionManager({ sessionFile: createTempFile() }));
 
-		await callShutdown(context);
+    await callShutdown(context);
 
-		expect(order).toEqual(["drainInput", "stop", "dispose"]);
-		expect(stdoutWrite).toHaveBeenCalledWith(
-			`${chalk.dim("To resume this session:")} ${APP_NAME} --session test-session\n`,
-		);
-	});
+    expect(order).toEqual(["drainInput", "stop", "dispose"]);
+    expect(stdoutWrite).toHaveBeenCalledWith(
+      `${chalk.dim("To resume this session:")} ${APP_NAME} --session test-session\n`,
+    );
+  });
 
-	test("signal-triggered shutdown does not print a resume hint", async () => {
-		vi.spyOn(process, "exit").mockImplementation((() => {
-			throw new ProcessExitError();
-		}) as typeof process.exit);
-		const stdoutWrite = vi
-			.spyOn(process.stdout, "write")
-			.mockImplementation((() => true) as typeof process.stdout.write);
-		setStdoutIsTTY(true);
-		const order: string[] = [];
-		const context = createContext(order, createSessionManager({ sessionFile: createTempFile() }));
+  test("signal-triggered shutdown does not print a resume hint", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new ProcessExitError();
+    }) as typeof process.exit);
+    const stdoutWrite = vi
+      .spyOn(process.stdout, "write")
+      .mockImplementation((() => true) as typeof process.stdout.write);
+    setStdoutIsTTY(true);
+    const order: string[] = [];
+    const context = createContext(order, createSessionManager({ sessionFile: createTempFile() }));
 
-		await callShutdown(context, { fromSignal: true });
+    await callShutdown(context, { fromSignal: true });
 
-		for (const call of stdoutWrite.mock.calls) {
-			expect(call[0]).not.toContain("To resume this session:");
-		}
-	});
+    for (const call of stdoutWrite.mock.calls) {
+      expect(call[0]).not.toContain("To resume this session:");
+    }
+  });
 
-	test("re-entrant shutdown is a no-op", async () => {
-		vi.spyOn(process, "exit").mockImplementation((() => {
-			throw new ProcessExitError();
-		}) as typeof process.exit);
-		const order: string[] = [];
-		const context = createContext(order);
-		context.isShuttingDown = true;
+  test("re-entrant shutdown is a no-op", async () => {
+    vi.spyOn(process, "exit").mockImplementation((() => {
+      throw new ProcessExitError();
+    }) as typeof process.exit);
+    const order: string[] = [];
+    const context = createContext(order);
+    context.isShuttingDown = true;
 
-		await callShutdown(context, { fromSignal: true });
+    await callShutdown(context, { fromSignal: true });
 
-		expect(order).toEqual([]);
-		expect(context.runtimeHost.dispose).not.toHaveBeenCalled();
-	});
+    expect(order).toEqual([]);
+    expect(context.runtimeHost.dispose).not.toHaveBeenCalled();
+  });
 });

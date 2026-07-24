@@ -8,42 +8,42 @@
 import type { ExtensionAPI } from "@dst0/p";
 
 export default function (p: ExtensionAPI) {
-	p.on("session_shutdown", async (_event, ctx) => {
-		// Check for uncommitted changes
-		const { stdout: status, code } = await p.exec("git", ["status", "--porcelain"]);
+  p.on("session_shutdown", async (_event, ctx) => {
+    // Check for uncommitted changes
+    const { stdout: status, code } = await p.exec("git", ["status", "--porcelain"]);
 
-		if (code !== 0 || status.trim().length === 0) {
-			// Not a git repo or no changes
-			return;
-		}
+    if (code !== 0 || status.trim().length === 0) {
+      // Not a git repo or no changes
+      return;
+    }
 
-		// Find the last assistant message for commit context
-		const entries = ctx.sessionManager.getEntries();
-		let lastAssistantText = "";
-		for (let i = entries.length - 1; i >= 0; i--) {
-			const entry = entries[i];
-			if (entry.type === "message" && entry.message.role === "assistant") {
-				const content = entry.message.content;
-				if (Array.isArray(content)) {
-					lastAssistantText = content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("\n");
-				}
-				break;
-			}
-		}
+    // Find the last assistant message for commit context
+    const entries = ctx.sessionManager.getEntries();
+    let lastAssistantText = "";
+    for (let i = entries.length - 1; i >= 0; i--) {
+      const entry = entries[i];
+      if (entry.type === "message" && entry.message.role === "assistant") {
+        const content = entry.message.content;
+        if (Array.isArray(content)) {
+          lastAssistantText = content
+            .filter((c): c is { type: "text"; text: string } => c.type === "text")
+            .map((c) => c.text)
+            .join("\n");
+        }
+        break;
+      }
+    }
 
-		// Generate a simple commit message
-		const firstLine = lastAssistantText.split("\n")[0] || "Work in progress";
-		const commitMessage = `[p] ${firstLine.slice(0, 50)}${firstLine.length > 50 ? "..." : ""}`;
+    // Generate a simple commit message
+    const firstLine = lastAssistantText.split("\n")[0] || "Work in progress";
+    const commitMessage = `[p] ${firstLine.slice(0, 50)}${firstLine.length > 50 ? "..." : ""}`;
 
-		// Stage and commit
-		await p.exec("git", ["add", "-A"]);
-		const { code: commitCode } = await p.exec("git", ["commit", "-m", commitMessage]);
+    // Stage and commit
+    await p.exec("git", ["add", "-A"]);
+    const { code: commitCode } = await p.exec("git", ["commit", "-m", commitMessage]);
 
-		if (commitCode === 0 && ctx.hasUI) {
-			ctx.ui.notify(`Auto-committed: ${commitMessage}`, "info");
-		}
-	});
+    if (commitCode === 0 && ctx.hasUI) {
+      ctx.ui.notify(`Auto-committed: ${commitMessage}`, "info");
+    }
+  });
 }

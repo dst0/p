@@ -10,18 +10,18 @@
 import type { ExtensionAPI } from "@dst0/p";
 
 export default function (p: ExtensionAPI) {
-	p.registerCommand("session-name", {
-		description: "Set or show session name (usage: /session-name [new name])",
-		handler: async (args, ctx) => {
-			const name = args.trim();
+  p.registerCommand("session-name", {
+    description: "Set or show session name (usage: /session-name [new name])",
+    handler: async (args, ctx) => {
+      const name = args.trim();
 
-			if (name) {
-				p.setSessionName(name);
-				ctx.ui.notify(`Session named: ${name}`, "info");
-			} else {
-				const current = p.getSessionName();
-				ctx.ui.notify(current ? `Session: ${current}` : "No session name set", "info");
-			}
-		},
-	});
+      if (name) {
+        p.setSessionName(name);
+        ctx.ui.notify(`Session named: ${name}`, "info");
+      } else {
+        const current = p.getSessionName();
+        ctx.ui.notify(current ? `Session: ${current}` : "No session name set", "info");
+      }
+    },
+  });
 }

@@ -32,16 +32,16 @@ export const SLEEP_TOOL_NAME = "sleep";
  * Message type for bash executions via the ! command.
  */
 export interface BashExecutionMessage {
-	role: "bashExecution";
-	command: string;
-	output: string;
-	exitCode: number | undefined;
-	cancelled: boolean;
-	truncated: boolean;
-	fullOutputPath?: string;
-	timestamp: number;
-	/** If true, this message is excluded from LLM context (!! prefix) */
-	excludeFromContext?: boolean;
+  role: "bashExecution";
+  command: string;
+  output: string;
+  exitCode: number | undefined;
+  cancelled: boolean;
+  truncated: boolean;
+  fullOutputPath?: string;
+  timestamp: number;
+  /** If true, this message is excluded from LLM context (!! prefix) */
+  excludeFromContext?: boolean;
 }
 
 /**
@@ -49,121 +49,121 @@ export interface BashExecutionMessage {
  * These are custom messages that extensions can inject into the conversation.
  */
 export interface CustomMessage<T = unknown> {
-	role: "custom";
-	customType: string;
-	content: string | (TextContent | ImageContent)[];
-	display: boolean;
-	details?: T;
-	timestamp: number;
+  role: "custom";
+  customType: string;
+  content: string | (TextContent | ImageContent)[];
+  display: boolean;
+  details?: T;
+  timestamp: number;
 }
 
 export interface BranchSummaryMessage {
-	role: "branchSummary";
-	summary: string;
-	fromId: string;
-	timestamp: number;
+  role: "branchSummary";
+  summary: string;
+  fromId: string;
+  timestamp: number;
 }
 
 export interface CompactionSummaryMessage {
-	role: "compactionSummary";
-	summary: string;
-	tokensBefore: number;
-	tokensAfter?: number;
-	timestamp: number;
+  role: "compactionSummary";
+  summary: string;
+  tokensBefore: number;
+  tokensAfter?: number;
+  timestamp: number;
 }
 
 // Extend CustomAgentMessages via declaration merging
 declare module "@dst0/p-agent-core" {
-	interface CustomAgentMessages {
-		bashExecution: BashExecutionMessage;
-		custom: CustomMessage;
-		branchSummary: BranchSummaryMessage;
-		compactionSummary: CompactionSummaryMessage;
-	}
+  interface CustomAgentMessages {
+    bashExecution: BashExecutionMessage;
+    custom: CustomMessage;
+    branchSummary: BranchSummaryMessage;
+    compactionSummary: CompactionSummaryMessage;
+  }
 }
 
 /**
  * Convert a BashExecutionMessage to user message text for LLM context.
  */
 export function bashExecutionToText(msg: BashExecutionMessage): string {
-	let text = `Ran \`${msg.command}\`\n`;
-	if (msg.output) {
-		text += `\`\`\`\n${msg.output}\n\`\`\``;
-	} else {
-		text += "(no output)";
-	}
-	if (msg.cancelled) {
-		text += "\n\n(command cancelled)";
-	} else if (msg.exitCode !== null && msg.exitCode !== undefined && msg.exitCode !== 0) {
-		text += `\n\nCommand exited with code ${msg.exitCode}`;
-	}
-	if (msg.truncated && msg.fullOutputPath) {
-		text += `\n\n[Output truncated. Full output: ${msg.fullOutputPath}]`;
-	}
-	return text;
+  let text = `Ran \`${msg.command}\`\n`;
+  if (msg.output) {
+    text += `\`\`\`\n${msg.output}\n\`\`\``;
+  } else {
+    text += "(no output)";
+  }
+  if (msg.cancelled) {
+    text += "\n\n(command cancelled)";
+  } else if (msg.exitCode !== null && msg.exitCode !== undefined && msg.exitCode !== 0) {
+    text += `\n\nCommand exited with code ${msg.exitCode}`;
+  }
+  if (msg.truncated && msg.fullOutputPath) {
+    text += `\n\n[Output truncated. Full output: ${msg.fullOutputPath}]`;
+  }
+  return text;
 }
 
 export function createBranchSummaryMessage(summary: string, fromId: string, timestamp: string): BranchSummaryMessage {
-	return {
-		role: "branchSummary",
-		summary,
-		fromId,
-		timestamp: new Date(timestamp).getTime(),
-	};
+  return {
+    role: "branchSummary",
+    summary,
+    fromId,
+    timestamp: new Date(timestamp).getTime(),
+  };
 }
 
 export function createCompactionSummaryMessage(
-	summary: string,
-	tokensBefore: number,
-	timestamp: string,
-	tokensAfter?: number,
+  summary: string,
+  tokensBefore: number,
+  timestamp: string,
+  tokensAfter?: number,
 ): CompactionSummaryMessage {
-	return {
-		role: "compactionSummary",
-		summary: summary,
-		tokensBefore,
-		tokensAfter,
-		timestamp: new Date(timestamp).getTime(),
-	};
+  return {
+    role: "compactionSummary",
+    summary: summary,
+    tokensBefore,
+    tokensAfter,
+    timestamp: new Date(timestamp).getTime(),
+  };
 }
 
 /** Convert CustomMessageEntry to AgentMessage format */
 export function createCustomMessage(
-	customType: string,
-	content: string | (TextContent | ImageContent)[],
-	display: boolean,
-	details: unknown | undefined,
-	timestamp: string,
+  customType: string,
+  content: string | (TextContent | ImageContent)[],
+  display: boolean,
+  details: unknown | undefined,
+  timestamp: string,
 ): CustomMessage {
-	return {
-		role: "custom",
-		customType,
-		content,
-		display,
-		details,
-		timestamp: new Date(timestamp).getTime(),
-	};
+  return {
+    role: "custom",
+    customType,
+    content,
+    display,
+    details,
+    timestamp: new Date(timestamp).getTime(),
+  };
 }
 
 function filterSleepToolCalls(message: AssistantMessage): AssistantMessage | undefined {
-	const content = message.content.filter((block) => !(block.type === "toolCall" && block.name === SLEEP_TOOL_NAME));
-	if (content.length === message.content.length) {
-		return message;
-	}
-	if (content.length === 0) {
-		return undefined;
-	}
-	return { ...message, content };
+  const content = message.content.filter((block) => !(block.type === "toolCall" && block.name === SLEEP_TOOL_NAME));
+  if (content.length === message.content.length) {
+    return message;
+  }
+  if (content.length === 0) {
+    return undefined;
+  }
+  return { ...message, content };
 }
 
 export function filterSleepToolUseForHistory(message: AgentMessage): AgentMessage | undefined {
-	if (message.role === "assistant") {
-		return filterSleepToolCalls(message);
-	}
-	if (message.role === "toolResult" && message.toolName === SLEEP_TOOL_NAME) {
-		return undefined;
-	}
-	return message;
+  if (message.role === "assistant") {
+    return filterSleepToolCalls(message);
+  }
+  if (message.role === "toolResult" && message.toolName === SLEEP_TOOL_NAME) {
+    return undefined;
+  }
+  return message;
 }
 
 /**
@@ -175,57 +175,57 @@ export function filterSleepToolUseForHistory(message: AgentMessage): AgentMessag
  * - Custom extensions and tools
  */
 export function convertToLlm(messages: AgentMessage[]): Message[] {
-	return messages
-		.map((originalMessage): Message | undefined => {
-			const m = filterSleepToolUseForHistory(originalMessage);
-			if (!m) {
-				return undefined;
-			}
-			switch (m.role) {
-				case "bashExecution":
-					// Skip messages excluded from context (!! prefix)
-					if (m.excludeFromContext) {
-						return undefined;
-					}
-					return {
-						role: "user",
-						content: [{ type: "text", text: bashExecutionToText(m) }],
-						timestamp: m.timestamp,
-					};
-				case "custom": {
-					if (m.customType === FAST_RESPONDER_CUSTOM_TYPE) {
-						return undefined;
-					}
-					const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
-					return {
-						role: "user",
-						content,
-						timestamp: m.timestamp,
-					};
-				}
-				case "branchSummary":
-					return {
-						role: "user",
-						content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
-						timestamp: m.timestamp,
-					};
-				case "compactionSummary":
-					return {
-						role: "user",
-						content: [
-							{ type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
-						],
-						timestamp: m.timestamp,
-					};
-				case "user":
-				case "assistant":
-				case "toolResult":
-					return m;
-				default:
-					// biome-ignore lint/correctness/noSwitchDeclarations: fine
-					const _exhaustiveCheck: never = m;
-					return undefined;
-			}
-		})
-		.filter((m) => m !== undefined);
+  return messages
+    .map((originalMessage): Message | undefined => {
+      const m = filterSleepToolUseForHistory(originalMessage);
+      if (!m) {
+        return undefined;
+      }
+      switch (m.role) {
+        case "bashExecution":
+          // Skip messages excluded from context (!! prefix)
+          if (m.excludeFromContext) {
+            return undefined;
+          }
+          return {
+            role: "user",
+            content: [{ type: "text", text: bashExecutionToText(m) }],
+            timestamp: m.timestamp,
+          };
+        case "custom": {
+          if (m.customType === FAST_RESPONDER_CUSTOM_TYPE) {
+            return undefined;
+          }
+          const content = typeof m.content === "string" ? [{ type: "text" as const, text: m.content }] : m.content;
+          return {
+            role: "user",
+            content,
+            timestamp: m.timestamp,
+          };
+        }
+        case "branchSummary":
+          return {
+            role: "user",
+            content: [{ type: "text" as const, text: BRANCH_SUMMARY_PREFIX + m.summary + BRANCH_SUMMARY_SUFFIX }],
+            timestamp: m.timestamp,
+          };
+        case "compactionSummary":
+          return {
+            role: "user",
+            content: [
+              { type: "text" as const, text: COMPACTION_SUMMARY_PREFIX + m.summary + COMPACTION_SUMMARY_SUFFIX },
+            ],
+            timestamp: m.timestamp,
+          };
+        case "user":
+        case "assistant":
+        case "toolResult":
+          return m;
+        default:
+          // biome-ignore lint/correctness/noSwitchDeclarations: fine
+          const _exhaustiveCheck: never = m;
+          return undefined;
+      }
+    })
+    .filter((m) => m !== undefined);
 }

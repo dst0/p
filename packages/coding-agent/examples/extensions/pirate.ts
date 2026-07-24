@@ -13,24 +13,24 @@
 import type { ExtensionAPI } from "@dst0/p";
 
 export default function pirateExtension(p: ExtensionAPI) {
-	let pirateMode = false;
+  let pirateMode = false;
 
-	// Register /pirate command to toggle pirate mode
-	p.registerCommand("pirate", {
-		description: "Toggle pirate mode (agent speaks like a pirate)",
-		handler: async (_args, ctx) => {
-			pirateMode = !pirateMode;
-			ctx.ui.notify(pirateMode ? "Arrr! Pirate mode enabled!" : "Pirate mode disabled", "info");
-		},
-	});
+  // Register /pirate command to toggle pirate mode
+  p.registerCommand("pirate", {
+    description: "Toggle pirate mode (agent speaks like a pirate)",
+    handler: async (_args, ctx) => {
+      pirateMode = !pirateMode;
+      ctx.ui.notify(pirateMode ? "Arrr! Pirate mode enabled!" : "Pirate mode disabled", "info");
+    },
+  });
 
-	// Append to system prompt when pirate mode is enabled
-	p.on("before_agent_start", async (event) => {
-		if (pirateMode) {
-			return {
-				systemPrompt:
-					event.systemPrompt +
-					`
+  // Append to system prompt when pirate mode is enabled
+  p.on("before_agent_start", async (event) => {
+    if (pirateMode) {
+      return {
+        systemPrompt:
+          event.systemPrompt +
+          `
 
 IMPORTANT: You are now in PIRATE MODE. You must:
 - Speak like a stereotypical pirate in all responses
@@ -40,8 +40,8 @@ IMPORTANT: You are now in PIRATE MODE. You must:
 - End sentences with nautical expressions
 - Still complete the actual task correctly, just in pirate speak
 `,
-			};
-		}
-		return undefined;
-	});
+      };
+    }
+    return undefined;
+  });
 }

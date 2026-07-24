@@ -4,13 +4,13 @@ import { getModel } from "@dst0/p-ai";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
 import { InMemorySessionStorage } from "../../src/harness/session/memory-storage.ts";
 import {
-	AgentHarness,
-	formatSkillsForSystemPrompt,
-	loadSourcedPromptTemplates,
-	loadSourcedSkills,
-	type PromptTemplate,
-	Session,
-	type Skill,
+  AgentHarness,
+  formatSkillsForSystemPrompt,
+  loadSourcedPromptTemplates,
+  loadSourcedSkills,
+  type PromptTemplate,
+  Session,
+  type Skill,
 } from "../../src/index.ts";
 
 type Source = { type: "project" | "user" | "path"; dir: string };
@@ -21,38 +21,38 @@ const env = new NodeExecutionEnv({ cwd: process.cwd() });
 
 const source = (type: Source["type"], dir: string) => ({ path: dir, source: { type, dir } });
 const { skills: sourcedSkills } = await loadSourcedSkills<Source, SourcedSkill>(
-	env,
-	[
-		source("project", join(env.cwd, ".p/skills")),
-		source("user", join(homedir(), ".p/agent/skills")),
-		source("path", join(env.cwd, "../../../pi-skills")),
-	],
-	(skill, source) => ({ ...skill, source }),
+  env,
+  [
+    source("project", join(env.cwd, ".p/skills")),
+    source("user", join(homedir(), ".p/agent/skills")),
+    source("path", join(env.cwd, "../../../pi-skills")),
+  ],
+  (skill, source) => ({ ...skill, source }),
 );
 const { promptTemplates: sourcedPromptTemplates } = await loadSourcedPromptTemplates<Source, SourcedPromptTemplate>(
-	env,
-	[source("project", join(env.cwd, ".p/prompts")), source("user", join(homedir(), ".p/agent/prompts"))],
-	(promptTemplate, source) => ({ ...promptTemplate, source }),
+  env,
+  [source("project", join(env.cwd, ".p/prompts")), source("user", join(homedir(), ".p/agent/prompts"))],
+  (promptTemplate, source) => ({ ...promptTemplate, source }),
 );
 
 const session = new Session(new InMemorySessionStorage());
 const agent = new AgentHarness({
-	env,
-	session,
-	model: getModel("openai", "gpt-5.5"),
-	thinkingLevel: "low",
-	systemPrompt: ({ env, resources }) =>
-		[
-			"You are a helpful assistant.",
-			formatSkillsForSystemPrompt(resources.skills ?? []),
-			`Current working directory: ${env.cwd}`,
-		]
-			.filter((part) => part.length > 0)
-			.join("\n\n"),
-	resources: {
-		promptTemplates: sourcedPromptTemplates.map(({ promptTemplate }) => promptTemplate),
-		skills: sourcedSkills.map(({ skill }) => skill),
-	},
+  env,
+  session,
+  model: getModel("openai", "gpt-5.5"),
+  thinkingLevel: "low",
+  systemPrompt: ({ env, resources }) =>
+    [
+      "You are a helpful assistant.",
+      formatSkillsForSystemPrompt(resources.skills ?? []),
+      `Current working directory: ${env.cwd}`,
+    ]
+      .filter((part) => part.length > 0)
+      .join("\n\n"),
+  resources: {
+    promptTemplates: sourcedPromptTemplates.map(({ promptTemplate }) => promptTemplate),
+    skills: sourcedSkills.map(({ skill }) => skill),
+  },
 });
 
 const response = await agent.prompt("What skills do you have? Any duplicates?");

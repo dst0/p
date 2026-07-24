@@ -4,245 +4,242 @@ import { streamOpenAICompletions } from "../src/providers/openai-completions.ts"
 import type { Model } from "../src/types.ts";
 
 interface FakeOpenAIClientOptions {
-	apiKey: string;
-	baseURL: string;
-	dangerouslyAllowBrowser: boolean;
-	defaultHeaders?: Record<string, string>;
+  apiKey: string;
+  baseURL: string;
+  dangerouslyAllowBrowser: boolean;
+  defaultHeaders?: Record<string, string>;
 }
 
 interface CapturedCompletionsPayload {
-	prompt_cache_key?: string;
-	prompt_cache_retention?: "24h" | "in-memory" | null;
-	cache_prompt?: boolean;
+  prompt_cache_key?: string;
+  prompt_cache_retention?: "24h" | "in-memory" | null;
+  cache_prompt?: boolean;
 }
 
 const mockState = vi.hoisted(() => ({
-	lastParams: undefined as CapturedCompletionsPayload | undefined,
-	lastClientOptions: undefined as FakeOpenAIClientOptions | undefined,
+  lastParams: undefined as CapturedCompletionsPayload | undefined,
+  lastClientOptions: undefined as FakeOpenAIClientOptions | undefined,
 }));
 
 vi.mock("openai", () => {
-	class FakeOpenAI {
-		chat = {
-			completions: {
-				create: (params: CapturedCompletionsPayload) => {
-					mockState.lastParams = params;
-					const stream = {
-						async *[Symbol.asyncIterator]() {
-							yield {
-								choices: [{ delta: {}, finish_reason: "stop" }],
-								usage: {
-									prompt_tokens: 1,
-									completion_tokens: 1,
-									prompt_tokens_details: { cached_tokens: 0 },
-									completion_tokens_details: { reasoning_tokens: 0 },
-								},
-							};
-						},
-					};
-					const promise = Promise.resolve(stream) as Promise<typeof stream> & {
-						withResponse: () => Promise<{
-							data: typeof stream;
-							response: { status: number; headers: Headers };
-						}>;
-					};
-					promise.withResponse = async () => ({
-						data: stream,
-						response: { status: 200, headers: new Headers() },
-					});
-					return promise;
-				},
-			},
-		};
+  class FakeOpenAI {
+    chat = {
+      completions: {
+        create: (params: CapturedCompletionsPayload) => {
+          mockState.lastParams = params;
+          const stream = {
+            async *[Symbol.asyncIterator]() {
+              yield {
+                choices: [{ delta: {}, finish_reason: "stop" }],
+                usage: {
+                  prompt_tokens: 1,
+                  completion_tokens: 1,
+                  prompt_tokens_details: { cached_tokens: 0 },
+                  completion_tokens_details: { reasoning_tokens: 0 },
+                },
+              };
+            },
+          };
+          const promise = Promise.resolve(stream) as Promise<typeof stream> & {
+            withResponse: () => Promise<{
+              data: typeof stream;
+              response: { status: number; headers: Headers };
+            }>;
+          };
+          promise.withResponse = async () => ({
+            data: stream,
+            response: { status: 200, headers: new Headers() },
+          });
+          return promise;
+        },
+      },
+    };
 
-		constructor(options: FakeOpenAIClientOptions) {
-			mockState.lastClientOptions = options;
-		}
-	}
+    constructor(options: FakeOpenAIClientOptions) {
+      mockState.lastClientOptions = options;
+    }
+  }
 
-	return { default: FakeOpenAI };
+  return { default: FakeOpenAI };
 });
 
 describe("openai-completions prompt caching", () => {
-	const originalEnv = process.env.P_CACHE_RETENTION;
+  const originalEnv = process.env.P_CACHE_RETENTION;
 
-	beforeEach(() => {
-		mockState.lastParams = undefined;
-		mockState.lastClientOptions = undefined;
-		delete process.env.P_CACHE_RETENTION;
-	});
+  beforeEach(() => {
+    mockState.lastParams = undefined;
+    mockState.lastClientOptions = undefined;
+    delete process.env.P_CACHE_RETENTION;
+  });
 
-	afterEach(() => {
-		if (originalEnv === undefined) {
-			delete process.env.P_CACHE_RETENTION;
-		} else {
-			process.env.P_CACHE_RETENTION = originalEnv;
-		}
-	});
+  afterEach(() => {
+    if (originalEnv === undefined) {
+      delete process.env.P_CACHE_RETENTION;
+    } else {
+      process.env.P_CACHE_RETENTION = originalEnv;
+    }
+  });
 
-	function createModel(overrides: Partial<Model<"openai-completions">> = {}): Model<"openai-completions"> {
-		const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
-		return {
-			...(baseModel as Omit<Model<"openai-completions">, "api">),
-			api: "openai-completions",
-			...overrides,
-		};
-	}
+  function createModel(overrides: Partial<Model<"openai-completions">> = {}): Model<"openai-completions"> {
+    const { compat: _compat, ...baseModel } = getModel("openai", "gpt-4o-mini");
+    return {
+      ...(baseModel as Omit<Model<"openai-completions">, "api">),
+      api: "openai-completions",
+      ...overrides,
+    };
+  }
 
-	async function captureRequest(
-		options?: {
-			cacheRetention?: "none" | "short" | "long";
-			sessionId?: string;
-			headers?: Record<string, string>;
-		},
-		model: Model<"openai-completions"> = createModel(),
-	) {
-		await streamOpenAICompletions(
-			model,
-			{
-				systemPrompt: "sys",
-				messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
-			},
-			{ apiKey: "test-key", ...options },
-		).result();
+  async function captureRequest(
+    options?: {
+      cacheRetention?: "none" | "short" | "long";
+      sessionId?: string;
+      headers?: Record<string, string>;
+    },
+    model: Model<"openai-completions"> = createModel(),
+  ) {
+    await streamOpenAICompletions(
+      model,
+      {
+        systemPrompt: "sys",
+        messages: [{ role: "user", content: "hi", timestamp: Date.now() }],
+      },
+      { apiKey: "test-key", ...options },
+    ).result();
 
-		return {
-			payload: mockState.lastParams,
-			headers: mockState.lastClientOptions?.defaultHeaders ?? {},
-		};
-	}
+    return {
+      payload: mockState.lastParams,
+      headers: mockState.lastClientOptions?.defaultHeaders ?? {},
+    };
+  }
 
-	it("sets prompt_cache_key for direct OpenAI requests when caching is enabled", async () => {
-		const { payload } = await captureRequest({ sessionId: "session-123" });
+  it("sets prompt_cache_key for direct OpenAI requests when caching is enabled", async () => {
+    const { payload } = await captureRequest({ sessionId: "session-123" });
 
-		expect(payload?.prompt_cache_key).toBe("session-123");
-		expect(payload?.prompt_cache_retention).toBeUndefined();
-	});
+    expect(payload?.prompt_cache_key).toBe("session-123");
+    expect(payload?.prompt_cache_retention).toBeUndefined();
+  });
 
-	it("sets prompt_cache_retention to 24h for direct OpenAI requests when cacheRetention is long", async () => {
-		const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-456" });
+  it("sets prompt_cache_retention to 24h for direct OpenAI requests when cacheRetention is long", async () => {
+    const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-456" });
 
-		expect(payload?.prompt_cache_key).toBe("session-456");
-		expect(payload?.prompt_cache_retention).toBe("24h");
-	});
+    expect(payload?.prompt_cache_key).toBe("session-456");
+    expect(payload?.prompt_cache_retention).toBe("24h");
+  });
 
-	it("clamps prompt_cache_key to OpenAI's 64-character limit", async () => {
-		const sessionId = "x".repeat(67);
-		const { payload } = await captureRequest({ sessionId });
+  it("clamps prompt_cache_key to OpenAI's 64-character limit", async () => {
+    const sessionId = "x".repeat(67);
+    const { payload } = await captureRequest({ sessionId });
 
-		expect(payload?.prompt_cache_key).toBe("x".repeat(64));
-	});
+    expect(payload?.prompt_cache_key).toBe("x".repeat(64));
+  });
 
-	it("omits prompt cache fields when cacheRetention is none", async () => {
-		const { payload } = await captureRequest({ cacheRetention: "none", sessionId: "session-789" });
+  it("omits prompt cache fields when cacheRetention is none", async () => {
+    const { payload } = await captureRequest({ cacheRetention: "none", sessionId: "session-789" });
 
-		expect(payload?.prompt_cache_key).toBeUndefined();
-		expect(payload?.prompt_cache_retention).toBeUndefined();
-	});
+    expect(payload?.prompt_cache_key).toBeUndefined();
+    expect(payload?.prompt_cache_retention).toBeUndefined();
+  });
 
-	it("omits prompt cache fields for non-OpenAI base URLs without compatible long retention", async () => {
-		const model = createModel({
-			baseUrl: "https://proxy.example.com/v1",
-			compat: { supportsLongCacheRetention: false },
-		});
-		const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-proxy" }, model);
+  it("omits prompt cache fields for non-OpenAI base URLs without compatible long retention", async () => {
+    const model = createModel({
+      baseUrl: "https://proxy.example.com/v1",
+      compat: { supportsLongCacheRetention: false },
+    });
+    const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-proxy" }, model);
 
-		expect(payload?.prompt_cache_key).toBeUndefined();
-		expect(payload?.prompt_cache_retention).toBeUndefined();
-	});
+    expect(payload?.prompt_cache_key).toBeUndefined();
+    expect(payload?.prompt_cache_retention).toBeUndefined();
+  });
 
-	it("uses P_CACHE_RETENTION for direct OpenAI requests", async () => {
-		process.env.P_CACHE_RETENTION = "long";
-		const { payload } = await captureRequest({ sessionId: "session-env" });
+  it("uses P_CACHE_RETENTION for direct OpenAI requests", async () => {
+    process.env.P_CACHE_RETENTION = "long";
+    const { payload } = await captureRequest({ sessionId: "session-env" });
 
-		expect(payload?.prompt_cache_key).toBe("session-env");
-		expect(payload?.prompt_cache_retention).toBe("24h");
-	});
+    expect(payload?.prompt_cache_key).toBe("session-env");
+    expect(payload?.prompt_cache_retention).toBe("24h");
+  });
 
-	it("sends known session-affinity headers when compat.sendSessionAffinityHeaders is enabled", async () => {
-		const model = createModel({
-			baseUrl: "https://proxy.example.com/v1",
-			compat: { sendSessionAffinityHeaders: true },
-		});
-		const { headers } = await captureRequest({ sessionId: "session-affinity" }, model);
+  it("sends known session-affinity headers when compat.sendSessionAffinityHeaders is enabled", async () => {
+    const model = createModel({
+      baseUrl: "https://proxy.example.com/v1",
+      compat: { sendSessionAffinityHeaders: true },
+    });
+    const { headers } = await captureRequest({ sessionId: "session-affinity" }, model);
 
-		expect(headers.session_id).toBe("session-affinity");
-		expect(headers["x-client-request-id"]).toBe("session-affinity");
-		expect(headers["x-session-affinity"]).toBe("session-affinity");
-	});
+    expect(headers.session_id).toBe("session-affinity");
+    expect(headers["x-client-request-id"]).toBe("session-affinity");
+    expect(headers["x-session-affinity"]).toBe("session-affinity");
+  });
 
-	it("sends session-affinity headers by default for non-OpenAI base URLs", async () => {
-		const model = createModel({
-			baseUrl: "https://llm.org/v1",
-			provider: "llm-orchestrator",
-		});
-		const { headers } = await captureRequest({ sessionId: "session-affinity" }, model);
+  it("sends session-affinity headers by default for non-OpenAI base URLs", async () => {
+    const model = createModel({
+      baseUrl: "https://llm.org/v1",
+      provider: "llm-orchestrator",
+    });
+    const { headers } = await captureRequest({ sessionId: "session-affinity" }, model);
 
-		expect(headers.session_id).toBe("session-affinity");
-		expect(headers["x-client-request-id"]).toBe("session-affinity");
-		expect(headers["x-session-affinity"]).toBe("session-affinity");
-	});
+    expect(headers.session_id).toBe("session-affinity");
+    expect(headers["x-client-request-id"]).toBe("session-affinity");
+    expect(headers["x-session-affinity"]).toBe("session-affinity");
+  });
 
-	it("sends llama.cpp cache_prompt without OpenAI long-retention fields for llama-compatible backends", async () => {
-		const model = createModel({
-			baseUrl: "https://llm.org/v1",
-			provider: "llm-orchestrator",
-		});
-		const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-llama" }, model);
+  it("sends llama.cpp cache_prompt without OpenAI long-retention fields for llama-compatible backends", async () => {
+    const model = createModel({
+      baseUrl: "https://llm.org/v1",
+      provider: "llm-orchestrator",
+    });
+    const { payload } = await captureRequest({ cacheRetention: "long", sessionId: "session-llama" }, model);
 
-		expect(payload?.cache_prompt).toBe(true);
-		expect(payload?.prompt_cache_key).toBeUndefined();
-		expect(payload?.prompt_cache_retention).toBeUndefined();
-	});
+    expect(payload?.cache_prompt).toBe(true);
+    expect(payload?.prompt_cache_key).toBeUndefined();
+    expect(payload?.prompt_cache_retention).toBeUndefined();
+  });
 
-	it("treats an openai provider baseUrl override as a proxy for cache compatibility", async () => {
-		const model = createModel({
-			baseUrl: "https://llm.org/v1",
-		});
-		const { payload, headers } = await captureRequest(
-			{ cacheRetention: "long", sessionId: "session-override" },
-			model,
-		);
+  it("treats an openai provider baseUrl override as a proxy for cache compatibility", async () => {
+    const model = createModel({
+      baseUrl: "https://llm.org/v1",
+    });
+    const { payload, headers } = await captureRequest({ cacheRetention: "long", sessionId: "session-override" }, model);
 
-		expect(headers.session_id).toBe("session-override");
-		expect(headers["x-client-request-id"]).toBe("session-override");
-		expect(headers["x-session-affinity"]).toBe("session-override");
-		expect(payload?.cache_prompt).toBe(true);
-		expect(payload?.prompt_cache_key).toBeUndefined();
-		expect(payload?.prompt_cache_retention).toBeUndefined();
-	});
+    expect(headers.session_id).toBe("session-override");
+    expect(headers["x-client-request-id"]).toBe("session-override");
+    expect(headers["x-session-affinity"]).toBe("session-override");
+    expect(payload?.cache_prompt).toBe(true);
+    expect(payload?.prompt_cache_key).toBeUndefined();
+    expect(payload?.prompt_cache_retention).toBeUndefined();
+  });
 
-	it("omits session-affinity headers when cacheRetention is none", async () => {
-		const model = createModel({
-			baseUrl: "https://proxy.example.com/v1",
-			compat: { sendSessionAffinityHeaders: true },
-		});
-		const { headers } = await captureRequest({ cacheRetention: "none", sessionId: "session-affinity" }, model);
+  it("omits session-affinity headers when cacheRetention is none", async () => {
+    const model = createModel({
+      baseUrl: "https://proxy.example.com/v1",
+      compat: { sendSessionAffinityHeaders: true },
+    });
+    const { headers } = await captureRequest({ cacheRetention: "none", sessionId: "session-affinity" }, model);
 
-		expect(headers.session_id).toBeUndefined();
-		expect(headers["x-client-request-id"]).toBeUndefined();
-		expect(headers["x-session-affinity"]).toBeUndefined();
-	});
+    expect(headers.session_id).toBeUndefined();
+    expect(headers["x-client-request-id"]).toBeUndefined();
+    expect(headers["x-session-affinity"]).toBeUndefined();
+  });
 
-	it("lets explicit headers override generated session-affinity headers", async () => {
-		const model = createModel({
-			baseUrl: "https://proxy.example.com/v1",
-			compat: { sendSessionAffinityHeaders: true },
-		});
-		const { headers } = await captureRequest(
-			{
-				sessionId: "session-affinity",
-				headers: {
-					session_id: "override-session",
-					"x-client-request-id": "override-request",
-					"x-session-affinity": "override-affinity",
-				},
-			},
-			model,
-		);
+  it("lets explicit headers override generated session-affinity headers", async () => {
+    const model = createModel({
+      baseUrl: "https://proxy.example.com/v1",
+      compat: { sendSessionAffinityHeaders: true },
+    });
+    const { headers } = await captureRequest(
+      {
+        sessionId: "session-affinity",
+        headers: {
+          session_id: "override-session",
+          "x-client-request-id": "override-request",
+          "x-session-affinity": "override-affinity",
+        },
+      },
+      model,
+    );
 
-		expect(headers.session_id).toBe("override-session");
-		expect(headers["x-client-request-id"]).toBe("override-request");
-		expect(headers["x-session-affinity"]).toBe("override-affinity");
-	});
+    expect(headers.session_id).toBe("override-session");
+    expect(headers["x-client-request-id"]).toBe("override-request");
+    expect(headers["x-session-affinity"]).toBe("override-affinity");
+  });
 });

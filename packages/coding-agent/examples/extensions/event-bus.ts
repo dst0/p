@@ -10,34 +10,34 @@
 import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
 
 export default function (p: ExtensionAPI) {
-	// Store ctx for use in event handler
-	let currentCtx: ExtensionContext | undefined;
+  // Store ctx for use in event handler
+  let currentCtx: ExtensionContext | undefined;
 
-	p.on("session_start", async (_event, ctx) => {
-		currentCtx = ctx;
-	});
+  p.on("session_start", async (_event, ctx) => {
+    currentCtx = ctx;
+  });
 
-	// Listen for events from other extensions
-	p.events.on("my:notification", (data) => {
-		const { message, from } = data as { message: string; from: string };
-		currentCtx?.ui.notify(`Event from ${from}: ${message}`, "info");
-	});
+  // Listen for events from other extensions
+  p.events.on("my:notification", (data) => {
+    const { message, from } = data as { message: string; from: string };
+    currentCtx?.ui.notify(`Event from ${from}: ${message}`, "info");
+  });
 
-	// Command to emit events (emits "my:notification" which the listener above receives)
-	p.registerCommand("emit", {
-		description: "Emit my:notification event (usage: /emit message)",
-		handler: async (args, _ctx) => {
-			const message = args.trim() || "hello";
-			p.events.emit("my:notification", { message, from: "/emit command" });
-			// Listener above will show the notification
-		},
-	});
+  // Command to emit events (emits "my:notification" which the listener above receives)
+  p.registerCommand("emit", {
+    description: "Emit my:notification event (usage: /emit message)",
+    handler: async (args, _ctx) => {
+      const message = args.trim() || "hello";
+      p.events.emit("my:notification", { message, from: "/emit command" });
+      // Listener above will show the notification
+    },
+  });
 
-	// Example: emit on session start
-	p.on("session_start", async () => {
-		p.events.emit("my:notification", {
-			message: "Session started",
-			from: "event-bus-example",
-		});
-	});
+  // Example: emit on session start
+  p.on("session_start", async () => {
+    p.events.emit("my:notification", {
+      message: "Session started",
+      from: "event-bus-example",
+    });
+  });
 }

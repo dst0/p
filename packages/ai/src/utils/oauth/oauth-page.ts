@@ -1,21 +1,21 @@
 const LOGO_SVG = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 800" aria-hidden="true"><path fill="#fff" fill-rule="evenodd" d="M165.29 165.29 H517.36 V400 H400 V517.36 H282.65 V634.72 H165.29 Z M282.65 282.65 V400 H400 V282.65 Z"/><path fill="#fff" d="M517.36 400 H634.72 V634.72 H517.36 Z"/></svg>`;
 
 function escapeHtml(value: string): string {
-	return value
-		.replaceAll("&", "&amp;")
-		.replaceAll("<", "&lt;")
-		.replaceAll(">", "&gt;")
-		.replaceAll('"', "&quot;")
-		.replaceAll("'", "&#39;");
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
 }
 
 function renderPage(options: { title: string; heading: string; message: string; details?: string }): string {
-	const title = escapeHtml(options.title);
-	const heading = escapeHtml(options.heading);
-	const message = escapeHtml(options.message);
-	const details = options.details ? escapeHtml(options.details) : undefined;
+  const title = escapeHtml(options.title);
+  const heading = escapeHtml(options.heading);
+  const message = escapeHtml(options.message);
+  const details = options.details ? escapeHtml(options.details) : undefined;
 
-	return `<!doctype html>
+  return `<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8" />
@@ -92,18 +92,18 @@ function renderPage(options: { title: string; heading: string; message: string; 
 }
 
 export function oauthSuccessHtml(message: string): string {
-	return renderPage({
-		title: "Authentication successful",
-		heading: "Authentication successful",
-		message,
-	});
+  return renderPage({
+    title: "Authentication successful",
+    heading: "Authentication successful",
+    message,
+  });
 }
 
 export function oauthErrorHtml(message: string, details?: string): string {
-	return renderPage({
-		title: "Authentication failed",
-		heading: "Authentication failed",
-		message,
-		details,
-	});
+  return renderPage({
+    title: "Authentication failed",
+    heading: "Authentication failed",
+    message,
+    details,
+  });
 }

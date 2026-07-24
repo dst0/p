@@ -15,7 +15,7 @@ import type { RegisteredTool } from "./types.ts";
  * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
 export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: ExtensionRunner): AgentTool {
-	return wrapToolDefinition(registeredTool.definition, () => runner.createContext());
+  return wrapToolDefinition(registeredTool.definition, () => runner.createContext());
 }
 
 /**
@@ -23,8 +23,8 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: Exten
  * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
 export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: ExtensionRunner): AgentTool[] {
-	return wrapToolDefinitions(
-		registeredTools.map((registeredTool) => registeredTool.definition),
-		() => runner.createContext(),
-	);
+  return wrapToolDefinitions(
+    registeredTools.map((registeredTool) => registeredTool.definition),
+    () => runner.createContext(),
+  );
 }

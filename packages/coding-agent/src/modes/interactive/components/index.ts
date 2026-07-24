@@ -14,9 +14,9 @@ export { ExtensionEditorComponent } from "./extension-editor.ts";
 export { ExtensionInputComponent } from "./extension-input.ts";
 export { ExtensionSelectorComponent } from "./extension-selector.ts";
 export {
-	FirstTimeSetupComponent,
-	type FirstTimeSetupOptions,
-	type FirstTimeSetupResult,
+  FirstTimeSetupComponent,
+  type FirstTimeSetupOptions,
+  type FirstTimeSetupResult,
 } from "./first-time-setup.ts";
 export { FooterComponent } from "./footer.ts";
 export { keyHint, keyText, rawKeyHint } from "./keybinding-hints.ts";

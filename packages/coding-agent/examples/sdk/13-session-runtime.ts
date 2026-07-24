@@ -9,44 +9,44 @@
  */
 
 import {
-	type CreateAgentSessionRuntimeFactory,
-	createAgentSessionFromServices,
-	createAgentSessionRuntime,
-	createAgentSessionServices,
-	getAgentDir,
-	SessionManager,
+  type CreateAgentSessionRuntimeFactory,
+  createAgentSessionFromServices,
+  createAgentSessionRuntime,
+  createAgentSessionServices,
+  getAgentDir,
+  SessionManager,
 } from "@dst0/p";
 
 const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
-	const services = await createAgentSessionServices({ cwd });
-	return {
-		...(await createAgentSessionFromServices({
-			services,
-			sessionManager,
-			sessionStartEvent,
-		})),
-		services,
-		diagnostics: services.diagnostics,
-	};
+  const services = await createAgentSessionServices({ cwd });
+  return {
+    ...(await createAgentSessionFromServices({
+      services,
+      sessionManager,
+      sessionStartEvent,
+    })),
+    services,
+    diagnostics: services.diagnostics,
+  };
 };
 const runtime = await createAgentSessionRuntime(createRuntime, {
-	cwd: process.cwd(),
-	agentDir: getAgentDir(),
-	sessionManager: SessionManager.create(process.cwd()),
+  cwd: process.cwd(),
+  agentDir: getAgentDir(),
+  sessionManager: SessionManager.create(process.cwd()),
 });
 
 let unsubscribe: (() => void) | undefined;
 
 async function bindSession() {
-	unsubscribe?.();
-	const session = runtime.session;
-	await session.bindExtensions({});
-	unsubscribe = session.subscribe((event) => {
-		if (event.type === "queue_update") {
-			console.log("Queued:", event.steering.length + event.followUp.length);
-		}
-	});
-	return session;
+  unsubscribe?.();
+  const session = runtime.session;
+  await session.bindExtensions({});
+  unsubscribe = session.subscribe((event) => {
+    if (event.type === "queue_update") {
+      console.log("Queued:", event.steering.length + event.followUp.length);
+    }
+  });
+  return session;
 }
 
 let session = await bindSession();
@@ -58,9 +58,9 @@ session = await bindSession();
 console.log("After newSession():", session.sessionFile);
 
 if (originalSessionFile) {
-	await runtime.switchSession(originalSessionFile);
-	session = await bindSession();
-	console.log("After switchSession():", session.sessionFile);
+  await runtime.switchSession(originalSessionFile);
+  session = await bindSession();
+  console.log("After switchSession():", session.sessionFile);
 }
 
 unsubscribe?.();

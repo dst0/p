@@ -28,95 +28,95 @@ A:
 Keep questions in the order they appeared. Be concise.`;
 
 export default function (p: ExtensionAPI) {
-	p.registerCommand("qna", {
-		description: "Extract questions from last assistant message into editor",
-		handler: async (_args, ctx) => {
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify("qna requires interactive mode", "error");
-				return;
-			}
+  p.registerCommand("qna", {
+    description: "Extract questions from last assistant message into editor",
+    handler: async (_args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("qna requires interactive mode", "error");
+        return;
+      }
 
-			if (!ctx.model) {
-				ctx.ui.notify("No model selected", "error");
-				return;
-			}
+      if (!ctx.model) {
+        ctx.ui.notify("No model selected", "error");
+        return;
+      }
 
-			// Find the last assistant message on the current branch
-			const branch = ctx.sessionManager.getBranch();
-			let lastAssistantText: string | undefined;
+      // Find the last assistant message on the current branch
+      const branch = ctx.sessionManager.getBranch();
+      let lastAssistantText: string | undefined;
 
-			for (let i = branch.length - 1; i >= 0; i--) {
-				const entry = branch[i];
-				if (entry.type === "message") {
-					const msg = entry.message;
-					if ("role" in msg && msg.role === "assistant") {
-						if (msg.stopReason !== "stop") {
-							ctx.ui.notify(`Last assistant message incomplete (${msg.stopReason})`, "error");
-							return;
-						}
-						const textParts = msg.content
-							.filter((c): c is { type: "text"; text: string } => c.type === "text")
-							.map((c) => c.text);
-						if (textParts.length > 0) {
-							lastAssistantText = textParts.join("\n");
-							break;
-						}
-					}
-				}
-			}
+      for (let i = branch.length - 1; i >= 0; i--) {
+        const entry = branch[i];
+        if (entry.type === "message") {
+          const msg = entry.message;
+          if ("role" in msg && msg.role === "assistant") {
+            if (msg.stopReason !== "stop") {
+              ctx.ui.notify(`Last assistant message incomplete (${msg.stopReason})`, "error");
+              return;
+            }
+            const textParts = msg.content
+              .filter((c): c is { type: "text"; text: string } => c.type === "text")
+              .map((c) => c.text);
+            if (textParts.length > 0) {
+              lastAssistantText = textParts.join("\n");
+              break;
+            }
+          }
+        }
+      }
 
-			if (!lastAssistantText) {
-				ctx.ui.notify("No assistant messages found", "error");
-				return;
-			}
+      if (!lastAssistantText) {
+        ctx.ui.notify("No assistant messages found", "error");
+        return;
+      }
 
-			// Run extraction with loader UI
-			const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
-				const loader = new BorderedLoader(tui, theme, `Extracting questions using ${ctx.model!.id}...`);
-				loader.onAbort = () => done(null);
+      // Run extraction with loader UI
+      const result = await ctx.ui.custom<string | null>((tui, theme, _kb, done) => {
+        const loader = new BorderedLoader(tui, theme, `Extracting questions using ${ctx.model!.id}...`);
+        loader.onAbort = () => done(null);
 
-				// Do the work
-				const doExtract = async () => {
-					const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
-					if (!auth.ok || !auth.apiKey) {
-						throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error);
-					}
-					const userMessage: UserMessage = {
-						role: "user",
-						content: [{ type: "text", text: lastAssistantText! }],
-						timestamp: Date.now(),
-					};
+        // Do the work
+        const doExtract = async () => {
+          const auth = await ctx.modelRegistry.getApiKeyAndHeaders(ctx.model!);
+          if (!auth.ok || !auth.apiKey) {
+            throw new Error(auth.ok ? `No API key for ${ctx.model!.provider}` : auth.error);
+          }
+          const userMessage: UserMessage = {
+            role: "user",
+            content: [{ type: "text", text: lastAssistantText! }],
+            timestamp: Date.now(),
+          };
 
-					const response = await complete(
-						ctx.model!,
-						{ systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
-						{ apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
-					);
+          const response = await complete(
+            ctx.model!,
+            { systemPrompt: SYSTEM_PROMPT, messages: [userMessage] },
+            { apiKey: auth.apiKey, headers: auth.headers, signal: loader.signal },
+          );
 
-					if (response.stopReason === "aborted") {
-						return null;
-					}
+          if (response.stopReason === "aborted") {
+            return null;
+          }
 
-					return response.content
-						.filter((c): c is { type: "text"; text: string } => c.type === "text")
-						.map((c) => c.text)
-						.join("\n");
-				};
+          return response.content
+            .filter((c): c is { type: "text"; text: string } => c.type === "text")
+            .map((c) => c.text)
+            .join("\n");
+        };
 
-				doExtract()
-					.then(done)
-					.catch(() => done(null));
+        doExtract()
+          .then(done)
+          .catch(() => done(null));
 
-				return loader;
-			});
+        return loader;
+      });
 
-			if (result === null) {
-				ctx.ui.notify("Cancelled", "info");
-				return;
-			}
+      if (result === null) {
+        ctx.ui.notify("Cancelled", "info");
+        return;
+      }
 
-			ctx.ui.setEditorText(result);
-			ctx.ui.notify("Questions loaded. Edit and submit when ready.", "info");
-		},
-	});
+      ctx.ui.setEditorText(result);
+      ctx.ui.notify("Questions loaded. Edit and submit when ready.", "info");
+    },
+  });
 }

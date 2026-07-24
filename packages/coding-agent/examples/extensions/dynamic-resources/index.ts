@@ -5,11 +5,11 @@ import type { ExtensionAPI } from "@dst0/p";
 const baseDir = dirname(fileURLToPath(import.meta.url));
 
 export default function (p: ExtensionAPI) {
-	p.on("resources_discover", () => {
-		return {
-			skillPaths: [join(baseDir, "SKILL.md")],
-			promptPaths: [join(baseDir, "dynamic.md")],
-			themePaths: [join(baseDir, "dynamic.json")],
-		};
-	});
+  p.on("resources_discover", () => {
+    return {
+      skillPaths: [join(baseDir, "SKILL.md")],
+      promptPaths: [join(baseDir, "dynamic.md")],
+      themePaths: [join(baseDir, "dynamic.json")],
+    };
+  });
 }

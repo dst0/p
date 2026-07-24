@@ -3,18 +3,18 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@dst0/p-agent-core";
 import {
-	type AssistantMessage,
-	fauxAssistantMessage,
-	fauxToolCall,
-	type Message,
-	type Model,
-	type TextContent,
+  type AssistantMessage,
+  fauxAssistantMessage,
+  fauxToolCall,
+  type Message,
+  type Model,
+  type TextContent,
 } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
-	createInitialStructuredSessionState,
-	STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
+  createInitialStructuredSessionState,
+  STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
 } from "../../src/core/compaction/index.ts";
 import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
@@ -24,1170 +24,1156 @@ import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness as createBaseHarness, getMessageText, type Harness, type HarnessOptions } from "./harness.ts";
 
 describe("AgentSession prompt characterization", () => {
-	const harnesses: Harness[] = [];
-	const tempDirs: string[] = [];
-	const createPromptHarness = (options: HarnessOptions = {}) =>
-		createBaseHarness({ completionMode: "implicit", ...options });
-	const getUserTexts = (messages: Message[]): string[] =>
-		messages.flatMap((message) => {
-			if (message.role !== "user") return [];
-			if (typeof message.content === "string") return [message.content];
-			return message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text);
-		});
-	const serializePrompt = (systemPrompt: string | undefined, messages: Message[]): string =>
-		[
-			systemPrompt ? `system:${systemPrompt}` : undefined,
-			...messages.map((message) => `${message.role}:${getMessageText(message)}`),
-		]
-			.filter((part): part is string => part !== undefined)
-			.join("\n\n");
-	const serializeProviderPayload = (systemPrompt: string | undefined, messages: Message[]): string =>
-		`${[
-			systemPrompt ? JSON.stringify({ role: "system", content: systemPrompt }) : undefined,
-			...messages.map((message) => JSON.stringify(message)),
-		]
-			.filter((part): part is string => part !== undefined)
-			.join("\n")}\n`;
-
-	afterEach(() => {
-		while (harnesses.length > 0) {
-			harnesses.pop()?.cleanup();
-		}
-		while (tempDirs.length > 0) {
-			const tempDir = tempDirs.pop();
-			if (tempDir) {
-				rmSync(tempDir, { recursive: true, force: true });
-			}
-		}
-	});
-
-	it("prompts while idle and records a single text response", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-
-		harness.setResponses([fauxAssistantMessage("hello")]);
-
-		await harness.session.prompt("hi");
-
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-		expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
-		expect(harness.getPendingResponseCount()).toBe(0);
-	});
-
-	it("automatically syncs project memory and injects scoped memory into later prompts", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		let secondSystemPrompt = "";
-		harness.setResponses([
-			fauxAssistantMessage("first done"),
-			(context) => {
-				secondSystemPrompt = context.systemPrompt ?? "";
-				return fauxAssistantMessage("second done");
-			},
-		]);
-
-		await harness.session.prompt("Fix compaction loops");
-		const snapshotPath = join(harness.tempDir, ".pdev/state/session.current.json");
-		expect(existsSync(snapshotPath)).toBe(true);
-		expect(readFileSync(snapshotPath, "utf8")).toContain("Fix compaction loops");
-
-		await harness.session.prompt("continue compaction work");
-
-		expect(secondSystemPrompt).not.toContain("<project_memory>");
-		expect(
-			harness.session.messages.some(
-				(message) => message.role === "custom" && message.customType === "pi.project-memory",
-			),
-		).toBe(false);
-	});
-
-	it("stores hidden state updates and injects working state into the next prompt", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		let firstSystemPrompt = "";
-		let secondSystemPrompt = "";
-		let secondUserTexts: string[] = [];
-		let thirdUserTexts: string[] = [];
-		harness.setResponses([
-			(context) => {
-				firstSystemPrompt = context.systemPrompt ?? "";
-				return fauxAssistantMessage(
-					`Recorded.\n<session_state_update>{"type":"patch","goal":"Fix durable state tracking","plan":[{"text":"Add state protocol parser","status":"done"},{"text":"Run deterministic compaction tests","status":"not_started"}],"risks":["Prompt state may grow"]}</session_state_update>`,
-				);
-			},
-			(context) => {
-				secondSystemPrompt = context.systemPrompt ?? "";
-				secondUserTexts = getUserTexts(context.messages);
-				return fauxAssistantMessage("continued");
-			},
-			(context) => {
-				thirdUserTexts = getUserTexts(context.messages);
-				return fauxAssistantMessage("continued again");
-			},
-		]);
-
-		await harness.session.prompt("Fix durable state tracking");
-
-		expect(firstSystemPrompt).toContain("<session_state_protocol>");
-		expect(getMessageText(harness.session.messages[1]!)).toBe("Recorded.");
-		expect(
-			harness.sessionManager
-				.getEntries()
-				.some((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
-		).toBe(true);
-
-		await harness.session.prompt("continue");
-
-		const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
-		expect(secondSystemPrompt).not.toContain("<working_state>");
-		expect(workingState).toContain("🚩 Goal: Fix durable state tracking");
-		expect(workingState).toContain("✅ Add state protocol parser");
-		expect(workingState).toContain("• Run deterministic compaction tests");
-		expect(secondSystemPrompt).not.toContain("<project_memory>");
-
-		const persistedWorkingStateEntries = harness.sessionManager
-			.getEntries()
-			.filter(
-				(entry): entry is CustomMessageEntry =>
-					entry.type === "custom_message" && entry.customType === "working_state",
-			);
-		expect(persistedWorkingStateEntries).toHaveLength(1);
-		expect(persistedWorkingStateEntries[0]?.display).toBe(false);
-		expect(String(persistedWorkingStateEntries[0]?.content)).toContain("Fix durable state tracking");
-
-		await harness.session.prompt("continue again");
-
-		expect(thirdUserTexts.filter((text) => text.includes("<working_state>"))).toHaveLength(2);
-	});
-
-	it("backfills omitted hidden state update goals from the live user request", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		let secondSystemPrompt = "";
-		let secondUserTexts: string[] = [];
-		harness.setResponses([
-			fauxAssistantMessage(
-				[
-					"Working.",
-					`<session_state_update>{"type":"patch","plan":[{"text":"Reproduce the smart-state overwrite","status":"done"},{"text":"Patch state persistence","status":"in_progress"},{"text":"Run unit, integration, and e2e tests","status":"not_started"}]}</session_state_update>`,
-				].join("\n"),
-			),
-			(context) => {
-				secondSystemPrompt = context.systemPrompt ?? "";
-				secondUserTexts = getUserTexts(context.messages);
-				return fauxAssistantMessage("continued");
-			},
-		]);
-
-		await harness.session.prompt("Fix smart state so an omitted metadata goal cannot erase the real objective");
-
-		const snapshot = harness.session.getSessionStateSnapshot();
-		const stateEntries = harness.sessionManager
-			.getEntries()
-			.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
-
-		expect(getMessageText(harness.session.messages[1]!)).toBe("Working.");
-		expect(snapshot.state.canonicalRequest.current).toBe(
-			"Fix smart state so an omitted metadata goal cannot erase the real objective",
-		);
-		expect(snapshot.state.plan.map((item) => [item.text, item.status])).toEqual([
-			["Reproduce the smart-state overwrite", "done"],
-			["Patch state persistence", "in_progress"],
-			["Run unit, integration, and e2e tests", "not_started"],
-		]);
-		expect(stateEntries).toHaveLength(1);
-
-		await harness.session.prompt("continue");
-
-		const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
-		expect(secondSystemPrompt).not.toContain("<working_state>");
-		expect(workingState).toContain(
-			"🚩 Goal: Fix smart state so an omitted metadata goal cannot erase the real objective",
-		);
-		expect(workingState).toContain("✅ Reproduce the smart-state overwrite");
-		expect(workingState).toContain("⏳ Patch state persistence");
-		expect(workingState).toContain("• Run unit, integration, and e2e tests");
-		expect(workingState).not.toContain("🚩 Goal: continue");
-	});
-
-	it("renders concrete current turns over stale structured state goals", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		const staleState = createInitialStructuredSessionState(harness.session.sessionId);
-		staleState.canonicalRequest.current =
-			"Turn 16 of 26. Use the read tool to read in/file-16.txt. Convert every alphabetic letter in that file to uppercase.";
-		harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, staleState);
-		let userTexts: string[] = [];
-		harness.setResponses([
-			(context) => {
-				userTexts = getUserTexts(context.messages);
-				return fauxAssistantMessage("turn 23 complete");
-			},
-		]);
-
-		await harness.session.prompt(
-			"Turn 23 of 26. Use the read tool to read in/file-23.txt. Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines.",
-		);
-
-		const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
-		expect(workingState).toContain("🚩 Goal: Turn 23 of 26");
-		expect(workingState).toContain("in/file-23.txt");
-		expect(workingState).not.toContain("🚩 Goal: Turn 16 of 26");
-		expect(workingState).not.toContain("in/file-16.txt");
-	});
-
-	it("preserves durable structured state goals over pending follow-up commands", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		const durableState = createInitialStructuredSessionState(harness.session.sessionId);
-		durableState.canonicalRequest.current = "Preserve primary session state across completed follow-up turns";
-		durableState.plan.push({
-			id: "plan-preserve-primary-goal",
-			text: "Keep the primary goal stable across later user messages",
-			status: "in_progress",
-			evidenceEntryIds: [],
-		});
-		harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, durableState);
-		let userTexts: string[] = [];
-		harness.setResponses([
-			(context) => {
-				userTexts = getUserTexts(context.messages);
-				return fauxAssistantMessage("checked");
-			},
-		]);
-
-		await harness.session.prompt(
-			"Interrupt scenario command: write at least 1200 words first. This must not replace the primary goal.",
-		);
-
-		const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
-		expect(workingState).toContain("🚩 Goal: Preserve primary session state across completed follow-up turns");
-		expect(workingState).toContain("⏳ Keep the primary goal stable across later user messages");
-		expect(workingState).not.toContain("🚩 Goal: Interrupt scenario command");
-	});
-
-	it("reuses provider prompt cache across sequential user prompts", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("first done"), fauxAssistantMessage("second done")]);
-
-		await harness.session.prompt("Fix prompt cache reuse");
-		await harness.session.prompt("continue");
-
-		const assistantMessages = harness.session.messages.filter(
-			(message): message is AssistantMessage => message.role === "assistant",
-		);
-		expect(harness.session.agent.sessionId).toBe(harness.session.sessionId);
-		expect(assistantMessages).toHaveLength(2);
-		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
-		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
-		expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
-	});
-
-	it("reuses provider prompt cache after a completed tool loop and ten idle seconds", async () => {
-		const toolRuns: string[] = [];
-		const echoTool: AgentTool = {
-			name: "echo",
-			label: "Echo",
-			description: "Echo text back",
-			parameters: Type.Object({ text: Type.String() }),
-			execute: async (_toolCallId, params) => {
-				const text = typeof params === "object" && params !== null && "text" in params ? String(params.text) : "";
-				toolRuns.push(text);
-				return {
-					content: [{ type: "text", text: `echo:${text}` }],
-					details: { text },
-				};
-			},
-		};
-		const harness = await createPromptHarness({ tools: [echoTool] });
-		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("echo", { text: "warm-cache" }), {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage("first tool loop complete"),
-			fauxAssistantMessage("second prompt complete"),
-		]);
-
-		await harness.session.prompt("Start a multi-turn tool loop");
-		expect(toolRuns).toEqual(["warm-cache"]);
-		expect(harness.session.state.isStreaming).toBe(false);
-		expect(harness.session.messages.map((message) => message.role)).toEqual([
-			"user",
-			"assistant",
-			"toolResult",
-			"custom",
-			"assistant",
-		]);
-		expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
-
-		vi.useFakeTimers();
-		try {
-			const idleGap = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
-			await vi.advanceTimersByTimeAsync(10_000);
-			await idleGap;
-		} finally {
-			vi.useRealTimers();
-		}
-
-		await harness.session.prompt("Continue after idle");
-
-		const assistantMessages = harness.session.messages.filter(
-			(message): message is AssistantMessage => message.role === "assistant",
-		);
-		expect(assistantMessages).toHaveLength(3);
-		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
-		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
-		expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
-		expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(0);
-		expect(assistantMessages[2]?.usage.input).toBeLessThan(assistantMessages[2]?.usage.totalTokens ?? 0);
-	});
-
-	it("persists volatile runtime context in history so prompt cache survives changing rule matches", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		writeFileSync(
-			join(harness.tempDir, "AGENTS.md"),
-			[
-				"# Project Rules",
-				"- Must preserve alpha cache detail when the request mentions alpha.",
-				"- Must preserve beta cache detail when the request mentions beta.",
-			].join("\n"),
-		);
-		const prompts: string[] = [];
-		const systemPrompts: string[] = [];
-		harness.setResponses([
-			(context) => {
-				systemPrompts.push(context.systemPrompt ?? "");
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage("alpha complete");
-			},
-			(context) => {
-				systemPrompts.push(context.systemPrompt ?? "");
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage("beta complete");
-			},
-			(context) => {
-				systemPrompts.push(context.systemPrompt ?? "");
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage("alpha again complete");
-			},
-		]);
-
-		await harness.session.prompt("alpha request");
-		await harness.session.prompt("beta request");
-		await harness.session.prompt("alpha request again");
-
-		expect(systemPrompts).toHaveLength(3);
-		expect(systemPrompts[1]).toBe(systemPrompts[0]);
-		expect(systemPrompts[2]).toBe(systemPrompts[0]);
-		expect(prompts[0]).toContain("alpha cache detail");
-		expect(prompts[1]).toContain("beta cache detail");
-		expect(prompts[1].startsWith(prompts[0])).toBe(true);
-		expect(prompts[2].startsWith(prompts[1])).toBe(true);
-		const assistantMessages = harness.session.messages.filter(
-			(message): message is AssistantMessage => message.role === "assistant",
-		);
-		expect(assistantMessages).toHaveLength(3);
-		expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
-		expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
-		expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(assistantMessages[1]?.usage.cacheRead ?? 0);
-		const runtimeContextMessages = harness.session.messages.filter(
-			(message): message is Extract<AgentMessage, { role: "custom" }> =>
-				message.role === "custom" && message.customType === "runtime_context",
-		);
-		expect(runtimeContextMessages).toHaveLength(3);
-		expect(runtimeContextMessages.every((message) => message.display === false)).toBe(true);
-	});
-
-	it("persists explicit-finish repair prompts for cache-stable follow-up prompts", async () => {
-		const noopTool: AgentTool = {
-			name: "noop",
-			label: "No-op",
-			description: "Unused test tool to keep explicit completion active",
-			parameters: Type.Object({}),
-			execute: async () => ({ content: [{ type: "text", text: "noop" }], details: undefined }),
-		};
-		const harness = await createPromptHarness({
-			completionMode: "explicit_finish",
-			tools: [noopTool],
-			initialActiveToolNames: ["noop"],
-		});
-		harnesses.push(harness);
-		harness.session.settingsManager.applyOverrides({ compaction: { enabled: false } });
-		const prompts: string[] = [];
-		harness.setResponses([
-			(context) => {
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage("plain answer without finish_work");
-			},
-			(context) => {
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "done" }), {
-					stopReason: "toolUse",
-				});
-			},
-			(context) => {
-				prompts.push(serializePrompt(context.systemPrompt, context.messages));
-				return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "second done" }), {
-					stopReason: "toolUse",
-				});
-			},
-		]);
-
-		await harness.session.prompt("first task");
-		await harness.session.prompt("second task");
-
-		expect(prompts).toHaveLength(3);
-		expect(prompts[1]).toContain("The task is not complete because you did not call `finish_work`.");
-		expect(prompts[2].startsWith(prompts[1])).toBe(true);
-		expect(harness.session.messages.filter((message) => message.role === "user").map(getMessageText)).toEqual([
-			"first task",
-			"second task",
-		]);
-		const persistedRepairEntries = harness.sessionManager
-			.getEntries()
-			.filter((entry): entry is SessionMessageEntry => {
-				if (entry.type !== "message" || entry.message.role !== "user") return false;
-				return getMessageText(entry.message).includes(
-					"The task is not complete because you did not call `finish_work`.",
-				);
-			});
-		expect(persistedRepairEntries).toHaveLength(1);
-		expect(
-			persistedRepairEntries[0]?.message.role === "user"
-				? persistedRepairEntries[0].message.metadata?.pInternal
-				: undefined,
-		).toBe("completion_protocol_repair");
-	});
-
-	it("keeps cache reads nonzero across a long same-session tool loop", async () => {
-		const readChunkTool: AgentTool = {
-			name: "read_chunk",
-			label: "Read chunk",
-			description: "Return deterministic chunk text",
-			parameters: Type.Object({ turn: Type.Number() }),
-			execute: async (_toolCallId, params) => {
-				const turn = typeof params === "object" && params !== null && "turn" in params ? Number(params.turn) : 0;
-				const lines = Array.from(
-					{ length: 120 },
-					(_, index) => `turn ${turn} line ${index.toString().padStart(3, "0")} ${"x".repeat(72)}`,
-				).join("\n");
-				return {
-					content: [{ type: "text", text: lines }],
-					details: { turn },
-				};
-			},
-		};
-		const harness = await createPromptHarness({ tools: [readChunkTool] });
-		harnesses.push(harness);
-		writeFileSync(
-			join(harness.tempDir, "AGENTS.md"),
-			[
-				"# Project Rules",
-				"- Must preserve alpha cache detail when the request mentions alpha.",
-				"- Must preserve beta cache detail when the request mentions beta.",
-			].join("\n"),
-		);
-		const responses = Array.from({ length: 12 }).flatMap((_, index) => {
-			const turn = index + 1;
-			return [
-				fauxAssistantMessage(fauxToolCall("read_chunk", { turn }), { stopReason: "toolUse" }),
-				fauxAssistantMessage(`turn ${turn} complete`),
-			];
-		});
-		harness.setResponses(responses);
-
-		for (let turn = 1; turn <= 12; turn++) {
-			const previousAssistantCount = harness.session.messages.filter(
-				(message) => message.role === "assistant",
-			).length;
-			const topic = turn % 2 === 0 ? "beta" : "alpha";
-			await harness.session.prompt(`${topic} request turn ${turn}`);
-			const newAssistantMessages = harness.session.messages
-				.filter((message): message is AssistantMessage => message.role === "assistant")
-				.slice(previousAssistantCount);
-			expect(newAssistantMessages).toHaveLength(2);
-			if (turn === 1) {
-				expect(newAssistantMessages[0]?.usage.cacheRead).toBe(0);
-			} else {
-				expect(newAssistantMessages[0]?.usage.cacheRead).toBeGreaterThan(0);
-			}
-			expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
-		}
-	});
-
-	it("keeps >8,000 tokens of successive provider tool payloads append-only before compaction", async () => {
-		const readSmallChunkTool: AgentTool = {
-			name: "read_small_chunk",
-			label: "Read small chunk",
-			description: "Return deterministic small chunk text",
-			parameters: Type.Object({ turn: Type.Number() }),
-			execute: async (_toolCallId, params) => {
-				const turn = typeof params === "object" && params !== null && "turn" in params ? Number(params.turn) : 0;
-				const lines = Array.from(
-					{ length: 48 },
-					(_, index) => `turn ${turn} line ${index.toString().padStart(3, "0")} ${"x".repeat(36)}`,
-				).join("\n");
-				return {
-					content: [{ type: "text", text: lines }],
-					details: { turn },
-				};
-			},
-		};
-		const harness = await createPromptHarness({ tools: [readSmallChunkTool] });
-		harnesses.push(harness);
-		const firstRequestPrompts: string[] = [];
-		const responses = Array.from({ length: 18 }).flatMap((_, index) => {
-			const turn = index + 1;
-			return [
-				(context: { systemPrompt?: string; messages: Message[] }) => {
-					firstRequestPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
-					return fauxAssistantMessage(fauxToolCall("read_small_chunk", { turn }), { stopReason: "toolUse" });
-				},
-				fauxAssistantMessage(`turn ${turn} complete`),
-			];
-		});
-		harness.setResponses(responses);
-
-		for (let turn = 1; turn <= 18; turn++) {
-			const previousAssistantCount = harness.session.messages.filter(
-				(message) => message.role === "assistant",
-			).length;
-			await harness.session.prompt(`request turn ${turn}`);
-			const newAssistantMessages = harness.session.messages
-				.filter((message): message is AssistantMessage => message.role === "assistant")
-				.slice(previousAssistantCount);
-			expect(newAssistantMessages).toHaveLength(2);
-			if (turn === 1) {
-				expect(newAssistantMessages[0]?.usage.cacheRead).toBe(0);
-			} else {
-				expect(newAssistantMessages[0]?.usage.cacheRead).toBeGreaterThan(0);
-			}
-			expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
-		}
-
-		expect(firstRequestPrompts).toHaveLength(18);
-		for (let index = 1; index < firstRequestPrompts.length; index++) {
-			expect(firstRequestPrompts[index]?.startsWith(firstRequestPrompts[index - 1] ?? "")).toBe(true);
-		}
-		const finalPrompt = firstRequestPrompts[17] ?? "";
-		expect(finalPrompt.length).toBeGreaterThan(32_000);
-		expect(finalPrompt).not.toContain("[Tool result stubbed");
-		expect(finalPrompt).not.toContain('session_recall("tool-result:');
-		expect(finalPrompt).toContain("turn 1 line 047");
-		expect(finalPrompt).toContain("turn 17 line 047");
-		expect(harness.session.messages.map(getMessageText).join("\n")).toContain("turn 1 line 047");
-	});
-
-	it("appends one cache-stable plan reminder after 90 seconds of ordinary tool work", async () => {
-		let now = 1_800_000_000_000;
-		const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
-		const providerPayloads: string[] = [];
-
-		try {
-			const harness = await createPromptHarness();
-			harnesses.push(harness);
-			writeFileSync(join(harness.tempDir, "work.txt"), "deterministic work\n");
-			harness.setResponses([
-				fauxAssistantMessage(
-					fauxToolCall("update_session_state", {
-						action: "initial_plan",
-						goal: "Keep a long-running plan current",
-						plan: [{ text: "Complete the work steps", status: "in_progress" }],
-					}),
-					{ stopReason: "toolUse" },
-				),
-				(context) => {
-					providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
-					now += 91_000;
-					return fauxAssistantMessage(fauxToolCall("read", { path: "work.txt" }), { stopReason: "toolUse" });
-				},
-				(context) => {
-					providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
-					return fauxAssistantMessage(fauxToolCall("read", { path: "work.txt" }), { stopReason: "toolUse" });
-				},
-				(context) => {
-					providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
-					return fauxAssistantMessage("done");
-				},
-			]);
-
-			await harness.session.prompt("Complete several work steps and keep the plan current");
-
-			expect(harness.session.getSessionStateSnapshot().state.plan.map((item) => item.status)).toEqual([
-				"in_progress",
-			]);
-			const reminders = harness.session.messages.filter(
-				(message): message is Extract<AgentMessage, { role: "custom" }> =>
-					message.role === "custom" && message.customType === "session_state_reminder",
-			);
-			expect(reminders).toHaveLength(1);
-			expect(reminders[0]?.display).toBe(false);
-			expect(getMessageText(reminders[0])).toContain("About 90 seconds of active work");
-			expect(providerPayloads).toHaveLength(3);
-			expect(providerPayloads[1]?.startsWith(providerPayloads[0] ?? "")).toBe(true);
-			expect(providerPayloads[2]?.startsWith(providerPayloads[1] ?? "")).toBe(true);
-		} finally {
-			nowSpy.mockRestore();
-		}
-	});
-
-	it("persists one formal compaction between multi-tool turns and resumes cache-stable reuse", async () => {
-		const largeChunkTool: AgentTool = {
-			name: "large_chunk",
-			label: "Large chunk",
-			description: "Return a deterministic large chunk",
-			parameters: Type.Object({ part: Type.Number() }),
-			execute: async (_toolCallId, params) => {
-				const part = typeof params === "object" && params !== null && "part" in params ? Number(params.part) : 0;
-				return {
-					content: [
-						{
-							type: "text",
-							text: Array.from(
-								{ length: 700 },
-								(_, index) => `part ${part} line ${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
-							).join("\n"),
-						},
-					],
-					details: { part },
-				};
-			},
-		};
-		const verifyTool: AgentTool = {
-			name: "verify_chunk",
-			label: "Verify chunk",
-			description: "Return a small deterministic verification",
-			parameters: Type.Object({}),
-			execute: async () => ({ content: [{ type: "text", text: "verification complete" }], details: {} }),
-		};
-		const harness = await createPromptHarness({
-			models: [{ id: "compaction-boundary", contextWindow: 24_000, maxTokens: 1000 }],
-			tools: [largeChunkTool, verifyTool],
-			settings: {
-				compaction: {
-					enabled: true,
-					triggerReserveTokens: 4_000,
-					triggerRatio: 0.5,
-					targetContextTokens: 3_000,
-					keepRecentMinTokens: 200,
-					keepRecentMaxTokens: 500,
-					summaryMaxTokens: 500,
-					renderedStateMaxTokens: 500,
-				},
-			},
-		});
-		harnesses.push(harness);
-		const postCompactionPrompts: string[] = [];
-		harness.setResponses([
-			fauxAssistantMessage([fauxToolCall("large_chunk", { part: 1 }), fauxToolCall("large_chunk", { part: 2 })], {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage(
-				"## Goal\nProcess both large chunks.\n\n## Plan\n- [v] Read both chunks\n- [.] Verify the result\n\n## Decisions\n- **Compact formally**: preserve one visible cache boundary\n\n## Files\n- (none)\n\n## Risks\n- (none)",
-			),
-			(context) => {
-				postCompactionPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
-				return fauxAssistantMessage(fauxToolCall("verify_chunk", {}), { stopReason: "toolUse" });
-			},
-			(context) => {
-				postCompactionPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
-				return fauxAssistantMessage("verified");
-			},
-		]);
-
-		await harness.session.prompt("Process both large chunks, then verify the result");
-
-		const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
-		expect(compactionEntries).toHaveLength(1);
-		expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["threshold"]);
-		expect(harness.eventsOfType("compaction_end").map((event) => event.reason)).toEqual(["threshold"]);
-		expect(postCompactionPrompts).toHaveLength(2);
-		expect(postCompactionPrompts[1]?.startsWith(postCompactionPrompts[0] ?? "")).toBe(true);
-		expect(postCompactionPrompts[0]).toContain("authoritative working-state checkpoint after compaction");
-		const postCompactionAssistants = harness.session.messages.filter(
-			(message): message is AssistantMessage => message.role === "assistant" && message.timestamp > 0,
-		);
-		expect(postCompactionAssistants.at(-1)?.usage.cacheRead).toBeGreaterThan(0);
-	});
-
-	it("sends raw tool-result context to the provider before compaction without mutating session history", async () => {
-		const harness = await createPromptHarness({
-			models: [{ id: "large-context", contextWindow: 100_000, maxTokens: 1000 }],
-			settings: {
-				compaction: {
-					enabled: true,
-					triggerReserveTokens: 20_000,
-					triggerRatio: 0.95,
-					targetContextTokens: 4000,
-					keepRecentMinTokens: 500,
-					keepRecentMaxTokens: 1000,
-				},
-			},
-		});
-		harnesses.push(harness);
-		const hugeOutput = Array.from(
-			{ length: 3000 },
-			(_, index) => `raw-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
-		).join("\n");
-		const rawToolResult: AgentMessage = {
-			role: "toolResult",
-			toolCallId: "call-read-huge",
-			toolName: "read",
-			content: [{ type: "text", text: hugeOutput }],
-			isError: false,
-			timestamp: Date.now() - 1000,
-		};
-		harness.session.agent.state.messages = [
-			{
-				role: "user",
-				content: [{ type: "text", text: "inspect a large file" }],
-				timestamp: Date.now() - 3000,
-			},
-			rawToolResult,
-			{
-				role: "toolResult",
-				toolCallId: "call-read-small",
-				toolName: "read",
-				content: [{ type: "text", text: "small output" }],
-				isError: false,
-				timestamp: Date.now() - 500,
-			},
-		];
-		let providerPromptText = "";
-		harness.setResponses([
-			(context) => {
-				providerPromptText = context.messages.map(getMessageText).join("\n");
-				return fauxAssistantMessage("bounded");
-			},
-		]);
-
-		await harness.session.prompt("continue");
-
-		expect(providerPromptText).not.toContain("[Tool result stubbed");
-		expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-huge"');
-		expect(providerPromptText).toContain("raw-line-0100");
-		expect(getMessageText(rawToolResult)).toContain("raw-line-0000");
-	});
-
-	it("does not stub completed long tool results before compaction", async () => {
-		const harness = await createPromptHarness({
-			models: [{ id: "large-context", contextWindow: 65_536, maxTokens: 1000 }],
-			settings: {
-				compaction: {
-					enabled: true,
-					triggerReserveTokens: 16_384,
-					triggerRatio: 0.75,
-					targetContextTokens: 12_000,
-				},
-			},
-		});
-		harnesses.push(harness);
-		const longOutput = Array.from(
-			{ length: 360 },
-			(_, index) => `doc-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
-		).join("\n");
-		const rawToolResult: AgentMessage = {
-			role: "toolResult",
-			toolCallId: "call-read-doc",
-			toolName: "read",
-			content: [{ type: "text", text: longOutput }],
-			isError: false,
-			timestamp: Date.now() - 1000,
-		};
-		harness.session.agent.state.messages = [
-			{
-				role: "user",
-				content: [{ type: "text", text: "read the architecture doc" }],
-				timestamp: Date.now() - 3000,
-			},
-			rawToolResult,
-			{
-				role: "toolResult",
-				toolCallId: "call-read-small",
-				toolName: "read",
-				content: [{ type: "text", text: "small output" }],
-				isError: false,
-				timestamp: Date.now() - 500,
-			},
-		];
-		let providerPromptText = "";
-		harness.setResponses([
-			(context) => {
-				providerPromptText = context.messages.map(getMessageText).join("\n");
-				return fauxAssistantMessage("bounded");
-			},
-		]);
-
-		await harness.session.prompt("continue");
-
-		expect(providerPromptText).not.toContain("[Tool result stubbed");
-		expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-doc"');
-		expect(providerPromptText).toContain("doc-line-0100");
-		expect(getMessageText(rawToolResult)).toContain("doc-line-0000");
-	});
-
-	it("handles a tool call turn and waits for the follow-up LLM response", async () => {
-		const toolRuns: string[] = [];
-		const echoTool: AgentTool = {
-			name: "echo",
-			label: "Echo",
-			description: "Echo text back",
-			parameters: Type.Object({ text: Type.String() }),
-			execute: async (_toolCallId, params) => {
-				const text = typeof params === "object" && params !== null && "text" in params ? String(params.text) : "";
-				toolRuns.push(text);
-				return {
-					content: [{ type: "text", text: `echo:${text}` }],
-					details: { text },
-				};
-			},
-		};
-		const harness = await createPromptHarness({ tools: [echoTool] });
-		harnesses.push(harness);
-
-		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), {
-				stopReason: "toolUse",
-			}),
-			fauxAssistantMessage("done"),
-		]);
-
-		await harness.session.prompt("start");
-
-		expect(toolRuns).toEqual(["hello"]);
-		expect(harness.session.messages.map((message) => message.role)).toEqual([
-			"user",
-			"assistant",
-			"toolResult",
-			"custom",
-			"assistant",
-		]);
-		expect(harness.session.messages[2]?.role).toBe("toolResult");
-		expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
-		expect(harness.session.messages[4]?.role).toBe("assistant");
-	});
-
-	it("executes multiple tool calls from one response and continues with a single follow-up response", async () => {
-		const toolRuns: string[] = [];
-		const makeTool = (name: string, delayMs: number): AgentTool => ({
-			name,
-			label: name,
-			description: `${name} tool`,
-			parameters: Type.Object({ value: Type.String() }),
-			execute: async (_toolCallId, params) => {
-				const value =
-					typeof params === "object" && params !== null && "value" in params ? String(params.value) : "";
-				await new Promise((resolve) => setTimeout(resolve, delayMs));
-				toolRuns.push(`${name}:${value}`);
-				return {
-					content: [{ type: "text", text: `${name}:${value}` }],
-					details: { value },
-				};
-			},
-		});
-		const harness = await createPromptHarness({
-			tools: [makeTool("slow", 25), makeTool("fast", 0)],
-		});
-		harnesses.push(harness);
-
-		harness.setResponses([
-			fauxAssistantMessage([fauxToolCall("slow", { value: "a" }), fauxToolCall("fast", { value: "b" })], {
-				stopReason: "toolUse",
-			}),
-			(context) => {
-				const toolResults = context.messages.filter((message) => message.role === "toolResult");
-				return fauxAssistantMessage(`tool results: ${toolResults.length}`);
-			},
-		]);
-
-		await harness.session.prompt("run tools");
-
-		expect(toolRuns.sort()).toEqual(["fast:b", "slow:a"]);
-		expect(harness.session.messages.filter((message) => message.role === "toolResult")).toHaveLength(2);
-		expect(harness.session.messages[harness.session.messages.length - 1]?.role).toBe("assistant");
-	});
-
-	it("preserves image attachments in the provider context", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		let sawImage = false;
-
-		harness.setResponses([
-			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
-				sawImage =
-					user?.role === "user" &&
-					typeof user.content !== "string" &&
-					user.content.some((part) => part.type === "image");
-				return fauxAssistantMessage("ok");
-			},
-		]);
-
-		await harness.session.prompt("describe", {
-			images: [
-				{
-					type: "image",
-					mimeType: "image/png",
-					data: "ZmFrZQ==",
-				},
-			],
-		});
-
-		expect(sawImage).toBe(true);
-	});
-
-	it("expands skill commands before sending the prompt", async () => {
-		const tempDir = join(tmpdir(), `pi-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-		mkdirSync(tempDir, { recursive: true });
-		tempDirs.push(tempDir);
-		const skillPath = join(tempDir, "test-skill.md");
-		writeFileSync(skillPath, "# Test Skill\n\nUse the skill body.");
-
-		const resourceLoader = {
-			...createTestResourceLoader(),
-			getSkills: () => ({
-				skills: [
-					{
-						name: "test",
-						description: "Test skill",
-						filePath: skillPath,
-						disableModelInvocation: false,
-						baseDir: tempDir,
-						sourceInfo: createSyntheticSourceInfo(skillPath, {
-							source: "local",
-							scope: "project",
-							origin: "top-level",
-							baseDir: tempDir,
-						}),
-					},
-				],
-				diagnostics: [],
-			}),
-		};
-		const harness = await createPromptHarness({ resourceLoader });
-		harnesses.push(harness);
-		let expandedPrompt = "";
-
-		harness.setResponses([
-			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
-				expandedPrompt = user ? getMessageText(user) : "";
-				return fauxAssistantMessage("ok");
-			},
-		]);
-
-		await harness.session.prompt("/skill:test explain this");
-
-		expect(expandedPrompt).toContain('<skill name="test" location="');
-		expect(expandedPrompt).toContain("Use the skill body.");
-		expect(expandedPrompt).toContain("explain this");
-	});
-
-	it("expands prompt templates before sending the prompt", async () => {
-		const template: PromptTemplate = {
-			name: "review",
-			description: "Review template",
-			content: "Review this code: $1",
-			filePath: "/virtual/review.md",
-			sourceInfo: createSyntheticSourceInfo("/virtual/review.md", {
-				source: "local",
-				scope: "temporary",
-				origin: "top-level",
-			}),
-		};
-		const resourceLoader = {
-			...createTestResourceLoader(),
-			getPrompts: () => ({ prompts: [template], diagnostics: [] }),
-		};
-		const harness = await createPromptHarness({ resourceLoader });
-		harnesses.push(harness);
-		let expandedPrompt = "";
-
-		harness.setResponses([
-			(context) => {
-				const user = context.messages.find((message) => message.role === "user");
-				expandedPrompt = user ? getMessageText(user) : "";
-				return fauxAssistantMessage("ok");
-			},
-		]);
-
-		await harness.session.prompt("/review src/index.ts");
-
-		expect(expandedPrompt).toBe("Review this code: src/index.ts");
-	});
-
-	it("dispatches extension commands without consuming a provider response", async () => {
-		const commandRuns: string[] = [];
-		const harness = await createPromptHarness({
-			extensionFactories: [
-				(pi) => {
-					pi.registerCommand("testcmd", {
-						description: "Test command",
-						handler: async (args) => {
-							commandRuns.push(args);
-						},
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("should stay queued")]);
-
-		await harness.session.prompt("/testcmd hello world");
-
-		expect(commandRuns).toEqual(["hello world"]);
-		expect(harness.session.messages).toEqual([]);
-		expect(harness.getPendingResponseCount()).toBe(1);
-	});
-
-	it("sendUserMessage while idle triggers a turn", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-
-		harness.setResponses([fauxAssistantMessage("response")]);
-
-		await harness.session.sendUserMessage("from extension");
-
-		expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-		expect(getMessageText(harness.session.messages[0]!)).toBe("from extension");
-	});
-
-	it("does not report streamingBehavior to input handlers while idle", async () => {
-		const inputEvents: InputEvent[] = [];
-		const harness = await createPromptHarness({
-			extensionFactories: [
-				(pi) => {
-					pi.on("input", (event) => {
-						inputEvents.push(event);
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([fauxAssistantMessage("ok")]);
-
-		await harness.session.prompt("idle", { streamingBehavior: "followUp" });
-
-		expect(inputEvents).toHaveLength(1);
-		expect(inputEvents[0]?.streamingBehavior).toBeUndefined();
-	});
-
-	it("reports streamingBehavior to input handlers while streaming", async () => {
-		let releaseToolExecution: (() => void) | undefined;
-		const toolRelease = new Promise<void>((resolve) => {
-			releaseToolExecution = resolve;
-		});
-		const inputEvents: InputEvent[] = [];
-		const waitTool: AgentTool = {
-			name: "wait",
-			label: "Wait",
-			description: "Wait for release",
-			parameters: Type.Object({}),
-			execute: async () => {
-				await toolRelease;
-				return {
-					content: [{ type: "text", text: "released" }],
-					details: {},
-				};
-			},
-		};
-		const harness = await createPromptHarness({
-			tools: [waitTool],
-			extensionFactories: [
-				(pi) => {
-					pi.on("input", (event) => {
-						inputEvents.push(event);
-					});
-				},
-			],
-		});
-		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
-			fauxAssistantMessage("done"),
-		]);
-
-		const sawToolStart = new Promise<void>((resolve) => {
-			const unsubscribe = harness.session.subscribe((event) => {
-				if (event.type === "tool_execution_start") {
-					unsubscribe();
-					resolve();
-				}
-			});
-		});
-
-		const promptPromise = harness.session.prompt("start");
-		await sawToolStart;
-		await harness.session.prompt("queued", { streamingBehavior: "followUp" });
-
-		expect(inputEvents.map((event) => event.streamingBehavior)).toEqual([undefined, "followUp"]);
-
-		releaseToolExecution?.();
-		await promptPromise;
-	});
-
-	it("throws when prompted during streaming without a streamingBehavior", async () => {
-		let releaseToolExecution: (() => void) | undefined;
-		const toolRelease = new Promise<void>((resolve) => {
-			releaseToolExecution = resolve;
-		});
-		const waitTool: AgentTool = {
-			name: "wait",
-			label: "Wait",
-			description: "Wait for release",
-			parameters: Type.Object({}),
-			execute: async () => {
-				await toolRelease;
-				return {
-					content: [{ type: "text", text: "released" }],
-					details: {},
-				};
-			},
-		};
-		const harness = await createPromptHarness({ tools: [waitTool] });
-		harnesses.push(harness);
-		harness.setResponses([
-			fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
-			fauxAssistantMessage("done"),
-		]);
-
-		const sawToolStart = new Promise<void>((resolve) => {
-			const unsubscribe = harness.session.subscribe((event) => {
-				if (event.type === "tool_execution_start") {
-					unsubscribe();
-					resolve();
-				}
-			});
-		});
-
-		const promptPromise = harness.session.prompt("start");
-		await sawToolStart;
-
-		await expect(harness.session.prompt("second")).rejects.toThrow(
-			"Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
-		);
-
-		releaseToolExecution?.();
-		await promptPromise;
-	});
-
-	it("throws when prompting without a model", async () => {
-		const harness = await createPromptHarness();
-		harnesses.push(harness);
-		harness.session.agent.state.model = undefined as unknown as Model<any>;
-
-		await expect(harness.session.prompt("hi")).rejects.toThrow("No model selected.");
-	});
-
-	it("throws when prompting without configured auth", async () => {
-		const harness = await createPromptHarness({ withConfiguredAuth: false });
-		harnesses.push(harness);
-
-		await expect(harness.session.prompt("hi")).rejects.toThrow(
-			`No API key found for ${harness.getModel().provider}.`,
-		);
-	});
+  const harnesses: Harness[] = [];
+  const tempDirs: string[] = [];
+  const createPromptHarness = (options: HarnessOptions = {}) =>
+    createBaseHarness({ completionMode: "implicit", ...options });
+  const getUserTexts = (messages: Message[]): string[] =>
+    messages.flatMap((message) => {
+      if (message.role !== "user") return [];
+      if (typeof message.content === "string") return [message.content];
+      return message.content.filter((part): part is TextContent => part.type === "text").map((part) => part.text);
+    });
+  const serializePrompt = (systemPrompt: string | undefined, messages: Message[]): string =>
+    [
+      systemPrompt ? `system:${systemPrompt}` : undefined,
+      ...messages.map((message) => `${message.role}:${getMessageText(message)}`),
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join("\n\n");
+  const serializeProviderPayload = (systemPrompt: string | undefined, messages: Message[]): string =>
+    `${[
+      systemPrompt ? JSON.stringify({ role: "system", content: systemPrompt }) : undefined,
+      ...messages.map((message) => JSON.stringify(message)),
+    ]
+      .filter((part): part is string => part !== undefined)
+      .join("\n")}\n`;
+
+  afterEach(() => {
+    while (harnesses.length > 0) {
+      harnesses.pop()?.cleanup();
+    }
+    while (tempDirs.length > 0) {
+      const tempDir = tempDirs.pop();
+      if (tempDir) {
+        rmSync(tempDir, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("prompts while idle and records a single text response", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+
+    harness.setResponses([fauxAssistantMessage("hello")]);
+
+    await harness.session.prompt("hi");
+
+    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
+    expect(harness.getPendingResponseCount()).toBe(0);
+  });
+
+  it("automatically syncs project memory and injects scoped memory into later prompts", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    let secondSystemPrompt = "";
+    harness.setResponses([
+      fauxAssistantMessage("first done"),
+      (context) => {
+        secondSystemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage("second done");
+      },
+    ]);
+
+    await harness.session.prompt("Fix compaction loops");
+    const snapshotPath = join(harness.tempDir, ".pdev/state/session.current.json");
+    expect(existsSync(snapshotPath)).toBe(true);
+    expect(readFileSync(snapshotPath, "utf8")).toContain("Fix compaction loops");
+
+    await harness.session.prompt("continue compaction work");
+
+    expect(secondSystemPrompt).not.toContain("<project_memory>");
+    expect(
+      harness.session.messages.some(
+        (message) => message.role === "custom" && message.customType === "pi.project-memory",
+      ),
+    ).toBe(false);
+  });
+
+  it("stores hidden state updates and injects working state into the next prompt", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    let firstSystemPrompt = "";
+    let secondSystemPrompt = "";
+    let secondUserTexts: string[] = [];
+    let thirdUserTexts: string[] = [];
+    harness.setResponses([
+      (context) => {
+        firstSystemPrompt = context.systemPrompt ?? "";
+        return fauxAssistantMessage(
+          `Recorded.\n<session_state_update>{"type":"patch","goal":"Fix durable state tracking","plan":[{"text":"Add state protocol parser","status":"done"},{"text":"Run deterministic compaction tests","status":"not_started"}],"risks":["Prompt state may grow"]}</session_state_update>`,
+        );
+      },
+      (context) => {
+        secondSystemPrompt = context.systemPrompt ?? "";
+        secondUserTexts = getUserTexts(context.messages);
+        return fauxAssistantMessage("continued");
+      },
+      (context) => {
+        thirdUserTexts = getUserTexts(context.messages);
+        return fauxAssistantMessage("continued again");
+      },
+    ]);
+
+    await harness.session.prompt("Fix durable state tracking");
+
+    expect(firstSystemPrompt).toContain("<session_state_protocol>");
+    expect(getMessageText(harness.session.messages[1]!)).toBe("Recorded.");
+    expect(
+      harness.sessionManager
+        .getEntries()
+        .some((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
+    ).toBe(true);
+
+    await harness.session.prompt("continue");
+
+    const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
+    expect(secondSystemPrompt).not.toContain("<working_state>");
+    expect(workingState).toContain("🚩 Goal: Fix durable state tracking");
+    expect(workingState).toContain("✅ Add state protocol parser");
+    expect(workingState).toContain("• Run deterministic compaction tests");
+    expect(secondSystemPrompt).not.toContain("<project_memory>");
+
+    const persistedWorkingStateEntries = harness.sessionManager
+      .getEntries()
+      .filter(
+        (entry): entry is CustomMessageEntry => entry.type === "custom_message" && entry.customType === "working_state",
+      );
+    expect(persistedWorkingStateEntries).toHaveLength(1);
+    expect(persistedWorkingStateEntries[0]?.display).toBe(false);
+    expect(String(persistedWorkingStateEntries[0]?.content)).toContain("Fix durable state tracking");
+
+    await harness.session.prompt("continue again");
+
+    expect(thirdUserTexts.filter((text) => text.includes("<working_state>"))).toHaveLength(2);
+  });
+
+  it("backfills omitted hidden state update goals from the live user request", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    let secondSystemPrompt = "";
+    let secondUserTexts: string[] = [];
+    harness.setResponses([
+      fauxAssistantMessage(
+        [
+          "Working.",
+          `<session_state_update>{"type":"patch","plan":[{"text":"Reproduce the smart-state overwrite","status":"done"},{"text":"Patch state persistence","status":"in_progress"},{"text":"Run unit, integration, and e2e tests","status":"not_started"}]}</session_state_update>`,
+        ].join("\n"),
+      ),
+      (context) => {
+        secondSystemPrompt = context.systemPrompt ?? "";
+        secondUserTexts = getUserTexts(context.messages);
+        return fauxAssistantMessage("continued");
+      },
+    ]);
+
+    await harness.session.prompt("Fix smart state so an omitted metadata goal cannot erase the real objective");
+
+    const snapshot = harness.session.getSessionStateSnapshot();
+    const stateEntries = harness.sessionManager
+      .getEntries()
+      .filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
+
+    expect(getMessageText(harness.session.messages[1]!)).toBe("Working.");
+    expect(snapshot.state.canonicalRequest.current).toBe(
+      "Fix smart state so an omitted metadata goal cannot erase the real objective",
+    );
+    expect(snapshot.state.plan.map((item) => [item.text, item.status])).toEqual([
+      ["Reproduce the smart-state overwrite", "done"],
+      ["Patch state persistence", "in_progress"],
+      ["Run unit, integration, and e2e tests", "not_started"],
+    ]);
+    expect(stateEntries).toHaveLength(1);
+
+    await harness.session.prompt("continue");
+
+    const workingState = secondUserTexts.find((text) => text.includes("<working_state>")) ?? "";
+    expect(secondSystemPrompt).not.toContain("<working_state>");
+    expect(workingState).toContain(
+      "🚩 Goal: Fix smart state so an omitted metadata goal cannot erase the real objective",
+    );
+    expect(workingState).toContain("✅ Reproduce the smart-state overwrite");
+    expect(workingState).toContain("⏳ Patch state persistence");
+    expect(workingState).toContain("• Run unit, integration, and e2e tests");
+    expect(workingState).not.toContain("🚩 Goal: continue");
+  });
+
+  it("renders concrete current turns over stale structured state goals", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    const staleState = createInitialStructuredSessionState(harness.session.sessionId);
+    staleState.canonicalRequest.current =
+      "Turn 16 of 26. Use the read tool to read in/file-16.txt. Convert every alphabetic letter in that file to uppercase.";
+    harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, staleState);
+    let userTexts: string[] = [];
+    harness.setResponses([
+      (context) => {
+        userTexts = getUserTexts(context.messages);
+        return fauxAssistantMessage("turn 23 complete");
+      },
+    ]);
+
+    await harness.session.prompt(
+      "Turn 23 of 26. Use the read tool to read in/file-23.txt. Convert every alphabetic letter in that file to uppercase while preserving digits, punctuation, spaces, and newlines.",
+    );
+
+    const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
+    expect(workingState).toContain("🚩 Goal: Turn 23 of 26");
+    expect(workingState).toContain("in/file-23.txt");
+    expect(workingState).not.toContain("🚩 Goal: Turn 16 of 26");
+    expect(workingState).not.toContain("in/file-16.txt");
+  });
+
+  it("preserves durable structured state goals over pending follow-up commands", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    const durableState = createInitialStructuredSessionState(harness.session.sessionId);
+    durableState.canonicalRequest.current = "Preserve primary session state across completed follow-up turns";
+    durableState.plan.push({
+      id: "plan-preserve-primary-goal",
+      text: "Keep the primary goal stable across later user messages",
+      status: "in_progress",
+      evidenceEntryIds: [],
+    });
+    harness.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, durableState);
+    let userTexts: string[] = [];
+    harness.setResponses([
+      (context) => {
+        userTexts = getUserTexts(context.messages);
+        return fauxAssistantMessage("checked");
+      },
+    ]);
+
+    await harness.session.prompt(
+      "Interrupt scenario command: write at least 1200 words first. This must not replace the primary goal.",
+    );
+
+    const workingState = userTexts.find((text) => text.includes("<working_state>")) ?? "";
+    expect(workingState).toContain("🚩 Goal: Preserve primary session state across completed follow-up turns");
+    expect(workingState).toContain("⏳ Keep the primary goal stable across later user messages");
+    expect(workingState).not.toContain("🚩 Goal: Interrupt scenario command");
+  });
+
+  it("reuses provider prompt cache across sequential user prompts", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    harness.setResponses([fauxAssistantMessage("first done"), fauxAssistantMessage("second done")]);
+
+    await harness.session.prompt("Fix prompt cache reuse");
+    await harness.session.prompt("continue");
+
+    const assistantMessages = harness.session.messages.filter(
+      (message): message is AssistantMessage => message.role === "assistant",
+    );
+    expect(harness.session.agent.sessionId).toBe(harness.session.sessionId);
+    expect(assistantMessages).toHaveLength(2);
+    expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+    expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+    expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
+  });
+
+  it("reuses provider prompt cache after a completed tool loop and ten idle seconds", async () => {
+    const toolRuns: string[] = [];
+    const echoTool: AgentTool = {
+      name: "echo",
+      label: "Echo",
+      description: "Echo text back",
+      parameters: Type.Object({ text: Type.String() }),
+      execute: async (_toolCallId, params) => {
+        const text = typeof params === "object" && params !== null && "text" in params ? String(params.text) : "";
+        toolRuns.push(text);
+        return {
+          content: [{ type: "text", text: `echo:${text}` }],
+          details: { text },
+        };
+      },
+    };
+    const harness = await createPromptHarness({ tools: [echoTool] });
+    harnesses.push(harness);
+    harness.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "warm-cache" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage("first tool loop complete"),
+      fauxAssistantMessage("second prompt complete"),
+    ]);
+
+    await harness.session.prompt("Start a multi-turn tool loop");
+    expect(toolRuns).toEqual(["warm-cache"]);
+    expect(harness.session.state.isStreaming).toBe(false);
+    expect(harness.session.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "toolResult",
+      "custom",
+      "assistant",
+    ]);
+    expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
+
+    vi.useFakeTimers();
+    try {
+      const idleGap = new Promise<void>((resolve) => setTimeout(resolve, 10_000));
+      await vi.advanceTimersByTimeAsync(10_000);
+      await idleGap;
+    } finally {
+      vi.useRealTimers();
+    }
+
+    await harness.session.prompt("Continue after idle");
+
+    const assistantMessages = harness.session.messages.filter(
+      (message): message is AssistantMessage => message.role === "assistant",
+    );
+    expect(assistantMessages).toHaveLength(3);
+    expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+    expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+    expect(assistantMessages[1]?.usage.input).toBeLessThan(assistantMessages[1]?.usage.totalTokens ?? 0);
+    expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(0);
+    expect(assistantMessages[2]?.usage.input).toBeLessThan(assistantMessages[2]?.usage.totalTokens ?? 0);
+  });
+
+  it("persists volatile runtime context in history so prompt cache survives changing rule matches", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    writeFileSync(
+      join(harness.tempDir, "AGENTS.md"),
+      [
+        "# Project Rules",
+        "- Must preserve alpha cache detail when the request mentions alpha.",
+        "- Must preserve beta cache detail when the request mentions beta.",
+      ].join("\n"),
+    );
+    const prompts: string[] = [];
+    const systemPrompts: string[] = [];
+    harness.setResponses([
+      (context) => {
+        systemPrompts.push(context.systemPrompt ?? "");
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage("alpha complete");
+      },
+      (context) => {
+        systemPrompts.push(context.systemPrompt ?? "");
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage("beta complete");
+      },
+      (context) => {
+        systemPrompts.push(context.systemPrompt ?? "");
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage("alpha again complete");
+      },
+    ]);
+
+    await harness.session.prompt("alpha request");
+    await harness.session.prompt("beta request");
+    await harness.session.prompt("alpha request again");
+
+    expect(systemPrompts).toHaveLength(3);
+    expect(systemPrompts[1]).toBe(systemPrompts[0]);
+    expect(systemPrompts[2]).toBe(systemPrompts[0]);
+    expect(prompts[0]).toContain("alpha cache detail");
+    expect(prompts[1]).toContain("beta cache detail");
+    expect(prompts[1].startsWith(prompts[0])).toBe(true);
+    expect(prompts[2].startsWith(prompts[1])).toBe(true);
+    const assistantMessages = harness.session.messages.filter(
+      (message): message is AssistantMessage => message.role === "assistant",
+    );
+    expect(assistantMessages).toHaveLength(3);
+    expect(assistantMessages[0]?.usage.cacheWrite).toBeGreaterThan(0);
+    expect(assistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+    expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(assistantMessages[1]?.usage.cacheRead ?? 0);
+    const runtimeContextMessages = harness.session.messages.filter(
+      (message): message is Extract<AgentMessage, { role: "custom" }> =>
+        message.role === "custom" && message.customType === "runtime_context",
+    );
+    expect(runtimeContextMessages).toHaveLength(3);
+    expect(runtimeContextMessages.every((message) => message.display === false)).toBe(true);
+  });
+
+  it("persists explicit-finish repair prompts for cache-stable follow-up prompts", async () => {
+    const noopTool: AgentTool = {
+      name: "noop",
+      label: "No-op",
+      description: "Unused test tool to keep explicit completion active",
+      parameters: Type.Object({}),
+      execute: async () => ({ content: [{ type: "text", text: "noop" }], details: undefined }),
+    };
+    const harness = await createPromptHarness({
+      completionMode: "explicit_finish",
+      tools: [noopTool],
+      initialActiveToolNames: ["noop"],
+    });
+    harnesses.push(harness);
+    harness.session.settingsManager.applyOverrides({ compaction: { enabled: false } });
+    const prompts: string[] = [];
+    harness.setResponses([
+      (context) => {
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage("plain answer without finish_work");
+      },
+      (context) => {
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "done" }), {
+          stopReason: "toolUse",
+        });
+      },
+      (context) => {
+        prompts.push(serializePrompt(context.systemPrompt, context.messages));
+        return fauxAssistantMessage(fauxToolCall("finish_work", { status: "success", summary: "second done" }), {
+          stopReason: "toolUse",
+        });
+      },
+    ]);
+
+    await harness.session.prompt("first task");
+    await harness.session.prompt("second task");
+
+    expect(prompts).toHaveLength(3);
+    expect(prompts[1]).toContain("The task is not complete because you did not call `finish_work`.");
+    expect(prompts[2].startsWith(prompts[1])).toBe(true);
+    expect(harness.session.messages.filter((message) => message.role === "user").map(getMessageText)).toEqual([
+      "first task",
+      "second task",
+    ]);
+    const persistedRepairEntries = harness.sessionManager.getEntries().filter((entry): entry is SessionMessageEntry => {
+      if (entry.type !== "message" || entry.message.role !== "user") return false;
+      return getMessageText(entry.message).includes("The task is not complete because you did not call `finish_work`.");
+    });
+    expect(persistedRepairEntries).toHaveLength(1);
+    expect(
+      persistedRepairEntries[0]?.message.role === "user"
+        ? persistedRepairEntries[0].message.metadata?.pInternal
+        : undefined,
+    ).toBe("completion_protocol_repair");
+  });
+
+  it("keeps cache reads nonzero across a long same-session tool loop", async () => {
+    const readChunkTool: AgentTool = {
+      name: "read_chunk",
+      label: "Read chunk",
+      description: "Return deterministic chunk text",
+      parameters: Type.Object({ turn: Type.Number() }),
+      execute: async (_toolCallId, params) => {
+        const turn = typeof params === "object" && params !== null && "turn" in params ? Number(params.turn) : 0;
+        const lines = Array.from(
+          { length: 120 },
+          (_, index) => `turn ${turn} line ${index.toString().padStart(3, "0")} ${"x".repeat(72)}`,
+        ).join("\n");
+        return {
+          content: [{ type: "text", text: lines }],
+          details: { turn },
+        };
+      },
+    };
+    const harness = await createPromptHarness({ tools: [readChunkTool] });
+    harnesses.push(harness);
+    writeFileSync(
+      join(harness.tempDir, "AGENTS.md"),
+      [
+        "# Project Rules",
+        "- Must preserve alpha cache detail when the request mentions alpha.",
+        "- Must preserve beta cache detail when the request mentions beta.",
+      ].join("\n"),
+    );
+    const responses = Array.from({ length: 12 }).flatMap((_, index) => {
+      const turn = index + 1;
+      return [
+        fauxAssistantMessage(fauxToolCall("read_chunk", { turn }), { stopReason: "toolUse" }),
+        fauxAssistantMessage(`turn ${turn} complete`),
+      ];
+    });
+    harness.setResponses(responses);
+
+    for (let turn = 1; turn <= 12; turn++) {
+      const previousAssistantCount = harness.session.messages.filter((message) => message.role === "assistant").length;
+      const topic = turn % 2 === 0 ? "beta" : "alpha";
+      await harness.session.prompt(`${topic} request turn ${turn}`);
+      const newAssistantMessages = harness.session.messages
+        .filter((message): message is AssistantMessage => message.role === "assistant")
+        .slice(previousAssistantCount);
+      expect(newAssistantMessages).toHaveLength(2);
+      if (turn === 1) {
+        expect(newAssistantMessages[0]?.usage.cacheRead).toBe(0);
+      } else {
+        expect(newAssistantMessages[0]?.usage.cacheRead).toBeGreaterThan(0);
+      }
+      expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps >8,000 tokens of successive provider tool payloads append-only before compaction", async () => {
+    const readSmallChunkTool: AgentTool = {
+      name: "read_small_chunk",
+      label: "Read small chunk",
+      description: "Return deterministic small chunk text",
+      parameters: Type.Object({ turn: Type.Number() }),
+      execute: async (_toolCallId, params) => {
+        const turn = typeof params === "object" && params !== null && "turn" in params ? Number(params.turn) : 0;
+        const lines = Array.from(
+          { length: 48 },
+          (_, index) => `turn ${turn} line ${index.toString().padStart(3, "0")} ${"x".repeat(36)}`,
+        ).join("\n");
+        return {
+          content: [{ type: "text", text: lines }],
+          details: { turn },
+        };
+      },
+    };
+    const harness = await createPromptHarness({ tools: [readSmallChunkTool] });
+    harnesses.push(harness);
+    const firstRequestPrompts: string[] = [];
+    const responses = Array.from({ length: 18 }).flatMap((_, index) => {
+      const turn = index + 1;
+      return [
+        (context: { systemPrompt?: string; messages: Message[] }) => {
+          firstRequestPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
+          return fauxAssistantMessage(fauxToolCall("read_small_chunk", { turn }), { stopReason: "toolUse" });
+        },
+        fauxAssistantMessage(`turn ${turn} complete`),
+      ];
+    });
+    harness.setResponses(responses);
+
+    for (let turn = 1; turn <= 18; turn++) {
+      const previousAssistantCount = harness.session.messages.filter((message) => message.role === "assistant").length;
+      await harness.session.prompt(`request turn ${turn}`);
+      const newAssistantMessages = harness.session.messages
+        .filter((message): message is AssistantMessage => message.role === "assistant")
+        .slice(previousAssistantCount);
+      expect(newAssistantMessages).toHaveLength(2);
+      if (turn === 1) {
+        expect(newAssistantMessages[0]?.usage.cacheRead).toBe(0);
+      } else {
+        expect(newAssistantMessages[0]?.usage.cacheRead).toBeGreaterThan(0);
+      }
+      expect(newAssistantMessages[1]?.usage.cacheRead).toBeGreaterThan(0);
+    }
+
+    expect(firstRequestPrompts).toHaveLength(18);
+    for (let index = 1; index < firstRequestPrompts.length; index++) {
+      expect(firstRequestPrompts[index]?.startsWith(firstRequestPrompts[index - 1] ?? "")).toBe(true);
+    }
+    const finalPrompt = firstRequestPrompts[17] ?? "";
+    expect(finalPrompt.length).toBeGreaterThan(32_000);
+    expect(finalPrompt).not.toContain("[Tool result stubbed");
+    expect(finalPrompt).not.toContain('session_recall("tool-result:');
+    expect(finalPrompt).toContain("turn 1 line 047");
+    expect(finalPrompt).toContain("turn 17 line 047");
+    expect(harness.session.messages.map(getMessageText).join("\n")).toContain("turn 1 line 047");
+  });
+
+  it("appends one cache-stable plan reminder after 90 seconds of ordinary tool work", async () => {
+    let now = 1_800_000_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    const providerPayloads: string[] = [];
+
+    try {
+      const harness = await createPromptHarness();
+      harnesses.push(harness);
+      writeFileSync(join(harness.tempDir, "work.txt"), "deterministic work\n");
+      harness.setResponses([
+        fauxAssistantMessage(
+          fauxToolCall("update_session_state", {
+            action: "initial_plan",
+            goal: "Keep a long-running plan current",
+            plan: [{ text: "Complete the work steps", status: "in_progress" }],
+          }),
+          { stopReason: "toolUse" },
+        ),
+        (context) => {
+          providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
+          now += 91_000;
+          return fauxAssistantMessage(fauxToolCall("read", { path: "work.txt" }), { stopReason: "toolUse" });
+        },
+        (context) => {
+          providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
+          return fauxAssistantMessage(fauxToolCall("read", { path: "work.txt" }), { stopReason: "toolUse" });
+        },
+        (context) => {
+          providerPayloads.push(serializeProviderPayload(context.systemPrompt, context.messages));
+          return fauxAssistantMessage("done");
+        },
+      ]);
+
+      await harness.session.prompt("Complete several work steps and keep the plan current");
+
+      expect(harness.session.getSessionStateSnapshot().state.plan.map((item) => item.status)).toEqual(["in_progress"]);
+      const reminders = harness.session.messages.filter(
+        (message): message is Extract<AgentMessage, { role: "custom" }> =>
+          message.role === "custom" && message.customType === "session_state_reminder",
+      );
+      expect(reminders).toHaveLength(1);
+      expect(reminders[0]?.display).toBe(false);
+      expect(getMessageText(reminders[0])).toContain("About 90 seconds of active work");
+      expect(providerPayloads).toHaveLength(3);
+      expect(providerPayloads[1]?.startsWith(providerPayloads[0] ?? "")).toBe(true);
+      expect(providerPayloads[2]?.startsWith(providerPayloads[1] ?? "")).toBe(true);
+    } finally {
+      nowSpy.mockRestore();
+    }
+  });
+
+  it("persists one formal compaction between multi-tool turns and resumes cache-stable reuse", async () => {
+    const largeChunkTool: AgentTool = {
+      name: "large_chunk",
+      label: "Large chunk",
+      description: "Return a deterministic large chunk",
+      parameters: Type.Object({ part: Type.Number() }),
+      execute: async (_toolCallId, params) => {
+        const part = typeof params === "object" && params !== null && "part" in params ? Number(params.part) : 0;
+        return {
+          content: [
+            {
+              type: "text",
+              text: Array.from(
+                { length: 700 },
+                (_, index) => `part ${part} line ${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+              ).join("\n"),
+            },
+          ],
+          details: { part },
+        };
+      },
+    };
+    const verifyTool: AgentTool = {
+      name: "verify_chunk",
+      label: "Verify chunk",
+      description: "Return a small deterministic verification",
+      parameters: Type.Object({}),
+      execute: async () => ({ content: [{ type: "text", text: "verification complete" }], details: {} }),
+    };
+    const harness = await createPromptHarness({
+      models: [{ id: "compaction-boundary", contextWindow: 24_000, maxTokens: 1000 }],
+      tools: [largeChunkTool, verifyTool],
+      settings: {
+        compaction: {
+          enabled: true,
+          triggerReserveTokens: 4_000,
+          triggerRatio: 0.5,
+          targetContextTokens: 3_000,
+          keepRecentMinTokens: 200,
+          keepRecentMaxTokens: 500,
+          summaryMaxTokens: 500,
+          renderedStateMaxTokens: 500,
+        },
+      },
+    });
+    harnesses.push(harness);
+    const postCompactionPrompts: string[] = [];
+    harness.setResponses([
+      fauxAssistantMessage([fauxToolCall("large_chunk", { part: 1 }), fauxToolCall("large_chunk", { part: 2 })], {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage(
+        "## Goal\nProcess both large chunks.\n\n## Plan\n- [v] Read both chunks\n- [.] Verify the result\n\n## Decisions\n- **Compact formally**: preserve one visible cache boundary\n\n## Files\n- (none)\n\n## Risks\n- (none)",
+      ),
+      (context) => {
+        postCompactionPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
+        return fauxAssistantMessage(fauxToolCall("verify_chunk", {}), { stopReason: "toolUse" });
+      },
+      (context) => {
+        postCompactionPrompts.push(serializeProviderPayload(context.systemPrompt, context.messages));
+        return fauxAssistantMessage("verified");
+      },
+    ]);
+
+    await harness.session.prompt("Process both large chunks, then verify the result");
+
+    const compactionEntries = harness.sessionManager.getEntries().filter((entry) => entry.type === "compaction");
+    expect(compactionEntries).toHaveLength(1);
+    expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["threshold"]);
+    expect(harness.eventsOfType("compaction_end").map((event) => event.reason)).toEqual(["threshold"]);
+    expect(postCompactionPrompts).toHaveLength(2);
+    expect(postCompactionPrompts[1]?.startsWith(postCompactionPrompts[0] ?? "")).toBe(true);
+    expect(postCompactionPrompts[0]).toContain("authoritative working-state checkpoint after compaction");
+    const postCompactionAssistants = harness.session.messages.filter(
+      (message): message is AssistantMessage => message.role === "assistant" && message.timestamp > 0,
+    );
+    expect(postCompactionAssistants.at(-1)?.usage.cacheRead).toBeGreaterThan(0);
+  });
+
+  it("sends raw tool-result context to the provider before compaction without mutating session history", async () => {
+    const harness = await createPromptHarness({
+      models: [{ id: "large-context", contextWindow: 100_000, maxTokens: 1000 }],
+      settings: {
+        compaction: {
+          enabled: true,
+          triggerReserveTokens: 20_000,
+          triggerRatio: 0.95,
+          targetContextTokens: 4000,
+          keepRecentMinTokens: 500,
+          keepRecentMaxTokens: 1000,
+        },
+      },
+    });
+    harnesses.push(harness);
+    const hugeOutput = Array.from(
+      { length: 3000 },
+      (_, index) => `raw-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+    ).join("\n");
+    const rawToolResult: AgentMessage = {
+      role: "toolResult",
+      toolCallId: "call-read-huge",
+      toolName: "read",
+      content: [{ type: "text", text: hugeOutput }],
+      isError: false,
+      timestamp: Date.now() - 1000,
+    };
+    harness.session.agent.state.messages = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "inspect a large file" }],
+        timestamp: Date.now() - 3000,
+      },
+      rawToolResult,
+      {
+        role: "toolResult",
+        toolCallId: "call-read-small",
+        toolName: "read",
+        content: [{ type: "text", text: "small output" }],
+        isError: false,
+        timestamp: Date.now() - 500,
+      },
+    ];
+    let providerPromptText = "";
+    harness.setResponses([
+      (context) => {
+        providerPromptText = context.messages.map(getMessageText).join("\n");
+        return fauxAssistantMessage("bounded");
+      },
+    ]);
+
+    await harness.session.prompt("continue");
+
+    expect(providerPromptText).not.toContain("[Tool result stubbed");
+    expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-huge"');
+    expect(providerPromptText).toContain("raw-line-0100");
+    expect(getMessageText(rawToolResult)).toContain("raw-line-0000");
+  });
+
+  it("does not stub completed long tool results before compaction", async () => {
+    const harness = await createPromptHarness({
+      models: [{ id: "large-context", contextWindow: 65_536, maxTokens: 1000 }],
+      settings: {
+        compaction: {
+          enabled: true,
+          triggerReserveTokens: 16_384,
+          triggerRatio: 0.75,
+          targetContextTokens: 12_000,
+        },
+      },
+    });
+    harnesses.push(harness);
+    const longOutput = Array.from(
+      { length: 360 },
+      (_, index) => `doc-line-${index.toString().padStart(4, "0")} ${"x".repeat(80)}`,
+    ).join("\n");
+    const rawToolResult: AgentMessage = {
+      role: "toolResult",
+      toolCallId: "call-read-doc",
+      toolName: "read",
+      content: [{ type: "text", text: longOutput }],
+      isError: false,
+      timestamp: Date.now() - 1000,
+    };
+    harness.session.agent.state.messages = [
+      {
+        role: "user",
+        content: [{ type: "text", text: "read the architecture doc" }],
+        timestamp: Date.now() - 3000,
+      },
+      rawToolResult,
+      {
+        role: "toolResult",
+        toolCallId: "call-read-small",
+        toolName: "read",
+        content: [{ type: "text", text: "small output" }],
+        isError: false,
+        timestamp: Date.now() - 500,
+      },
+    ];
+    let providerPromptText = "";
+    harness.setResponses([
+      (context) => {
+        providerPromptText = context.messages.map(getMessageText).join("\n");
+        return fauxAssistantMessage("bounded");
+      },
+    ]);
+
+    await harness.session.prompt("continue");
+
+    expect(providerPromptText).not.toContain("[Tool result stubbed");
+    expect(providerPromptText).not.toContain('session_recall("tool-result:call-read-doc"');
+    expect(providerPromptText).toContain("doc-line-0100");
+    expect(getMessageText(rawToolResult)).toContain("doc-line-0000");
+  });
+
+  it("handles a tool call turn and waits for the follow-up LLM response", async () => {
+    const toolRuns: string[] = [];
+    const echoTool: AgentTool = {
+      name: "echo",
+      label: "Echo",
+      description: "Echo text back",
+      parameters: Type.Object({ text: Type.String() }),
+      execute: async (_toolCallId, params) => {
+        const text = typeof params === "object" && params !== null && "text" in params ? String(params.text) : "";
+        toolRuns.push(text);
+        return {
+          content: [{ type: "text", text: `echo:${text}` }],
+          details: { text },
+        };
+      },
+    };
+    const harness = await createPromptHarness({ tools: [echoTool] });
+    harnesses.push(harness);
+
+    harness.setResponses([
+      fauxAssistantMessage(fauxToolCall("echo", { text: "hello" }), {
+        stopReason: "toolUse",
+      }),
+      fauxAssistantMessage("done"),
+    ]);
+
+    await harness.session.prompt("start");
+
+    expect(toolRuns).toEqual(["hello"]);
+    expect(harness.session.messages.map((message) => message.role)).toEqual([
+      "user",
+      "assistant",
+      "toolResult",
+      "custom",
+      "assistant",
+    ]);
+    expect(harness.session.messages[2]?.role).toBe("toolResult");
+    expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
+    expect(harness.session.messages[4]?.role).toBe("assistant");
+  });
+
+  it("executes multiple tool calls from one response and continues with a single follow-up response", async () => {
+    const toolRuns: string[] = [];
+    const makeTool = (name: string, delayMs: number): AgentTool => ({
+      name,
+      label: name,
+      description: `${name} tool`,
+      parameters: Type.Object({ value: Type.String() }),
+      execute: async (_toolCallId, params) => {
+        const value = typeof params === "object" && params !== null && "value" in params ? String(params.value) : "";
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        toolRuns.push(`${name}:${value}`);
+        return {
+          content: [{ type: "text", text: `${name}:${value}` }],
+          details: { value },
+        };
+      },
+    });
+    const harness = await createPromptHarness({
+      tools: [makeTool("slow", 25), makeTool("fast", 0)],
+    });
+    harnesses.push(harness);
+
+    harness.setResponses([
+      fauxAssistantMessage([fauxToolCall("slow", { value: "a" }), fauxToolCall("fast", { value: "b" })], {
+        stopReason: "toolUse",
+      }),
+      (context) => {
+        const toolResults = context.messages.filter((message) => message.role === "toolResult");
+        return fauxAssistantMessage(`tool results: ${toolResults.length}`);
+      },
+    ]);
+
+    await harness.session.prompt("run tools");
+
+    expect(toolRuns.sort()).toEqual(["fast:b", "slow:a"]);
+    expect(harness.session.messages.filter((message) => message.role === "toolResult")).toHaveLength(2);
+    expect(harness.session.messages[harness.session.messages.length - 1]?.role).toBe("assistant");
+  });
+
+  it("preserves image attachments in the provider context", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    let sawImage = false;
+
+    harness.setResponses([
+      (context) => {
+        const user = context.messages.find((message) => message.role === "user");
+        sawImage =
+          user?.role === "user" &&
+          typeof user.content !== "string" &&
+          user.content.some((part) => part.type === "image");
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+
+    await harness.session.prompt("describe", {
+      images: [
+        {
+          type: "image",
+          mimeType: "image/png",
+          data: "ZmFrZQ==",
+        },
+      ],
+    });
+
+    expect(sawImage).toBe(true);
+  });
+
+  it("expands skill commands before sending the prompt", async () => {
+    const tempDir = join(tmpdir(), `pi-skill-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(tempDir, { recursive: true });
+    tempDirs.push(tempDir);
+    const skillPath = join(tempDir, "test-skill.md");
+    writeFileSync(skillPath, "# Test Skill\n\nUse the skill body.");
+
+    const resourceLoader = {
+      ...createTestResourceLoader(),
+      getSkills: () => ({
+        skills: [
+          {
+            name: "test",
+            description: "Test skill",
+            filePath: skillPath,
+            disableModelInvocation: false,
+            baseDir: tempDir,
+            sourceInfo: createSyntheticSourceInfo(skillPath, {
+              source: "local",
+              scope: "project",
+              origin: "top-level",
+              baseDir: tempDir,
+            }),
+          },
+        ],
+        diagnostics: [],
+      }),
+    };
+    const harness = await createPromptHarness({ resourceLoader });
+    harnesses.push(harness);
+    let expandedPrompt = "";
+
+    harness.setResponses([
+      (context) => {
+        const user = context.messages.find((message) => message.role === "user");
+        expandedPrompt = user ? getMessageText(user) : "";
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+
+    await harness.session.prompt("/skill:test explain this");
+
+    expect(expandedPrompt).toContain('<skill name="test" location="');
+    expect(expandedPrompt).toContain("Use the skill body.");
+    expect(expandedPrompt).toContain("explain this");
+  });
+
+  it("expands prompt templates before sending the prompt", async () => {
+    const template: PromptTemplate = {
+      name: "review",
+      description: "Review template",
+      content: "Review this code: $1",
+      filePath: "/virtual/review.md",
+      sourceInfo: createSyntheticSourceInfo("/virtual/review.md", {
+        source: "local",
+        scope: "temporary",
+        origin: "top-level",
+      }),
+    };
+    const resourceLoader = {
+      ...createTestResourceLoader(),
+      getPrompts: () => ({ prompts: [template], diagnostics: [] }),
+    };
+    const harness = await createPromptHarness({ resourceLoader });
+    harnesses.push(harness);
+    let expandedPrompt = "";
+
+    harness.setResponses([
+      (context) => {
+        const user = context.messages.find((message) => message.role === "user");
+        expandedPrompt = user ? getMessageText(user) : "";
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+
+    await harness.session.prompt("/review src/index.ts");
+
+    expect(expandedPrompt).toBe("Review this code: src/index.ts");
+  });
+
+  it("dispatches extension commands without consuming a provider response", async () => {
+    const commandRuns: string[] = [];
+    const harness = await createPromptHarness({
+      extensionFactories: [
+        (pi) => {
+          pi.registerCommand("testcmd", {
+            description: "Test command",
+            handler: async (args) => {
+              commandRuns.push(args);
+            },
+          });
+        },
+      ],
+    });
+    harnesses.push(harness);
+    harness.setResponses([fauxAssistantMessage("should stay queued")]);
+
+    await harness.session.prompt("/testcmd hello world");
+
+    expect(commandRuns).toEqual(["hello world"]);
+    expect(harness.session.messages).toEqual([]);
+    expect(harness.getPendingResponseCount()).toBe(1);
+  });
+
+  it("sendUserMessage while idle triggers a turn", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+
+    harness.setResponses([fauxAssistantMessage("response")]);
+
+    await harness.session.sendUserMessage("from extension");
+
+    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(getMessageText(harness.session.messages[0]!)).toBe("from extension");
+  });
+
+  it("does not report streamingBehavior to input handlers while idle", async () => {
+    const inputEvents: InputEvent[] = [];
+    const harness = await createPromptHarness({
+      extensionFactories: [
+        (pi) => {
+          pi.on("input", (event) => {
+            inputEvents.push(event);
+          });
+        },
+      ],
+    });
+    harnesses.push(harness);
+    harness.setResponses([fauxAssistantMessage("ok")]);
+
+    await harness.session.prompt("idle", { streamingBehavior: "followUp" });
+
+    expect(inputEvents).toHaveLength(1);
+    expect(inputEvents[0]?.streamingBehavior).toBeUndefined();
+  });
+
+  it("reports streamingBehavior to input handlers while streaming", async () => {
+    let releaseToolExecution: (() => void) | undefined;
+    const toolRelease = new Promise<void>((resolve) => {
+      releaseToolExecution = resolve;
+    });
+    const inputEvents: InputEvent[] = [];
+    const waitTool: AgentTool = {
+      name: "wait",
+      label: "Wait",
+      description: "Wait for release",
+      parameters: Type.Object({}),
+      execute: async () => {
+        await toolRelease;
+        return {
+          content: [{ type: "text", text: "released" }],
+          details: {},
+        };
+      },
+    };
+    const harness = await createPromptHarness({
+      tools: [waitTool],
+      extensionFactories: [
+        (pi) => {
+          pi.on("input", (event) => {
+            inputEvents.push(event);
+          });
+        },
+      ],
+    });
+    harnesses.push(harness);
+    harness.setResponses([
+      fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const sawToolStart = new Promise<void>((resolve) => {
+      const unsubscribe = harness.session.subscribe((event) => {
+        if (event.type === "tool_execution_start") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    const promptPromise = harness.session.prompt("start");
+    await sawToolStart;
+    await harness.session.prompt("queued", { streamingBehavior: "followUp" });
+
+    expect(inputEvents.map((event) => event.streamingBehavior)).toEqual([undefined, "followUp"]);
+
+    releaseToolExecution?.();
+    await promptPromise;
+  });
+
+  it("throws when prompted during streaming without a streamingBehavior", async () => {
+    let releaseToolExecution: (() => void) | undefined;
+    const toolRelease = new Promise<void>((resolve) => {
+      releaseToolExecution = resolve;
+    });
+    const waitTool: AgentTool = {
+      name: "wait",
+      label: "Wait",
+      description: "Wait for release",
+      parameters: Type.Object({}),
+      execute: async () => {
+        await toolRelease;
+        return {
+          content: [{ type: "text", text: "released" }],
+          details: {},
+        };
+      },
+    };
+    const harness = await createPromptHarness({ tools: [waitTool] });
+    harnesses.push(harness);
+    harness.setResponses([
+      fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
+      fauxAssistantMessage("done"),
+    ]);
+
+    const sawToolStart = new Promise<void>((resolve) => {
+      const unsubscribe = harness.session.subscribe((event) => {
+        if (event.type === "tool_execution_start") {
+          unsubscribe();
+          resolve();
+        }
+      });
+    });
+
+    const promptPromise = harness.session.prompt("start");
+    await sawToolStart;
+
+    await expect(harness.session.prompt("second")).rejects.toThrow(
+      "Agent is already processing. Specify streamingBehavior ('steer' or 'followUp') to queue the message.",
+    );
+
+    releaseToolExecution?.();
+    await promptPromise;
+  });
+
+  it("throws when prompting without a model", async () => {
+    const harness = await createPromptHarness();
+    harnesses.push(harness);
+    harness.session.agent.state.model = undefined as unknown as Model<any>;
+
+    await expect(harness.session.prompt("hi")).rejects.toThrow("No model selected.");
+  });
+
+  it("throws when prompting without configured auth", async () => {
+    const harness = await createPromptHarness({ withConfiguredAuth: false });
+    harnesses.push(harness);
+
+    await expect(harness.session.prompt("hi")).rejects.toThrow(`No API key found for ${harness.getModel().provider}.`);
+  });
 });

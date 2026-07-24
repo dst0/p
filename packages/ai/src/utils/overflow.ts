@@ -34,30 +34,30 @@ import type { AssistantMessage } from "../types.ts";
  * - Ollama: Some deployments truncate silently, others return errors like "prompt too long; exceeded max context length by X tokens"
  */
 const OVERFLOW_PATTERNS = [
-	/prompt is too long/i, // Anthropic token overflow
-	/request_too_large/i, // Anthropic request byte-size overflow (HTTP 413)
-	/input is too long for requested model/i, // Amazon Bedrock
-	/exceeds the context window/i, // OpenAI (Completions & Responses API)
-	/exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))/i, // OpenAI-compatible proxies (LiteLLM)
-	/input token count.*exceeds the maximum/i, // Google (Gemini)
-	/maximum prompt length is \d+/i, // xAI (Grok)
-	/reduce the length of the messages/i, // Groq
-	/maximum context length is \d+ tokens/i, // OpenRouter (most backends)
-	/exceeds (?:the )?maximum allowed input length of [\d,]+ tokens?/i, // OpenRouter/Poolside
-	/input \(\d+ tokens\) is longer than the model'?s context length \(\d+ tokens\)/i, // Together AI
-	/exceeds the limit of \d+/i, // GitHub Copilot
-	/exceeds the available context size/i, // llama.cpp server
-	/invalid input batch/i, // llama.cpp/OpenAI-compatible oversized prompt batch
-	/greater than the context length/i, // LM Studio
-	/context window exceeds limit/i, // MiniMax
-	/exceeded model token limit/i, // Kimi For Coding
-	/too large for model with \d+ maximum context length/i, // Mistral
-	/model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
-	/prompt too long; exceeded (?:max )?context length/i, // Ollama explicit overflow error
-	/context[_ ]length[_ ]exceeded/i, // Generic fallback
-	/too many tokens/i, // Generic fallback
-	/token limit exceeded/i, // Generic fallback
-	/^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i, // Cerebras: 400/413 with no body
+  /prompt is too long/i, // Anthropic token overflow
+  /request_too_large/i, // Anthropic request byte-size overflow (HTTP 413)
+  /input is too long for requested model/i, // Amazon Bedrock
+  /exceeds the context window/i, // OpenAI (Completions & Responses API)
+  /exceeds (?:the )?(?:model'?s )?maximum context length(?: of [\d,]+ tokens?|\s*\([\d,]+\))/i, // OpenAI-compatible proxies (LiteLLM)
+  /input token count.*exceeds the maximum/i, // Google (Gemini)
+  /maximum prompt length is \d+/i, // xAI (Grok)
+  /reduce the length of the messages/i, // Groq
+  /maximum context length is \d+ tokens/i, // OpenRouter (most backends)
+  /exceeds (?:the )?maximum allowed input length of [\d,]+ tokens?/i, // OpenRouter/Poolside
+  /input \(\d+ tokens\) is longer than the model'?s context length \(\d+ tokens\)/i, // Together AI
+  /exceeds the limit of \d+/i, // GitHub Copilot
+  /exceeds the available context size/i, // llama.cpp server
+  /invalid input batch/i, // llama.cpp/OpenAI-compatible oversized prompt batch
+  /greater than the context length/i, // LM Studio
+  /context window exceeds limit/i, // MiniMax
+  /exceeded model token limit/i, // Kimi For Coding
+  /too large for model with \d+ maximum context length/i, // Mistral
+  /model_context_window_exceeded/i, // z.ai non-standard finish_reason surfaced as error text
+  /prompt too long; exceeded (?:max )?context length/i, // Ollama explicit overflow error
+  /context[_ ]length[_ ]exceeded/i, // Generic fallback
+  /too many tokens/i, // Generic fallback
+  /token limit exceeded/i, // Generic fallback
+  /^4(?:00|13)\s*(?:status code)?\s*\(no body\)/i, // Cerebras: 400/413 with no body
 ];
 
 // Optimization: Combining patterns into a single Regex reduces overhead in tight evaluation loops compared to iterating .some()
@@ -73,9 +73,9 @@ const OVERFLOW_REGEX = new RegExp(OVERFLOW_PATTERNS.map((p) => p.source).join("|
  * pattern without this exclusion.
  */
 const NON_OVERFLOW_PATTERNS = [
-	/^(Throttling error|Service unavailable):/i, // AWS Bedrock non-overflow errors (human-readable prefixes from formatBedrockError)
-	/rate limit/i, // Generic rate limiting
-	/too many requests/i, // Generic HTTP 429 style
+  /^(Throttling error|Service unavailable):/i, // AWS Bedrock non-overflow errors (human-readable prefixes from formatBedrockError)
+  /rate limit/i, // Generic rate limiting
+  /too many requests/i, // Generic HTTP 429 style
 ];
 
 // Optimization: Combining patterns into a single Regex reduces overhead in tight evaluation loops compared to iterating .some()
@@ -132,39 +132,39 @@ const NON_OVERFLOW_REGEX = new RegExp(NON_OVERFLOW_PATTERNS.map((p) => p.source)
  * @returns true if the message indicates a context overflow
  */
 export function isContextOverflow(message: AssistantMessage, contextWindow?: number): boolean {
-	// Case 1: Check error message patterns
-	if (message.stopReason === "error" && message.errorMessage) {
-		// Skip messages matching known non-overflow patterns (e.g. throttling / rate-limit)
-		const isNonOverflow = NON_OVERFLOW_REGEX.test(message.errorMessage!);
-		if (!isNonOverflow && OVERFLOW_REGEX.test(message.errorMessage!)) {
-			return true;
-		}
-	}
+  // Case 1: Check error message patterns
+  if (message.stopReason === "error" && message.errorMessage) {
+    // Skip messages matching known non-overflow patterns (e.g. throttling / rate-limit)
+    const isNonOverflow = NON_OVERFLOW_REGEX.test(message.errorMessage!);
+    if (!isNonOverflow && OVERFLOW_REGEX.test(message.errorMessage!)) {
+      return true;
+    }
+  }
 
-	// Case 2: Silent overflow (z.ai style) - successful but usage exceeds context
-	if (contextWindow && message.stopReason === "stop") {
-		const inputTokens = message.usage.input + message.usage.cacheRead;
-		if (inputTokens > contextWindow) {
-			return true;
-		}
-	}
+  // Case 2: Silent overflow (z.ai style) - successful but usage exceeds context
+  if (contextWindow && message.stopReason === "stop") {
+    const inputTokens = message.usage.input + message.usage.cacheRead;
+    if (inputTokens > contextWindow) {
+      return true;
+    }
+  }
 
-	// Case 3: Length-stop overflow (Xiaomi MiMo style) - server truncates oversized input
-	// to fit the context window, leaving no room for output. Returns stopReason "length"
-	// with output=0 and input+cacheRead filling the context window.
-	if (contextWindow && message.stopReason === "length" && message.usage.output === 0) {
-		const inputTokens = message.usage.input + message.usage.cacheRead;
-		if (inputTokens >= contextWindow * 0.99) {
-			return true;
-		}
-	}
+  // Case 3: Length-stop overflow (Xiaomi MiMo style) - server truncates oversized input
+  // to fit the context window, leaving no room for output. Returns stopReason "length"
+  // with output=0 and input+cacheRead filling the context window.
+  if (contextWindow && message.stopReason === "length" && message.usage.output === 0) {
+    const inputTokens = message.usage.input + message.usage.cacheRead;
+    if (inputTokens >= contextWindow * 0.99) {
+      return true;
+    }
+  }
 
-	return false;
+  return false;
 }
 
 /**
  * Get the overflow patterns for testing purposes.
  */
 export function getOverflowPatterns(): RegExp[] {
-	return [...OVERFLOW_PATTERNS];
+  return [...OVERFLOW_PATTERNS];
 }

@@ -10,7 +10,7 @@ const STATE_FILE_EXT = ".json";
  * Resolve the per-session state file path: .pdev/state/<sessionId>.json
  */
 export function getSessionStateFilePath(cwd: string, sessionId: string): string {
-	return join(cwd, STATE_DIR, `${sessionId}${STATE_FILE_EXT}`);
+  return join(cwd, STATE_DIR, `${sessionId}${STATE_FILE_EXT}`);
 }
 
 /**
@@ -18,18 +18,18 @@ export function getSessionStateFilePath(cwd: string, sessionId: string): string 
  * Returns undefined if the file does not exist or contains invalid JSON.
  */
 export function readSessionStateFile(cwd: string, sessionId: string): StructuredSessionState | undefined {
-	const path = getSessionStateFilePath(cwd, sessionId);
-	if (!existsSync(path)) return undefined;
-	try {
-		const raw = readFileSync(path, "utf8");
-		const parsed = JSON.parse(raw);
-		if (isStructuredSessionState(parsed)) {
-			return sanitizeStructuredSessionState(parsed);
-		}
-		return undefined;
-	} catch {
-		return undefined;
-	}
+  const path = getSessionStateFilePath(cwd, sessionId);
+  if (!existsSync(path)) return undefined;
+  try {
+    const raw = readFileSync(path, "utf8");
+    const parsed = JSON.parse(raw);
+    if (isStructuredSessionState(parsed)) {
+      return sanitizeStructuredSessionState(parsed);
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /**
@@ -37,24 +37,24 @@ export function readSessionStateFile(cwd: string, sessionId: string): Structured
  * Creates the .pdev/state directory if it does not exist.
  */
 export function writeSessionStateFile(cwd: string, state: StructuredSessionState): void {
-	const sanitizedState = sanitizeStructuredSessionState(state);
-	const path = getSessionStateFilePath(cwd, sanitizedState.sessionId);
-	mkdirSync(join(cwd, STATE_DIR), { recursive: true });
-	writeFileSync(path, `${JSON.stringify(sanitizedState, undefined, 2)}\n`);
+  const sanitizedState = sanitizeStructuredSessionState(state);
+  const path = getSessionStateFilePath(cwd, sanitizedState.sessionId);
+  mkdirSync(join(cwd, STATE_DIR), { recursive: true });
+  writeFileSync(path, `${JSON.stringify(sanitizedState, undefined, 2)}\n`);
 }
 
 /**
  * Type guard for StructuredSessionState from raw JSON.
  */
 function isStructuredSessionState(value: unknown): value is StructuredSessionState {
-	if (!value || typeof value !== "object") return false;
-	const obj = value as Record<string, unknown>;
-	const audit = obj.audit as Record<string, unknown> | undefined;
-	return (
-		typeof obj.version === "number" &&
-		typeof obj.sessionId === "string" &&
-		typeof obj.canonicalRequest === "object" &&
-		Array.isArray(obj.plan) &&
-		Array.isArray(audit?.knownRisks)
-	);
+  if (!value || typeof value !== "object") return false;
+  const obj = value as Record<string, unknown>;
+  const audit = obj.audit as Record<string, unknown> | undefined;
+  return (
+    typeof obj.version === "number" &&
+    typeof obj.sessionId === "string" &&
+    typeof obj.canonicalRequest === "object" &&
+    Array.isArray(obj.plan) &&
+    Array.isArray(audit?.knownRisks)
+  );
 }

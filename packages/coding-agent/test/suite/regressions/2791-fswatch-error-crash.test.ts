@@ -20,36 +20,36 @@ import { ENV_AGENT_DIR } from "../../../src/config.ts";
  * 5. If the watcher has an error handler -> clean exit (exit 0) -> bug fixed
  */
 describe("issue #2791 fs.watch error event crashes process", () => {
-	let tempRoot: string;
+  let tempRoot: string;
 
-	beforeEach(() => {
-		tempRoot = mkdtempSync(join(tmpdir(), "pi-2791-"));
-		const agentDir = join(tempRoot, "agent");
-		const themesDir = join(agentDir, "themes");
-		mkdirSync(themesDir, { recursive: true });
+  beforeEach(() => {
+    tempRoot = mkdtempSync(join(tmpdir(), "pi-2791-"));
+    const agentDir = join(tempRoot, "agent");
+    const themesDir = join(agentDir, "themes");
+    mkdirSync(themesDir, { recursive: true });
 
-		// Copy dark.json as "custom-test" theme
-		const darkThemePath = join(__dirname, "../../../src/modes/interactive/theme/dark.json");
-		const darkTheme = JSON.parse(readFileSync(darkThemePath, "utf-8"));
-		darkTheme.name = "custom-test";
-		writeFileSync(join(themesDir, "custom-test.json"), JSON.stringify(darkTheme, null, 2));
-	});
+    // Copy dark.json as "custom-test" theme
+    const darkThemePath = join(__dirname, "../../../src/modes/interactive/theme/dark.json");
+    const darkTheme = JSON.parse(readFileSync(darkThemePath, "utf-8"));
+    darkTheme.name = "custom-test";
+    writeFileSync(join(themesDir, "custom-test.json"), JSON.stringify(darkTheme, null, 2));
+  });
 
-	afterEach(() => {
-		rmSync(tempRoot, { recursive: true, force: true });
-	});
+  afterEach(() => {
+    rmSync(tempRoot, { recursive: true, force: true });
+  });
 
-	it("process should survive an error event on the theme FSWatcher", () => {
-		const themeModulePath = join(__dirname, "../../../src/modes/interactive/theme/theme.ts").replace(/\\/g, "/");
-		const agentDir = join(tempRoot, "agent").replace(/\\/g, "/");
+  it("process should survive an error event on the theme FSWatcher", () => {
+    const themeModulePath = join(__dirname, "../../../src/modes/interactive/theme/theme.ts").replace(/\\/g, "/");
+    const agentDir = join(tempRoot, "agent").replace(/\\/g, "/");
 
-		// Script that sets up the watcher and emits a synthetic error on it.
-		// If no .on('error') handler is attached, EventEmitter.emit('error')
-		// throws, which either crashes the process or gets caught by our try/catch.
-		const scriptPath = join(tempRoot, "test-watcher-error.mts");
-		writeFileSync(
-			scriptPath,
-			`
+    // Script that sets up the watcher and emits a synthetic error on it.
+    // If no .on('error') handler is attached, EventEmitter.emit('error')
+    // throws, which either crashes the process or gets caught by our try/catch.
+    const scriptPath = join(tempRoot, "test-watcher-error.mts");
+    writeFileSync(
+      scriptPath,
+      `
 import { setTheme, stopThemeWatcher } from "${themeModulePath}";
 
 process.env.${ENV_AGENT_DIR} = "${agentDir}";
@@ -82,26 +82,26 @@ try {
 stopThemeWatcher();
 process.exit(0);
 `,
-		);
+    );
 
-		let _stdout = "";
-		let stderr = "";
-		let exitCode: number;
-		try {
-			_stdout = execFileSync(process.execPath, [scriptPath], {
-				timeout: 10000,
-				encoding: "utf-8",
-				env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
-				stdio: ["pipe", "pipe", "pipe"],
-			});
-			exitCode = 0;
-		} catch (err: unknown) {
-			const e = err as { status: number; stdout: string; stderr: string };
-			_stdout = e.stdout ?? "";
-			stderr = e.stderr ?? "";
-			exitCode = e.status ?? 1;
-		}
+    let _stdout = "";
+    let stderr = "";
+    let exitCode: number;
+    try {
+      _stdout = execFileSync(process.execPath, [scriptPath], {
+        timeout: 10000,
+        encoding: "utf-8",
+        env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
+        stdio: ["pipe", "pipe", "pipe"],
+      });
+      exitCode = 0;
+    } catch (err: unknown) {
+      const e = err as { status: number; stdout: string; stderr: string };
+      _stdout = e.stdout ?? "";
+      stderr = e.stderr ?? "";
+      exitCode = e.status ?? 1;
+    }
 
-		expect(exitCode, `Child crashed (exit ${exitCode}). stderr: ${stderr.trim()}`).toBe(0);
-	});
+    expect(exitCode, `Child crashed (exit ${exitCode}). stderr: ${stderr.trim()}`).toBe(0);
+  });
 });

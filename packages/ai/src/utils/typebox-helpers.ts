@@ -12,13 +12,13 @@ import { type TUnsafe, Type } from "typebox";
  * type Operation = Static<typeof OperationSchema>; // "add" | "subtract" | "multiply" | "divide"
  */
 export function StringEnum<T extends readonly string[]>(
-	values: T,
-	options?: { description?: string; default?: T[number] },
+  values: T,
+  options?: { description?: string; default?: T[number] },
 ): TUnsafe<T[number]> {
-	return Type.Unsafe<T[number]>({
-		type: "string",
-		enum: values as any,
-		...(options?.description && { description: options.description }),
-		...(options?.default && { default: options.default }),
-	});
+  return Type.Unsafe<T[number]>({
+    type: "string",
+    enum: values as any,
+    ...(options?.description && { description: options.description }),
+    ...(options?.default && { default: options.default }),
+  });
 }

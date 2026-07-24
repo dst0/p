@@ -10,154 +10,154 @@ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
  * Component that renders a complete assistant message
  */
 export class AssistantMessageComponent extends Container {
-	private contentContainer: Container;
-	private hideThinkingBlock: boolean;
-	private markdownTheme: MarkdownTheme;
-	private hiddenThinkingLabel: string;
-	private lastMessage?: AssistantMessage;
-	private hasToolCalls = false;
+  private contentContainer: Container;
+  private hideThinkingBlock: boolean;
+  private markdownTheme: MarkdownTheme;
+  private hiddenThinkingLabel: string;
+  private lastMessage?: AssistantMessage;
+  private hasToolCalls = false;
 
-	constructor(
-		message?: AssistantMessage,
-		hideThinkingBlock = false,
-		markdownTheme: MarkdownTheme = getMarkdownTheme(),
-		hiddenThinkingLabel = "Thinking...",
-	) {
-		super();
+  constructor(
+    message?: AssistantMessage,
+    hideThinkingBlock = false,
+    markdownTheme: MarkdownTheme = getMarkdownTheme(),
+    hiddenThinkingLabel = "Thinking...",
+  ) {
+    super();
 
-		this.hideThinkingBlock = hideThinkingBlock;
-		this.markdownTheme = markdownTheme;
-		this.hiddenThinkingLabel = hiddenThinkingLabel;
+    this.hideThinkingBlock = hideThinkingBlock;
+    this.markdownTheme = markdownTheme;
+    this.hiddenThinkingLabel = hiddenThinkingLabel;
 
-		// Container for text/thinking content
-		this.contentContainer = new Container();
-		this.addChild(this.contentContainer);
+    // Container for text/thinking content
+    this.contentContainer = new Container();
+    this.addChild(this.contentContainer);
 
-		if (message) {
-			this.updateContent(message);
-		}
-	}
+    if (message) {
+      this.updateContent(message);
+    }
+  }
 
-	override invalidate(): void {
-		super.invalidate();
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
-	}
+  override invalidate(): void {
+    super.invalidate();
+    if (this.lastMessage) {
+      this.updateContent(this.lastMessage);
+    }
+  }
 
-	setHideThinkingBlock(hide: boolean): void {
-		this.hideThinkingBlock = hide;
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
-	}
+  setHideThinkingBlock(hide: boolean): void {
+    this.hideThinkingBlock = hide;
+    if (this.lastMessage) {
+      this.updateContent(this.lastMessage);
+    }
+  }
 
-	setHiddenThinkingLabel(label: string): void {
-		this.hiddenThinkingLabel = label;
-		if (this.lastMessage) {
-			this.updateContent(this.lastMessage);
-		}
-	}
+  setHiddenThinkingLabel(label: string): void {
+    this.hiddenThinkingLabel = label;
+    if (this.lastMessage) {
+      this.updateContent(this.lastMessage);
+    }
+  }
 
-	override render(width: number): string[] {
-		const lines = super.render(width);
-		if (this.hasToolCalls || lines.length === 0) {
-			return lines;
-		}
+  override render(width: number): string[] {
+    const lines = super.render(width);
+    if (this.hasToolCalls || lines.length === 0) {
+      return lines;
+    }
 
-		lines[0] = OSC133_ZONE_START + lines[0];
-		lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
-		return lines;
-	}
+    lines[0] = OSC133_ZONE_START + lines[0];
+    lines[lines.length - 1] = OSC133_ZONE_END + OSC133_ZONE_FINAL + lines[lines.length - 1];
+    return lines;
+  }
 
-	updateContent(message: AssistantMessage): void {
-		this.lastMessage = message;
+  updateContent(message: AssistantMessage): void {
+    this.lastMessage = message;
 
-		// Clear content container
-		this.contentContainer.clear();
+    // Clear content container
+    this.contentContainer.clear();
 
-		let hasVisibleContent = false;
-		for (let i = 0; i < message.content.length; i++) {
-			const c = message.content[i];
-			if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
-				hasVisibleContent = true;
-				break;
-			}
-		}
+    let hasVisibleContent = false;
+    for (let i = 0; i < message.content.length; i++) {
+      const c = message.content[i];
+      if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
+        hasVisibleContent = true;
+        break;
+      }
+    }
 
-		if (hasVisibleContent) {
-			this.contentContainer.addChild(new Spacer(1));
-		}
+    if (hasVisibleContent) {
+      this.contentContainer.addChild(new Spacer(1));
+    }
 
-		// Render content in order
-		for (let i = 0; i < message.content.length; i++) {
-			const content = message.content[i];
-			if (content.type === "text" && content.text.trim()) {
-				// Assistant text messages with no background - trim the text
-				// Set paddingY=0 to avoid extra spacing before tool executions
-				this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
-			} else if (content.type === "thinking" && content.thinking.trim()) {
-				// Add spacing only when another visible assistant content block follows.
-				// This avoids a superfluous blank line before separately-rendered tool execution blocks.
-				let hasVisibleContentAfter = false;
-				for (let j = i + 1; j < message.content.length; j++) {
-					const c = message.content[j];
-					if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
-						hasVisibleContentAfter = true;
-						break;
-					}
-				}
+    // Render content in order
+    for (let i = 0; i < message.content.length; i++) {
+      const content = message.content[i];
+      if (content.type === "text" && content.text.trim()) {
+        // Assistant text messages with no background - trim the text
+        // Set paddingY=0 to avoid extra spacing before tool executions
+        this.contentContainer.addChild(new Markdown(content.text.trim(), 1, 0, this.markdownTheme));
+      } else if (content.type === "thinking" && content.thinking.trim()) {
+        // Add spacing only when another visible assistant content block follows.
+        // This avoids a superfluous blank line before separately-rendered tool execution blocks.
+        let hasVisibleContentAfter = false;
+        for (let j = i + 1; j < message.content.length; j++) {
+          const c = message.content[j];
+          if ((c.type === "text" && c.text.trim()) || (c.type === "thinking" && c.thinking.trim())) {
+            hasVisibleContentAfter = true;
+            break;
+          }
+        }
 
-				if (this.hideThinkingBlock) {
-					// Show static thinking label when hidden
-					this.contentContainer.addChild(
-						new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
-				} else {
-					// Thinking traces in thinkingText color, italic
-					this.contentContainer.addChild(
-						new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
-							color: (text: string) => theme.fg("thinkingText", text),
-							italic: true,
-						}),
-					);
-					if (hasVisibleContentAfter) {
-						this.contentContainer.addChild(new Spacer(1));
-					}
-				}
-			}
-		}
+        if (this.hideThinkingBlock) {
+          // Show static thinking label when hidden
+          this.contentContainer.addChild(
+            new Text(theme.italic(theme.fg("thinkingText", this.hiddenThinkingLabel)), 1, 0),
+          );
+          if (hasVisibleContentAfter) {
+            this.contentContainer.addChild(new Spacer(1));
+          }
+        } else {
+          // Thinking traces in thinkingText color, italic
+          this.contentContainer.addChild(
+            new Markdown(content.thinking.trim(), 1, 0, this.markdownTheme, {
+              color: (text: string) => theme.fg("thinkingText", text),
+              italic: true,
+            }),
+          );
+          if (hasVisibleContentAfter) {
+            this.contentContainer.addChild(new Spacer(1));
+          }
+        }
+      }
+    }
 
-		// Check if aborted - show after partial content
-		// But only if there are no tool calls (tool execution components will show the error)
-		let hasToolCalls = false;
-		for (let i = 0; i < message.content.length; i++) {
-			if (message.content[i].type === "toolCall") {
-				hasToolCalls = true;
-				break;
-			}
-		}
-		this.hasToolCalls = hasToolCalls;
-		if (!hasToolCalls) {
-			if (message.stopReason === "aborted") {
-				const abortMessage =
-					message.errorMessage && message.errorMessage !== "Request was aborted"
-						? message.errorMessage
-						: "Operation aborted";
-				if (hasVisibleContent) {
-					this.contentContainer.addChild(new Spacer(1));
-				} else {
-					this.contentContainer.addChild(new Spacer(1));
-				}
-				this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), 1, 0));
-			} else if (message.stopReason === "error") {
-				const errorMsg = message.errorMessage || "Unknown error";
-				this.contentContainer.addChild(new Spacer(1));
-				this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
-			}
-		}
-	}
+    // Check if aborted - show after partial content
+    // But only if there are no tool calls (tool execution components will show the error)
+    let hasToolCalls = false;
+    for (let i = 0; i < message.content.length; i++) {
+      if (message.content[i].type === "toolCall") {
+        hasToolCalls = true;
+        break;
+      }
+    }
+    this.hasToolCalls = hasToolCalls;
+    if (!hasToolCalls) {
+      if (message.stopReason === "aborted") {
+        const abortMessage =
+          message.errorMessage && message.errorMessage !== "Request was aborted"
+            ? message.errorMessage
+            : "Operation aborted";
+        if (hasVisibleContent) {
+          this.contentContainer.addChild(new Spacer(1));
+        } else {
+          this.contentContainer.addChild(new Spacer(1));
+        }
+        this.contentContainer.addChild(new Text(theme.fg("error", abortMessage), 1, 0));
+      } else if (message.stopReason === "error") {
+        const errorMsg = message.errorMessage || "Unknown error";
+        this.contentContainer.addChild(new Spacer(1));
+        this.contentContainer.addChild(new Text(theme.fg("error", `Error: ${errorMsg}`), 1, 0));
+      }
+    }
+  }
 }

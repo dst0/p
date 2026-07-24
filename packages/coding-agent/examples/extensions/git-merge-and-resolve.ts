@@ -17,99 +17,99 @@ import { createInterface } from "node:readline";
 import type { ExtensionAPI } from "@dst0/p";
 
 interface ConflictBlock {
-	file: string;
-	startLine: number;
-	separatorLine: number;
-	endLine: number;
+  file: string;
+  startLine: number;
+  separatorLine: number;
+  endLine: number;
 }
 
 /** Parse conflict markers from working tree files with unmerged paths. */
 async function findConflicts(p: ExtensionAPI, cwd: string): Promise<ConflictBlock[]> {
-	const { stdout, code } = await p.exec("git", ["diff", "--name-only", "--diff-filter=U"]);
-	if (code !== 0 || !stdout.trim()) return [];
+  const { stdout, code } = await p.exec("git", ["diff", "--name-only", "--diff-filter=U"]);
+  if (code !== 0 || !stdout.trim()) return [];
 
-	const blocks: ConflictBlock[] = [];
-	for (const file of stdout.trim().split("\n")) {
-		try {
-			const rl = createInterface({ input: createReadStream(join(cwd, file), "utf-8") });
-			let lineNo = 0;
-			let blockStart: number | undefined;
-			let separatorLine: number | undefined;
-			for await (const line of rl) {
-				lineNo++;
-				if (line.startsWith("<<<<<<<")) {
-					blockStart = lineNo;
-					separatorLine = undefined;
-				} else if (line.startsWith("=======") && blockStart !== undefined) {
-					separatorLine = lineNo;
-				} else if (line.startsWith(">>>>>>>") && blockStart !== undefined && separatorLine !== undefined) {
-					blocks.push({ file, startLine: blockStart, separatorLine, endLine: lineNo });
-					blockStart = undefined;
-					separatorLine = undefined;
-				}
-			}
-		} catch {}
-	}
-	return blocks;
+  const blocks: ConflictBlock[] = [];
+  for (const file of stdout.trim().split("\n")) {
+    try {
+      const rl = createInterface({ input: createReadStream(join(cwd, file), "utf-8") });
+      let lineNo = 0;
+      let blockStart: number | undefined;
+      let separatorLine: number | undefined;
+      for await (const line of rl) {
+        lineNo++;
+        if (line.startsWith("<<<<<<<")) {
+          blockStart = lineNo;
+          separatorLine = undefined;
+        } else if (line.startsWith("=======") && blockStart !== undefined) {
+          separatorLine = lineNo;
+        } else if (line.startsWith(">>>>>>>") && blockStart !== undefined && separatorLine !== undefined) {
+          blocks.push({ file, startLine: blockStart, separatorLine, endLine: lineNo });
+          blockStart = undefined;
+          separatorLine = undefined;
+        }
+      }
+    } catch {}
+  }
+  return blocks;
 }
 
 function formatRange(start: number, end: number): string {
-	if (start > end) return "empty";
-	if (start === end) return `${start}`;
-	return `${start}-${end}`;
+  if (start > end) return "empty";
+  if (start === end) return `${start}`;
+  return `${start}-${end}`;
 }
 
 function formatConflicts(ref: string, blocks: ConflictBlock[]): string {
-	const lines = [`Merged ${ref} with conflicts:`, ""];
-	for (const b of blocks) {
-		const ours = formatRange(b.startLine + 1, b.separatorLine - 1);
-		const theirs = formatRange(b.separatorLine + 1, b.endLine - 1);
-		lines.push(`  ${b.file}:${b.startLine}-${b.endLine} (ours ${ours}, theirs ${theirs})`);
-	}
-	lines.push("", "Resolve these conflicts.");
-	return lines.join("\n");
+  const lines = [`Merged ${ref} with conflicts:`, ""];
+  for (const b of blocks) {
+    const ours = formatRange(b.startLine + 1, b.separatorLine - 1);
+    const theirs = formatRange(b.separatorLine + 1, b.endLine - 1);
+    lines.push(`  ${b.file}:${b.startLine}-${b.endLine} (ours ${ours}, theirs ${theirs})`);
+  }
+  lines.push("", "Resolve these conflicts.");
+  return lines.join("\n");
 }
 
 export default function (p: ExtensionAPI) {
-	p.on("agent_end", async (_event, ctx) => {
-		const { code: revParseCode } = await p.exec("git", ["rev-parse", "--git-dir"]);
-		if (revParseCode !== 0) return;
+  p.on("agent_end", async (_event, ctx) => {
+    const { code: revParseCode } = await p.exec("git", ["rev-parse", "--git-dir"]);
+    if (revParseCode !== 0) return;
 
-		let ref = "MERGE_HEAD";
+    let ref = "MERGE_HEAD";
 
-		// If not already in a merge, attempt one
-		const { code: mergeHeadCode } = await p.exec("git", ["rev-parse", "MERGE_HEAD"]);
-		if (mergeHeadCode !== 0) {
-			// Only attempt a new merge if the working tree is clean
-			const { stdout: status } = await p.exec("git", ["status", "--porcelain"]);
-			if (status.trim()) return;
+    // If not already in a merge, attempt one
+    const { code: mergeHeadCode } = await p.exec("git", ["rev-parse", "MERGE_HEAD"]);
+    if (mergeHeadCode !== 0) {
+      // Only attempt a new merge if the working tree is clean
+      const { stdout: status } = await p.exec("git", ["status", "--porcelain"]);
+      if (status.trim()) return;
 
-			const { stdout: upstream, code: upstreamCode } = await p.exec("git", [
-				"rev-parse",
-				"--abbrev-ref",
-				"--symbolic-full-name",
-				"@{u}",
-			]);
-			if (upstreamCode !== 0) return;
+      const { stdout: upstream, code: upstreamCode } = await p.exec("git", [
+        "rev-parse",
+        "--abbrev-ref",
+        "--symbolic-full-name",
+        "@{u}",
+      ]);
+      if (upstreamCode !== 0) return;
 
-			ref = upstream.trim();
-			const remote = ref.split("/")[0];
-			ctx.ui.notify(`git-merge-and-resolve: fetching ${remote}, merging ${ref}`, "info");
+      ref = upstream.trim();
+      const remote = ref.split("/")[0];
+      ctx.ui.notify(`git-merge-and-resolve: fetching ${remote}, merging ${ref}`, "info");
 
-			const { code: fetchCode, stderr: fetchErr } = await p.exec("git", ["fetch", remote]);
-			if (fetchCode !== 0) {
-				ctx.ui.notify(`git-merge-and-resolve: fetch failed: ${fetchErr.trim()}`, "warning");
-				return;
-			}
+      const { code: fetchCode, stderr: fetchErr } = await p.exec("git", ["fetch", remote]);
+      if (fetchCode !== 0) {
+        ctx.ui.notify(`git-merge-and-resolve: fetch failed: ${fetchErr.trim()}`, "warning");
+        return;
+      }
 
-			const { code: mergeCode } = await p.exec("git", ["merge", "--no-ff", ref]);
-			if (mergeCode === 0) return;
-		}
+      const { code: mergeCode } = await p.exec("git", ["merge", "--no-ff", ref]);
+      if (mergeCode === 0) return;
+    }
 
-		// Either we just merged with conflicts, or we were already in an unfinished merge
-		const conflicts = await findConflicts(p, ctx.cwd);
-		if (conflicts.length === 0) return;
+    // Either we just merged with conflicts, or we were already in an unfinished merge
+    const conflicts = await findConflicts(p, ctx.cwd);
+    if (conflicts.length === 0) return;
 
-		p.sendUserMessage(formatConflicts(ref, conflicts), { deliverAs: "followUp" });
-	});
+    p.sendUserMessage(formatConflicts(ref, conflicts), { deliverAs: "followUp" });
+  });
 }

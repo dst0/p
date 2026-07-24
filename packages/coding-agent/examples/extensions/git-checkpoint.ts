@@ -8,46 +8,46 @@
 import type { ExtensionAPI } from "@dst0/p";
 
 export default function (p: ExtensionAPI) {
-	const checkpoints = new Map<string, string>();
-	let currentEntryId: string | undefined;
+  const checkpoints = new Map<string, string>();
+  let currentEntryId: string | undefined;
 
-	// Track the current entry ID when user messages are saved
-	p.on("tool_result", async (_event, ctx) => {
-		const leaf = ctx.sessionManager.getLeafEntry();
-		if (leaf) currentEntryId = leaf.id;
-	});
+  // Track the current entry ID when user messages are saved
+  p.on("tool_result", async (_event, ctx) => {
+    const leaf = ctx.sessionManager.getLeafEntry();
+    if (leaf) currentEntryId = leaf.id;
+  });
 
-	p.on("turn_start", async () => {
-		// Create a git stash entry before LLM makes changes
-		const { stdout } = await p.exec("git", ["stash", "create"]);
-		const ref = stdout.trim();
-		if (ref && currentEntryId) {
-			checkpoints.set(currentEntryId, ref);
-		}
-	});
+  p.on("turn_start", async () => {
+    // Create a git stash entry before LLM makes changes
+    const { stdout } = await p.exec("git", ["stash", "create"]);
+    const ref = stdout.trim();
+    if (ref && currentEntryId) {
+      checkpoints.set(currentEntryId, ref);
+    }
+  });
 
-	p.on("session_before_fork", async (event, ctx) => {
-		const ref = checkpoints.get(event.entryId);
-		if (!ref) return;
+  p.on("session_before_fork", async (event, ctx) => {
+    const ref = checkpoints.get(event.entryId);
+    if (!ref) return;
 
-		if (!ctx.hasUI) {
-			// In non-interactive mode, don't restore automatically
-			return;
-		}
+    if (!ctx.hasUI) {
+      // In non-interactive mode, don't restore automatically
+      return;
+    }
 
-		const choice = await ctx.ui.select("Restore code state?", [
-			"Yes, restore code to that point",
-			"No, keep current code",
-		]);
+    const choice = await ctx.ui.select("Restore code state?", [
+      "Yes, restore code to that point",
+      "No, keep current code",
+    ]);
 
-		if (choice?.startsWith("Yes")) {
-			await p.exec("git", ["stash", "apply", ref]);
-			ctx.ui.notify("Code restored to checkpoint", "info");
-		}
-	});
+    if (choice?.startsWith("Yes")) {
+      await p.exec("git", ["stash", "apply", ref]);
+      ctx.ui.notify("Code restored to checkpoint", "info");
+    }
+  });
 
-	p.on("agent_end", async () => {
-		// Clear checkpoints after agent completes
-		checkpoints.clear();
-	});
+  p.on("agent_end", async () => {
+    // Clear checkpoints after agent completes
+    checkpoints.clear();
+  });
 }

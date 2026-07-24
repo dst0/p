@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
+
 ### Fixed
 
 - Filtered out lone surrogates (0xD800-0xDFFF), DEL, and C1 control characters in `sanitizeBinaryOutput`.

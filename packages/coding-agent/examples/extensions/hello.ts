@@ -6,21 +6,21 @@ import { defineTool, type ExtensionAPI } from "@dst0/p";
 import { Type } from "@dst0/p-ai";
 
 const helloTool = defineTool({
-	name: "hello",
-	label: "Hello",
-	description: "A simple greeting tool",
-	parameters: Type.Object({
-		name: Type.String({ description: "Name to greet" }),
-	}),
+  name: "hello",
+  label: "Hello",
+  description: "A simple greeting tool",
+  parameters: Type.Object({
+    name: Type.String({ description: "Name to greet" }),
+  }),
 
-	async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
-		return {
-			content: [{ type: "text", text: `Hello, ${params.name}!` }],
-			details: { greeted: params.name },
-		};
-	},
+  async execute(_toolCallId, params, _signal, _onUpdate, _ctx) {
+    return {
+      content: [{ type: "text", text: `Hello, ${params.name}!` }],
+      details: { greeted: params.name },
+    };
+  },
 });
 
 export default function (p: ExtensionAPI) {
-	p.registerTool(helloTool);
+  p.registerTool(helloTool);
 }

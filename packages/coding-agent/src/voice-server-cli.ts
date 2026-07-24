@@ -13,27 +13,27 @@ const DEFAULT_PORT = 8787;
 const MAX_JSON_BYTES = 1024 * 1024;
 
 interface VoiceServerOptions {
-	host: string;
-	port: number;
-	cwd: string;
-	open: boolean;
-	agentArgs: string[];
+  host: string;
+  port: number;
+  cwd: string;
+  open: boolean;
+  agentArgs: string[];
 }
 
 interface PromptBody {
-	message: string;
-	mode: "auto" | "prompt" | "steer" | "follow_up";
+  message: string;
+  mode: "auto" | "prompt" | "steer" | "follow_up";
 }
 
 interface SseClient {
-	id: number;
-	response: ServerResponse;
+  id: number;
+  response: ServerResponse;
 }
 
 type JsonObject = Record<string, unknown>;
 
 function printHelp(): void {
-	process.stdout.write(`p-voice ${VERSION}
+  process.stdout.write(`p-voice ${VERSION}
 
 Serve a local browser voice interface backed by a persistent P RPC session.
 
@@ -55,389 +55,389 @@ Examples:
 }
 
 function parseArgs(args: string[]): VoiceServerOptions | "help" {
-	let host = DEFAULT_HOST;
-	let port = DEFAULT_PORT;
-	let cwd = process.cwd();
-	let open = false;
-	let agentArgs: string[] = [];
+  let host = DEFAULT_HOST;
+  let port = DEFAULT_PORT;
+  let cwd = process.cwd();
+  let open = false;
+  let agentArgs: string[] = [];
 
-	for (let i = 0; i < args.length; i++) {
-		const arg = args[i];
-		if (arg === "--") {
-			agentArgs = args.slice(i + 1);
-			break;
-		}
-		if (arg === "-h" || arg === "--help") {
-			return "help";
-		}
-		if (arg === "--open") {
-			open = true;
-			continue;
-		}
-		if (arg === "--host" && args[i + 1]) {
-			host = args[++i];
-			continue;
-		}
-		if (arg === "--port" && args[i + 1]) {
-			const parsedPort = Number.parseInt(args[++i], 10);
-			if (!Number.isInteger(parsedPort) || parsedPort < 0 || parsedPort > 65535) {
-				throw new Error(`Invalid port: ${args[i]}`);
-			}
-			port = parsedPort;
-			continue;
-		}
-		if (arg === "--cwd" && args[i + 1]) {
-			cwd = resolve(args[++i]);
-			continue;
-		}
-		throw new Error(`Unknown option: ${arg}. Put P RPC arguments after --.`);
-	}
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i];
+    if (arg === "--") {
+      agentArgs = args.slice(i + 1);
+      break;
+    }
+    if (arg === "-h" || arg === "--help") {
+      return "help";
+    }
+    if (arg === "--open") {
+      open = true;
+      continue;
+    }
+    if (arg === "--host" && args[i + 1]) {
+      host = args[++i];
+      continue;
+    }
+    if (arg === "--port" && args[i + 1]) {
+      const parsedPort = Number.parseInt(args[++i], 10);
+      if (!Number.isInteger(parsedPort) || parsedPort < 0 || parsedPort > 65535) {
+        throw new Error(`Invalid port: ${args[i]}`);
+      }
+      port = parsedPort;
+      continue;
+    }
+    if (arg === "--cwd" && args[i + 1]) {
+      cwd = resolve(args[++i]);
+      continue;
+    }
+    throw new Error(`Unknown option: ${arg}. Put P RPC arguments after --.`);
+  }
 
-	return { host, port, cwd, open, agentArgs };
+  return { host, port, cwd, open, agentArgs };
 }
 
 function resolveCliPath(): string {
-	if (process.env.P_VOICE_CLI_PATH) {
-		return resolve(process.env.P_VOICE_CLI_PATH);
-	}
-	const currentDir = dirname(fileURLToPath(import.meta.url));
-	return join(currentDir, "cli.js");
+  if (process.env.P_VOICE_CLI_PATH) {
+    return resolve(process.env.P_VOICE_CLI_PATH);
+  }
+  const currentDir = dirname(fileURLToPath(import.meta.url));
+  return join(currentDir, "cli.js");
 }
 
 function isObject(value: unknown): value is JsonObject {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function getString(value: unknown): string | undefined {
-	return typeof value === "string" ? value : undefined;
+  return typeof value === "string" ? value : undefined;
 }
 
 function stripSessionStateUpdates(text: string): string {
-	return text.replace(/<session_state_update>\s*[\s\S]*?\s*<\/session_state_update>/g, "").trim();
+  return text.replace(/<session_state_update>\s*[\s\S]*?\s*<\/session_state_update>/g, "").trim();
 }
 
 function textFromMessage(message: unknown): string {
-	if (!isObject(message)) return "";
-	const content = message.content;
-	if (!Array.isArray(content)) return "";
+  if (!isObject(message)) return "";
+  const content = message.content;
+  if (!Array.isArray(content)) return "";
 
-	let text = "";
-	for (const block of content) {
-		if (!isObject(block)) continue;
-		if (block.type === "text" && typeof block.text === "string") {
-			text += block.text;
-		}
-	}
-	return stripSessionStateUpdates(text);
+  let text = "";
+  for (const block of content) {
+    if (!isObject(block)) continue;
+    if (block.type === "text" && typeof block.text === "string") {
+      text += block.text;
+    }
+  }
+  return stripSessionStateUpdates(text);
 }
 
 function extractFinalText(event: unknown): string | undefined {
-	if (!isObject(event) || event.type !== "agent_end" || !Array.isArray(event.messages)) {
-		return undefined;
-	}
+  if (!isObject(event) || event.type !== "agent_end" || !Array.isArray(event.messages)) {
+    return undefined;
+  }
 
-	const messages = event.messages as AgentMessage[];
-	const finishPayload = getFinishWorkPayload(messages);
-	const finishText = finishPayload?.result ?? finishPayload?.summary;
-	if (finishText?.trim()) {
-		return finishText.trim();
-	}
+  const messages = event.messages as AgentMessage[];
+  const finishPayload = getFinishWorkPayload(messages);
+  const finishText = finishPayload?.result ?? finishPayload?.summary;
+  if (finishText?.trim()) {
+    return finishText.trim();
+  }
 
-	for (let i = event.messages.length - 1; i >= 0; i--) {
-		const candidate = event.messages[i];
-		if (!isObject(candidate) || candidate.role !== "assistant") continue;
-		const text = textFromMessage(candidate).trim();
-		if (text) return text;
-	}
-	return undefined;
+  for (let i = event.messages.length - 1; i >= 0; i--) {
+    const candidate = event.messages[i];
+    if (!isObject(candidate) || candidate.role !== "assistant") continue;
+    const text = textFromMessage(candidate).trim();
+    if (text) return text;
+  }
+  return undefined;
 }
 
 function extractFinalError(event: unknown): string | undefined {
-	if (!isObject(event) || event.type !== "agent_end" || !Array.isArray(event.messages)) {
-		return undefined;
-	}
+  if (!isObject(event) || event.type !== "agent_end" || !Array.isArray(event.messages)) {
+    return undefined;
+  }
 
-	for (let i = event.messages.length - 1; i >= 0; i--) {
-		const candidate = event.messages[i];
-		if (!isObject(candidate) || candidate.role !== "assistant") continue;
-		const stopReason = getString(candidate.stopReason);
-		const errorMessage = getString(candidate.errorMessage);
-		if ((stopReason === "error" || stopReason === "aborted") && errorMessage?.trim()) {
-			return errorMessage.trim();
-		}
-	}
-	return undefined;
+  for (let i = event.messages.length - 1; i >= 0; i--) {
+    const candidate = event.messages[i];
+    if (!isObject(candidate) || candidate.role !== "assistant") continue;
+    const stopReason = getString(candidate.stopReason);
+    const errorMessage = getString(candidate.errorMessage);
+    if ((stopReason === "error" || stopReason === "aborted") && errorMessage?.trim()) {
+      return errorMessage.trim();
+    }
+  }
+  return undefined;
 }
 
 function sendJson(response: ServerResponse, statusCode: number, value: unknown): void {
-	const body = JSON.stringify(value);
-	response.writeHead(statusCode, {
-		"content-type": "application/json; charset=utf-8",
-		"content-length": Buffer.byteLength(body).toString(),
-	});
-	response.end(body);
+  const body = JSON.stringify(value);
+  response.writeHead(statusCode, {
+    "content-type": "application/json; charset=utf-8",
+    "content-length": Buffer.byteLength(body).toString(),
+  });
+  response.end(body);
 }
 
 function sendText(response: ServerResponse, statusCode: number, contentType: string, body: string): void {
-	response.writeHead(statusCode, {
-		"content-type": contentType,
-		"content-length": Buffer.byteLength(body).toString(),
-	});
-	response.end(body);
+  response.writeHead(statusCode, {
+    "content-type": contentType,
+    "content-length": Buffer.byteLength(body).toString(),
+  });
+  response.end(body);
 }
 
 function readJson(request: IncomingMessage): Promise<unknown> {
-	return new Promise((resolvePromise, reject) => {
-		let body = "";
-		let bytes = 0;
+  return new Promise((resolvePromise, reject) => {
+    let body = "";
+    let bytes = 0;
 
-		request.setEncoding("utf8");
-		request.on("data", (chunk: string) => {
-			bytes += Buffer.byteLength(chunk);
-			if (bytes > MAX_JSON_BYTES) {
-				reject(new Error("Request body is too large"));
-				request.destroy();
-				return;
-			}
-			body += chunk;
-		});
-		request.on("end", () => {
-			if (!body.trim()) {
-				resolvePromise({});
-				return;
-			}
-			try {
-				resolvePromise(JSON.parse(body));
-			} catch (error: unknown) {
-				reject(error instanceof Error ? error : new Error(String(error)));
-			}
-		});
-		request.on("error", reject);
-	});
+    request.setEncoding("utf8");
+    request.on("data", (chunk: string) => {
+      bytes += Buffer.byteLength(chunk);
+      if (bytes > MAX_JSON_BYTES) {
+        reject(new Error("Request body is too large"));
+        request.destroy();
+        return;
+      }
+      body += chunk;
+    });
+    request.on("end", () => {
+      if (!body.trim()) {
+        resolvePromise({});
+        return;
+      }
+      try {
+        resolvePromise(JSON.parse(body));
+      } catch (error: unknown) {
+        reject(error instanceof Error ? error : new Error(String(error)));
+      }
+    });
+    request.on("error", reject);
+  });
 }
 
 function parsePromptBody(value: unknown): PromptBody {
-	if (!isObject(value)) {
-		throw new Error("Request body must be a JSON object");
-	}
-	const message = getString(value.message)?.trim();
-	if (!message) {
-		throw new Error("Prompt message is required");
-	}
-	const rawMode = getString(value.mode);
-	const mode =
-		rawMode === "prompt" || rawMode === "steer" || rawMode === "follow_up" || rawMode === "auto" ? rawMode : "auto";
-	return { message, mode };
+  if (!isObject(value)) {
+    throw new Error("Request body must be a JSON object");
+  }
+  const message = getString(value.message)?.trim();
+  if (!message) {
+    throw new Error("Prompt message is required");
+  }
+  const rawMode = getString(value.mode);
+  const mode =
+    rawMode === "prompt" || rawMode === "steer" || rawMode === "follow_up" || rawMode === "auto" ? rawMode : "auto";
+  return { message, mode };
 }
 
 function writeSse(response: ServerResponse, eventName: string, value: unknown): void {
-	response.write(`event: ${eventName}\n`);
-	response.write(`data: ${JSON.stringify(value)}\n\n`);
+  response.write(`event: ${eventName}\n`);
+  response.write(`data: ${JSON.stringify(value)}\n\n`);
 }
 
 function openBrowser(url: string): void {
-	const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
-	const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
-	const child = spawn(opener, args, {
-		detached: true,
-		stdio: "ignore",
-	});
-	child.unref();
+  const opener = process.platform === "darwin" ? "open" : process.platform === "win32" ? "cmd" : "xdg-open";
+  const args = process.platform === "win32" ? ["/c", "start", "", url] : [url];
+  const child = spawn(opener, args, {
+    detached: true,
+    stdio: "ignore",
+  });
+  child.unref();
 }
 
 class VoiceServer {
-	private readonly options: VoiceServerOptions;
-	private readonly client: RpcClient;
-	private readonly sseClients = new Map<number, SseClient>();
-	private nextSseClientId = 1;
-	private startPromise: Promise<void> | undefined;
-	private clientStarted = false;
-	private lastError: string | undefined;
+  private readonly options: VoiceServerOptions;
+  private readonly client: RpcClient;
+  private readonly sseClients = new Map<number, SseClient>();
+  private nextSseClientId = 1;
+  private startPromise: Promise<void> | undefined;
+  private clientStarted = false;
+  private lastError: string | undefined;
 
-	constructor(options: VoiceServerOptions) {
-		this.options = options;
-		this.client = new RpcClient({
-			cliPath: resolveCliPath(),
-			cwd: options.cwd,
-			args: options.agentArgs,
-		});
-		this.client.onEvent((event) => {
-			this.broadcast("rpc", {
-				type: "agent_event",
-				event,
-				finalText: extractFinalText(event),
-				finalError: extractFinalError(event),
-			});
-		});
-	}
+  constructor(options: VoiceServerOptions) {
+    this.options = options;
+    this.client = new RpcClient({
+      cliPath: resolveCliPath(),
+      cwd: options.cwd,
+      args: options.agentArgs,
+    });
+    this.client.onEvent((event) => {
+      this.broadcast("rpc", {
+        type: "agent_event",
+        event,
+        finalText: extractFinalText(event),
+        finalError: extractFinalError(event),
+      });
+    });
+  }
 
-	async start(): Promise<void> {
-		const server = createServer((request, response) => {
-			void this.handleRequest(request, response);
-		});
+  async start(): Promise<void> {
+    const server = createServer((request, response) => {
+      void this.handleRequest(request, response);
+    });
 
-		server.on("clientError", (_error, socket) => {
-			socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
-		});
+    server.on("clientError", (_error, socket) => {
+      socket.end("HTTP/1.1 400 Bad Request\r\n\r\n");
+    });
 
-		await new Promise<void>((resolvePromise, reject) => {
-			server.once("error", reject);
-			server.listen(this.options.port, this.options.host, () => {
-				server.off("error", reject);
-				resolvePromise();
-			});
-		});
+    await new Promise<void>((resolvePromise, reject) => {
+      server.once("error", reject);
+      server.listen(this.options.port, this.options.host, () => {
+        server.off("error", reject);
+        resolvePromise();
+      });
+    });
 
-		const address = server.address();
-		const port = typeof address === "object" && address ? address.port : this.options.port;
-		const url = `http://${this.options.host}:${port}/`;
-		process.stdout.write(`P voice server listening at ${url}\n`);
-		process.stdout.write(`Agent cwd: ${this.options.cwd}\n`);
-		if (this.options.agentArgs.length > 0) {
-			process.stdout.write(`P RPC args: ${this.options.agentArgs.join(" ")}\n`);
-		}
-		if (this.options.open) {
-			openBrowser(url);
-		}
+    const address = server.address();
+    const port = typeof address === "object" && address ? address.port : this.options.port;
+    const url = `http://${this.options.host}:${port}/`;
+    process.stdout.write(`P voice server listening at ${url}\n`);
+    process.stdout.write(`Agent cwd: ${this.options.cwd}\n`);
+    if (this.options.agentArgs.length > 0) {
+      process.stdout.write(`P RPC args: ${this.options.agentArgs.join(" ")}\n`);
+    }
+    if (this.options.open) {
+      openBrowser(url);
+    }
 
-		const shutdown = async () => {
-			server.close();
-			for (const client of this.sseClients.values()) {
-				client.response.end();
-			}
-			await this.client.stop();
-			process.exit(0);
-		};
-		process.once("SIGINT", () => {
-			void shutdown();
-		});
-		process.once("SIGTERM", () => {
-			void shutdown();
-		});
-	}
+    const shutdown = async () => {
+      server.close();
+      for (const client of this.sseClients.values()) {
+        client.response.end();
+      }
+      await this.client.stop();
+      process.exit(0);
+    };
+    process.once("SIGINT", () => {
+      void shutdown();
+    });
+    process.once("SIGTERM", () => {
+      void shutdown();
+    });
+  }
 
-	private async ensureClient(): Promise<void> {
-		if (this.clientStarted) return;
-		if (this.startPromise) return this.startPromise;
+  private async ensureClient(): Promise<void> {
+    if (this.clientStarted) return;
+    if (this.startPromise) return this.startPromise;
 
-		this.startPromise = this.client
-			.start()
-			.then(() => {
-				this.clientStarted = true;
-				this.lastError = undefined;
-				this.broadcast("status", { type: "status", status: "agent_started" });
-			})
-			.catch((error: unknown) => {
-				this.startPromise = undefined;
-				this.lastError = error instanceof Error ? error.message : String(error);
-				this.broadcast("status", { type: "status", status: "agent_error", error: this.lastError });
-				throw error;
-			});
+    this.startPromise = this.client
+      .start()
+      .then(() => {
+        this.clientStarted = true;
+        this.lastError = undefined;
+        this.broadcast("status", { type: "status", status: "agent_started" });
+      })
+      .catch((error: unknown) => {
+        this.startPromise = undefined;
+        this.lastError = error instanceof Error ? error.message : String(error);
+        this.broadcast("status", { type: "status", status: "agent_error", error: this.lastError });
+        throw error;
+      });
 
-		return this.startPromise;
-	}
+    return this.startPromise;
+  }
 
-	private broadcast(eventName: string, value: unknown): void {
-		for (const client of this.sseClients.values()) {
-			writeSse(client.response, eventName, value);
-		}
-	}
+  private broadcast(eventName: string, value: unknown): void {
+    for (const client of this.sseClients.values()) {
+      writeSse(client.response, eventName, value);
+    }
+  }
 
-	private addSseClient(response: ServerResponse): void {
-		const id = this.nextSseClientId++;
-		response.writeHead(200, {
-			"content-type": "text/event-stream; charset=utf-8",
-			"cache-control": "no-cache, no-transform",
-			connection: "keep-alive",
-			"x-accel-buffering": "no",
-		});
-		writeSse(response, "status", {
-			type: "status",
-			status: this.clientStarted ? "agent_started" : "idle",
-			version: VERSION,
-			cwd: this.options.cwd,
-			error: this.lastError,
-		});
-		this.sseClients.set(id, { id, response });
-		response.on("close", () => {
-			this.sseClients.delete(id);
-		});
-	}
+  private addSseClient(response: ServerResponse): void {
+    const id = this.nextSseClientId++;
+    response.writeHead(200, {
+      "content-type": "text/event-stream; charset=utf-8",
+      "cache-control": "no-cache, no-transform",
+      connection: "keep-alive",
+      "x-accel-buffering": "no",
+    });
+    writeSse(response, "status", {
+      type: "status",
+      status: this.clientStarted ? "agent_started" : "idle",
+      version: VERSION,
+      cwd: this.options.cwd,
+      error: this.lastError,
+    });
+    this.sseClients.set(id, { id, response });
+    response.on("close", () => {
+      this.sseClients.delete(id);
+    });
+  }
 
-	private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
-		const method = request.method ?? "GET";
-		const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
+  private async handleRequest(request: IncomingMessage, response: ServerResponse): Promise<void> {
+    const method = request.method ?? "GET";
+    const url = new URL(request.url ?? "/", `http://${request.headers.host ?? "localhost"}`);
 
-		try {
-			if (method === "GET" && url.pathname === "/") {
-				sendText(response, 200, "text/html; charset=utf-8", VOICE_PAGE_HTML);
-				return;
-			}
+    try {
+      if (method === "GET" && url.pathname === "/") {
+        sendText(response, 200, "text/html; charset=utf-8", VOICE_PAGE_HTML);
+        return;
+      }
 
-			if (method === "GET" && url.pathname === "/favicon.ico") {
-				response.writeHead(204, { "cache-control": "public, max-age=86400" });
-				response.end();
-				return;
-			}
+      if (method === "GET" && url.pathname === "/favicon.ico") {
+        response.writeHead(204, { "cache-control": "public, max-age=86400" });
+        response.end();
+        return;
+      }
 
-			if (method === "GET" && url.pathname === "/events") {
-				this.addSseClient(response);
-				return;
-			}
+      if (method === "GET" && url.pathname === "/events") {
+        this.addSseClient(response);
+        return;
+      }
 
-			if (method === "GET" && url.pathname === "/api/info") {
-				sendJson(response, 200, {
-					version: VERSION,
-					cwd: this.options.cwd,
-					agentStarted: this.clientStarted,
-					error: this.lastError,
-				});
-				return;
-			}
+      if (method === "GET" && url.pathname === "/api/info") {
+        sendJson(response, 200, {
+          version: VERSION,
+          cwd: this.options.cwd,
+          agentStarted: this.clientStarted,
+          error: this.lastError,
+        });
+        return;
+      }
 
-			if (method === "GET" && url.pathname === "/api/state") {
-				await this.ensureClient();
-				const state = await this.client.getState();
-				sendJson(response, 200, { state });
-				return;
-			}
+      if (method === "GET" && url.pathname === "/api/state") {
+        await this.ensureClient();
+        const state = await this.client.getState();
+        sendJson(response, 200, { state });
+        return;
+      }
 
-			if (method === "POST" && url.pathname === "/api/prompt") {
-				await this.ensureClient();
-				const body = parsePromptBody(await readJson(request));
-				const state = await this.client.getState();
-				if (body.mode === "steer" || (body.mode === "auto" && state.isStreaming)) {
-					await this.client.steer(body.message);
-				} else if (body.mode === "follow_up") {
-					await this.client.followUp(body.message);
-				} else {
-					await this.client.prompt(body.message);
-				}
-				sendJson(response, 202, { ok: true });
-				return;
-			}
+      if (method === "POST" && url.pathname === "/api/prompt") {
+        await this.ensureClient();
+        const body = parsePromptBody(await readJson(request));
+        const state = await this.client.getState();
+        if (body.mode === "steer" || (body.mode === "auto" && state.isStreaming)) {
+          await this.client.steer(body.message);
+        } else if (body.mode === "follow_up") {
+          await this.client.followUp(body.message);
+        } else {
+          await this.client.prompt(body.message);
+        }
+        sendJson(response, 202, { ok: true });
+        return;
+      }
 
-			if (method === "POST" && url.pathname === "/api/abort") {
-				await this.ensureClient();
-				await this.client.abort();
-				sendJson(response, 200, { ok: true });
-				return;
-			}
+      if (method === "POST" && url.pathname === "/api/abort") {
+        await this.ensureClient();
+        await this.client.abort();
+        sendJson(response, 200, { ok: true });
+        return;
+      }
 
-			if (method === "POST" && url.pathname === "/api/new-session") {
-				await this.ensureClient();
-				const result = await this.client.newSession();
-				sendJson(response, 200, { ok: true, result });
-				return;
-			}
+      if (method === "POST" && url.pathname === "/api/new-session") {
+        await this.ensureClient();
+        const result = await this.client.newSession();
+        sendJson(response, 200, { ok: true, result });
+        return;
+      }
 
-			sendJson(response, 404, { error: "Not found" });
-		} catch (error: unknown) {
-			const message = error instanceof Error ? error.message : String(error);
-			this.lastError = message;
-			sendJson(response, 500, { error: message });
-		}
-	}
+      sendJson(response, 404, { error: "Not found" });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.lastError = message;
+      sendJson(response, 500, { error: message });
+    }
+  }
 }
 
 const VOICE_PAGE_HTML = `<!doctype html>
@@ -1087,15 +1087,15 @@ const VOICE_PAGE_HTML = `<!doctype html>
 `;
 
 async function main(): Promise<void> {
-	const options = parseArgs(process.argv.slice(2));
-	if (options === "help") {
-		printHelp();
-		return;
-	}
-	await new VoiceServer(options).start();
+  const options = parseArgs(process.argv.slice(2));
+  if (options === "help") {
+    printHelp();
+    return;
+  }
+  await new VoiceServer(options).start();
 }
 
 main().catch((error: unknown) => {
-	process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-	process.exit(1);
+  process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+  process.exit(1);
 });

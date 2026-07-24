@@ -12,20 +12,20 @@ export { anthropicOAuthProvider, loginAnthropic, refreshAnthropicToken } from ".
 export * from "./device-code.ts";
 // GitHub Copilot
 export {
-	getGitHubCopilotBaseUrl,
-	githubCopilotOAuthProvider,
-	loginGitHubCopilot,
-	normalizeDomain,
-	refreshGitHubCopilotToken,
+  getGitHubCopilotBaseUrl,
+  githubCopilotOAuthProvider,
+  loginGitHubCopilot,
+  normalizeDomain,
+  refreshGitHubCopilotToken,
 } from "./github-copilot.ts";
 // OpenAI Codex (ChatGPT OAuth)
 export {
-	loginOpenAICodex,
-	loginOpenAICodexDeviceCode,
-	OPENAI_CODEX_BROWSER_LOGIN_METHOD,
-	OPENAI_CODEX_DEVICE_CODE_LOGIN_METHOD,
-	openaiCodexOAuthProvider,
-	refreshOpenAICodexToken,
+  loginOpenAICodex,
+  loginOpenAICodexDeviceCode,
+  OPENAI_CODEX_BROWSER_LOGIN_METHOD,
+  OPENAI_CODEX_DEVICE_CODE_LOGIN_METHOD,
+  openaiCodexOAuthProvider,
+  refreshOpenAICodexToken,
 } from "./openai-codex.ts";
 
 export * from "./types.ts";
@@ -40,27 +40,27 @@ import { openaiCodexOAuthProvider } from "./openai-codex.ts";
 import type { OAuthCredentials, OAuthProviderId, OAuthProviderInfo, OAuthProviderInterface } from "./types.ts";
 
 const BUILT_IN_OAUTH_PROVIDERS: OAuthProviderInterface[] = [
-	anthropicOAuthProvider,
-	githubCopilotOAuthProvider,
-	openaiCodexOAuthProvider,
+  anthropicOAuthProvider,
+  githubCopilotOAuthProvider,
+  openaiCodexOAuthProvider,
 ];
 
 const oauthProviderRegistry = new Map<string, OAuthProviderInterface>(
-	BUILT_IN_OAUTH_PROVIDERS.map((provider) => [provider.id, provider]),
+  BUILT_IN_OAUTH_PROVIDERS.map((provider) => [provider.id, provider]),
 );
 
 /**
  * Get an OAuth provider by ID
  */
 export function getOAuthProvider(id: OAuthProviderId): OAuthProviderInterface | undefined {
-	return oauthProviderRegistry.get(id);
+  return oauthProviderRegistry.get(id);
 }
 
 /**
  * Register a custom OAuth provider
  */
 export function registerOAuthProvider(provider: OAuthProviderInterface): void {
-	oauthProviderRegistry.set(provider.id, provider);
+  oauthProviderRegistry.set(provider.id, provider);
 }
 
 /**
@@ -70,40 +70,40 @@ export function registerOAuthProvider(provider: OAuthProviderInterface): void {
  * Custom providers are removed completely.
  */
 export function unregisterOAuthProvider(id: string): void {
-	const builtInProvider = BUILT_IN_OAUTH_PROVIDERS.find((provider) => provider.id === id);
-	if (builtInProvider) {
-		oauthProviderRegistry.set(id, builtInProvider);
-		return;
-	}
-	oauthProviderRegistry.delete(id);
+  const builtInProvider = BUILT_IN_OAUTH_PROVIDERS.find((provider) => provider.id === id);
+  if (builtInProvider) {
+    oauthProviderRegistry.set(id, builtInProvider);
+    return;
+  }
+  oauthProviderRegistry.delete(id);
 }
 
 /**
  * Reset OAuth providers to built-ins.
  */
 export function resetOAuthProviders(): void {
-	oauthProviderRegistry.clear();
-	for (const provider of BUILT_IN_OAUTH_PROVIDERS) {
-		oauthProviderRegistry.set(provider.id, provider);
-	}
+  oauthProviderRegistry.clear();
+  for (const provider of BUILT_IN_OAUTH_PROVIDERS) {
+    oauthProviderRegistry.set(provider.id, provider);
+  }
 }
 
 /**
  * Get all registered OAuth providers
  */
 export function getOAuthProviders(): OAuthProviderInterface[] {
-	return Array.from(oauthProviderRegistry.values());
+  return Array.from(oauthProviderRegistry.values());
 }
 
 /**
  * @deprecated Use getOAuthProviders() which returns OAuthProviderInterface[]
  */
 export function getOAuthProviderInfoList(): OAuthProviderInfo[] {
-	return getOAuthProviders().map((p) => ({
-		id: p.id,
-		name: p.name,
-		available: true,
-	}));
+  return getOAuthProviders().map((p) => ({
+    id: p.id,
+    name: p.name,
+    available: true,
+  }));
 }
 
 // ============================================================================
@@ -115,14 +115,14 @@ export function getOAuthProviderInfoList(): OAuthProviderInfo[] {
  * @deprecated Use getOAuthProvider(id).refreshToken() instead
  */
 export async function refreshOAuthToken(
-	providerId: OAuthProviderId,
-	credentials: OAuthCredentials,
+  providerId: OAuthProviderId,
+  credentials: OAuthCredentials,
 ): Promise<OAuthCredentials> {
-	const provider = getOAuthProvider(providerId);
-	if (!provider) {
-		throw new Error(`Unknown OAuth provider: ${providerId}`);
-	}
-	return provider.refreshToken(credentials);
+  const provider = getOAuthProvider(providerId);
+  if (!provider) {
+    throw new Error(`Unknown OAuth provider: ${providerId}`);
+  }
+  return provider.refreshToken(credentials);
 }
 
 /**
@@ -133,28 +133,28 @@ export async function refreshOAuthToken(
  * @throws Error if refresh fails
  */
 export async function getOAuthApiKey(
-	providerId: OAuthProviderId,
-	credentials: Record<string, OAuthCredentials>,
+  providerId: OAuthProviderId,
+  credentials: Record<string, OAuthCredentials>,
 ): Promise<{ newCredentials: OAuthCredentials; apiKey: string } | null> {
-	const provider = getOAuthProvider(providerId);
-	if (!provider) {
-		throw new Error(`Unknown OAuth provider: ${providerId}`);
-	}
+  const provider = getOAuthProvider(providerId);
+  if (!provider) {
+    throw new Error(`Unknown OAuth provider: ${providerId}`);
+  }
 
-	let creds = credentials[providerId];
-	if (!creds) {
-		return null;
-	}
+  let creds = credentials[providerId];
+  if (!creds) {
+    return null;
+  }
 
-	// Refresh if expired
-	if (Date.now() >= creds.expires) {
-		try {
-			creds = await provider.refreshToken(creds);
-		} catch (_error) {
-			throw new Error(`Failed to refresh OAuth token for ${providerId}`);
-		}
-	}
+  // Refresh if expired
+  if (Date.now() >= creds.expires) {
+    try {
+      creds = await provider.refreshToken(creds);
+    } catch (_error) {
+      throw new Error(`Failed to refresh OAuth token for ${providerId}`);
+    }
+  }
 
-	const apiKey = provider.getApiKey(creds);
-	return { newCredentials: creds, apiKey };
+  const apiKey = provider.getApiKey(creds);
+  return { newCredentials: creds, apiKey };
 }

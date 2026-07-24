@@ -15,13 +15,13 @@ console.log("Current settings:", JSON.stringify(settingsManagerFromDisk.getGloba
 // Override specific settings
 const settingsManager = SettingsManager.create(cwd);
 settingsManager.applyOverrides({
-	compaction: { enabled: false },
-	retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
+  compaction: { enabled: false },
+  retry: { enabled: true, maxRetries: 5, baseDelayMs: 1000 },
 });
 
 const { session: customSettingsSession } = await createAgentSession({
-	settingsManager,
-	sessionManager: SessionManager.inMemory(),
+  settingsManager,
+  sessionManager: SessionManager.inMemory(),
 });
 console.log("Session created with custom settings");
 customSettingsSession.dispose();
@@ -34,20 +34,20 @@ await settingsManager.flush();
 // Surface settings I/O errors at the app layer.
 const settingsErrors = settingsManager.drainErrors();
 if (settingsErrors.length > 0) {
-	for (const { scope, error } of settingsErrors) {
-		console.warn(`Warning (${scope} settings): ${error.message}`);
-	}
+  for (const { scope, error } of settingsErrors) {
+    console.warn(`Warning (${scope} settings): ${error.message}`);
+  }
 }
 
 // For testing without file I/O:
 const inMemorySettings = SettingsManager.inMemory({
-	compaction: { enabled: false },
-	retry: { enabled: false },
+  compaction: { enabled: false },
+  retry: { enabled: false },
 });
 
 const { session: testSession } = await createAgentSession({
-	settingsManager: inMemorySettings,
-	sessionManager: SessionManager.inMemory(),
+  settingsManager: inMemorySettings,
+  sessionManager: SessionManager.inMemory(),
 });
 console.log("Test session created with in-memory settings");
 testSession.dispose();

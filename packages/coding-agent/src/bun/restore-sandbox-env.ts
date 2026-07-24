@@ -13,20 +13,20 @@ import { readFileSync } from "node:fs";
  * inside a sandbox where Bun's `process.env` is empty.
  */
 export function restoreSandboxEnv(): void {
-	if (!process.versions?.bun) return;
+  if (!process.versions?.bun) return;
 
-	// If process.env already has entries, nothing to fix.
-	if (Object.keys(process.env).length > 0) return;
+  // If process.env already has entries, nothing to fix.
+  if (Object.keys(process.env).length > 0) return;
 
-	try {
-		const data = readFileSync("/proc/self/environ", "utf-8");
-		for (const entry of data.split("\0")) {
-			const idx = entry.indexOf("=");
-			if (idx > 0) {
-				process.env[entry.slice(0, idx)] = entry.slice(idx + 1);
-			}
-		}
-	} catch {
-		// /proc/self/environ may not be readable; ignore.
-	}
+  try {
+    const data = readFileSync("/proc/self/environ", "utf-8");
+    for (const entry of data.split("\0")) {
+      const idx = entry.indexOf("=");
+      if (idx > 0) {
+        process.env[entry.slice(0, idx)] = entry.slice(idx + 1);
+      }
+    }
+  } catch {
+    // /proc/self/environ may not be readable; ignore.
+  }
 }

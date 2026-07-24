@@ -19,56 +19,56 @@ let activeEngine: DoomEngine | null = null;
 let activeWadPath: string | null = null;
 
 export default function (p: ExtensionAPI) {
-	p.registerCommand("doom-overlay", {
-		description: "Play DOOM as an overlay. Q to pause and exit.",
+  p.registerCommand("doom-overlay", {
+    description: "Play DOOM as an overlay. Q to pause and exit.",
 
-		handler: async (args, ctx) => {
-			if (ctx.mode !== "tui") {
-				ctx.ui.notify("DOOM requires interactive mode", "error");
-				return;
-			}
+    handler: async (args, ctx) => {
+      if (ctx.mode !== "tui") {
+        ctx.ui.notify("DOOM requires interactive mode", "error");
+        return;
+      }
 
-			// Auto-download WAD if not present
-			ctx.ui.notify("Loading DOOM...", "info");
-			const wad = args?.trim() ? args.trim() : await ensureWadFile();
+      // Auto-download WAD if not present
+      ctx.ui.notify("Loading DOOM...", "info");
+      const wad = args?.trim() ? args.trim() : await ensureWadFile();
 
-			if (!wad) {
-				ctx.ui.notify("Failed to download DOOM WAD file. Check your internet connection.", "error");
-				return;
-			}
+      if (!wad) {
+        ctx.ui.notify("Failed to download DOOM WAD file. Check your internet connection.", "error");
+        return;
+      }
 
-			try {
-				// Reuse existing engine if same WAD, otherwise create new
-				let isResume = false;
-				if (activeEngine && activeWadPath === wad) {
-					ctx.ui.notify("Resuming DOOM...", "info");
-					isResume = true;
-				} else {
-					ctx.ui.notify(`Loading DOOM from ${wad}...`, "info");
-					activeEngine = new DoomEngine(wad);
-					await activeEngine.init();
-					activeWadPath = wad;
-				}
+      try {
+        // Reuse existing engine if same WAD, otherwise create new
+        let isResume = false;
+        if (activeEngine && activeWadPath === wad) {
+          ctx.ui.notify("Resuming DOOM...", "info");
+          isResume = true;
+        } else {
+          ctx.ui.notify(`Loading DOOM from ${wad}...`, "info");
+          activeEngine = new DoomEngine(wad);
+          await activeEngine.init();
+          activeWadPath = wad;
+        }
 
-				await ctx.ui.custom(
-					(tui, _theme, _keybindings, done) => {
-						return new DoomOverlayComponent(tui, activeEngine!, () => done(undefined), isResume);
-					},
-					{
-						overlay: true,
-						overlayOptions: {
-							width: "75%",
-							maxHeight: "95%",
-							anchor: "center",
-							margin: { top: 1 },
-						},
-					},
-				);
-			} catch (error) {
-				ctx.ui.notify(`Failed to load DOOM: ${error}`, "error");
-				activeEngine = null;
-				activeWadPath = null;
-			}
-		},
-	});
+        await ctx.ui.custom(
+          (tui, _theme, _keybindings, done) => {
+            return new DoomOverlayComponent(tui, activeEngine!, () => done(undefined), isResume);
+          },
+          {
+            overlay: true,
+            overlayOptions: {
+              width: "75%",
+              maxHeight: "95%",
+              anchor: "center",
+              margin: { top: 1 },
+            },
+          },
+        );
+      } catch (error) {
+        ctx.ui.notify(`Failed to load DOOM: ${error}`, "error");
+        activeEngine = null;
+        activeWadPath = null;
+      }
+    },
+  });
 }

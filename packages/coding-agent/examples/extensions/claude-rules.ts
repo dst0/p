@@ -25,53 +25,53 @@ import type { ExtensionAPI } from "@dst0/p";
  * Recursively find all .md files in a directory
  */
 function findMarkdownFiles(dir: string, basePath: string = ""): string[] {
-	const results: string[] = [];
+  const results: string[] = [];
 
-	if (!fs.existsSync(dir)) {
-		return results;
-	}
+  if (!fs.existsSync(dir)) {
+    return results;
+  }
 
-	const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
 
-	for (const entry of entries) {
-		const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
+  for (const entry of entries) {
+    const relativePath = basePath ? `${basePath}/${entry.name}` : entry.name;
 
-		if (entry.isDirectory()) {
-			results.push(...findMarkdownFiles(path.join(dir, entry.name), relativePath));
-		} else if (entry.isFile() && entry.name.endsWith(".md")) {
-			results.push(relativePath);
-		}
-	}
+    if (entry.isDirectory()) {
+      results.push(...findMarkdownFiles(path.join(dir, entry.name), relativePath));
+    } else if (entry.isFile() && entry.name.endsWith(".md")) {
+      results.push(relativePath);
+    }
+  }
 
-	return results;
+  return results;
 }
 
 export default function claudeRulesExtension(p: ExtensionAPI) {
-	let ruleFiles: string[] = [];
-	let rulesDir: string = "";
+  let ruleFiles: string[] = [];
+  let rulesDir: string = "";
 
-	// Scan for rules on session start
-	p.on("session_start", async (_event, ctx) => {
-		rulesDir = path.join(ctx.cwd, ".claude", "rules");
-		ruleFiles = findMarkdownFiles(rulesDir);
+  // Scan for rules on session start
+  p.on("session_start", async (_event, ctx) => {
+    rulesDir = path.join(ctx.cwd, ".claude", "rules");
+    ruleFiles = findMarkdownFiles(rulesDir);
 
-		if (ruleFiles.length > 0) {
-			ctx.ui.notify(`Found ${ruleFiles.length} rule(s) in .claude/rules/`, "info");
-		}
-	});
+    if (ruleFiles.length > 0) {
+      ctx.ui.notify(`Found ${ruleFiles.length} rule(s) in .claude/rules/`, "info");
+    }
+  });
 
-	// Append available rules to system prompt
-	p.on("before_agent_start", async (event) => {
-		if (ruleFiles.length === 0) {
-			return;
-		}
+  // Append available rules to system prompt
+  p.on("before_agent_start", async (event) => {
+    if (ruleFiles.length === 0) {
+      return;
+    }
 
-		const rulesList = ruleFiles.map((f) => `- .claude/rules/${f}`).join("\n");
+    const rulesList = ruleFiles.map((f) => `- .claude/rules/${f}`).join("\n");
 
-		return {
-			systemPrompt:
-				event.systemPrompt +
-				`
+    return {
+      systemPrompt:
+        event.systemPrompt +
+        `
 
 ## Project Rules
 
@@ -81,6 +81,6 @@ ${rulesList}
 
 When working on tasks related to these rules, use the read tool to load the relevant rule files for guidance.
 `,
-		};
-	});
+    };
+  });
 }

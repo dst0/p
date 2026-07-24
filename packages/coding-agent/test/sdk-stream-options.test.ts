@@ -2,11 +2,11 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
-	type Api,
-	type AssistantMessage,
-	createAssistantMessageEventStream,
-	type Model,
-	type SimpleStreamOptions,
+  type Api,
+  type AssistantMessage,
+  createAssistantMessageEventStream,
+  type Model,
+  type SimpleStreamOptions,
 } from "@dst0/p-ai";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
@@ -16,152 +16,148 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 describe("createAgentSession stream options", () => {
-	let tempDir: string;
-	let cwd: string;
-	let agentDir: string;
+  let tempDir: string;
+  let cwd: string;
+  let agentDir: string;
 
-	beforeEach(() => {
-		tempDir = mkdtempSync(join(tmpdir(), "pi-sdk-stream-options-"));
-		cwd = join(tempDir, "project");
-		agentDir = join(tempDir, "agent");
-		mkdirSync(cwd, { recursive: true });
-		mkdirSync(agentDir, { recursive: true });
-	});
+  beforeEach(() => {
+    tempDir = mkdtempSync(join(tmpdir(), "pi-sdk-stream-options-"));
+    cwd = join(tempDir, "project");
+    agentDir = join(tempDir, "agent");
+    mkdirSync(cwd, { recursive: true });
+    mkdirSync(agentDir, { recursive: true });
+  });
 
-	afterEach(() => {
-		if (tempDir) {
-			rmSync(tempDir, { recursive: true, force: true });
-		}
-	});
+  afterEach(() => {
+    if (tempDir) {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
 
-	function createModel(api: Api): Model<Api> {
-		return {
-			id: "capture-model",
-			name: "Capture Model",
-			api,
-			provider: "capture-provider",
-			baseUrl: "https://capture.invalid/v1",
-			reasoning: false,
-			input: ["text"],
-			cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-			contextWindow: 128000,
-			maxTokens: 4096,
-		};
-	}
+  function createModel(api: Api): Model<Api> {
+    return {
+      id: "capture-model",
+      name: "Capture Model",
+      api,
+      provider: "capture-provider",
+      baseUrl: "https://capture.invalid/v1",
+      reasoning: false,
+      input: ["text"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+      contextWindow: 128000,
+      maxTokens: 4096,
+    };
+  }
 
-	function createDoneStream(api: Api) {
-		const stream = createAssistantMessageEventStream();
-		const message: AssistantMessage = {
-			role: "assistant",
-			content: [{ type: "text", text: "ok" }],
-			api,
-			provider: "capture-provider",
-			model: "capture-model",
-			usage: {
-				input: 0,
-				output: 0,
-				cacheRead: 0,
-				cacheWrite: 0,
-				totalTokens: 0,
-				cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
-			},
-			stopReason: "stop",
-			timestamp: Date.now(),
-		};
-		stream.end(message);
-		return stream;
-	}
+  function createDoneStream(api: Api) {
+    const stream = createAssistantMessageEventStream();
+    const message: AssistantMessage = {
+      role: "assistant",
+      content: [{ type: "text", text: "ok" }],
+      api,
+      provider: "capture-provider",
+      model: "capture-model",
+      usage: {
+        input: 0,
+        output: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        totalTokens: 0,
+        cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+      },
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
+    stream.end(message);
+    return stream;
+  }
 
-	async function captureStreamOptions(
-		api: Api,
-		settings: { httpIdleTimeoutMs?: number; websocketConnectTimeoutMs?: number },
-		requestOptions: SimpleStreamOptions = {},
-		sessionOptions: { maxTokens?: number } = {},
-	): Promise<SimpleStreamOptions | undefined> {
-		const model = createModel(api);
-		const settingsManager = SettingsManager.inMemory(settings);
+  async function captureStreamOptions(
+    api: Api,
+    settings: { httpIdleTimeoutMs?: number; websocketConnectTimeoutMs?: number },
+    requestOptions: SimpleStreamOptions = {},
+    sessionOptions: { maxTokens?: number } = {},
+  ): Promise<SimpleStreamOptions | undefined> {
+    const model = createModel(api);
+    const settingsManager = SettingsManager.inMemory(settings);
 
-		const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
-		authStorage.setRuntimeApiKey(model.provider, "test-api-key");
-		const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
-		let capturedOptions: SimpleStreamOptions | undefined;
+    const authStorage = AuthStorage.create(join(agentDir, "auth.json"));
+    authStorage.setRuntimeApiKey(model.provider, "test-api-key");
+    const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
+    let capturedOptions: SimpleStreamOptions | undefined;
 
-		modelRegistry.registerProvider(model.provider, {
-			api,
-			streamSimple: (_model, _context, providerOptions) => {
-				capturedOptions = providerOptions;
-				return createDoneStream(api);
-			},
-		});
+    modelRegistry.registerProvider(model.provider, {
+      api,
+      streamSimple: (_model, _context, providerOptions) => {
+        capturedOptions = providerOptions;
+        return createDoneStream(api);
+      },
+    });
 
-		const sessionManager = SessionManager.inMemory(cwd);
-		const { session } = await createAgentSession({
-			cwd,
-			agentDir,
-			model,
-			authStorage,
-			modelRegistry,
-			settingsManager,
-			sessionManager,
-			maxTokens: sessionOptions.maxTokens,
-		});
+    const sessionManager = SessionManager.inMemory(cwd);
+    const { session } = await createAgentSession({
+      cwd,
+      agentDir,
+      model,
+      authStorage,
+      modelRegistry,
+      settingsManager,
+      sessionManager,
+      maxTokens: sessionOptions.maxTokens,
+    });
 
-		try {
-			await session.agent.streamFn(model, { messages: [] }, requestOptions);
-			return capturedOptions;
-		} finally {
-			session.dispose();
-			modelRegistry.unregisterProvider(model.provider);
-		}
-	}
+    try {
+      await session.agent.streamFn(model, { messages: [] }, requestOptions);
+      return capturedOptions;
+    } finally {
+      session.dispose();
+      modelRegistry.unregisterProvider(model.provider);
+    }
+  }
 
-	it("forwards httpIdleTimeoutMs as timeoutMs for OpenAI Codex", async () => {
-		const options = await captureStreamOptions("openai-codex-responses", { httpIdleTimeoutMs: 1234 });
+  it("forwards httpIdleTimeoutMs as timeoutMs for OpenAI Codex", async () => {
+    const options = await captureStreamOptions("openai-codex-responses", { httpIdleTimeoutMs: 1234 });
 
-		expect(options?.timeoutMs).toBe(1234);
-	});
+    expect(options?.timeoutMs).toBe(1234);
+  });
 
-	it("defaults timeoutMs from httpIdleTimeoutMs for all providers", async () => {
-		const options = await captureStreamOptions("openai-completions", { httpIdleTimeoutMs: 1234 });
+  it("defaults timeoutMs from httpIdleTimeoutMs for all providers", async () => {
+    const options = await captureStreamOptions("openai-completions", { httpIdleTimeoutMs: 1234 });
 
-		expect(options?.timeoutMs).toBe(1234);
-	});
+    expect(options?.timeoutMs).toBe(1234);
+  });
 
-	it("lets request timeoutMs override httpIdleTimeoutMs for OpenAI Codex", async () => {
-		const options = await captureStreamOptions(
-			"openai-codex-responses",
-			{ httpIdleTimeoutMs: 1234 },
-			{ timeoutMs: 0 },
-		);
+  it("lets request timeoutMs override httpIdleTimeoutMs for OpenAI Codex", async () => {
+    const options = await captureStreamOptions("openai-codex-responses", { httpIdleTimeoutMs: 1234 }, { timeoutMs: 0 });
 
-		expect(options?.timeoutMs).toBe(0);
-	});
+    expect(options?.timeoutMs).toBe(0);
+  });
 
-	it("forwards websocketConnectTimeoutMs from settings", async () => {
-		const options = await captureStreamOptions("openai-codex-responses", { websocketConnectTimeoutMs: 1234 });
+  it("forwards websocketConnectTimeoutMs from settings", async () => {
+    const options = await captureStreamOptions("openai-codex-responses", { websocketConnectTimeoutMs: 1234 });
 
-		expect(options?.websocketConnectTimeoutMs).toBe(1234);
-	});
+    expect(options?.websocketConnectTimeoutMs).toBe(1234);
+  });
 
-	it("uses session maxTokens when the request does not override it", async () => {
-		const options = await captureStreamOptions("openai-completions", {}, {}, { maxTokens: 8 });
+  it("uses session maxTokens when the request does not override it", async () => {
+    const options = await captureStreamOptions("openai-completions", {}, {}, { maxTokens: 8 });
 
-		expect(options?.maxTokens).toBe(8);
-	});
+    expect(options?.maxTokens).toBe(8);
+  });
 
-	it("lets request maxTokens override the session default", async () => {
-		const options = await captureStreamOptions("openai-completions", {}, { maxTokens: 12 }, { maxTokens: 8 });
+  it("lets request maxTokens override the session default", async () => {
+    const options = await captureStreamOptions("openai-completions", {}, { maxTokens: 12 }, { maxTokens: 8 });
 
-		expect(options?.maxTokens).toBe(12);
-	});
+    expect(options?.maxTokens).toBe(12);
+  });
 
-	it("lets request websocketConnectTimeoutMs override settings", async () => {
-		const options = await captureStreamOptions(
-			"openai-codex-responses",
-			{ websocketConnectTimeoutMs: 1234 },
-			{ websocketConnectTimeoutMs: 0 },
-		);
+  it("lets request websocketConnectTimeoutMs override settings", async () => {
+    const options = await captureStreamOptions(
+      "openai-codex-responses",
+      { websocketConnectTimeoutMs: 1234 },
+      { websocketConnectTimeoutMs: 0 },
+    );
 
-		expect(options?.websocketConnectTimeoutMs).toBe(0);
-	});
+    expect(options?.websocketConnectTimeoutMs).toBe(0);
+  });
 });

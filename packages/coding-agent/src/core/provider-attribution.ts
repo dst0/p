@@ -9,89 +9,89 @@ const CLOUDFLARE_AI_GATEWAY_HOST = "gateway.ai.cloudflare.com";
 const OPENCODE_HOST = "opencode.ai";
 
 function matchesHost(baseUrl: string, expectedHost: string): boolean {
-	try {
-		return new URL(baseUrl).hostname === expectedHost;
-	} catch {
-		return false;
-	}
+  try {
+    return new URL(baseUrl).hostname === expectedHost;
+  } catch {
+    return false;
+  }
 }
 
 function isOpenRouterModel(model: Model<Api>): boolean {
-	return model.provider === "openrouter" || (model.baseUrl?.includes(OPENROUTER_HOST) ?? false);
+  return model.provider === "openrouter" || (model.baseUrl?.includes(OPENROUTER_HOST) ?? false);
 }
 
 function isNvidiaNimModel(model: Model<Api>): boolean {
-	return model.provider === "nvidia" || (model.baseUrl ? matchesHost(model.baseUrl, NVIDIA_NIM_HOST) : false);
+  return model.provider === "nvidia" || (model.baseUrl ? matchesHost(model.baseUrl, NVIDIA_NIM_HOST) : false);
 }
 
 function isCloudflareModel(model: Model<Api>): boolean {
-	return (
-		model.provider === "cloudflare-workers-ai" ||
-		model.provider === "cloudflare-ai-gateway" ||
-		(model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_API_HOST) : false) ||
-		(model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_AI_GATEWAY_HOST) : false)
-	);
+  return (
+    model.provider === "cloudflare-workers-ai" ||
+    model.provider === "cloudflare-ai-gateway" ||
+    (model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_API_HOST) : false) ||
+    (model.baseUrl ? matchesHost(model.baseUrl, CLOUDFLARE_AI_GATEWAY_HOST) : false)
+  );
 }
 
 function getDefaultAttributionHeaders(
-	model: Model<Api>,
-	settingsManager: SettingsManager,
+  model: Model<Api>,
+  settingsManager: SettingsManager,
 ): Record<string, string> | undefined {
-	if (!isInstallTelemetryEnabled(settingsManager)) {
-		return undefined;
-	}
+  if (!isInstallTelemetryEnabled(settingsManager)) {
+    return undefined;
+  }
 
-	if (isOpenRouterModel(model)) {
-		return {
-			"HTTP-Referer": "https://p.dev",
-			"X-OpenRouter-Title": "p",
-			"X-OpenRouter-Categories": "cli-agent",
-		};
-	}
+  if (isOpenRouterModel(model)) {
+    return {
+      "HTTP-Referer": "https://p.dev",
+      "X-OpenRouter-Title": "p",
+      "X-OpenRouter-Categories": "cli-agent",
+    };
+  }
 
-	if (isNvidiaNimModel(model)) {
-		return {
-			"X-BILLING-INVOKE-ORIGIN": "P",
-		};
-	}
+  if (isNvidiaNimModel(model)) {
+    return {
+      "X-BILLING-INVOKE-ORIGIN": "P",
+    };
+  }
 
-	if (isCloudflareModel(model)) {
-		return {
-			"User-Agent": "p",
-		};
-	}
+  if (isCloudflareModel(model)) {
+    return {
+      "User-Agent": "p",
+    };
+  }
 
-	return undefined;
+  return undefined;
 }
 
 function getSessionHeaders(model: Model<Api>, sessionId: string | undefined): Record<string, string> | undefined {
-	if (!sessionId) return undefined;
-	if (
-		model.provider !== "opencode" &&
-		model.provider !== "opencode-go" &&
-		!(model.baseUrl ? matchesHost(model.baseUrl, OPENCODE_HOST) : false)
-	) {
-		return undefined;
-	}
-	return { "x-opencode-session": sessionId, "x-opencode-client": "p" };
+  if (!sessionId) return undefined;
+  if (
+    model.provider !== "opencode" &&
+    model.provider !== "opencode-go" &&
+    !(model.baseUrl ? matchesHost(model.baseUrl, OPENCODE_HOST) : false)
+  ) {
+    return undefined;
+  }
+  return { "x-opencode-session": sessionId, "x-opencode-client": "p" };
 }
 
 export function mergeProviderAttributionHeaders(
-	model: Model<Api>,
-	settingsManager: SettingsManager,
-	sessionId: string | undefined,
-	...headerSources: Array<Record<string, string> | undefined>
+  model: Model<Api>,
+  settingsManager: SettingsManager,
+  sessionId: string | undefined,
+  ...headerSources: Array<Record<string, string> | undefined>
 ): Record<string, string> | undefined {
-	const merged = {
-		...getSessionHeaders(model, sessionId),
-		...getDefaultAttributionHeaders(model, settingsManager),
-	};
+  const merged = {
+    ...getSessionHeaders(model, sessionId),
+    ...getDefaultAttributionHeaders(model, settingsManager),
+  };
 
-	for (const headers of headerSources) {
-		if (headers) {
-			Object.assign(merged, headers);
-		}
-	}
+  for (const headers of headerSources) {
+    if (headers) {
+      Object.assign(merged, headers);
+    }
+  }
 
-	return Object.keys(merged).length > 0 ? merged : undefined;
+  return Object.keys(merged).length > 0 ? merged : undefined;
 }
