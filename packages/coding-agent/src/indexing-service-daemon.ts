@@ -56,14 +56,13 @@ export async function runIndexingService(): Promise<void> {
 						console.error(
 							`Failed to prepare code indexing service for reinstall: ${error instanceof Error ? error.message : String(error)}`,
 						);
-						throw error;
 					});
 			};
 			const stop = () => {
 				if (stopping) return;
 				stopping = true;
 				process.off("SIGUSR1", prepareForRestart);
-				const prepared = preparePromise?.catch(() => undefined) ?? Promise.resolve();
+				const prepared = preparePromise ?? Promise.resolve();
 				void prepared.then(() => daemon.stop({ graceful: true })).finally(resolve);
 			};
 			process.on("SIGUSR1", prepareForRestart);
