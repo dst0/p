@@ -3,8 +3,8 @@
  * Release script for p-mono
  *
  * Usage:
- *   node scripts/release.mjs <major|minor|patch>
- *   node scripts/release.mjs <x.y.z>
+ *   node scripts/release.js <major|minor|patch>
+ *   node scripts/release.js <x.y.z>
  *
  * Steps:
  * 1. Check for uncommitted changes
@@ -29,7 +29,7 @@ const CHANGELOG_HEADER = "# Changelog\n\n## [Unreleased]\n\n";
 const RELEASE_HEADING_RE = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/gm;
 
 if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
-	console.error("Usage: node scripts/release.mjs <major|minor|patch|x.y.z>");
+	console.error("Usage: node scripts/release.js <major|minor|patch|x.y.z>");
 	process.exit(1);
 }
 

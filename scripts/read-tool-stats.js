@@ -53,7 +53,7 @@ function parseArgs(argv) {
 }
 
 function printHelp() {
-	console.log(`Usage: node scripts/read-tool-stats.mjs [options]
+	console.log(`Usage: node scripts/read-tool-stats.js [options]
 
 Options:
   --sessions-dir <path>  Sessions directory (default: ~/.p/agent/sessions)

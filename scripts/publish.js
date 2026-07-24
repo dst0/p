@@ -15,7 +15,7 @@ const dryRun = process.argv.includes("--dry-run");
 const unknownArgs = process.argv.slice(2).filter((arg) => arg !== "--dry-run");
 
 if (unknownArgs.length > 0) {
-	console.error(`Usage: node scripts/publish.mjs [--dry-run]`);
+	console.error(`Usage: node scripts/publish.js [--dry-run]`);
 	process.exit(1);
 }
 

@@ -7,7 +7,7 @@ cd "$SCRIPT_DIR"
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 cleanup_indexing_reinstall_marker() {
     if [[ "$INDEXING_REINSTALL_MARKER_ACTIVE" == true ]]; then
-        node scripts/prepare-indexing-service-reinstall.mjs --clear >/dev/null 2>&1 || true
+        node scripts/prepare-indexing-service-reinstall.js --clear >/dev/null 2>&1 || true
     fi
 }
 trap cleanup_indexing_reinstall_marker EXIT
@@ -92,11 +92,11 @@ console.log('Compaction settings verified OK');
 # Give the indexing daemon a bounded opportunity to quiesce. If active work cannot
 # settle promptly, stop the validated daemon before replacing its managed service.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
-node scripts/prepare-indexing-service-reinstall.mjs
+node scripts/prepare-indexing-service-reinstall.js
 
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js
-node scripts/prepare-indexing-service-reinstall.mjs --clear
+node scripts/prepare-indexing-service-reinstall.js --clear
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 
 echo "Done. Version $VERSION installed."

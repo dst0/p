@@ -5,7 +5,7 @@
  * which fails when workspace packages depend on each other via unpublish
  * versions (e.g. @dst0/p-ai@^0.3.0 not yet on npm).
  *
- * Usage: node scripts/version-bump.mjs [patch|minor|major]
+ * Usage: node scripts/version-bump.js [patch|minor|major]
  */
 
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
@@ -15,7 +15,7 @@ import { inc } from 'semver';
 const bump = process.argv[2] || 'minor';
 const validBumps = ['patch', 'minor', 'major'];
 if (!validBumps.includes(bump)) {
-	console.error(`Usage: node scripts/version-bump.mjs [${validBumps.join('|')}]`);
+	console.error(`Usage: node scripts/version-bump.js [${validBumps.join('|')}]`);
 	process.exit(1);
 }
 

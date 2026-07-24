@@ -65,7 +65,7 @@ describe("indexing reinstall scripts", () => {
 		const startedAt = Date.now();
 		const result = await runProcess(
 			process.execPath,
-			[path.join(repositoryRoot, "scripts", "prepare-indexing-service-reinstall.mjs")],
+			[path.join(repositoryRoot, "scripts", "prepare-indexing-service-reinstall.js")],
 			{
 				...process.env,
 				P_CODING_AGENT_DIR: fixture.agentDir,

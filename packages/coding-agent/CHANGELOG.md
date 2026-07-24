@@ -99,7 +99,7 @@
 - Session state progress preserved after compaction
 - Plan items preserved during replan
 - Footer shows queued session progress with position
-- `scripts/version-bump.mjs` for automated version bumps across all packages
+- `scripts/version-bump.js` for automated version bumps across all packages
 - `npm run release:patch`, `npm run release:minor`, `npm run release:major` scripts
 
 ### Changed

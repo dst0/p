@@ -14,7 +14,7 @@ const URL_SCHEME_RE = /^[a-z][a-z0-9+.-]*:/i;
 const INLINE_MARKDOWN_LINK_RE = /(!?\[[^\]\n]+\]\()([^\s)]+)((?:\s+[^)]*)?\))/g;
 
 function printUsage() {
-	console.log(`Usage: node scripts/release-notes.mjs <command> [options]
+	console.log(`Usage: node scripts/release-notes.js <command> [options]
 
 Commands:
   extract              Extract release notes from the coding-agent changelog

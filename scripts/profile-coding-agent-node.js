@@ -18,7 +18,7 @@ const startupBenchmarkReadyMarker = "PI_STARTUP_BENCHMARK_READY";
 
 function printHelp() {
 	console.log(`Usage:
-  node scripts/profile-coding-agent-node.mjs [options]
+  node scripts/profile-coding-agent-node.js [options]
 
 Profiles coding-agent startup with the runtime selected below:
 - npm run profile:tui     -> builds packages/coding-agent and profiles TUI startup with Node

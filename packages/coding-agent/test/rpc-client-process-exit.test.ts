@@ -9,7 +9,7 @@ const tempDirs: string[] = [];
 function writeChildScript(contents: string): string {
 	const dir = mkdtempSync(join(tmpdir(), "pi-rpc-client-exit-"));
 	tempDirs.push(dir);
-	const path = join(dir, "child.mjs");
+	const path = join(dir, "child.js");
 	writeFileSync(path, contents);
 	return path;
 }

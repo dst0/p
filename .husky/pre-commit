@@ -3,7 +3,7 @@
 # Get list of staged files before running check
 STAGED_FILES=$(git diff --cached --name-only)
 
-node scripts/check-lockfile-commit.mjs
+node scripts/check-lockfile-commit.js
 if [ $? -ne 0 ]; then
   exit 1
 fi

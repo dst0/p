@@ -13,7 +13,7 @@ const packages = [
 ];
 
 function printUsage() {
-	console.log(`Usage: node scripts/local-release.mjs [options]
+	console.log(`Usage: node scripts/local-release.js [options]
 
 Builds and packs the publishable packages, then installs the tarballs into an
 isolated directory outside the repository for local release testing.

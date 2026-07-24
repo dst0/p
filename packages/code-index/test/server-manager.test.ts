@@ -31,7 +31,7 @@ describe("QdrantServerManager", () => {
 	it("waits for an in-flight stop before restarting on the same port", async () => {
 		const directory = mkdtempSync(join(tmpdir(), "p-qdrant-manager-"));
 		temporaryDirectories.push(directory);
-		const executable = join(directory, "fake-qdrant.mjs");
+		const executable = join(directory, "fake-qdrant.js");
 		writeFileSync(
 			executable,
 			[

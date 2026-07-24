@@ -7,7 +7,7 @@ const REPO_MAP_FILE = ".pdev/state/repo-map.json";
 const MAX_FILES = 1_200;
 const MAX_FILE_BYTES = 200_000;
 const MAX_CONTEXT_TOKENS = 900;
-const INDEX_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".mjs", ".cjs"]);
+const INDEX_EXTENSIONS = new Set([".ts", ".tsx", ".js", ".jsx", ".json", ".md", ".cjs"]);
 const QUERY_STOP_WORDS = new Set([
 	"a",
 	"an",
@@ -404,7 +404,6 @@ function languageForExtension(ext: string): string {
 			return "typescript";
 		case ".js":
 		case ".jsx":
-		case ".mjs":
 		case ".cjs":
 			return "javascript";
 		case ".json":

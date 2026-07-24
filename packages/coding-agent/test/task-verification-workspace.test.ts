@@ -110,7 +110,7 @@ describe("task verification workspace enforcement", () => {
 			await runHookedTool(
 				agent,
 				"bash",
-				{ command: "node scripts/change-source.mjs" },
+				{ command: "node scripts/change-source.js" },
 				{
 					between: async () => {
 						await writeFile(join(cwd, "source.ts"), "export const value = 2;\n");
@@ -134,7 +134,7 @@ describe("task verification workspace enforcement", () => {
 			task_summary: "Fix refresh recovery after daemon restart",
 		});
 
-		const baselineCommand = "node test/reproduce-refresh-restart.mjs";
+		const baselineCommand = "node test/reproduce-refresh-restart.js";
 		const baselineEvidence = evidenceHandle(
 			await runHookedTool(agent, "bash", { command: baselineCommand }, { text: "reproduced" }),
 		);
@@ -153,7 +153,7 @@ describe("task verification workspace enforcement", () => {
 			edits: [{ oldText: "old", newText: "new" }],
 		});
 		const unrelatedEvidence = evidenceHandle(
-			await runHookedTool(agent, "bash", { command: "node test/other-check.mjs" }, { text: "passed" }),
+			await runHookedTool(agent, "bash", { command: "node test/other-check.js" }, { text: "passed" }),
 		);
 		const unrelatedFinal = await callVerificationTool(controller, {
 			action: "record_final",

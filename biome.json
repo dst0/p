@@ -5,9 +5,13 @@
 		"rules": {
 			"recommended": true,
 			"style": {
+				"noRestrictedImports": "off",
 				"noNonNullAssertion": "off",
 				"useConst": "error",
 				"useNodejsImportProtocol": "off"
+			},
+			"correctness": {
+				"useImportExtensions": "off"
 			},
 			"suspicious": {
 				"noExplicitAny": "off",

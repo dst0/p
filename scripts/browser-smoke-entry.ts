@@ -17,7 +17,7 @@ import {
 	truncateHead,
 } from "@dst0/p-agent-core";
 
-// Keep this entry browser-safe. It is bundled by scripts/check-browser-smoke.mjs
+// Keep this entry browser-safe. It is bundled by scripts/check-browser-smoke.js
 // to catch accidental Node-only runtime imports in browser-facing package exports.
 const model = getModel("google", "gemini-2.5-flash");
 const schema = Type.Object({ prompt: Type.String() });

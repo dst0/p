@@ -109,7 +109,9 @@ export async function executeShellWithCapture(
 			onStderr: onChunk,
 		});
 		const tailOutput = outputChunks.join("");
-		const truncationResult = truncateTail(tailOutput);
+		// Remove trailing newlines to avoid empty lines dominating truncation
+		const trimmedOutput = tailOutput.replace(/\n+$/g, "");
+		const truncationResult = truncateTail(trimmedOutput);
 		if (truncationResult.truncated && !fullOutputPath) {
 			ensureFullOutputFile(tailOutput);
 		}

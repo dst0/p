@@ -118,7 +118,7 @@ describe("task verification controller", () => {
 		expect(withoutBaseline?.reason).toContain("baseline");
 
 		const reproduction = evidenceHandle(
-			await afterTool(agent, "bash", { command: "node test/reproduce-restart.mjs" }, { text: "reproduced" }),
+			await afterTool(agent, "bash", { command: "node test/reproduce-restart.js" }, { text: "reproduced" }),
 		);
 		const baseline = await callVerificationTool(controller, {
 			action: "record_baseline",
@@ -214,7 +214,7 @@ describe("task verification controller", () => {
 		expect(unfinished?.reason).toContain("semantic verification");
 
 		const reproduction = evidenceHandle(
-			await afterTool(agent, "bash", { command: "node test/manual-gate-check.mjs" }, { text: "gate passed" }),
+			await afterTool(agent, "bash", { command: "node test/manual-gate-check.js" }, { text: "gate passed" }),
 		);
 		const final = await callVerificationTool(controller, {
 			action: "record_final",
@@ -253,7 +253,7 @@ describe("task verification controller", () => {
 			task_summary: "Fix an incorrect completion gate",
 		});
 		const baseline = evidenceHandle(
-			await afterTool(agent, "bash", { command: "node test/reproduce-completion.mjs" }, { text: "reproduced" }),
+			await afterTool(agent, "bash", { command: "node test/reproduce-completion.js" }, { text: "reproduced" }),
 		);
 		await callVerificationTool(controller, {
 			action: "record_baseline",

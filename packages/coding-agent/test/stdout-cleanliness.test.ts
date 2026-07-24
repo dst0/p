@@ -29,7 +29,7 @@ async function runCli(args: string[]): Promise<{ stdout: string; stderr: string;
 	mkdirSync(agentDir, { recursive: true });
 	mkdirSync(projectConfigDir, { recursive: true });
 
-	const fakeNpmPath = join(tempRoot, "fake-npm.mjs");
+	const fakeNpmPath = join(tempRoot, "fake-npm.js");
 	writeFileSync(
 		fakeNpmPath,
 		[
