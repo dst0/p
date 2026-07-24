@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Enforce evidence-backed task verification in mutating coding-agent sessions: require baseline proof before bug fixes and fresh semantic verification of the original failing scenario before successful completion or publishing.
+
 ### Fixed
 
 - Validate changelog structure before release, require descending release versions, and document UTC release dates.
