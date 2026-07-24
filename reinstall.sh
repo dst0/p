@@ -89,7 +89,7 @@ if (settings.triggerReserveTokens !== 2000) { console.error('ERROR: triggerReser
 console.log('Compaction settings verified OK');
 "
 
-# Ask the indexing daemon to quiesce with a bounded wait. If active work cannot
+# Give the indexing daemon a bounded opportunity to quiesce. If active work cannot
 # settle promptly, stop the validated daemon before replacing its managed service.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
 node scripts/prepare-indexing-service-reinstall.mjs
