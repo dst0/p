@@ -245,6 +245,7 @@ function behavioralFinalRequired(kind: TaskKind, taskText: string): boolean {
 
 export class TaskVerificationController {
 	readonly toolDefinition: ToolDefinition;
+	private readonly sessionManager: SessionManager;
 	private readonly evidence = new Map<string, TaskVerificationEvidence>();
 	private readonly bashFingerprints = new Map<string, string | undefined>();
 	private state = emptyState();
@@ -252,7 +253,8 @@ export class TaskVerificationController {
 	private nextEvidence = 1;
 	private installed = false;
 
-	constructor(private readonly sessionManager: SessionManager) {
+	constructor(sessionManager: SessionManager) {
+		this.sessionManager = sessionManager;
 		this.restore();
 		this.toolDefinition = this.createToolDefinition() as unknown as ToolDefinition;
 	}
