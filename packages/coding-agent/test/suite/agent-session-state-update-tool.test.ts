@@ -10,6 +10,8 @@ import { createHarness, type Harness } from "./harness.ts";
 
 const UPDATE_TOOL = "update_session_state";
 const PROGRESS_TOOL = "mark_session_progress";
+const STATE_UPDATE_REMINDER =
+	"After receiving the latest user message, call update_session_state first to record or revise the goal, plan, and next action before attempting any other tool call.";
 
 function updateStateCall(goal: string, action: "initial_plan" | "replan" = "initial_plan") {
 	return fauxToolCall(UPDATE_TOOL, {
@@ -63,7 +65,9 @@ describe("AgentSession default session-state tool", () => {
 			const readEnds = toolEndEvents(harness, "read");
 			expect(readEnds).toHaveLength(2);
 			expect(readEnds[0]?.isError).toBe(true);
-			expect(JSON.stringify(readEnds[0]?.result.content)).toContain(UPDATE_TOOL);
+			const reminder = JSON.stringify(readEnds[0]?.result.content);
+			expect(reminder).toContain(STATE_UPDATE_REMINDER);
+			expect(reminder).not.toContain("Before calling");
 			expect(readEnds[1]?.isError).toBe(false);
 			expect(toolEndEvents(harness, UPDATE_TOOL)[0]?.isError).toBe(false);
 			// Auto-reconciliation: finish_work('success') auto-transitions in_progress items to done, succeeds in one call
@@ -261,7 +265,9 @@ describe("AgentSession default session-state tool", () => {
 			const readEnds = toolEndEvents(harness, "read");
 			expect(readEnds).toHaveLength(1);
 			expect(readEnds[0]?.isError).toBe(true);
-			expect(JSON.stringify(readEnds[0]?.result.content)).toContain(UPDATE_TOOL);
+			const reminder = JSON.stringify(readEnds[0]?.result.content);
+			expect(reminder).toContain(STATE_UPDATE_REMINDER);
+			expect(reminder).not.toContain("Before calling");
 
 			const stateEntries = harness.sessionManager
 				.getEntries()

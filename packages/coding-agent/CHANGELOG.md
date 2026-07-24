@@ -5,6 +5,7 @@
 ### Fixed
 
 - Make task-verification gates self-explanatory after compaction: expose exact next actions, eligible evidence, required replay commands, and ready-to-use verification payloads through proactive status and every rejection.
+- Clarify the session-state guard reminder around user-message timing instead of framing it as a prerequisite for the attempted tool call.
 
 ### Added
 
