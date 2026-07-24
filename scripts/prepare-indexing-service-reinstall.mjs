@@ -47,6 +47,7 @@ async function prepareForReinstall() {
 		console.log(`Preparing code indexing service ${pid} for a safe reinstall...`);
 		process.kill(pid, "SIGUSR1");
 		await waitForQuiesceMarker(pid, timeoutMs);
+		writeReinstallMarker(pid);
 		console.log("Active indexing completed and the daemon is quiescent.");
 		return;
 	}
@@ -56,6 +57,7 @@ async function prepareForReinstall() {
 	// replace it. This path is only needed for the first upgrade to this version.
 	console.log(`Waiting for legacy code indexing service ${pid} to become idle...`);
 	await waitForLegacyIdle(pid, timeoutMs);
+	writeReinstallMarker(pid);
 	console.log("Legacy code indexing service is idle; reinstall can continue.");
 }
 
