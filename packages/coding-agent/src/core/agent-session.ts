@@ -1491,8 +1491,8 @@ export class AgentSession {
 					return {
 						block: true,
 						reason:
-							`Before calling ${toolCall.name}, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
-							"record or revise the goal, plan, and next action for the latest user message.",
+							`After receiving the latest user message, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
+							"record or revise the goal, plan, and next action before attempting any other tool call.",
 					};
 				}
 			}
