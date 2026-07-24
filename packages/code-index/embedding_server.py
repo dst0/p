@@ -22,9 +22,8 @@ import os
 import sys
 import threading
 import traceback
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from typing import List
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 os.environ.setdefault("PYTORCH_MPS_HIGH_WATERMARK_RATIO", "0.0")
@@ -115,27 +114,26 @@ class Handler(BaseHTTPRequestHandler):
         try:
             length = int(self.headers.get("Content-Length", 0))
             body = json.loads(self.rfile.read(length))
-            texts: List[str] = body.get("input", [])
+            texts: list[str] = body.get("input", [])
             normalize = body.get("normalize", True)
 
             if not texts:
                 self._json(400, {"error": "empty input"})
                 return
 
-            with encode_lock:
-                with torch.inference_mode():
-                    embeddings = server.model.encode(
-                        texts,
-                        normalize_embeddings=normalize,
-                        batch_size=16,
-                        show_progress_bar=False,
-                    )
-                    # Reclaim GPU/Metal memory after encode
-                    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
-                        if hasattr(torch.mps, "empty_cache"):
-                            torch.mps.empty_cache()
-                    elif torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+            with encode_lock, torch.inference_mode():
+                embeddings = server.model.encode(
+                    texts,
+                    normalize_embeddings=normalize,
+                    batch_size=16,
+                    show_progress_bar=False,
+                )
+                # Reclaim GPU/Metal memory after encode
+                if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+                    if hasattr(torch.mps, "empty_cache"):
+                        torch.mps.empty_cache()
+                elif torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
             self._json(200, {
                 "model": server.model_name,
