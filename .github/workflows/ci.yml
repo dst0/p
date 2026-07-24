@@ -26,6 +26,12 @@ jobs:
       - name: Apply pending task-verification guidance patch
         if: github.event_name == 'pull_request' && github.head_ref == 'fix/task-verification-guidance'
         run: |
+          if [[ -f .patch-error.txt ]]; then
+            cat .patch-error.txt
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           python - <<'PY'
           from pathlib import Path
           import subprocess
@@ -54,12 +60,27 @@ jobs:
                       raise SystemExit(f'Unexpected indentation in temporary workflow step {target}: {line!r}')
                   lines.append(line[10:] if line else '')
               script = '\n'.join(lines) + '\n'
-              subprocess.run(['bash', '-euxo', 'pipefail', '-c', script], check=True)
+              result = subprocess.run(
+                  ['bash', '-euxo', 'pipefail', '-c', script],
+                  text=True,
+                  stdout=subprocess.PIPE,
+                  stderr=subprocess.STDOUT,
+              )
+              print(result.stdout, end='')
+              if result.returncode != 0:
+                  Path('.patch-error.txt').write_text(
+                      f'Failed temporary step: {target}\nExit code: {result.returncode}\n\n{result.stdout}'
+                  )
+                  subprocess.run(['git', 'add', '.patch-error.txt'], check=True)
+                  subprocess.run(['git', 'commit', '-m', 'chore: capture task verification patch failure'], check=True)
+                  subprocess.run(
+                      ['git', 'push', 'origin', 'HEAD:fix/task-verification-guidance'],
+                      check=True,
+                  )
+                  raise SystemExit(result.returncode)
           PY
           git checkout origin/main -- .github/workflows/ci.yml
-          rm -f .github/workflows/temp-task-verification-guidance.yml
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -f .github/workflows/temp-task-verification-guidance.yml .patch-error.txt
           git add -A
           git commit -m "fix(coding-agent): explain verification recovery steps"
           git push origin HEAD:fix/task-verification-guidance
