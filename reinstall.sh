@@ -4,6 +4,14 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
+INDEXING_REINSTALL_MARKER_ACTIVE=false
+cleanup_indexing_reinstall_marker() {
+    if [[ "$INDEXING_REINSTALL_MARKER_ACTIVE" == true ]]; then
+        node scripts/prepare-indexing-service-reinstall.mjs --clear >/dev/null 2>&1 || true
+    fi
+}
+trap cleanup_indexing_reinstall_marker EXIT
+
 echo "=== Using current checkout (no git pull) ==="
 
 echo "=== Reinstalling Monorepo Dependencies ==="
@@ -83,9 +91,12 @@ console.log('Compaction settings verified OK');
 
 # Stop accepting new indexing work and let active repository operations finish
 # before the service manager replaces the daemon and its managed backends.
+INDEXING_REINSTALL_MARKER_ACTIVE=true
 node scripts/prepare-indexing-service-reinstall.mjs
 
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js
+node scripts/prepare-indexing-service-reinstall.mjs --clear
+INDEXING_REINSTALL_MARKER_ACTIVE=false
 
 echo "Done. Version $VERSION installed."
