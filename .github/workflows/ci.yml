@@ -42,7 +42,14 @@ jobs:
           path: build.log
 
       - name: Check
-        run: npm run check
+        run: npm run check > check.log 2>&1
+
+      - name: Upload check diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: check-log
+          path: check.log
 
       - name: Test
         run: |
