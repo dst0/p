@@ -435,11 +435,12 @@ export function truncateKeptMessages(
 	const targetContextTokens =
 		typeof budget === "number" ? keepRecentTokens * 1.5 : (budget.targetContextTokens ?? keepRecentTokens * 1.5);
 	const systemPromptTokens = typeof budget === "number" ? 0 : (budget.systemPromptTokens ?? 0);
+	const originalTexts = messages.map((message) => messageText(message));
 
 	for (let index = 0; index < messages.length; index++) {
 		const message = messages[index];
 		if (message.role === "compactionSummary") continue;
-		const text = messageText(message);
+		const text = originalTexts[index];
 		if (text && estimateTokens(message) > keepRecentTokens) {
 			messages[index] = replaceText(message, truncateHeadAndTail(text, MAX_MESSAGE_LINES, MAX_MESSAGE_CHARS));
 		}
@@ -456,7 +457,7 @@ export function truncateKeptMessages(
 			if (totalTokens(messages, systemPromptTokens) <= targetContextTokens) break;
 			const message = messages[index];
 			if (message.role === "compactionSummary") continue;
-			const text = messageText(message);
+			const text = originalTexts[index];
 			if (!text || estimateTokens(message) <= maxTokens) continue;
 			messages[index] = replaceText(message, truncateHeadAndTail(text, maxLines, maxChars));
 		}

@@ -102,6 +102,7 @@ vi.mock("../src/core/compaction/index.js", () => ({
 			systemPromptTokens: 0,
 		},
 	}),
+	renderMinimalCompactionCheckpoint: () => "compacted",
 	renderStructuredSessionCheckpoint: () => "compacted",
 	selectKeepRecentTokens: () => 4000,
 	shouldCompact: (
