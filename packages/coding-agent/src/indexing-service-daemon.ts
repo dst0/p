@@ -1,12 +1,34 @@
 #!/usr/bin/env node
 
+import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getAgentDir } from "./config.ts";
 import { IndexingDaemon } from "./core/indexing-daemon.ts";
 
+const REINSTALL_CONTROL_FILE = "reinstall-control.json";
+const REINSTALL_READY_FILE = "reinstall-ready.json";
+const REINSTALL_STOP_LEASE_MS = 60_000;
+
+export function getIndexingReinstallControlPath(agentDir: string): string {
+	return path.join(agentDir, "indexing-service", REINSTALL_CONTROL_FILE);
+}
+
+export function getIndexingReinstallReadyPath(agentDir: string): string {
+	return path.join(agentDir, "indexing-service", REINSTALL_READY_FILE);
+}
+
 export async function runIndexingService(): Promise<void> {
 	const agentDir = getAgentDir();
+	const reinstallControlPath = getIndexingReinstallControlPath(agentDir);
+	const reinstallReadyPath = getIndexingReinstallReadyPath(agentDir);
+	fs.mkdirSync(path.dirname(reinstallControlPath), { recursive: true, mode: 0o700 });
+	fs.rmSync(reinstallReadyPath, { force: true });
+	fs.writeFileSync(
+		reinstallControlPath,
+		`${JSON.stringify({ pid: process.pid, protocolVersion: 1, startedAt: new Date().toISOString() })}\n`,
+		{ mode: 0o600 },
+	);
 	const daemon = new IndexingDaemon({
 		agentDir,
 		qdrantBinary: process.env.P_CODE_RAG_QDRANT_BINARY ?? "qdrant",
@@ -14,18 +36,52 @@ export async function runIndexingService(): Promise<void> {
 		pythonExecutable: process.env.P_CODE_RAG_PYTHON ?? "python3",
 		embeddingModel: process.env.P_CODE_RAG_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B",
 	});
-	await daemon.start();
+	try {
+		await daemon.start();
 
-	await new Promise<void>((resolve) => {
-		let stopping = false;
-		const stop = () => {
-			if (stopping) return;
-			stopping = true;
-			void daemon.stop().finally(resolve);
-		};
-		process.once("SIGINT", stop);
-		process.once("SIGTERM", stop);
-	});
+		await new Promise<void>((resolve) => {
+			let stopping = false;
+			let preparedForRestart = false;
+			let preparePromise: Promise<void> | undefined;
+			let restartLeaseTimer: ReturnType<typeof setTimeout> | undefined;
+			const stop = () => {
+				if (stopping) return;
+				stopping = true;
+				if (restartLeaseTimer) clearTimeout(restartLeaseTimer);
+				process.off("SIGUSR1", prepareForRestart);
+				const prepared = preparePromise ?? Promise.resolve();
+				void prepared.then(() => daemon.stop({ graceful: preparedForRestart })).finally(resolve);
+			};
+			const prepareForRestart = () => {
+				if (stopping || preparePromise) return;
+				preparePromise = daemon
+					.prepareForRestart()
+					.then(() => {
+						fs.writeFileSync(
+							reinstallReadyPath,
+							`${JSON.stringify({ pid: process.pid, readyAt: new Date().toISOString() })}\n`,
+							{ mode: 0o600 },
+						);
+						preparedForRestart = true;
+						restartLeaseTimer = setTimeout(() => {
+							console.error("Indexing reinstall did not stop the prepared daemon; restarting it safely");
+							stop();
+						}, REINSTALL_STOP_LEASE_MS);
+					})
+					.catch((error: unknown) => {
+						console.error(
+							`Failed to prepare code indexing service for reinstall: ${error instanceof Error ? error.message : String(error)}`,
+						);
+					});
+			};
+			process.on("SIGUSR1", prepareForRestart);
+			process.once("SIGINT", stop);
+			process.once("SIGTERM", stop);
+		});
+	} finally {
+		fs.rmSync(reinstallControlPath, { force: true });
+		fs.rmSync(reinstallReadyPath, { force: true });
+	}
 }
 
 const invokedPath = process.argv[1] ? pathToFileURL(path.resolve(process.argv[1])).href : undefined;
