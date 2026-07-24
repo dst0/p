@@ -32,6 +32,7 @@ jobs:
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          npm install --ignore-scripts
           set +e
           python3 - <<'PY' > /tmp/task-verification-patch.log 2>&1
           from pathlib import Path
