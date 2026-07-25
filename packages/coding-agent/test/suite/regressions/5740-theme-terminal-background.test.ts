@@ -5,7 +5,6 @@ import {
   getThemePageBg,
   initTheme,
   isLightTheme,
-  onThemeChange,
   setTheme,
 } from "../../../src/modes/interactive/theme/theme.ts";
 import { createHarness, type Harness } from "../harness.ts";
@@ -104,30 +103,26 @@ describe("regression #5740: theme terminal background export", () => {
     (submenu as any).selectList.onCancel?.();
   });
 
-  it("triggers updateTerminalBackground via onThemeChange event listener", () => {
-    const setTerminalBackgroundColor = vi.fn();
-    const updateEditorBorderColor = vi.fn();
-    const invalidate = vi.fn();
-    const requestRender = vi.fn();
+  it("triggers updateTerminalBackground via onThemeChange watcher registered in mode.init()", async () => {
+    const harness = await createHarness();
+    harnesses.push(harness);
 
-    const dummyMode = {
-      ui: { setTerminalBackgroundColor, invalidate, requestRender },
-      updateEditorBorderColor,
-      updateTerminalBackground() {
-        this.ui.setTerminalBackgroundColor(getThemePageBg());
-      },
-    };
+    const runtimeHost = {
+      session: harness.session,
+      setBeforeSessionInvalidate: vi.fn(),
+      setRebindSession: vi.fn(),
+      dispose: async () => {},
+    } as any;
+    const mode = new InteractiveMode(runtimeHost);
+    const setTerminalBackgroundColor = vi.spyOn((mode as any).ui, "setTerminalBackgroundColor");
 
-    onThemeChange(() => {
-      dummyMode.updateTerminalBackground();
-      dummyMode.ui.invalidate();
-      dummyMode.updateEditorBorderColor();
-      dummyMode.ui.requestRender();
-    });
+    vi.spyOn(mode as any, "rebindCurrentSession").mockResolvedValue(undefined);
+    vi.spyOn((mode as any).ui, "requestRender").mockImplementation(() => {});
 
+    await mode.init();
+
+    // Trigger theme change which executes line 799 in interactive-mode.ts
     setTheme("catppuccin", true);
     expect(setTerminalBackgroundColor).toHaveBeenCalledWith("#11111b");
-    expect(updateEditorBorderColor).toHaveBeenCalled();
-    expect(requestRender).toHaveBeenCalled();
   });
 });
