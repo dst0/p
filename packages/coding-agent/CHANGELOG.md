@@ -21,6 +21,7 @@
 
 ### Added
 
+- Added classic built-in themes (Catppuccin, Darcula, Dracula, Gruvbox, Monokai, Nord, One Dark, Solarized Dark, Tokyo Night, VS Code Dark+) and dynamic built-in theme discovery.
 - Added `rg` as an explicit tool name alias for `grep` (`createRgTool`, `createRgToolDefinition`, and `rg` tool registration).
 - Added unit tests for find, grep, sleep, finish_work tools and shell/changelog/html utilities.
 - Added asynchronous bash sessions and a `process` tool that wakes on new output or completion, supports immediate inspection, and can interrupt stuck process trees.

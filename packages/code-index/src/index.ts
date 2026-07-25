@@ -49,4 +49,4 @@ export type {
 } from "./rag/types.ts";
 export { QdrantVectorStore } from "./rag/vector-store.ts";
 export type { Chunk, ChunkPayload, IndexConfig, IndexStats, IndexStatus, SearchResult } from "./types.ts";
-export const CODE_INDEX_VERSION = "0.4.68";
+export const CODE_INDEX_VERSION = "0.4.69";

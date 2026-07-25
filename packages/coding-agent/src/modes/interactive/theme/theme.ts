@@ -430,12 +430,21 @@ let BUILTIN_THEMES: Record<string, ThemeJson> | undefined;
 function getBuiltinThemes(): Record<string, ThemeJson> {
   if (!BUILTIN_THEMES) {
     const themesDir = getThemesDir();
-    const darkPath = path.join(themesDir, "dark.json");
-    const lightPath = path.join(themesDir, "light.json");
-    BUILTIN_THEMES = {
-      dark: JSON.parse(fs.readFileSync(darkPath, "utf-8")) as ThemeJson,
-      light: JSON.parse(fs.readFileSync(lightPath, "utf-8")) as ThemeJson,
-    };
+    BUILTIN_THEMES = {};
+    if (fs.existsSync(themesDir)) {
+      for (const file of fs.readdirSync(themesDir)) {
+        if (file.endsWith(".json") && file !== "theme-schema.json") {
+          const themePath = path.join(themesDir, file);
+          try {
+            const content = fs.readFileSync(themePath, "utf-8");
+            const themeJson = parseThemeJsonContent(file, content);
+            BUILTIN_THEMES[themeJson.name] = themeJson;
+          } catch {
+            // Ignore invalid files during built-in theme discovery
+          }
+        }
+      }
+    }
   }
   return BUILTIN_THEMES;
 }
