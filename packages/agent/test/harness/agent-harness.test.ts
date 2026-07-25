@@ -880,7 +880,7 @@ describe("AgentHarness", () => {
       getApiKeyAndHeaders: async () => ({ apiKey: "test-key" }),
     });
 
-    await harness.navigateTree("nonexistent-entry-id");
+    await expect(harness.navigateTree("nonexistent-entry-id")).rejects.toThrow("Entry nonexistent-entry-id not found");
 
     const result = await harness.navigateTree(e2, { summarize: true });
     expect(result.cancelled).toBe(false);

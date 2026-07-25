@@ -76,3 +76,49 @@ describe("api-registry", () => {
     unregisterApiProviders("source-mismatch");
   });
 });
+
+it("invokes wrapped stream and streamSimple correctly", () => {
+  let streamCalled = false;
+  let streamSimpleCalled = false;
+
+  registerApiProvider({
+    api: "anthropic" as any,
+    stream: () => {
+      streamCalled = true;
+      return {} as any;
+    },
+    streamSimple: () => {
+      streamSimpleCalled = true;
+      return {} as any;
+    },
+  });
+
+  const p = getApiProvider("anthropic" as any);
+  p!.stream({ api: "anthropic" } as any, [] as any, {} as any);
+  p!.streamSimple({ api: "anthropic" } as any, [] as any, {} as any);
+
+  expect(streamCalled).toBe(true);
+  expect(streamSimpleCalled).toBe(true);
+
+  // Mismatched api
+  expect(() => p!.stream({ api: "openai-completions" } as any, [] as any, {} as any)).toThrow("Mismatched api");
+  expect(() => p!.streamSimple({ api: "openai-completions" } as any, [] as any, {} as any)).toThrow("Mismatched api");
+});
+
+it("unregisterApiProviders handles non-matching sourceId", () => {
+  registerApiProvider(
+    {
+      api: "anthropic" as any,
+      stream: () => ({}) as any,
+      streamSimple: () => ({}) as any,
+    },
+    "source-1",
+  );
+
+  // Unregister another source, shouldn't delete anthropic
+  unregisterApiProviders("source-2");
+  expect(getApiProvider("anthropic" as any)).toBeDefined();
+
+  unregisterApiProviders("source-1");
+  expect(getApiProvider("anthropic" as any)).toBeUndefined();
+});

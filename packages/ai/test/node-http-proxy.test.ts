@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   createHttpProxyAgentsForTarget,
   resolveHttpProxyUrlForTarget,
@@ -65,4 +65,24 @@ describe("node-http-proxy", () => {
     process.env.HTTPS_PROXY = "http://proxy.example.com:8080";
     expect(resolveHttpProxyUrlForTarget("not-a-valid-url")).toBeUndefined();
   });
+});
+
+it("handles URL object", () => {
+  // line 29: parseProxyTargetUrl with URL object
+  vi.stubGlobal("process", { env: { http_proxy: "http://proxy" } });
+  const u = new URL("http://example.com");
+  expect(resolveHttpProxyUrlForTarget(u)?.href).toBe("http://proxy/");
+});
+
+it("handles NO_PROXY=*", () => {
+  // line 45
+  vi.stubGlobal("process", { env: { http_proxy: "http://proxy", no_proxy: "*" } });
+  expect(resolveHttpProxyUrlForTarget("http://example.com")).toBeUndefined();
+});
+
+it("handles exact host in NO_PROXY without dot or star", () => {
+  // line 61
+  vi.stubGlobal("process", { env: { http_proxy: "http://proxy", no_proxy: "example.com" } });
+  expect(resolveHttpProxyUrlForTarget("http://example.com")).toBeUndefined();
+  expect(resolveHttpProxyUrlForTarget("http://other.com")?.href).toBe("http://proxy/");
 });
