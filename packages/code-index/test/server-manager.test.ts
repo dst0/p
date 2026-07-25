@@ -73,8 +73,11 @@ describe("QdrantServerManager", () => {
   }, 10_000);
 
   it("handles aborted signal on ensureStarted", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "p-qdrant-abort-"));
+    temporaryDirectories.push(directory);
     const manager = new QdrantServerManager(9999, {
       qdrantBinary: "non-existent-binary-12345",
+      dataDirectory: join(directory, "data"),
       startupTimeoutMs: 1_000,
     });
 
@@ -85,8 +88,11 @@ describe("QdrantServerManager", () => {
   });
 
   it("rejects when qdrant binary fails to spawn or exits early", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "p-qdrant-spawn-"));
+    temporaryDirectories.push(directory);
     const manager = new QdrantServerManager(await availablePort(), {
       qdrantBinary: "non-existent-binary-12345",
+      dataDirectory: join(directory, "data"),
       startupTimeoutMs: 1_000,
     });
 
