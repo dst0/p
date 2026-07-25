@@ -35,11 +35,11 @@ const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 const SCOPES =
   "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
 async function getNodeApis(): Promise<NodeApis> {
+  if (typeof process === "undefined" || (!process.versions?.node && !process.versions?.bun)) {
+    throw new Error("Anthropic OAuth is only available in Node.js environments");
+  }
   if (nodeApis) return nodeApis;
   if (!nodeApisPromise) {
-    if (typeof process === "undefined" || (!process.versions?.node && !process.versions?.bun)) {
-      throw new Error("Anthropic OAuth is only available in Node.js environments");
-    }
     nodeApisPromise = import("node:http").then((httpModule) => ({
       createServer: httpModule.createServer,
     }));
@@ -338,6 +338,9 @@ export async function loginAnthropic(options: {
     options.onProgress?.("Exchanging authorization code for tokens...");
     return exchangeAuthorizationCode(code, state, verifier, redirectUriForExchange);
   } finally {
+    try {
+      (server.server as any).closeAllConnections?.();
+    } catch {}
     server.server.close();
   }
 }

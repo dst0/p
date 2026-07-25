@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { loginGitHubCopilot } from "../src/utils/oauth/github-copilot.ts";
+import { githubCopilotOAuthProvider, loginGitHubCopilot } from "../src/utils/oauth/github-copilot.ts";
 
 function jsonResponse(body: unknown, status: number = 200): Response {
   return new Response(JSON.stringify(body), {
@@ -345,5 +345,59 @@ describe("GitHub Copilot OAuth device flow", () => {
     });
 
     expect(modified[0].baseUrl).toBe("https://api.custom.githubcopilot.com");
+  });
+});
+
+describe("GitHub Copilot Provider logic", () => {
+  it("cancels login if aborted", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      githubCopilotOAuthProvider.login({
+        onAuth: () => {},
+        onPrompt: async () => "",
+        onDeviceCode: () => {},
+        onSelect: async () => "",
+        signal: controller.signal,
+      }),
+    ).rejects.toThrow("Login cancelled");
+  });
+
+  it("handles invalid enterprise domain", async () => {
+    await expect(
+      githubCopilotOAuthProvider.login({
+        onAuth: () => {},
+        onPrompt: async () => "http://invalid space domain",
+        onDeviceCode: () => {},
+        onSelect: async () => "",
+      }),
+    ).rejects.toThrow("Invalid GitHub Enterprise URL/domain");
+  });
+
+  it("implements refreshToken, getApiKey, and modifyModels", async () => {
+    // refresh token calls refreshGitHubCopilotToken which we can mock the fetch for
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => {
+        return new Response(
+          JSON.stringify({ endpoints: { api: "https://api.ghe.com" }, token: "new-token", expires_at: 99999999 }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    const creds = await githubCopilotOAuthProvider.refreshToken({
+      access: "old",
+      refresh: "old",
+      expires: 0,
+      accountId: "1",
+      enterpriseUrl: "ghe.com",
+    } as any);
+    expect(creds.access).toBe("new-token"); // tid is the temp id from refresh
+
+    expect(githubCopilotOAuthProvider.getApiKey(creds)).toBe(creds.access);
+
+    // modifyModels
+    const models = githubCopilotOAuthProvider.modifyModels!([{ provider: "github-copilot" } as any], creds);
+    expect(models[0].baseUrl).toBe("https://copilot-api.ghe.com");
   });
 });
