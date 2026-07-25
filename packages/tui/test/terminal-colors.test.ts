@@ -1,6 +1,13 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { type Component, parseOsc11BackgroundColor, type Terminal, TUI } from "../src/index.ts";
+import {
+  type Component,
+  formatOsc11BackgroundColor,
+  formatOsc111ResetBackgroundColor,
+  parseOsc11BackgroundColor,
+  type Terminal,
+  TUI,
+} from "../src/index.ts";
 
 class TestTerminal implements Terminal {
   private inputHandler?: (data: string) => void;
@@ -242,5 +249,70 @@ describe("TUI.queryTerminalBackgroundColor", () => {
     } finally {
       tui.stop();
     }
+  });
+});
+
+describe("formatOsc11BackgroundColor & formatOsc111ResetBackgroundColor", () => {
+  it("formats non-tmux OSC 11 background color sequence", () => {
+    const origTmux = process.env.TMUX;
+    const origTerm = process.env.TERM;
+    delete process.env.TMUX;
+    process.env.TERM = "xterm-256color";
+    try {
+      assert.strictEqual(formatOsc11BackgroundColor("#18181e"), "\x1b]11;#18181e\x07");
+      assert.strictEqual(formatOsc111ResetBackgroundColor(), "\x1b]111\x07");
+    } finally {
+      if (origTmux) process.env.TMUX = origTmux;
+      else delete process.env.TMUX;
+      if (origTerm) process.env.TERM = origTerm;
+      else delete process.env.TERM;
+    }
+  });
+
+  it("formats tmux OSC 11 background color sequence", () => {
+    const origTmux = process.env.TMUX;
+    process.env.TMUX = "/tmp/tmux-1000/default,12345,0";
+    try {
+      assert.strictEqual(
+        formatOsc11BackgroundColor("#18181e"),
+        "\x1bPtmux;\x1b\x1b]11;#18181e\x07\x1b\\\x1b]11;#18181e\x07",
+      );
+      assert.strictEqual(formatOsc111ResetBackgroundColor(), "\x1bPtmux;\x1b\x1b]111\x07\x1b\\\x1b]111\x07");
+    } finally {
+      if (origTmux) process.env.TMUX = origTmux;
+      else delete process.env.TMUX;
+    }
+  });
+});
+
+describe("TUI background color setting", () => {
+  it("sets and resets background color via TUI methods", () => {
+    const terminal = new TestTerminal();
+    const tui = new TUI(terminal);
+    tui.setTerminalBackgroundColor("#18181e");
+    assert.strictEqual(terminal.writes.length, 1);
+    assert.ok(terminal.writes[0].includes("#18181e"));
+
+    // Setting same background should be no-op
+    tui.setTerminalBackgroundColor("#18181e");
+    assert.strictEqual(terminal.writes.length, 1);
+
+    // Setting undefined resets
+    tui.setTerminalBackgroundColor(undefined);
+    assert.strictEqual(terminal.writes.length, 2);
+    assert.ok(terminal.writes[1].includes("111"));
+
+    // resetTerminalBackgroundColor
+    tui.setTerminalBackgroundColor("#222222");
+    tui.resetTerminalBackgroundColor();
+    assert.ok(terminal.writes[terminal.writes.length - 1].includes("111"));
+  });
+
+  it("resets background color when TUI stops", () => {
+    const terminal = new TestTerminal();
+    const tui = new TUI(terminal);
+    tui.setTerminalBackgroundColor("#18181e");
+    tui.stop();
+    assert.ok(terminal.writes.some((w) => w.includes("111")));
   });
 });

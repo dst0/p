@@ -978,11 +978,32 @@ export function getResolvedThemeColors(themeName?: string): Record<string, strin
 }
 
 /**
+ * Get explicit or derived page background color (as hex) for a theme.
+ */
+export function getThemePageBg(themeName?: string): string | undefined {
+  const name = themeName ?? currentThemeName ?? getDefaultTheme();
+  const exportColors = getThemeExportColors(name);
+  if (exportColors.pageBg) {
+    return exportColors.pageBg;
+  }
+  return undefined;
+}
+
+/**
  * Check if a theme is a "light" theme (for CSS that needs light/dark variants).
  */
 export function isLightTheme(themeName?: string): boolean {
-  // Currently just check the name - could be extended to analyze colors
-  return themeName === "light";
+  const pageBg = getThemePageBg(themeName);
+  if (pageBg) {
+    try {
+      const rgb = hexToRgb(pageBg);
+      return getRgbColorLuminance(rgb) >= 0.5;
+    } catch {
+      // Fall through
+    }
+  }
+  const name = themeName ?? currentThemeName ?? getDefaultTheme();
+  return name === "light" || name.endsWith("-light") || name.endsWith("-latte") || name === "sakura";
 }
 
 /**
