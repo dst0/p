@@ -28,12 +28,15 @@ Each repository runtime has a recursive watcher, a debounce timer, retry state, 
 
 A refresh discovers allowed repository files, hashes them, and compares them with the persisted manifest. Small compatible changes update the current collection incrementally. A new or incompatible index builds an isolated generation:
 
-1. source files are split into symbol-aware or bounded line chunks;
-2. a frozen-generation BM25 vocabulary is built over chunk text;
-3. the local embedding server encodes chunks into dense vectors;
-4. Qdrant receives points containing dense and sparse vectors plus source metadata;
-5. the vocabulary and manifest are written atomically;
-6. the previous generation is deleted only after the new manifest is committed.
+1. a CPU- and cgroup-memory-aware worker pool hashes files and splits them into symbol-aware or bounded line chunks;
+2. prepared chunks are written to a private bounded spool while a frozen-generation BM25 vocabulary is built;
+3. the spool is streamed back in embedding-sized batches instead of retaining the repository corpus in memory;
+4. the local embedding server encodes chunks into dense vectors;
+5. Qdrant receives points containing dense and sparse vectors plus source metadata;
+6. the vocabulary and manifest are written atomically;
+7. the previous generation is deleted only after the new manifest is committed.
+
+Worker concurrency is bounded by logical CPUs, an operator ceiling, currently available host/cgroup memory, a memory reserve, and a conservative per-worker estimate. The worker and memory reservation is process-wide across concurrent repository refreshes. Preparation proceeds in ordered windows, so completed source text cannot accumulate behind a slow file. Worker V8 heaps are capped, file reads cannot exceed the configured byte limit, and rebuilds verify disk headroom before opening the spool.
 
 Repository locks serialize daemon refreshes and administrative installer-smoke or SDK rebuilds across processes. PAgent's search path never takes refresh ownership. After acquiring the lock, a writer reloads the on-disk manifest instead of trusting an older in-memory generation. A missing vocabulary or Qdrant collection is an incompatible index and requires a full rebuild, including when no source files changed.
 

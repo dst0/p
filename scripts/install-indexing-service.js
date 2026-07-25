@@ -191,6 +191,25 @@ WantedBy=default.target
 `;
 }
 
+export function collectResourceEnvironment(source = process.env) {
+	const environment = {};
+	for (const key of [
+		"P_CODE_RAG_DEVICE",
+		"P_CODE_RAG_MAX_CPU_THREADS",
+		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
+		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
+		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
+		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
+		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
+		"P_CODE_RAG_PREPARATION_MAX_WORKERS",
+		"P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB",
+		"P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB",
+	]) {
+		if (source[key] !== undefined) environment[key] = source[key];
+	}
+	return environment;
+}
+
 async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
@@ -205,18 +224,8 @@ async function main() {
 		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
 		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
 		P_CODE_RAG_EXPECTED_BACKEND: torchPlan.backend,
+		...collectResourceEnvironment(),
 	};
-	for (const key of [
-		"P_CODE_RAG_DEVICE",
-		"P_CODE_RAG_MAX_CPU_THREADS",
-		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
-		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
-		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
-	]) {
-		if (process.env[key] !== undefined) environment[key] = process.env[key];
-	}
 	const values = {
 		node: process.execPath,
 		daemon: DAEMON,

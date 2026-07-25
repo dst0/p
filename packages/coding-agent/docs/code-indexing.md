@@ -100,7 +100,11 @@ sequenceDiagram
     Daemon->>Daemon: Update indexing-service-status.json
 ```
 
-Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry. An active repository cannot be assigned to a second worker; changes that arrive during its refresh are queued behind older work instead of consuming both workers or starving other repositories. Explicit `/index up` preemption also preserves the interrupted repository as queued work rather than treating cancellation as an indexing failure.
+Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Hashing and chunk preparation run in a bounded worker-thread pool. The pool leaves one logical CPU available, observes cgroup memory limits on Linux, preserves an explicit memory reserve, and caps both worker count and estimated in-flight memory. Worker and memory reservations are process-wide, so concurrent repository refreshes share the same budget instead of each assuming it owns all available resources. If the remaining budget cannot safely fit one worker, indexing stops with a resource error instead of consuming the reserve.
+
+Full rebuilds stream prepared chunks through a private mode-`0600` disk spool while building the frozen BM25 vocabulary. This keeps source-text memory bounded by the preparation window and embedding batch rather than the total repository size. The service checks free disk space before creating the spool, preserves a disk reserve, and removes the spool after success, cancellation, or failure.
+
+If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Per-file reads are hard-capped at `maxFileBytes`, including when a file grows after discovery. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry. An active repository cannot be assigned to a second worker; changes that arrive during its refresh are queued behind older work instead of consuming both workers or starving other repositories. Explicit `/index up` preemption also preserves the interrupted repository as queued work rather than treating cancellation as an indexing failure.
 
 The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. Creating the real `semantic_search` tool for an already enabled repository only refreshes that repository's request timestamp in `indexed-repos.json`; the daemon observes the registry change and performs the prioritized work. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 
@@ -152,11 +156,25 @@ Important fields include:
   "searchTimeoutMs": 30000,
   "defaultLimit": 8,
   "maxLimit": 20,
-  "maxFileBytes": 1048576
+  "maxFileBytes": 1048576,
+  "maxSparseVocabularyTokens": 1000000,
+  "preparationMaxWorkers": 32,
+  "preparationWorkerMemoryBytes": 134217728,
+  "preparationMemoryReserveBytes": 536870912
 }
 ```
 
-Supported environment overrides include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, and `P_CODE_RAG_PYTHON`.
+Supported environment overrides include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, `P_CODE_RAG_PYTHON`, `P_CODE_RAG_PREPARATION_MAX_WORKERS`, `P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB`, and `P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB`.
+
+File-preparation controls are safety ceilings:
+
+| Variable | Behavior |
+|---|---|
+| `P_CODE_RAG_PREPARATION_MAX_WORKERS` | Maximum hashing/chunking workers, default 32; the planner can select fewer from CPU or memory limits |
+| `P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB` | Conservative memory budget per worker, default 128 MiB; large `maxFileBytes` settings automatically raise the effective estimate |
+| `P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB` | RAM excluded from the worker budget, default 512 MiB |
+
+The latest selected preparation plan is exposed in `RagStatus.preparation`, including worker count, effective available memory, reserve, in-flight memory ceiling, and whether worker startup fell back to in-process preparation. `maxSparseVocabularyTokens` is an additional hard ceiling; the active rebuild limit is the smaller of that value and a bound derived from currently available memory.
 
 Embedding resource controls are safe caps rather than fixed utilization targets:
 
