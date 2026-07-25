@@ -185,6 +185,22 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
         workspaceRoot: dir,
+        settings: { preparationMemoryReserveBytes: Number.MAX_SAFE_INTEGER + 1 },
+      }),
+    ).toThrow("preparationMemoryReserveBytes must be a positive integer");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { maxFileBytes: Number.MAX_SAFE_INTEGER + 1 },
+      }),
+    ).toThrow("maxFileBytes must be a positive integer");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
         settings: { maxSparseVocabularyTokens: 1.5 },
       }),
     ).toThrow("maxSparseVocabularyTokens must be a positive integer");

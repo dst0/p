@@ -316,6 +316,7 @@ export async function processFilePreparationTasks(
   const reservation = await acquireFilePreparationPlan(tasks.length, limits, signal, resources);
   let plan = reservation.plan;
   if (plan.workers === 0) {
+    reservation.release();
     throw new FilePreparationTaskError(
       "resource",
       `Insufficient free memory for file preparation: ${plan.availableMemoryBytes} bytes available, ` +

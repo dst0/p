@@ -1,5 +1,5 @@
 import fs, { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import os, { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -9,6 +9,12 @@ import {
   processFilePreparationTasks,
 } from "../src/rag/file-preparation.ts";
 import { executeFilePreparationTask, type FilePreparationTask } from "../src/rag/file-preparation-core.ts";
+import {
+  handleFilePreparationWorkerMessage,
+  registerFilePreparationWorker,
+  type WorkerRequest,
+  type WorkerResponse,
+} from "../src/rag/file-preparation-worker.ts";
 
 const temporaryDirectories: string[] = [];
 const MEBIBYTE = 1024 * 1024;
@@ -45,6 +51,40 @@ describe("file preparation resource planning", () => {
 
     expect(resources.logicalCpus).toBeGreaterThanOrEqual(1);
     expect(resources.availableMemoryBytes).toBeGreaterThanOrEqual(0);
+  });
+
+  it("falls back from unavailable cgroup files to host memory", () => {
+    vi.spyOn(fs, "readFileSync").mockImplementation(() => {
+      throw new Error("cgroup unavailable");
+    });
+    vi.spyOn(os, "freemem").mockReturnValue(768 * MEBIBYTE);
+    vi.spyOn(os, "availableParallelism").mockReturnValue(6);
+
+    expect(detectFilePreparationResources()).toEqual({
+      logicalCpus: 6,
+      availableMemoryBytes: 768 * MEBIBYTE,
+    });
+  });
+
+  it("uses cgroup v1 headroom when v2 has no finite limit", () => {
+    vi.spyOn(fs, "readFileSync").mockImplementation((filePath) => {
+      const values = new Map([
+        ["/sys/fs/cgroup/memory.max", "max"],
+        ["/sys/fs/cgroup/memory.current", "0"],
+        ["/sys/fs/cgroup/memory/memory.limit_in_bytes", String(1024 * MEBIBYTE)],
+        ["/sys/fs/cgroup/memory/memory.usage_in_bytes", String(256 * MEBIBYTE)],
+      ]);
+      const value = values.get(String(filePath));
+      if (value === undefined) throw new Error(`Unexpected cgroup path: ${String(filePath)}`);
+      return value;
+    });
+    vi.spyOn(os, "freemem").mockReturnValue(2048 * MEBIBYTE);
+    vi.spyOn(os, "availableParallelism").mockReturnValue(8);
+
+    expect(detectFilePreparationResources()).toEqual({
+      logicalCpus: 8,
+      availableMemoryBytes: 768 * MEBIBYTE,
+    });
   });
 
   it("returns an empty plan without reserving resources", () => {
@@ -194,6 +234,42 @@ describe("bounded file reads and chunking", () => {
 });
 
 describe("bounded file preparation workers", () => {
+  it("validates worker messages and serializes success and bounded-read errors", () => {
+    const [task] = createTasks(1);
+    const request: WorkerRequest = { id: 7, task };
+
+    expect(handleFilePreparationWorkerMessage(null, 11)).toBeUndefined();
+    expect(handleFilePreparationWorkerMessage(request, 11)).toMatchObject({
+      id: 7,
+      result: {
+        file: { path: task.path },
+        workerThreadId: 11,
+      },
+    });
+    expect(handleFilePreparationWorkerMessage({ id: 8, task: { ...task, maxFileBytes: 8 } }, 11)).toMatchObject({
+      id: 8,
+      error: {
+        kind: "security",
+        message: expect.stringContaining("exceeds the indexing size limit"),
+      },
+    });
+
+    let listener: ((message: unknown) => void) | undefined;
+    const responses: WorkerResponse[] = [];
+    registerFilePreparationWorker(
+      {
+        on: (_event, callback) => {
+          listener = callback;
+        },
+        postMessage: (response) => responses.push(response),
+      },
+      13,
+    );
+    listener?.(null);
+    listener?.(request);
+    expect(responses).toMatchObject([{ id: 7, result: { workerThreadId: 13 } }]);
+  });
+
   it("uses the planned worker threads and emits results in source order", async () => {
     const tasks = createTasks(4);
     const results: Array<{ path: string; workerThreadId: number }> = [];
@@ -294,6 +370,47 @@ describe("bounded file preparation workers", () => {
     expect(results).toEqual([0, 0]);
   });
 
+  it.each([
+    ["an invalid response", "parentPort.postMessage(null);"],
+    ["a response without a result", "parentPort.postMessage({ id: message.id });"],
+  ])("falls back after %s from a worker", async (_description, responseStatement) => {
+    const tasks = createTasks(1);
+    const workerPath = join(tasks[0].absPath, "..", "invalid-response-worker.mjs");
+    writeFileSync(
+      workerPath,
+      `import { parentPort } from "node:worker_threads";
+parentPort.on("message", (message) => {
+  ${responseStatement}
+});
+`,
+    );
+    const results: number[] = [];
+
+    const plan = await processFilePreparationTasks(
+      tasks,
+      {
+        maxWorkers: 1,
+        workerMemoryBytes: 64 * MEBIBYTE,
+        memoryReserveBytes: 0,
+      },
+      new AbortController().signal,
+      (result) => {
+        results.push(result.workerThreadId);
+      },
+      {
+        logicalCpus: 2,
+        availableMemoryBytes: 1024 * MEBIBYTE,
+      },
+      pathToFileURL(workerPath),
+    );
+
+    expect(plan).toMatchObject({
+      mode: "in_process",
+      fallbackReason: expect.stringMatching(/file preparation worker/i),
+    });
+    expect(results).toEqual([0]);
+  });
+
   it("terminates active workers and preserves the abort reason", async () => {
     const tasks = createTasks(1);
     const hangingWorkerPath = join(tasks[0].absPath, "..", "hanging-worker.mjs");
@@ -314,7 +431,7 @@ describe("bounded file preparation workers", () => {
       },
       pathToFileURL(hangingWorkerPath),
     );
-    controller.abort(new Error("cancel active preparation"));
+    setTimeout(() => controller.abort(new Error("cancel active preparation")), 25);
 
     await expect(operation).rejects.toThrow("cancel active preparation");
   });

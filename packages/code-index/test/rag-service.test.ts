@@ -155,6 +155,7 @@ function createService(
     sparseRebuildDriftRatio?: number;
     allowStaleSearch?: boolean;
     maxSparseVocabularyTokens?: number;
+    maxFileBytes?: number;
   } = {},
 ): WorkspaceCodeRagService {
   return new WorkspaceCodeRagService({
@@ -174,6 +175,7 @@ function createService(
       preparationMaxWorkers: 4,
       preparationWorkerMemoryBytes: 64 * 1024 * 1024,
       preparationMemoryReserveBytes: 16 * 1024 * 1024,
+      ...(options.maxFileBytes === undefined ? {} : { maxFileBytes: options.maxFileBytes }),
       ...(options.maxSparseVocabularyTokens === undefined
         ? {}
         : { maxSparseVocabularyTokens: options.maxSparseVocabularyTokens }),
@@ -268,6 +270,24 @@ describe("WorkspaceCodeRagService", () => {
     expect(store.allContents().join("\n")).toContain("second = 'latest'");
     expect(store.allContents().join("\n")).not.toContain("second = 'intermediate'");
     expect((await service.status()).state).toBe("ready");
+  });
+
+  it("maps an incremental file that grows beyond its limit to a security error", async () => {
+    const { root, data } = createFixture();
+    const secondPath = join(root, "second.ts");
+    writeFileSync(secondPath, "export const second = 'initial';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, { maxFileBytes: 256 });
+    await service.rebuild();
+
+    writeFileSync(join(root, "main.ts"), "export const first = 'changed';\n");
+    writeFileSync(secondPath, "export const second = 'intermediate';\n");
+    embedding.onEncode = () => writeFileSync(secondPath, "x".repeat(512));
+
+    await expect(service.refresh()).rejects.toMatchObject({
+      code: "RAG_SECURITY_BLOCK",
+    });
   });
 
   it("reports monotonic progress for full and incremental indexing", async () => {
