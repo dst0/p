@@ -17,6 +17,26 @@ function fetchLocal(path: string): Promise<http.IncomingMessage> {
   });
 }
 
+function getUrl(input: unknown): string {
+  if (typeof input === "string") {
+    return input;
+  }
+  if (input instanceof URL) {
+    return input.toString();
+  }
+  if (input instanceof Request) {
+    return input.url;
+  }
+  throw new Error(`Unsupported fetch input: ${String(input)}`);
+}
+
+function getJsonBody(init?: RequestInit): Record<string, string> {
+  if (typeof init?.body !== "string") {
+    throw new Error(`Expected string request body, got ${typeof init?.body}`);
+  }
+  return JSON.parse(init.body) as Record<string, string>;
+}
+
 describe.sequential("Anthropic OAuth Coverage", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
@@ -114,6 +134,44 @@ describe.sequential("Anthropic OAuth Coverage", () => {
     });
     await p2;
     expect(fetchMock).toHaveBeenCalled();
+  });
+
+  it("keeps the localhost redirect_uri for manual callback login", async () => {
+    let authUrl = "";
+    const fetchMock = vi.fn(async (input: unknown, init?: RequestInit): Promise<Response> => {
+      expect(getUrl(input)).toBe("https://platform.claude.com/v1/oauth/token");
+      expect(init?.method).toBe("POST");
+      const body = getJsonBody(init);
+      expect(body.grant_type).toBe("authorization_code");
+      expect(body.code).toBe("manual-code");
+      expect(body.redirect_uri).toBe("http://localhost:53692/callback");
+      return jsonResponse({
+        access_token: "access-token",
+        refresh_token: "refresh-token",
+        expires_in: 3600,
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const credentials = await loginAnthropic({
+      onAuth: (info) => {
+        authUrl = info.url;
+      },
+      onPrompt: async () => "",
+      onManualCodeInput: async () => {
+        const url = new URL(authUrl);
+        const state = url.searchParams.get("state");
+        const redirectUri = url.searchParams.get("redirect_uri");
+        if (!state || !redirectUri) {
+          throw new Error("Missing OAuth state or redirect_uri in auth URL");
+        }
+        return `${redirectUri}?code=manual-code&state=${state}`;
+      },
+    });
+
+    expect(credentials.access).toBe("access-token");
+    expect(credentials.refresh).toBe("refresh-token");
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it("formats complex errors during token refresh", async () => {
