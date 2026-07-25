@@ -11,9 +11,9 @@ export default defineConfig({
 		testTimeout: 30000, // 30 seconds for API calls
 		coverage: {
 			provider: "v8",
-			reporter: ["text", "html", "lcov", "json-summary"],
+			reporter: ["text-summary", "lcov", "json-summary"],
 			include: ["src/**/*.ts"],
-			exclude: ["src/**/*.d.ts", "src/index.ts", "src/types.ts", "src/node.ts"],
+			reportOnFailure: true,
 		},
 	},
 	resolve: {

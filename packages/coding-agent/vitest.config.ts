@@ -18,6 +18,12 @@ export default defineConfig({
 				external: [/@silvia-odwyer\/photon-node/],
 			},
 		},
+		coverage: {
+			provider: "v8",
+			reporter: ["text-summary", "lcov", "json-summary"],
+			include: ["src/**/*.ts"],
+			reportOnFailure: true,
+		},
 	},
 	resolve: {
 		alias: [
