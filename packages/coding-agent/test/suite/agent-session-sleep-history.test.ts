@@ -43,44 +43,62 @@ describe("AgentSession sleep history filtering", () => {
     }
   });
 
-  it("drops assistant sleep-only turns from persisted and visible history", async () => {
-    const harness = await createHarness({ completionMode: "implicit" });
-    harnesses.push(harness);
-    harness.setResponses([
-      fauxAssistantMessage([fauxToolCall(SLEEP_TOOL_NAME, { seconds: 0 })], { stopReason: "toolUse" }),
-      fauxAssistantMessage("done"),
-    ]);
-
-    await harness.session.prompt("start");
-
-    const persisted = persistedMessages(harness);
-    expect(persisted.map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(assistantToolNames(persisted)).toEqual([]);
-    expect(toolResultNames(persisted)).toEqual([]);
-    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
-    expect(harness.session.getSessionStats().toolCalls).toBe(0);
-    expect(harness.session.getSessionStats().toolResults).toBe(0);
-  });
-
-  it("removes sleep from mixed tool turns while preserving real tool history and context", async () => {
+  it("drops sleep while preserving its required check in persisted and visible history", async () => {
     const harness = await createHarness({ completionMode: "implicit", tools: [createEchoTool()] });
     harnesses.push(harness);
     harness.setResponses([
-      fauxAssistantMessage([fauxToolCall(SLEEP_TOOL_NAME, { seconds: 0 }), fauxToolCall("echo", { text: "hello" })], {
-        stopReason: "toolUse",
-      }),
+      fauxAssistantMessage(
+        [
+          fauxToolCall(SLEEP_TOOL_NAME, {
+            seconds: 0,
+            check: { tool: "echo", arguments: { text: "status" } },
+          }),
+        ],
+        { stopReason: "toolUse" },
+      ),
       fauxAssistantMessage("done"),
     ]);
 
     await harness.session.prompt("start");
 
     const persisted = persistedMessages(harness);
+    expect(persisted.map((message) => message.role)).toEqual(["user", "assistant", "toolResult", "assistant"]);
     expect(assistantToolNames(persisted)).toEqual(["echo"]);
     expect(toolResultNames(persisted)).toEqual(["echo"]);
     expect(assistantToolNames(harness.session.messages)).toEqual(["echo"]);
     expect(toolResultNames(harness.session.messages)).toEqual(["echo"]);
     expect(harness.session.getSessionStats().toolCalls).toBe(1);
     expect(harness.session.getSessionStats().toolResults).toBe(1);
+  });
+
+  it("removes sleep from mixed tool turns while preserving real tool history and context", async () => {
+    const harness = await createHarness({ completionMode: "implicit", tools: [createEchoTool()] });
+    harnesses.push(harness);
+    harness.setResponses([
+      fauxAssistantMessage(
+        [
+          fauxToolCall(SLEEP_TOOL_NAME, {
+            seconds: 0,
+            check: { tool: "echo", arguments: { text: "status" } },
+          }),
+          fauxToolCall("echo", { text: "hello" }),
+        ],
+        {
+          stopReason: "toolUse",
+        },
+      ),
+      fauxAssistantMessage("done"),
+    ]);
+
+    await harness.session.prompt("start");
+
+    const persisted = persistedMessages(harness);
+    expect(assistantToolNames(persisted)).toEqual(["echo", "echo"]);
+    expect(toolResultNames(persisted)).toEqual(["echo", "echo"]);
+    expect(assistantToolNames(harness.session.messages)).toEqual(["echo", "echo"]);
+    expect(toolResultNames(harness.session.messages)).toEqual(["echo", "echo"]);
+    expect(harness.session.getSessionStats().toolCalls).toBe(2);
+    expect(harness.session.getSessionStats().toolResults).toBe(2);
 
     const llmMessages = convertToLlm(harness.session.state.messages);
     expect(JSON.stringify(llmMessages)).not.toContain(`"${SLEEP_TOOL_NAME}"`);

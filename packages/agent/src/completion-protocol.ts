@@ -9,6 +9,7 @@ export type CompletionMode = "implicit" | "explicit_finish" | "hybrid";
 export interface CompletionProtocolLimits {
   maxTurns?: number;
   maxNoProgressTurns?: number;
+  maxConsecutiveWaitingTurns?: number;
   maxMalformedToolRetries?: number;
   maxEmptyAssistantRetries?: number;
   maxMissingFinishRetries?: number;

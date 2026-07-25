@@ -6,28 +6,46 @@ import type { ToolDefinition } from "../extensions/types.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const sleepSchema = Type.Object({
-  seconds: Type.Number({ description: "Seconds to wait before retrying" }),
+  seconds: Type.Number({ description: "Seconds to wait before running the required check" }),
+  check: Type.Object(
+    {
+      tool: Type.String({
+        description: "Tool that will inspect concrete external state after the wait. Cannot be sleep or finish_work.",
+      }),
+      arguments: Type.Record(Type.String(), Type.Unknown(), {
+        description: "Arguments for the check tool",
+      }),
+    },
+    {
+      description:
+        "Required continuation. The runtime executes this tool immediately after sleeping, in the same sequential batch.",
+    },
+  ),
 });
 
 export type SleepToolInput = Static<typeof sleepSchema>;
 
 export interface SleepToolDetails {
   seconds: number;
+  check: SleepToolInput["check"];
 }
 
-function formatSleepCall(args: { seconds?: number } | undefined, theme: Theme): string {
+function formatSleepCall(args: { seconds?: number; check?: { tool?: string } } | undefined, theme: Theme): string {
   const seconds = Number.isFinite(args?.seconds) ? Math.max(0, args?.seconds ?? 0) : 0;
-  return `${theme.fg("toolTitle", theme.bold("sleep"))} ${theme.fg("toolOutput", `${seconds}s`)}`;
+  const check = args?.check?.tool ? ` → ${args.check.tool}` : " → invalid: missing check";
+  return `${theme.fg("toolTitle", theme.bold("sleep"))} ${theme.fg("toolOutput", `${seconds}s${check}`)}`;
 }
 
 export function createSleepToolDefinition(): ToolDefinition<typeof sleepSchema, SleepToolDetails> {
   return {
     name: "sleep",
     label: "sleep",
-    description: "Wait for a short period before retrying a queued request.",
-    promptSnippet: "Wait before retrying a queued request",
+    description:
+      "Wait briefly and then run a required concrete check. Supply check.tool and check.arguments; the runtime executes that check immediately after the delay. Bare sleeps and sleep-to-sleep continuations are invalid. For a running bash session, use process action=wait instead because it observes the process directly.",
+    promptSnippet: "Wait briefly, then immediately run a required concrete check",
     parameters: sleepSchema,
-    async execute(_toolCallId, { seconds }: SleepToolInput, signal?: AbortSignal) {
+    executionMode: "sequential",
+    async execute(_toolCallId, { seconds, check }: SleepToolInput, signal?: AbortSignal) {
       const safeSeconds = Number.isFinite(seconds) ? Math.min(60, Math.max(0, seconds)) : 0;
       await new Promise<void>((resolve, reject) => {
         if (signal?.aborted) {
@@ -45,8 +63,14 @@ export function createSleepToolDefinition(): ToolDefinition<typeof sleepSchema, 
         signal?.addEventListener("abort", onAbort, { once: true });
       });
       return {
-        content: [{ type: "text", text: `Slept for ${safeSeconds} seconds.` }],
-        details: { seconds: safeSeconds },
+        content: [
+          {
+            type: "text",
+            text: `Slept for ${safeSeconds} seconds. Running required check \`${check.tool}\` now.`,
+          },
+        ],
+        details: { seconds: safeSeconds, check },
+        progress: "waiting",
       };
     },
     renderCall(args, theme, context) {

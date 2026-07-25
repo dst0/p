@@ -5,6 +5,12 @@
 ### Added
 
 - Added unit test coverage for `streamProxy` and branch summarization.
+- Added progress-aware wait results so repeated wait-only turns stop without limiting productive tool sequences.
+
+### Fixed
+
+- Repair malformed provider responses that announce a wait but omit the corresponding tool call.
+- Require generic waits to carry a concrete check tool, validate it before waiting, and execute the wait-check pair sequentially.
 
 ## [0.4.41] - 2026-07-23
 
