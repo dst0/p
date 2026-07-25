@@ -213,10 +213,8 @@ class EmbeddingServer:
             return "cpu", memory
         if requested_device == "auto":
             return detected_backend or "cpu", memory
-        if requested_device in {"cuda", "rocm"} and detected_backend in {"cuda", "rocm"}:
+        if requested_device in {"cuda", "rocm", "mps"} and detected_backend == requested_device:
             return detected_backend, memory
-        if requested_device == "mps" and detected_backend == "mps":
-            return "mps", memory
         warning = f"requested {requested_device} backend is unavailable; using CPU"
         self._record_warning(warning)
         print(f"WARNING: {warning}", file=sys.stderr, flush=True)
