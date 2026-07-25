@@ -377,4 +377,56 @@ describe("FooterComponent width handling", () => {
       }
     }
   });
+
+  it("renders model name correctly on wide screen when statsLeft contains ANSI color codes", () => {
+    const session = createSession({
+      sessionName: "",
+      modelId: "claude-3-7-sonnet",
+      provider: "anthropic",
+      reasoning: false,
+      usage: {
+        input: 50_000,
+        output: 2_500,
+        cacheRead: 10_000,
+        cacheWrite: 5_000,
+        cost: { total: 0.15 },
+      },
+    });
+    const footerData = createFooterData(2);
+    const footer = new FooterComponent(session, footerData);
+
+    const rawLine = footer.render(160)[1];
+    const strippedLine = stripAnsi(rawLine);
+
+    expect(strippedLine).toContain("claude-3-7-sonnet");
+    expect(strippedLine).toContain("(anthropic) claude-3-7-sonnet");
+    expect(visibleWidth(rawLine)).toBeLessThanOrEqual(160);
+  });
+
+  it("falls back to loading/sending/switch progress model when state.model is undefined on wide screen", () => {
+    const session = {
+      state: {
+        model: undefined,
+        thinkingLevel: "off",
+      },
+      sessionManager: {
+        getEntries: () => [],
+        getSessionName: () => "",
+        getCwd: () => "/tmp/project",
+      },
+      getContextUsage: () => undefined,
+      modelRegistry: {
+        isUsingOAuth: () => false,
+      },
+    } as unknown as AgentSession;
+
+    const footerData = createFooterData(1, {
+      sending: { model: "anthropic/claude-3-7-sonnet" },
+    });
+    const footer = new FooterComponent(session, footerData);
+
+    const statsLine = stripAnsi(footer.render(160)[1]);
+    expect(statsLine).toContain("anthropic/claude-3-7-sonnet");
+    expect(statsLine).not.toContain("no-model");
+  });
 });

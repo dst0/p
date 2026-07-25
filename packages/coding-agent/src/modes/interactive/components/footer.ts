@@ -344,7 +344,12 @@ export class FooterComponent implements Component {
     let statsLeft = statsParts.join(" ");
 
     // Add model name on the right side, plus thinking level if model supports it
-    const modelName = state.model?.id || "no-model";
+    const sendingModel = this.footerData.getSendingProgress()?.model;
+    const loadingModel = this.footerData.getLoadingProgress()?.model;
+    const switchModel = this.footerData.getModelSwitchProgress()?.toModel;
+    const fallbackProgressModel = sendingModel || loadingModel || switchModel;
+
+    const modelName = state.model?.id || fallbackProgressModel || "no-model";
 
     const minPadding = 2;
 
@@ -358,8 +363,9 @@ export class FooterComponent implements Component {
 
     // Prepend the provider in parentheses if there are multiple providers and there's enough room
     let rightSide = rightSideWithoutProvider;
-    if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-      const withProvider = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
+    if (this.footerData.getAvailableProviderCount() > 1 && (state.model || fallbackProgressModel)) {
+      const provider = state.model?.provider;
+      const withProvider = provider ? `(${provider}) ${rightSideWithoutProvider}` : rightSideWithoutProvider;
       if (visibleWidth(statsLeft) + minPadding + visibleWidth(withProvider) <= width) {
         rightSide = withProvider;
       }
@@ -375,30 +381,25 @@ export class FooterComponent implements Component {
     let statsLeftWidth = visibleWidth(statsLeft);
     const maxAvailableForLeft = width - rightSideWidth - minPadding;
 
-    let statsLine: string;
+    let paddingStr = "";
     if (maxAvailableForLeft > 0) {
       if (statsLeftWidth > maxAvailableForLeft) {
         statsLeft = truncateToWidth(statsLeft, maxAvailableForLeft, "...");
         statsLeftWidth = visibleWidth(statsLeft);
       }
-      const padding = " ".repeat(Math.max(0, width - statsLeftWidth - rightSideWidth));
-      statsLine = statsLeft + padding + rightSide;
+      paddingStr = " ".repeat(Math.max(0, width - statsLeftWidth - rightSideWidth));
     } else {
       // Extremely narrow terminal: prioritize showing model name right-aligned
-      const padding = " ".repeat(Math.max(0, width - rightSideWidth));
-      statsLine = padding + rightSide;
+      paddingStr = " ".repeat(Math.max(0, width - rightSideWidth));
       statsLeft = "";
+      statsLeftWidth = 0;
     }
 
-    // Apply dim to each part separately. statsLeft may contain color codes (for context %)
-    // that end with a reset, which would clear an outer dim wrapper. So we dim the parts
-    // before and after the colored section independently.
     const dimStatsLeft = theme.fg("dim", statsLeft);
-    const remainder = statsLine.slice(statsLeft.length); // padding + rightSide
-    const dimRemainder = theme.fg("dim", remainder);
+    const formattedRightSide = theme.fg("muted", rightSide);
 
     const pwdLine = truncateToWidth(theme.fg("dim", pwd), width, theme.fg("dim", "..."));
-    const lines = [pwdLine, dimStatsLeft + dimRemainder];
+    const lines = [pwdLine, dimStatsLeft + paddingStr + formattedRightSide];
 
     // Add extension statuses on a single line, sorted by key alphabetically
     const extensionStatuses = this.footerData.getExtensionStatuses();
