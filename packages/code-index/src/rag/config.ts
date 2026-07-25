@@ -26,6 +26,10 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   maxFileBytes: 1024 * 1024,
   defaultChunkLines: 80,
   maxChunkLines: 300,
+  maxSparseVocabularyTokens: 1_000_000,
+  preparationMaxWorkers: 32,
+  preparationWorkerMemoryBytes: 128 * 1024 * 1024,
+  preparationMemoryReserveBytes: 512 * 1024 * 1024,
   encodeBatchSize: 64,
   upsertBatchSize: 128,
   maxEncodeCharacters: 4096,
@@ -53,6 +57,10 @@ const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "maxFileBytes",
   "defaultChunkLines",
   "maxChunkLines",
+  "maxSparseVocabularyTokens",
+  "preparationMaxWorkers",
+  "preparationWorkerMemoryBytes",
+  "preparationMemoryReserveBytes",
   "encodeBatchSize",
   "upsertBatchSize",
   "maxEncodeCharacters",
@@ -113,6 +121,16 @@ function parseBooleanEnvironment(name: string): boolean | undefined {
   throw new Error(`${name} must be true, false, 1, or 0`);
 }
 
+function parsePositiveIntegerEnvironment(name: string): number | undefined {
+  const value = process.env[name];
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== value.trim()) {
+    throw new Error(`${name} must be a positive integer`);
+  }
+  return parsed;
+}
+
 function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
   const settings: Partial<WorkspaceCodeRagSettings> = {};
   const enabled = parseBooleanEnvironment("P_CODE_RAG_ENABLED");
@@ -125,6 +143,16 @@ function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
   if (process.env.P_CODE_RAG_EMBEDDING_URL) settings.embeddingServerUrl = process.env.P_CODE_RAG_EMBEDDING_URL;
   if (process.env.P_CODE_RAG_EMBEDDING_MODEL) settings.embeddingModel = process.env.P_CODE_RAG_EMBEDDING_MODEL;
   if (process.env.P_CODE_RAG_PYTHON) settings.pythonExecutable = process.env.P_CODE_RAG_PYTHON;
+  const preparationMaxWorkers = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_MAX_WORKERS");
+  if (preparationMaxWorkers !== undefined) settings.preparationMaxWorkers = preparationMaxWorkers;
+  const preparationWorkerMemoryMb = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB");
+  if (preparationWorkerMemoryMb !== undefined) {
+    settings.preparationWorkerMemoryBytes = preparationWorkerMemoryMb * 1024 * 1024;
+  }
+  const preparationMemoryReserveMb = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB");
+  if (preparationMemoryReserveMb !== undefined) {
+    settings.preparationMemoryReserveBytes = preparationMemoryReserveMb * 1024 * 1024;
+  }
   const remoteBackendsAllowed = parseBooleanEnvironment("P_CODE_RAG_REMOTE_BACKENDS_ALLOWED");
   if (remoteBackendsAllowed !== undefined) settings.remoteBackendsAllowed = remoteBackendsAllowed;
   return settings;
@@ -143,6 +171,24 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   if (settings.sparseRebuildDriftRatio < 0 || settings.sparseRebuildDriftRatio > 1) {
     throw new Error("Code RAG sparseRebuildDriftRatio must be between 0 and 1");
   }
+  if (!Number.isInteger(settings.preparationMaxWorkers)) {
+    throw new Error("Code RAG preparationMaxWorkers must be a positive integer");
+  }
+  if (
+    !Number.isSafeInteger(settings.preparationWorkerMemoryBytes) ||
+    settings.preparationWorkerMemoryBytes < 1024 * 1024
+  ) {
+    throw new Error("Code RAG preparationWorkerMemoryBytes must be an integer of at least 1 MiB");
+  }
+  if (!Number.isSafeInteger(settings.preparationMemoryReserveBytes)) {
+    throw new Error("Code RAG preparationMemoryReserveBytes must be a positive integer");
+  }
+  if (!Number.isSafeInteger(settings.maxFileBytes)) {
+    throw new Error("Code RAG maxFileBytes must be a positive integer");
+  }
+  if (!Number.isSafeInteger(settings.maxSparseVocabularyTokens)) {
+    throw new Error("Code RAG maxSparseVocabularyTokens must be a positive integer");
+  }
   for (const value of [
     settings.qdrantStartupTimeoutMs,
     settings.maxContextCharacters,
@@ -153,6 +199,10 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
     settings.maxFileBytes,
     settings.defaultChunkLines,
     settings.maxChunkLines,
+    settings.maxSparseVocabularyTokens,
+    settings.preparationMaxWorkers,
+    settings.preparationWorkerMemoryBytes,
+    settings.preparationMemoryReserveBytes,
     settings.encodeBatchSize,
     settings.upsertBatchSize,
     settings.maxEncodeCharacters,

@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { loadWorkspaceCodeRagSettings } from "../src/rag/config.ts";
+import { executeFilePreparationTask } from "../src/rag/file-preparation-core.ts";
 import { acquireRepositoryLock } from "../src/rag/manifest.ts";
 import { WorkspaceCodeRagService } from "../src/rag/service.ts";
 import type { RagVectorStore, StoredChunkPayload, VectorPoint, VectorSearchFilters } from "../src/rag/types.ts";
@@ -300,26 +301,36 @@ describe("WorkspaceCodeRagService deep coverage", () => {
     expect((service as any).staleReason).toContain("indexed file set changed");
   });
 
-  it("handles readStableFile mutation error when file keeps changing", () => {
+  it("rejects a file that changes throughout all stable-read attempts", () => {
     const dir = mkdtempSync(join(tmpdir(), "p-mutate-test-"));
     temporaryDirectories.push(dir);
     const file = join(dir, "changing.ts");
     writeFileSync(file, "content 1");
-
-    const service = new WorkspaceCodeRagService({
-      workspaceRoot: dir,
-      dataDirectory: join(dir, "data"),
-      manageLocalBackends: false,
-    });
-
+    const actualStat = fs.statSync(file);
     let count = 0;
-    vi.spyOn(fs, "statSync").mockImplementation(() => {
+    vi.spyOn(fs, "fstatSync").mockImplementation(() => {
       count++;
-      return { size: count, mtimeMs: count } as any;
+      return {
+        ...actualStat,
+        size: actualStat.size + count,
+        mtimeMs: actualStat.mtimeMs + count,
+        isFile: () => true,
+      } as fs.Stats;
     });
 
     expect(() =>
-      (service as any).readStableFile({ absPath: file, path: "changing.ts" } as any, new AbortController().signal),
+      executeFilePreparationTask({
+        operation: "prepare",
+        absPath: file,
+        path: "changing.ts",
+        language: "typescript",
+        isTest: false,
+        isGenerated: false,
+        maxFileBytes: 1024,
+        defaultChunkLines: 80,
+        maxChunkLines: 300,
+        maxChunksPerFile: 2_000,
+      }),
     ).toThrow("File kept changing while indexing");
   });
 

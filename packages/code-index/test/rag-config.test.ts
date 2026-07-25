@@ -109,6 +109,23 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     );
   });
 
+  it("loads and validates file preparation resource overrides", () => {
+    const dir = createTempDir();
+    process.env.P_CODE_RAG_PREPARATION_MAX_WORKERS = "12";
+    process.env.P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB = "96";
+    process.env.P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB = "768";
+
+    const settings = loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir });
+    expect(settings.preparationMaxWorkers).toBe(12);
+    expect(settings.preparationWorkerMemoryBytes).toBe(96 * 1024 * 1024);
+    expect(settings.preparationMemoryReserveBytes).toBe(768 * 1024 * 1024);
+
+    process.env.P_CODE_RAG_PREPARATION_MAX_WORKERS = "2.5";
+    expect(() => loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir })).toThrow(
+      "P_CODE_RAG_PREPARATION_MAX_WORKERS must be a positive integer",
+    );
+  });
+
   it("validates result limits, dimensions, and rebuild ratios", () => {
     const dir = createTempDir();
 
@@ -147,6 +164,46 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { sparseRebuildDriftRatio: -0.1 },
       }),
     ).toThrow("sparseRebuildDriftRatio must be between 0 and 1");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { preparationMaxWorkers: 1.5 },
+      }),
+    ).toThrow("preparationMaxWorkers must be a positive integer");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { preparationWorkerMemoryBytes: 1024 },
+      }),
+    ).toThrow("preparationWorkerMemoryBytes must be an integer of at least 1 MiB");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { preparationMemoryReserveBytes: Number.MAX_SAFE_INTEGER + 1 },
+      }),
+    ).toThrow("preparationMemoryReserveBytes must be a positive integer");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { maxFileBytes: Number.MAX_SAFE_INTEGER + 1 },
+      }),
+    ).toThrow("maxFileBytes must be a positive integer");
+
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { maxSparseVocabularyTokens: 1.5 },
+      }),
+    ).toThrow("maxSparseVocabularyTokens must be a positive integer");
   });
 
   it("validates remote URLs when remoteBackendsAllowed is false", () => {

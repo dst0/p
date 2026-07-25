@@ -1,8 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createInterface } from "node:readline";
 import { BM25Vocabulary } from "../bm25.ts";
-import { chunkFile } from "../chunk.ts";
 import { LANG_MAP } from "../config.ts";
 import { detectLanguage, discoverFilesWithOptions, getGitInfo } from "../discover.ts";
 import { EmbeddingError, VectorStoreError } from "../embed/errors.ts";
@@ -10,6 +10,14 @@ import { EmbeddingProviderHttp } from "../embed/http.ts";
 import type { EmbeddingProvider } from "../embed/provider.ts";
 import { QdrantServerManager } from "../embed/qdrant-server.ts";
 import { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "./config.ts";
+import { type FilePreparationPlan, processFilePreparationTasks } from "./file-preparation.ts";
+import {
+  executeFilePreparationTask,
+  type FilePreparationResult,
+  type FilePreparationTask,
+  FilePreparationTaskError,
+  type ScannedFile,
+} from "./file-preparation-core.ts";
 import {
   acquireRepositoryLock,
   CHUNKER_NAME,
@@ -41,17 +49,6 @@ import type {
   WorkspaceCodeRagSettings,
 } from "./types.ts";
 import { QdrantVectorStore } from "./vector-store.ts";
-
-interface ScannedFile {
-  absPath: string;
-  path: string;
-  hash: string;
-  size: number;
-  mtimeMs: number;
-  language: string;
-  isTest: boolean;
-  isGenerated: boolean;
-}
 
 interface PreparedChunk {
   id: string;
@@ -86,6 +83,8 @@ interface NormalizedSearchInput {
 const KNOWN_LANGUAGES = new Set(Object.values(LANG_MAP));
 const KNOWN_SYMBOL_TYPES = new Set(["function", "class", "module", "section", "text"]);
 const MAX_CHUNKS_PER_FILE = 2_000;
+const MEBIBYTE = 1024 * 1024;
+const PREPARATION_SPOOL_DISK_RESERVE_BYTES = 512 * MEBIBYTE;
 
 /** Error thrown by the CodeRAG service with a machine-readable error code. */
 export class CodeRagError extends Error {
@@ -133,6 +132,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
   private refreshController: AbortController | undefined;
   private cachedVocabulary: BM25Vocabulary | undefined;
   private cachedVocabularyGeneration: string | undefined;
+  private lastPreparationPlan: FilePreparationPlan | undefined;
 
   private serviceOptions: WorkspaceCodeRagServiceOptions;
 
@@ -411,11 +411,12 @@ export class WorkspaceCodeRagService implements CodeRagService {
     const startedAt = Date.now();
     const lock = acquireRepositoryLock(this.repositoryDirectory);
     try {
+      this.lastPreparationPlan = undefined;
       await this.reloadPersistedState();
       this.state = this.manifest ? "updating" : "initializing";
       this.reportProgress(options.onProgress, "scanning", 0);
-      const scanned = this.scanWorkspace(signal);
-      this.reportProgress(options.onProgress, "indexing", 0.1);
+      const scanned = await this.scanWorkspace(signal, options.onProgress);
+      this.reportProgress(options.onProgress, "indexing", 5);
       const plan = this.createRefreshPlan(scanned);
       const changedFileCount = plan.added.length + plan.changed.length + plan.deleted.length;
       const incompatibility = this.manifest
@@ -499,29 +500,42 @@ export class WorkspaceCodeRagService implements CodeRagService {
   ): Promise<IndexUpdateSummary> {
     const generation = this.createGeneration();
     const collection = this.collectionName(generation);
-    const preparedFiles: PreparedFile[] = [];
-    for (const [index, file] of scanned.entries()) {
-      preparedFiles.push(this.prepareFile(file, generation, signal));
-      this.reportProgress(onProgress, "indexing", (0.1 * (index + 1)) / Math.max(scanned.length, 1), {
-        processedFiles: index + 1,
-        totalFiles: scanned.length,
-      });
-    }
     const vocabulary = new BM25Vocabulary();
-    for (const prepared of preparedFiles) {
-      for (const chunk of prepared.chunks) vocabulary.register(chunk.retrievalText);
-    }
-    vocabulary.finalize();
+    const manifestFiles: Record<string, ManifestFileEntry> = {};
+    this.assertSpoolCapacity(scanned);
+    const spoolPath = path.join(this.repositoryDirectory, `.preparation-${generation}-${process.pid}.jsonl`);
+    const spool = fs.openSync(spoolPath, "wx", 0o600);
+    let chunkCount = 0;
     let createdCollection = false;
     try {
+      const vocabularyTokenLimit = this.sparseVocabularyTokenLimit();
+      await this.processPreparedFiles(scanned, generation, signal, (prepared, index) => {
+        manifestFiles[prepared.file.path] = prepared.entry;
+        for (const chunk of prepared.chunks) {
+          vocabulary.register(chunk.retrievalText);
+          if (vocabulary.tokenToIdx.size > vocabularyTokenLimit) {
+            throw new FilePreparationTaskError(
+              "resource",
+              `Sparse vocabulary exceeded its safe limit of ${vocabularyTokenLimit} tokens`,
+            );
+          }
+          fs.writeFileSync(spool, `${JSON.stringify(chunk)}\n`, "utf-8");
+          chunkCount += 1;
+        }
+        this.reportProgress(onProgress, "indexing", 5 + (10 * (index + 1)) / Math.max(scanned.length, 1), {
+          processedFiles: index + 1,
+          totalFiles: scanned.length,
+        });
+      });
+      fs.fsyncSync(spool);
+      vocabulary.finalize();
       await this.vectorStore.createCollection(collection, this.settings.embeddingDimensions);
       createdCollection = true;
-      const chunks = preparedFiles.flatMap((file) => file.chunks);
-      await this.encodeAndUpsert(collection, chunks, vocabulary, signal, (completed, total) => {
+      await this.encodeSpoolAndUpsert(collection, spoolPath, chunkCount, vocabulary, signal, (completed, total) => {
         this.reportProgress(
           onProgress,
           "indexing",
-          0.1 + (99.8 * completed) / Math.max(total, 1),
+          15 + (84.8 * completed) / Math.max(total, 1),
           { processedFiles: scanned.length, totalFiles: scanned.length },
           { processedChunks: completed, totalChunks: total },
         );
@@ -531,7 +545,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
         "finalizing",
         99.9,
         { processedFiles: scanned.length, totalFiles: scanned.length },
-        { processedChunks: chunks.length, totalChunks: chunks.length },
+        { processedChunks: chunkCount, totalChunks: chunkCount },
       );
       const now = this.now().toISOString();
       const vocabularyPath = this.vocabularyPath(generation);
@@ -566,8 +580,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
           frozenStatsAt: now,
           driftFileCount: 0,
         },
-        files: Object.fromEntries(preparedFiles.map((file) => [file.file.path, file.entry])),
-        chunkCount: chunks.length,
+        files: manifestFiles,
+        chunkCount,
       };
       writeManifestAtomic(this.manifestPath, manifest);
       this.manifest = manifest;
@@ -593,7 +607,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
         }
       }
       this.reportProgress(onProgress, "finalizing", 100);
-      return this.summaryForPlan(plan, startedAt, chunks.length, true);
+      return this.summaryForPlan(plan, startedAt, chunkCount, true);
     } catch (error) {
       if (createdCollection) {
         try {
@@ -603,6 +617,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
         }
       }
       throw error;
+    } finally {
+      fs.closeSync(spool);
+      try {
+        fs.unlinkSync(spoolPath);
+      } catch {
+        // The bounded preparation spool is best-effort cleanup after completion or failure.
+      }
     }
   }
 
@@ -626,32 +647,32 @@ export class WorkspaceCodeRagService implements CodeRagService {
     const changedFiles = [...plan.added, ...plan.changed];
     const totalFiles = changedFiles.length + plan.deleted.length;
 
-    for (const file of changedFiles) {
+    await this.processPreparedFiles(changedFiles, nextManifest.generation, signal, async (initialPrepared) => {
       if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-      const prepared = this.prepareFile(file, nextManifest.generation, signal);
+      const prepared = await this.refreshPreparedFileIfChanged(initialPrepared, nextManifest.generation, signal);
       await this.encodeAndUpsert(nextManifest.collection, prepared.chunks, vocabulary, signal, (completed, total) => {
         const currentFileProgress = total === 0 ? 1 : completed / total;
         this.reportProgress(
           onProgress,
           "indexing",
-          (99.8 * (completedFiles + currentFileProgress)) / Math.max(totalFiles, 1),
+          5 + (94.8 * (completedFiles + currentFileProgress)) / Math.max(totalFiles, 1),
           { processedFiles: completedFiles, totalFiles },
         );
       });
       await this.vectorStore.deleteFileVersions(
         nextManifest.collection,
         this.repoId,
-        fileIdFor(this.repoId, file.path),
+        fileIdFor(this.repoId, prepared.file.path),
         prepared.chunks.length > 0 ? prepared.file.hash : undefined,
       );
-      nextManifest.files[file.path] = prepared.entry;
+      nextManifest.files[prepared.file.path] = prepared.entry;
       chunksEmbedded += prepared.chunks.length;
       completedFiles += 1;
-      this.reportProgress(onProgress, "indexing", (99.8 * completedFiles) / Math.max(totalFiles, 1), {
+      this.reportProgress(onProgress, "indexing", 5 + (94.8 * completedFiles) / Math.max(totalFiles, 1), {
         processedFiles: completedFiles,
         totalFiles,
       });
-    }
+    });
     for (const deleted of plan.deleted) {
       if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
       await this.vectorStore.deleteFileVersions(
@@ -661,7 +682,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
       );
       delete nextManifest.files[deleted.path];
       completedFiles += 1;
-      this.reportProgress(onProgress, "indexing", (99.8 * completedFiles) / Math.max(totalFiles, 1), {
+      this.reportProgress(onProgress, "indexing", 5 + (94.8 * completedFiles) / Math.max(totalFiles, 1), {
         processedFiles: completedFiles,
         totalFiles,
       });
@@ -693,6 +714,43 @@ export class WorkspaceCodeRagService implements CodeRagService {
       this.settings = loadWorkspaceCodeRagSettings(this.serviceOptions);
     } catch {
       // Best-effort settings reload; keep existing settings if config reading fails.
+    }
+  }
+
+  /** Stream prepared chunks from the private spool so rebuild memory stays bounded. */
+  private async encodeSpoolAndUpsert(
+    collection: string,
+    spoolPath: string,
+    totalChunks: number,
+    vocabulary: BM25Vocabulary,
+    signal: AbortSignal,
+    onProgress: (completed: number, total: number) => void,
+  ): Promise<void> {
+    const input = fs.createReadStream(spoolPath, { encoding: "utf-8" });
+    const lines = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
+    const pending: PreparedChunk[] = [];
+    let completed = 0;
+    try {
+      for await (const line of lines) {
+        if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
+        if (!line) continue;
+        pending.push(JSON.parse(line) as PreparedChunk);
+        this.refreshSettingsSilently();
+        const batchSize = Math.max(1, this.settings.encodeBatchSize);
+        if (pending.length < batchSize) continue;
+        const batch = pending.splice(0, batchSize);
+        await this.encodeAndUpsert(collection, batch, vocabulary, signal);
+        completed += batch.length;
+        onProgress(completed, totalChunks);
+      }
+      if (pending.length > 0) {
+        await this.encodeAndUpsert(collection, pending, vocabulary, signal);
+        completed += pending.length;
+      }
+      onProgress(completed, totalChunks);
+    } finally {
+      lines.close();
+      input.destroy();
     }
   }
 
@@ -757,20 +815,11 @@ export class WorkspaceCodeRagService implements CodeRagService {
     }
   }
 
-  private prepareFile(file: ScannedFile, generation: string, signal: AbortSignal): PreparedFile {
-    const { content, file: stableFile } = this.readStableFile(file, signal);
-    const chunks = chunkFile(
-      content,
-      stableFile.language,
-      this.settings.defaultChunkLines,
-      this.settings.maxChunkLines,
-    );
-    if (chunks.length > MAX_CHUNKS_PER_FILE) {
-      throw new CodeRagError("RAG_SECURITY_BLOCK", `File produced too many chunks: ${stableFile.path}`);
-    }
+  private preparedFileFromResult(result: FilePreparationResult, generation: string): PreparedFile {
+    const stableFile = result.file;
     const indexedAt = this.now().toISOString();
     const fileId = fileIdFor(this.repoId, stableFile.path);
-    const preparedChunks = chunks.map((chunk, ordinal) => {
+    const preparedChunks = result.chunks.map((chunk, ordinal) => {
       const chunkHash = hashText(chunk.text);
       const payload: StoredChunkPayload = {
         repoId: this.repoId,
@@ -820,44 +869,150 @@ export class WorkspaceCodeRagService implements CodeRagService {
     };
   }
 
-  private readStableFile(file: ScannedFile, signal: AbortSignal): { content: string; file: ScannedFile } {
-    for (let attempt = 0; attempt < 3; attempt += 1) {
-      if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-      const before = fs.statSync(file.absPath);
-      const content = fs.readFileSync(file.absPath, "utf-8");
-      const after = fs.statSync(file.absPath);
-      if (before.size !== after.size || before.mtimeMs !== after.mtimeMs) continue;
-      return {
-        content,
-        file: {
-          ...file,
-          hash: hashText(content),
-          size: after.size,
-          mtimeMs: after.mtimeMs,
-        },
-      };
-    }
-    throw new Error(`File kept changing while indexing: ${file.path}`);
+  private preparationTask(
+    file: Omit<ScannedFile, "hash" | "size" | "mtimeMs">,
+    operation: "scan" | "prepare",
+  ): FilePreparationTask {
+    return {
+      operation,
+      absPath: file.absPath,
+      path: file.path,
+      language: file.language,
+      isTest: file.isTest,
+      isGenerated: file.isGenerated,
+      maxFileBytes: this.settings.maxFileBytes,
+      defaultChunkLines: this.settings.defaultChunkLines,
+      maxChunkLines: this.settings.maxChunkLines,
+      maxChunksPerFile: MAX_CHUNKS_PER_FILE,
+    };
   }
 
-  /** Discover all indexable files in the workspace and compute hashes, sizes, and languages. */
-  private scanWorkspace(signal: AbortSignal): ScannedFile[] {
+  private preparationLimits(): {
+    maxWorkers: number;
+    workerMemoryBytes: number;
+    memoryReserveBytes: number;
+  } {
+    return {
+      maxWorkers: this.settings.preparationMaxWorkers,
+      workerMemoryBytes: Math.max(
+        this.settings.preparationWorkerMemoryBytes,
+        this.settings.maxFileBytes * 4 + 32 * MEBIBYTE,
+      ),
+      memoryReserveBytes: this.settings.preparationMemoryReserveBytes,
+    };
+  }
+
+  private recordPreparationPlan(plan: FilePreparationPlan): void {
+    if (!this.lastPreparationPlan || plan.workers > this.lastPreparationPlan.workers || plan.fallbackReason) {
+      this.lastPreparationPlan = plan;
+    }
+  }
+
+  private assertSpoolCapacity(files: ScannedFile[]): void {
+    const sourceBytes = files.reduce((total, file) => total + file.size, 0);
+    const estimatedSpoolBytes = sourceBytes * 5 + 64 * MEBIBYTE;
+    const disk = fs.statfsSync(this.repositoryDirectory);
+    const availableBytes = disk.bavail * disk.bsize;
+    if (availableBytes - estimatedSpoolBytes < PREPARATION_SPOOL_DISK_RESERVE_BYTES) {
+      throw new FilePreparationTaskError(
+        "resource",
+        `Insufficient disk space for bounded indexing spool: ${availableBytes} bytes available, ` +
+          `${estimatedSpoolBytes} bytes estimated, ${PREPARATION_SPOOL_DISK_RESERVE_BYTES} bytes reserved`,
+      );
+    }
+  }
+
+  private sparseVocabularyTokenLimit(): number {
+    const plan = this.lastPreparationPlan;
+    if (!plan) return this.settings.maxSparseVocabularyTokens;
+    const memoryBudget = Math.max(0, plan.availableMemoryBytes - plan.memoryReserveBytes - plan.maxInFlightBytes);
+    const memoryBound = Math.max(1, Math.floor(memoryBudget / 256));
+    return Math.min(this.settings.maxSparseVocabularyTokens, memoryBound);
+  }
+
+  private async processPreparedFiles(
+    files: ScannedFile[],
+    generation: string,
+    signal: AbortSignal,
+    onPrepared: (prepared: PreparedFile, index: number) => Promise<void> | void,
+  ): Promise<void> {
+    try {
+      const plan = await processFilePreparationTasks(
+        files.map((file) => this.preparationTask(file, "prepare")),
+        this.preparationLimits(),
+        signal,
+        (result, index) => onPrepared(this.preparedFileFromResult(result, generation), index),
+      );
+      this.recordPreparationPlan(plan);
+    } catch (error) {
+      if (error instanceof FilePreparationTaskError && error.kind === "security") {
+        throw new CodeRagError("RAG_SECURITY_BLOCK", error.message);
+      }
+      throw error;
+    }
+  }
+
+  private async refreshPreparedFileIfChanged(
+    prepared: PreparedFile,
+    generation: string,
+    signal: AbortSignal,
+  ): Promise<PreparedFile> {
+    try {
+      const current = fs.statSync(prepared.file.absPath);
+      if (current.size === prepared.file.size && current.mtimeMs === prepared.file.mtimeMs) return prepared;
+    } catch {
+      // Let the bounded preparation task provide the actionable read error.
+    }
+    if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
+    try {
+      return this.preparedFileFromResult(
+        executeFilePreparationTask(this.preparationTask(prepared.file, "prepare")),
+        generation,
+      );
+    } catch (error) {
+      if (error instanceof FilePreparationTaskError && error.kind === "security") {
+        throw new CodeRagError("RAG_SECURITY_BLOCK", error.message);
+      }
+      throw error;
+    }
+  }
+
+  /** Discover all indexable files and hash them in a bounded worker pool. */
+  private async scanWorkspace(
+    signal: AbortSignal,
+    onProgress: RefreshIndexOptions["onProgress"],
+  ): Promise<ScannedFile[]> {
     const files = discoverFilesWithOptions(this.workspaceRoot, { maxFileSize: this.settings.maxFileBytes });
-    return files.map((absPath) => {
-      if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
-      const stat = fs.statSync(absPath);
+    const tasks = files.map((absPath) => {
       const relativePath = normalizeRepositoryPath(path.relative(this.workspaceRoot, absPath));
-      return {
-        absPath,
-        path: relativePath,
-        hash: hashText(fs.readFileSync(absPath)),
-        size: stat.size,
-        mtimeMs: stat.mtimeMs,
-        language: detectLanguage(absPath),
-        isTest: isTestPath(relativePath),
-        isGenerated: isGeneratedPath(relativePath),
-      };
+      return this.preparationTask(
+        {
+          absPath,
+          path: relativePath,
+          language: detectLanguage(absPath),
+          isTest: isTestPath(relativePath),
+          isGenerated: isGeneratedPath(relativePath),
+        },
+        "scan",
+      );
     });
+    const scanned: ScannedFile[] = [];
+    try {
+      const plan = await processFilePreparationTasks(tasks, this.preparationLimits(), signal, (result, index) => {
+        scanned.push(result.file);
+        this.reportProgress(onProgress, "scanning", (5 * (index + 1)) / Math.max(files.length, 1), {
+          processedFiles: index + 1,
+          totalFiles: files.length,
+        });
+      });
+      this.recordPreparationPlan(plan);
+      return scanned;
+    } catch (error) {
+      if (error instanceof FilePreparationTaskError && error.kind === "security") {
+        throw new CodeRagError("RAG_SECURITY_BLOCK", error.message);
+      }
+      throw error;
+    }
   }
 
   /** Categorize scanned files into added, changed, deleted, and unchanged buckets. */
@@ -1073,6 +1228,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
         exact: (this.manifest?.sparse.driftFileCount ?? 0) === 0,
         driftFileCount: this.manifest?.sparse.driftFileCount ?? 0,
       },
+      preparation: this.lastPreparationPlan ? { ...this.lastPreparationPlan } : undefined,
       lastError: this.lastError,
     };
   }
