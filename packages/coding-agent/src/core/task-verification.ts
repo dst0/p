@@ -6,7 +6,6 @@ import type {
   BeforeToolCallContext,
   BeforeToolCallResult,
 } from "@dst0/p-agent-core";
-import { Text } from "@dst0/p-tui";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "./extensions/types.ts";
 import type { SessionManager } from "./session-manager.ts";
@@ -332,23 +331,6 @@ export class TaskVerificationController {
       ],
       parameters: VerificationSchema,
       executionMode: "sequential",
-      renderShell: "self" as const,
-      renderCall(_args, theme, context) {
-        const icon = context.isPartial
-          ? "\x1b[36m\u26A1\x1b[0m"
-          : context.isError
-            ? "\x1b[31m\u2716\x1b[0m"
-            : "\x1b[32m\u2714\x1b[0m";
-        return new Text(`${icon} ${theme.fg("toolTitle", theme.bold(TASK_VERIFICATION_TOOL_NAME))}`, 0, 0);
-      },
-      renderResult(result, _options, theme) {
-        const text = result.content
-          ?.filter((c: { type: string }) => c.type === "text")
-          .map((c: { type: string; text?: string }) => c.text ?? "")
-          .join("\n");
-        if (!text) return new Text("", 0, 0);
-        return new Text(`\x1b[90m\u21B3\x1b[0m ${theme.fg("toolOutput", text)}`, 0, 0);
-      },
       execute: async (_id, params) => {
         const result = this.applyInput(params);
         if (result.status === "rejected") throw new Error(this.withGuidance(result.message));
