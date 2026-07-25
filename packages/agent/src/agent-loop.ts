@@ -46,6 +46,8 @@ const MISSING_FINISH_WORK_REPAIR_MESSAGE =
 
 const MALFORMED_TOOL_CALL_REPAIR_MESSAGE =
   "Your previous tool call appears to be incomplete, malformed, or truncated.\n" +
+  "If you need to wait, call `sleep` with `{ seconds, check: { tool, arguments } }`; bare waits are invalid.\n" +
+  "The runtime will execute the check immediately after the wait.\n" +
   "Re-emit the intended tool call in valid form, or call `finish_work` if the task is complete.\n" +
   "Do not explain. Call a tool.";
 
@@ -796,7 +798,7 @@ async function streamAssistantResponse(
 
       case "done":
       case "error": {
-        const finalMessage = recoverMisplacedToolCalls(await response.result(), context.tools);
+        const finalMessage = normalizeAssistantToolCalls(await response.result(), context.tools);
         if (addedPartial) {
           context.messages[context.messages.length - 1] = finalMessage;
         } else {
@@ -811,7 +813,7 @@ async function streamAssistantResponse(
     }
   }
 
-  const finalMessage = recoverMisplacedToolCalls(await response.result(), context.tools);
+  const finalMessage = normalizeAssistantToolCalls(await response.result(), context.tools);
   if (addedPartial) {
     context.messages[context.messages.length - 1] = finalMessage;
   } else {
@@ -822,17 +824,15 @@ async function streamAssistantResponse(
   return finalMessage;
 }
 
+function normalizeAssistantToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AssistantMessage {
+  return expandWaitCheckToolCalls(recoverMisplacedToolCalls(message, tools), tools);
+}
+
 function recoverMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AssistantMessage {
   if (message.content.some((block) => block.type === "toolCall")) {
     return message;
   }
   const toolCalls = extractMisplacedToolCalls(message, tools);
-  if (toolCalls.length === 0) {
-    const recoveredWaitCall = recoverMalformedWaitIntent(message, tools);
-    if (recoveredWaitCall) {
-      toolCalls.push(recoveredWaitCall);
-    }
-  }
   if (toolCalls.length === 0) {
     return message;
   }
@@ -843,42 +843,81 @@ function recoverMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[]
   };
 }
 
-function recoverMalformedWaitIntent(
-  message: AssistantMessage,
-  tools: AgentTool[] | undefined,
-): AgentToolCall | undefined {
-  if (message.stopReason !== "toolUse" || !tools?.some((tool) => tool.name === "sleep")) {
-    return undefined;
+function expandWaitCheckToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AssistantMessage {
+  const expandedContent: AssistantMessage["content"] = [];
+  let expanded = false;
+  for (const block of message.content) {
+    expandedContent.push(block);
+    if (block.type !== "toolCall" || block.name !== "sleep") {
+      continue;
+    }
+    const checkToolCall = createValidatedWaitCheckToolCall(block, tools);
+    if (!checkToolCall) {
+      continue;
+    }
+    expandedContent.push(checkToolCall);
+    expanded = true;
   }
-  const text = getAssistantText(message).replace(/\s+/g, " ").trim();
-  if (
-    text.length === 0 ||
-    /\b(?:do not|don't|should not|shouldn't|without)\s+(?:just\s+)?wait\b/i.test(text) ||
-    !/\b(?:wait|waiting|loading|pending|retry|poll)\b/i.test(text) ||
-    !/(?:\blet me\b|\bi(?:'ll| will| should| need to)\b|\bbefore (?:i |we )?(?:check|retry|poll)\b|\bthen (?:check|retry|poll|inspect|take)\b)/i.test(
-      text,
-    )
-  ) {
-    return undefined;
-  }
-  return {
-    type: "toolCall",
-    id: `recovered_wait_${Date.now()}`,
-    name: "sleep",
-    arguments: { seconds: getRecoveredWaitSeconds(text) },
-  };
+  return expanded ? { ...message, content: expandedContent } : message;
 }
 
-function getRecoveredWaitSeconds(text: string): number {
-  const duration = text.match(/\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i);
-  if (duration) {
-    const value = Number.parseFloat(duration[1]);
-    return Math.min(60, duration[2].toLowerCase().startsWith("m") ? value * 60 : value);
+function createValidatedWaitCheckToolCall(
+  waitToolCall: AgentToolCall,
+  tools: AgentTool[] | undefined,
+): AgentToolCall | undefined {
+  const check = isRecord(waitToolCall.arguments.check) ? waitToolCall.arguments.check : undefined;
+  const name = getStringValue(check?.tool);
+  const args = isRecord(check?.arguments) ? check.arguments : undefined;
+  if (!name || !args || name === "sleep" || name === FINISH_WORK_TOOL_NAME) {
+    return undefined;
   }
-  if (/\b(?:a|one)\s+minute\b/i.test(text)) {
-    return 60;
+  const tool = tools?.find((candidate) => candidate.name === name);
+  if (!tool) {
+    return undefined;
   }
-  return 2;
+  const toolCall: AgentToolCall = {
+    type: "toolCall",
+    id: `wait_check_${sanitizeToolCallIdSegment(waitToolCall.id)}`,
+    name,
+    arguments: args,
+  };
+  try {
+    validateToolArguments(tool, prepareToolCallArguments(tool, toolCall));
+  } catch {
+    return undefined;
+  }
+  return toolCall;
+}
+
+function getWaitCheckValidationError(waitToolCall: AgentToolCall, tools: AgentTool[] | undefined): string | undefined {
+  const check = isRecord(waitToolCall.arguments.check) ? waitToolCall.arguments.check : undefined;
+  const name = getStringValue(check?.tool);
+  const args = isRecord(check?.arguments) ? check.arguments : undefined;
+  if (!name || !args) {
+    return "sleep requires `check: { tool, arguments }`; a bare wait is not allowed";
+  }
+  if (name === "sleep") {
+    return "sleep check cannot call sleep; it must inspect concrete external state";
+  }
+  if (name === FINISH_WORK_TOOL_NAME) {
+    return "sleep check cannot call finish_work; it must inspect concrete external state";
+  }
+  const tool = tools?.find((candidate) => candidate.name === name);
+  if (!tool) {
+    return `sleep check tool ${name} not found`;
+  }
+  try {
+    const checkToolCall: AgentToolCall = {
+      type: "toolCall",
+      id: `wait_check_${sanitizeToolCallIdSegment(waitToolCall.id)}`,
+      name,
+      arguments: args,
+    };
+    validateToolArguments(tool, prepareToolCallArguments(tool, checkToolCall));
+  } catch (error) {
+    return `Invalid sleep check for ${name}: ${error instanceof Error ? error.message : String(error)}`;
+  }
+  return undefined;
 }
 
 function removeRecoveredXmlToolCallMarkup(message: AssistantMessage): AssistantMessage {
@@ -1401,6 +1440,16 @@ async function prepareToolCall(
       result: createErrorToolResult(`Tool ${toolCall.name} not found`),
       isError: true,
     };
+  }
+  if (toolCall.name === "sleep") {
+    const waitCheckError = getWaitCheckValidationError(toolCall, currentContext.tools);
+    if (waitCheckError) {
+      return {
+        kind: "immediate",
+        result: createErrorToolResult(waitCheckError),
+        isError: true,
+      };
+    }
   }
 
   try {

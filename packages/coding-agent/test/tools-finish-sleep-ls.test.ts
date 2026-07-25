@@ -68,22 +68,26 @@ describe("finish_work tool", () => {
 
 describe("sleep tool", () => {
   const toolDef = createSleepToolDefinition();
+  const check = { tool: "ls", arguments: { path: "." } };
 
   it("executes sleep with finite seconds", async () => {
-    const res = await toolDef.execute("1", { seconds: 0 }, undefined, undefined, dummyExtCtx);
-    expect((res.content[0] as { type: "text"; text: string }).text).toBe("Slept for 0 seconds.");
+    const res = await toolDef.execute("1", { seconds: 0, check }, undefined, undefined, dummyExtCtx);
+    expect((res.content[0] as { type: "text"; text: string }).text).toContain(
+      "Slept for 0 seconds. Running required check `ls` now.",
+    );
+    expect(res.details).toEqual({ seconds: 0, check });
   });
 
   it("aborts when signal is already aborted", async () => {
     const controller = new AbortController();
     controller.abort();
-    await expect(toolDef.execute("1", { seconds: 1 }, controller.signal, undefined, dummyExtCtx)).rejects.toThrow(
-      "Operation aborted",
-    );
+    await expect(
+      toolDef.execute("1", { seconds: 1, check }, controller.signal, undefined, dummyExtCtx),
+    ).rejects.toThrow("Operation aborted");
   });
 
   it("renders call", () => {
-    const rendered = toolDef.renderCall?.({ seconds: 5 }, dummyTheme, dummyContext);
+    const rendered = toolDef.renderCall?.({ seconds: 5, check }, dummyTheme, dummyContext);
     expect(rendered).toBeDefined();
   });
 });

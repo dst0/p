@@ -110,18 +110,40 @@ async function runWaitScript(
 }
 
 function createTestTools(executed: string[]): AgentTool[] {
-  const sleepSchema = Type.Object({ seconds: Type.Number() });
+  const sleepSchema = Type.Object({
+    seconds: Type.Number(),
+    check: Type.Object({
+      tool: Type.String(),
+      arguments: Type.Record(Type.String(), Type.Unknown()),
+    }),
+  });
+  const waitSchema = Type.Object({});
   const echoSchema = Type.Object({ value: Type.String() });
   return [
     {
       name: "sleep",
       label: "Sleep",
-      description: "Wait",
+      description: "Wait and then check",
       parameters: sleepSchema,
+      executionMode: "sequential",
       async execute() {
         executed.push("sleep");
         return {
           content: [{ type: "text", text: "Wait complete" }],
+          details: {},
+          progress: "waiting",
+        };
+      },
+    },
+    {
+      name: "wait_event",
+      label: "Wait event",
+      description: "Test a wait-only result from a self-observing tool",
+      parameters: waitSchema,
+      async execute() {
+        executed.push("wait_event");
+        return {
+          content: [{ type: "text", text: "No new event" }],
           details: {},
           progress: "waiting",
         };
@@ -146,14 +168,19 @@ function createTestTools(executed: string[]): AgentTool[] {
 }
 
 describe("wait-loop recovery", () => {
-  it("turns a malformed wait-intent response into an executable wait and then recovers", async () => {
+  it("repairs malformed wait intent and executes a structured wait-check pair", async () => {
     const executed: string[] = [];
     const { events, contexts } = await runWaitScript(
       [
         createAssistantMessage([
           { type: "text", text: "The PR page is loading. Let me wait a moment and then inspect it." },
         ]),
-        createAssistantMessage([createToolCall("echo-1", "echo", { value: "new evidence" })]),
+        createAssistantMessage([
+          createToolCall("sleep-1", "sleep", {
+            seconds: 0,
+            check: { tool: "echo", arguments: { value: "new evidence" } },
+          }),
+        ]),
         createAssistantMessage([
           createToolCall("finish-1", FINISH_WORK_TOOL_NAME, { status: "success", summary: "done" }),
         ]),
@@ -163,9 +190,16 @@ describe("wait-loop recovery", () => {
 
     expect(executed).toEqual(["sleep", "new evidence"]);
     expect(contexts).toHaveLength(3);
+    expect(JSON.stringify(contexts[1].messages)).toContain("check: { tool, arguments }");
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
-    ).toHaveLength(0);
+    ).toHaveLength(1);
+    expect(
+      events
+        .filter((event) => event.type === "tool_execution_start")
+        .map((event) => event.toolName)
+        .filter((name) => name !== FINISH_WORK_TOOL_NAME),
+    ).toEqual(["sleep", "echo"]);
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_stop"),
     ).toHaveLength(0);
@@ -173,15 +207,10 @@ describe("wait-loop recovery", () => {
 
   it("stops repeated wait-only turns without using the generic malformed-response limit", async () => {
     const executed: string[] = [];
-    const malformedWait = createAssistantMessage([
-      { type: "text", text: "It is still loading. I will wait before I check again." },
-    ]);
-    const { events, contexts } = await runWaitScript(
-      [malformedWait, malformedWait, malformedWait],
-      createTestTools(executed),
-    );
+    const waitOnly = createAssistantMessage([createToolCall("wait-event", "wait_event")]);
+    const { events, contexts } = await runWaitScript([waitOnly, waitOnly, waitOnly], createTestTools(executed));
 
-    expect(executed).toEqual(["sleep", "sleep", "sleep"]);
+    expect(executed).toEqual(["wait_event", "wait_event", "wait_event"]);
     expect(contexts).toHaveLength(3);
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
@@ -189,6 +218,36 @@ describe("wait-loop recovery", () => {
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_stop"),
     ).toHaveLength(1);
+  });
+
+  it("rejects bare and recursive sleeps before waiting", async () => {
+    const executed: string[] = [];
+    const { events } = await runWaitScript(
+      [
+        createAssistantMessage([createToolCall("sleep-without-check", "sleep", { seconds: 0 })]),
+        createAssistantMessage([
+          createToolCall("sleep-checking-sleep", "sleep", {
+            seconds: 0,
+            check: { tool: "sleep", arguments: { seconds: 0 } },
+          }),
+        ]),
+        createAssistantMessage([
+          createToolCall("finish-1", FINISH_WORK_TOOL_NAME, { status: "success", summary: "done" }),
+        ]),
+      ],
+      createTestTools(executed),
+    );
+
+    expect(executed).toEqual([]);
+    const sleepEnds = events.filter((event) => event.type === "tool_execution_end" && event.toolName === "sleep");
+    expect(sleepEnds).toHaveLength(2);
+    expect(sleepEnds.every((event) => event.type === "tool_execution_end" && event.isError)).toBe(true);
+    expect(
+      sleepEnds.map((event) => (event.type === "tool_execution_end" ? event.result.content[0] : undefined)),
+    ).toEqual([
+      expect.objectContaining({ type: "text", text: expect.stringContaining("a bare wait is not allowed") }),
+      expect.objectContaining({ type: "text", text: expect.stringContaining("cannot call sleep") }),
+    ]);
   });
 
   it("does not limit long sequences of tools that keep producing evidence", async () => {

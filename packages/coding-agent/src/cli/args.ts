@@ -444,7 +444,8 @@ ${chalk.bold("Built-in Tool Names:")}
   grep         - Search file contents (read-only, off by default)
   find         - Find files by glob pattern (read-only, off by default)
   ls           - List directory contents (read-only, off by default)
-  sleep        - Wait before retrying delayed work
+  sleep        - Wait, then run a required concrete check
+  process      - Wait for, inspect, or interrupt an asynchronous bash process
   update_session_state - Record/re-plan goal and plan status for each user turn
   ask_user     - Ask the user a question when explicitly requested
   confirm_user - Wait for user confirmation when explicitly requested

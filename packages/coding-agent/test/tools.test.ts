@@ -807,11 +807,12 @@ describe("Coding Agent Tools", () => {
   describe("sleep tool", () => {
     it("should wait and return a result", async () => {
       const startedAt = Date.now();
-      const result = await sleepTool.execute("test-call-sleep", { seconds: 0.01 });
+      const check = { tool: "ls", arguments: { path: "." } };
+      const result = await sleepTool.execute("test-call-sleep", { seconds: 0.01, check });
 
       expect(Date.now() - startedAt).toBeGreaterThanOrEqual(5);
       expect(getTextOutput(result)).toContain("Slept for 0.01 seconds.");
-      expect(result.details).toEqual({ seconds: 0.01 });
+      expect(result.details).toEqual({ seconds: 0.01, check });
     });
   });
 });
