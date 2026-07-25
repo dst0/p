@@ -211,6 +211,12 @@ export interface VectorPoint {
   payload: StoredChunkPayload;
 }
 
+export interface StoredVectorPoint {
+  id: string;
+  dense?: number[];
+  payload: StoredChunkPayload;
+}
+
 export interface VectorSearchFilters {
   repoId: string;
   languages?: string[];
@@ -231,6 +237,12 @@ export interface RagVectorStore {
   collectionStatus(collection: string): Promise<{ points: number; dimensions: number | undefined }>;
   upsert(collection: string, points: VectorPoint[]): Promise<void>;
   deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void>;
+  iteratePoints?(
+    collection: string,
+    repoId: string,
+    withDense: boolean,
+    signal?: AbortSignal,
+  ): AsyncIterable<StoredVectorPoint>;
   search(
     collection: string,
     dense: Float32Array,

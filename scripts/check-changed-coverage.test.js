@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
@@ -11,6 +12,16 @@ import {
 	parseChangedLines,
 	parseLcov,
 } from "./check-changed-coverage.js";
+
+test("can be imported when the Node entrypoint argument is absent", () => {
+	const result = spawnSync(
+		process.execPath,
+		["--input-type=module", "--eval", 'import "./scripts/check-changed-coverage.js"'],
+		{ cwd: path.resolve(import.meta.dirname, ".."), encoding: "utf8" },
+	);
+
+	assert.equal(result.status, 0, result.stderr);
+});
 
 test("parses added and replaced line ranges from a zero-context diff", () => {
 	const changed = parseChangedLines(

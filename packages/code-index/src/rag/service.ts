@@ -36,11 +36,12 @@ import type {
   SemanticSearchInput,
   SemanticSearchResponse,
   StoredChunkPayload,
+  StoredVectorPoint,
   VectorPoint,
   WorkspaceCodeRagServiceOptions,
   WorkspaceCodeRagSettings,
 } from "./types.ts";
-import { QdrantVectorStore } from "./vector-store.ts";
+import { QdrantVectorStore, StoredPointError } from "./vector-store.ts";
 
 interface ScannedFile {
   absPath: string;
@@ -86,6 +87,7 @@ interface NormalizedSearchInput {
 const KNOWN_LANGUAGES = new Set(Object.values(LANG_MAP));
 const KNOWN_SYMBOL_TYPES = new Set(["function", "class", "module", "section", "text"]);
 const MAX_CHUNKS_PER_FILE = 2_000;
+const SCROLL_PROGRESS_INTERVAL = 256;
 
 /** Error thrown by the CodeRAG service with a machine-readable error code. */
 export class CodeRagError extends Error {
@@ -95,6 +97,13 @@ export class CodeRagError extends Error {
     super(message);
     this.name = "CodeRagError";
     this.code = code;
+  }
+}
+
+class ReusableGenerationError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "ReusableGenerationError";
   }
 }
 
@@ -454,14 +463,11 @@ export class WorkspaceCodeRagService implements CodeRagService {
 
       const changeRatio = changedFileCount / Math.max(previousFileCount, 1);
 
-      if (
-        options.forceSparseRebuild ||
-        !this.manifest ||
-        incompatibility !== undefined ||
-        sparseDriftExceeded ||
-        changeRatio > this.settings.fullSparseRebuildChangeRatio
-      ) {
+      if (options.forceSparseRebuild || !this.manifest || incompatibility !== undefined) {
         return await this.performRebuild(scanned, plan, startedAt, signal, options.onProgress);
+      }
+      if (sparseDriftExceeded || changeRatio > this.settings.fullSparseRebuildChangeRatio) {
+        return await this.performSparseGenerationRefresh(scanned, plan, startedAt, signal, options.onProgress);
       }
 
       return await this.performIncrementalRefresh(plan, startedAt, signal, options.onProgress);
@@ -513,6 +519,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
     }
     vocabulary.finalize();
     let createdCollection = false;
+    let newVocabularyPath: string | undefined;
     try {
       await this.vectorStore.createCollection(collection, this.settings.embeddingDimensions);
       createdCollection = true;
@@ -534,8 +541,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
         { processedChunks: chunks.length, totalChunks: chunks.length },
       );
       const now = this.now().toISOString();
-      const vocabularyPath = this.vocabularyPath(generation);
-      vocabulary.save(vocabularyPath);
+      newVocabularyPath = this.vocabularyPath(generation);
+      vocabulary.save(newVocabularyPath);
       const previousManifest = this.manifest;
       const manifest: IndexManifest = {
         schemaVersion: INDEX_MANIFEST_SCHEMA_VERSION,
@@ -561,7 +568,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
         sparse: {
           strategy: "frozen-bm25",
           generation,
-          vocabularyFile: path.basename(vocabularyPath),
+          vocabularyFile: path.basename(newVocabularyPath),
           corpusDocCount: vocabulary.totalDocs,
           frozenStatsAt: now,
           driftFileCount: 0,
@@ -576,6 +583,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
       this.lastError = undefined;
       this.cachedVocabulary = vocabulary;
       this.cachedVocabularyGeneration = generation;
+      createdCollection = false;
 
       if (previousManifest && previousManifest.collection !== collection) {
         try {
@@ -601,6 +609,223 @@ export class WorkspaceCodeRagService implements CodeRagService {
         } catch {
           // Preserve the original failure.
         }
+        if (newVocabularyPath) unlinkBestEffort(newVocabularyPath);
+      }
+      throw error;
+    }
+  }
+
+  /**
+   * Rebuild sparse vectors into a new generation while preserving dense vectors
+   * for files whose content is unchanged.
+   */
+  private async performSparseGenerationRefresh(
+    scanned: ScannedFile[],
+    plan: RefreshPlan,
+    startedAt: number,
+    signal: AbortSignal,
+    onProgress: RefreshIndexOptions["onProgress"],
+  ): Promise<IndexUpdateSummary> {
+    if (!this.manifest) throw new CodeRagError("RAG_NOT_INITIALIZED", "Code RAG index is not initialized");
+    const iteratePoints = this.vectorStore.iteratePoints?.bind(this.vectorStore);
+    if (!iteratePoints) {
+      return this.performRebuild(scanned, plan, startedAt, signal, onProgress);
+    }
+
+    const previousManifest = this.manifest;
+    const generation = this.createGeneration();
+    const collection = this.collectionName(generation);
+    const changedFiles = [...plan.added, ...plan.changed];
+    const preparedFiles: PreparedFile[] = [];
+    for (const [index, file] of changedFiles.entries()) {
+      preparedFiles.push(this.prepareFile(file, generation, signal));
+      this.reportProgress(onProgress, "indexing", (5 * (index + 1)) / Math.max(changedFiles.length, 1), {
+        processedFiles: index + 1,
+        totalFiles: scanned.length,
+      });
+    }
+
+    const reusableEntries = new Map<string, ManifestFileEntry>();
+    const nextFiles: Record<string, ManifestFileEntry> = {};
+    for (const file of plan.unchanged) {
+      const entry = previousManifest.files[file.path];
+      if (!entry) {
+        return this.performRebuild(scanned, plan, startedAt, signal, this.fallbackRebuildProgress(onProgress));
+      }
+      reusableEntries.set(file.path, entry);
+      nextFiles[file.path] = { ...entry, size: file.size, mtimeMs: file.mtimeMs };
+    }
+    for (const prepared of preparedFiles) nextFiles[prepared.file.path] = prepared.entry;
+
+    const changedChunks = preparedFiles.flatMap((file) => file.chunks);
+    const reusableChunkTotal = [...reusableEntries.values()].reduce((total, entry) => total + entry.chunkCount, 0);
+    const totalChunks = reusableChunkTotal + changedChunks.length;
+    const vocabulary = new BM25Vocabulary();
+    for (const chunk of changedChunks) vocabulary.register(chunk.retrievalText);
+
+    const vocabularyCounts = new Map<string, number>();
+    let vocabularyChunkCount = 0;
+    try {
+      for await (const point of iteratePoints(previousManifest.collection, this.repoId, false, signal)) {
+        if (!this.isReusablePoint(point, reusableEntries)) continue;
+        vocabulary.register(retrievalTextForPayload(point.payload, this.settings.maxEncodeCharacters));
+        vocabularyChunkCount += 1;
+        vocabularyCounts.set(point.payload.path, (vocabularyCounts.get(point.payload.path) ?? 0) + 1);
+        if (vocabularyChunkCount % SCROLL_PROGRESS_INTERVAL === 0) {
+          this.reportProgress(
+            onProgress,
+            "indexing",
+            5 + (10 * vocabularyChunkCount) / Math.max(reusableChunkTotal, 1),
+            {
+              processedFiles: changedFiles.length,
+              totalFiles: scanned.length,
+            },
+          );
+        }
+      }
+      this.assertReusableCounts(reusableEntries, vocabularyCounts);
+      vocabulary.finalize();
+      this.reportProgress(
+        onProgress,
+        "indexing",
+        15,
+        { processedFiles: changedFiles.length, totalFiles: scanned.length },
+        { processedChunks: 0, totalChunks },
+      );
+
+      await this.vectorStore.createCollection(collection, this.settings.embeddingDimensions);
+      let createdCollection = true;
+      let newVocabularyPath: string | undefined;
+      try {
+        const copiedCounts = new Map<string, number>();
+        const pending: VectorPoint[] = [];
+        let copiedChunks = 0;
+        for await (const point of iteratePoints(previousManifest.collection, this.repoId, true, signal)) {
+          if (!this.isReusablePoint(point, reusableEntries)) continue;
+          if (!point.dense || point.dense.length !== this.settings.embeddingDimensions) {
+            throw new ReusableGenerationError(`Dense vector is missing or incompatible for point: ${point.id}`);
+          }
+          pending.push({
+            id: point.id,
+            vectors: {
+              dense: point.dense,
+              sparse: vocabulary.encode(retrievalTextForPayload(point.payload, this.settings.maxEncodeCharacters)),
+            },
+            payload: { ...point.payload, indexGeneration: generation },
+          });
+          copiedChunks += 1;
+          copiedCounts.set(point.payload.path, (copiedCounts.get(point.payload.path) ?? 0) + 1);
+          this.refreshSettingsSilently();
+          if (pending.length >= Math.max(1, this.settings.upsertBatchSize)) {
+            await this.vectorStore.upsert(collection, pending.splice(0));
+            this.reportProgress(
+              onProgress,
+              "indexing",
+              15 + (70 * copiedChunks) / Math.max(reusableChunkTotal, 1),
+              { processedFiles: changedFiles.length, totalFiles: scanned.length },
+              { processedChunks: copiedChunks, totalChunks },
+            );
+          }
+        }
+        if (pending.length > 0) await this.vectorStore.upsert(collection, pending);
+        this.assertReusableCounts(reusableEntries, copiedCounts);
+        this.reportProgress(
+          onProgress,
+          "indexing",
+          85,
+          { processedFiles: plan.unchanged.length + changedFiles.length, totalFiles: scanned.length },
+          { processedChunks: reusableChunkTotal, totalChunks },
+        );
+
+        await this.encodeAndUpsert(collection, changedChunks, vocabulary, signal, (completed, total) => {
+          this.reportProgress(
+            onProgress,
+            "indexing",
+            85 + (14.8 * completed) / Math.max(total, 1),
+            { processedFiles: scanned.length, totalFiles: scanned.length },
+            { processedChunks: reusableChunkTotal + completed, totalChunks },
+          );
+        });
+        this.reportProgress(
+          onProgress,
+          "finalizing",
+          99.9,
+          { processedFiles: scanned.length, totalFiles: scanned.length },
+          { processedChunks: totalChunks, totalChunks },
+        );
+
+        const now = this.now().toISOString();
+        newVocabularyPath = this.vocabularyPath(generation);
+        vocabulary.save(newVocabularyPath);
+        const manifest: IndexManifest = {
+          schemaVersion: INDEX_MANIFEST_SCHEMA_VERSION,
+          repoId: this.repoId,
+          root: this.workspaceRoot,
+          collection,
+          generation,
+          state: "ready",
+          createdAt: now,
+          updatedAt: now,
+          sourceRevision: getGitInfo(this.workspaceRoot).commit || undefined,
+          chunker: {
+            name: CHUNKER_NAME,
+            version: CHUNKER_VERSION,
+            defaultChunkLines: this.settings.defaultChunkLines,
+            maxChunkLines: this.settings.maxChunkLines,
+          },
+          embedding: {
+            provider: "local-python-http",
+            model: this.settings.embeddingModel,
+            dimensions: this.settings.embeddingDimensions,
+          },
+          sparse: {
+            strategy: "frozen-bm25",
+            generation,
+            vocabularyFile: path.basename(newVocabularyPath),
+            corpusDocCount: vocabulary.totalDocs,
+            frozenStatsAt: now,
+            driftFileCount: 0,
+          },
+          files: nextFiles,
+          chunkCount: totalChunks,
+        };
+        writeManifestAtomic(this.manifestPath, manifest);
+        this.manifest = manifest;
+        this.state = "ready";
+        this.staleReason = undefined;
+        this.lastError = undefined;
+        this.cachedVocabulary = vocabulary;
+        this.cachedVocabularyGeneration = generation;
+        createdCollection = false;
+
+        try {
+          await this.vectorStore.deleteCollection(previousManifest.collection);
+        } catch {
+          // The new manifest is already committed; old-generation cleanup is best effort.
+        }
+        try {
+          fs.unlinkSync(path.join(this.repositoryDirectory, previousManifest.sparse.vocabularyFile));
+        } catch (error) {
+          if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+            // Old local vocabulary cleanup is best effort.
+          }
+        }
+        this.reportProgress(onProgress, "finalizing", 100);
+        return this.summaryForPlan(plan, startedAt, changedChunks.length, false);
+      } catch (error) {
+        if (createdCollection) {
+          try {
+            await this.vectorStore.deleteCollection(collection);
+          } catch {
+            // Preserve the original failure.
+          }
+          if (newVocabularyPath) unlinkBestEffort(newVocabularyPath);
+        }
+        throw error;
+      }
+    } catch (error) {
+      if (error instanceof ReusableGenerationError || error instanceof StoredPointError) {
+        return this.performRebuild(scanned, plan, startedAt, signal, this.fallbackRebuildProgress(onProgress));
       }
       throw error;
     }
@@ -688,6 +913,25 @@ export class WorkspaceCodeRagService implements CodeRagService {
     return this.summaryForPlan(plan, startedAt, chunksEmbedded, false);
   }
 
+  private isReusablePoint(point: StoredVectorPoint, entries: Map<string, ManifestFileEntry>): boolean {
+    return entries.get(point.payload.path)?.hash === point.payload.fileHash;
+  }
+
+  private assertReusableCounts(entries: Map<string, ManifestFileEntry>, actual: Map<string, number>): void {
+    for (const [filePath, entry] of entries) {
+      if ((actual.get(filePath) ?? 0) !== entry.chunkCount) {
+        throw new ReusableGenerationError(`Stored chunks are incomplete for unchanged file: ${filePath}`);
+      }
+    }
+  }
+
+  private fallbackRebuildProgress(onProgress: RefreshIndexOptions["onProgress"]): RefreshIndexOptions["onProgress"] {
+    if (!onProgress) return undefined;
+    return (progress) => {
+      onProgress({ ...progress, percent: 85 + progress.percent * 0.15 });
+    };
+  }
+
   private refreshSettingsSilently(): void {
     try {
       this.settings = loadWorkspaceCodeRagSettings(this.serviceOptions);
@@ -704,6 +948,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
     signal: AbortSignal,
     onProgress?: (completed: number, total: number) => void,
   ): Promise<void> {
+    if (chunks.length === 0) {
+      onProgress?.(0, 0);
+      return;
+    }
     // Ensure embedding provider is ready (auto-start if needed)
     if (this.embeddingProvider.ensureReady) await this.embeddingProvider.ensureReady(signal);
     let offset = 0;
@@ -732,7 +980,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
       offset += batch.length;
       onProgress?.(Math.min(offset, chunks.length), chunks.length);
     }
-    if (chunks.length === 0) onProgress?.(0, 0);
   }
 
   private reportProgress(
@@ -1208,6 +1455,25 @@ function buildRetrievalText(
   const maxCodeChars = Math.max(0, maxChars - headerLen);
   const truncatedCode = code.length > maxCodeChars ? code.slice(0, maxCodeChars) : code;
   return header + truncatedCode;
+}
+
+function retrievalTextForPayload(payload: StoredChunkPayload, maxChars: number): string {
+  return buildRetrievalText(
+    payload.path,
+    payload.language,
+    payload.symbolName,
+    payload.symbolType,
+    payload.content,
+    maxChars,
+  );
+}
+
+function unlinkBestEffort(filePath: string): void {
+  try {
+    fs.unlinkSync(filePath);
+  } catch {
+    // Generation cleanup must not mask the indexing failure.
+  }
 }
 
 function safeErrorMessage(error: unknown): string {

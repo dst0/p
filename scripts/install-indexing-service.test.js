@@ -2,6 +2,8 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	getQdrantAsset,
+	getQdrantExtractionArgs,
+	getSystemdUserUnitDirectory,
 	isIndexingDaemonCommand,
 	isManagedBackendCommand,
 	renderLaunchdPlist,
@@ -156,4 +158,18 @@ test("rejects unsupported accelerator wheel targets", () => {
 			}),
 		/P_CODE_RAG_TORCH_BACKEND/,
 	);
+});
+
+test("extracts Qdrant without applying archive ownership", () => {
+	assert.deepEqual(getQdrantExtractionArgs("/tmp/qdrant.tar.gz", "/tmp/bin"), [
+		"-xzf",
+		"/tmp/qdrant.tar.gz",
+		"--no-same-owner",
+		"-C",
+		"/tmp/bin",
+	]);
+});
+
+test("respects XDG_CONFIG_HOME for the systemd user unit", () => {
+	assert.equal(getSystemdUserUnitDirectory("/tmp/xdg"), "/tmp/xdg/systemd/user");
 });

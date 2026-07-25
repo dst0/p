@@ -1,6 +1,17 @@
 import chalk from "chalk";
 import { type SpawnSyncReturns, spawnSync } from "child_process";
-import { chmodSync, createWriteStream, existsSync, mkdirSync, readdirSync, renameSync, rmSync } from "fs";
+import {
+  chmodSync,
+  closeSync,
+  createWriteStream,
+  existsSync,
+  mkdirSync,
+  openSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+} from "fs";
 import { arch, platform } from "os";
 import { join } from "path";
 import { Readable } from "stream";
@@ -10,11 +21,55 @@ import { APP_NAME, getBinDir } from "../config.ts";
 const TOOLS_DIR = getBinDir();
 const NETWORK_TIMEOUT_MS = 10_000;
 const DOWNLOAD_TIMEOUT_MS = 120_000;
+const DOWNLOAD_LOCK_POLL_MS = 100;
+const DOWNLOAD_LOCK_STALE_MS = NETWORK_TIMEOUT_MS + DOWNLOAD_TIMEOUT_MS + 30_000;
 
 function isOfflineModeEnabled(): boolean {
   const value = process.env.P_OFFLINE;
   if (!value) return false;
   return value === "1" || value.toLowerCase() === "true" || value.toLowerCase() === "yes";
+}
+
+interface DownloadLockOptions {
+  now?: () => number;
+  sleep?: (milliseconds: number) => Promise<void>;
+  staleMs?: number;
+}
+
+export async function acquireDownloadLock(
+  tool: "fd" | "rg",
+  options: DownloadLockOptions = {},
+): Promise<{ fd: number; path: string }> {
+  const now = options.now ?? Date.now;
+  const sleep =
+    options.sleep ?? ((milliseconds: number) => new Promise<void>((resolve) => setTimeout(resolve, milliseconds)));
+  const staleMs = options.staleMs ?? DOWNLOAD_LOCK_STALE_MS;
+  mkdirSync(TOOLS_DIR, { recursive: true });
+  const lockPath = join(TOOLS_DIR, `.${tool}.download.lock`);
+  const deadline = now() + staleMs;
+  while (true) {
+    try {
+      return { fd: openSync(lockPath, "wx", 0o600), path: lockPath };
+    } catch (error) {
+      if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
+      try {
+        if (now() - statSync(lockPath).mtimeMs >= staleMs) {
+          rmSync(lockPath, { force: true });
+          continue;
+        }
+      } catch {
+        rmSync(lockPath, { force: true });
+        continue;
+      }
+      if (now() >= deadline) throw new Error(`Timed out waiting for the ${tool} download lock`);
+      await sleep(DOWNLOAD_LOCK_POLL_MS);
+    }
+  }
+}
+
+export function releaseDownloadLock(lock: { fd: number; path: string }): void {
+  closeSync(lock.fd);
+  rmSync(lock.path, { force: true });
 }
 
 interface ToolConfig {
@@ -181,8 +236,34 @@ function runExtractionCommand(command: string, args: string[]): string | null {
   return `${command}: ${formatSpawnFailure(result)}`;
 }
 
+export function getTarExtractionArgs(archivePath: string, extractDir: string): string[] {
+  return ["xzf", archivePath, "--no-same-owner", "-C", extractDir];
+}
+
+export function getToolDownloadPaths(
+  binaryName: string,
+  assetName: string,
+  targetPlatform: string,
+  downloadId = `${binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
+): { archivePath: string; binaryPath: string; extractDir: string } {
+  const binaryExt = targetPlatform === "win32" ? ".exe" : "";
+  return {
+    archivePath: join(TOOLS_DIR, `${downloadId}_${assetName}`),
+    binaryPath: join(TOOLS_DIR, binaryName + binaryExt),
+    extractDir: join(TOOLS_DIR, `extract_tmp_${downloadId}`),
+  };
+}
+
+export function moveDownloadedBinary(extractedBinary: string, binaryPath: string): void {
+  try {
+    renameSync(extractedBinary, binaryPath);
+  } catch (error) {
+    if (!existsSync(binaryPath)) throw error;
+  }
+}
+
 function extractTarGzArchive(archivePath: string, extractDir: string, assetName: string): void {
-  const failure = runExtractionCommand("tar", ["xzf", archivePath, "-C", extractDir]);
+  const failure = runExtractionCommand("tar", getTarExtractionArgs(archivePath, extractDir));
   if (failure) {
     throw new Error(`Failed to extract ${assetName}: ${failure}`);
   }
@@ -238,7 +319,7 @@ function extractZipArchive(archivePath: string, extractDir: string, assetName: s
 }
 
 // Download and install a tool
-async function downloadTool(tool: "fd" | "rg"): Promise<string> {
+export async function downloadTool(tool: "fd" | "rg"): Promise<string> {
   const config = TOOLS[tool];
   if (!config) throw new Error(`Unknown tool: ${tool}`);
 
@@ -261,19 +342,14 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
   mkdirSync(TOOLS_DIR, { recursive: true });
 
   const downloadUrl = `https://github.com/${config.repo}/releases/download/${config.tagPrefix}${version}/${assetName}`;
-  const archivePath = join(TOOLS_DIR, assetName);
+  const { archivePath, binaryPath, extractDir } = getToolDownloadPaths(config.binaryName, assetName, plat);
   const binaryExt = plat === "win32" ? ".exe" : "";
-  const binaryPath = join(TOOLS_DIR, config.binaryName + binaryExt);
 
   // Download
   await downloadFile(downloadUrl, archivePath);
 
   // Extract into a unique temp directory. fd and rg downloads can run concurrently
   // during startup, so sharing a fixed directory causes races.
-  const extractDir = join(
-    TOOLS_DIR,
-    `extract_tmp_${config.binaryName}_${process.pid}_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`,
-  );
   mkdirSync(extractDir, { recursive: true });
 
   try {
@@ -297,7 +373,7 @@ async function downloadTool(tool: "fd" | "rg"): Promise<string> {
     }
 
     if (extractedBinary) {
-      renameSync(extractedBinary, binaryPath);
+      moveDownloadedBinary(extractedBinary, binaryPath);
     } else {
       throw new Error(`Binary not found in archive: expected ${binaryFileName} under ${extractDir}`);
     }
@@ -355,7 +431,13 @@ export async function ensureTool(tool: "fd" | "rg", silent: boolean = false): Pr
   }
 
   try {
-    const path = await downloadTool(tool);
+    const lock = await acquireDownloadLock(tool);
+    let path: string;
+    try {
+      path = getToolPath(tool) ?? (await downloadTool(tool));
+    } finally {
+      releaseDownloadLock(lock);
+    }
     if (!silent) {
       console.log(chalk.dim(`${config.name} installed to ${path}`));
     }

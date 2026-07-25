@@ -33,10 +33,19 @@ export function findIndexWorkspaceRoot(cwd: string): string {
   const canonicalCwd = canonicalizePath(cwd);
   let current = canonicalCwd;
   while (true) {
-    if (fs.existsSync(path.join(current, ".git"))) return current;
+    if (isGitMetadataPath(path.join(current, ".git"))) return current;
     const parent = path.dirname(current);
     if (parent === current) return canonicalCwd;
     current = parent;
+  }
+}
+
+function isGitMetadataPath(gitPath: string): boolean {
+  if (fs.existsSync(path.join(gitPath, "HEAD"))) return true;
+  try {
+    return fs.readFileSync(gitPath, "utf8").trimStart().startsWith("gitdir:");
+  } catch {
+    return false;
   }
 }
 

@@ -1,4 +1,4 @@
-import { type ChildProcess, spawn } from "node:child_process";
+import { type ChildProcess, spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -14,6 +14,10 @@ import {
 const temporaryDirectories: string[] = [];
 const childProcesses: ChildProcess[] = [];
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
+const canInspectProcesses =
+  spawnSync("ps", ["-p", String(process.pid), "-o", "command="], {
+    stdio: "ignore",
+  }).status === 0;
 
 afterEach(async () => {
   for (const child of childProcesses.splice(0)) {
@@ -30,7 +34,7 @@ afterEach(async () => {
 });
 
 describe("indexing reinstall scripts", () => {
-  it("force-stops a daemon that ignores the bounded quiesce handshake", async () => {
+  it.skipIf(!canInspectProcesses)("force-stops a daemon that ignores the bounded quiesce handshake", async () => {
     const fixture = createFixture();
     const fakeDaemonPath = path.join(fixture.root, "indexing-service-daemon.js");
     const startedPath = path.join(fixture.root, "started");
@@ -74,7 +78,7 @@ describe("indexing reinstall scripts", () => {
       },
     );
 
-    expect(result.code).toBe(0);
+    expect(result.code, `${result.stdout}\n${result.stderr}`).toBe(0);
     expect(`${result.stdout}\n${result.stderr}`).toContain("did not become quiescent within 100ms");
     expect(`${result.stdout}\n${result.stderr}`).toContain("sending SIGKILL");
     expect(Date.now() - startedAt).toBeLessThan(5_000);

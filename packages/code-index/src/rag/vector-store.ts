@@ -2,6 +2,7 @@ import type {
   RagVectorStore,
   SparseVector,
   StoredChunkPayload,
+  StoredVectorPoint,
   VectorPoint,
   VectorSearchFilters,
   VectorSearchResult,
@@ -47,10 +48,26 @@ interface QdrantSearchRequest {
   params: { hnsw_ef: number; quantization?: { rescore: true } };
 }
 
-interface QdrantScoredPoint {
+interface QdrantStoredPoint {
   id: QdrantPointId;
   payload?: Record<string, unknown>;
+  vector?: unknown;
 }
+
+interface QdrantScrollRequest {
+  offset?: QdrantPointId;
+  limit: number;
+  filter: QdrantFilter;
+  with_payload: true;
+  with_vector: false | ["dense"];
+}
+
+interface QdrantScrollResult {
+  points: QdrantStoredPoint[];
+  next_page_offset?: QdrantPointId | null;
+}
+
+type QdrantScoredPoint = QdrantStoredPoint;
 
 interface QdrantRestClient {
   collectionExists(collection: string): Promise<{ exists: boolean }>;
@@ -70,6 +87,7 @@ interface QdrantRestClient {
   ): Promise<void>;
   delete(collection: string, request: { wait: true; filter: QdrantFilter }): Promise<void>;
   search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]>;
+  scroll(collection: string, request: QdrantScrollRequest, signal?: AbortSignal): Promise<QdrantScrollResult>;
 }
 
 class FetchQdrantRestClient implements QdrantRestClient {
@@ -126,18 +144,23 @@ class FetchQdrantRestClient implements QdrantRestClient {
     return this.request("POST", `${this.collectionPath(collection)}/points/search`, request);
   }
 
+  async scroll(collection: string, request: QdrantScrollRequest, signal?: AbortSignal): Promise<QdrantScrollResult> {
+    return this.request("POST", `${this.collectionPath(collection)}/points/scroll`, request, signal);
+  }
+
   private collectionPath(collection: string): string {
     return `/collections/${encodeURIComponent(collection)}`;
   }
 
-  private async request<T>(method: string, requestPath: string, body?: unknown): Promise<T> {
+  private async request<T>(method: string, requestPath: string, body?: unknown, signal?: AbortSignal): Promise<T> {
     let response: Response;
     try {
+      const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
       response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
         method,
         headers: body === undefined ? undefined : { "Content-Type": "application/json" },
         body: body === undefined ? undefined : JSON.stringify(body),
-        signal: AbortSignal.timeout(this.timeoutMs),
+        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -170,6 +193,14 @@ const HNSW_EF = 60;
 const HNSW_M = 10;
 /** HNSW construction beam — higher than query ef for better build quality. */
 const HNSW_EF_CONSTRUCTION = 128;
+const SCROLL_PAGE_SIZE = 256;
+
+export class StoredPointError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = "StoredPointError";
+  }
+}
 
 export class QdrantVectorStore implements RagVectorStore {
   private client: QdrantRestClient;
@@ -267,6 +298,41 @@ export class QdrantVectorStore implements RagVectorStore {
     await this.client.delete(collection, { wait: true, filter });
   }
 
+  async *iteratePoints(
+    collection: string,
+    repoId: string,
+    withDense: boolean,
+    signal?: AbortSignal,
+  ): AsyncIterable<StoredVectorPoint> {
+    let offset: QdrantPointId | undefined;
+    while (true) {
+      if (signal?.aborted) throw signal.reason ?? new Error("Qdrant point iteration cancelled");
+      const page = await this.client.scroll(
+        collection,
+        {
+          ...(offset === undefined ? {} : { offset }),
+          limit: SCROLL_PAGE_SIZE,
+          filter: { must: [{ key: "repoId", match: { value: repoId } }] },
+          with_payload: true,
+          with_vector: withDense ? ["dense"] : false,
+        },
+        signal,
+      );
+      if (!Array.isArray(page.points)) throw new StoredPointError("Qdrant scroll returned an invalid point page");
+      for (const point of page.points) {
+        if (signal?.aborted) throw signal.reason ?? new Error("Qdrant point iteration cancelled");
+        yield parseStoredPoint(point, withDense);
+      }
+      const nextOffset = page.next_page_offset;
+      if (nextOffset === undefined || nextOffset === null) return;
+      if (typeof nextOffset !== "string" && typeof nextOffset !== "number") {
+        throw new StoredPointError("Qdrant scroll returned an invalid offset");
+      }
+      if (nextOffset === offset) throw new StoredPointError("Qdrant scroll returned a repeated offset");
+      offset = nextOffset;
+    }
+  }
+
   async search(
     collection: string,
     dense: Float32Array,
@@ -314,6 +380,51 @@ export class QdrantVectorStore implements RagVectorStore {
       .slice(0, requestLimit)
       .map(([id, score]) => ({ id, score, payload: payloads.get(id)! }));
   }
+}
+
+const STRING_PAYLOAD_FIELDS = [
+  "repoId",
+  "fileId",
+  "path",
+  "language",
+  "symbolName",
+  "symbolType",
+  "fileHash",
+  "chunkHash",
+  "chunkerVersion",
+  "indexGeneration",
+  "content",
+  "indexedAt",
+] as const satisfies ReadonlyArray<keyof StoredChunkPayload>;
+
+const NUMBER_PAYLOAD_FIELDS = ["startLine", "endLine", "chunkOrdinal"] as const satisfies ReadonlyArray<
+  keyof StoredChunkPayload
+>;
+
+const BOOLEAN_PAYLOAD_FIELDS = ["isTest", "isGenerated"] as const satisfies ReadonlyArray<keyof StoredChunkPayload>;
+
+function parseStoredPoint(point: QdrantStoredPoint, withDense: boolean): StoredVectorPoint {
+  if (typeof point.id !== "string") throw new StoredPointError("Qdrant stored point has a non-string ID");
+  const payload = point.payload;
+  if (
+    !payload ||
+    Array.isArray(payload) ||
+    STRING_PAYLOAD_FIELDS.some((field) => typeof payload[field] !== "string") ||
+    NUMBER_PAYLOAD_FIELDS.some((field) => typeof payload[field] !== "number") ||
+    BOOLEAN_PAYLOAD_FIELDS.some((field) => typeof payload[field] !== "boolean")
+  ) {
+    throw new StoredPointError(`Qdrant stored point ${point.id} has an invalid payload`);
+  }
+  if (!withDense) return { id: point.id, payload: payload as unknown as StoredChunkPayload };
+  const vectors = point.vector;
+  const dense =
+    vectors && typeof vectors === "object" && !Array.isArray(vectors)
+      ? (vectors as Record<string, unknown>).dense
+      : undefined;
+  if (!Array.isArray(dense) || dense.some((value) => typeof value !== "number" || !Number.isFinite(value))) {
+    throw new StoredPointError(`Qdrant stored point ${point.id} has an invalid dense vector`);
+  }
+  return { id: point.id, dense, payload: payload as unknown as StoredChunkPayload };
 }
 
 function createSearchFilter(filters: VectorSearchFilters): QdrantFilter {

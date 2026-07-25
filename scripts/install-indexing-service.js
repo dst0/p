@@ -91,6 +91,16 @@ export function selectTorchInstallPlan(options = {}) {
 	};
 }
 
+export function getQdrantExtractionArgs(archive, destination) {
+	return ["-xzf", archive, "--no-same-owner", "-C", destination];
+}
+
+export function getSystemdUserUnitDirectory(
+	configHome = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
+) {
+	return path.join(configHome, "systemd", "user");
+}
+
 export function isIndexingDaemonCommand(command, daemonPath = "indexing-service-daemon.js") {
 	const executable = command.trim().split(/\s+/, 1)[0];
 	if (!/^node(?:js)?(?:\.exe)?$/.test(path.basename(executable))) return false;
@@ -270,7 +280,7 @@ async function installQdrant(qdrantBinary) {
 		const digest = createHash("sha256").update(bytes).digest("hex");
 		if (digest !== asset.sha256) throw new Error(`Qdrant archive checksum mismatch for ${asset.name}`);
 		fs.writeFileSync(archive, bytes, { mode: 0o600 });
-		run("tar", ["-xzf", archive, "-C", BIN_DIR]);
+		run("tar", getQdrantExtractionArgs(archive, BIN_DIR));
 		fs.chmodSync(qdrantBinary, 0o755);
 		const version = capture(qdrantBinary, ["--version"]);
 		if (!version.includes(QDRANT_VERSION)) throw new Error(`Unexpected Qdrant version: ${version.trim()}`);
@@ -400,7 +410,7 @@ async function waitForLaunchdRemoval(uid, label) {
 
 async function installLinux(unit) {
 	const knownDaemonPid = readStatusDaemonPid();
-	const unitDirectory = path.join(os.homedir(), ".config", "systemd", "user");
+	const unitDirectory = getSystemdUserUnitDirectory();
 	const unitPath = path.join(unitDirectory, `${SERVICE_LABEL}.service`);
 	const legacyUnitPath = path.join(unitDirectory, `${LEGACY_SERVICE_LABEL}.service`);
 	fs.mkdirSync(unitDirectory, { recursive: true });

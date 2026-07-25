@@ -8,6 +8,7 @@ import { executeShellWithCapture } from "../../src/harness/utils/shell-output.ts
 import { createTempDir } from "./session-test-utils.ts";
 
 const chmodRestorePaths: string[] = [];
+const runsAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
 afterEach(async () => {
   for (const path of chmodRestorePaths.splice(0)) {
@@ -287,7 +288,7 @@ describe("NodeExecutionEnv", () => {
     expect(result.output.length).toBeLessThan(fullOutput.length);
   });
 
-  it("handles permission_denied and exists error propagation", async () => {
+  it.skipIf(runsAsRoot)("handles permission_denied and exists error propagation", async () => {
     const root = createTempDir();
     const env = new NodeExecutionEnv({ cwd: root });
     const noAccessDir = join(root, "no_access");
@@ -309,7 +310,7 @@ describe("NodeExecutionEnv", () => {
     }
   });
 
-  it("handles createTempFile write error", async () => {
+  it.skipIf(runsAsRoot)("handles createTempFile write error", async () => {
     const root = createTempDir();
     const env = new NodeExecutionEnv({ cwd: root });
     const origCreateTempDir = env.createTempDir.bind(env);

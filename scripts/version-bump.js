@@ -51,6 +51,12 @@ for (const relPath of workspacePackagePaths) {
 	}
 }
 
+const targetVersion = Object.values(versionMap)[0];
+if (!targetVersion) {
+	console.error('No workspace package versions were updated');
+	process.exit(1);
+}
+
 // Update inter-package dependencies in core packages
 const corePackagePaths = [
 	'packages/agent/package.json',
@@ -84,9 +90,36 @@ for (const relPath of corePackagePaths) {
 	}
 }
 
+// Bump root package.json to match workspace package version
+const rootPkgPath = join(process.cwd(), 'package.json');
+const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf8'));
+const oldRootVersion = rootPkg.version;
+if (rootPkg.version !== targetVersion) {
+	rootPkg.version = targetVersion;
+	writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
+	console.log(`p-monorepo (root): ${oldRootVersion} → ${targetVersion}`);
+} else {
+	console.log(`p-monorepo (root): already at ${targetVersion}`);
+}
+
+// Keep the public code-index package version synchronized.
+const codeIndexSourcePath = join(process.cwd(), 'packages/code-index/src/index.ts');
+const codeIndexSource = readFileSync(codeIndexSourcePath, 'utf8');
+const updatedCodeIndexSource = codeIndexSource.replace(
+	/export const CODE_INDEX_VERSION = "[^"]+";/,
+	`export const CODE_INDEX_VERSION = "${targetVersion}";`,
+);
+if (updatedCodeIndexSource === codeIndexSource) {
+	console.error(`Failed to update CODE_INDEX_VERSION in ${codeIndexSourcePath}`);
+	process.exit(1);
+}
+writeFileSync(codeIndexSourcePath, updatedCodeIndexSource);
+
 // Update root package-lock.json
 const lockfilePath = join(process.cwd(), 'package-lock.json');
 const lockfile = JSON.parse(readFileSync(lockfilePath, 'utf8'));
+lockfile.version = targetVersion;
+if (lockfile.packages?.['']) lockfile.packages[''].version = targetVersion;
 
 // Update workspace package entries
 for (const [name, version] of Object.entries(versionMap)) {
@@ -115,18 +148,5 @@ for (const [name, version] of Object.entries(versionMap)) {
 }
 
 writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2) + '\n');
-
-// Bump root package.json to match workspace package version
-const rootPkgPath = join(process.cwd(), 'package.json');
-const rootPkg = JSON.parse(readFileSync(rootPkgPath, 'utf8'));
-const targetVersion = Object.values(versionMap)[0];
-const oldRootVersion = rootPkg.version;
-if (rootPkg.version !== targetVersion) {
-    rootPkg.version = targetVersion;
-    writeFileSync(rootPkgPath, JSON.stringify(rootPkg, null, 2) + '\n');
-    console.log(`p-monorepo (root): ${oldRootVersion} → ${targetVersion}`);
-} else {
-    console.log(`p-monorepo (root): already at ${targetVersion}`);
-}
 
 console.log(`\n✅ Bumped all packages to ${targetVersion}`);
