@@ -2,8 +2,10 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { BM25Vocabulary } from "../src/bm25.ts";
 import { main, parseArgs, printUsage } from "../src/cli.ts";
 import { CodeIndexer } from "../src/indexer.ts";
+import { QdrantClient } from "../src/qdrant.ts";
 
 describe("cli parseArgs", () => {
   it("parses all options correctly", () => {
@@ -88,6 +90,15 @@ describe("cli main", () => {
     vi.spyOn(CodeIndexer.prototype, "search").mockResolvedValue([]);
     vi.spyOn(CodeIndexer.prototype, "searchDense").mockResolvedValue([]);
     vi.spyOn(CodeIndexer.prototype, "indexRepo").mockResolvedValue({ files: 5, chunks: 10, skipped: 1, errors: 0 });
+    vi.spyOn(QdrantClient.prototype, "createCollection").mockResolvedValue(undefined);
+    vi.spyOn(QdrantClient.prototype, "getStatus").mockResolvedValue({
+      points: 10,
+      indexedVectors: 10,
+      segments: 1,
+      vectorDim: 1024,
+      sparseVectors: true,
+    });
+    vi.spyOn(BM25Vocabulary.prototype, "save").mockImplementation(() => {});
   });
 
   afterEach(() => {
@@ -144,7 +155,14 @@ describe("cli main", () => {
 
     try {
       await main(["node", "cli.js", "--workspace", tmpDir]);
+      expect(QdrantClient.prototype.createCollection).toHaveBeenCalledOnce();
+      expect(CodeIndexer.prototype.indexRepo).toHaveBeenCalledOnce();
+      expect(CodeIndexer.prototype.indexRepo).toHaveBeenCalledWith(repo1);
+      expect(BM25Vocabulary.prototype.save).toHaveBeenCalledOnce();
+      expect(QdrantClient.prototype.getStatus).toHaveBeenCalledOnce();
       expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Index complete"));
+      expect(logSpy).toHaveBeenCalledWith(expect.stringContaining("Total: 5 files, 10 chunks"));
+      expect(logSpy).toHaveBeenCalledWith("   Qdrant points: 10");
     } finally {
       fs.rmSync(tmpDir, { recursive: true, force: true });
     }
