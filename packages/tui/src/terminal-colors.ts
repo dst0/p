@@ -57,3 +57,19 @@ export function parseOsc11BackgroundColor(data: string): RgbColor | undefined {
   const b = parseOscHexChannel(blue);
   return r !== undefined && g !== undefined && b !== undefined ? { r, g, b } : undefined;
 }
+
+export function formatOsc11BackgroundColor(colorHex: string): string {
+  const osc = `\x1b]11;${colorHex}\x07`;
+  if (process.env.TMUX || process.env.TERM?.startsWith("tmux")) {
+    return `\x1bPtmux;\x1b${osc}\x1b\\${osc}`;
+  }
+  return osc;
+}
+
+export function formatOsc111ResetBackgroundColor(): string {
+  const osc = `\x1b]111\x07`;
+  if (process.env.TMUX || process.env.TERM?.startsWith("tmux")) {
+    return `\x1bPtmux;\x1b${osc}\x1b\\${osc}`;
+  }
+  return osc;
+}

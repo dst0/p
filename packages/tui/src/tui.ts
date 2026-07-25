@@ -8,7 +8,13 @@ import * as path from "node:path";
 import { performance } from "node:perf_hooks";
 import { isKeyRelease, matchesKey } from "./keys.ts";
 import type { Terminal } from "./terminal.ts";
-import { isOsc11BackgroundColorResponse, parseOsc11BackgroundColor, type RgbColor } from "./terminal-colors.ts";
+import {
+  formatOsc11BackgroundColor,
+  formatOsc111ResetBackgroundColor,
+  isOsc11BackgroundColorResponse,
+  parseOsc11BackgroundColor,
+  type RgbColor,
+} from "./terminal-colors.ts";
 import { deleteKittyImage, getCapabilities, isImageLine, setCellDimensions } from "./terminal-image.ts";
 import { extractSegments, normalizeTerminalOutput, sliceByColumn, sliceWithWidth, visibleWidth } from "./utils.ts";
 
@@ -656,12 +662,39 @@ export class TUI extends Container {
     this.terminal.write("\x1b[16t");
   }
 
+  private currentBackgroundColorHex: string | undefined = undefined;
+
+  /**
+   * Set the terminal background color dynamically using OSC 11.
+   * Pass hex string (e.g. "#f8f8f8" or "#18181e") or undefined to reset.
+   */
+  setTerminalBackgroundColor(colorHex?: string): void {
+    if (this.currentBackgroundColorHex === colorHex) return;
+    this.currentBackgroundColorHex = colorHex;
+    if (colorHex) {
+      this.terminal.write(formatOsc11BackgroundColor(colorHex));
+    } else {
+      this.terminal.write(formatOsc111ResetBackgroundColor());
+    }
+  }
+
+  /**
+   * Reset terminal background color to default using OSC 111.
+   */
+  resetTerminalBackgroundColor(): void {
+    if (this.currentBackgroundColorHex !== undefined) {
+      this.currentBackgroundColorHex = undefined;
+      this.terminal.write(formatOsc111ResetBackgroundColor());
+    }
+  }
+
   stop(): void {
     this.stopped = true;
     if (this.renderTimer) {
       clearTimeout(this.renderTimer);
       this.renderTimer = undefined;
     }
+    this.resetTerminalBackgroundColor();
     // Move cursor to the end of the content to prevent overwriting/artifacts on exit
     if (this.previousLines.length > 0) {
       const targetRow = this.previousLines.length; // Line after the last content

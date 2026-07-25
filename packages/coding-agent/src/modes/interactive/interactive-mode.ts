@@ -142,6 +142,7 @@ import {
   getEditorTheme,
   getMarkdownTheme,
   getThemeByName,
+  getThemePageBg,
   initTheme,
   onThemeChange,
   setRegisteredThemes,
@@ -456,6 +457,12 @@ export class InteractiveMode {
     // Register themes from resource loader and initialize
     setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
     initTheme(this.settingsManager.getTheme(), true);
+    this.updateTerminalBackground();
+  }
+
+  private updateTerminalBackground(): void {
+    const pageBg = getThemePageBg();
+    this.ui.setTerminalBackgroundColor(pageBg);
   }
 
   private async detectThemeIfUnset(): Promise<void> {
@@ -476,6 +483,7 @@ export class InteractiveMode {
       this.settingsManager.setTheme(detection.theme);
       await this.settingsManager.flush();
     }
+    this.updateTerminalBackground();
     this.updateEditorBorderColor();
     this.ui.requestRender();
   }
@@ -788,6 +796,7 @@ export class InteractiveMode {
 
     // Set up theme file watcher
     onThemeChange(() => {
+      this.updateTerminalBackground();
       this.ui.invalidate();
       this.updateEditorBorderColor();
       this.ui.requestRender();
@@ -4444,6 +4453,7 @@ export class InteractiveMode {
           onThemeChange: (themeName) => {
             const result = setTheme(themeName, true);
             this.settingsManager.setTheme(themeName);
+            this.updateTerminalBackground();
             this.ui.invalidate();
             if (!result.success) {
               this.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
@@ -4452,6 +4462,7 @@ export class InteractiveMode {
           onThemePreview: (themeName) => {
             const result = setTheme(themeName, true);
             if (result.success) {
+              this.updateTerminalBackground();
               this.ui.invalidate();
               this.ui.requestRender();
             }
