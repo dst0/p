@@ -26,6 +26,7 @@ const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const QDRANT_VERSION = "1.18.3";
+const TORCH_VERSION = "2.12.1";
 const DRY_RUN = process.argv.includes("--dry-run");
 
 const QDRANT_ASSETS = {
@@ -49,6 +50,45 @@ const QDRANT_ASSETS = {
 
 export function getQdrantAsset(platform = process.platform, architecture = process.arch) {
 	return QDRANT_ASSETS[`${platform}-${architecture}`];
+}
+
+export function selectTorchInstallPlan(options = {}) {
+	const platform = options.platform ?? process.platform;
+	const architecture = options.architecture ?? process.arch;
+	const requestedBackend = options.requestedBackend ?? process.env.P_CODE_RAG_TORCH_BACKEND ?? "auto";
+	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
+	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
+	if (!["auto", "cpu", "rocm", "cuda"].includes(requestedBackend)) {
+		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda");
+	}
+
+	let backend = requestedBackend;
+	if (backend === "auto") {
+		if (platform === "linux" && architecture === "x64" && hasAmdComputeDevice) backend = "rocm";
+		else if (platform === "linux" && architecture === "x64" && hasNvidiaComputeDevice) backend = "cuda";
+		else if (platform === "linux") backend = "cpu";
+		else backend = "default";
+	}
+	if (backend === "rocm" && (platform !== "linux" || architecture !== "x64")) {
+		throw new Error("ROCm PyTorch is supported only on Linux x64");
+	}
+	if (backend === "cuda" && (platform !== "linux" || architecture !== "x64")) {
+		throw new Error("Managed CUDA PyTorch is supported only on Linux x64");
+	}
+	if (platform === "darwin" && backend === "cpu") {
+		backend = "default";
+	}
+
+	const indexUrls = {
+		cpu: "https://download.pytorch.org/whl/cpu",
+		rocm: "https://download.pytorch.org/whl/rocm7.2",
+		cuda: "https://download.pytorch.org/whl/cu126",
+	};
+	return {
+		backend,
+		version: platform === "darwin" && architecture === "x64" ? "2.2.2" : TORCH_VERSION,
+		indexUrl: indexUrls[backend],
+	};
 }
 
 export function isIndexingDaemonCommand(command, daemonPath = "indexing-service-daemon.js") {
@@ -156,6 +196,7 @@ async function main() {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
 	const python = findCompatiblePython();
+	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
 	const environment = {
@@ -163,7 +204,19 @@ async function main() {
 		P_CODE_RAG_PYTHON: venvPython,
 		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
 		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
+		P_CODE_RAG_EXPECTED_BACKEND: torchPlan.backend,
 	};
+	for (const key of [
+		"P_CODE_RAG_DEVICE",
+		"P_CODE_RAG_MAX_CPU_THREADS",
+		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
+		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
+		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
+		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
+		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
+	]) {
+		if (process.env[key] !== undefined) environment[key] = process.env[key];
+	}
 	const values = {
 		node: process.execPath,
 		daemon: DAEMON,
@@ -176,7 +229,10 @@ async function main() {
 	if (DRY_RUN) {
 		if (process.platform === "darwin") renderLaunchdPlist(values);
 		else renderSystemdUnit(values);
-		console.log(`Indexing service installation validated for ${process.platform}/${process.arch} with ${python}`);
+		console.log(
+			`Indexing service installation validated for ${process.platform}/${process.arch} `
+			+ `with ${python} and PyTorch backend ${torchPlan.backend}`,
+		);
 		return;
 	}
 
@@ -185,7 +241,7 @@ async function main() {
 	fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
 	fs.mkdirSync(QDRANT_DATA_DIR, { recursive: true, mode: 0o700 });
 	await installQdrant(qdrantBinary);
-	installPythonEnvironment(python, venvPython);
+	installPythonEnvironment(python, venvPython, torchPlan);
 	mergeCodeRagConfig({
 		qdrantBinary,
 		qdrantDataDirectory: QDRANT_DATA_DIR,
@@ -223,15 +279,28 @@ async function installQdrant(qdrantBinary) {
 	}
 }
 
-function installPythonEnvironment(python, venvPython) {
+function installPythonEnvironment(python, venvPython, torchPlan) {
 	const requirements = fs.readFileSync(REQUIREMENTS, "utf-8");
 	const markerPath = path.join(VENV_DIR, ".p-requirements");
 	const marker = createHash("sha256")
-		.update(`${python}\0${capture(python, ["--version"])}\0${requirements}`)
+		.update(`${python}\0${capture(python, ["--version"])}\0${requirements}\0${JSON.stringify(torchPlan)}`)
 		.digest("hex");
 	if (fs.existsSync(venvPython) && readFileIfPresent(markerPath) === marker) return;
-	console.log("Installing pinned code-index Python dependencies");
+	console.log(`Installing pinned code-index Python dependencies for ${torchPlan.backend}`);
 	run(python, ["-m", "venv", VENV_DIR]);
+	if (torchPlan.indexUrl) {
+		run(venvPython, [
+			"-m",
+			"pip",
+			"install",
+			"--disable-pip-version-check",
+			"--only-binary=:all:",
+			"--force-reinstall",
+			`torch==${torchPlan.version}`,
+			"--index-url",
+			torchPlan.indexUrl,
+		]);
+	}
 	run(venvPython, [
 		"-m",
 		"pip",
@@ -241,7 +310,42 @@ function installPythonEnvironment(python, venvPython) {
 		"--requirement",
 		REQUIREMENTS,
 	]);
+	validateTorchInstallation(venvPython, torchPlan);
 	fs.writeFileSync(markerPath, marker, { mode: 0o600 });
+}
+
+function validateTorchInstallation(venvPython, torchPlan) {
+	const probe = JSON.parse(
+		capture(venvPython, [
+			"-c",
+			[
+				"import json, torch",
+				"mps = getattr(torch.backends, 'mps', None)",
+				"print(json.dumps({",
+				"'version': torch.__version__,",
+				"'cuda': getattr(torch.version, 'cuda', None),",
+				"'hip': getattr(torch.version, 'hip', None),",
+				"'accelerator_available': bool(torch.cuda.is_available() or (mps and mps.is_available()))",
+				"}))",
+			].join("\n"),
+		]),
+	);
+	if (!String(probe.version).startsWith(torchPlan.version)) {
+		throw new Error(`Expected PyTorch ${torchPlan.version}, installed ${probe.version}`);
+	}
+	if (torchPlan.backend === "rocm" && !probe.hip) {
+		throw new Error("The installed PyTorch build does not include ROCm/HIP support");
+	}
+	if (torchPlan.backend === "cuda" && !probe.cuda) {
+		throw new Error("The installed PyTorch build does not include CUDA support");
+	}
+	if (torchPlan.backend === "cpu" && (probe.hip || probe.cuda)) {
+		throw new Error("The installed PyTorch build is not CPU-only");
+	}
+	console.log(
+		`PyTorch ${probe.version} installed (${torchPlan.backend}); `
+		+ `accelerator currently ${probe.accelerator_available ? "available" : "unavailable"}`,
+	);
 }
 
 function mergeCodeRagConfig(defaults) {

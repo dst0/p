@@ -16,6 +16,8 @@ For a source checkout, run:
 
 On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed native Qdrant binary, creates a Python virtual environment with pinned embedding dependencies, and finishes with a real end-to-end semantic-search smoke test against a temporary repository. Docker is not used.
 
+On Linux x64, the installer selects a PyTorch build from the available compute device: ROCm 7.2 when `/dev/kfd` exposes AMD compute, CUDA 12.6 when an NVIDIA compute device is present, and CPU-only otherwise. The selected flavor is part of the environment marker, so rerunning `./reinstall.sh` replaces an old CPU-only environment after ROCm or CUDA becomes available. Set `P_CODE_RAG_TORCH_BACKEND` to `cpu`, `rocm`, or `cuda` while reinstalling to override automatic selection.
+
 The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
 
 The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash. A per-agent-directory daemon lock prevents manual, launchd, and systemd starts from running overlapping index writers. Reinstall also stops validated stale daemon and managed-backend processes left by an older service installation before running its smoke test.
@@ -102,6 +104,8 @@ Refreshes compare current file hashes with the stored manifest. Added and change
 
 The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. Creating the real `semantic_search` tool for an already enabled repository only refreshes that repository's request timestamp in `indexed-repos.json`; the daemon observes the registry change and performs the prioritized work. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 
+The embedding server measures currently available system and accelerator memory before loading the model. It keeps a safety reserve, uses FP16 on accelerators, selects CPU thread count and embedding micro-batch size from the remaining budget, and refuses to load when neither backend can safely fit. A detected GPU with too little free VRAM does not force an unsafe allocation: the server uses CPU and scales CPU parallelism from available RAM. During indexing it recalculates memory headroom before requests, halves the micro-batch after an out-of-memory error, and moves an accelerator-resident model to CPU if batch size 1 can no longer run safely. Repeated successful requests release the temporary OOM batch ceiling.
+
 Common generated and dependency directories such as `.git`, `node_modules`, `dist`, `build`, `coverage`, `target`, and `storage` are ignored by the watcher. Repository discovery also applies `.gitignore`, secret-file exclusions, binary and file-size limits, and out-of-root symlink protection.
 
 The `semantic_search` tool checks the repository opt-in registry before accessing the index. When indexing is disabled or has not been approved, it returns `RAG_DISABLED` and directs the agent to exact search and file reads. Backend failures returned with an empty result are exposed as tool errors; a healthy ready index with no matching chunks is reported as a successful no-match result.
@@ -154,6 +158,20 @@ Important fields include:
 
 Supported environment overrides include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, and `P_CODE_RAG_PYTHON`.
 
+Embedding resource controls are safe caps rather than fixed utilization targets:
+
+| Variable | Behavior |
+|---|---|
+| `P_CODE_RAG_DEVICE` | Prefer `auto` (default), `cpu`, `cuda`, `rocm`, or `mps`; an unavailable requested accelerator falls back to CPU |
+| `P_CODE_RAG_MAX_CPU_THREADS` | Maximum PyTorch CPU threads; the planner can select fewer when RAM is constrained |
+| `P_CODE_RAG_MAX_EMBED_BATCH_SIZE` | Maximum embedding micro-batch, default 64; the planner and OOM backoff can select less |
+| `P_CODE_RAG_MAX_SEQUENCE_LENGTH` | Maximum model context, default 2048 tokens; longer contexts reduce the planned batch budget |
+| `P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB` | Minimum RAM left outside the model budget, default 1024 MiB |
+| `P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB` | Minimum VRAM left outside the model budget, default 512 MiB |
+| `P_CODE_RAG_MODEL_PARAMETER_COUNT` | Conservative parameter-count estimate for custom models whose name does not include a size such as `0.6B` |
+
+Set these variables while running `./reinstall.sh`; the generated launchd or systemd service records them. `P_CODE_RAG_TORCH_BACKEND` affects installation only and selects the PyTorch wheel flavor.
+
 Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is explicitly enabled. The managed local Qdrant auto-start applies only to loopback endpoints.
 
 ## Troubleshooting
@@ -165,6 +183,14 @@ Start with `/index`. If the background service is not running or reports an erro
 3. confirm the configured Python version is supported;
 4. check available disk space for the model cache and Qdrant database;
 5. use exact search and file reads while the index is initializing or unavailable.
+
+The embedding endpoint exposes its decision directly:
+
+```bash
+curl -s http://127.0.0.1:18742/health
+```
+
+Inspect `resource_plan.backend`, `batch_size`, `cpu_threads`, the RAM/VRAM byte counts under `memory`, and `runtime.torch_hip_version`. On an AMD machine, a null HIP version means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or reinstall with `P_CODE_RAG_TORCH_BACKEND=rocm`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback, not failed GPU discovery.
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 

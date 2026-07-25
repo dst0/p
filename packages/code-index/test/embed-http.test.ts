@@ -45,3 +45,14 @@ describe("EmbeddingProviderHttp.encodeQuery", () => {
     expect(requests).toEqual([["tool definition system"]]);
   });
 });
+
+describe("EmbeddingProviderHttp.encode", () => {
+  it("lets the resource-aware server micro-batch the configured 64-item encode batch", async () => {
+    const requests = captureEmbeddingRequests();
+    const provider = new EmbeddingProviderHttp("http://127.0.0.1:18742", 3, false);
+
+    await provider.encode(Array.from({ length: 65 }, (_, index) => `chunk ${index}`));
+
+    expect(requests.map((request) => request.length)).toEqual([64, 1]);
+  });
+});
