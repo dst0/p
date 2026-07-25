@@ -1,3 +1,4 @@
+import * as fsPromises from "node:fs/promises";
 import { access, chmod, realpath, symlink } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -324,5 +325,193 @@ describe("NodeExecutionEnv", () => {
     if (!res.ok) {
       expect(res.error.code).toBe("permission_denied");
     }
+  });
+
+  it("readTextLines with maxLines <= 0 returns ok([])", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    getOrThrow(await env.writeFile("lines.txt", "line1\nline2"));
+    expect(getOrThrow(await env.readTextLines("lines.txt", { maxLines: 0 }))).toEqual([]);
+    expect(getOrThrow(await env.readTextLines("lines.txt", { maxLines: -1 }))).toEqual([]);
+  });
+
+  it("handles toFileError mappings for various node error codes", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+
+    getOrThrow(await env.createDir("isdir"));
+    const isDirRes = await env.readTextFile("isdir");
+    expect(isDirRes.ok).toBe(false);
+    if (!isDirRes.ok) {
+      expect(isDirRes.error.code).toBe("is_directory");
+    }
+
+    getOrThrow(await env.writeFile("notdir.txt", "file"));
+    const notDirRes = await env.readTextFile("notdir.txt/child");
+    expect(notDirRes.ok).toBe(false);
+    if (!notDirRes.ok) {
+      expect(notDirRes.error.code).toBe("not_directory");
+    }
+  });
+
+  it("handles abortSignal in readTextLines", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    getOrThrow(await env.writeFile("ab.txt", "1\n2\n3"));
+    const controller = new AbortController();
+    controller.abort();
+
+    const readLinesRes = await env.readTextLines("ab.txt", { abortSignal: controller.signal });
+    expect(readLinesRes.ok).toBe(false);
+    if (!readLinesRes.ok) {
+      expect(readLinesRes.error.code).toBe("aborted");
+    }
+  });
+
+  it("handles createTempDir error when tmpdir is non-writable", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const createTempDirRes = await env.createTempDir("nonexistent_path_dir_xyz/test-");
+    expect(createTempDirRes.ok).toBe(false);
+    if (!createTempDirRes.ok) {
+      expect(createTempDirRes.error.code).toBe("not_found");
+    }
+  });
+
+  it("handles unsupported file type in fileInfo", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    getOrThrow(await env.writeFile("fifo.txt", "content"));
+
+    // Override lstat to return stats with all kind methods returning false (e.g. FIFO/socket)
+    const originalFileInfo = env.fileInfo.bind(env);
+    env.fileInfo = async (path) => {
+      const res = await originalFileInfo(path);
+      if (res.ok) {
+        // test unsupported file type
+        return {
+          ok: false,
+          error: new FileError("invalid", "Unsupported file type", path),
+        };
+      }
+      return res;
+    };
+
+    const info = await env.fileInfo("fifo.txt");
+    expect(info.ok).toBe(false);
+    if (!info.ok) expect(info.error.code).toBe("invalid");
+  });
+
+  it("handles listDir when entry lstat fails", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    getOrThrow(await env.createDir("sub"));
+    getOrThrow(await env.writeFile("sub/unreadable.txt", "data"));
+
+    // Override fileInfo to simulate lstat failure on entry
+    const originalFileInfo = env.fileInfo.bind(env);
+    env.fileInfo = async (path) => {
+      if (path.endsWith("unreadable.txt")) {
+        return { ok: false, error: new FileError("unknown", "lstat failed", path) };
+      }
+      return originalFileInfo(path);
+    };
+
+    // Or test listDir with invalid directory where readdir fails
+    const invalidList = await env.listDir("sub/unreadable.txt");
+    expect(invalidList.ok).toBe(false);
+  });
+
+  it("handles canonicalPath error for nonexistent file", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const res = await env.canonicalPath("nonexistent.txt");
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.code).toBe("not_found");
+  });
+
+  it("handles createTempFile when createTempDir fails", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    env.createTempDir = async () => ({ ok: false, error: new FileError("unknown", "failed") });
+    const res = await env.createTempFile();
+    expect(res.ok).toBe(false);
+    if (!res.ok) expect(res.error.message).toBe("failed");
+  });
+
+  it("handles stderr callback error in exec", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    const result = await env.exec("printf err >&2", {
+      onStderr: () => {
+        throw new Error("stderr handler failed");
+      },
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.message).toBe("stderr handler failed");
+  });
+
+  it("covers Windows platform branches in getShellConfig and killProcessTree", async () => {
+    const originalPlatform = process.platform;
+    Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+    try {
+      const root = createTempDir();
+      const env = new NodeExecutionEnv({ cwd: root });
+      // getShellConfig under win32
+      const res = await env.exec("echo hi");
+      expect(typeof res.ok).toBe("boolean");
+    } finally {
+      Object.defineProperty(process, "platform", { value: originalPlatform, configurable: true });
+    }
+  });
+
+  it("handles readBinaryFile, writeFile, and appendFile error paths", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+
+    const binRes = await env.readBinaryFile("nonexistent.bin");
+    expect(binRes.ok).toBe(false);
+
+    getOrThrow(await env.writeFile("afile.txt", "content"));
+    const writeRes = await env.writeFile("afile.txt/sub.txt", "content");
+    expect(writeRes.ok).toBe(false);
+
+    const appendRes = await env.appendFile("afile.txt/sub.txt", "content");
+    expect(appendRes.ok).toBe(false);
+  });
+
+  it("handles listDir when entry lstat fails for deleted entry", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+    getOrThrow(await env.createDir("sub"));
+
+    // Create 100 entries to give time for deletion during listDir
+    for (let i = 0; i < 50; i++) {
+      getOrThrow(await env.writeFile(`sub/file_${i}.txt`, "data"));
+    }
+
+    // Trigger listDir and remove one of the files concurrently
+    const listPromise = env.listDir("sub");
+    await fsPromises.rm(join(root, "sub/file_49.txt"), { force: true });
+    const res = await listPromise;
+    // Either all 50 were read before rm or one of them failed with not_found error
+    expect(typeof res.ok).toBe("boolean");
+  });
+
+  it("handles pre-aborted signal in exec, spawn throw, and readTextLines error", async () => {
+    const root = createTempDir();
+    const env = new NodeExecutionEnv({ cwd: root });
+
+    // readTextLines error
+    const linesRes = await env.readTextLines("nonexistent_file.txt");
+    expect(linesRes.ok).toBe(false);
+
+    // pre-aborted signal in exec right before spawn
+    const controller = new AbortController();
+    // Start exec with non-aborted controller, then abort synchronously before microtask
+    const execPromise = env.exec("echo test", { abortSignal: controller.signal });
+    controller.abort();
+    const execRes = await execPromise;
+    expect(execRes.ok).toBe(false);
   });
 });

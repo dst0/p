@@ -126,4 +126,9 @@ describe("TruncatedText component", () => {
     assert.ok(stripped.includes("…"));
     assert.ok(!stripped.includes("Second line"));
   });
+
+  it("handles invalidate without error", () => {
+    const text = new TruncatedText("Test", 1, 0);
+    text.invalidate();
+  });
 });

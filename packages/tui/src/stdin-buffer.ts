@@ -26,11 +26,7 @@ const BRACKETED_PASTE_END = "\x1b[201~";
 /**
  * Check if a string is a complete escape sequence or needs more data
  */
-function isCompleteSequence(data: string): "complete" | "incomplete" | "not-escape" {
-  if (!data.startsWith(ESC)) {
-    return "not-escape";
-  }
-
+function isCompleteSequence(data: string): "complete" | "incomplete" {
   if (data.length === 1) {
     return "incomplete";
   }
@@ -82,10 +78,6 @@ function isCompleteSequence(data: string): "complete" | "incomplete" | "not-esca
  * CSI sequences: ESC [ ... followed by a final byte (0x40-0x7E)
  */
 function isCompleteCsiSequence(data: string): "complete" | "incomplete" {
-  if (!data.startsWith(`${ESC}[`)) {
-    return "complete";
-  }
-
   // Need at least ESC [ and one more character
   if (data.length < 3) {
     return "incomplete";
@@ -130,10 +122,6 @@ function isCompleteCsiSequence(data: string): "complete" | "incomplete" {
  * OSC sequences: ESC ] ... ST (where ST is ESC \ or BEL)
  */
 function isCompleteOscSequence(data: string): "complete" | "incomplete" {
-  if (!data.startsWith(`${ESC}]`)) {
-    return "complete";
-  }
-
   // OSC sequences end with ST (ESC \) or BEL (\x07)
   if (data.endsWith(`${ESC}\\`) || data.endsWith("\x07")) {
     return "complete";
@@ -148,10 +136,6 @@ function isCompleteOscSequence(data: string): "complete" | "incomplete" {
  * Used for XTVersion responses like ESC P >| ... ESC \
  */
 function isCompleteDcsSequence(data: string): "complete" | "incomplete" {
-  if (!data.startsWith(`${ESC}P`)) {
-    return "complete";
-  }
-
   // DCS sequences end with ST (ESC \)
   if (data.endsWith(`${ESC}\\`)) {
     return "complete";
@@ -166,10 +150,6 @@ function isCompleteDcsSequence(data: string): "complete" | "incomplete" {
  * Used for Kitty graphics responses like ESC _ G ... ESC \
  */
 function isCompleteApcSequence(data: string): "complete" | "incomplete" {
-  if (!data.startsWith(`${ESC}_`)) {
-    return "complete";
-  }
-
   // APC sequences end with ST (ESC \)
   if (data.endsWith(`${ESC}\\`)) {
     return "complete";
@@ -233,11 +213,6 @@ function extractCompleteSequences(buffer: string): { sequences: string[]; remain
           break;
         } else if (status === "incomplete") {
           seqEnd++;
-        } else {
-          // Should not happen when starting with ESC
-          sequences.push(candidate);
-          pos += seqEnd;
-          break;
         }
       }
 

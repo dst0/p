@@ -20,9 +20,11 @@ import {
   generateSummary,
   getLastAssistantUsage,
   prepareCompaction,
+  selectKeepRecentTokens,
   serializeConversation,
   shouldCompact,
 } from "../../src/harness/compaction/compaction.ts";
+
 import { buildSessionContext } from "../../src/harness/session/session.ts";
 import type {
   BranchSummaryEntry,
@@ -718,6 +720,101 @@ describe("harness compaction", () => {
     expect(result.summary.length).toBeGreaterThan(0);
     expect(result.firstKeptEntryId).toBeTruthy();
     expect(result.details).toBeDefined();
+  });
+
+  it("handles compaction entry type in prepareCompaction", async () => {
+    const parentId: string | null = null;
+    const entries: SessionTreeEntry[] = [
+      {
+        type: "compaction",
+        id: "comp-1",
+        parentId,
+        timestamp: "2026-01-01T00:00:00Z",
+        summary: "Previous compaction summary",
+        tokensBefore: 5000,
+        firstKeptEntryId: "m2",
+      },
+      {
+        type: "message",
+        id: "m3",
+        parentId: "comp-1",
+        timestamp: "2026-01-01T00:01:00Z",
+        message: createUserMessage("Hello after compaction"),
+      },
+      {
+        type: "message",
+        id: "m4",
+        parentId: "m3",
+        timestamp: "2026-01-01T00:02:00Z",
+        message: createUserMessage("Second message after compaction"),
+      },
+    ];
+
+    const prep = prepareCompaction(entries, {
+      ...DEFAULT_COMPACTION_SETTINGS,
+      keepRecentTokens: 5,
+    });
+    if (prep.ok && prep.value) {
+      expect(prep.value.firstKeptEntryId).toBeDefined();
+    }
+  });
+
+  it("safeJsonStringify handles circular reference in toolCall arguments", () => {
+    const circ: any = {};
+    circ.self = circ;
+    const msg: AgentMessage = {
+      role: "assistant",
+      content: [{ type: "toolCall", id: "call-1", name: "bad_tool", arguments: circ }],
+      api: "anthropic",
+      provider: "anthropic",
+      model: "claude",
+      usage: createMockUsage(10, 10),
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
+    expect(estimateTokens(msg)).toBeGreaterThan(0);
+  });
+
+  it("getMessageFromEntry returns compaction summary message for compaction entry", () => {
+    const compactionEntry = createCompactionEntry("compact summary text", "e1");
+    const sessionCtx = buildSessionContext([compactionEntry]);
+    expect(sessionCtx.messages[0].role).toBe("compactionSummary");
+  });
+
+  it("selectKeepRecentTokens computes interpolated keepRecentTokens during context pressure ramp", () => {
+    const settings: CompactionSettings = {
+      enabled: true,
+      keepRecentMinTokens: 2000,
+      keepRecentMaxTokens: 8000,
+      targetContextTokens: 10000,
+    };
+    expect(selectKeepRecentTokens(30000, settings)).toBe(8000);
+    expect(selectKeepRecentTokens(90000, settings)).toBe(2000);
+    const mid = selectKeepRecentTokens(60000, settings);
+    expect(mid).toBeGreaterThan(2000);
+    expect(mid).toBeLessThan(8000);
+  });
+
+  it("findCutPoint fallback when accumulatedTokens exceeds keepRecentTokens", () => {
+    const u1 = createMessageEntry(createUserMessage("User message 1"));
+    const u2 = createMessageEntry(createUserMessage("User message 2"), u1.id);
+    const u3 = createMessageEntry(createUserMessage("User message 3"), u2.id);
+    const result = findCutPoint([u1, u2, u3], 0, 3, 1);
+    expect(result.firstKeptEntryIndex).toBeDefined();
+  });
+
+  it("prepareCompaction returns error when firstKeptEntry lacks id", () => {
+    const invalidEntry = {
+      type: "message",
+      parentId: null,
+      timestamp: "2026-01-01",
+      message: createUserMessage("hi"),
+    } as any;
+    const res = prepareCompaction([invalidEntry], DEFAULT_COMPACTION_SETTINGS);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.error.code).toBe("invalid_session");
+    }
   });
 });
 

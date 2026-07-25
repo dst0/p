@@ -57,3 +57,9 @@ export function isNativeModifierPressed(key: ModifierKey): boolean {
     return false;
   }
 }
+
+export const _test_isNativeModifiersHelper = isNativeModifiersHelper;
+export const _test_loadNativeModifiersHelper = loadNativeModifiersHelper;
+export function _test_resetNativeModifiersHelper() {
+  nativeModifiersHelper = undefined;
+}

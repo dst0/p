@@ -9,3 +9,4 @@ export type { QdrantServerManagerOptions } from "./embed/qdrant-server.ts";
 export { QdrantServerManager } from "./embed/qdrant-server.ts";
 export type { EmbeddingServerManagerOptions } from "./embed/server.ts";
 export { EmbeddingServerManager } from "./embed/server.ts";
+export const EMBED_MODULE_VERSION = "1.0.0";

@@ -1,65 +1,68 @@
-import { afterEach, describe, expect, it } from "vitest";
-import { resolveHttpProxyUrlForTarget, UNSUPPORTED_PROXY_PROTOCOL_MESSAGE } from "../src/utils/node-http-proxy.ts";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import {
+  createHttpProxyAgentsForTarget,
+  resolveHttpProxyUrlForTarget,
+  UNSUPPORTED_PROXY_PROTOCOL_MESSAGE,
+} from "../src/utils/node-http-proxy.ts";
 
-const PROXY_ENV_KEYS = [
-  "HTTP_PROXY",
-  "HTTPS_PROXY",
-  "NO_PROXY",
-  "ALL_PROXY",
-  "http_proxy",
-  "https_proxy",
-  "no_proxy",
-  "all_proxy",
-  "npm_config_http_proxy",
-  "npm_config_https_proxy",
-  "npm_config_proxy",
-  "npm_config_no_proxy",
-] as const;
+describe("node-http-proxy", () => {
+  const origEnv = { ...process.env };
 
-const originalEnv = new Map<string, string | undefined>();
-for (const key of PROXY_ENV_KEYS) {
-  originalEnv.set(key, process.env[key]);
-}
-
-function resetProxyEnv(): void {
-  for (const key of PROXY_ENV_KEYS) {
-    delete process.env[key];
-  }
-}
-
-afterEach(() => {
-  resetProxyEnv();
-  for (const [key, value] of originalEnv) {
-    if (value !== undefined) {
-      process.env[key] = value;
-    }
-  }
-});
-
-describe("node HTTP proxy resolution", () => {
-  it("respects NO_PROXY exclusions", () => {
-    resetProxyEnv();
-    process.env.HTTPS_PROXY = "http://proxy.example:8080";
-    process.env.NO_PROXY = "bedrock-runtime.us-east-1.amazonaws.com";
-
-    expect(resolveHttpProxyUrlForTarget("https://bedrock-runtime.us-east-1.amazonaws.com")).toBeUndefined();
+  beforeEach(() => {
+    delete process.env.http_proxy;
+    delete process.env.HTTP_PROXY;
+    delete process.env.https_proxy;
+    delete process.env.HTTPS_PROXY;
+    delete process.env.all_proxy;
+    delete process.env.ALL_PROXY;
+    delete process.env.no_proxy;
+    delete process.env.NO_PROXY;
   });
 
-  it("resolves HTTP and HTTPS proxy URLs", () => {
-    resetProxyEnv();
-    process.env.HTTPS_PROXY = "http://proxy.example:8080";
-
-    expect(resolveHttpProxyUrlForTarget("https://bedrock-runtime.us-east-1.amazonaws.com")?.toString()).toBe(
-      "http://proxy.example:8080/",
-    );
+  afterEach(() => {
+    process.env = { ...origEnv };
   });
 
-  it("rejects SOCKS and PAC proxy URLs explicitly", () => {
-    resetProxyEnv();
-    process.env.HTTPS_PROXY = "socks5://proxy.example:1080";
+  it("returns undefined when no proxy env is set", () => {
+    expect(resolveHttpProxyUrlForTarget("https://api.openai.com")).toBeUndefined();
+    expect(createHttpProxyAgentsForTarget("https://api.openai.com")).toBeUndefined();
+  });
 
-    expect(() => resolveHttpProxyUrlForTarget("https://bedrock-runtime.us-east-1.amazonaws.com")).toThrow(
-      UNSUPPORTED_PROXY_PROTOCOL_MESSAGE,
-    );
+  it("resolves HTTP and HTTPS proxy from environment", () => {
+    process.env.HTTPS_PROXY = "http://proxy.example.com:8080";
+    const proxyUrl = resolveHttpProxyUrlForTarget("https://api.openai.com");
+    expect(proxyUrl?.href).toBe("http://proxy.example.com:8080/");
+
+    const agents = createHttpProxyAgentsForTarget("https://api.openai.com");
+    expect(agents).toBeDefined();
+    expect(agents?.httpAgent).toBeDefined();
+    expect(agents?.httpsAgent).toBeDefined();
+  });
+
+  it("handles proxy without protocol prefix by defaulting to target protocol", () => {
+    process.env.HTTPS_PROXY = "proxy.example.com:8080";
+    const proxyUrl = resolveHttpProxyUrlForTarget("https://api.openai.com");
+    expect(proxyUrl?.href).toBe("https://proxy.example.com:8080/");
+  });
+
+  it("respects NO_PROXY wildcard and specific domains/ports", () => {
+    process.env.HTTPS_PROXY = "http://proxy.example.com:8080";
+    process.env.NO_PROXY = "*.openai.com, 127.0.0.1:8000";
+
+    expect(resolveHttpProxyUrlForTarget("https://api.openai.com")).toBeUndefined();
+    expect(resolveHttpProxyUrlForTarget("https://other.com")).toBeDefined();
+  });
+
+  it("throws error for invalid proxy URL or unsupported protocol", () => {
+    process.env.HTTPS_PROXY = "socks5://localhost:1080";
+    expect(() => resolveHttpProxyUrlForTarget("https://api.openai.com")).toThrow(UNSUPPORTED_PROXY_PROTOCOL_MESSAGE);
+
+    process.env.HTTPS_PROXY = "http://[invalid-ipv6-host";
+    expect(() => resolveHttpProxyUrlForTarget("https://api.openai.com")).toThrow("Invalid proxy URL");
+  });
+
+  it("handles invalid target URL gracefully", () => {
+    process.env.HTTPS_PROXY = "http://proxy.example.com:8080";
+    expect(resolveHttpProxyUrlForTarget("not-a-valid-url")).toBeUndefined();
   });
 });

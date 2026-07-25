@@ -96,4 +96,20 @@ describe.sequential("Anthropic OAuth", () => {
     expect(credentials.refresh).toBe("new-refresh-token");
     expect(fetchMock).toHaveBeenCalledOnce();
   });
+
+  it("handles token refresh failures and invalid JSON responses", async () => {
+    // 500 error
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("Server error", { status: 500 })),
+    );
+    await expect(refreshAnthropicToken("bad-token")).rejects.toThrow("Anthropic token refresh request failed");
+
+    // Invalid JSON
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () => new Response("{ invalid json }", { status: 200 })),
+    );
+    await expect(refreshAnthropicToken("bad-token")).rejects.toThrow("Anthropic token refresh returned invalid JSON");
+  });
 });

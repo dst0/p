@@ -47,4 +47,10 @@ describe("uuidv7", () => {
       dateNow.mockRestore();
     }
   });
+
+  it("falls back to Math.random when crypto is undefined", () => {
+    vi.stubGlobal("crypto", undefined);
+    const id = uuidv7();
+    expect(id).toMatch(UUID_V7_RE);
+  });
 });

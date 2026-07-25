@@ -6,7 +6,7 @@
  */
 
 import assert from "node:assert";
-import { beforeEach, describe, it } from "node:test";
+import { beforeEach, describe, it, mock } from "node:test";
 import { StdinBuffer } from "../src/stdin-buffer.ts";
 
 describe("StdinBuffer", () => {
@@ -454,5 +454,59 @@ describe("StdinBuffer", () => {
       // Should not have emitted anything
       assert.deepStrictEqual(emittedSequences, []);
     });
+  });
+
+  it("handles OSC sequences properly", () => {
+    processInput("\x1b]title");
+    assert.deepEqual(emittedSequences, []);
+    processInput("\x07"); // Complete with BEL
+    assert.deepEqual(emittedSequences, ["\x1b]title\x07"]);
+
+    processInput("\x1b]title");
+    processInput("\x1b\\"); // Complete with ST
+    assert.deepEqual(emittedSequences, ["\x1b]title\x07", "\x1b]title\x1b\\"]);
+  });
+
+  it("handles DCS sequences properly", () => {
+    processInput("\x1bP>");
+    assert.deepEqual(emittedSequences, []);
+    processInput("\x1b\\"); // Complete with ST
+    assert.deepEqual(emittedSequences, ["\x1bP>\x1b\\"]);
+  });
+
+  it("handles APC sequences properly", () => {
+    processInput("\x1b_G");
+    assert.deepEqual(emittedSequences, []);
+    processInput("\x1b\\"); // Complete with ST
+    assert.deepEqual(emittedSequences, ["\x1b_G\x1b\\"]);
+  });
+
+  it("handles unknown sequences as complete", () => {
+    // ESC followed by an unhandled character like @
+    processInput("\x1b@");
+    assert.deepEqual(emittedSequences, ["\x1b@"]);
+  });
+
+  it("handles force paste end on timeout", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      // Trigger paste mode
+      processInput("\x1b[200~hello");
+      // Tick to force paste end (5000ms)
+      mock.timers.tick(5000);
+      assert.deepEqual(emittedSequences, []); // Emits on 'paste' event, not 'data'
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it("clears paste timeout on clear()", () => {
+    mock.timers.enable({ apis: ["setTimeout"] });
+    try {
+      processInput("\x1b[200~hello");
+      buffer.clear();
+    } finally {
+      mock.timers.reset();
+    }
   });
 });

@@ -110,6 +110,8 @@ describe("parseOsc11BackgroundColor", () => {
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]10;#ffffff\x07"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#ffffff\x07x"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#invalid\x07"), undefined);
+    assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#12345\x07"), undefined);
+    assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#00008000zzzz\x07"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:invalid/0000/0000\x07"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:0000\x07"), undefined);
   });

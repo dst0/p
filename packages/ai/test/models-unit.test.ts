@@ -137,6 +137,19 @@ describe("models utility functions", () => {
     // "high" is null, should clamp to next available level or fall back
     expect(clampThinkingLevel(model, "high")).toBe("medium");
     expect(clampThinkingLevel(model, "invalid" as any)).toBe("off");
+
+    const noLevelsModel: Model<any> = {
+      ...model,
+      thinkingLevelMap: {
+        off: null,
+        minimal: null,
+        low: null,
+        medium: null,
+        high: null,
+        xhigh: null,
+      },
+    };
+    expect(clampThinkingLevel(noLevelsModel, "high")).toBe("off");
   });
 
   it("modelsAreEqual compares models correctly", () => {

@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { NodeExecutionEnv } from "../../src/harness/env/nodejs.ts";
 import { JsonlSessionStorage } from "../../src/harness/session/jsonl-storage.ts";
 import { InMemorySessionStorage } from "../../src/harness/session/memory-storage.ts";
+import { getEntriesToFork } from "../../src/harness/session/repo-utils.ts";
 import { Session } from "../../src/harness/session/session.ts";
 import type { SessionStorage } from "../../src/harness/types.ts";
 import { createAssistantMessage, createTempDir, createUserMessage, getLatestTempDir } from "./session-test-utils.ts";
@@ -99,9 +100,29 @@ async function runSessionSuite(
       expect((await session.buildContext()).messages).toHaveLength(1);
     });
 
-    it("rejects labels for missing entries", async () => {
+    it("rejects labels for missing entries and moveTo missing entries", async () => {
       const session = new Session(await createStorage());
       await expect(session.appendLabel("missing", "checkpoint")).rejects.toThrow("Entry missing not found");
+      await expect(session.moveTo("missing")).rejects.toThrow("Entry missing not found");
+    });
+
+    it("supports custom entries", async () => {
+      const session = new Session(await createStorage());
+      const customId = await session.appendCustomEntry("my_custom_type", { payload: 123 });
+      expect(customId).toBeTruthy();
+      const entry = await session.getEntry(customId);
+      expect(entry).toMatchObject({ type: "custom", customType: "my_custom_type" });
+    });
+
+    it("handles getEntriesToFork error branches", async () => {
+      const storage = await createStorage();
+      await expect(getEntriesToFork(storage, { entryId: "missing" })).rejects.toThrow("Entry missing not found");
+
+      const session = new Session(storage);
+      const assistantId = await session.appendMessage(createAssistantMessage("assistant msg"));
+      await expect(getEntriesToFork(storage, { entryId: assistantId, position: "before" })).rejects.toThrow(
+        "is not a user message",
+      );
     });
 
     it("persists leaf changes and appended entries via storage", async () => {

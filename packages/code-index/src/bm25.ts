@@ -28,7 +28,7 @@ export class BM25Vocabulary {
         this.docFreq.set(t, 0);
         this.nextIdx++;
       }
-      this.docFreq.set(t, (this.docFreq.get(t) ?? 0) + 1);
+      this.docFreq.set(t, this.docFreq.get(t)! + 1);
     }
 
     this.totalDocs++;
@@ -97,7 +97,7 @@ export class BM25Vocabulary {
    * Save vocabulary to a JSON file.
    */
   save(path: string): void {
-    const dir = path.slice(0, path.lastIndexOf("/"));
+    const dir = path.lastIndexOf("/") >= 0 ? path.slice(0, path.lastIndexOf("/")) : "";
     if (dir) {
       fs.mkdirSync(dir, { recursive: true, mode: 0o700 });
     }

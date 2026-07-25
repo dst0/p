@@ -37,6 +37,12 @@ describe("diagnostics utility", () => {
     expect(nonErr.message).toBe("raw error text");
     expect(nonErr.code).toBeUndefined();
     expect(nonErr.stack).toBeUndefined();
+
+    const emptyNameMsgErr = new Error("");
+    emptyNameMsgErr.name = "";
+    const infoEmpty = extractDiagnosticError(emptyNameMsgErr);
+    expect(infoEmpty.name).toBeUndefined();
+    expect(infoEmpty.message).toBe("");
   });
 
   it("createAssistantMessageDiagnostic creates a diagnostic object", () => {

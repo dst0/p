@@ -17,7 +17,7 @@ import { findRepos } from "./discover.ts";
 import type { EmbeddingProviderHttp } from "./embed/http.ts";
 import { CodeIndexer } from "./indexer.ts";
 
-interface CliArgs {
+export interface CliArgs {
   repo?: string;
   status?: boolean;
   deleteRepo?: string;
@@ -28,7 +28,7 @@ interface CliArgs {
   embeddingServerUrl?: string;
 }
 
-function parseArgs(argv: string[]): CliArgs {
+export function parseArgs(argv: string[]): CliArgs {
   const args: CliArgs = {};
 
   for (let i = 2; i < argv.length; i++) {
@@ -82,7 +82,7 @@ function parseArgs(argv: string[]): CliArgs {
   return args;
 }
 
-function printUsage(): void {
+export function printUsage(): void {
   console.log(`
 code-index — hybrid dense + BM25 code indexer
 
@@ -102,8 +102,8 @@ Options:
 `);
 }
 
-async function main(): Promise<void> {
-  const args = parseArgs(process.argv);
+export async function main(argv: string[] = process.argv): Promise<void> {
+  const args = parseArgs(argv);
   const config = createConfig({
     workspace: args.workspace,
     batchSize: args.batchSize,
@@ -231,7 +231,19 @@ async function main(): Promise<void> {
   console.log(`   Total disk:     ~${((denseBytes * 2.5 + nPoints * 350) / 1024 / 1024).toFixed(0)} MB`);
 }
 
-main().catch((e) => {
-  console.error("Fatal:", e);
-  process.exit(1);
-});
+export async function runCliMain(argv: string[] = process.argv): Promise<void> {
+  return main(argv).catch((e) => {
+    console.error("Fatal:", e);
+    process.exit(1);
+  });
+}
+
+const isMain =
+  process.argv[1] &&
+  (process.argv[1].endsWith("/cli.ts") ||
+    process.argv[1].endsWith("/cli.js") ||
+    process.argv[1].endsWith("/code-index"));
+
+if (isMain) {
+  runCliMain();
+}

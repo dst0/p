@@ -113,4 +113,120 @@ describe("SelectList", () => {
     assert.ok(rendered[0].includes("…"));
     assert.equal(visibleIndexOf(rendered[0], "first"), visibleIndexOf(rendered[1], "second"));
   });
+
+  it("filters items correctly", () => {
+    const items = [
+      { value: "apple", label: "Apple" },
+      { value: "banana", label: "Banana" },
+      { value: "cherry", label: "Cherry" },
+    ];
+    const list = new SelectList(items, 5, testTheme);
+
+    list.setFilter("ban");
+    const rendered = list.render(80);
+    assert.equal(rendered.length, 1);
+    assert.ok(rendered[0].includes("Banana"));
+
+    // Setting an empty filter restores all items
+    list.setFilter("");
+    const renderedAll = list.render(80);
+    assert.equal(renderedAll.length, 3);
+  });
+
+  it("handles input and wraps selection correctly", () => {
+    const items = [
+      { value: "1", label: "1" },
+      { value: "2", label: "2" },
+      { value: "3", label: "3" },
+    ];
+    const list = new SelectList(items, 5, testTheme);
+
+    // Initial state: selectedIndex = 0
+    assert.equal(list.getSelectedItem()?.value, "1");
+
+    // Press up -> wraps to bottom
+    list.handleInput("\x1b[A"); // Up arrow
+    assert.equal(list.getSelectedItem()?.value, "3");
+
+    // Press down -> wraps to top
+    list.handleInput("\x1b[B"); // Down arrow
+    assert.equal(list.getSelectedItem()?.value, "1");
+
+    // Move down normally
+    list.handleInput("\x1b[B");
+    assert.equal(list.getSelectedItem()?.value, "2");
+  });
+
+  it("triggers onSelect and onCancel correctly", () => {
+    const items = [{ value: "1", label: "1" }];
+    const list = new SelectList(items, 5, testTheme);
+    let selected: any = null;
+    let cancelled = false;
+
+    list.onSelect = (item) => {
+      selected = item;
+    };
+    list.onCancel = () => {
+      cancelled = true;
+    };
+
+    list.handleInput("\x1b"); // Escape
+    assert.ok(cancelled);
+
+    list.handleInput("\r"); // Enter
+    assert.equal(selected?.value, "1");
+  });
+
+  it("renders no match when empty", () => {
+    const list = new SelectList([], 5, testTheme);
+    const rendered = list.render(80);
+    assert.equal(rendered.length, 1);
+    assert.ok(rendered[0].includes("No matching commands"));
+  });
+
+  it("does not crash on invalidate", () => {
+    const list = new SelectList([], 5, testTheme);
+    list.invalidate(); // noop, just cover it
+  });
+
+  it("setSelectedIndex clamps to valid range", () => {
+    const items = [
+      { value: "1", label: "1" },
+      { value: "2", label: "2" },
+    ];
+    const list = new SelectList(items, 5, testTheme);
+
+    list.setSelectedIndex(-5);
+    assert.equal(list.getSelectedItem()?.value, "1");
+
+    list.setSelectedIndex(5);
+    assert.equal(list.getSelectedItem()?.value, "2");
+  });
+
+  it("shows scroll info when truncated", () => {
+    const items = Array.from({ length: 10 }).map((_, i) => ({ value: `${i}`, label: `${i}` }));
+    const list = new SelectList(items, 5, testTheme);
+
+    // Move to index 7 to force start index > 0
+    list.setSelectedIndex(7);
+    const rendered = list.render(80);
+
+    assert.ok(rendered.some((line) => line.includes("(8/10)")));
+  });
+
+  it("triggers onSelectionChange when selection changes", () => {
+    const items = [
+      { value: "1", label: "1" },
+      { value: "2", label: "2" },
+    ];
+    const list = new SelectList(items, 5, testTheme);
+    let changedTo: any = null;
+
+    list.onSelectionChange = (item) => {
+      changedTo = item;
+    };
+
+    list.handleInput("\x1b[B"); // Down arrow
+    assert.equal(changedTo?.value, "2");
+  });
 });

@@ -63,7 +63,8 @@ describe("json-parse utilities", () => {
       expect(res).toBeDefined();
     });
 
-    it("returns empty object for completely unparseable input", () => {
+    it("falls back through partialParse repair and returns empty object on extreme failure", () => {
+      expect(parseStreamingJson("{{{{")).toEqual({});
       expect(parseStreamingJson("<<<<>>>")).toEqual({});
     });
   });

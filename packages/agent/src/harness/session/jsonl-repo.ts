@@ -132,20 +132,17 @@ export class JsonlSessionRepo implements JsonlSessionRepoApi {
     const forkedEntries = await getEntriesToFork(source.getStorage(), options);
     const id = options.id ?? createSessionId();
     const createdAt = createTimestamp();
-    const sessionDir = await this.getSessionDir(options.cwd);
+    const cwd = options.cwd ?? sourceMetadata.cwd;
+    const sessionDir = await this.getSessionDir(cwd);
     getFileSystemResultOrThrow(
       await this.fs.createDir(sessionDir, { recursive: true }),
       `Failed to create session directory ${sessionDir}`,
     );
-    const storage = await JsonlSessionStorage.create(
-      this.fs,
-      await this.createSessionFilePath(options.cwd, id, createdAt),
-      {
-        cwd: options.cwd,
-        sessionId: id,
-        parentSessionPath: options.parentSessionPath ?? sourceMetadata.path,
-      },
-    );
+    const storage = await JsonlSessionStorage.create(this.fs, await this.createSessionFilePath(cwd, id, createdAt), {
+      cwd,
+      sessionId: id,
+      parentSessionPath: options.parentSessionPath ?? sourceMetadata.path,
+    });
     for (const entry of forkedEntries) {
       await storage.appendEntry(entry);
     }

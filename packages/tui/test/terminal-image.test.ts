@@ -446,3 +446,108 @@ describe("hyperlink", () => {
     assert.ok(result.includes("README.md"));
   });
 });
+
+import {
+  calculateImageRows,
+  encodeITerm2,
+  getGifDimensions,
+  getImageDimensions,
+  getJpegDimensions,
+  getPngDimensions,
+  getWebpDimensions,
+} from "../src/terminal-image.ts";
+
+describe("Additional terminal-image coverage", () => {
+  it("encodeKitty splits large data into chunks", () => {
+    const largeData = "A".repeat(5000);
+    const result = encodeKitty(largeData);
+    assert.ok(result.includes(",m=1;"));
+    assert.ok(result.includes("m=0;"));
+  });
+
+  it("encodeITerm2 handles name and preserveAspectRatio false", () => {
+    const result = encodeITerm2("AAAA", { name: "test.png", preserveAspectRatio: false });
+    assert.ok(result.includes(`name=${Buffer.from("test.png").toString("base64")}`));
+    assert.ok(result.includes("preserveAspectRatio=0"));
+  });
+
+  it("calculateImageRows returns correct rows", () => {
+    setCapabilities({ images: null, trueColor: false, hyperlinks: false });
+    const res = renderImage("AAAA", { widthPx: 10, heightPx: 10 });
+    assert.strictEqual(res, null);
+  });
+});
+
+describe("Image dimension parsing", () => {
+  it("calculateImageRows", () => {
+    const rows = calculateImageRows({ widthPx: 100, heightPx: 100 }, 80, { widthPx: 10, heightPx: 20 });
+    assert.ok(rows > 0);
+  });
+
+  it("getPngDimensions edge cases", () => {
+    assert.strictEqual(getPngDimensions(""), null);
+    assert.strictEqual(
+      getPngDimensions(
+        Buffer.from([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]).toString("base64"),
+      ),
+      null,
+    );
+    assert.strictEqual(getPngDimensions("invalid_base64***!"), null);
+  });
+
+  it("getJpegDimensions", () => {
+    assert.strictEqual(getJpegDimensions(""), null);
+    assert.strictEqual(getJpegDimensions("invalid_base64***!"), null);
+    assert.strictEqual(getJpegDimensions(Buffer.from([0xff, 0xd8, 0x00]).toString("base64")), null);
+
+    // A valid 1x1 JPEG
+    const validJpeg =
+      "/9j/4AAQSkZJRgABAQEASABIAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////wgALCAABAAEBAREA/8QAFBABAAAAAAAAAAAAAAAAAAAAAP/aAAgBAQABPxA=";
+    const dim = getJpegDimensions(validJpeg);
+    assert.deepStrictEqual(dim, { widthPx: 1, heightPx: 1 });
+  });
+
+  it("getGifDimensions", () => {
+    assert.strictEqual(getGifDimensions(""), null);
+    assert.strictEqual(getGifDimensions("invalid_base64***!"), null);
+
+    const validGif = Buffer.from("GIF89a" + "\x10\x00\x10\x00", "ascii").toString("base64");
+    const dim = getGifDimensions(validGif);
+    assert.deepStrictEqual(dim, { widthPx: 16, heightPx: 16 });
+  });
+
+  it("getWebpDimensions", () => {
+    assert.strictEqual(getWebpDimensions(""), null);
+
+    // VP8 1x1
+    const vp8 = "UklGRjIAAABXRUJQVlA4ICYAAACyAgCdASoBAAEALmk0mk0iIiIiIgBoSygABc6zbAAA/v56QAAAAA==";
+    assert.deepStrictEqual(getWebpDimensions(vp8), { widthPx: 1, heightPx: 1 });
+
+    // VP8L 1x1
+    const vp8l = "UklGRhoAAABXRUJQVlA4TA0AAAAvAAAAEAcQERGIiP4HAA==";
+    assert.deepStrictEqual(getWebpDimensions(vp8l), { widthPx: 1, heightPx: 1 });
+
+    // VP8X 1x1 (Note: VP8X needs VP8X chunk)
+    // Create a manual VP8X chunk for 16x16
+    const vp8x = Buffer.alloc(30);
+    vp8x.write("RIFF", 0);
+    vp8x.write("WEBP", 8);
+    vp8x.write("VP8X", 12);
+    vp8x[24] = 15;
+    vp8x[25] = 0;
+    vp8x[26] = 0;
+    vp8x[27] = 15;
+    vp8x[28] = 0;
+    vp8x[29] = 0;
+    assert.deepStrictEqual(getWebpDimensions(vp8x.toString("base64")), { widthPx: 16, heightPx: 16 });
+  });
+
+  it("getImageDimensions routes correctly", () => {
+    assert.strictEqual(getImageDimensions("", "image/unknown"), null);
+    const validGif = Buffer.from("GIF89a" + "\x10\x00\x10\x00", "ascii").toString("base64");
+    assert.deepStrictEqual(getImageDimensions(validGif, "image/gif"), { widthPx: 16, heightPx: 16 });
+    assert.strictEqual(getImageDimensions("", "image/png"), null);
+    assert.strictEqual(getImageDimensions("", "image/jpeg"), null);
+    assert.strictEqual(getImageDimensions("", "image/webp"), null);
+  });
+});

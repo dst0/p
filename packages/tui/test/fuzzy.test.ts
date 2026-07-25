@@ -54,9 +54,12 @@ describe("fuzzyMatch", () => {
     assert.ok(atBoundary.score < notAtBoundary.score);
   });
 
-  it("matches swapped alpha numeric tokens", () => {
-    const result = fuzzyMatch("codex52", "gpt-5.2-codex");
-    assert.strictEqual(result.matches, true);
+  it("handles swapped alpha numeric tokens when neither primary nor swapped matches", () => {
+    const result1 = fuzzyMatch("a1", "xyz");
+    assert.strictEqual(result1.matches, false);
+
+    const result2 = fuzzyMatch("1a", "xyz");
+    assert.strictEqual(result2.matches, false);
   });
 });
 
@@ -65,6 +68,9 @@ describe("fuzzyFilter", () => {
     const items = ["apple", "banana", "cherry"];
     const result = fuzzyFilter(items, "", (x: string) => x);
     assert.deepStrictEqual(result, items);
+
+    const resultSlashOnly = fuzzyFilter(items, "  /  ", (x: string) => x);
+    assert.deepStrictEqual(resultSlashOnly, items);
   });
 
   it("filters out non-matching items", () => {

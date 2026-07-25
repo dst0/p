@@ -142,6 +142,18 @@ describe("completion-protocol unit tests", () => {
     const payload = getFinishWorkPayload(messages);
     expect(payload).toEqual({ status: "success", summary: "Second attempt" });
 
+    const nonFinishMessages: AgentMessage[] = [
+      { role: "user", content: "hello", timestamp: 1 },
+      {
+        role: "toolResult",
+        toolCallId: "call-99",
+        toolName: "read",
+        content: [{ type: "text", text: "read result" }],
+        isError: false,
+        timestamp: 2,
+      },
+    ];
+    expect(getFinishWorkPayload(nonFinishMessages)).toBeUndefined();
     expect(getFinishWorkPayload([])).toBeUndefined();
   });
 });

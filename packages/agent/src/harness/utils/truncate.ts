@@ -48,11 +48,11 @@ interface RuntimeBuffer {
   byteLength(content: string, encoding: "utf8"): number;
 }
 
-const runtimeBuffer = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
 const nonAsciiPattern = /[^\x00-\x7f]/;
 
 function utf8ByteLength(content: string): number {
-  if (runtimeBuffer) return runtimeBuffer.byteLength(content, "utf8");
+  const buf = (globalThis as { Buffer?: RuntimeBuffer }).Buffer;
+  if (buf) return buf.byteLength(content, "utf8");
 
   const firstNonAscii = content.search(nonAsciiPattern);
   if (firstNonAscii === -1) return content.length;

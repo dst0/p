@@ -222,4 +222,89 @@ describe("executeShellWithCapture", () => {
       expect(result.error.message).toContain("disk full");
     }
   });
+
+  it("appends subsequent chunks to full output log file and handles append errors", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    let appendCalls = 0;
+    env.appendFile = vi.fn().mockImplementation(async () => {
+      appendCalls++;
+      if (appendCalls === 2) {
+        return { ok: false, error: { code: "permission_denied", message: "append failed" } };
+      }
+      return { ok: true, value: undefined };
+    });
+
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      // Chunk 1 triggers temp file creation
+      options?.onStdout?.("x".repeat(DEFAULT_MAX_BYTES + 100));
+      // Chunk 2 triggers appendFullOutput
+      options?.onStdout?.("subsequent chunk");
+      return { ok: true, value: { exitCode: 0 } };
+    });
+
+    const result = await executeShellWithCapture(env, "cmd");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("append failed");
+    }
+  });
+
+  it("returns error if createTempFile fails in ensureFullOutputFile", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    env.createTempFile = vi
+      .fn()
+      .mockResolvedValue({ ok: false, error: { code: "permission_denied", message: "tmp fail" } });
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      options?.onStdout?.("x".repeat(DEFAULT_MAX_BYTES + 100));
+      return { ok: true, value: { exitCode: 0 } };
+    });
+
+    const result = await executeShellWithCapture(env, "cmd");
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.error.message).toContain("tmp fail");
+    }
+  });
+
+  it("appends full output log file when chunks arrive after temp file creation", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    let appendCount = 0;
+    env.appendFile = vi.fn().mockImplementation(async () => {
+      appendCount++;
+      return { ok: true, value: undefined };
+    });
+
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      options?.onStdout?.("x".repeat(DEFAULT_MAX_BYTES + 100));
+      // Give microtasks a chance to run so createTempFile finishes and fullOutputPath is set
+      await new Promise((r) => setTimeout(r, 10));
+      options?.onStdout?.("subsequent chunk");
+      return { ok: true, value: { exitCode: 0 } };
+    });
+
+    const result = await executeShellWithCapture(env, "cmd");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.truncated).toBe(true);
+      expect(result.value.fullOutputPath).toBe("/tmp/file.log");
+    }
+    expect(appendCount).toBeGreaterThanOrEqual(2);
+  });
+
+  it("creates temp file when truncation happens due to max lines limit", async () => {
+    const env = createMockEnv({ execResult: { ok: true, value: { exitCode: 0 } } });
+    env.exec = vi.fn().mockImplementation(async (_cmd, options) => {
+      // 2500 lines of short text: total bytes < DEFAULT_MAX_BYTES (50KB), but lines > 2000
+      const lines = Array.from({ length: 2500 }, (_, i) => `line ${i}`).join("\n");
+      options?.onStdout?.(lines);
+      return { ok: true, value: { exitCode: 0 } };
+    });
+
+    const result = await executeShellWithCapture(env, "cmd");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.value.truncated).toBe(true);
+      expect(result.value.fullOutputPath).toBe("/tmp/file.log");
+    }
+  });
 });

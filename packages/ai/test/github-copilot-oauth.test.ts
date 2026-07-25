@@ -329,4 +329,21 @@ describe("GitHub Copilot OAuth device flow", () => {
 
     expect(accessTokenPollTimes).toEqual([startTime.getTime(), startTime.getTime() + 10000]);
   });
+
+  it("modifies model base URL via provider interface", () => {
+    const { githubCopilotOAuthProvider } = require("../src/utils/oauth/github-copilot.ts");
+    const dummyModel = {
+      id: "copilot-gpt-4o",
+      provider: "github-copilot",
+      baseUrl: "https://api.individual.githubcopilot.com",
+    };
+
+    const modified = githubCopilotOAuthProvider.modifyModels([dummyModel], {
+      access: "tid=1;proxy-ep=proxy.custom.githubcopilot.com;",
+      refresh: "r",
+      expires: 9999,
+    });
+
+    expect(modified[0].baseUrl).toBe("https://api.custom.githubcopilot.com");
+  });
 });

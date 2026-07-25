@@ -227,4 +227,225 @@ describe("streamProxy", () => {
     const result = await stream.result();
     expect(result.stopReason).toBe("stop");
   });
+
+  it("throws when receiving delta/end for mismatched content types or invalid state", async () => {
+    const sseEvents = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "thinking_delta", contentIndex: 0, delta: "bad" },
+    ];
+    const sseBody = sseEvents.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let readDone = false;
+          return {
+            read: async () => {
+              if (readDone) return { done: true, value: undefined };
+              readDone = true;
+              return { done: false, value: new TextEncoder().encode(sseBody) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret-token",
+    });
+
+    const result = await stream.result();
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toContain("Received thinking_delta for non-thinking content");
+  });
+
+  it("handles reader cancellation on abort signal during active stream", async () => {
+    const controller = new AbortController();
+    let cancelCalled = false;
+    let resolveRead: (v: { done: boolean; value: undefined }) => void;
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => ({
+          read: () =>
+            new Promise((resolve) => {
+              resolveRead = resolve;
+            }),
+          cancel: async () => {
+            cancelCalled = true;
+            resolveRead?.({ done: true, value: undefined });
+          },
+        }),
+      },
+    });
+
+    const stream = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret-token",
+      signal: controller.signal,
+    });
+
+    setTimeout(() => controller.abort(), 10);
+
+    const result = await stream.result();
+    expect(result.stopReason).toBe("aborted");
+    expect(cancelCalled).toBe(true);
+  });
+
+  it("throws for text_end and thinking_end on mismatched content types", async () => {
+    const sseEventsText = [
+      { type: "thinking_start", contentIndex: 0 },
+      { type: "text_end", contentIndex: 0, contentSignature: "sig" },
+    ];
+    const sseBodyText = sseEventsText.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let done = false;
+          return {
+            read: async () => {
+              if (done) return { done: true, value: undefined };
+              done = true;
+              return { done: false, value: new TextEncoder().encode(sseBodyText) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream1 = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret",
+    });
+    const res1 = await stream1.result();
+    expect(res1.errorMessage).toContain("Received text_end for non-text content");
+
+    const sseEventsThinking = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "thinking_end", contentIndex: 0, contentSignature: "sig" },
+    ];
+    const sseBodyThinking = sseEventsThinking.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let done = false;
+          return {
+            read: async () => {
+              if (done) return { done: true, value: undefined };
+              done = true;
+              return { done: false, value: new TextEncoder().encode(sseBodyThinking) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream2 = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret",
+    });
+    const res2 = await stream2.result();
+    expect(res2.errorMessage).toContain("Received thinking_end for non-thinking content");
+
+    const sseEventsToolDelta = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "toolcall_delta", contentIndex: 0, delta: "{}" },
+    ];
+    const sseBodyToolDelta = sseEventsToolDelta.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let done = false;
+          return {
+            read: async () => {
+              if (done) return { done: true, value: undefined };
+              done = true;
+              return { done: false, value: new TextEncoder().encode(sseBodyToolDelta) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream3 = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret",
+    });
+    const res3 = await stream3.result();
+    expect(res3.errorMessage).toContain("Received toolcall_delta for non-toolCall content");
+
+    const sseEventsToolEnd = [
+      { type: "text_start", contentIndex: 0 },
+      { type: "toolcall_end", contentIndex: 0 },
+      { type: "done", reason: "stop" },
+    ];
+    const sseBodyToolEnd = sseEventsToolEnd.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let done = false;
+          return {
+            read: async () => {
+              if (done) return { done: true, value: undefined };
+              done = true;
+              return { done: false, value: new TextEncoder().encode(sseBodyToolEnd) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream4 = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret",
+    });
+    const res4 = await stream4.result();
+    expect(res4.stopReason).toBe("stop");
+
+    const sseEventsTextDeltaErr = [
+      { type: "thinking_start", contentIndex: 0 },
+      { type: "text_delta", contentIndex: 0, delta: "bad" },
+    ];
+    const sseBodyTextDeltaErr = sseEventsTextDeltaErr.map((ev) => `data: ${JSON.stringify(ev)}\n\n`).join("");
+
+    globalThis.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      body: {
+        getReader: () => {
+          let done = false;
+          return {
+            read: async () => {
+              if (done) return { done: true, value: undefined };
+              done = true;
+              return { done: false, value: new TextEncoder().encode(sseBodyTextDeltaErr) };
+            },
+            cancel: async () => {},
+          };
+        },
+      },
+    });
+
+    const stream5 = streamProxy(mockModel, mockContext, {
+      proxyUrl: "http://localhost:3000",
+      authToken: "secret",
+    });
+    const res5 = await stream5.result();
+    expect(res5.errorMessage).toContain("Received text_delta for non-text content");
+  });
 });

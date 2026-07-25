@@ -128,7 +128,45 @@ describe("validation utility unit tests", () => {
       },
     };
 
-    const validated = validateToolArguments(unionTool, call);
+    const validated = validateToolArguments(unionTool, call) as { val: number };
     expect(validated.val).toBe(42);
+  });
+
+  it("formats required property error paths correctly", () => {
+    const requiredTool: Tool = {
+      name: "req_tool",
+      description: "Required tool",
+      parameters: {
+        type: "object",
+        properties: {
+          sub: {
+            type: "object",
+            properties: {
+              field: { type: "string" },
+            },
+            required: ["field"],
+          },
+        },
+        required: ["sub"],
+      } as any,
+    };
+
+    const callMissingRoot: ToolCall = {
+      type: "toolCall",
+      id: "c1",
+      name: "req_tool",
+      arguments: {},
+    };
+
+    expect(() => validateToolArguments(requiredTool, callMissingRoot)).toThrow("sub");
+
+    const callMissingSub: ToolCall = {
+      type: "toolCall",
+      id: "c2",
+      name: "req_tool",
+      arguments: { sub: {} },
+    };
+
+    expect(() => validateToolArguments(requiredTool, callMissingSub)).toThrow("sub.field");
   });
 });

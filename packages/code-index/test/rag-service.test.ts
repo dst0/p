@@ -11,6 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EmbeddingError, VectorStoreError } from "../src/embed/errors.ts";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import {
   type IndexingProgress,
@@ -151,6 +152,7 @@ function createService(
     embeddingModel?: string;
     allowSearchRefresh?: boolean;
     sparseRebuildDriftRatio?: number;
+    allowStaleSearch?: boolean;
   } = {},
 ): WorkspaceCodeRagService {
   return new WorkspaceCodeRagService({
@@ -166,6 +168,7 @@ function createService(
       embeddingModel: options.embeddingModel ?? "test-embedding-v1",
       fullSparseRebuildChangeRatio: 1,
       sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
+      allowStaleSearch: options.allowStaleSearch,
     },
   });
 }
@@ -570,6 +573,65 @@ describe("search validation and edge cases", () => {
     await service.dispose();
   });
 
+  it("handles require_fresh when no manifest exists (allowSearchRefresh = true)", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      allowSearchRefresh: true,
+    });
+    vi.spyOn(service, "refresh").mockRejectedValue(new Error("Refresh failed"));
+    const response = await service.search({ query: "test", freshness: "require_fresh" });
+    expect(response.results).toEqual([]);
+    await service.dispose();
+  });
+
+  it("handles prefer_fresh when no manifest exists (allowSearchRefresh = true)", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      allowSearchRefresh: true,
+    });
+    const response = await service.search({ query: "test", freshness: "prefer_fresh" });
+    expect(response.results).toEqual([]);
+    await service.dispose();
+  });
+
+  it("handles require_fresh when stale and refresh throws (allowSearchRefresh = true)", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      allowSearchRefresh: true,
+    });
+    await service.rebuild();
+    writeFileSync(join(root, "main.ts"), "export const changedForDaemon = true;\n");
+    vi.spyOn(service, "refresh").mockRejectedValue(new Error("Refresh failed"));
+    const response = await service.search({ query: "test", freshness: "require_fresh" });
+    expect(response.results).toEqual([]);
+    await service.dispose();
+  });
+
+  it("handles prefer_fresh when stale (allowSearchRefresh = true)", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      allowSearchRefresh: true,
+    });
+    await service.rebuild();
+    writeFileSync(join(root, "main.ts"), "export const changedForDaemon = true;\n");
+    const response = await service.search({ query: "test", freshness: "prefer_fresh" });
+    expect(response.status.state).toBe("stale");
+    await service.dispose();
+  });
+
+  it("returns empty when stale and allowStaleSearch = false", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      allowSearchRefresh: false,
+      allowStaleSearch: false,
+    });
+    await service.rebuild();
+    writeFileSync(join(root, "main.ts"), "export const changedForDaemon = true;\n");
+    const response = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(response.results).toEqual([]);
+    await service.dispose();
+  });
+
   it("search cancels when signal is already aborted", async () => {
     const { root, data } = createFixture();
     const embedding = new FakeEmbeddingProvider();
@@ -651,6 +713,63 @@ describe("abort and cancellation", () => {
     await service.dispose();
   });
 
+  it("refresh aborts when signal fires during operation", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore());
+
+    // Ensure initialized so it doesn't pause at await initialize
+    await service.rebuild();
+
+    // Create an abort controller and abort it *after* refresh starts
+    const controller = new AbortController();
+
+    // Start the first refresh, it will set refreshPromise synchronously
+    const promise1 = service.refresh({}, controller.signal);
+
+    // Concurrently start a second refresh, this will hit waitForSignal
+    const promise2 = service.refresh({}, controller.signal);
+
+    // Now abort
+    controller.abort();
+
+    await expect(promise1).rejects.toThrow("cancelled");
+    await expect(promise2).rejects.toThrow("cancelled");
+
+    await service.dispose();
+  });
+
+  it("waitForSignal succeeds when promise resolves", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore());
+    await service.rebuild();
+
+    const controller = new AbortController();
+
+    // Start the first refresh
+    const promise1 = service.refresh({}, controller.signal);
+
+    // Concurrently start a second refresh
+    const promise2 = service.refresh({}, controller.signal);
+
+    // Let them finish successfully
+    await expect(promise1).resolves.toBeDefined();
+    await expect(promise2).resolves.toBeDefined();
+
+    await service.dispose();
+  });
+
+  it("handles valid pathPrefix in search", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store);
+    await service.rebuild();
+    const response = await service.search({ query: "test", pathPrefix: "src/" });
+    // just expecting it not to throw RAG_SECURITY_BLOCK
+    expect(response.status.state).toBe("ready");
+    await service.dispose();
+  });
+
   it("rebuild aborts when signal fires during operation", async () => {
     const { root, data } = createFixture();
     const embedding = new FakeEmbeddingProvider();
@@ -727,5 +846,145 @@ describe("vocabulary persistence", () => {
     const response = await freshService.search({ query: "authentication initialization", freshness: "allow_stale" });
     expect(response.results[0]).toMatchObject({ path: "main.ts", startLine: 1, endLine: 3 });
     await freshService.dispose();
+  });
+
+  it("handles search when disabled, missing manifest, or missing Qdrant collection", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+
+    // Disabled service
+    const disabledService = new WorkspaceCodeRagService({
+      workspaceRoot: root,
+      dataDirectory: data,
+      embeddingProvider: embedding,
+      vectorStore: store,
+      settings: { enabled: false },
+    });
+    const disabledRes = await disabledService.search({ query: "test" });
+    expect(disabledRes.results).toHaveLength(0);
+    await disabledService.dispose();
+
+    // Service without manifest (not rebuilt yet)
+    const unindexedService = createService(root, data, embedding, store, { allowSearchRefresh: false });
+    const requireFreshRes = await unindexedService.search({ query: "test", freshness: "require_fresh" });
+    expect(requireFreshRes.results).toHaveLength(0);
+
+    const preferFreshRes = await unindexedService.search({ query: "test", freshness: "prefer_fresh" });
+    expect(preferFreshRes.results).toHaveLength(0);
+
+    const allowStaleRes = await unindexedService.search({ query: "test", freshness: "allow_stale" });
+    expect(allowStaleRes.results).toHaveLength(0);
+    await unindexedService.dispose();
+
+    // Rebuilt service but Qdrant collection deleted
+    const indexedService = createService(root, data, embedding, store);
+    await indexedService.rebuild();
+    store.collections.clear(); // Simulate collection deleted from Qdrant
+
+    const missingCollRes = await indexedService.search({ query: "test", freshness: "allow_stale" });
+    expect(missingCollRes.results).toHaveLength(0);
+    const status = await indexedService.status();
+    expect(status.state).toBe("stale");
+    expect(status.staleReason).toContain("Qdrant collection is missing");
+    await indexedService.dispose();
+  });
+
+  it("handles initialization error when reloadPersistedState throws unexpected error", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store);
+
+    vi.spyOn(
+      service as unknown as { reloadPersistedState: () => Promise<void> },
+      "reloadPersistedState",
+    ).mockRejectedValueOnce(new Error("Disk error loading state"));
+
+    const status = await service.initialize();
+    expect(status.state).toBe("unavailable");
+    expect(status.lastError?.code).toBe("RAG_INCOMPATIBLE_INDEX");
+    expect(status.lastError?.message).toContain("Disk error loading state");
+    await service.dispose();
+  });
+
+  it("classifies search errors correctly for EmbeddingError, VectorStoreError, TimeoutError, and generic Error", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store);
+
+    await service.rebuild();
+
+    // 1. EmbeddingError server_down
+    embedding.encodeQuery = vi.fn().mockRejectedValueOnce(new EmbeddingError("server_down", "Server down"));
+    const res1 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res1.status.lastError?.code).toBe("RAG_EMBEDDING_SERVER_DOWN");
+
+    // 2. EmbeddingError server_error
+    embedding.encodeQuery = vi.fn().mockRejectedValueOnce(new EmbeddingError("server_error", "Server err"));
+    const res2 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res2.status.lastError?.code).toBe("RAG_EMBEDDING_SERVER_ERROR");
+
+    // 3. VectorStoreError qdrant_down
+    store.search = vi.fn().mockRejectedValueOnce(new VectorStoreError("qdrant_down", "Qdrant down"));
+    const res3 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res3.status.lastError?.code).toBe("RAG_QDRANT_DOWN");
+
+    // 4. VectorStoreError network
+    store.search = vi.fn().mockRejectedValueOnce(new VectorStoreError("network", "Network err"));
+    const res4 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res4.status.lastError?.code).toBe("RAG_NETWORK_ERROR");
+
+    // 5. VectorStoreError qdrant_error
+    store.search = vi.fn().mockRejectedValueOnce(new VectorStoreError("qdrant_error", "Qdrant err"));
+    const res5 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res5.status.lastError?.code).toBe("RAG_QDRANT_ERROR");
+
+    // 6. TimeoutError
+    const timeoutErr = new Error("Timed out");
+    timeoutErr.name = "TimeoutError";
+    store.search = vi.fn().mockRejectedValueOnce(timeoutErr);
+    const res6 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res6.status.lastError?.code).toBe("RAG_TIMEOUT");
+
+    // 7. Generic Error
+    store.search = vi.fn().mockRejectedValueOnce(new Error("Generic failure"));
+    const res7 = await service.search({ query: "test", freshness: "allow_stale" });
+    expect(res7.status.lastError?.code).toBe("RAG_NETWORK_ERROR");
+
+    await service.dispose();
+  });
+
+  it("handles operation cancellation and error mapping during refresh/rebuild", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store);
+
+    // Cancelled signal
+    const controller = new AbortController();
+    controller.abort(new Error("Operation cancelled"));
+
+    await expect(service.refresh({}, controller.signal)).rejects.toThrow("cancelled");
+
+    // Progress reporter callback
+    const progressReports: IndexingProgress[] = [];
+    await service.rebuild({
+      onProgress: (progress) => progressReports.push(progress),
+    });
+    expect(progressReports.length).toBeGreaterThan(0);
+
+    // Timeout mapOperationError test
+    vi.spyOn(service as any, "performIncrementalRefresh").mockImplementationOnce(() => {
+      const err = new Error("timeout");
+      err.name = "TimeoutError";
+      return Promise.reject(err);
+    });
+    writeFileSync(join(root, "main.ts"), "export const changedForDaemon = true;\n");
+    const timeoutController = new AbortController();
+    await expect(service.refresh({}, timeoutController.signal)).rejects.toThrow("timed out");
+
+    await service.dispose();
   });
 });

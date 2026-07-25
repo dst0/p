@@ -679,4 +679,235 @@ describe("AgentHarness", () => {
     const navResult = await treeHarness.navigateTree(entry1);
     expect(navResult.cancelled).toBe(true);
   });
+
+  it("abort throws normalized error when listeners throw during abort execution", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("ok")]);
+    const session = new Session(new InMemorySessionStorage());
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+    });
+    harness.subscribe((event) => {
+      if (event.type === "abort") {
+        throw new Error("listener abort failed");
+      }
+    });
+
+    await expect(harness.abort()).rejects.toThrow("listener abort failed");
+  });
+
+  it("formats skills with formatSkillInvocation and handles unknown template error", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("skill response")]);
+    const session = new Session(new InMemorySessionStorage());
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      resources: {
+        skills: [
+          {
+            name: "code-review",
+            description: "Review code",
+            content: "review content",
+            filePath: "/skills/review/SKILL.md",
+          },
+        ],
+        promptTemplates: [{ name: "greet", description: "greet", content: "Hello $1" }],
+      },
+    });
+
+    const msg = await harness.promptFromTemplate("greet", ["Bob"]);
+    expect(msg).toMatchObject({ role: "assistant" });
+
+    await expect(harness.promptFromTemplate("nonexistent-template")).rejects.toMatchObject({
+      code: "invalid_argument",
+    });
+  });
+
+  it("evaluates async function systemPrompt", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    let capturedSystem = "";
+    registration.setResponses([
+      (ctx) => {
+        capturedSystem = ctx.systemPrompt ?? "";
+        return fauxAssistantMessage("ok");
+      },
+    ]);
+    const session = new Session(new InMemorySessionStorage());
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      systemPrompt: async (opts) => `System prompt for ${opts.model.id}`,
+    });
+
+    await harness.prompt("test");
+    expect(capturedSystem).toContain("System prompt for");
+  });
+
+  it("handles hooks: before_provider_request and context transform", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("done")]);
+
+    const session = new Session(new InMemorySessionStorage());
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      getApiKeyAndHeaders: async () => ({ apiKey: "key", headers: { "X-Test": "1" } }),
+    });
+
+    let requestHookHit = false;
+    harness.on("before_provider_request", (_evt) => {
+      requestHookHit = true;
+      return { streamOptions: { headers: { "X-Custom": "val" } } };
+    });
+
+    let contextHookHit = false;
+    harness.on("context", (evt) => {
+      contextHookHit = true;
+      return { messages: evt.messages };
+    });
+
+    await harness.prompt("run prompt");
+    expect(requestHookHit).toBe(true);
+    expect(contextHookHit).toBe(true);
+  });
+
+  it("handles active tool changes during active turn (pendingSessionWrites)", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    const turn1Done = deferred();
+    registration.setResponses([
+      async () => {
+        turn1Done.resolve();
+        await new Promise((r) => setTimeout(r, 50));
+        return fauxAssistantMessage("first turn done");
+      },
+      () => fauxAssistantMessage("second turn done"),
+    ]);
+
+    const session = new Session(new InMemorySessionStorage());
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      tools: [calculateTool, getCurrentTimeTool],
+    });
+
+    const runPromise = harness.prompt("start turn");
+    await turn1Done.promise;
+    // Harness is in non-idle state, so setActiveTools adds to pendingSessionWrites
+    await harness.setActiveTools([calculateTool.name]);
+    await runPromise;
+
+    expect(harness.getActiveTools().map((t) => t.name)).toEqual([calculateTool.name]);
+  });
+
+  it("validates tool names and detects duplicates", async () => {
+    const session = new Session(new InMemorySessionStorage());
+    const env = new NodeExecutionEnv({ cwd: process.cwd() });
+    const model = getModel("anthropic", "claude-sonnet-4-5");
+
+    expect(
+      () =>
+        new AgentHarness({
+          env,
+          session,
+          model,
+          tools: [calculateTool, calculateTool],
+        }),
+    ).toThrow();
+
+    const harness = new AgentHarness({
+      env,
+      session,
+      model,
+    });
+
+    await expect(harness.setActiveTools(["unknown_tool"])).rejects.toMatchObject({ code: "invalid_argument" });
+  });
+
+  it("handles compact success with auth and options", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("summary of context")]);
+
+    const session = new Session(new InMemorySessionStorage());
+    await session.appendMessage({ role: "user", content: "hello", timestamp: Date.now() });
+    await session.appendMessage(fauxAssistantMessage("hi"));
+
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      getApiKeyAndHeaders: async () => ({ apiKey: "test-key" }),
+    });
+
+    const result = await harness.compact();
+    expect(result.summary).toBeDefined();
+  });
+
+  it("handles navigateTree with summarize option", async () => {
+    const registration = registerFauxProvider();
+    registrations.push(registration);
+    registration.setResponses([() => fauxAssistantMessage("branch summary text")]);
+
+    const session = new Session(new InMemorySessionStorage());
+    await session.appendMessage(fauxAssistantMessage("hi"));
+
+    const e2 = await session.appendMessage(fauxAssistantMessage("msg 2"));
+    const _e3 = await session.appendMessage({ role: "user", content: "msg 3", timestamp: Date.now() });
+
+    const harness = new AgentHarness({
+      completionMode: "implicit",
+      env: new NodeExecutionEnv({ cwd: process.cwd() }),
+      session,
+      model: registration.getModel(),
+      getApiKeyAndHeaders: async () => ({ apiKey: "test-key" }),
+    });
+
+    await harness.navigateTree("nonexistent-entry-id");
+
+    const result = await harness.navigateTree(e2, { summarize: true });
+    expect(result.cancelled).toBe(false);
+  });
+
+  it("handles session errors in setThinkingLevel and listener errors in abort queue_update", async () => {
+    const session = new Session(new InMemorySessionStorage());
+    const env = new NodeExecutionEnv({ cwd: process.cwd() });
+    const model = getModel("anthropic", "claude-sonnet-4-5");
+    const harness = new AgentHarness({
+      env,
+      session,
+      model,
+    });
+
+    // setThinkingLevel session error
+    session.appendThinkingLevelChange = async () => {
+      throw new Error("storage failed");
+    };
+    await expect(harness.setThinkingLevel("high")).rejects.toMatchObject({ code: "session" });
+
+    // abort error in queue_update
+    harness.subscribe((evt) => {
+      if (evt.type === "queue_update") {
+        throw new Error("queue_update error");
+      }
+    });
+    await expect(harness.abort()).rejects.toThrow("queue_update error");
+  });
 });

@@ -59,10 +59,6 @@ function isPrintableAscii(str: string): boolean {
 }
 
 function truncateFragmentToWidth(text: string, maxWidth: number): { text: string; width: number } {
-  if (maxWidth <= 0 || text.length === 0) {
-    return { text: "", width: 0 };
-  }
-
   if (isPrintableAscii(text)) {
     const clipped = text.slice(0, maxWidth);
     return { text: clipped, width: clipped.length };

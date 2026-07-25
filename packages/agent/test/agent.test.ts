@@ -701,4 +701,204 @@ describe("Agent", () => {
       { cacheRetention: "long", sessionId: "session-cache" },
     ]);
   });
+
+  it("covers steeringMode, followUpMode, queues drain('all'), clear, reset, and signal", async () => {
+    const agent = new Agent({
+      steeringMode: "all",
+      followUpMode: "all",
+    });
+
+    expect(agent.steeringMode).toBe("all");
+    expect(agent.followUpMode).toBe("all");
+
+    agent.steeringMode = "one-at-a-time";
+    agent.followUpMode = "one-at-a-time";
+    expect(agent.steeringMode).toBe("one-at-a-time");
+    expect(agent.followUpMode).toBe("one-at-a-time");
+
+    agent.steeringMode = "all";
+    agent.followUpMode = "all";
+
+    const msg1 = { role: "user" as const, content: "s1", timestamp: Date.now() };
+    const msg2 = { role: "user" as const, content: "s2", timestamp: Date.now() };
+    const f1 = { role: "user" as const, content: "f1", timestamp: Date.now() };
+
+    expect(agent.hasQueuedMessages()).toBe(false);
+    agent.steer(msg1);
+    agent.steer(msg2);
+    agent.followUp(f1);
+    expect(agent.hasQueuedMessages()).toBe(true);
+
+    agent.clearSteeringQueue();
+    expect(agent.hasQueuedMessages()).toBe(true); // f1 still queued
+    agent.clearFollowUpQueue();
+    expect(agent.hasQueuedMessages()).toBe(false);
+
+    agent.steer(msg1);
+    agent.followUp(f1);
+    agent.clearAllQueues();
+    expect(agent.hasQueuedMessages()).toBe(false);
+
+    agent.state.messages = [msg1];
+    agent.reset();
+    expect(agent.state.messages).toEqual([]);
+    expect(agent.state.isStreaming).toBe(false);
+  });
+
+  it("covers prompt inputs (array, message object, image inputs) and prepareNextTurn", async () => {
+    let prepareCalled = false;
+    const agent = new Agent({
+      prepareNextTurn: () => {
+        prepareCalled = true;
+        return undefined;
+      },
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => {
+          stream.push({ type: "done", reason: "stop", message: createAssistantMessage("ok") });
+        });
+        return stream;
+      },
+      completionMode: "implicit",
+    });
+
+    await agent.prompt([{ role: "user", content: "hello array", timestamp: Date.now() }]);
+    expect(prepareCalled).toBe(true);
+
+    await agent.prompt({ role: "user", content: "hello msg obj", timestamp: Date.now() });
+
+    await agent.prompt("hello image", [{ type: "image", data: "base64...", mimeType: "image/png" }]);
+  });
+
+  it("handles non-Error objects thrown in runWithLifecycle", async () => {
+    const agent = new Agent({
+      streamFn: () => {
+        throw "string error failure";
+      },
+      completionMode: "implicit",
+    });
+
+    await agent.prompt("test failure");
+    expect(agent.state.errorMessage).toBe("string error failure");
+  });
+
+  it("handles continue() error branches", async () => {
+    const agent = new Agent();
+    await expect(agent.continue()).rejects.toThrow("No messages to continue from");
+
+    agent.state.messages = [createAssistantMessage("no queue")];
+    await expect(agent.continue()).rejects.toThrow("Cannot continue from message role: assistant");
+  });
+
+  it("handles message_update events and processEvents error when outside active run", async () => {
+    const agent = new Agent({
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => {
+          const p1 = createAssistantMessage("p1");
+          stream.push({ type: "start", partial: p1 });
+          stream.push({
+            type: "text_delta",
+            contentIndex: 0,
+            delta: " p2",
+            partial: { ...p1, content: [{ type: "text", text: "p1 p2" }] },
+          });
+          stream.push({ type: "done", reason: "stop", message: createAssistantMessage("p1 p2 done") });
+        });
+        return stream;
+      },
+      completionMode: "implicit",
+    });
+
+    let updateReceived = false;
+    agent.subscribe((event) => {
+      if (event.type === "message_update") {
+        updateReceived = true;
+        expect(agent.state.streamingMessage).toBeDefined();
+      }
+    });
+
+    await agent.prompt("test update");
+    expect(updateReceived).toBe(true);
+
+    // Call processEvents directly outside an active run
+    await expect(
+      (agent as unknown as { processEvents: (e: unknown) => Promise<void> }).processEvents({
+        type: "message_start",
+        message: createAssistantMessage("orphan"),
+      }),
+    ).rejects.toThrow("Agent listener invoked outside active run");
+  });
+
+  it("calls continue() when transcript ends with user message and throws in runWithLifecycle if activeRun set", async () => {
+    const agent = new Agent({
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => {
+          stream.push({ type: "done", reason: "stop", message: createAssistantMessage("continued ok") });
+        });
+        return stream;
+      },
+      completionMode: "implicit",
+    });
+
+    agent.state.messages = [{ role: "user", content: [{ type: "text", text: "user msg" }], timestamp: Date.now() }];
+
+    await agent.continue();
+    expect(agent.state.messages).toHaveLength(2);
+
+    await (
+      agent as unknown as { runWithLifecycle: (fn: (s: AbortSignal) => Promise<void>) => Promise<void> }
+    ).runWithLifecycle(async () => {
+      await expect(
+        (
+          agent as unknown as { runWithLifecycle: (fn: (s: AbortSignal) => Promise<void>) => Promise<void> }
+        ).runWithLifecycle(async () => {}),
+      ).rejects.toThrow("Agent is already processing.");
+    });
+  });
+
+  it("drains all steering messages when steeringMode is all during agent prompt run", async () => {
+    const agent = new Agent({
+      steeringMode: "all",
+      streamFn: () => {
+        const stream = new MockAssistantStream();
+        queueMicrotask(() => {
+          stream.push({ type: "done", reason: "stop", message: createAssistantMessage("ok") });
+        });
+        return stream;
+      },
+      completionMode: "implicit",
+    });
+
+    agent.steer({ role: "user", content: "s1", timestamp: Date.now() });
+    agent.steer({ role: "user", content: "s2", timestamp: Date.now() });
+
+    await agent.prompt("initial");
+    expect(agent.state.messages.filter((m) => m.role === "user")).toHaveLength(3);
+  });
+
+  it("waitForIdle returns immediately when agent is idle and string error handled in runWithLifecycle", async () => {
+    const agent = new Agent({
+      streamFn: () => {
+        throw "String error thrown";
+      },
+    });
+
+    await expect(agent.waitForIdle()).resolves.toBeUndefined();
+
+    await agent.prompt("trigger error");
+    expect(agent.state.errorMessage).toBe("String error thrown");
+  });
+
+  it("defaultConvertToLlm filters out non-standard message roles", () => {
+    const defaultAgent = new Agent({ completionMode: "implicit" });
+    const convert = (defaultAgent as any).convertToLlm;
+    const msgs = convert([
+      { role: "user", content: "hi", timestamp: 1 },
+      { role: "custom_role", content: "custom", timestamp: 2 },
+    ]);
+    expect(msgs).toHaveLength(1);
+    expect(msgs[0].role).toBe("user");
+  });
 });

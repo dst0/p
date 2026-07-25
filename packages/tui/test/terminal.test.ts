@@ -231,3 +231,210 @@ describe("ProcessTerminal dimensions", () => {
     }
   });
 });
+
+import { afterEach, beforeEach } from "node:test";
+
+describe("ProcessTerminal methods", () => {
+  let terminal: ProcessTerminal;
+  let writes: string[] = [];
+  const previousWrite = process.stdout.write;
+
+  beforeEach(() => {
+    terminal = new ProcessTerminal();
+    writes = [];
+    process.stdout.write = ((chunk: string | Uint8Array) => {
+      writes.push(String(chunk));
+      return true;
+    }) as typeof process.stdout.write;
+  });
+
+  afterEach(() => {
+    process.stdout.write = previousWrite;
+    terminal.stop();
+  });
+
+  it("write", () => {
+    terminal.write("test output");
+    assert.ok(writes.includes("test output"));
+  });
+
+  it("moveBy", () => {
+    terminal.moveBy(5);
+    assert.ok(writes.includes("\x1b[5B"));
+    terminal.moveBy(-3);
+    assert.ok(writes.includes("\x1b[3A"));
+    terminal.moveBy(0); // Should not write anything
+  });
+
+  it("hideCursor and showCursor", () => {
+    terminal.hideCursor();
+    assert.ok(writes.includes("\x1b[?25l"));
+    terminal.showCursor();
+    assert.ok(writes.includes("\x1b[?25h"));
+  });
+
+  it("clear functions", () => {
+    terminal.clearLine();
+    assert.ok(writes.includes("\x1b[K"));
+    terminal.clearFromCursor();
+    assert.ok(writes.includes("\x1b[J"));
+    terminal.clearScreen();
+    assert.ok(writes.includes("\x1b[2J\x1b[H"));
+  });
+
+  it("setTitle", () => {
+    terminal.setTitle("my-title");
+    assert.ok(writes.includes("\x1b]0;my-title\x07"));
+  });
+
+  it("setProgress", () => {
+    mock.timers.enable({ apis: ["setInterval"] });
+    try {
+      terminal.setProgress(true);
+      assert.ok(writes.includes("\x1b]9;4;3\x07"));
+      mock.timers.tick(1500);
+      assert.equal(writes.filter((w) => w === "\x1b]9;4;3\x07").length, 2);
+
+      terminal.setProgress(false);
+      assert.ok(writes.includes("\x1b]9;4;0;\x07"));
+    } finally {
+      mock.timers.reset();
+    }
+  });
+
+  it("start and stop lifecycle", () => {
+    let _resized = false;
+    terminal.start(
+      () => {},
+      () => {
+        _resized = true;
+      },
+    );
+    assert.ok(writes.includes("\x1b[?2004h"));
+
+    // Simulate paste
+    (terminal as any).stdinBuffer.emit("paste", "hello");
+
+    terminal.stop();
+    assert.ok(writes.includes("\x1b[?2004l"));
+
+    // Multiple stops shouldn't crash
+    terminal.stop();
+  });
+});
+
+describe("ProcessTerminal drainInput", () => {
+  let terminal: ProcessTerminal;
+
+  beforeEach(() => {
+    terminal = new ProcessTerminal();
+  });
+
+  it("drains input and turns off kitty protocol", async () => {
+    let writeCalled = false;
+    const previousWrite = process.stdout.write;
+    process.stdout.write = ((chunk: string) => {
+      if (chunk === "\x1b[<u") writeCalled = true;
+      return true;
+    }) as any;
+
+    try {
+      terminal.start(
+        () => {},
+        () => {},
+      );
+      // Force kitty active
+      (terminal as any)._kittyProtocolActive = true;
+      (terminal as any).keyboardProtocolPushed = true;
+
+      // Use fast real timeouts instead of mocking timers for V8 coverage
+      const drainPromise = terminal.drainInput(10, 5);
+
+      await drainPromise;
+      assert.ok(writeCalled);
+      assert.equal(terminal.kittyProtocolActive, false);
+    } finally {
+      mock.timers.reset();
+      process.stdout.write = previousWrite;
+      terminal.stop();
+    }
+  });
+});
+
+describe("ProcessTerminal edge cases", () => {
+  it("modifyOtherKeysActive returns the correct boolean", () => {
+    const terminal = new ProcessTerminal();
+    assert.equal(terminal.modifyOtherKeysActive, false);
+  });
+
+  it("handles isAppleTerminalSession true", () => {
+    const prevPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    const prevTerm = process.env.TERM_PROGRAM;
+    try {
+      Object.defineProperty(process, "platform", { value: "darwin", configurable: true });
+      process.env.TERM_PROGRAM = "Apple_Terminal";
+      assert.equal(normalizeAppleTerminalInput("\r", true, true), "\x1b[13;2u");
+    } finally {
+      if (prevPlatform) Object.defineProperty(process, "platform", prevPlatform);
+      process.env.TERM_PROGRAM = prevTerm;
+    }
+  });
+
+  it("handles enableWindowsVTInput on win32", () => {
+    const prevPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    try {
+      Object.defineProperty(process, "platform", { value: "win32", configurable: true });
+      const terminal = new ProcessTerminal();
+      // start() calls enableWindowsVTInput
+      terminal.start(
+        () => {},
+        () => {},
+      );
+      terminal.stop();
+    } finally {
+      if (prevPlatform) Object.defineProperty(process, "platform", prevPlatform);
+    }
+  });
+
+  it("write logs to PI_TUI_WRITE_LOG", () => {
+    const terminal = new ProcessTerminal();
+    (terminal as any).writeLogPath = "/dev/null";
+    terminal.write("test log");
+  });
+
+  it("readKeyboardProtocolNegotiationSequence processes buffered sequence prefix", () => {
+    const terminal = new ProcessTerminal();
+    (terminal as any).setKeyboardProtocolNegotiationBuffer("\x1b[");
+    const result = (terminal as any).readKeyboardProtocolNegotiationSequence("?");
+    assert.equal(result, "pending");
+  });
+
+  it("readKeyboardProtocolNegotiationSequence flushes invalid buffer", () => {
+    const terminal = new ProcessTerminal();
+    let flushed = false;
+    (terminal as any).inputHandler = () => {
+      flushed = true;
+    };
+    (terminal as any).setKeyboardProtocolNegotiationBuffer("\x1b[?");
+    const result = (terminal as any).readKeyboardProtocolNegotiationSequence("x");
+    assert.equal(result, undefined);
+    assert.equal(flushed, true);
+  });
+
+  it("stop() cleans up progress interval", () => {
+    const terminal = new ProcessTerminal();
+    terminal.setProgress(true);
+    terminal.stop();
+    assert.equal((terminal as any).progressInterval, undefined);
+  });
+
+  it("drainInput handles timeout and early return", async () => {
+    const terminal = new ProcessTerminal();
+    terminal.start(
+      () => {},
+      () => {},
+    );
+    await terminal.drainInput(10, 5);
+    terminal.stop();
+  });
+});

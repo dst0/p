@@ -103,7 +103,7 @@ describe("Spacer component", () => {
 });
 
 describe("Loader & CancellableLoader components", () => {
-  it("manages animation state and updates display", () => {
+  it("manages animation state and updates display", async () => {
     let renderRequested = false;
     const mockUi: TUI = {
       requestRender: () => {
@@ -130,7 +130,8 @@ describe("Loader & CancellableLoader components", () => {
     loader.setMessage("Next");
     assert.equal(loader.render(20)[1].includes("M:Next"), true);
 
-    loader.setIndicator({ frames: ["*"], intervalMs: 0 });
+    loader.setIndicator({ frames: ["1", "2"], intervalMs: 10 });
+    await new Promise((resolve) => setTimeout(resolve, 25));
     loader.stop();
   });
 
@@ -143,16 +144,29 @@ describe("Loader & CancellableLoader components", () => {
       "Work",
     );
 
+    assert.ok(loader.signal instanceof AbortSignal);
     assert.equal(loader.aborted, false);
-    loader.onAbort = () => {
+
+    // Cancellation without onAbort set
+    loader.handleInput("\x1b");
+    assert.equal(loader.aborted, true);
+    assert.equal(loader.signal.aborted, true);
+    loader.dispose();
+
+    const loader2 = new CancellableLoader(
+      { requestRender: () => {} } as unknown as TUI,
+      (s) => s,
+      (m) => m,
+      "Work2",
+    );
+    loader2.onAbort = () => {
       abortedSignal = true;
     };
-
-    loader.handleInput("\x1b"); // Escape
-    assert.equal(loader.aborted, true);
+    loader2.handleInput("\x1b"); // Escape
+    assert.equal(loader2.aborted, true);
     assert.equal(abortedSignal, true);
 
-    loader.dispose();
+    loader2.dispose();
   });
 });
 

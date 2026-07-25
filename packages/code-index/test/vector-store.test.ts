@@ -332,4 +332,180 @@ describe("QdrantVectorStore", () => {
     // Other indexes should still be attempted
     expect(client.createPayloadIndex).toHaveBeenCalledTimes(4);
   });
+
+  it("handles FetchQdrantRestClient HTTP errors and response parsing failures", async () => {
+    // Network failure
+    const storeNetworkErr = new QdrantVectorStore({
+      url: "http://localhost:6333",
+      timeoutMs: 1000,
+      fetch: async () => {
+        throw new Error("Network unreachable");
+      },
+    });
+    await expect(storeNetworkErr.collectionExists("test")).rejects.toThrow("failed: Network unreachable");
+
+    // HTTP 500 status
+    const storeHttpErr = new QdrantVectorStore({
+      url: "http://localhost:6333",
+      timeoutMs: 1000,
+      fetch: async () => new Response("Internal Qdrant Error", { status: 500 }),
+    });
+    await expect(storeHttpErr.collectionExists("test")).rejects.toThrow("HTTP 500");
+
+    // Invalid JSON response
+    const storeJsonErr = new QdrantVectorStore({
+      url: "http://localhost:6333",
+      timeoutMs: 1000,
+      fetch: async () => new Response("not valid json {{", { status: 200 }),
+    });
+    await expect(storeJsonErr.collectionExists("test")).rejects.toThrow("invalid JSON");
+
+    // Response missing 'result' field
+    const storeNoResultErr = new QdrantVectorStore({
+      url: "http://localhost:6333",
+      timeoutMs: 1000,
+      fetch: async () => new Response(JSON.stringify({ status: "ok" }), { status: 200 }),
+    });
+    await expect(storeNoResultErr.collectionExists("test")).rejects.toThrow("without a result");
+  });
+
+  it("exercises FetchQdrantRestClient success methods over mock fetch", async () => {
+    const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/exists")) return new Response(JSON.stringify({ result: { exists: true } }), { status: 200 });
+      if (u.includes("/points/search"))
+        return new Response(JSON.stringify({ result: [{ id: "p1", payload: {} }] }), { status: 200 });
+      if (u.includes("/points/delete"))
+        return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+      if (u.includes("/points?wait="))
+        return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+      if (u.includes("/index")) return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+      if (init?.method === "GET") {
+        return new Response(
+          JSON.stringify({
+            result: { points_count: 10, config: { params: { vectors: { dense: { size: 3 } } } } },
+          }),
+          { status: 200 },
+        );
+      }
+      return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+    });
+
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 5000, fetch: mockFetch });
+
+    // 1. collectionExists
+    expect(await store.collectionExists("coll1")).toBe(true);
+
+    // 2. createCollection when collection exists and dimensions match
+    await store.createCollection("coll1", 3);
+
+    // 3. collectionStatus
+    const status = await store.collectionStatus("coll1");
+    expect(status).toEqual({ points: 10, dimensions: 3 });
+
+    // 4. createPayloadIndexes
+    await store.createPayloadIndexes("coll1");
+
+    // 5. upsert
+    const payload = makePayload();
+    await store.upsert("coll1", [makePoint("p1", payload)]);
+
+    // 6. deleteFileVersions
+    await store.deleteFileVersions("coll1", "repo1", "file1", "hash1");
+
+    // 7. search
+    const results = await store.search(
+      "coll1",
+      denseVector(0.1),
+      { indices: [0], values: [1.0] },
+      { repoId: "repo1", includeTests: true, includeGenerated: true },
+      5,
+    );
+    expect(results.length).toBeGreaterThanOrEqual(1);
+
+    // 8. deleteCollection
+    await store.deleteCollection("coll1");
+  });
+
+  describe("error handling and edge cases", () => {
+    it("throws if request returns missing or non-object result", async () => {
+      // Create a store with a mock fetch
+      const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+      const client = (store as any).client;
+
+      // Mock fetchImpl to return invalid result structure
+      client.fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({ not_result: true })),
+      });
+      await expect(client.collectionExists("test")).rejects.toThrow("without a result");
+
+      client.fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify({ result: [1, 2, 3] })), // Wait, Array.isArray(decoded) checks decoded, not result!
+      });
+      // the check is `!decoded || typeof decoded !== "object" || Array.isArray(decoded) || !("result" in decoded)`
+      client.fetchImpl = vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(JSON.stringify([1, 2, 3])), // decoded is an array
+      });
+      await expect(client.collectionExists("test")).rejects.toThrow("without a result");
+    });
+
+    it("throws if createCollection dimensions mismatch", async () => {
+      const client = createMockClient();
+      const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+      (store as any).client = client;
+
+      client.collectionExists.mockResolvedValueOnce({ exists: true });
+      client.getCollection.mockResolvedValueOnce({
+        points_count: 5,
+        config: { params: { vectors: { dense: { size: "unknown_size" } } } },
+      });
+
+      await expect(store.createCollection("test", 1024)).rejects.toThrow("unknown dimensions; expected 1024");
+    });
+
+    it("handles parsing dimensions from missing/array configs", async () => {
+      const client = createMockClient();
+      const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+      (store as any).client = client;
+
+      // vectors is array
+      client.getCollection.mockResolvedValueOnce({ config: { params: { vectors: [] } } });
+      let status = await store.collectionStatus("test");
+      expect(status.dimensions).toBeUndefined();
+
+      // dense is array
+      client.getCollection.mockResolvedValueOnce({ config: { params: { vectors: { dense: [] } } } });
+      status = await store.collectionStatus("test");
+      expect(status.dimensions).toBeUndefined();
+
+      // dense.size is string
+      client.getCollection.mockResolvedValueOnce({ config: { params: { vectors: { dense: { size: "512" } } } } });
+      status = await store.collectionStatus("test");
+      expect(status.dimensions).toBeUndefined();
+    });
+
+    it("search handles points without payloads", async () => {
+      const client = createMockClient();
+      const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+      (store as any).client = client;
+
+      // Mock search to return points with missing payloads
+      client.search.mockResolvedValueOnce([{ id: "point-1", score: 0.9, payload: undefined }]);
+      client.search.mockResolvedValueOnce([
+        { id: "point-1", score: 0.8, payload: undefined }, // sparse
+      ]);
+
+      const results = await store.search(
+        "test",
+        denseVector(0.1),
+        { indices: [0], values: [1] },
+        { repoId: "repo1", includeTests: true, includeGenerated: true },
+        5,
+      );
+      expect(results.length).toBe(0); // Filters out points without payloads
+    });
+  });
 });

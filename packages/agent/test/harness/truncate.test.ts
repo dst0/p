@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { truncateHead, truncateTail } from "../../src/harness/utils/truncate.ts";
+import { formatSize, truncateHead, truncateLine, truncateTail } from "../../src/harness/utils/truncate.ts";
 
 const encoder = new TextEncoder();
 
@@ -70,6 +70,15 @@ describe("truncate utilities", () => {
     expect(result.totalBytes).toBe(byteLength(content));
     expect(result.outputBytes).toBe(byteLength(content));
     expect(result.totalBytes).toBe(9);
+  });
+
+  it("truncates head by lines limit", () => {
+    const content = "line1\nline2\nline3";
+    const res = truncateHead(content, { maxLines: 2, maxBytes: 1000 });
+    expect(res.truncated).toBe(true);
+    expect(res.truncatedBy).toBe("lines");
+    expect(res.outputLines).toBe(2);
+    expect(res.content).toBe("line1\nline2");
   });
 
   it("truncates head on UTF-8 byte limits without partial lines", () => {
@@ -167,19 +176,47 @@ describe("truncate utilities", () => {
     }
   });
 
-  it("formats byte sizes with formatSize", async () => {
-    const { formatSize } = await import("../../src/harness/utils/truncate.ts");
+  it("formats byte sizes with formatSize", () => {
     expect(formatSize(500)).toBe("500B");
     expect(formatSize(2048)).toBe("2.0KB");
     expect(formatSize(5 * 1024 * 1024)).toBe("5.0MB");
   });
 
-  it("truncates lines with truncateLine", async () => {
-    const { truncateLine } = await import("../../src/harness/utils/truncate.ts");
+  it("truncates lines with truncateLine", () => {
     expect(truncateLine("short line", 20)).toEqual({ text: "short line", wasTruncated: false });
     expect(truncateLine("a very long line that exceeds limit", 10)).toEqual({
       text: "a very lon... [truncated]",
       wasTruncated: true,
     });
+  });
+
+  it("exercises non-Buffer utf8ByteLength fallback paths", () => {
+    const originalBuffer = (globalThis as unknown as { Buffer?: unknown }).Buffer;
+    try {
+      (globalThis as unknown as { Buffer?: unknown }).Buffer = undefined;
+
+      // ASCII only
+      const resAscii = truncateHead("hello", { maxBytes: 10 });
+      expect(resAscii.totalBytes).toBe(5);
+
+      // 2-byte char (é), 3-byte char (中), valid surrogate pair (🙂), lone high surrogate (\ud800), lone low surrogate (\udc00)
+      const resNonAscii = truncateHead("aé中🙂\ud800\udc00", { maxBytes: 100 });
+      expect(resNonAscii.totalBytes).toBe(byteLength("aé中🙂\ud800\udc00"));
+
+      // Lone high surrogate followed by regular char
+      const resLoneHigh = truncateHead("a\ud800x", { maxBytes: 100 });
+      expect(resLoneHigh.totalBytes).toBe(byteLength("a\ud800x"));
+    } finally {
+      (globalThis as unknown as { Buffer?: unknown }).Buffer = originalBuffer;
+    }
+  });
+
+  it("truncates tail by maxLines limit when line limit is hit before byte limit", () => {
+    const content = "line1\nline2\nline3\nline4";
+    const result = truncateTail(content, { maxLines: 2, maxBytes: 1000 });
+    expect(result.truncated).toBe(true);
+    expect(result.truncatedBy).toBe("lines");
+    expect(result.outputLines).toBe(2);
+    expect(result.content).toBe("line3\nline4");
   });
 });

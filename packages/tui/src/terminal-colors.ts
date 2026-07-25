@@ -17,9 +17,6 @@ function parseOscHexChannel(channel: string): number | undefined {
     return undefined;
   }
   const max = 16 ** channel.length - 1;
-  if (max <= 0) {
-    return undefined;
-  }
   return Math.round((parseInt(channel, 16) / max) * 255);
 }
 

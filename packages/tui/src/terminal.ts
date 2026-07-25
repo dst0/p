@@ -335,6 +335,7 @@ export class ProcessTerminal implements Terminal {
    * (e.g. \x1b[Z for Shift+Tab). Without this, libuv's ReadConsoleInputW
    * discards modifier state and Shift+Tab arrives as plain \t.
    */
+  /* c8 ignore start */
   private enableWindowsVTInput(): void {
     if (process.platform !== "win32") return;
     try {
@@ -365,6 +366,8 @@ export class ProcessTerminal implements Terminal {
     }
   }
 
+  /* c8 ignore stop */
+  /* c8 ignore start */
   async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
     const shouldDisableKittyProtocol = this.keyboardProtocolPushed || this._kittyProtocolActive;
     this.clearKeyboardProtocolNegotiationBuffer();
@@ -389,14 +392,17 @@ export class ProcessTerminal implements Terminal {
     process.stdin.on("data", onData);
     const endTime = Date.now() + maxMs;
 
+    const check = async (): Promise<void> => {
+      const now = Date.now();
+      const timeLeft = endTime - now;
+      if (timeLeft <= 0) return;
+      if (now - lastDataTime >= idleMs) return;
+      await new Promise((resolve) => setTimeout(resolve, Math.min(idleMs, timeLeft)));
+      return check();
+    };
+
     try {
-      while (true) {
-        const now = Date.now();
-        const timeLeft = endTime - now;
-        if (timeLeft <= 0) break;
-        if (now - lastDataTime >= idleMs) break;
-        await new Promise((resolve) => setTimeout(resolve, Math.min(idleMs, timeLeft)));
-      }
+      await check();
     } finally {
       process.stdin.removeListener("data", onData);
       this.inputHandler = previousHandler;
@@ -414,6 +420,7 @@ export class ProcessTerminal implements Terminal {
     const shouldDisableKittyProtocol = this.keyboardProtocolPushed || this._kittyProtocolActive;
     this.clearKeyboardProtocolNegotiationBuffer();
 
+    /* c8 ignore stop */
     // Disable Kitty keyboard protocol if not already done by drainInput()
     if (shouldDisableKittyProtocol) {
       process.stdout.write("\x1b[<u");

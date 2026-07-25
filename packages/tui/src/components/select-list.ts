@@ -181,10 +181,6 @@ export class SelectList implements Component {
   }
 
   private getPrimaryColumnWidth(): number {
-    if (this.filteredItems.length === 0) {
-      return DEFAULT_PRIMARY_COLUMN_WIDTH;
-    }
-
     const { min, max } = this.getPrimaryColumnBounds();
     const widestPrimary = this.items.reduce((widest, item) => {
       return Math.max(widest, visibleWidth(this.getDisplayValue(item)) + PRIMARY_COLUMN_GAP);

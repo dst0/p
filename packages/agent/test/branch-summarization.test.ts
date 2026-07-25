@@ -1,4 +1,4 @@
-import type { Model } from "@dst0/p-ai";
+import { completeSimple, type Model } from "@dst0/p-ai";
 import { describe, expect, it, vi } from "vitest";
 import {
   collectEntriesForBranchSummary,
@@ -102,8 +102,39 @@ describe("branch-summarization unit tests", () => {
     }
   });
 
+  it("prepareBranchEntries handles custom_message, compaction, and tokenBudget limits", () => {
+    const entries: SessionTreeEntry[] = [
+      {
+        id: "1",
+        parentId: null,
+        type: "custom_message",
+        customType: "info",
+        content: "custom info",
+        display: true,
+        timestamp: "2026-01-01T00:00:00Z",
+      } as any,
+      {
+        id: "2",
+        parentId: "1",
+        type: "compaction",
+        summary: "previous compaction summary",
+        firstKeptEntryId: "1",
+        tokensBefore: 200,
+        timestamp: "2026-01-01T00:00:01Z",
+      } as any,
+      {
+        id: "3",
+        parentId: "2",
+        type: "message",
+        message: { role: "user", content: "latest message" },
+      } as any,
+    ];
+
+    const prep = prepareBranchEntries(entries, 10); // Very small token budget
+    expect(prep.messages.length).toBeGreaterThan(0);
+  });
+
   it("generateBranchSummary formats summary result from LLM response", async () => {
-    const { completeSimple } = await import("@dst0/p-ai");
     vi.mocked(completeSimple).mockResolvedValueOnce({
       role: "assistant",
       content: [{ type: "text", text: "## Goal\nTest goal" }],
@@ -159,7 +190,6 @@ describe("branch-summarization unit tests", () => {
   });
 
   it("handles replaceInstructions and completeSimple error/aborted responses", async () => {
-    const { completeSimple } = await import("@dst0/p-ai");
     const mockModel: Model<any> = {
       id: "mock-model",
       name: "Mock Model",
@@ -265,5 +295,23 @@ describe("branch-summarization unit tests", () => {
     if (!resErr.ok) {
       expect(resErr.error.code).toBe("summarization_failed");
     }
+  });
+
+  it("handles thinking_level_change, custom_message, and leaf entries in prepareBranchEntries", () => {
+    const entries: SessionTreeEntry[] = [
+      { id: "e1", parentId: null, type: "thinking_level_change", thinkingLevel: "high" } as any,
+      {
+        id: "e2",
+        parentId: "e1",
+        type: "custom_message",
+        customType: "test",
+        content: "hello",
+        display: true,
+        timestamp: "2026-01-01T00:00:00Z",
+      } as any,
+      { id: "e3", parentId: "e2", type: "leaf" } as any,
+    ];
+    const prep = prepareBranchEntries(entries, 100);
+    expect(prep.messages).toHaveLength(1);
   });
 });
