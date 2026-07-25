@@ -346,15 +346,6 @@ export class FooterComponent implements Component {
     // Add model name on the right side, plus thinking level if model supports it
     const modelName = state.model?.id || "no-model";
 
-    let statsLeftWidth = visibleWidth(statsLeft);
-
-    // If statsLeft is too wide, truncate it
-    if (statsLeftWidth > width) {
-      statsLeft = truncateToWidth(statsLeft, width, "...");
-      statsLeftWidth = visibleWidth(statsLeft);
-    }
-
-    // Calculate available space for padding (minimum 2 spaces between stats and model)
     const minPadding = 2;
 
     // Add thinking level indicator if model supports reasoning
@@ -368,33 +359,35 @@ export class FooterComponent implements Component {
     // Prepend the provider in parentheses if there are multiple providers and there's enough room
     let rightSide = rightSideWithoutProvider;
     if (this.footerData.getAvailableProviderCount() > 1 && state.model) {
-      rightSide = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
-      if (statsLeftWidth + minPadding + visibleWidth(rightSide) > width) {
-        // Too wide, fall back
-        rightSide = rightSideWithoutProvider;
+      const withProvider = `(${state.model!.provider}) ${rightSideWithoutProvider}`;
+      if (visibleWidth(statsLeft) + minPadding + visibleWidth(withProvider) <= width) {
+        rightSide = withProvider;
       }
     }
 
-    const rightSideWidth = visibleWidth(rightSide);
-    const totalNeeded = statsLeftWidth + minPadding + rightSideWidth;
+    let rightSideWidth = visibleWidth(rightSide);
+    if (rightSideWidth > width) {
+      rightSide = truncateToWidth(rightSide, width, "");
+      rightSideWidth = visibleWidth(rightSide);
+    }
+
+    // Prioritize model name visibility on the right side over statsLeft length
+    let statsLeftWidth = visibleWidth(statsLeft);
+    const maxAvailableForLeft = width - rightSideWidth - minPadding;
 
     let statsLine: string;
-    if (totalNeeded <= width) {
-      // Both fit - add padding to right-align model
-      const padding = " ".repeat(width - statsLeftWidth - rightSideWidth);
+    if (maxAvailableForLeft > 0) {
+      if (statsLeftWidth > maxAvailableForLeft) {
+        statsLeft = truncateToWidth(statsLeft, maxAvailableForLeft, "...");
+        statsLeftWidth = visibleWidth(statsLeft);
+      }
+      const padding = " ".repeat(Math.max(0, width - statsLeftWidth - rightSideWidth));
       statsLine = statsLeft + padding + rightSide;
     } else {
-      // Need to truncate right side
-      const availableForRight = width - statsLeftWidth - minPadding;
-      if (availableForRight > 0) {
-        const truncatedRight = truncateToWidth(rightSide, availableForRight, "");
-        const truncatedRightWidth = visibleWidth(truncatedRight);
-        const padding = " ".repeat(Math.max(0, width - statsLeftWidth - truncatedRightWidth));
-        statsLine = statsLeft + padding + truncatedRight;
-      } else {
-        // Not enough space for right side at all
-        statsLine = statsLeft;
-      }
+      // Extremely narrow terminal: prioritize showing model name right-aligned
+      const padding = " ".repeat(Math.max(0, width - rightSideWidth));
+      statsLine = padding + rightSide;
+      statsLeft = "";
     }
 
     // Apply dim to each part separately. statsLeft may contain color codes (for context %)

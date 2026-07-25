@@ -326,4 +326,55 @@ describe("FooterComponent width handling", () => {
     expect(statsLine).not.toContain("↓");
     expect(statsLine).not.toContain("CH");
   });
+
+  it("always preserves model name on right side even when stats left is long", () => {
+    const session = createSession({
+      sessionName: "",
+      modelId: "claude-3-5-sonnet",
+      provider: "anthropic",
+      reasoning: true,
+      thinkingLevel: "medium",
+      usage: {
+        input: 100_000,
+        output: 50_000,
+        cacheRead: 20_000,
+        cacheWrite: 10_000,
+        cost: { total: 12.3456 },
+      },
+    });
+    // Long progress messages on statsLeft
+    const footerData = createFooterData(2, {
+      sending: { model: "very-long-provider/very-long-model-name-in-sending-state" },
+      prefill: { percent: 99, elapsedMs: 12000 },
+      gen: { tokens: 99999, tokensPerSecond: 123 },
+    });
+    const footer = new FooterComponent(session, footerData);
+
+    // Render at constrained width (70 cols)
+    const statsLine = stripAnsi(footer.render(70)[1]);
+    expect(statsLine).toContain("claude-3-5-sonnet");
+    expect(statsLine).toContain("medium");
+    expect(visibleWidth(statsLine)).toBeLessThanOrEqual(70);
+  });
+
+  it("renders different thinking levels correctly alongside model name", () => {
+    const thinkingLevels = ["off", "minimal", "low", "medium", "high", "xhigh"];
+    for (const thinkingLevel of thinkingLevels) {
+      const session = createSession({
+        sessionName: "",
+        modelId: "gpt-4o-reasoning",
+        reasoning: true,
+        thinkingLevel,
+      });
+      const footer = new FooterComponent(session, createFooterData(1));
+      const statsLine = stripAnsi(footer.render(100)[1]);
+
+      expect(statsLine).toContain("gpt-4o-reasoning");
+      if (thinkingLevel === "off") {
+        expect(statsLine).toContain("thinking off");
+      } else {
+        expect(statsLine).toContain(thinkingLevel);
+      }
+    }
+  });
 });
