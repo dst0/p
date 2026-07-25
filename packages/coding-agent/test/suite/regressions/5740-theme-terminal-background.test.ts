@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { InteractiveMode } from "../../../src/modes/interactive/interactive-mode.ts";
 import {
   getAvailableThemes,
@@ -8,8 +8,17 @@ import {
   onThemeChange,
   setTheme,
 } from "../../../src/modes/interactive/theme/theme.ts";
+import { createHarness, type Harness } from "../harness.ts";
 
 describe("regression #5740: theme terminal background export", () => {
+  const harnesses: Harness[] = [];
+
+  afterEach(() => {
+    while (harnesses.length > 0) {
+      harnesses.pop()?.cleanup();
+    }
+  });
+
   it("returns explicit pageBg hex for built-in themes and handles undefined/missing themes", () => {
     initTheme("dark");
     expect(getThemePageBg("dark")).toBe("#18181e");
@@ -45,60 +54,54 @@ describe("regression #5740: theme terminal background export", () => {
     expect(available).toContain("cyberpunk-tokyo");
   });
 
-  it("executes updateTerminalBackground on InteractiveMode", () => {
-    const setTerminalBackgroundColor = vi.fn();
-    const dummyMode = {
-      ui: { setTerminalBackgroundColor },
-    };
-    initTheme("dark");
-    (InteractiveMode.prototype as any).updateTerminalBackground.call(dummyMode);
+  it("exercises updateTerminalBackground, detectThemeIfUnset, and showSettingsSelector in InteractiveMode", async () => {
+    const harness = await createHarness();
+    harnesses.push(harness);
+
+    const runtimeHost = {
+      session: harness.session,
+      setBeforeSessionInvalidate: vi.fn(),
+      setRebindSession: vi.fn(),
+      dispose: async () => {},
+    } as any;
+    const mode = new InteractiveMode(runtimeHost);
+    const setTerminalBackgroundColor = vi.spyOn((mode as any).ui, "setTerminalBackgroundColor");
+
+    // Line 460 / 464 / 465 coverage
+    (mode as any).updateTerminalBackground();
     expect(setTerminalBackgroundColor).toHaveBeenCalledWith("#18181e");
-  });
 
-  it("triggers updateTerminalBackground in settings onThemeChange and onThemePreview callbacks", () => {
-    const setTerminalBackgroundColor = vi.fn();
-    const invalidate = vi.fn();
-    const requestRender = vi.fn();
-    const showError = vi.fn();
-    const setThemeSetting = vi.fn();
+    // Line 486 coverage (detectThemeIfUnset)
+    harness.settingsManager.setTheme("");
+    vi.spyOn((mode as any).ui, "queryTerminalBackgroundColor").mockResolvedValue({ r: 0, g: 0, b: 0 });
+    await (mode as any).detectThemeIfUnset();
+    expect(setTerminalBackgroundColor).toHaveBeenCalled();
 
-    const dummyMode = {
-      ui: { setTerminalBackgroundColor, invalidate, requestRender },
-      settingsManager: { setTheme: setThemeSetting },
-      showError,
-      updateTerminalBackground() {
-        this.ui.setTerminalBackgroundColor(getThemePageBg());
-      },
+    // Lines 4456 and 4465 coverage (showSettingsSelector callbacks)
+    let selectorComponent: any;
+    (mode as any).showSelector = (fn: any) => {
+      const res = fn(() => {});
+      selectorComponent = res.component || res;
     };
+    (mode as any).showSettingsSelector();
 
-    // Simulate onThemeChange callback (lines 4453-4460)
-    const onThemeChangeHandler = (themeName: string) => {
-      const result = setTheme(themeName, true);
-      dummyMode.settingsManager.setTheme(themeName);
-      dummyMode.updateTerminalBackground();
-      dummyMode.ui.invalidate();
-      if (!result.success) {
-        dummyMode.showError(`Failed to load theme "${themeName}": ${result.error}\nFell back to dark theme.`);
-      }
-    };
+    const settingsList = selectorComponent.getSettingsList();
+    expect(settingsList).toBeDefined();
 
-    onThemeChangeHandler("light");
+    const items = (settingsList as any).items;
+    const themeItem = items.find((item: any) => item.label === "Theme");
+    expect(themeItem).toBeDefined();
+
+    const submenu = themeItem.submenu("dark", () => {});
+    // Test onThemeChange callback in interactive-mode.ts (line 4456)
+    (submenu as any).selectList.onSelect({ value: "light" });
     expect(setTerminalBackgroundColor).toHaveBeenCalledWith("#f8f8f8");
-    expect(setThemeSetting).toHaveBeenCalledWith("light");
 
-    // Simulate onThemePreview callback (lines 4461-4467)
-    const onThemePreviewHandler = (themeName: string) => {
-      const result = setTheme(themeName, true);
-      if (result.success) {
-        dummyMode.updateTerminalBackground();
-        dummyMode.ui.invalidate();
-        dummyMode.ui.requestRender();
-      }
-    };
-
-    onThemePreviewHandler("dracula");
+    // Test onThemePreview callback in interactive-mode.ts (line 4465)
+    (submenu as any).selectList.onSelectionChange?.({ value: "dracula" });
     expect(setTerminalBackgroundColor).toHaveBeenCalledWith("#21222c");
-    expect(requestRender).toHaveBeenCalled();
+
+    (submenu as any).selectList.onCancel?.();
   });
 
   it("triggers updateTerminalBackground via onThemeChange event listener", () => {
