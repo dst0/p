@@ -98,7 +98,6 @@ export class EmbeddingServerManager {
           env: {
             ...process.env,
             PYTORCH_ENABLE_MPS_FALLBACK: "1",
-            PYTORCH_MPS_HIGH_WATERMARK_RATIO: "0.0",
           },
         },
       );

@@ -6,6 +6,7 @@ import {
 	isManagedBackendCommand,
 	renderLaunchdPlist,
 	renderSystemdUnit,
+	selectTorchInstallPlan,
 	selectIndexingDaemonPids,
 	selectManagedBackendPids,
 } from "./install-indexing-service.js";
@@ -79,4 +80,80 @@ test("ships pinned Qdrant assets for macOS and Linux", () => {
 	assert.ok(getQdrantAsset("darwin", "x64"));
 	assert.ok(getQdrantAsset("linux", "arm64"));
 	assert.ok(getQdrantAsset("linux", "x64"));
+});
+
+test("selects the ROCm wheel index when Linux exposes an AMD compute device", () => {
+	assert.deepEqual(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "auto",
+			hasAmdComputeDevice: true,
+			hasNvidiaComputeDevice: false,
+		}),
+		{
+			backend: "rocm",
+			version: "2.12.1",
+			indexUrl: "https://download.pytorch.org/whl/rocm7.2",
+		},
+	);
+});
+
+test("selects bounded CPU and CUDA builds for non-AMD Linux hosts", () => {
+	assert.equal(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "auto",
+			hasAmdComputeDevice: false,
+			hasNvidiaComputeDevice: false,
+		}).backend,
+		"cpu",
+	);
+	assert.equal(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "auto",
+			hasAmdComputeDevice: false,
+			hasNvidiaComputeDevice: true,
+		}).backend,
+		"cuda",
+	);
+});
+
+test("keeps the compatible native PyTorch build on Intel macOS", () => {
+	assert.deepEqual(
+		selectTorchInstallPlan({
+			platform: "darwin",
+			architecture: "x64",
+			requestedBackend: "cpu",
+		}),
+		{
+			backend: "default",
+			version: "2.2.2",
+			indexUrl: undefined,
+		},
+	);
+});
+
+test("rejects unsupported accelerator wheel targets", () => {
+	assert.throws(
+		() =>
+			selectTorchInstallPlan({
+				platform: "darwin",
+				architecture: "arm64",
+				requestedBackend: "rocm",
+			}),
+		/ROCm PyTorch is supported only on Linux x64/,
+	);
+	assert.throws(
+		() =>
+			selectTorchInstallPlan({
+				platform: "linux",
+				architecture: "x64",
+				requestedBackend: "invalid",
+			}),
+		/P_CODE_RAG_TORCH_BACKEND/,
+	);
 });

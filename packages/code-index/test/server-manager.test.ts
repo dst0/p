@@ -143,6 +143,8 @@ describe("QdrantServerManager", () => {
 
 describe("EmbeddingServerManager", () => {
   it("starts and manages a fake python embedding server subprocess", async () => {
+    const previousMpsWatermark = process.env.PYTORCH_MPS_HIGH_WATERMARK_RATIO;
+    process.env.PYTORCH_MPS_HIGH_WATERMARK_RATIO = "0.7";
     const directory = mkdtempSync(join(tmpdir(), "p-embed-manager-"));
     temporaryDirectories.push(directory);
     const fakePython = join(directory, "fake-python.js");
@@ -155,6 +157,7 @@ describe("EmbeddingServerManager", () => {
         'const portIndex = args.indexOf("--port");',
         "const port = Number(args[portIndex + 1]);",
         "console.log('Server starting stdout');",
+        "console.log('MPS watermark ' + process.env.PYTORCH_MPS_HIGH_WATERMARK_RATIO);",
         "console.error('Server starting stderr');",
         "const server = http.createServer((request, response) => {",
         '  if (request.url === "/health") {',
@@ -191,8 +194,11 @@ describe("EmbeddingServerManager", () => {
 
       expect(logs.some((l) => l.message.includes("Server starting stdout"))).toBe(true);
       expect(logs.some((l) => l.message.includes("Server starting stderr"))).toBe(true);
+      expect(logs.some((l) => l.message.includes("MPS watermark 0.7"))).toBe(true);
     } finally {
       await manager.stop();
+      if (previousMpsWatermark === undefined) delete process.env.PYTORCH_MPS_HIGH_WATERMARK_RATIO;
+      else process.env.PYTORCH_MPS_HIGH_WATERMARK_RATIO = previousMpsWatermark;
     }
   }, 10_000);
 
