@@ -39,17 +39,12 @@ jobs:
       - name: Check
         run: npm run check
 
-      - name: Test
-        run: |
-          mkdir -p "$RUNNER_TEMP/p-ci-home"
-          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh
-
-      - name: Coverage (99% changed lines)
+      - name: Test with coverage
         env:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
         run: |
-          mkdir -p "$RUNNER_TEMP/p-ci-coverage-home"
-          HOME="$RUNNER_TEMP/p-ci-coverage-home" ./test.sh test:coverage
+          mkdir -p "$RUNNER_TEMP/p-ci-home"
+          HOME="$RUNNER_TEMP/p-ci-home" ./test.sh test:coverage
           npm run test:coverage:check -- --base "$COVERAGE_BASE_SHA"
 
       - name: Upload coverage reports
