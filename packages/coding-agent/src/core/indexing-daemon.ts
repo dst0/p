@@ -12,6 +12,7 @@ import {
 } from "@dst0/p-code-index";
 import { acknowledgeIndexingPriorityForRepo, INDEXED_REPOS_FILE, loadIndexedRepos } from "./indexed-repos.ts";
 import {
+  computeIndexingVersion,
   type IndexingServiceStatusData,
   type RepositoryServiceStatus,
   writeIndexingServiceStatus,
@@ -114,6 +115,7 @@ export class IndexingDaemon {
   private readonly watchFactory: WatchFactory;
   private readonly runtimes = new Map<string, RepositoryRuntime>();
   private readonly startedAt = new Date().toISOString();
+  private readonly indexingVersion: string;
   private registryWatcher: FSWatcher | null = null;
   private registryWatchRetryTimer: ReturnType<typeof setTimeout> | undefined;
   private registrySyncPromise: Promise<void> | undefined;
@@ -169,6 +171,7 @@ export class IndexingDaemon {
     this.watchFactory =
       options.watchFactory ??
       ((target, watchOptions, listener) => fs.watch(target, { ...watchOptions, encoding: "utf8" }, listener));
+    this.indexingVersion = computeIndexingVersion();
   }
 
   async start(): Promise<void> {
@@ -706,6 +709,7 @@ export class IndexingDaemon {
       running,
       startedAt: this.startedAt,
       updatedAt: new Date().toISOString(),
+      indexingVersion: this.indexingVersion,
       repos,
     };
     writeIndexingServiceStatus(this.options.agentDir, data);

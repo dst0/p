@@ -91,8 +91,41 @@ console.log('Compaction settings verified OK');
 
 # Give the indexing daemon a bounded opportunity to quiesce. If active work cannot
 # settle promptly, stop the validated daemon before replacing its managed service.
+# However, if the indexing-related code hasn't changed, skip the quiesce entirely.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
-node scripts/prepare-indexing-service-reinstall.js
+
+# Read the old indexing version from the current daemon's status file.
+OLD_INDEXING_VERSION=$(node -e "
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const agentDir = process.env.P_CODING_AGENT_DIR || path.join(os.homedir(), '.p', 'agent');
+try {
+  const status = JSON.parse(fs.readFileSync(path.join(agentDir, 'indexing-service-status.json'), 'utf8'));
+  if (status && typeof status.indexingVersion === 'string') {
+    console.log(status.indexingVersion);
+    process.exit(0);
+  }
+} catch {}
+console.log('');
+process.exit(0);
+")
+
+# Compute the new indexing version from the freshly-built files.
+NEW_INDEXING_VERSION=$(node scripts/compute-indexing-version.js 2>/dev/null || echo "")
+
+if [[ -n "$OLD_INDEXING_VERSION" && "$OLD_INDEXING_VERSION" == "$NEW_INDEXING_VERSION" ]]; then
+    # Indexing version unchanged; write flag file so prepare/install skip disruptive operations.
+    AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
+    touch "$AGENT_DIR/indexing-version-unchanged"
+    echo "Indexing version unchanged; skipping daemon quiesce and restart."
+    node scripts/prepare-indexing-service-reinstall.js --skip-quiesce
+else
+    if [[ -n "$OLD_INDEXING_VERSION" && -n "$NEW_INDEXING_VERSION" ]]; then
+        echo "Indexing version changed; preparing daemon for reinstall..."
+    fi
+    node scripts/prepare-indexing-service-reinstall.js
+fi
 
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js

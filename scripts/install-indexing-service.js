@@ -23,6 +23,7 @@ const EMBEDDING_SCRIPT = path.join(CODE_INDEX_DIR, "embedding_server.py");
 const EMBEDDING_PORT = 18742;
 const LOG_DIR = path.join(SERVICE_ROOT, "logs");
 const STATUS_PATH = path.join(AGENT_DIR, "indexing-service-status.json");
+const VERSION_UNCHANGED_FLAG_PATH = path.join(AGENT_DIR, "indexing-version-unchanged");
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const QDRANT_VERSION = "1.18.3";
@@ -390,11 +391,23 @@ function mergeCodeRagConfig(defaults) {
 async function installDarwin(plist) {
 	const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 	if (uid === undefined) throw new Error("Unable to determine the current user id for launchd");
+	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
+	if (versionUnchanged) fs.rmSync(VERSION_UNCHANGED_FLAG_PATH, { force: true });
 	const knownDaemonPid = readStatusDaemonPid();
 	const launchAgentsDir = path.join(os.homedir(), "Library", "LaunchAgents");
 	const plistPath = path.join(launchAgentsDir, `${SERVICE_LABEL}.plist`);
 	const legacyPlistPath = path.join(launchAgentsDir, `${LEGACY_SERVICE_LABEL}.plist`);
 	fs.mkdirSync(launchAgentsDir, { recursive: true });
+	if (versionUnchanged) {
+		// Indexing version unchanged; update plist in place without restarting the daemon.
+		// The running daemon will continue with the same binary.
+		writeFileAtomic(plistPath, plist);
+		run("launchctl", ["bootout", `gui/${uid}/${LEGACY_SERVICE_LABEL}`], { allowFailure: true });
+		await waitForLaunchdRemoval(uid, LEGACY_SERVICE_LABEL);
+		if (fs.existsSync(legacyPlistPath)) fs.rmSync(legacyPlistPath);
+		console.log("Indexing version unchanged; skipped daemon restart.");
+		return;
+	}
 	run("launchctl", ["bootout", `gui/${uid}/${LEGACY_SERVICE_LABEL}`], { allowFailure: true });
 	await waitForLaunchdRemoval(uid, LEGACY_SERVICE_LABEL);
 	if (fs.existsSync(legacyPlistPath)) fs.rmSync(legacyPlistPath);
@@ -418,11 +431,22 @@ async function waitForLaunchdRemoval(uid, label) {
 }
 
 async function installLinux(unit) {
+	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
+	if (versionUnchanged) fs.rmSync(VERSION_UNCHANGED_FLAG_PATH, { force: true });
 	const knownDaemonPid = readStatusDaemonPid();
 	const unitDirectory = getSystemdUserUnitDirectory();
 	const unitPath = path.join(unitDirectory, `${SERVICE_LABEL}.service`);
 	const legacyUnitPath = path.join(unitDirectory, `${LEGACY_SERVICE_LABEL}.service`);
 	fs.mkdirSync(unitDirectory, { recursive: true });
+	if (versionUnchanged) {
+		// Indexing version unchanged; update unit file in place without restarting the daemon.
+		writeFileAtomic(unitPath, unit);
+		run("systemctl", ["--user", "disable", "--now", `${LEGACY_SERVICE_LABEL}.service`], { allowFailure: true });
+		if (fs.existsSync(legacyUnitPath)) fs.rmSync(legacyUnitPath);
+		run("systemctl", ["--user", "daemon-reload"]);
+		console.log("Indexing version unchanged; skipped daemon restart.");
+		return;
+	}
 	run("systemctl", ["--user", "disable", "--now", `${LEGACY_SERVICE_LABEL}.service`], { allowFailure: true });
 	if (fs.existsSync(legacyUnitPath)) fs.rmSync(legacyUnitPath);
 	run("systemctl", ["--user", "stop", `${SERVICE_LABEL}.service`], { allowFailure: true });

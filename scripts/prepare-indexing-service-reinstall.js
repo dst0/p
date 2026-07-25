@@ -24,6 +24,15 @@ const ACTIVE_STATES = new Set(["queued", "initializing", "updating"]);
 
 if (process.argv.includes("--clear")) {
 	fs.rmSync(REINSTALL_PATH, { force: true });
+} else if (process.argv.includes("--skip-quiesce")) {
+	// Version unchanged; skip the quiesce handshake but still write the reinstall marker
+	// so the daemon knows an install is happening.
+	const status = readJson(STATUS_PATH);
+	const pid = status && Number.isSafeInteger(status.pid) && status.pid > 0 ? status.pid : undefined;
+	if (pid && isProcessRunning(pid) && isIndexingDaemonProcess(pid)) {
+		writeReinstallMarker(pid);
+	}
+	console.log("Indexing version unchanged; skipping quiesce. Reinstall can continue.");
 } else {
 	await prepareForReinstall();
 }
@@ -74,6 +83,16 @@ async function prepareForReinstall() {
 		await stopDaemonForReinstall(pid, stopWaitMs);
 		writeReinstallMarker(pid);
 		console.log("Code indexing service stopped; reinstall can continue.");
+		return;
+	}
+
+	// Check if version file exists (set by reinstall.sh after build when version is unchanged)
+	// This is a fallback for when the --skip-quiesce flag wasn't used but the version file is present.
+	const versionFilePath = path.join(AGENT_DIR, "indexing-version-unchanged");
+	if (fs.existsSync(versionFilePath)) {
+		writeReinstallMarker(pid);
+		fs.rmSync(versionFilePath, { force: true });
+		console.log("Indexing version unchanged (version file detected); skipping quiesce. Reinstall can continue.");
 		return;
 	}
 
