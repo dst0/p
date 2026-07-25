@@ -34,6 +34,7 @@ export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
 const DEFAULT_COMPLETION_MODE: CompletionMode = "explicit_finish";
 const DEFAULT_MAX_TURNS = Number.POSITIVE_INFINITY;
 const DEFAULT_MAX_NO_PROGRESS_TURNS = 5;
+const DEFAULT_MAX_CONSECUTIVE_WAITING_TURNS = 3;
 const DEFAULT_MAX_MALFORMED_TOOL_RETRIES = 3;
 const DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES = 3;
 const DEFAULT_MAX_MISSING_FINISH_RETRIES = 15;
@@ -181,6 +182,7 @@ function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
 type CompletionProtocolState = {
   turns: number;
   noProgressTurns: number;
+  consecutiveWaitingTurns: number;
   malformedToolRetries: number;
   emptyAssistantRetries: number;
   missingFinishRetries: number;
@@ -199,6 +201,7 @@ function createCompletionProtocolState(): CompletionProtocolState {
   return {
     turns: 0,
     noProgressTurns: 0,
+    consecutiveWaitingTurns: 0,
     malformedToolRetries: 0,
     emptyAssistantRetries: 0,
     missingFinishRetries: 0,
@@ -220,6 +223,8 @@ function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode):
     maxTurns: config.completionLimits?.maxTurns ?? explicitFinishDefault ?? DEFAULT_MAX_TURNS,
     maxNoProgressTurns:
       config.completionLimits?.maxNoProgressTurns ?? explicitFinishDefault ?? DEFAULT_MAX_NO_PROGRESS_TURNS,
+    maxConsecutiveWaitingTurns:
+      config.completionLimits?.maxConsecutiveWaitingTurns ?? DEFAULT_MAX_CONSECUTIVE_WAITING_TURNS,
     maxMalformedToolRetries: config.completionLimits?.maxMalformedToolRetries ?? DEFAULT_MAX_MALFORMED_TOOL_RETRIES,
     maxEmptyAssistantRetries: config.completionLimits?.maxEmptyAssistantRetries ?? DEFAULT_MAX_EMPTY_ASSISTANT_RETRIES,
     maxMissingFinishRetries:
@@ -312,6 +317,7 @@ function detectCompletionProtocolRepair(
 
 function resetCompletionProgress(state: CompletionProtocolState): void {
   state.noProgressTurns = 0;
+  state.consecutiveWaitingTurns = 0;
   state.emptyAssistantRetries = 0;
   state.malformedToolRetries = 0;
   state.missingFinishRetries = 0;
@@ -346,7 +352,7 @@ async function emitProtocolFailure(
   config: AgentLoopConfig,
   emit: AgentEventSink,
   mode: CompletionMode,
-  event: "max_turns_without_finish_work" | "no_progress_stop",
+  event: "max_turns_without_finish_work" | "no_progress_stop" | "waiting_loop_stop",
   diagnostic: string,
   turnAlreadyStarted: boolean,
 ): Promise<void> {
@@ -444,9 +450,10 @@ async function runLoop(
         : undefined;
 
       const toolResults: ToolResultMessage[] = [];
+      let executedToolBatch: ExecutedToolCallBatch | undefined;
       hasMoreToolCalls = false;
       if (toolCalls.length > 0 && !protocolRepairBeforeExecution) {
-        const executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
+        executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
         toolResults.push(...executedToolBatch.messages);
         hasMoreToolCalls = !executedToolBatch.terminate;
 
@@ -457,6 +464,25 @@ async function runLoop(
       }
 
       await emit({ type: "turn_end", message, toolResults });
+
+      if (executedToolBatch?.madeProgress) {
+        completionState.consecutiveWaitingTurns = 0;
+      } else if (executedToolBatch?.waiting) {
+        completionState.consecutiveWaitingTurns++;
+      }
+      if (completionState.consecutiveWaitingTurns >= completionLimits.maxConsecutiveWaitingTurns) {
+        await emitProtocolFailure(
+          currentContext,
+          newMessages,
+          config,
+          emit,
+          completionMode,
+          "waiting_loop_stop",
+          `Agent stopped a repeated waiting loop after ${completionState.consecutiveWaitingTurns} consecutive wait-only turns without new evidence. Use an event-driven process wait, inspect concrete state, or interrupt the pending operation before continuing.`,
+          false,
+        );
+        return;
+      }
 
       if (isCompletionProtocolEnabled(completionMode) && !completionState.allowImplicitCompletion) {
         const finishWorkResult = toolResults.find((result) => isFinishWorkToolResult(result) && !result.isError);
@@ -479,7 +505,7 @@ async function runLoop(
           if (isEmptyAssistantMessage(message, toolCalls)) {
             completionState.emptyAssistantRetries++;
           }
-        } else if (toolResults.some((result) => !result.isError)) {
+        } else if (executedToolBatch?.madeProgress) {
           resetCompletionProgress(completionState);
         } else if (toolCalls.length > 0) {
           completionState.noProgressTurns++;
@@ -802,6 +828,12 @@ function recoverMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[]
   }
   const toolCalls = extractMisplacedToolCalls(message, tools);
   if (toolCalls.length === 0) {
+    const recoveredWaitCall = recoverMalformedWaitIntent(message, tools);
+    if (recoveredWaitCall) {
+      toolCalls.push(recoveredWaitCall);
+    }
+  }
+  if (toolCalls.length === 0) {
     return message;
   }
   return {
@@ -809,6 +841,44 @@ function recoverMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[]
     content: [...removeRecoveredXmlToolCallMarkup(message).content, ...toolCalls],
     stopReason: "toolUse",
   };
+}
+
+function recoverMalformedWaitIntent(
+  message: AssistantMessage,
+  tools: AgentTool[] | undefined,
+): AgentToolCall | undefined {
+  if (message.stopReason !== "toolUse" || !tools?.some((tool) => tool.name === "sleep")) {
+    return undefined;
+  }
+  const text = getAssistantText(message).replace(/\s+/g, " ").trim();
+  if (
+    text.length === 0 ||
+    /\b(?:do not|don't|should not|shouldn't|without)\s+(?:just\s+)?wait\b/i.test(text) ||
+    !/\b(?:wait|waiting|loading|pending|retry|poll)\b/i.test(text) ||
+    !/(?:\blet me\b|\bi(?:'ll| will| should| need to)\b|\bbefore (?:i |we )?(?:check|retry|poll)\b|\bthen (?:check|retry|poll|inspect|take)\b)/i.test(
+      text,
+    )
+  ) {
+    return undefined;
+  }
+  return {
+    type: "toolCall",
+    id: `recovered_wait_${Date.now()}`,
+    name: "sleep",
+    arguments: { seconds: getRecoveredWaitSeconds(text) },
+  };
+}
+
+function getRecoveredWaitSeconds(text: string): number {
+  const duration = text.match(/\b(\d+(?:\.\d+)?)\s*(seconds?|secs?|minutes?|mins?)\b/i);
+  if (duration) {
+    const value = Number.parseFloat(duration[1]);
+    return Math.min(60, duration[2].toLowerCase().startsWith("m") ? value * 60 : value);
+  }
+  if (/\b(?:a|one)\s+minute\b/i.test(text)) {
+    return 60;
+  }
+  return 2;
 }
 
 function removeRecoveredXmlToolCallMarkup(message: AssistantMessage): AssistantMessage {
@@ -1135,6 +1205,8 @@ async function executeToolCalls(
 type ExecutedToolCallBatch = {
   messages: ToolResultMessage[];
   terminate: boolean;
+  madeProgress: boolean;
+  waiting: boolean;
 };
 
 async function executeToolCallsSequential(
@@ -1187,10 +1259,7 @@ async function executeToolCallsSequential(
     }
   }
 
-  return {
-    messages,
-    terminate: shouldTerminateToolBatch(finalizedCalls),
-  };
+  return createExecutedToolCallBatch(messages, finalizedCalls);
 }
 
 async function executeToolCallsParallel(
@@ -1254,10 +1323,7 @@ async function executeToolCallsParallel(
     messages.push(toolResultMessage);
   }
 
-  return {
-    messages,
-    terminate: shouldTerminateToolBatch(orderedFinalizedCalls),
-  };
+  return createExecutedToolCallBatch(messages, orderedFinalizedCalls);
 }
 
 type PreparedToolCall = {
@@ -1288,6 +1354,23 @@ type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<Finalize
 
 function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
   return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
+}
+
+function createExecutedToolCallBatch(
+  messages: ToolResultMessage[],
+  finalizedCalls: FinalizedToolCallOutcome[],
+): ExecutedToolCallBatch {
+  const madeProgress = finalizedCalls.some(
+    (finalized) => !finalized.isError && finalized.result.progress !== "waiting",
+  );
+  return {
+    messages,
+    terminate: shouldTerminateToolBatch(finalizedCalls),
+    madeProgress,
+    waiting:
+      !madeProgress &&
+      finalizedCalls.some((finalized) => !finalized.isError && finalized.result.progress === "waiting"),
+  };
 }
 
 function prepareToolCallArguments(tool: AgentTool<any>, toolCall: AgentToolCall): AgentToolCall {
@@ -1441,6 +1524,7 @@ async function finalizeExecutedToolCall(
         result = {
           content: afterResult.content ?? result.content,
           details: afterResult.details ?? result.details,
+          progress: afterResult.progress ?? result.progress,
           terminate: afterResult.terminate ?? result.terminate,
         };
         isError = afterResult.isError ?? isError;

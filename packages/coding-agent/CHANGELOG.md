@@ -16,6 +16,7 @@
 
 - Added `rg` as an explicit tool name alias for `grep` (`createRgTool`, `createRgToolDefinition`, and `rg` tool registration).
 - Added unit tests for find, grep, sleep, finish_work tools and shell/changelog/html utilities.
+- Added asynchronous bash sessions and a `process` tool that wakes on new output or completion, supports immediate inspection, and can interrupt stuck process trees.
 
 - Enforce evidence-backed task verification in mutating coding-agent sessions: require baseline proof before bug fixes and fresh semantic verification of the original failing scenario before successful completion or publishing.
 

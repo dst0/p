@@ -47,6 +47,7 @@ export function createSleepToolDefinition(): ToolDefinition<typeof sleepSchema, 
       return {
         content: [{ type: "text", text: `Slept for ${safeSeconds} seconds.` }],
         details: { seconds: safeSeconds },
+        progress: "waiting",
       };
     },
     renderCall(args, theme, context) {

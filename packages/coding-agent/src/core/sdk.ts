@@ -32,6 +32,7 @@ import {
   createFindTool,
   createGrepTool,
   createLsTool,
+  createProcessTool,
   createReadOnlyTools,
   createReadTool,
   createSleepTool,
@@ -62,14 +63,14 @@ export interface CreateAgentSessionOptions {
    * Optional default tool suppression mode when no explicit allowlist is provided.
    *
    * - "all": start with no tools enabled
-   * - "builtin": disable the default built-in tools (read, bash, edit, write, sleep, update_session_state)
+   * - "builtin": disable the default built-in tools (read, bash, process, edit, write, sleep, update_session_state)
    *   but keep extension/custom tools enabled
    */
   noTools?: "all" | "builtin";
   /**
    * Optional allowlist of tool names.
    *
-   * When omitted, p enables the default built-in tools (read, bash, edit, write, sleep, update_session_state)
+   * When omitted, p enables the default built-in tools (read, bash, process, edit, write, sleep, update_session_state)
    * and leaves extension/custom tools enabled unless `noTools` changes that default.
    * When provided, only the listed tool names are enabled.
    */
@@ -153,6 +154,7 @@ export {
   createGrepTool,
   createFindTool,
   createLsTool,
+  createProcessTool,
   createSleepTool,
   createSubmitPlanTool,
 };
@@ -293,6 +295,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const defaultActiveToolNames: string[] = [
     "read",
     "bash",
+    "process",
     "edit",
     "write",
     "sleep",

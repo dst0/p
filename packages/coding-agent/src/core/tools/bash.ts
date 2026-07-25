@@ -16,22 +16,31 @@ import {
   untrackDetachedChildPid,
 } from "../../utils/shell.ts";
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
-import { OutputAccumulator } from "./output-accumulator.ts";
+import {
+  type BackgroundProcessManager,
+  type BackgroundProcessSnapshot,
+  defaultBackgroundProcessManager,
+} from "./background-process.ts";
 import { getTextOutput, invalidArgText, str } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
-import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize, type TruncationResult } from "./truncate.ts";
+import { DEFAULT_MAX_BYTES, DEFAULT_MAX_LINES, formatSize } from "./truncate.ts";
 
 const bashSchema = Type.Object({
   command: Type.String({ description: "Bash command to execute" }),
   timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (optional, no default timeout)" })),
+  yield_time_ms: Type.Optional(
+    Type.Integer({
+      description:
+        "Milliseconds to stream before yielding a process session (default 10000, maximum 60000). Set 0 to run aside immediately.",
+      minimum: 0,
+      maximum: 60000,
+    }),
+  ),
 });
 
 export type BashToolInput = Static<typeof bashSchema>;
 
-export interface BashToolDetails {
-  truncation?: TruncationResult;
-  fullOutputPath?: string;
-}
+export type BashToolDetails = BackgroundProcessSnapshot;
 
 /**
  * Pluggable operations for the bash tool.
@@ -147,6 +156,8 @@ export interface BashToolOptions {
   shellPath?: string;
   /** Hook to adjust command, cwd, or env before execution */
   spawnHook?: BashSpawnHook;
+  /** Process lifecycle manager shared with the process wait/poll/kill tool */
+  processManager?: BackgroundProcessManager;
   /** Callback invoked after command execution completes (for verification ledger recording) */
   onResult?: (context: {
     command: string;
@@ -183,12 +194,13 @@ function formatDuration(ms: number): string {
   return `${(ms / 1000).toFixed(1)}s`;
 }
 
-function formatBashCall(args: { command?: string; timeout?: number } | undefined): string {
+function formatBashCall(args: { command?: string; timeout?: number; yield_time_ms?: number } | undefined): string {
   const command = str(args?.command);
   const timeout = args?.timeout as number | undefined;
   const timeoutSuffix = timeout ? theme.fg("muted", ` (timeout ${timeout}s)`) : "";
+  const yieldSuffix = args?.yield_time_ms === undefined ? "" : theme.fg("muted", ` (yield ${args.yield_time_ms}ms)`);
   const commandDisplay = command === null ? invalidArgText(theme) : command ? command : theme.fg("toolOutput", "...");
-  return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix;
+  return theme.fg("toolTitle", theme.bold(`$ ${commandDisplay}`)) + timeoutSuffix + yieldSuffix;
 }
 
 function rebuildBashResultRenderComponent(
@@ -281,38 +293,38 @@ export function createBashToolDefinition(
   const commandPrefix = options?.commandPrefix;
   const spawnHook = options?.spawnHook;
   const onResult = options?.onResult;
+  const processManager = options?.processManager ?? defaultBackgroundProcessManager;
   return {
     name: "bash",
     label: "bash",
-    description: `Execute a bash command in the current working directory. Returns stdout and stderr. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
+    description: `Execute a bash command in the current working directory. Returns stdout and stderr. After yield_time_ms (default 10000), a still-running command yields a process session id so other work can continue. Use the process tool to wait for output/completion, inspect it, or interrupt it. Output is truncated to last ${DEFAULT_MAX_LINES} lines or ${DEFAULT_MAX_BYTES / 1024}KB (whichever is hit first). If truncated, full output is saved to a temp file. Optionally provide a timeout in seconds.`,
     promptSnippet: "Execute bash commands (ls, grep, find, etc.)",
     parameters: bashSchema,
     async execute(
       _toolCallId,
-      { command, timeout }: { command: string; timeout?: number },
+      {
+        command,
+        timeout,
+        yield_time_ms: yieldTimeMs = 10000,
+      }: { command: string; timeout?: number; yield_time_ms?: number },
       signal?: AbortSignal,
       onUpdate?,
       _ctx?,
     ) {
       const resolvedCommand = commandPrefix ? `${commandPrefix}\n${command}` : command;
       const spawnContext = resolveSpawnContext(resolvedCommand, cwd, spawnHook);
-      const output = new OutputAccumulator({ tempFilePrefix: "p-bash" });
-      let acceptingOutput = true;
       let updateTimer: NodeJS.Timeout | undefined;
-      let updateDirty = false;
+      let pendingUpdate: BackgroundProcessSnapshot | undefined;
       let lastUpdateAt = 0;
 
       const emitOutputUpdate = () => {
-        if (!onUpdate || !updateDirty) return;
-        updateDirty = false;
+        if (!onUpdate || !pendingUpdate) return;
+        const snapshot = pendingUpdate;
+        pendingUpdate = undefined;
         lastUpdateAt = Date.now();
-        const snapshot = output.snapshot({ persistIfTruncated: true });
         onUpdate({
-          content: [{ type: "text", text: snapshot.content || "" }],
-          details: {
-            truncation: snapshot.truncation.truncated ? snapshot.truncation : undefined,
-            fullOutputPath: snapshot.fullOutputPath,
-          },
+          content: [{ type: "text", text: snapshot.output || "" }],
+          details: snapshot,
         });
       };
 
@@ -323,9 +335,9 @@ export function createBashToolDefinition(
         }
       };
 
-      const scheduleOutputUpdate = () => {
+      const scheduleOutputUpdate = (snapshot: BackgroundProcessSnapshot) => {
         if (!onUpdate) return;
-        updateDirty = true;
+        pendingUpdate = snapshot;
         const delay = BASH_UPDATE_THROTTLE_MS - (Date.now() - lastUpdateAt);
         if (delay <= 0) {
           clearUpdateTimer();
@@ -342,85 +354,94 @@ export function createBashToolDefinition(
         onUpdate({ content: [], details: undefined });
       }
 
-      const handleData = (data: Buffer) => {
-        if (!acceptingOutput) return;
-        output.append(data);
-        scheduleOutputUpdate();
-      };
-
-      const recordResult = (exitCode: number | null, snapshot: Awaited<ReturnType<typeof finishOutput>>) => {
-        if (!onResult) return;
-        onResult({
-          command: resolvedCommand,
-          exitCode,
-          truncated: snapshot.truncation.truncated,
-          fullOutputPath: snapshot.fullOutputPath,
-        });
-      };
-
-      const finishOutput = async () => {
-        acceptingOutput = false;
-        output.finish();
-        clearUpdateTimer();
-        emitOutputUpdate();
-        const snapshot = output.snapshot({ persistIfTruncated: true });
-        await output.closeTempFile();
-        return snapshot;
-      };
-
-      const formatOutput = (snapshot: Awaited<ReturnType<typeof finishOutput>>, emptyText = "(no output)") => {
+      const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
+      const formatOutput = (snapshot: BackgroundProcessSnapshot, emptyText = "(no output)") => {
         const truncation = snapshot.truncation;
-        let text = snapshot.content || emptyText;
-        let details: BashToolDetails | undefined;
-        if (truncation.truncated) {
-          details = { truncation, fullOutputPath: snapshot.fullOutputPath };
+        let text = snapshot.output || emptyText;
+        if (truncation?.truncated) {
           const startLine = truncation.totalLines - truncation.outputLines + 1;
           const endLine = truncation.totalLines;
-          if (truncation.lastLinePartial) {
-            const lastLineSize = formatSize(output.getLastLineBytes());
-            text += `\n\n[Showing last ${formatSize(truncation.outputBytes)} of line ${endLine} (line is ${lastLineSize}). Full output: ${snapshot.fullOutputPath}]`;
-          } else if (truncation.truncatedBy === "lines") {
+          if (truncation.truncatedBy === "lines") {
             text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines}. Full output: ${snapshot.fullOutputPath}]`;
           } else {
             text += `\n\n[Showing lines ${startLine}-${endLine} of ${truncation.totalLines} (${formatSize(DEFAULT_MAX_BYTES)} limit). Full output: ${snapshot.fullOutputPath}]`;
           }
         }
-        return { text, details };
+        return text;
       };
 
-      const appendStatus = (text: string, status: string) => `${text ? `${text}\n\n` : ""}${status}`;
-
-      try {
-        let exitCode: number | null = null;
-        try {
-          const result = await ops.exec(spawnContext.command, spawnContext.cwd, {
-            onData: handleData,
-            signal,
+      const sessionId = processManager.start({
+        command: spawnContext.command,
+        signal,
+        execute: ({ onData, signal: processSignal }) =>
+          ops.exec(spawnContext.command, spawnContext.cwd, {
+            onData,
+            signal: processSignal,
             timeout,
             env: spawnContext.env,
+          }),
+        onSettled: (snapshot) =>
+          onResult?.({
+            command: resolvedCommand,
+            exitCode: snapshot.exitCode ?? null,
+            truncated: snapshot.truncation?.truncated ?? false,
+            fullOutputPath: snapshot.fullOutputPath,
+          }),
+      });
+
+      try {
+        let snapshot: BackgroundProcessSnapshot;
+        try {
+          snapshot = await processManager.waitForCompletion(sessionId, {
+            signal,
+            yieldTimeMs: Math.min(60000, Math.max(0, yieldTimeMs)),
+            onUpdate: scheduleOutputUpdate,
           });
-          exitCode = result.exitCode;
-        } catch (err) {
-          const snapshot = await finishOutput();
-          recordResult(exitCode, snapshot);
-          const { text } = formatOutput(snapshot, "");
-          if (err instanceof Error && err.message === "aborted") {
-            throw new Error(appendStatus(text, "Command aborted"));
+        } catch (error) {
+          if (!signal?.aborted) {
+            throw error;
           }
-          if (err instanceof Error && err.message.startsWith("timeout:")) {
-            const timeoutSecs = err.message.split(":")[1];
-            throw new Error(appendStatus(text, `Command timed out after ${timeoutSecs} seconds`));
-          }
-          throw err;
+          snapshot = await processManager.waitForCompletion(sessionId);
         }
 
-        const snapshot = await finishOutput();
-        recordResult(exitCode, snapshot);
-        const { text: outputText, details } = formatOutput(snapshot);
-        if (exitCode !== 0 && exitCode !== null) {
-          throw new Error(appendStatus(outputText, `Command exited with code ${exitCode}`));
+        clearUpdateTimer();
+        pendingUpdate = snapshot;
+        emitOutputUpdate();
+        const outputText = formatOutput(snapshot, snapshot.status === "running" ? "(no output yet)" : "(no output)");
+
+        if (snapshot.status === "running") {
+          return {
+            content: [
+              {
+                type: "text",
+                text: appendStatus(
+                  outputText,
+                  `Command is still running (session ${snapshot.sessionId}). Use process action=wait to wake on output/completion, poll to inspect, or kill to interrupt.`,
+                ),
+              },
+            ],
+            details: snapshot,
+            progress: "made_progress",
+          };
         }
-        return { content: [{ type: "text", text: outputText }], details };
+        if (snapshot.status === "cancelled") {
+          throw new Error(appendStatus(outputText, "Command aborted"));
+        }
+        if (snapshot.status === "failed") {
+          if (snapshot.error?.startsWith("timeout:")) {
+            const timeoutSecs = snapshot.error.split(":")[1];
+            throw new Error(appendStatus(outputText, `Command timed out after ${timeoutSecs} seconds`));
+          }
+          if (snapshot.error === "aborted") {
+            throw new Error(appendStatus(outputText, "Command aborted"));
+          }
+          throw new Error(appendStatus(outputText, snapshot.error ?? "Command failed"));
+        }
+        return {
+          content: [{ type: "text", text: outputText }],
+          details: snapshot.truncation?.truncated ? snapshot : undefined,
+          progress: "made_progress",
+        };
       } finally {
         clearUpdateTimer();
       }

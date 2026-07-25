@@ -75,6 +75,12 @@ export interface AfterToolCallResult {
   details?: unknown;
   isError?: boolean;
   /**
+   * Whether this result produced new evidence or only represented waiting.
+   *
+   * Omit this to preserve the tool's original progress classification.
+   */
+  progress?: AgentToolProgress;
+  /**
    * Hint that the agent should stop after the current tool batch.
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
@@ -399,11 +405,20 @@ export interface AgentToolResult<T> {
   /** Arbitrary structured details for logs or UI rendering. */
   details: T;
   /**
+   * Classifies whether the result supplied new evidence or only waited for external state.
+   *
+   * Omitted results count as progress. Waiting results are tracked separately so the
+   * runtime can stop repeated wait-only loops without limiting ordinary tool calls.
+   */
+  progress?: AgentToolProgress;
+  /**
    * Hint that the agent should stop after the current tool batch.
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
 }
+
+export type AgentToolProgress = "made_progress" | "waiting";
 
 /**
  * Callback used by tools to stream partial execution updates.
@@ -480,7 +495,8 @@ export type AgentEvent =
         | "missing_finish_work_retry"
         | "malformed_tool_call_retry"
         | "max_turns_without_finish_work"
-        | "no_progress_stop";
+        | "no_progress_stop"
+        | "waiting_loop_stop";
       retry?: number;
       maxRetries?: number;
       reason?: string;

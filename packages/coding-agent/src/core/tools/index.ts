@@ -1,4 +1,12 @@
 export {
+  BackgroundProcessManager,
+  type BackgroundProcessSnapshot,
+  type BackgroundProcessStartOptions,
+  type BackgroundProcessStatus,
+  type BackgroundProcessWaitOptions,
+  defaultBackgroundProcessManager,
+} from "./background-process.ts";
+export {
   type BashOperations,
   type BashSpawnContext,
   type BashSpawnHook,
@@ -42,6 +50,13 @@ export {
   type LsToolInput,
   type LsToolOptions,
 } from "./ls.ts";
+export {
+  createProcessTool,
+  createProcessToolDefinition,
+  type ProcessToolDetails,
+  type ProcessToolInput,
+  type ProcessToolOptions,
+} from "./process.ts";
 export {
   createReadTool,
   createReadToolDefinition,
@@ -104,11 +119,13 @@ export {
   type SubmitPlanToolOptions,
 } from "./user-input.ts";
 
+import type { BackgroundProcessManager } from "./background-process.ts";
 import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
+import { createProcessTool, createProcessToolDefinition, type ProcessToolOptions } from "./process.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
 import {
   createGrepTool,
@@ -143,6 +160,7 @@ export type ToolName =
   | "find"
   | "ls"
   | "sleep"
+  | "process"
   | "ask_user"
   | "confirm_user"
   | "submit_plan"
@@ -158,6 +176,7 @@ export const allToolNames: Set<ToolName> = new Set([
   "find",
   "ls",
   "sleep",
+  "process",
   "ask_user",
   "confirm_user",
   "submit_plan",
@@ -173,6 +192,8 @@ export interface ToolsOptions {
   grep?: GrepToolOptions;
   find?: FindToolOptions;
   ls?: LsToolOptions;
+  process?: ProcessToolOptions;
+  backgroundProcesses?: BackgroundProcessManager;
   submitPlan?: SubmitPlanToolOptions;
 }
 
@@ -187,7 +208,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
     case "read":
       return createReadToolDefinition(cwd, options?.read);
     case "bash":
-      return createBashToolDefinition(cwd, options?.bash);
+      return createBashToolDefinition(cwd, {
+        ...options?.bash,
+        processManager: options?.backgroundProcesses ?? options?.bash?.processManager,
+      });
     case "edit":
       return createEditToolDefinition(cwd, options?.edit);
     case "write":
@@ -198,6 +222,11 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
       return createLsToolDefinition(cwd, options?.ls);
     case "sleep":
       return createSleepToolDefinition();
+    case "process":
+      return createProcessToolDefinition({
+        ...options?.process,
+        manager: options?.backgroundProcesses ?? options?.process?.manager,
+      });
     case "ask_user":
       return createAskUserToolDefinition();
     case "confirm_user":
@@ -222,7 +251,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
     case "read":
       return createReadTool(cwd, options?.read);
     case "bash":
-      return createBashTool(cwd, options?.bash);
+      return createBashTool(cwd, {
+        ...options?.bash,
+        processManager: options?.backgroundProcesses ?? options?.bash?.processManager,
+      });
     case "edit":
       return createEditTool(cwd, options?.edit);
     case "write":
@@ -233,6 +265,11 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
       return createLsTool(cwd, options?.ls);
     case "sleep":
       return createSleepTool();
+    case "process":
+      return createProcessTool({
+        ...options?.process,
+        manager: options?.backgroundProcesses ?? options?.process?.manager,
+      });
     case "ask_user":
       return createAskUserTool();
     case "confirm_user":
@@ -247,9 +284,12 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
 }
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
+  const backgroundProcesses =
+    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
   return [
     createReadToolDefinition(cwd, options?.read),
-    createBashToolDefinition(cwd, options?.bash),
+    createBashToolDefinition(cwd, { ...options?.bash, processManager: backgroundProcesses }),
+    createProcessToolDefinition({ ...options?.process, manager: backgroundProcesses }),
     createEditToolDefinition(cwd, options?.edit),
     createWriteToolDefinition(cwd, options?.write),
   ];
@@ -266,17 +306,20 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
 }
 
 export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
+  const backgroundProcesses =
+    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
   return {
     semantic_search: createSemanticSearchToolDefinition(cwd),
     rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
     grep: createGrepToolDefinition(cwd, options?.grep ?? options?.rg, "grep"),
     read: createReadToolDefinition(cwd, options?.read),
-    bash: createBashToolDefinition(cwd, options?.bash),
+    bash: createBashToolDefinition(cwd, { ...options?.bash, processManager: backgroundProcesses }),
     edit: createEditToolDefinition(cwd, options?.edit),
     write: createWriteToolDefinition(cwd, options?.write),
     find: createFindToolDefinition(cwd, options?.find),
     ls: createLsToolDefinition(cwd, options?.ls),
     sleep: createSleepToolDefinition(),
+    process: createProcessToolDefinition({ ...options?.process, manager: backgroundProcesses }),
     ask_user: createAskUserToolDefinition(),
     confirm_user: createConfirmUserToolDefinition(),
     submit_plan: createSubmitPlanToolDefinition(options?.submitPlan),
@@ -285,9 +328,12 @@ export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): R
 }
 
 export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
+  const backgroundProcesses =
+    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
   return [
     createReadTool(cwd, options?.read),
-    createBashTool(cwd, options?.bash),
+    createBashTool(cwd, { ...options?.bash, processManager: backgroundProcesses }),
+    createProcessTool({ ...options?.process, manager: backgroundProcesses }),
     createEditTool(cwd, options?.edit),
     createWriteTool(cwd, options?.write),
   ];
@@ -304,17 +350,20 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[]
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
+  const backgroundProcesses =
+    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
   return {
     semantic_search: createSemanticSearchTool(cwd),
     rg: createRgTool(cwd, options?.rg ?? options?.grep),
     grep: createGrepTool(cwd, options?.grep ?? options?.rg, "grep"),
     read: createReadTool(cwd, options?.read),
-    bash: createBashTool(cwd, options?.bash),
+    bash: createBashTool(cwd, { ...options?.bash, processManager: backgroundProcesses }),
     edit: createEditTool(cwd, options?.edit),
     write: createWriteTool(cwd, options?.write),
     find: createFindTool(cwd, options?.find),
     ls: createLsTool(cwd, options?.ls),
     sleep: createSleepTool(),
+    process: createProcessTool({ ...options?.process, manager: backgroundProcesses }),
     ask_user: createAskUserTool(),
     confirm_user: createConfirmUserTool(),
     submit_plan: createSubmitPlanTool(options?.submitPlan),
