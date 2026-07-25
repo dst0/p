@@ -21,6 +21,7 @@
 
 ### Added
 
+- Added classic light and Japanese aesthetic built-in themes (GitHub Light, Solarized Light, Catppuccin Latte, One Light, Sakura, Kanagawa, Matcha, Cyberpunk Tokyo).
 - Added classic built-in themes (Catppuccin, Darcula, Dracula, Gruvbox, Monokai, Nord, One Dark, Solarized Dark, Tokyo Night, VS Code Dark+) and dynamic built-in theme discovery.
 - Added `rg` as an explicit tool name alias for `grep` (`createRgTool`, `createRgToolDefinition`, and `rg` tool registration).
 - Added unit tests for find, grep, sleep, finish_work tools and shell/changelog/html utilities.
