@@ -22,6 +22,7 @@
     "benchmark:agents": "node scripts/benchmark-agents.js",
     "test": "npm run test --workspaces --if-present",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:coverage:check": "node --test scripts/check-changed-coverage.test.js && node scripts/check-changed-coverage.js",
     "version:patch": "node scripts/version-bump.js patch",
     "version:minor": "node scripts/version-bump.js minor",
     "version:major": "node scripts/version-bump.js major",

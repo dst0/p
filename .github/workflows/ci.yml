@@ -16,6 +16,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -41,3 +43,22 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/p-ci-home"
           HOME="$RUNNER_TEMP/p-ci-home" ./test.sh
+
+      - name: Coverage (99% changed lines)
+        env:
+          COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/p-ci-coverage-home"
+          HOME="$RUNNER_TEMP/p-ci-coverage-home" ./test.sh test:coverage
+          npm run test:coverage:check -- --base "$COVERAGE_BASE_SHA"
+
+      - name: Upload coverage reports
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: |
+            packages/*/coverage/lcov.info
+            packages/*/coverage/coverage-summary.json
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -e
 
+NPM_TEST_SCRIPT="${1:-test}"
+if [[ "$NPM_TEST_SCRIPT" != "test" && "$NPM_TEST_SCRIPT" != "test:coverage" ]]; then
+    echo "Usage: $0 [test|test:coverage]" >&2
+    exit 2
+fi
+
 AUTH_FILE="$HOME/.p/agent/auth.json"
 AUTH_BACKUP="$HOME/.p/agent/auth.json.bak"
 
@@ -72,5 +78,5 @@ unset AWS_CONTAINER_CREDENTIALS_FULL_URI
 unset AWS_WEB_IDENTITY_TOKEN_FILE
 unset BEDROCK_EXTENSIVE_MODEL_TEST
 
-echo "Running tests without API keys..."
-npm test
+echo "Running $NPM_TEST_SCRIPT without API keys..."
+npm run "$NPM_TEST_SCRIPT"

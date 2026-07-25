@@ -8,7 +8,7 @@
     "clean": "shx rm -rf dist",
     "build": "tsgo -p tsconfig.build.json",
     "test": "node --test test/*.test.ts",
-    "test:coverage": "node --test --experimental-test-coverage test/*.test.ts",
+    "test:coverage": "shx mkdir -p coverage && node --test --experimental-test-coverage '--test-coverage-include=src/**/*.ts' --test-reporter=spec --test-reporter=lcov --test-reporter-destination=stdout --test-reporter-destination=coverage/lcov.info test/*.test.ts",
     "prepublishOnly": "npm run clean && npm run build"
   },
   "files": [
