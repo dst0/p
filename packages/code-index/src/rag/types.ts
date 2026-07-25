@@ -49,6 +49,16 @@ export interface RagStatus {
     exact: boolean;
     driftFileCount: number;
   };
+  preparation?: {
+    mode: "worker_threads" | "in_process";
+    workers: number;
+    logicalCpus: number;
+    availableMemoryBytes: number;
+    memoryReserveBytes: number;
+    workerMemoryBytes: number;
+    maxInFlightBytes: number;
+    fallbackReason?: string;
+  };
   lastError?: RagErrorInfo;
 }
 
@@ -285,6 +295,10 @@ export interface WorkspaceCodeRagSettings {
   maxFileBytes: number;
   defaultChunkLines: number;
   maxChunkLines: number;
+  maxSparseVocabularyTokens: number;
+  preparationMaxWorkers: number;
+  preparationWorkerMemoryBytes: number;
+  preparationMemoryReserveBytes: number;
   encodeBatchSize: number;
   upsertBatchSize: number;
   maxEncodeCharacters: number;

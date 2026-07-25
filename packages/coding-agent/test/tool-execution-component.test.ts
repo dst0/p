@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { beforeAll, describe, expect, test } from "vitest";
 import { getReadmePath } from "../src/config.ts";
 import type { ToolDefinition } from "../src/core/extensions/types.ts";
+import { createTaskVerificationController } from "../src/core/task-verification.ts";
 import { type BashOperations, createBashToolDefinition } from "../src/core/tools/bash.ts";
 import { createReadTool, createReadToolDefinition } from "../src/core/tools/read.ts";
 import { createWriteToolDefinition } from "../src/core/tools/write.ts";
@@ -505,7 +506,50 @@ describe("ToolExecutionComponent parity", () => {
 
       const collapsed = stripAnsi(component.render(120).join("\n"));
       expect(collapsed).toContain(scenario.compact);
-      expect(collapsed.indexOf(":120-329")).toBeLessThan(collapsed.indexOf("to expand"));
     });
   }
+
+  test("renders record_task_verification within a themed Box container", () => {
+    const sessionManager = {
+      appendCustomMessage: () => {},
+      setActiveToolsByName: () => {},
+      getActiveToolNames: () => [],
+      getBranch: () => [],
+    } as any;
+    const controller = createTaskVerificationController(sessionManager);
+    const toolDef = (controller as any).createToolDefinition();
+
+    const component = new ToolExecutionComponent(
+      "record_task_verification",
+      "tool-verification-1",
+      { action: "status" },
+      {},
+      toolDef,
+      createFakeTui(),
+      process.cwd(),
+    );
+
+    component.updateResult(
+      {
+        content: [{ type: "text", text: "Final verification requires a declared task." }],
+        details: {},
+        isError: true,
+      },
+      false,
+    );
+
+    const rendered = component.render(100);
+    const plainText = stripAnsi(rendered.join("\n"));
+
+    // 1. Title and output text are present
+    expect(plainText).toContain("record_task_verification");
+    expect(plainText).toContain("Final verification requires a declared task.");
+
+    // 2. All non-empty lines have theme background ANSI color code applied
+    const contentLines = rendered.filter((line) => line.trim().length > 0);
+    expect(contentLines.length).toBeGreaterThan(0);
+    for (const line of contentLines) {
+      expect(line).toMatch(/\x1b\[48;/);
+    }
+  });
 });

@@ -193,6 +193,8 @@ function createService(
     fullSparseRebuildChangeRatio?: number;
     upsertBatchSize?: number;
     allowStaleSearch?: boolean;
+    maxSparseVocabularyTokens?: number;
+    maxFileBytes?: number;
   } = {},
 ): WorkspaceCodeRagService {
   return new WorkspaceCodeRagService({
@@ -210,6 +212,13 @@ function createService(
       sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
       ...(options.upsertBatchSize === undefined ? {} : { upsertBatchSize: options.upsertBatchSize }),
       allowStaleSearch: options.allowStaleSearch,
+      preparationMaxWorkers: 4,
+      preparationWorkerMemoryBytes: 64 * 1024 * 1024,
+      preparationMemoryReserveBytes: 16 * 1024 * 1024,
+      ...(options.maxFileBytes === undefined ? {} : { maxFileBytes: options.maxFileBytes }),
+      ...(options.maxSparseVocabularyTokens === undefined
+        ? {}
+        : { maxSparseVocabularyTokens: options.maxSparseVocabularyTokens }),
     },
   });
 }
@@ -227,6 +236,12 @@ describe("WorkspaceCodeRagService", () => {
     expect(summary.status.indexedFiles).toBe(1);
     expect(summary.status.indexedChunks).toBe(1);
     expect(summary.status.collection).toContain(summary.status.repoId.slice(0, 16));
+    expect(summary.status.preparation).toMatchObject({
+      mode: "worker_threads",
+      workers: 1,
+    });
+    expect(summary.status.preparation?.maxInFlightBytes).toBe(summary.status.preparation?.workerMemoryBytes);
+    expect(readdirSync(join(data, summary.status.repoId)).some((name) => name.startsWith(".preparation-"))).toBe(false);
     expect(embedding.encodedTexts[0]).toContain("file: main.ts");
     expect(embedding.encodedTexts[0]).toContain("language: typescript");
     expect(embedding.encodedTexts[0]).toContain("symbol: function initializeAuth");
@@ -707,6 +722,24 @@ describe("WorkspaceCodeRagService", () => {
     expect((await service.status()).state).toBe("ready");
   });
 
+  it("maps an incremental file that grows beyond its limit to a security error", async () => {
+    const { root, data } = createFixture();
+    const secondPath = join(root, "second.ts");
+    writeFileSync(secondPath, "export const second = 'initial';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, { maxFileBytes: 256 });
+    await service.rebuild();
+
+    writeFileSync(join(root, "main.ts"), "export const first = 'changed';\n");
+    writeFileSync(secondPath, "export const second = 'intermediate';\n");
+    embedding.onEncode = () => writeFileSync(secondPath, "x".repeat(512));
+
+    await expect(service.refresh()).rejects.toMatchObject({
+      code: "RAG_SECURITY_BLOCK",
+    });
+  });
+
   it("reports monotonic progress for full and incremental indexing", async () => {
     const { root, data } = createFixture();
     const embedding = new FakeEmbeddingProvider();
@@ -800,6 +833,35 @@ describe("WorkspaceCodeRagService", () => {
     expect(failedStatus.collection).toBe(priorStatus.collection);
     expect(store.collections.has(priorStatus.collection!)).toBe(true);
     expect(store.deletedCollections).toHaveLength(1);
+  });
+
+  it("bounds sparse vocabulary memory and removes the preparation spool after refusal", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore(), {
+      maxSparseVocabularyTokens: 1,
+    });
+
+    await expect(service.rebuild()).rejects.toThrow("Sparse vocabulary exceeded its safe limit");
+    const status = await service.status();
+    expect(status.state).toBe("unavailable");
+    expect(readdirSync(join(data, status.repoId)).some((name) => name.startsWith(".preparation-"))).toBe(false);
+    await service.dispose();
+  });
+
+  it("refuses a rebuild before spooling when the disk reserve cannot be preserved", async () => {
+    const { root, data } = createFixture();
+    const service = createService(root, data, new FakeEmbeddingProvider(), new FakeVectorStore());
+    const actualDisk = fs.statfsSync(root);
+    vi.spyOn(fs, "statfsSync").mockReturnValue({
+      ...actualDisk,
+      bavail: 1,
+      bsize: 1,
+    });
+
+    await expect(service.rebuild()).rejects.toThrow("Insufficient disk space for bounded indexing spool");
+    const status = await service.status();
+    expect(readdirSync(join(data, status.repoId)).some((name) => name.startsWith(".preparation-"))).toBe(false);
+    await service.dispose();
   });
 
   it("marks an embedding model change incompatible and rebuilds into a new generation", async () => {
@@ -1179,12 +1241,13 @@ describe("abort and cancellation", () => {
 
     // Concurrently start a second refresh, this will hit waitForSignal
     const promise2 = service.refresh({}, controller.signal);
+    const expectation1 = expect(promise1).rejects.toThrow("cancelled");
+    const expectation2 = expect(promise2).rejects.toThrow("cancelled");
 
     // Now abort
     controller.abort();
 
-    await expect(promise1).rejects.toThrow("cancelled");
-    await expect(promise2).rejects.toThrow("cancelled");
+    await Promise.all([expectation1, expectation2]);
 
     await service.dispose();
   });
