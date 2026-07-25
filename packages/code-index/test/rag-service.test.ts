@@ -213,8 +213,8 @@ function createService(
       ...(options.upsertBatchSize === undefined ? {} : { upsertBatchSize: options.upsertBatchSize }),
       allowStaleSearch: options.allowStaleSearch,
       preparationMaxWorkers: 4,
-      preparationWorkerMemoryBytes: 64 * 1024 * 1024,
-      preparationMemoryReserveBytes: 16 * 1024 * 1024,
+      preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+      preparationMemoryReserveBytes: 1 * 1024 * 1024,
       ...(options.maxFileBytes === undefined ? {} : { maxFileBytes: options.maxFileBytes }),
       ...(options.maxSparseVocabularyTokens === undefined
         ? {}
@@ -682,7 +682,7 @@ describe("WorkspaceCodeRagService", () => {
     const signal = new AbortController().signal;
     const internals = service as unknown as {
       manifest: { files: Record<string, unknown> };
-      scanWorkspace(signal: AbortSignal): unknown[];
+      scanWorkspace(signal: AbortSignal): Promise<unknown[]>;
       createRefreshPlan(scanned: unknown[]): unknown;
       performSparseGenerationRefresh(
         scanned: unknown[],
@@ -692,7 +692,7 @@ describe("WorkspaceCodeRagService", () => {
         onProgress: undefined,
       ): Promise<IndexUpdateSummary>;
     };
-    const scanned = internals.scanWorkspace(signal);
+    const scanned = await internals.scanWorkspace(signal);
     const plan = internals.createRefreshPlan(scanned);
     delete internals.manifest.files["stable.ts"];
 

@@ -91,7 +91,11 @@ function createService(
       encode: async (texts) => texts.map(() => new Float32Array(1024)),
       encodeQuery: async () => new Float32Array(1024),
     },
-    settings,
+    settings: {
+      preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+      preparationMemoryReserveBytes: 1 * 1024 * 1024,
+      ...settings,
+    },
     manageLocalBackends: false,
   });
 }

@@ -626,6 +626,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
         if (newVocabularyPath) unlinkBestEffort(newVocabularyPath);
       }
       throw error;
+    } finally {
+      fs.closeSync(spool);
+      try {
+        fs.unlinkSync(spoolPath);
+      } catch {
+        // The bounded preparation spool is best-effort cleanup after completion or failure.
+      }
     }
   }
 
@@ -651,13 +658,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
     const collection = this.collectionName(generation);
     const changedFiles = [...plan.added, ...plan.changed];
     const preparedFiles: PreparedFile[] = [];
-    for (const [index, file] of changedFiles.entries()) {
-      preparedFiles.push(this.prepareFile(file, generation, signal));
+    await this.processPreparedFiles(changedFiles, generation, signal, (prepared, index) => {
+      preparedFiles.push(prepared);
       this.reportProgress(onProgress, "indexing", (5 * (index + 1)) / Math.max(changedFiles.length, 1), {
         processedFiles: index + 1,
         totalFiles: scanned.length,
       });
-    }
+    });
 
     const reusableEntries = new Map<string, ManifestFileEntry>();
     const nextFiles: Record<string, ManifestFileEntry> = {};
@@ -842,13 +849,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
         return this.performRebuild(scanned, plan, startedAt, signal, this.fallbackRebuildProgress(onProgress));
       }
       throw error;
-    } finally {
-      fs.closeSync(spool);
-      try {
-        fs.unlinkSync(spoolPath);
-      } catch {
-        // The bounded preparation spool is best-effort cleanup after completion or failure.
-      }
     }
   }
 

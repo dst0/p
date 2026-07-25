@@ -298,6 +298,10 @@ describe("rag/service.ts partial state search, background refresh, and unchanged
         encodeQuery: async () => new Float32Array(1024),
       },
       manageLocalBackends: false,
+      settings: {
+        preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+        preparationMemoryReserveBytes: 1 * 1024 * 1024,
+      },
     });
 
     await service.refresh();
