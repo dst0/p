@@ -1,3 +1,4 @@
 sentence-transformers==5.6.0
+socksio==1.0.0
 torch==2.2.2; sys_platform == "darwin" and platform_machine == "x86_64"
 torch==2.12.1; sys_platform != "darwin" or platform_machine != "x86_64"

@@ -23,6 +23,7 @@ const originalLegacyAgentDir = process.env[LEGACY_ENV_AGENT_DIR];
 const originalLegacySessionDir = process.env[LEGACY_ENV_SESSION_DIR];
 const originalArgv1 = process.argv[1];
 let tempDir: string | undefined;
+const runsAsRoot = typeof process.getuid === "function" && process.getuid() === 0;
 
 function setExecPath(value: string): void {
   Object.defineProperty(process, "execPath", {
@@ -224,6 +225,21 @@ describe("detectInstallMethod", () => {
       args: ["--prefix", prefix, "install", "-g", "--ignore-scripts", "--min-release-age=0", "@dst0/p"],
       display: `npm --prefix ${prefix} install -g --ignore-scripts --min-release-age=0 @dst0/p`,
     });
+  });
+
+  test("ignores an empty .git marker above an npm install", () => {
+    const { prefix } = createNpmPrefixInstall();
+    mkdirSync(join(prefix, ".git"));
+
+    expect(detectInstallMethod()).toBe("npm");
+  });
+
+  test("recognizes a source checkout only when .git contains metadata", () => {
+    const { prefix } = createNpmPrefixInstall();
+    mkdirSync(join(prefix, ".git"));
+    writeFileSync(join(prefix, ".git", "HEAD"), "ref: refs/heads/main\n");
+
+    expect(detectInstallMethod()).toBe("source-checkout");
   });
 
   test("self-updates renamed packages from the current install prefix", () => {
@@ -428,7 +444,7 @@ describe("detectInstallMethod", () => {
     });
   });
 
-  test("does not self-update when npm install path is not writable", () => {
+  test.skipIf(runsAsRoot)("does not self-update when npm install path is not writable", () => {
     const { packageDir } = createNpmPrefixInstall();
     chmodSync(packageDir, 0o500);
 

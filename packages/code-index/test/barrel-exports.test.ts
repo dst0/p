@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import * as EmbedExports from "../src/embed.ts";
 import * as IndexExports from "../src/index.ts";
@@ -28,7 +29,8 @@ describe("Barrel Exports (src/index.ts and src/embed.ts)", () => {
     expect(IndexExports.CodeRagError).toBeDefined();
     expect(IndexExports.WorkspaceCodeRagService).toBeDefined();
     expect(IndexExports.QdrantVectorStore).toBeDefined();
-    expect(IndexExports.CODE_INDEX_VERSION).toBe("0.4.57");
+    const packageVersion = JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+    expect(IndexExports.CODE_INDEX_VERSION).toBe(packageVersion);
   });
 
   it("exports expected symbols from src/embed.ts", () => {

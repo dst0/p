@@ -52,8 +52,15 @@ function createMockClient() {
     createPayloadIndex: vi.fn().mockResolvedValue(true),
     upsert: vi.fn().mockResolvedValue(true),
     search: vi.fn().mockResolvedValue([]),
+    scroll: vi.fn().mockResolvedValue({ points: [], next_page_offset: null }),
     delete: vi.fn().mockResolvedValue(true),
   };
+}
+
+async function collect<T>(values: AsyncIterable<T>): Promise<T[]> {
+  const collected: T[] = [];
+  for await (const value of values) collected.push(value);
+  return collected;
 }
 
 describe("QdrantVectorStore", () => {
@@ -214,6 +221,188 @@ describe("QdrantVectorStore", () => {
     });
   });
 
+  it("scrolls stored points page by page with dense vectors", async () => {
+    const client = createMockClient();
+    const firstPayload = makePayload({ path: "src/first.ts" });
+    const secondPayload = makePayload({ path: "src/second.ts" });
+    client.scroll
+      .mockResolvedValueOnce({
+        points: [{ id: "point-1", payload: firstPayload, vector: { dense: [0.1, 0.2, 0.3] } }],
+        next_page_offset: "point-1",
+      })
+      .mockResolvedValueOnce({
+        points: [{ id: "point-2", payload: secondPayload, vector: { dense: [0.4, 0.5, 0.6] } }],
+        next_page_offset: null,
+      });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+
+    await expect(collect(store.iteratePoints("coll", "test-repo", true))).resolves.toEqual([
+      { id: "point-1", payload: firstPayload, dense: [0.1, 0.2, 0.3] },
+      { id: "point-2", payload: secondPayload, dense: [0.4, 0.5, 0.6] },
+    ]);
+    expect(client.scroll.mock.calls[0][1]).toEqual({
+      limit: 256,
+      filter: { must: [{ key: "repoId", match: { value: "test-repo" } }] },
+      with_payload: true,
+      with_vector: ["dense"],
+    });
+    expect(client.scroll.mock.calls[1][1]).toMatchObject({ offset: "point-1" });
+  });
+
+  it("scrolls payloads without requesting dense vectors", async () => {
+    const client = createMockClient();
+    const payload = makePayload();
+    client.scroll.mockResolvedValueOnce({ points: [{ id: "point-1", payload }], next_page_offset: undefined });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+
+    await expect(collect(store.iteratePoints("coll", "test-repo", false))).resolves.toEqual([
+      { id: "point-1", payload },
+    ]);
+    expect(client.scroll.mock.calls[0][1].with_vector).toBe(false);
+  });
+
+  it("cancels stored-point iteration before and between yielded points", async () => {
+    const client = createMockClient();
+    const payload = makePayload();
+    client.scroll.mockResolvedValue({
+      points: [
+        { id: "point-1", payload },
+        { id: "point-2", payload },
+      ],
+      next_page_offset: null,
+    });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+
+    const alreadyAborted = AbortSignal.abort(new Error("already stopped"));
+    await expect(collect(store.iteratePoints("coll", "test-repo", false, alreadyAborted))).rejects.toThrow(
+      "already stopped",
+    );
+    expect(client.scroll).not.toHaveBeenCalled();
+
+    const controller = new AbortController();
+    const iterator = store.iteratePoints("coll", "test-repo", false, controller.signal)[Symbol.asyncIterator]();
+    await expect(iterator.next()).resolves.toMatchObject({ value: { id: "point-1" }, done: false });
+    controller.abort(new Error("stopped between points"));
+    await expect(iterator.next()).rejects.toThrow("stopped between points");
+  });
+
+  it("uses a default cancellation error when an aborted signal has no reason", async () => {
+    const client = createMockClient();
+    client.scroll.mockResolvedValue({
+      points: [
+        { id: "point-1", payload: makePayload() },
+        { id: "point-2", payload: makePayload() },
+      ],
+      next_page_offset: null,
+    });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+    const abortedWithoutReason = { aborted: true, reason: undefined } as AbortSignal;
+    await expect(collect(store.iteratePoints("coll", "test-repo", false, abortedWithoutReason))).rejects.toThrow(
+      "iteration cancelled",
+    );
+
+    let aborted = false;
+    const signal = {
+      get aborted() {
+        return aborted;
+      },
+      reason: undefined,
+    } as AbortSignal;
+    const iterator = store.iteratePoints("coll", "test-repo", false, signal)[Symbol.asyncIterator]();
+    await iterator.next();
+    aborted = true;
+    await expect(iterator.next()).rejects.toThrow("iteration cancelled");
+  });
+
+  it.each([
+    ["non-string ID", { id: 1, payload: makePayload() }, false, "non-string ID"],
+    ["missing payload", { id: "point-1" }, false, "invalid payload"],
+    ["array payload", { id: "point-1", payload: [] }, false, "invalid payload"],
+    [
+      "invalid string payload field",
+      { id: "point-1", payload: makePayload({ path: 1 as unknown as string }) },
+      false,
+      "invalid payload",
+    ],
+    [
+      "invalid number payload field",
+      { id: "point-1", payload: makePayload({ startLine: "1" as unknown as number }) },
+      false,
+      "invalid payload",
+    ],
+    [
+      "invalid boolean payload field",
+      { id: "point-1", payload: makePayload({ isTest: "false" as unknown as boolean }) },
+      false,
+      "invalid payload",
+    ],
+    ["missing named vectors", { id: "point-1", payload: makePayload() }, true, "invalid dense vector"],
+    [
+      "array vector container",
+      { id: "point-1", payload: makePayload(), vector: [0.1, 0.2] },
+      true,
+      "invalid dense vector",
+    ],
+    [
+      "non-array dense vector",
+      { id: "point-1", payload: makePayload(), vector: { dense: "bad" } },
+      true,
+      "invalid dense vector",
+    ],
+    [
+      "non-number dense vector value",
+      { id: "point-1", payload: makePayload(), vector: { dense: [0.1, "bad"] } },
+      true,
+      "invalid dense vector",
+    ],
+    [
+      "non-finite dense vector",
+      { id: "point-1", payload: makePayload(), vector: { dense: [0.1, Number.NaN] } },
+      true,
+      "invalid dense vector",
+    ],
+  ])("rejects a stored point with %s", async (_case, point, withDense, expected) => {
+    const client = createMockClient();
+    client.scroll.mockResolvedValueOnce({ points: [point], next_page_offset: null });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+
+    await expect(collect(store.iteratePoints("coll", "test-repo", withDense))).rejects.toThrow(expected);
+  });
+
+  it("rejects a repeated scroll offset", async () => {
+    const client = createMockClient();
+    client.scroll
+      .mockResolvedValueOnce({ points: [], next_page_offset: "same" })
+      .mockResolvedValueOnce({ points: [], next_page_offset: "same" });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+
+    await expect(collect(store.iteratePoints("coll", "test-repo", false))).rejects.toThrow("repeated offset");
+  });
+
+  it("rejects malformed scroll pages and offsets", async () => {
+    const client = createMockClient();
+    client.scroll.mockResolvedValueOnce({ points: null, next_page_offset: null });
+    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
+    // @ts-expect-error — replacing private field for testing
+    store.client = client;
+    await expect(collect(store.iteratePoints("coll", "test-repo", false))).rejects.toThrow("invalid point page");
+
+    client.scroll.mockResolvedValueOnce({ points: [], next_page_offset: { invalid: true } });
+    await expect(collect(store.iteratePoints("coll", "test-repo", false))).rejects.toThrow("invalid offset");
+  });
+
   it("performs dense and sparse search with RRF fusion", async () => {
     const client = createMockClient();
     const payload1 = makePayload({ path: "src/a.ts" });
@@ -344,6 +533,13 @@ describe("QdrantVectorStore", () => {
     });
     await expect(storeNetworkErr.collectionExists("test")).rejects.toThrow("failed: Network unreachable");
 
+    const storeNonError = new QdrantVectorStore({
+      url: "http://localhost:6333",
+      timeoutMs: 1000,
+      fetch: async () => Promise.reject("offline"),
+    });
+    await expect(storeNonError.collectionExists("test")).rejects.toThrow("failed: offline");
+
     // HTTP 500 status
     const storeHttpErr = new QdrantVectorStore({
       url: "http://localhost:6333",
@@ -372,9 +568,17 @@ describe("QdrantVectorStore", () => {
   it("exercises FetchQdrantRestClient success methods over mock fetch", async () => {
     const mockFetch = vi.fn().mockImplementation(async (url: string, init?: RequestInit) => {
       const u = String(url);
-      if (u.includes("/exists")) return new Response(JSON.stringify({ result: { exists: true } }), { status: 200 });
+      if (u.includes("/exists"))
+        return new Response(JSON.stringify({ result: { exists: !u.includes("new-coll") } }), { status: 200 });
       if (u.includes("/points/search"))
         return new Response(JSON.stringify({ result: [{ id: "p1", payload: {} }] }), { status: 200 });
+      if (u.includes("/points/scroll"))
+        return new Response(
+          JSON.stringify({
+            result: { points: [{ id: "p1", payload: makePayload(), vector: { dense: [0.1, 0.2, 0.3] } }] },
+          }),
+          { status: 200 },
+        );
       if (u.includes("/points/delete"))
         return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
       if (u.includes("/points?wait="))
@@ -398,6 +602,7 @@ describe("QdrantVectorStore", () => {
 
     // 2. createCollection when collection exists and dimensions match
     await store.createCollection("coll1", 3);
+    await store.createCollection("new-coll", 3);
 
     // 3. collectionStatus
     const status = await store.collectionStatus("coll1");
@@ -423,7 +628,12 @@ describe("QdrantVectorStore", () => {
     );
     expect(results.length).toBeGreaterThanOrEqual(1);
 
-    // 8. deleteCollection
+    // 8. scroll with an external cancellation signal
+    const controller = new AbortController();
+    const stored = await collect(store.iteratePoints("coll1", "repo1", true, controller.signal));
+    expect(stored).toHaveLength(1);
+
+    // 9. deleteCollection
     await store.deleteCollection("coll1");
   });
 

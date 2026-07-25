@@ -15,13 +15,16 @@ import { EmbeddingError, VectorStoreError } from "../src/embed/errors.ts";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import {
   type IndexingProgress,
+  type IndexUpdateSummary,
   type RagVectorStore,
   type SparseVector,
+  type StoredVectorPoint,
   type VectorPoint,
   type VectorSearchFilters,
   type VectorSearchResult,
   WorkspaceCodeRagService,
 } from "../src/index.ts";
+import { StoredPointError } from "../src/rag/vector-store.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -33,7 +36,13 @@ afterEach(() => {
 class FakeEmbeddingProvider implements EmbeddingProvider {
   dim = 3;
   encodedTexts: string[] = [];
+  ensureReadyCalls = 0;
   onEncode: (() => void) | undefined;
+
+  async ensureReady(signal?: AbortSignal): Promise<void> {
+    if (signal?.aborted) throw signal.reason;
+    this.ensureReadyCalls += 1;
+  }
 
   async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
     if (signal?.aborted) throw signal.reason;
@@ -54,8 +63,12 @@ class FakeVectorStore implements RagVectorStore {
   collections = new Map<string, Map<string, VectorPoint>>();
   dimensions = new Map<string, number>();
   failNextUpsert = false;
+  failNextDeleteCollection = false;
+  failDeleteCollection: string | undefined;
   createdCollections: string[] = [];
   deletedCollections: string[] = [];
+  omitDensePointId: string | undefined;
+  failIteration: Error | undefined;
 
   async collectionExists(collection: string): Promise<boolean> {
     return this.collections.has(collection);
@@ -70,6 +83,10 @@ class FakeVectorStore implements RagVectorStore {
   }
 
   async deleteCollection(collection: string): Promise<void> {
+    if (this.failNextDeleteCollection || this.failDeleteCollection === collection) {
+      this.failNextDeleteCollection = false;
+      throw new Error("synthetic collection delete failure");
+    }
     this.collections.delete(collection);
     this.dimensions.delete(collection);
     this.deletedCollections.push(collection);
@@ -102,6 +119,26 @@ class FakeVectorStore implements RagVectorStore {
       ) {
         target.delete(id);
       }
+    }
+  }
+
+  async *iteratePoints(
+    collection: string,
+    repoId: string,
+    withDense: boolean,
+    signal?: AbortSignal,
+  ): AsyncIterable<StoredVectorPoint> {
+    if (this.failIteration) throw this.failIteration;
+    const target = this.collections.get(collection);
+    if (!target) throw new Error(`Collection not found: ${collection}`);
+    for (const point of target.values()) {
+      if (signal?.aborted) throw signal.reason;
+      if (point.payload.repoId !== repoId) continue;
+      yield {
+        id: point.id,
+        payload: point.payload,
+        ...(withDense && point.id !== this.omitDensePointId ? { dense: point.vectors.dense } : {}),
+      };
     }
   }
 
@@ -153,6 +190,8 @@ function createService(
     embeddingModel?: string;
     allowSearchRefresh?: boolean;
     sparseRebuildDriftRatio?: number;
+    fullSparseRebuildChangeRatio?: number;
+    upsertBatchSize?: number;
     allowStaleSearch?: boolean;
     maxSparseVocabularyTokens?: number;
     maxFileBytes?: number;
@@ -169,12 +208,13 @@ function createService(
       autoRefresh: false,
       embeddingDimensions: 3,
       embeddingModel: options.embeddingModel ?? "test-embedding-v1",
-      fullSparseRebuildChangeRatio: 1,
+      fullSparseRebuildChangeRatio: options.fullSparseRebuildChangeRatio ?? 1,
       sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
+      ...(options.upsertBatchSize === undefined ? {} : { upsertBatchSize: options.upsertBatchSize }),
       allowStaleSearch: options.allowStaleSearch,
       preparationMaxWorkers: 4,
-      preparationWorkerMemoryBytes: 64 * 1024 * 1024,
-      preparationMemoryReserveBytes: 16 * 1024 * 1024,
+      preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+      preparationMemoryReserveBytes: 1 * 1024 * 1024,
       ...(options.maxFileBytes === undefined ? {} : { maxFileBytes: options.maxFileBytes }),
       ...(options.maxSparseVocabularyTokens === undefined
         ? {}
@@ -234,7 +274,7 @@ describe("WorkspaceCodeRagService", () => {
     expect(store.allContents().join("\n")).not.toContain("unique-auth-token");
   });
 
-  it("performs a full rebuild when sparse vocabulary drift exceeds its threshold", async () => {
+  it("migrates to a new sparse generation when vocabulary drift exceeds its threshold", async () => {
     const { root, data } = createFixture();
     const embedding = new FakeEmbeddingProvider();
     const store = new FakeVectorStore();
@@ -245,10 +285,420 @@ describe("WorkspaceCodeRagService", () => {
     writeFileSync(join(root, "main.ts"), "export const replacement = 'sparse-drift-rebuild';\n");
     const refreshed = await service.refresh();
 
-    expect(refreshed.fullRebuild).toBe(true);
+    expect(refreshed.fullRebuild).toBe(false);
     expect(refreshed.status.collection).not.toBe(originalCollection);
     expect(refreshed.status.sparse.exact).toBe(true);
     expect(store.allContents().join("\n")).toContain("sparse-drift-rebuild");
+  });
+
+  it("reuses dense vectors and re-embeds only the changed ten percent during sparse migration", async () => {
+    const { root, data } = createFixture();
+    for (let index = 1; index < 10; index += 1) {
+      writeFileSync(join(root, `file-${index}.ts`), `export const value${index} = 'stable-${index}';\n`);
+    }
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0.05,
+      sparseRebuildDriftRatio: 1,
+      upsertBatchSize: 1,
+    });
+    await service.rebuild();
+    const originalStatus = await service.status();
+    const originalPoints = store.collections.get(originalStatus.collection!)!;
+    const originalUnchanged = [...originalPoints.values()].find((point) => point.payload.path === "file-1.ts")!;
+    const originalDense = [...originalUnchanged.vectors.dense];
+    const originalSparse = structuredClone(originalUnchanged.vectors.sparse);
+    const originalIndexedAt = originalUnchanged.payload.indexedAt;
+    embedding.encodedTexts = [];
+
+    writeFileSync(
+      join(root, "main.ts"),
+      "export function initializeAuth() {\n\treturn 'replacement-auth-token-with-extra-terms';\n}\n",
+    );
+    const progress: IndexingProgress[] = [];
+    const refreshed = await service.refresh({ onProgress: (value) => progress.push(value) });
+
+    expect(refreshed).toMatchObject({
+      fullRebuild: false,
+      filesChanged: 1,
+      filesUnchanged: 9,
+      chunksEmbedded: 1,
+    });
+    expect(embedding.encodedTexts).toHaveLength(1);
+    expect(refreshed.status.collection).not.toBe(originalStatus.collection);
+    expect(refreshed.status.sparse).toMatchObject({ exact: true, driftFileCount: 0 });
+    expect(store.collections.has(originalStatus.collection!)).toBe(false);
+
+    const migratedPoints = store.collections.get(refreshed.status.collection!)!;
+    const migratedUnchanged = [...migratedPoints.values()].find((point) => point.payload.path === "file-1.ts")!;
+    expect(migratedUnchanged.vectors.dense).toEqual(originalDense);
+    expect(migratedUnchanged.vectors.sparse).not.toEqual(originalSparse);
+    expect(migratedUnchanged.payload.indexGeneration).toBe(refreshed.status.generation);
+    expect(migratedUnchanged.payload.indexedAt).toBe(originalIndexedAt);
+    expect(progress.some((value) => value.processedChunks === 9 && value.totalChunks === 10)).toBe(true);
+    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+  });
+
+  it("excludes deleted files from a sparse migration without embedding unchanged files", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "keep.ts"), "export const keep = 'still-indexed';\n");
+    writeFileSync(join(root, "remove.ts"), "export const remove = 'delete-me';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    embedding.encodedTexts = [];
+    embedding.ensureReadyCalls = 0;
+
+    rmSync(join(root, "remove.ts"));
+    const refreshed = await service.refresh();
+
+    expect(refreshed).toMatchObject({ fullRebuild: false, filesDeleted: 1, chunksEmbedded: 0 });
+    expect(embedding.encodedTexts).toEqual([]);
+    expect(embedding.ensureReadyCalls).toBe(0);
+    expect(store.allContents().join("\n")).toContain("still-indexed");
+    expect(store.allContents().join("\n")).not.toContain("delete-me");
+  });
+
+  it("falls back to a full rebuild when reusable stored chunks are incomplete", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'must-survive';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    const oldPoints = store.collections.get(oldCollection)!;
+    const stablePointId = [...oldPoints.values()].find((point) => point.payload.path === "stable.ts")!.id;
+    oldPoints.delete(stablePointId);
+    embedding.encodedTexts = [];
+
+    writeFileSync(join(root, "main.ts"), "export const changed = 'force-migration';\n");
+    const refreshed = await service.refresh();
+
+    expect(refreshed.fullRebuild).toBe(true);
+    expect(refreshed.chunksEmbedded).toBe(2);
+    expect(embedding.encodedTexts).toHaveLength(2);
+    expect(store.allContents().join("\n")).toContain("must-survive");
+  });
+
+  it("removes a failed migration generation before falling back on an incompatible dense vector", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'reuse-me';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    store.omitDensePointId = [...store.collections.get(oldCollection)!.values()].find(
+      (point) => point.payload.path === "stable.ts",
+    )!.id;
+    const creationsBefore = store.createdCollections.length;
+    const progress: IndexingProgress[] = [];
+
+    writeFileSync(join(root, "main.ts"), "export const changed = 'force-dense-validation';\n");
+    const refreshed = await service.refresh({ onProgress: (value) => progress.push(value) });
+
+    expect(refreshed.fullRebuild).toBe(true);
+    expect(store.createdCollections).toHaveLength(creationsBefore + 2);
+    const failedMigration = store.createdCollections.at(-2)!;
+    expect(store.deletedCollections).toContain(failedMigration);
+    expect(store.collections.has(failedMigration)).toBe(false);
+    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+  });
+
+  it("preserves the old generation when sparse migration fails for a backend error", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'old-generation';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    store.failNextUpsert = true;
+    writeFileSync(join(root, "main.ts"), "export const changed = 'migration-fails';\n");
+
+    await expect(service.refresh()).rejects.toThrow("synthetic upsert failure");
+
+    expect((await service.status()).collection).toBe(oldCollection);
+    expect(store.collections.has(oldCollection)).toBe(true);
+    expect(store.collections.size).toBe(1);
+  });
+
+  it("cleans a new collection and vocabulary when a full rebuild cannot commit its manifest", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store);
+    await service.rebuild();
+    const status = await service.status();
+    const oldCollection = status.collection!;
+    const repositoryDirectory = join(data, status.repoId);
+    const oldVocabularies = readdirSync(repositoryDirectory).filter((file) => file.startsWith("bm25-"));
+    const originalRename = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((source, target) => {
+      if (String(target).endsWith("manifest.json")) throw new Error("manifest commit denied");
+      return originalRename(source, target);
+    });
+    writeFileSync(join(root, "main.ts"), "export const changed = 'full-commit-fails';\n");
+
+    await expect(service.rebuild()).rejects.toThrow("manifest commit denied");
+
+    expect(store.collections.has(oldCollection)).toBe(true);
+    expect(store.collections.size).toBe(1);
+    expect(readdirSync(repositoryDirectory).filter((file) => file.startsWith("bm25-"))).toEqual(oldVocabularies);
+  });
+
+  it("does not mask a manifest failure when temporary vocabulary cleanup also fails", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'cleanup-failure';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    const originalRename = fs.renameSync.bind(fs);
+    vi.spyOn(fs, "renameSync").mockImplementation((source, target) => {
+      if (String(target).endsWith("manifest.json")) throw new Error("migration manifest commit denied");
+      return originalRename(source, target);
+    });
+    const originalUnlink = fs.unlinkSync.bind(fs);
+    vi.spyOn(fs, "unlinkSync").mockImplementation((target) => {
+      if (String(target).includes("bm25-")) throw new Error("temporary vocabulary cleanup denied");
+      return originalUnlink(target);
+    });
+    writeFileSync(join(root, "main.ts"), "export const changed = 'migration-commit-fails';\n");
+
+    await expect(service.refresh()).rejects.toThrow("migration manifest commit denied");
+
+    expect((await service.status()).collection).toBe(oldCollection);
+    expect(store.collections.has(oldCollection)).toBe(true);
+  });
+
+  it("falls back to a full rebuild when the vector store cannot iterate existing points", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'legacy-store';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    Object.defineProperty(store, "iteratePoints", { value: undefined });
+    embedding.encodedTexts = [];
+    writeFileSync(join(root, "main.ts"), "export const changed = 'legacy-fallback';\n");
+
+    const refreshed = await service.refresh();
+
+    expect(refreshed.fullRebuild).toBe(true);
+    expect(embedding.encodedTexts).toHaveLength(2);
+  });
+
+  it("falls back to a full rebuild when stored-point validation rejects the old generation", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'corrupt-generation';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    store.failIteration = new StoredPointError("corrupt stored point");
+    writeFileSync(join(root, "main.ts"), "export const changed = 'validation-fallback';\n");
+
+    const refreshed = await service.refresh();
+
+    expect(refreshed.fullRebuild).toBe(true);
+    expect(refreshed.chunksEmbedded).toBe(2);
+  });
+
+  it("keeps a successful migration active when old-generation cleanup fails", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'cleanup-best-effort';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    store.failDeleteCollection = oldCollection;
+    const originalUnlink = fs.unlinkSync.bind(fs);
+    vi.spyOn(fs, "unlinkSync").mockImplementation((target) => {
+      if (!String(target).includes("bm25-")) return originalUnlink(target);
+      const error = new Error("vocabulary cleanup denied") as Error & { code: string };
+      error.code = "EPERM";
+      throw error;
+    });
+    writeFileSync(join(root, "main.ts"), "export const changed = 'cleanup-still-succeeds';\n");
+
+    const refreshed = await service.refresh();
+
+    expect(refreshed.fullRebuild).toBe(false);
+    expect(refreshed.status.state).toBe("ready");
+    expect(refreshed.status.collection).not.toBe(oldCollection);
+    expect(store.collections.has(oldCollection)).toBe(true);
+  });
+
+  it("treats an already-missing old vocabulary as successful cleanup", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'missing-old-vocabulary';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const originalUnlink = fs.unlinkSync.bind(fs);
+    vi.spyOn(fs, "unlinkSync").mockImplementation((target) => {
+      if (!String(target).includes("bm25-")) return originalUnlink(target);
+      const error = new Error("already removed") as Error & { code: string };
+      error.code = "ENOENT";
+      throw error;
+    });
+    writeFileSync(join(root, "main.ts"), "export const changed = 'cleanup-enoent';\n");
+
+    await expect(service.refresh()).resolves.toMatchObject({ fullRebuild: false });
+  });
+
+  it("preserves the original migration error when failed-generation cleanup also fails", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'double-failure';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    store.failNextUpsert = true;
+    store.failNextDeleteCollection = true;
+    writeFileSync(join(root, "main.ts"), "export const changed = 'upsert-fails-first';\n");
+
+    await expect(service.refresh()).rejects.toThrow("synthetic upsert failure");
+  });
+
+  it("does not delete a generation after its manifest has already been committed", async () => {
+    const { root, data } = createFixture();
+    writeFileSync(join(root, "stable.ts"), "export const stable = 'post-commit';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    const oldCollection = (await service.status()).collection!;
+    const internals = service as unknown as {
+      summaryForPlan(...args: unknown[]): IndexUpdateSummary;
+    };
+    vi.spyOn(internals, "summaryForPlan").mockImplementation(() => {
+      throw new Error("post-commit summary failure");
+    });
+    writeFileSync(join(root, "main.ts"), "export const changed = 'manifest-is-durable';\n");
+
+    await expect(service.refresh()).rejects.toThrow("post-commit summary failure");
+
+    const committedCollection = (await service.status()).collection!;
+    expect(committedCollection).not.toBe(oldCollection);
+    expect(store.collections.has(committedCollection)).toBe(true);
+  });
+
+  it("reports vocabulary migration progress for collections larger than one scroll interval", async () => {
+    const { root, data } = createFixture();
+    for (let index = 0; index < 256; index += 1) {
+      writeFileSync(join(root, `stable-${index}.ts`), `export const stable${index} = ${index};\n`);
+    }
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(root, data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    writeFileSync(join(root, "main.ts"), "export const changed = 'large-migration';\n");
+    const progress: IndexingProgress[] = [];
+
+    await service.refresh({ onProgress: (value) => progress.push(value) });
+
+    expect(progress).toContainEqual(
+      expect.objectContaining({ phase: "indexing", percent: 15, processedFiles: 1, totalFiles: 257 }),
+    );
+  });
+
+  it("guards sparse migration when its manifest disappears and when an unchanged entry is missing", async () => {
+    const first = createFixture();
+    const uninitialized = createService(first.root, first.data, new FakeEmbeddingProvider(), new FakeVectorStore());
+    const emptyPlan = { added: [], changed: [], deleted: [], unchanged: [] };
+    const uninitializedInternals = uninitialized as unknown as {
+      performSparseGenerationRefresh(
+        scanned: unknown[],
+        plan: unknown,
+        startedAt: number,
+        signal: AbortSignal,
+        onProgress: undefined,
+      ): Promise<IndexUpdateSummary>;
+    };
+    await expect(
+      uninitializedInternals.performSparseGenerationRefresh(
+        [],
+        emptyPlan,
+        Date.now(),
+        new AbortController().signal,
+        undefined,
+      ),
+    ).rejects.toThrow("not initialized");
+
+    const second = createFixture();
+    writeFileSync(join(second.root, "stable.ts"), "export const stable = 'missing-manifest-entry';\n");
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const service = createService(second.root, second.data, embedding, store, {
+      fullSparseRebuildChangeRatio: 0,
+      sparseRebuildDriftRatio: 1,
+    });
+    await service.rebuild();
+    writeFileSync(join(second.root, "main.ts"), "export const changed = 'direct-migration';\n");
+    const signal = new AbortController().signal;
+    const internals = service as unknown as {
+      manifest: { files: Record<string, unknown> };
+      scanWorkspace(signal: AbortSignal): Promise<unknown[]>;
+      createRefreshPlan(scanned: unknown[]): unknown;
+      performSparseGenerationRefresh(
+        scanned: unknown[],
+        plan: unknown,
+        startedAt: number,
+        signal: AbortSignal,
+        onProgress: undefined,
+      ): Promise<IndexUpdateSummary>;
+    };
+    const scanned = await internals.scanWorkspace(signal);
+    const plan = internals.createRefreshPlan(scanned);
+    delete internals.manifest.files["stable.ts"];
+
+    const refreshed = await internals.performSparseGenerationRefresh(scanned, plan, Date.now(), signal, undefined);
+
+    expect(refreshed.fullRebuild).toBe(true);
   });
 
   it("indexes the latest stable contents when a changed file changes again during refresh", async () => {

@@ -8,6 +8,13 @@
 
 ### Fixed
 
+- Rebuild Code RAG sparse generations without re-embedding unchanged files: stream existing Qdrant points, reuse their dense vectors, recompute BM25 vectors against the new corpus vocabulary, and atomically swap generations with validated full-rebuild fallback.
+- Extract the managed Qdrant binary without applying archive ownership, so reinstall works in rootless and containerized environments.
+- Respect `XDG_CONFIG_HOME` when installing the Linux user service.
+- Install SOCKS support for the managed embedding environment so model downloads work behind SOCKS proxies.
+- Ignore empty `.git` placeholders when detecting source checkouts and indexing roots.
+- Extract downloaded `fd` and `rg` archives without applying archive ownership.
+- Treat zombie indexing daemons as stopped during reinstall.
 - Filtered out lone surrogates (0xD800-0xDFFF), DEL, and C1 control characters in `sanitizeBinaryOutput`.
 - Make task-verification gates self-explanatory after compaction: expose exact next actions, eligible evidence, required replay commands, and ready-to-use verification payloads through proactive status and every rejection.
 - Clarify the session-state guard reminder around user-message timing instead of framing it as a prerequisite for the attempted tool call.

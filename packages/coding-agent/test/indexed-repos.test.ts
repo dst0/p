@@ -28,6 +28,7 @@ function createFixture(): { agentDir: string; repo: string; nested: string } {
   const repo = path.join(root, "repo");
   const nested = path.join(repo, "src", "nested");
   fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+  fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
   fs.mkdirSync(nested, { recursive: true });
   return { agentDir, repo, nested };
 }
@@ -94,5 +95,15 @@ describe("indexed repository decisions", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-folder-"));
     temporaryDirectories.push(root);
     expect(findIndexWorkspaceRoot(root)).toBe(fs.realpathSync(root));
+  });
+
+  it("ignores an empty .git marker in an ancestor directory", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-empty-marker-"));
+    temporaryDirectories.push(root);
+    const nested = path.join(root, "nested");
+    fs.mkdirSync(path.join(root, ".git"));
+    fs.mkdirSync(nested);
+
+    expect(findIndexWorkspaceRoot(nested)).toBe(fs.realpathSync(nested));
   });
 });

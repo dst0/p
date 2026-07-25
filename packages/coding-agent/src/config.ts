@@ -90,12 +90,21 @@ export function detectInstallMethod(): InstallMethod {
 function findGitRoot(startDir: string): string | undefined {
   let dir = startDir;
   while (dir !== dirname(dir)) {
-    if (existsSync(join(dir, ".git"))) {
+    if (isGitMetadataPath(join(dir, ".git"))) {
       return dir;
     }
     dir = dirname(dir);
   }
   return undefined;
+}
+
+function isGitMetadataPath(gitPath: string): boolean {
+  if (existsSync(join(gitPath, "HEAD"))) return true;
+  try {
+    return readFileSync(gitPath, "utf8").trimStart().startsWith("gitdir:");
+  } catch {
+    return false;
+  }
 }
 
 function getInferredNpmInstall(): { root: string; prefix: string } | undefined {

@@ -40,6 +40,7 @@ export type {
   SemanticSearchResponse,
   SparseVector,
   StoredChunkPayload,
+  StoredVectorPoint,
   VectorPoint,
   VectorSearchFilters,
   VectorSearchResult,
@@ -48,4 +49,4 @@ export type {
 } from "./rag/types.ts";
 export { QdrantVectorStore } from "./rag/vector-store.ts";
 export type { Chunk, ChunkPayload, IndexConfig, IndexStats, IndexStatus, SearchResult } from "./types.ts";
-export const CODE_INDEX_VERSION = "0.4.57";
+export const CODE_INDEX_VERSION = "0.4.68";

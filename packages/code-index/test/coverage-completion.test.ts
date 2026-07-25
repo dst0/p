@@ -342,6 +342,10 @@ describe("rag config, manifest, and service missing branches", () => {
       workspaceRoot: dir,
       dataDirectory: join(dir, "data"),
       manageLocalBackends: false,
+      settings: {
+        preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+        preparationMemoryReserveBytes: 1 * 1024 * 1024,
+      },
     });
 
     await expect(service.refresh()).rejects.toThrow("File produced too many chunks");
@@ -371,6 +375,10 @@ describe("rag config, manifest, and service missing branches", () => {
         encodeQuery: async () => new Float32Array(1024),
       },
       manageLocalBackends: false,
+      settings: {
+        preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+        preparationMemoryReserveBytes: 1 * 1024 * 1024,
+      },
     });
 
     await service.refresh();
@@ -459,6 +467,10 @@ describe("rag config, manifest, and service missing branches", () => {
         encodeQuery: async () => new Float32Array(1024),
       },
       manageLocalBackends: false,
+      settings: {
+        preparationWorkerMemoryBytes: 1 * 1024 * 1024,
+        preparationMemoryReserveBytes: 1 * 1024 * 1024,
+      },
     });
 
     await service.refresh();

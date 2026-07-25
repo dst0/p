@@ -36,7 +36,9 @@ async function prepareForReinstall() {
 		return;
 	}
 	if (!isIndexingDaemonProcess(pid)) {
-		throw new Error(`Refusing to signal pid ${pid}: it is not the code indexing daemon`);
+		throw new Error(
+			`Refusing to signal pid ${pid}: it is not the code indexing daemon (${readProcessCommand(pid) || "command unavailable"})`,
+		);
 	}
 
 	const timeoutMs =
@@ -176,17 +178,49 @@ function writeReinstallMarker(pid) {
 }
 
 function isIndexingDaemonProcess(pid) {
+	return isIndexingDaemonCommand(readProcessCommand(pid));
+}
+
+function readProcessCommand(pid) {
+	const procCommand = readLinuxProcessCommand(pid);
+	if (procCommand !== undefined) return procCommand;
 	const result = spawnSync("ps", ["-p", String(pid), "-o", "command="], { encoding: "utf8" });
-	if (result.status !== 0) return false;
-	return /(?:^|\s)\S*node(?:js)?(?:\.exe)?\s+.*indexing-service-daemon\.js(?:\s|$)/.test(result.stdout.trim());
+	return result.status === 0 ? result.stdout.trim() : "";
 }
 
 function isProcessRunning(pid) {
 	try {
 		process.kill(pid, 0);
-		return true;
+		const procState = readLinuxProcessState(pid);
+		if (procState !== undefined) return procState !== "Z";
+		const state = spawnSync("ps", ["-p", String(pid), "-o", "stat="], { encoding: "utf8" });
+		return state.status !== 0 || !state.stdout.trimStart().startsWith("Z");
 	} catch (error) {
 		return error instanceof Error && "code" in error && error.code === "EPERM";
+	}
+}
+
+function isIndexingDaemonCommand(command) {
+	return /(?:^|\s)\S*node(?:js)?(?:\.exe)?\s+.*indexing-service-daemon\.js(?:\s|$)/.test(command);
+}
+
+function readLinuxProcessCommand(pid) {
+	if (process.platform !== "linux") return undefined;
+	try {
+		return fs.readFileSync(`/proc/${pid}/cmdline`).toString("utf8").split("\0").filter(Boolean).join(" ");
+	} catch {
+		return undefined;
+	}
+}
+
+function readLinuxProcessState(pid) {
+	if (process.platform !== "linux") return undefined;
+	try {
+		const stat = fs.readFileSync(`/proc/${pid}/stat`, "utf8");
+		const commandEnd = stat.lastIndexOf(") ");
+		return commandEnd >= 0 ? stat[commandEnd + 2] : undefined;
+	} catch {
+		return undefined;
 	}
 }
 
