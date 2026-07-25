@@ -99,6 +99,51 @@ describe("parseOsc11BackgroundColor", () => {
     });
   });
 
+  it("parses rgba: prefix OSC 11 responses", () => {
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgba:0000/8000/ffff\x07"), {
+      r: 0,
+      g: 128,
+      b: 255,
+    });
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgba:ff/80/00\x07"), {
+      r: 255,
+      g: 128,
+      b: 0,
+    });
+  });
+
+  it("parses 1-digit, 2-digit, and 3-digit per-channel hex OSC 11 responses", () => {
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:f/8/0\x07"), {
+      r: 255,
+      g: 136,
+      b: 0,
+    });
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:ff/80/00\x07"), {
+      r: 255,
+      g: 128,
+      b: 0,
+    });
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:fff/800/000\x07"), {
+      r: 255,
+      g: 128,
+      b: 0,
+    });
+  });
+
+  it("parses uppercase OSC 11 hex responses", () => {
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#FFFFFF\x1b\\"), { r: 255, g: 255, b: 255 });
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#00008000FFFF\x07"), {
+      r: 0,
+      g: 128,
+      b: 255,
+    });
+    assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:FF/80/00\x07"), {
+      r: 255,
+      g: 128,
+      b: 0,
+    });
+  });
+
   it("parses OSC 11 hex responses", () => {
     assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#ffffff\x1b\\"), { r: 255, g: 255, b: 255 });
     assert.deepStrictEqual(parseOsc11BackgroundColor("\x1b]11;#000000\x07"), { r: 0, g: 0, b: 0 });
@@ -121,6 +166,8 @@ describe("parseOsc11BackgroundColor", () => {
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;#00008000zzzz\x07"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:invalid/0000/0000\x07"), undefined);
     assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:0000\x07"), undefined);
+    assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:ff/80\x07"), undefined);
+    assert.strictEqual(parseOsc11BackgroundColor("\x1b]11;rgb:ff/80/00/11\x07"), undefined);
   });
 });
 
@@ -261,6 +308,25 @@ describe("formatOsc11BackgroundColor & formatOsc111ResetBackgroundColor", () => 
     try {
       assert.strictEqual(formatOsc11BackgroundColor("#18181e"), "\x1b]11;#18181e\x07");
       assert.strictEqual(formatOsc111ResetBackgroundColor(), "\x1b]111\x07");
+    } finally {
+      if (origTmux) process.env.TMUX = origTmux;
+      else delete process.env.TMUX;
+      if (origTerm) process.env.TERM = origTerm;
+      else delete process.env.TERM;
+    }
+  });
+
+  it("formats tmux OSC 11 background color sequence when TERM starts with tmux", () => {
+    const origTmux = process.env.TMUX;
+    const origTerm = process.env.TERM;
+    delete process.env.TMUX;
+    process.env.TERM = "tmux-256color";
+    try {
+      assert.strictEqual(
+        formatOsc11BackgroundColor("#18181e"),
+        "\x1bPtmux;\x1b\x1b]11;#18181e\x07\x1b\\\x1b]11;#18181e\x07",
+      );
+      assert.strictEqual(formatOsc111ResetBackgroundColor(), "\x1bPtmux;\x1b\x1b]111\x07\x1b\\\x1b]111\x07");
     } finally {
       if (origTmux) process.env.TMUX = origTmux;
       else delete process.env.TMUX;

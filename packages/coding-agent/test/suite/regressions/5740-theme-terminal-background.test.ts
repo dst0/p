@@ -26,6 +26,9 @@ describe("regression #5740: theme terminal background export", () => {
     expect(getThemePageBg("catppuccin")).toBe("#11111b");
     expect(getThemePageBg("catppuccin-latte")).toBe("#dce0e8");
 
+    // Default parameter (undefined) uses current theme ("dark")
+    expect(getThemePageBg()).toBe("#18181e");
+
     // Line 989 coverage: missing theme or no pageBg returns undefined
     expect(getThemePageBg("nonexistent-theme-xyz")).toBeUndefined();
   });
@@ -40,6 +43,9 @@ describe("regression #5740: theme terminal background export", () => {
     // Line 1005 coverage: unknown theme fallback
     expect(isLightTheme("unknown-theme-dark")).toBe(false);
     expect(isLightTheme("unknown-theme-light")).toBe(true);
+
+    // Default parameter (undefined) uses current theme
+    expect(isLightTheme()).toBe(false);
   });
 
   it("returns all available built-in themes including light and Japanese aesthetics", () => {

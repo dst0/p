@@ -48,10 +48,11 @@ export function parseOsc11BackgroundColor(data: string): RgbColor | undefined {
   }
 
   const rgbValue = value.replace(/^rgba?:/i, "");
-  const [red, green, blue] = rgbValue.split("/");
-  if (red === undefined || green === undefined || blue === undefined) {
+  const parts = rgbValue.split("/");
+  if (parts.length !== 3) {
     return undefined;
   }
+  const [red, green, blue] = parts;
   const r = parseOscHexChannel(red);
   const g = parseOscHexChannel(green);
   const b = parseOscHexChannel(blue);
