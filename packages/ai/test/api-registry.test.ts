@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   clearApiProviders,
   getApiProvider,
@@ -6,119 +6,100 @@ import {
   registerApiProvider,
   unregisterApiProviders,
 } from "../src/api-registry.ts";
-import type { Api, Model, StreamFunction } from "../src/types.ts";
+import type { Api, Context, Model, StreamFunction } from "../src/types.ts";
 import { createAssistantMessageEventStream } from "../src/utils/event-stream.ts";
 
-describe("api-registry", () => {
-  it("registers, retrieves, lists, unregisters, and clears API providers", () => {
-    const dummyStream = vi.fn(() => createAssistantMessageEventStream()) as unknown as StreamFunction<Api>;
-    const dummySimple = vi.fn(() => createAssistantMessageEventStream()) as unknown as StreamFunction<Api>;
+function createModel(api: Api): Model<Api> {
+  return {
+    id: `${api}-model`,
+    name: `${api} model`,
+    api,
+    provider: "test-provider",
+    baseUrl: "https://example.test",
+    reasoning: false,
+    input: ["text"],
+    cost: {
+      input: 0,
+      output: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+    },
+    contextWindow: 1024,
+    maxTokens: 256,
+  };
+}
 
+afterEach(() => {
+  clearApiProviders();
+});
+
+describe("API provider registry", () => {
+  it("registers a provider and delegates both stream variants unchanged", () => {
+    const stream = vi.fn<StreamFunction<Api>>(() => createAssistantMessageEventStream());
+    const streamSimple = vi.fn<StreamFunction<Api>>(() => createAssistantMessageEventStream());
+    const context: Context = { messages: [] };
+    const model = createModel("custom-test-api");
     registerApiProvider(
       {
-        api: "custom-test-api" as Api,
-        stream: dummyStream,
-        streamSimple: dummySimple,
+        api: "custom-test-api",
+        stream,
+        streamSimple,
       },
       "source-1",
     );
 
-    const provider = getApiProvider("custom-test-api" as Api);
+    const provider = getApiProvider("custom-test-api");
     expect(provider).toBeDefined();
-    expect(provider?.api).toBe("custom-test-api");
+    if (!provider) throw new Error("Expected the custom API provider to be registered");
 
-    const allProviders = getApiProviders();
-    expect(allProviders.some((p) => p.api === "custom-test-api")).toBe(true);
+    const streamResult = provider.stream(model, context, { maxTokens: 128 });
+    const simpleResult = provider.streamSimple(model, context, { reasoning: "low" });
 
-    // Unregister by sourceId
+    expect(streamResult).toBeInstanceOf(Object);
+    expect(simpleResult).toBeInstanceOf(Object);
+    expect(stream).toHaveBeenCalledExactlyOnceWith(model, context, { maxTokens: 128 });
+    expect(streamSimple).toHaveBeenCalledExactlyOnceWith(model, context, { reasoning: "low" });
+    expect(getApiProviders()).toContainEqual(provider);
+  });
+
+  it("rejects mismatched models before invoking provider functions", () => {
+    const stream = vi.fn<StreamFunction<Api>>(() => createAssistantMessageEventStream());
+    const streamSimple = vi.fn<StreamFunction<Api>>(() => createAssistantMessageEventStream());
+    registerApiProvider({
+      api: "expected-api",
+      stream,
+      streamSimple,
+    });
+    const provider = getApiProvider("expected-api");
+    expect(provider).toBeDefined();
+    if (!provider) throw new Error("Expected the API provider to be registered");
+    const mismatchedModel = createModel("different-api");
+    const context: Context = { messages: [] };
+
+    expect(() => provider.stream(mismatchedModel, context)).toThrow(
+      "Mismatched api: different-api expected expected-api",
+    );
+    expect(() => provider.streamSimple(mismatchedModel, context)).toThrow(
+      "Mismatched api: different-api expected expected-api",
+    );
+    expect(stream).not.toHaveBeenCalled();
+    expect(streamSimple).not.toHaveBeenCalled();
+  });
+
+  it("unregisters only providers owned by the requested source", () => {
+    const stream: StreamFunction<Api> = () => createAssistantMessageEventStream();
+    registerApiProvider({ api: "source-one-api", stream, streamSimple: stream }, "source-1");
+    registerApiProvider({ api: "source-two-api", stream, streamSimple: stream }, "source-2");
+
+    unregisterApiProviders("missing-source");
+    expect(getApiProvider("source-one-api")).toBeDefined();
+    expect(getApiProvider("source-two-api")).toBeDefined();
+
     unregisterApiProviders("source-1");
-    expect(getApiProvider("custom-test-api" as Api)).toBeUndefined();
+    expect(getApiProvider("source-one-api")).toBeUndefined();
+    expect(getApiProvider("source-two-api")).toBeDefined();
 
-    // Re-register and clear
-    registerApiProvider(
-      {
-        api: "custom-test-api" as Api,
-        stream: dummyStream,
-        streamSimple: dummySimple,
-      },
-      "source-1",
-    );
     clearApiProviders();
-    expect(getApiProvider("custom-test-api" as Api)).toBeUndefined();
+    expect(getApiProviders()).toEqual([]);
   });
-
-  it("throws mismatched api error in stream wrapper when model.api does not match provider.api", () => {
-    const dummyStream = vi.fn(() => createAssistantMessageEventStream()) as unknown as StreamFunction<Api>;
-    const dummySimple = vi.fn(() => createAssistantMessageEventStream()) as unknown as StreamFunction<Api>;
-
-    registerApiProvider(
-      {
-        api: "test-api-mismatch-1" as Api,
-        stream: dummyStream,
-        streamSimple: dummySimple,
-      },
-      "source-mismatch",
-    );
-
-    const provider = getApiProvider("test-api-mismatch-1" as Api);
-    expect(provider).toBeDefined();
-
-    const badModel = { api: "different-api" } as unknown as Model<Api>;
-    const context = { messages: [] };
-
-    expect(() => provider!.stream(badModel, context)).toThrow(
-      "Mismatched api: different-api expected test-api-mismatch-1",
-    );
-    expect(() => provider!.streamSimple(badModel, context)).toThrow(
-      "Mismatched api: different-api expected test-api-mismatch-1",
-    );
-
-    unregisterApiProviders("source-mismatch");
-  });
-});
-
-it("invokes wrapped stream and streamSimple correctly", () => {
-  let streamCalled = false;
-  let streamSimpleCalled = false;
-
-  registerApiProvider({
-    api: "anthropic" as any,
-    stream: () => {
-      streamCalled = true;
-      return {} as any;
-    },
-    streamSimple: () => {
-      streamSimpleCalled = true;
-      return {} as any;
-    },
-  });
-
-  const p = getApiProvider("anthropic" as any);
-  p!.stream({ api: "anthropic" } as any, [] as any, {} as any);
-  p!.streamSimple({ api: "anthropic" } as any, [] as any, {} as any);
-
-  expect(streamCalled).toBe(true);
-  expect(streamSimpleCalled).toBe(true);
-
-  // Mismatched api
-  expect(() => p!.stream({ api: "openai-completions" } as any, [] as any, {} as any)).toThrow("Mismatched api");
-  expect(() => p!.streamSimple({ api: "openai-completions" } as any, [] as any, {} as any)).toThrow("Mismatched api");
-});
-
-it("unregisterApiProviders handles non-matching sourceId", () => {
-  registerApiProvider(
-    {
-      api: "anthropic" as any,
-      stream: () => ({}) as any,
-      streamSimple: () => ({}) as any,
-    },
-    "source-1",
-  );
-
-  // Unregister another source, shouldn't delete anthropic
-  unregisterApiProviders("source-2");
-  expect(getApiProvider("anthropic" as any)).toBeDefined();
-
-  unregisterApiProviders("source-1");
-  expect(getApiProvider("anthropic" as any)).toBeUndefined();
 });
