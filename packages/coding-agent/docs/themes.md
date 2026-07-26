@@ -18,7 +18,9 @@ Themes are JSON files that define colors for the TUI.
 
 P loads themes from:
 
-- Built-in: `dark`, `light`
+- Built-in themes (33 available):
+  - **Standard & Popular:** `dark`, `light`, `catppuccin`, `catppuccin-latte`, `cyberpunk-tokyo`, `darcula`, `dracula`, `github-light`, `gruvbox`, `kanagawa`, `matcha`, `monokai`, `nord`, `one-dark`, `one-light`, `solarized-dark`, `solarized-light`, `tokyo-night`, `vscode-dark`
+  - **Holiday & Seasonal:** `christmas` 🎄, `diwali` 🪔, `earthday` 🌍, `halloween` 🎃, `hanukkah` 🕎, `holi` 🎨, `lunarnewyear` 🧧, `newyear` 🎆, `nowruz` 🪻, `sakura` 🌸, `solstice` ☀️, `st-patricks-day` ☘️, `thanksgiving` 🦃, `valentine` 💖
 - Global: `~/.p/agent/themes/*.json`
 - Project: `.p/themes/*.json` (only after the project is trusted)
 - Packages: `themes/` directories or `p.themes` entries in `package.json`

@@ -82,7 +82,7 @@ The fast responder emits a short generated acknowledgement before large uncached
 
 | Setting                  | Type    | Default     | Description                                                                                                                          |
 | ------------------------ | ------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `theme`                  | string  | `"dark"`    | Theme name (`"dark"`, `"light"`, or custom)                                                                                          |
+| `theme`                  | string  | `"dark"`    | Built-in or custom theme name (see [themes.md](themes.md) for full list: `dark`, `light`, `catppuccin`, `dracula`, `tokyo-night`, holiday/event themes, etc.) |
 | `quietStartup`           | boolean | `false`     | Hide startup header                                                                                                                  |
 | `defaultProjectTrust`    | string  | `"ask"`     | Fallback project trust behavior: `"ask"`, `"always"`, or `"never"`. Global setting only                                              |
 | `collapseChangelog`      | boolean | `false`     | Show condensed changelog after updates                                                                                               |
