@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -50,15 +50,22 @@ describe("issue #2791 fs.watch error event crashes process", () => {
     writeFileSync(
       scriptPath,
       `
-import { setTheme, stopThemeWatcher } from "${themeModulePath}";
-
 process.env.${ENV_AGENT_DIR} = "${agentDir}";
 
-setTheme("custom-test", true);
+const { setTheme, stopThemeWatcher } = await import("${themeModulePath}");
 
-// Find the FSWatcher among active handles
+const result = setTheme("custom-test", true);
+if (!result.success) {
+	process.stderr.write("setTheme failed: " + result.error + "\\n");
+	process.exit(3);
+}
+
+// Find the FSWatcher among active handles (unwrapping h.owner if low-level C++ handle)
 const handles = (process as any)._getActiveHandles();
-const fsWatcher = handles.find((h: any) => h.constructor?.name === "FSWatcher");
+const watcherObjs = handles.map((h: any) => h.owner || h);
+const fsWatcher = watcherObjs.find(
+	(h: any) => typeof h.listenerCount === "function" && h.listenerCount("error") > 0,
+) || watcherObjs.find((h: any) => h.constructor?.name?.includes("Watcher") || h.constructor?.name?.includes("Event"));
 
 if (!fsWatcher) {
 	process.stderr.write("no FSWatcher found among active handles\\n");
@@ -84,11 +91,14 @@ process.exit(0);
 `,
     );
 
+    const tsxCli = join(__dirname, "../../../../../node_modules/tsx/dist/cli.mjs");
+    const execArgs = existsSync(tsxCli) ? [tsxCli, scriptPath] : [scriptPath];
+
     let _stdout = "";
     let stderr = "";
     let exitCode: number;
     try {
-      _stdout = execFileSync(process.execPath, [scriptPath], {
+      _stdout = execFileSync(process.execPath, execArgs, {
         timeout: 10000,
         encoding: "utf-8",
         env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
