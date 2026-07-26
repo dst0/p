@@ -571,4 +571,36 @@ describe("SettingsManager", () => {
       expect(savedSettings.terminal.showIndexingInfo).toBe(false);
     });
   });
+
+  describe("showHarnessMessages", () => {
+    it("should default to false", () => {
+      const manager = SettingsManager.create(projectDir, agentDir);
+      expect(manager.getShowHarnessMessages()).toBe(false);
+    });
+
+    it("should persist under terminal settings", async () => {
+      const manager = SettingsManager.create(projectDir, agentDir);
+
+      manager.setShowHarnessMessages(true);
+      await manager.flush();
+
+      const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+      expect(savedSettings.terminal.showHarnessMessages).toBe(true);
+    });
+
+    it("should toggle from true to false", async () => {
+      const manager = SettingsManager.create(projectDir, agentDir);
+
+      manager.setShowHarnessMessages(true);
+      await manager.flush();
+      expect(manager.getShowHarnessMessages()).toBe(true);
+
+      manager.setShowHarnessMessages(false);
+      await manager.flush();
+      expect(manager.getShowHarnessMessages()).toBe(false);
+
+      const savedSettings = JSON.parse(readFileSync(join(agentDir, "settings.json"), "utf-8"));
+      expect(savedSettings.terminal.showHarnessMessages).toBe(false);
+    });
+  });
 });

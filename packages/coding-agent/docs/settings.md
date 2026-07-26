@@ -250,6 +250,7 @@ Strict CI/testing profile:
 | `terminal.showTokenStats`       | boolean | `true`  | Show cumulative token and cache counts in the footer                                 |
 | `terminal.showIndexingInfo`     | boolean | `true`  | Show the active repository's `🔎` state marker and indexing percentage in the footer |
 | `terminal.showVersion`          | boolean | `false` | Show the p agent version in the footer                                               |
+| `terminal.showHarnessMessages`  | boolean | `false` | Show internal harness and completion protocol repair messages                        |
 | `images.autoResize`             | boolean | `true`  | Resize images to 2000x2000 max                                                       |
 | `images.blockImages`            | boolean | `false` | Block all images from being sent to LLM                                              |
 
