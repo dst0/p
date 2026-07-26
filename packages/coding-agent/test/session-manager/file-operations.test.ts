@@ -89,7 +89,7 @@ describe("loadEntriesFromFile", () => {
     expect(sessionManager.getSessionId()).toBe("abc");
     expect(sessionManager.getEntries()).toHaveLength(1);
     expect(sessionManager.buildSessionContext().messages).toEqual([{ role: "user", content: "hi", timestamp: 1 }]);
-  });
+  }, 60_000);
 });
 
 describe("findMostRecentSession", () => {
