@@ -63,6 +63,7 @@ import {
   type AgentSession,
   type AgentSessionEvent,
   type CompactionDryRunResult,
+  isInternalCompletionProtocolRepairMessage,
   parseSkillBlock,
 } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
@@ -3424,6 +3425,10 @@ export class InteractiveMode {
       }
       case "custom": {
         if (message.display) {
+          // Gate internal_repair messages behind showDebugMessages setting
+          if (message.customType === "internal_repair" && !this.settingsManager.getShowDebugMessages()) {
+            break;
+          }
           const renderer = this.session.extensionRunner.getMessageRenderer(message.customType);
           const component = new CustomMessageComponent(message, renderer, this.getMarkdownThemeWithSettings());
           component.setExpanded(this.toolOutputExpanded);
@@ -3446,6 +3451,10 @@ export class InteractiveMode {
         break;
       }
       case "user": {
+        // Gate internal repair messages behind showDebugMessages setting
+        if (isInternalCompletionProtocolRepairMessage(message) && !this.settingsManager.getShowDebugMessages()) {
+          break;
+        }
         const textContent = this.getUserMessageText(message);
         if (textContent) {
           if (this.chatContainer.children.length > 0) {
@@ -4398,6 +4407,7 @@ export class InteractiveMode {
           showTokenStats: this.settingsManager.getShowTokenStats(),
           showIndexingInfo: this.settingsManager.getShowIndexingInfo(),
           showVersion: this.settingsManager.getShowVersion(),
+          showDebugMessages: this.settingsManager.getShowDebugMessages(),
           warnings: this.settingsManager.getWarnings(),
         },
         {
@@ -4544,6 +4554,9 @@ export class InteractiveMode {
             this.settingsManager.setShowVersion(enabled);
             this.footer.setShowVersion(enabled, VERSION);
             this.ui.requestRender();
+          },
+          onShowDebugMessagesChange: (enabled) => {
+            this.settingsManager.setShowDebugMessages(enabled);
           },
           onWarningsChange: (warnings) => {
             this.settingsManager.setWarnings(warnings);

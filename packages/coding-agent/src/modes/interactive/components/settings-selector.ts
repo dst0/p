@@ -73,6 +73,7 @@ export interface SettingsConfig {
   showTokenStats: boolean;
   showIndexingInfo: boolean;
   showVersion: boolean;
+  showDebugMessages: boolean;
   warnings: WarningSettings;
 }
 
@@ -107,6 +108,7 @@ export interface SettingsCallbacks {
   onShowTokenStatsChange: (enabled: boolean) => void;
   onShowIndexingInfoChange: (enabled: boolean) => void;
   onShowVersionChange: (enabled: boolean) => void;
+  onShowDebugMessagesChange: (enabled: boolean) => void;
   onWarningsChange: (warnings: WarningSettings) => void;
   onCancel: () => void;
 }
@@ -533,6 +535,16 @@ export class SettingsSelectorComponent extends Container {
       values: ["true", "false"],
     });
 
+    // Debug messages toggle (insert after version)
+    const versionIndex = items.findIndex((item) => item.id === "version");
+    items.splice(versionIndex + 1, 0, {
+      id: "debug-messages",
+      label: "Show debug messages",
+      description: "Show internal harness and framework debug messages",
+      currentValue: config.showDebugMessages ? "true" : "false",
+      values: ["true", "false"],
+    });
+
     // Add borders
     this.addChild(new DynamicBorder());
 
@@ -631,6 +643,9 @@ export class SettingsSelectorComponent extends Container {
             break;
           case "version":
             callbacks.onShowVersionChange(newValue === "true");
+            break;
+          case "debug-messages":
+            callbacks.onShowDebugMessagesChange(newValue === "true");
             break;
         }
       },
