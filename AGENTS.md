@@ -46,7 +46,12 @@
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
 - After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
-- `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step.
+- `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step:
+  1. Hydrates monorepo dependencies (`npm install --ignore-scripts`) and builds all packages (`npm run build`).
+  2. Relinks `p` CLI across all global npm prefix locations on `PATH` and verifies version match & compaction settings.
+  3. Computes the indexing runtime version hash (`NEW_INDEXING_VERSION`) and compares it against the running daemon's `OLD_INDEXING_VERSION` in `~/.p/agent/indexing-service-status.json`.
+  4. If indexing version is unchanged, skips stopping/restarting the background daemon (`com.dst.p.code-index`) and avoids rebuilding vector stores. If changed, allows the daemon 10s to quiesce active indexing before updating service binaries.
+  5. Installs/updates the system service (launchd/systemd) and runs an isolated semantic-search smoke test.
 
 ## Code Indexing & Daemon Versioning
 
