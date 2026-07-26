@@ -48,15 +48,30 @@ describe("background process tools", () => {
     expect(sessionId).toBeDefined();
     expect(bashResult.details?.status).toBe("running");
 
-    const outputWait = processTool.execute("process-1", { action: "wait", session_id: sessionId! });
+    const updates: string[] = [];
+    const outputWait = processTool.execute(
+      "process-1",
+      { action: "wait", session_id: sessionId!, yield_time_ms: 50 },
+      undefined,
+      (update) => {
+        for (const item of update.content ?? []) {
+          if (item.type === "text") updates.push(item.text);
+        }
+      },
+    );
     controlled.emit("first useful output\n");
     const outputResult = await outputWait;
     expect(outputResult.details.status).toBe("running");
     expect(outputResult.details.newOutput).toBe(true);
     expect(outputResult.progress).toBe("made_progress");
     expect(outputResult.details.output).toContain("first useful output");
+    expect(updates.some((text) => text.includes("first useful output"))).toBe(true);
 
-    const completionWait = processTool.execute("process-2", { action: "wait", session_id: sessionId! });
+    const completionWait = processTool.execute("process-2", {
+      action: "wait",
+      session_id: sessionId!,
+      yield_time_ms: 1000,
+    });
     controlled.complete();
     const completionResult = await completionWait;
     expect(completionResult.details.status).toBe("completed");

@@ -13,13 +13,13 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 const processSchema = Type.Object({
   action: Type.Union([Type.Literal("wait"), Type.Literal("poll"), Type.Literal("kill")], {
     description:
-      "wait wakes on new output or completion, poll returns immediately, and kill interrupts the process tree",
+      "wait streams output while waiting for completion or yield_time_ms, poll returns immediately, and kill interrupts the process tree",
   }),
   session_id: Type.String({ description: "Process session id returned by bash" }),
   yield_time_ms: Type.Optional(
     Type.Integer({
       description:
-        "Maximum wait before returning control (default 10000ms). The tool still wakes earlier on output or completion.",
+        "Milliseconds to stream before yielding control back to the agent (default 10000, maximum 60000). Streams output updates while waiting.",
       minimum: 0,
       maximum: 60000,
     }),
@@ -69,7 +69,7 @@ export function createProcessToolDefinition(
     name: "process",
     label: "process",
     description:
-      "Inspect, wait for, or interrupt an asynchronous bash process. action=wait wakes as soon as new output or completion arrives, with a 10-second watchdog that returns control if nothing changes. Use poll to inspect immediately or kill to stop a stuck process.",
+      "Inspect, wait for, or interrupt an asynchronous bash process. action=wait streams output while waiting for completion or yield_time_ms (default 10000ms). Use poll to inspect immediately or kill to stop a stuck process.",
     promptSnippet: "Wait for, inspect, or interrupt asynchronous bash processes",
     parameters: processSchema,
     executionMode: "sequential",
@@ -81,7 +81,7 @@ export function createProcessToolDefinition(
         } else if (input.action === "poll") {
           snapshot = manager.observe(input.session_id);
         } else {
-          snapshot = await manager.waitForChange(input.session_id, {
+          snapshot = await manager.waitForCompletion(input.session_id, {
             signal,
             yieldTimeMs: input.yield_time_ms ?? 10000,
             onUpdate: (update) => onUpdate?.(createProcessResult(update)),
