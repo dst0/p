@@ -31,7 +31,25 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertEqual(plan.dtype, "float16")
         self.assertEqual(plan.batch_size, 64)
 
-    def test_falls_back_to_parallel_cpu_with_only_one_gibibyte_free_vram(self):
+    def test_falls_back_to_parallel_cpu_when_vram_and_system_memory_are_low(self):
+        plan = build_runtime_plan(
+            preferred_backend="rocm",
+            logical_cpu_count=32,
+            memory=MemorySnapshot(
+                system_total_bytes=16 * GIB,
+                system_available_bytes=12 * GIB,
+                accelerator_total_bytes=1 * GIB,
+                accelerator_free_bytes=1 * GIB,
+            ),
+            model_parameter_count=600_000_000,
+        )
+
+        self.assertTrue(plan.usable)
+        self.assertEqual(plan.backend, "cpu")
+        self.assertEqual(plan.cpu_threads, 4)
+        self.assertIn("below the safety reserve", plan.reason or "")
+
+    def test_uses_rocm_apu_unified_memory_when_system_memory_has_headroom(self):
         plan = build_runtime_plan(
             preferred_backend="rocm",
             logical_cpu_count=32,
@@ -45,10 +63,9 @@ class ResourceManagerTest(unittest.TestCase):
         )
 
         self.assertTrue(plan.usable)
-        self.assertEqual(plan.backend, "cpu")
-        self.assertEqual(plan.cpu_threads, 32)
-        self.assertEqual(plan.batch_size, 64)
-        self.assertIn("below the safety reserve", plan.reason or "")
+        self.assertEqual(plan.backend, "rocm")
+        self.assertEqual(plan.device, "cuda")
+        self.assertEqual(plan.dtype, "float16")
 
     def test_reduces_cpu_parallelism_when_system_memory_is_limited(self):
         plan = build_runtime_plan(
@@ -59,12 +76,13 @@ class ResourceManagerTest(unittest.TestCase):
                 system_available_bytes=8 * GIB,
             ),
             model_parameter_count=600_000_000,
+            max_cpu_threads=32,
         )
 
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
-        self.assertEqual(plan.cpu_threads, 7)
-        self.assertEqual(plan.batch_size, 8)
+        self.assertEqual(plan.cpu_threads, 8)
+        self.assertEqual(plan.batch_size, 16)
 
     def test_refuses_to_load_when_neither_accelerator_nor_system_memory_is_safe(self):
         plan = build_runtime_plan(

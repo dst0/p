@@ -22,6 +22,7 @@ import json
 import os
 import sys
 import threading
+import time
 import traceback
 from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -221,7 +222,14 @@ class EmbeddingServer:
         return "cpu", memory
 
     def _detect_accelerator(self) -> tuple[str | None, MemorySnapshot]:
+        now = time.monotonic()
+        if hasattr(self, "_cached_accelerator") and self._cached_accelerator is not None:
+            cached_backend, cached_memory, cached_time = self._cached_accelerator
+            if now - cached_time < 15.0:
+                return cached_backend, cached_memory
+
         memory = system_memory_snapshot()
+        backend: str | None = None
         if torch.cuda.is_available():
             try:
                 accelerator_free, accelerator_total = torch.cuda.mem_get_info()
@@ -229,18 +237,21 @@ class EmbeddingServer:
                 self._record_warning(f"unable to read CUDA/ROCm memory: {_error_summary(error)}")
                 accelerator_free, accelerator_total = None, None
             backend = "rocm" if getattr(torch.version, "hip", None) else "cuda"
-            return backend, replace(
+            memory = replace(
                 memory,
                 accelerator_total_bytes=accelerator_total,
                 accelerator_free_bytes=accelerator_free,
             )
-        if _mps_available():
-            return "mps", replace(
+        elif _mps_available():
+            backend = "mps"
+            memory = replace(
                 memory,
                 accelerator_total_bytes=memory.system_total_bytes,
                 accelerator_free_bytes=memory.system_available_bytes,
             )
-        return None, memory
+
+        self._cached_accelerator = (backend, memory, now)
+        return backend, memory
 
     def _current_memory(self) -> MemorySnapshot:
         detected_backend, memory = self._detect_accelerator()

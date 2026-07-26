@@ -98,7 +98,7 @@ def build_runtime_plan(
 
     system_reserve = max(
         min_system_reserve_bytes,
-        min(MAX_SYSTEM_RESERVE_BYTES, int(memory.system_total_bytes * 0.15)),
+        min(2 * GIB, int(memory.system_available_bytes * 0.25)),
     )
     accelerator_total = memory.accelerator_total_bytes or 0
     accelerator_reserve = (
@@ -116,6 +116,20 @@ def build_runtime_plan(
     reason = None
     if preferred_backend != "cpu":
         accelerator_free = memory.accelerator_free_bytes
+        # On ROCm APUs (unified memory architecture), PyTorch may report a small static VRAM window
+        # while ROCm can dynamically allocate from system RAM. If system available memory has enough
+        # headroom, treat ROCm free memory as available system memory minus system reserve.
+        if (
+            preferred_backend == "rocm"
+            and accelerator_free is not None
+            and accelerator_total >= 2 * GIB
+            and accelerator_free - accelerator_reserve - accelerator_load_bytes < MIN_RUNTIME_WORKSPACE_BYTES
+        ):
+            system_apu_headroom = memory.system_available_bytes - system_reserve - accelerator_load_bytes
+            if system_apu_headroom >= MIN_RUNTIME_WORKSPACE_BYTES:
+                accelerator_free = max(accelerator_free, memory.system_available_bytes - system_reserve)
+                accelerator_reserve = min(accelerator_reserve, MIN_ACCELERATOR_RESERVE_BYTES)
+
         accelerator_fits = (
             accelerator_free is not None
             and accelerator_total > 0
@@ -160,7 +174,10 @@ def build_runtime_plan(
             reason="insufficient system memory for the embedding model and safety reserve",
         )
 
-    thread_limit = min(logical_cpu_count, max_cpu_threads or logical_cpu_count)
+    default_cpu_thread_limit = (
+        min(4, max(1, logical_cpu_count // 2)) if max_cpu_threads is None else max_cpu_threads
+    )
+    thread_limit = min(logical_cpu_count, default_cpu_thread_limit)
     selected_model_bytes = cpu_model_bytes if selected_backend == "cpu" else accelerator_model_bytes
     sequence_scale = max(0.25, (sequence_length / 2048) ** 2)
     model_scale = max(0.5, (model_parameter_count / 600_000_000) ** 0.5)
