@@ -1,4 +1,5 @@
 import { type Component, truncateToWidth, visibleWidth } from "@dst0/p-tui";
+import { theme } from "../theme/theme.ts";
 
 export type PlanStepStatus =
   | "pending"
@@ -15,6 +16,10 @@ export interface PlanStep {
   id: string;
   description: string;
   status: PlanStepStatus;
+  parentId?: string;
+  depth?: number;
+  isLastChild?: boolean;
+  active?: boolean;
 }
 
 export type ToolEventStatus = "running" | "success" | "error";
@@ -87,13 +92,15 @@ export class PlanPanel implements Component {
 
     // Calculate progress
     const totalSteps = this.tracker.steps.length;
-    const completedSteps = this.tracker.steps.filter((s) => s.status === "completed").length;
+    const completedSteps = this.tracker.steps.filter((s) => s.status === "completed" || s.status === "done").length;
     const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-    // Header
+    // Header with theme colors
     const titleText = `[ ${completedSteps}/${totalSteps} Steps Complete (${percent}%) ]`;
     const decorativeLine = "━".repeat(Math.max(0, width - visibleWidth(titleText) - 2));
-    lines.push(truncateToWidth(`${C.cyan}${C.bold}${titleText} ${decorativeLine}${C.reset}`, width, ""));
+    const formattedTitle = theme.fg("accent", theme.bold(titleText));
+    const formattedLine = theme.fg("muted", decorativeLine);
+    lines.push(truncateToWidth(`${formattedTitle} ${formattedLine}`, width, ""));
     lines.push("");
 
     // Plan steps
@@ -127,7 +134,13 @@ export class PlanPanel implements Component {
             break;
         }
 
-        const stepText = ` ${icon} ${step.description}`;
+        const depth = step.depth ?? 0;
+        const treeIndent = depth > 0 ? "  ".repeat(depth - 1) + (step.isLastChild ? "└─ " : "├─ ") : "";
+        const isActive = step.active || step.status === "in_progress";
+        const activeMarker = isActive ? ` ${C.yellow}👈${C.reset}` : "";
+        const stepDesc = isActive ? `${C.bold}${theme.fg("accent", step.description)}${C.reset}` : step.description;
+
+        const stepText = ` ${C.gray}${treeIndent}${C.reset}${icon} ${stepDesc}${activeMarker}`;
         lines.push(truncateToWidth(stepText, width, "..."));
       }
     }
@@ -137,7 +150,7 @@ export class PlanPanel implements Component {
     // Execution log summary
     const logHeader = `[ Recent Tool Executions ]`;
     const logLine = "━".repeat(Math.max(0, width - visibleWidth(logHeader) - 2));
-    lines.push(truncateToWidth(`${C.gray}${logHeader} ${logLine}${C.reset}`, width, ""));
+    lines.push(truncateToWidth(`${theme.fg("muted", logHeader)} ${theme.fg("muted", logLine)}`, width, ""));
 
     if (this.tracker.toolEvents.length === 0) {
       lines.push(truncateToWidth(`  ${C.gray}No recent executions.${C.reset}`, width, ""));
@@ -167,6 +180,9 @@ export class PlanPanel implements Component {
         lines.push(truncateToWidth(eventText, width, "..."));
       }
     }
+
+    lines.push("");
+    lines.push(truncateToWidth(`  ${theme.fg("dim", "[F2] Toggle plan view")}`, width, ""));
 
     return lines;
   }

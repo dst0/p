@@ -1351,6 +1351,15 @@ export class TUI extends Container {
       return;
     }
 
+    // When an overlay is active, any shift in viewport top between renders requires an atomic
+    // full re-render so the screen-pinned overlay is not visually misplaced during partial diffing.
+    const newViewportTop = Math.max(0, newLines.length - height);
+    if (this.overlayStack.length > 0 && newViewportTop !== prevViewportTop) {
+      logRedraw(`overlay viewport shift (${prevViewportTop} -> ${newViewportTop})`);
+      fullRender(true);
+      return;
+    }
+
     // Find first and last changed lines
     let firstChanged = -1;
     let lastChanged = -1;

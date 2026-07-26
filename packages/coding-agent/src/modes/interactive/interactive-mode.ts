@@ -67,7 +67,7 @@ import {
   parseSkillBlock,
 } from "../../core/agent-session.ts";
 import { type AgentSessionRuntime, SessionImportFileNotFoundError } from "../../core/agent-session-runtime.ts";
-import { renderPlanStatusMarker, STATE_RENDER_MARKERS } from "../../core/compaction/index.ts";
+import { getOrderedPlanTree, renderPlanStatusMarker, STATE_RENDER_MARKERS } from "../../core/compaction/index.ts";
 import type {
   AutocompleteProviderFactory,
   EditorFactory,
@@ -745,6 +745,7 @@ export class InteractiveMode {
         rawKeyHint(`${keyText("app.model.cycleForward")}/${keyText("app.model.cycleBackward")}`, "to cycle models"),
         hint("app.model.select", "to select model"),
         hint("app.tools.expand", "to expand tools"),
+        hint("app.plan.toggle", "to toggle live plan"),
         hint("app.thinking.toggle", "to expand thinking"),
         hint("app.editor.external", "for external editor"),
         rawKeyHint("/", "for commands"),
@@ -760,6 +761,7 @@ export class InteractiveMode {
         rawKeyHint(`${keyText("app.clear")}/${keyText("app.exit")}`, "clear/exit"),
         rawKeyHint("/", "commands"),
         rawKeyHint("!", "bash"),
+        hint("app.plan.toggle", "plan"),
         hint("app.tools.expand", "more"),
       ].join(theme.fg("muted", " · "));
       const compactOnboarding = theme.fg(
@@ -3379,10 +3381,15 @@ export class InteractiveMode {
 
   private syncPlanTracker(): void {
     const state = this.session.getSessionStateSnapshot().state;
-    this.planStatusTracker.steps = state.plan.map((p, i) => ({
-      id: `step-${i}`,
-      description: p.text,
-      status: (p.status === "done" ? "completed" : p.status) || "pending",
+    const orderedTree = getOrderedPlanTree(state.plan);
+    this.planStatusTracker.steps = orderedTree.map(({ item, depth, isLastChild, active }) => ({
+      id: item.id,
+      description: item.text,
+      status: (item.status === "done" ? "completed" : item.status) || "pending",
+      parentId: item.parentId,
+      depth,
+      isLastChild,
+      active,
     }));
     this.planStatusTracker.onUpdate?.();
   }
