@@ -136,7 +136,9 @@ export async function executeBashWithOperations(
       ensureTempFile();
     }
     if (tempFileStream) {
-      tempFileStream.end();
+      await new Promise<void>((resolve) => {
+        tempFileStream?.end(() => resolve());
+      });
     }
     const cancelled = options?.signal?.aborted ?? false;
     const rawOutput = outputChunks.join("");
