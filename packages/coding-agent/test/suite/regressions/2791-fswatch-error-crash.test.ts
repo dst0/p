@@ -60,10 +60,12 @@ if (!result.success) {
 	process.exit(3);
 }
 
-// Find the FSWatcher among active handles
+// Find the FSWatcher among active handles (unwrapping h.owner if low-level C++ handle)
 const handles = (process as any)._getActiveHandles();
-const watchers = handles.filter((h: any) => h.constructor?.name === "FSWatcher");
-const fsWatcher = watchers.find((h: any) => h.listenerCount("error") > 0) || watchers[0];
+const watcherObjs = handles.map((h: any) => h.owner || h);
+const fsWatcher = watcherObjs.find(
+	(h: any) => typeof h.listenerCount === "function" && h.listenerCount("error") > 0,
+) || watcherObjs.find((h: any) => h.constructor?.name?.includes("Watcher") || h.constructor?.name?.includes("Event"));
 
 if (!fsWatcher) {
 	process.stderr.write("no FSWatcher found among active handles\\n");
