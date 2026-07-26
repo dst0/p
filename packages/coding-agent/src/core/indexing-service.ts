@@ -274,10 +274,11 @@ function collectIndexingFiles(projectRoot: string): string[] {
     if (fileExists(file)) files.push(file);
   }
 
-  // code-index compiled files
+  // code-index compiled files (exclude index.js which contains CODE_INDEX_VERSION bumped on every release)
   const codeIndexDistDir = path.join(codeIndexDir, "dist");
   if (dirExists(codeIndexDistDir)) {
-    collectJsFiles(codeIndexDistDir, files);
+    const excludeIndex = path.join(codeIndexDistDir, "index.js");
+    collectJsFiles(codeIndexDistDir, files, [".js"], [excludeIndex]);
   }
 
   // code-index Python files
@@ -303,15 +304,18 @@ function collectIndexingFiles(projectRoot: string): string[] {
   return files;
 }
 
-function collectJsFiles(dir: string, result: string[], extensions: string[] = [".js"]): void {
+function collectJsFiles(dir: string, result: string[], extensions: string[] = [".js"], excludeFiles?: string[]): void {
+  const excludeSet = excludeFiles ? new Set(excludeFiles) : undefined;
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        collectJsFiles(fullPath, result, extensions);
+        collectJsFiles(fullPath, result, extensions, excludeFiles);
       } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
-        result.push(fullPath);
+        if (!excludeSet?.has(fullPath)) {
+          result.push(fullPath);
+        }
       }
     }
   } catch {

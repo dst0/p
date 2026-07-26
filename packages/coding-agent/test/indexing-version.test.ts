@@ -48,6 +48,7 @@ function populateMockFiles(root: string): void {
 
   // code-index dist files
   fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "index.js"), "export const codeIndex = true;\n");
+  fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "chunk.js"), "export const chunk = true;\n");
 
   // code-index Python files
   fs.writeFileSync(path.join(root, "packages", "code-index", "embedding_server.py"), "print('embedding')\n");
@@ -208,12 +209,26 @@ describe("computeIndexingVersion", () => {
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
 
-    // Remove one file and add another with the same content
-    fs.rmSync(path.join(root, "packages", "code-index", "dist", "index.js"));
-    fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "index.js"), "different content\n");
+    // Remove one file and modify content
+    fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "chunk.js"), "different content\n");
 
     const after = computeIndexingVersion(root);
     expect(after).not.toBe(before);
+  });
+
+  it("ignores changes to code-index/dist/index.js (CODE_INDEX_VERSION package version bumps)", () => {
+    const root = createMockProjectRoot();
+    populateMockFiles(root);
+    const before = computeIndexingVersion(root);
+
+    // Modify dist/index.js (simulating a package version bump)
+    fs.writeFileSync(
+      path.join(root, "packages", "code-index", "dist", "index.js"),
+      'export const CODE_INDEX_VERSION = "0.4.74";\n',
+    );
+
+    const after = computeIndexingVersion(root);
+    expect(after).toBe(before);
   });
 
   it("ignores files outside the expected indexing directories", () => {
