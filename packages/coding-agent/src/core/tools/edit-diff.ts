@@ -111,25 +111,55 @@ export function fuzzyFindText(content: string, oldText: string): FuzzyMatchResul
   const fuzzyOldText = normalizeForFuzzyMatch(oldText);
   const fuzzyIndex = fuzzyContent.indexOf(fuzzyOldText);
 
-  if (fuzzyIndex === -1) {
+  if (fuzzyIndex !== -1) {
     return {
-      found: false,
-      index: -1,
-      matchLength: 0,
-      usedFuzzyMatch: false,
-      contentForReplacement: content,
+      found: true,
+      index: fuzzyIndex,
+      matchLength: fuzzyOldText.length,
+      usedFuzzyMatch: true,
+      contentForReplacement: fuzzyContent,
     };
   }
 
-  // When fuzzy matching, we work in the normalized space for replacement.
-  // This means the output will have normalized whitespace/quotes/dashes,
-  // which is acceptable since we're fixing minor formatting differences anyway.
+  // Try line-trimmed fuzzy match if exact and standard fuzzy failed
+  const lineTrimmedContent = fuzzyContent
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n");
+  const lineTrimmedOldText = fuzzyOldText
+    .split("\n")
+    .map((line) => line.trim())
+    .join("\n");
+
+  const trimmedOccurrences = lineTrimmedContent.split(lineTrimmedOldText).length - 1;
+  if (trimmedOccurrences === 1) {
+    const trimmedIndex = lineTrimmedContent.indexOf(lineTrimmedOldText);
+    const lineCountBeforeMatch = lineTrimmedContent.slice(0, trimmedIndex).split("\n").length - 1;
+    const fuzzyContentLines = fuzzyContent.split("\n");
+    let targetCharIndex = 0;
+    for (let i = 0; i < lineCountBeforeMatch; i++) {
+      targetCharIndex += fuzzyContentLines[i].length + 1;
+    }
+    const matchLineCount = lineTrimmedOldText.split("\n").length;
+    let matchCharLength = 0;
+    for (let i = 0; i < matchLineCount; i++) {
+      matchCharLength += (fuzzyContentLines[lineCountBeforeMatch + i] ?? "").length + (i < matchLineCount - 1 ? 1 : 0);
+    }
+    return {
+      found: true,
+      index: targetCharIndex,
+      matchLength: matchCharLength,
+      usedFuzzyMatch: true,
+      contentForReplacement: fuzzyContent,
+    };
+  }
+
   return {
-    found: true,
-    index: fuzzyIndex,
-    matchLength: fuzzyOldText.length,
-    usedFuzzyMatch: true,
-    contentForReplacement: fuzzyContent,
+    found: false,
+    index: -1,
+    matchLength: 0,
+    usedFuzzyMatch: false,
+    contentForReplacement: content,
   };
 }
 
