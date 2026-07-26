@@ -35,6 +35,17 @@ describe("Box component", () => {
     assert.equal(lines[1].includes("  Hello"), true);
   });
 
+  it("re-applies background ANSI styling after reset sequences inside lines", () => {
+    const bgFn = (text: string) => `\x1b[44m${text}\x1b[49m`;
+    const box = new Box(0, 0, bgFn);
+    const textChild = new Text("\x1b[90m↳\x1b[0m 1477: code line", 0, 0);
+    box.addChild(textChild);
+
+    const lines = box.render(30);
+    assert.equal(lines.length, 1);
+    assert.equal(lines[0].includes("\x1b[0m\x1b[44m"), true);
+  });
+
   it("handles child management and cache invalidation", () => {
     const box = new Box();
     let invalidations = 0;

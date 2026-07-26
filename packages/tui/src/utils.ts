@@ -894,7 +894,20 @@ export function applyBackgroundToLine(line: string, width: number, bgFn: (text: 
 
   // Apply background to content + padding
   const withPadding = line + padding;
-  return bgFn(withPadding);
+
+  // Extract background ANSI sequence by sampling bgFn with a sentinel
+  const sentinel = "\u0000";
+  const bgStyled = bgFn(sentinel);
+  const sentinelIndex = bgStyled.indexOf(sentinel);
+  const bgCode = sentinelIndex >= 0 ? bgStyled.slice(0, sentinelIndex) : "";
+
+  if (!bgCode) {
+    return bgFn(withPadding);
+  }
+
+  // Re-apply background color whenever a full reset (\x1b[0m or \x1b[m) or background reset (\x1b[49m) occurs in the line
+  const reapplied = withPadding.replace(/(\x1b\[0?m|\x1b\[49m)/g, `$1${bgCode}`);
+  return bgFn(reapplied);
 }
 
 /**
