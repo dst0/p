@@ -414,17 +414,29 @@ export class IndexingDaemon {
     }, this.options.retryMs);
   }
 
-  private watchRepository(runtime: RepositoryRuntime): void {
+  private watchRepository(runtime: RepositoryRuntime, useRecursive = true): void {
     if (this.disposed || this.quiescing || runtime.watcher) return;
     try {
-      const watcher = this.watchFactory(runtime.root, { recursive: true }, (_eventType, filename) => {
+      const watcher = this.watchFactory(runtime.root, { recursive: useRecursive }, (_eventType, filename) => {
         if (filename !== null && isIgnoredWatchPath(String(filename))) return;
         this.requestRefresh(runtime, true);
       });
-      watcher.on("error", () => this.handleRepositoryWatchError(runtime));
+      watcher.on("error", () => {
+        if (useRecursive) {
+          runtime.watcher?.close();
+          runtime.watcher = null;
+          this.watchRepository(runtime, false);
+        } else {
+          this.handleRepositoryWatchError(runtime);
+        }
+      });
       runtime.watcher = watcher;
     } catch {
-      this.handleRepositoryWatchError(runtime);
+      if (useRecursive) {
+        this.watchRepository(runtime, false);
+      } else {
+        this.handleRepositoryWatchError(runtime);
+      }
     }
   }
 
