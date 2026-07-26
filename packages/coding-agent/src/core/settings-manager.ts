@@ -60,7 +60,7 @@ export interface TerminalSettings {
   showTokenStats?: boolean; // default: true (cumulative ↑↓R W CH token counts in footer)
   showIndexingInfo?: boolean; // default: true (repository indexing marker and progress in footer)
   showVersion?: boolean; // default: false (p agent version in footer)
-  showDebugMessages?: boolean; // default: false (internal harness/debug messages)
+  showHarnessMessages?: boolean; // default: false (internal harness messages)
 }
 
 export interface ImageSettings {
@@ -1348,16 +1348,16 @@ export class SettingsManager {
     this.save();
   }
 
-  getShowDebugMessages(): boolean {
-    return this.settings.terminal?.showDebugMessages ?? false;
+  getShowHarnessMessages(): boolean {
+    return this.settings.terminal?.showHarnessMessages ?? false;
   }
 
-  setShowDebugMessages(enabled: boolean): void {
+  setShowHarnessMessages(enabled: boolean): void {
     if (!this.globalSettings.terminal) {
       this.globalSettings.terminal = {};
     }
-    this.globalSettings.terminal.showDebugMessages = enabled;
-    this.markModified("terminal", "showDebugMessages");
+    this.globalSettings.terminal.showHarnessMessages = enabled;
+    this.markModified("terminal", "showHarnessMessages");
     this.save();
   }
 
