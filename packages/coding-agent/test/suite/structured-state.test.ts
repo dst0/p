@@ -251,7 +251,7 @@ describe("structured-state normalization", () => {
     expect(matches[0]!.summary).toBe("very detailed summary of what was changed in this file");
   });
 
-  it("orders plan tree depth-first and highlights active working subtask", () => {
+  it("orders plan tree depth-first, highlights deepest active subtask, and handles cycles", () => {
     const plan = [
       { id: "parent1", text: "Top task 1", status: "in_progress" as const, evidenceEntryIds: [] },
       { id: "sub1.1", text: "Subtask 1.1", status: "done" as const, parentId: "parent1", evidenceEntryIds: [] },
@@ -262,6 +262,7 @@ describe("structured-state normalization", () => {
     const ordered = getOrderedPlanTree(plan);
     expect(ordered.map((o) => o.item.id)).toEqual(["parent1", "sub1.1", "sub1.2", "parent2"]);
     expect(ordered.find((o) => o.item.id === "sub1.2")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "parent1")?.active).toBe(false);
     expect(ordered.find((o) => o.item.id === "sub1.2")?.active).toBe(true);
 
     const state = createInitialStructuredSessionState("test");
@@ -271,6 +272,13 @@ describe("structured-state normalization", () => {
     const rendered = renderWorkingSessionState(state, 1000);
     expect(rendered).toContain("⏳ Top task 1");
     expect(rendered).toContain("├─ ✅ Subtask 1.1");
-    expect(rendered).toContain("├─ ⏳ Subtask 1.2 👈 (active)");
+    expect(rendered).toContain("└─ ⏳ Subtask 1.2 👈 (active)");
+
+    // Test cycle protection: A -> B -> A should not throw stack overflow
+    const cyclicPlan = [
+      { id: "A", text: "Task A", status: "in_progress" as const, parentId: "B", evidenceEntryIds: [] },
+      { id: "B", text: "Task B", status: "not_started" as const, parentId: "A", evidenceEntryIds: [] },
+    ];
+    expect(() => getOrderedPlanTree(cyclicPlan)).not.toThrow();
   });
 });

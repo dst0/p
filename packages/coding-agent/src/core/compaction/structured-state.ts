@@ -329,20 +329,23 @@ export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
   }
 
   const result: OrderedPlanItem[] = [];
+  const visiting = new Set<string>();
 
   function traverse(parentId: string | undefined, depth: number) {
     const children = childrenMap.get(parentId) ?? [];
     for (let i = 0; i < children.length; i++) {
       const child = children[i]!;
+      if (visiting.has(child.id)) continue;
+      visiting.add(child.id);
       const isLastChild = i === children.length - 1;
-      const active = child.status === "in_progress";
       result.push({
         item: child,
         depth,
         isLastChild,
-        active,
+        active: false,
       });
       traverse(child.id, depth + 1);
+      visiting.delete(child.id);
     }
   }
 
@@ -355,9 +358,15 @@ export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
         item,
         depth: 0,
         isLastChild: true,
-        active: item.status === "in_progress",
+        active: false,
       });
     }
+  }
+
+  const activeCandidate = result.filter((r) => r.item.status === "in_progress").sort((a, b) => b.depth - a.depth)[0];
+
+  if (activeCandidate) {
+    activeCandidate.active = true;
   }
 
   return result;
@@ -369,8 +378,8 @@ export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem |
 
 export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
   const orderedTree = getOrderedPlanTree(state.plan);
-  const plan = orderedTree.slice(0, 12).map(({ item, depth, active }) => {
-    const indent = depth > 0 ? `${"  ".repeat(depth)}├─ ` : "";
+  const plan = orderedTree.slice(0, 12).map(({ item, depth, isLastChild, active }) => {
+    const indent = depth > 0 ? `${"  ".repeat(depth - 1)}${isLastChild ? "└─ " : "├─ "}` : "";
     const activeText = active ? " 👈 (active)" : "";
     return `${indent}${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}${activeText}`;
   });
@@ -407,8 +416,8 @@ export function renderWorkingSessionState(state: StructuredSessionState, maxToke
     return undefined;
   }
   const orderedTree = getOrderedPlanTree(state.plan);
-  const plan = orderedTree.slice(0, 12).map(({ item, depth, active }) => {
-    const indent = depth > 0 ? `${"  ".repeat(depth)}├─ ` : "";
+  const plan = orderedTree.slice(0, 12).map(({ item, depth, isLastChild, active }) => {
+    const indent = depth > 0 ? `${"  ".repeat(depth - 1)}${isLastChild ? "└─ " : "├─ "}` : "";
     const activeText = active ? " 👈 (active)" : "";
     return `${indent}${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}${activeText}`;
   });
