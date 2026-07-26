@@ -172,7 +172,10 @@ def build_runtime_plan(
         remaining_workspace = max(0, workspace - cpu_threads * CPU_THREAD_WORKSPACE_BYTES)
         batch_item_bytes = max(1, int(CPU_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, remaining_workspace // batch_item_bytes)
-        effective_max_batch = min(max_batch_size, 16)
+        # Dynamic CPU batch limit: scales with CPU cores (2 items/thread base),
+        # inversely scaled by sequence length and model size.
+        cpu_core_batch_cap = max(1, int((cpu_threads * 2) / (sequence_scale * model_scale)))
+        effective_max_batch = min(max_batch_size, cpu_core_batch_cap)
     else:
         accelerator_free = memory.accelerator_free_bytes or 0
         max_accelerator_workspace = int(accelerator_free * 0.50)

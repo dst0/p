@@ -47,7 +47,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
         self.assertEqual(plan.cpu_threads, 32)
-        self.assertEqual(plan.batch_size, 16)
+        self.assertEqual(plan.batch_size, 64)
         self.assertIn("below the safety reserve", plan.reason or "")
 
     def test_reduces_cpu_parallelism_when_system_memory_is_limited(self):
@@ -64,7 +64,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
         self.assertEqual(plan.cpu_threads, 7)
-        self.assertEqual(plan.batch_size, 16)
+        self.assertEqual(plan.batch_size, 8)
 
     def test_refuses_to_load_when_neither_accelerator_nor_system_memory_is_safe(self):
         plan = build_runtime_plan(
@@ -114,8 +114,8 @@ class ResourceManagerTest(unittest.TestCase):
         default_context = build_runtime_plan(**common_options, sequence_length=2048)
         long_context = build_runtime_plan(**common_options, sequence_length=4096)
 
-        self.assertEqual(default_context.batch_size, 16)
-        self.assertEqual(long_context.batch_size, 4)
+        self.assertEqual(default_context.batch_size, 8)
+        self.assertEqual(long_context.batch_size, 2)
 
     def test_estimates_parameter_count_from_model_name(self):
         self.assertEqual(estimate_model_parameter_count("Qwen/Qwen3-Embedding-0.6B"), 600_000_000)
