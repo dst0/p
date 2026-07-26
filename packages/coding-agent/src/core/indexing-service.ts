@@ -250,18 +250,21 @@ function dirExists(dirPath: string): boolean {
 
 function collectIndexingFiles(projectRoot: string): string[] {
   const files: string[] = [];
-  const distDir = path.join(projectRoot, "packages", "coding-agent", "dist");
+  const agentDistDir = path.join(projectRoot, "packages", "coding-agent", "dist");
+  const agentSrcDir = path.join(projectRoot, "packages", "coding-agent", "src");
   const codeIndexDir = path.join(projectRoot, "packages", "code-index");
 
-  // Core daemon runtime files
-  const daemonFiles = [
-    path.join(distDir, "indexing-service-daemon.js"),
-    path.join(distDir, "core", "indexing-daemon.js"),
-    path.join(distDir, "core", "indexing-service.js"),
-    path.join(distDir, "core", "indexed-repos.js"),
-  ];
-  for (const file of daemonFiles) {
-    if (fileExists(file)) files.push(file);
+  // Standalone daemon entry point
+  const standaloneDaemon = path.join(agentDistDir, "indexing-service-daemon.js");
+  if (fileExists(standaloneDaemon)) files.push(standaloneDaemon);
+
+  // Core daemon runtime files (discover all indexing*.js or indexing*.ts files)
+  const daemonCoreDistDir = path.join(agentDistDir, "core");
+  const daemonCoreSrcDir = path.join(agentSrcDir, "core");
+  if (dirExists(daemonCoreDistDir)) {
+    collectMatchingFiles(daemonCoreDistDir, files, (name) => name.startsWith("indexing") && name.endsWith(".js"));
+  } else if (dirExists(daemonCoreSrcDir)) {
+    collectMatchingFiles(daemonCoreSrcDir, files, (name) => name.startsWith("indexing") && name.endsWith(".ts"));
   }
 
   // Service installer and helper scripts
@@ -274,11 +277,10 @@ function collectIndexingFiles(projectRoot: string): string[] {
     if (fileExists(file)) files.push(file);
   }
 
-  // code-index compiled files (exclude index.js which contains CODE_INDEX_VERSION bumped on every release)
+  // code-index compiled files
   const codeIndexDistDir = path.join(codeIndexDir, "dist");
   if (dirExists(codeIndexDistDir)) {
-    const excludeIndex = path.join(codeIndexDistDir, "index.js");
-    collectJsFiles(codeIndexDistDir, files, [".js"], [excludeIndex]);
+    collectJsFiles(codeIndexDistDir, files, [".js"]);
   }
 
   // code-index Python files
@@ -304,18 +306,28 @@ function collectIndexingFiles(projectRoot: string): string[] {
   return files;
 }
 
-function collectJsFiles(dir: string, result: string[], extensions: string[] = [".js"], excludeFiles?: string[]): void {
-  const excludeSet = excludeFiles ? new Set(excludeFiles) : undefined;
+function collectMatchingFiles(dir: string, result: string[], filter: (name: string) => boolean): void {
+  try {
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      if (entry.isFile() && filter(entry.name)) {
+        result.push(path.join(dir, entry.name));
+      }
+    }
+  } catch {
+    // Directory may not exist in all environments.
+  }
+}
+
+function collectJsFiles(dir: string, result: string[], extensions: string[] = [".js"]): void {
   try {
     const entries = fs.readdirSync(dir, { withFileTypes: true });
     for (const entry of entries) {
       const fullPath = path.join(dir, entry.name);
       if (entry.isDirectory()) {
-        collectJsFiles(fullPath, result, extensions, excludeFiles);
+        collectJsFiles(fullPath, result, extensions);
       } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
-        if (!excludeSet?.has(fullPath)) {
-          result.push(fullPath);
-        }
+        result.push(fullPath);
       }
     }
   } catch {

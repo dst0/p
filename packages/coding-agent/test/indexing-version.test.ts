@@ -209,26 +209,26 @@ describe("computeIndexingVersion", () => {
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
 
-    // Remove one file and modify content
+    // Modify content of a code-index dist file
     fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "chunk.js"), "different content\n");
 
     const after = computeIndexingVersion(root);
     expect(after).not.toBe(before);
   });
 
-  it("ignores changes to code-index/dist/index.js (CODE_INDEX_VERSION package version bumps)", () => {
+  it("detects newly added indexing core runtime files dynamically", () => {
     const root = createMockProjectRoot();
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
 
-    // Modify dist/index.js (simulating a package version bump)
+    // Add a new indexing helper file to coding-agent/dist/core/
     fs.writeFileSync(
-      path.join(root, "packages", "code-index", "dist", "index.js"),
-      'export const CODE_INDEX_VERSION = "0.4.74";\n',
+      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-helpers.js"),
+      "export const helper = true;\n",
     );
 
     const after = computeIndexingVersion(root);
-    expect(after).toBe(before);
+    expect(after).not.toBe(before);
   });
 
   it("ignores files outside the expected indexing directories", () => {

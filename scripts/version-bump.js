@@ -102,19 +102,6 @@ if (rootPkg.version !== targetVersion) {
 	console.log(`p-monorepo (root): already at ${targetVersion}`);
 }
 
-// Keep the public code-index package version synchronized.
-const codeIndexSourcePath = join(process.cwd(), 'packages/code-index/src/index.ts');
-const codeIndexSource = readFileSync(codeIndexSourcePath, 'utf8');
-const updatedCodeIndexSource = codeIndexSource.replace(
-	/export const CODE_INDEX_VERSION = "[^"]+";/,
-	`export const CODE_INDEX_VERSION = "${targetVersion}";`,
-);
-if (updatedCodeIndexSource === codeIndexSource) {
-	console.error(`Failed to update CODE_INDEX_VERSION in ${codeIndexSourcePath}`);
-	process.exit(1);
-}
-writeFileSync(codeIndexSourcePath, updatedCodeIndexSource);
-
 // Update root package-lock.json
 const lockfilePath = join(process.cwd(), 'package-lock.json');
 const lockfile = JSON.parse(readFileSync(lockfilePath, 'utf8'));
