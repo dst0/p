@@ -228,25 +228,20 @@ export function adjustNewTextIndentation(newText: string, oldText: string, origi
 
   if (oldIndent === origIndent) return newText;
 
-  if (origIndent.startsWith(oldIndent)) {
-    const indentToAdd = origIndent.slice(oldIndent.length);
-    return newText
-      .split("\n")
-      .map((line) => (line.length > 0 ? indentToAdd + line : line))
-      .join("\n");
-  }
-
-  if (oldIndent.startsWith(origIndent)) {
-    const extraIndent = oldIndent.slice(origIndent.length);
-    return newText
-      .split("\n")
-      .map((line) => (line.startsWith(extraIndent) ? line.slice(extraIndent.length) : line))
-      .join("\n");
-  }
-
   return newText
     .split("\n")
-    .map((line) => (line.startsWith(oldIndent) ? origIndent + line.slice(oldIndent.length) : line))
+    .map((line) => {
+      if (line.trim().length === 0) return "";
+      if (origIndent.startsWith(oldIndent)) {
+        const indentToAdd = origIndent.slice(oldIndent.length);
+        return indentToAdd + line;
+      }
+      if (oldIndent.startsWith(origIndent)) {
+        const extraIndent = oldIndent.slice(origIndent.length);
+        return line.startsWith(extraIndent) ? line.slice(extraIndent.length) : line;
+      }
+      return line.startsWith(oldIndent) ? origIndent + line.slice(oldIndent.length) : line;
+    })
     .join("\n");
 }
 

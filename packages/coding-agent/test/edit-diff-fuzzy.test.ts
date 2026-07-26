@@ -25,4 +25,25 @@ describe("fuzzyFindText line-trimmed matching", () => {
     const res = applyEditsToNormalizedContent(content, edits, "test.ts");
     expect(res.newContent).toContain("    bar() {\n      return 'qux';\n    }");
   });
+
+  it("does not add trailing spaces to blank lines during indentation adjustment", () => {
+    const content = "class Foo {\n    bar() {\n\n        return 'baz';\n    }\n}";
+    const edits = [{ oldText: "  bar() {\n\n    return 'baz';\n  }", newText: "  bar() {\n\n    return 'qux';\n  }" }];
+    const res = applyEditsToNormalizedContent(content, edits, "test.ts");
+    const lines = res.newContent.split("\n");
+    // Ensure the empty line at index 2 has no trailing spaces
+    expect(lines[2]).toBe("");
+  });
+
+  it("handles un-indentation when oldText had more indentation than original", () => {
+    const content = "function foo() {\n  return 1;\n}";
+    const edits = [
+      {
+        oldText: "    function foo() {\n      return 1;\n    }",
+        newText: "    function foo() {\n      return 2;\n    }",
+      },
+    ];
+    const res = applyEditsToNormalizedContent(content, edits, "test.ts");
+    expect(res.newContent).toBe("function foo() {\n  return 2;\n}");
+  });
 });
