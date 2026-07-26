@@ -496,4 +496,92 @@ describe("task verification controller", () => {
     expect(status.text).toContain("lifecycle/durability task");
     expect(status.text).not.toContain('"baseline_method":"static_trace"');
   });
+
+  it("recognizes tool aliases (ctx_shell, ctx_read, replace_file_content) and generates evidence handles", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix tool alias evidence handling",
+    });
+
+    const ctxReadOutput = await afterTool(agent, "ctx_read", { path: "src/daemon.ts" });
+    expect(ctxReadOutput).toContain("Verification evidence handle: verification-evidence-1");
+
+    const ctxShellOutput = await afterTool(
+      agent,
+      "ctx_shell",
+      { command: "npx vitest run test/suite/agent-session.test.ts" },
+      { isError: true, text: "1 failed test" },
+    );
+    expect(ctxShellOutput).toContain("Verification evidence handle: verification-evidence-2");
+
+    const baseline = await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "The tool wrapper did not register evidence",
+      conclusion: "Evidence handles are created for tool aliases",
+      evidence_refs: ["verification-evidence-2"],
+      unresolved_assumptions: [],
+    });
+    expect(baseline.isError).toBe(false);
+  });
+
+  it("supports toolCallId and @toolCallId references in resolveEvidence", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix toolCallId resolution",
+    });
+
+    const toolCall = createToolCall("ctx_shell", { command: "npx vitest run test/suite/foo.test.ts" });
+    await agent.afterToolCall?.({
+      assistantMessage: {} as never,
+      toolCall,
+      args: toolCall.arguments,
+      result: { content: [{ type: "text", text: "1 failed" }], details: undefined },
+      isError: true,
+      context: {} as never,
+    });
+
+    const baselineWithAt = await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "Using @toolCallId should resolve to the evidence entry",
+      conclusion: "Evidence resolution handles @toolCallId",
+      evidence_refs: [`@${toolCall.id}`],
+      unresolved_assumptions: [],
+    });
+    expect(baselineWithAt.isError).toBe(false);
+  });
+
+  it("rejects pipelined test commands for test verification evidence", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Disallow pipelined test commands",
+    });
+
+    const pipedTest = evidenceHandle(
+      await afterTool(
+        agent,
+        "ctx_shell",
+        { command: "npx vitest run test/suite/foo.test.ts 2>&1 | tail -10" },
+        { isError: true, text: "failed" },
+      ),
+    );
+
+    const baseline = await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "Pipelined command masks exit code",
+      conclusion: "Pipelined command should be rejected",
+      evidence_refs: [pipedTest],
+      unresolved_assumptions: [],
+    });
+    expect(baseline.isError).toBe(true);
+    expect(baseline.text).toContain("Pipelined test commands (containing '|') mask exit codes");
+  });
 });

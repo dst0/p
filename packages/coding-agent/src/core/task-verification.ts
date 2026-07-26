@@ -112,9 +112,9 @@ interface VerificationResult {
   state: TaskVerificationState;
 }
 
-const EVIDENCE_TOOLS = new Set(["read", "bash", "rg", "grep", "find", "ls", "semantic_search"]);
-const STATIC_TOOLS = new Set(["read", "rg", "grep", "find", "ls", "semantic_search"]);
-const DIRECT_MUTATION_TOOLS = new Set(["edit", "write"]);
+const KNOWN_EVIDENCE_TOOLS = new Set(["read", "bash", "rg", "grep", "find", "ls", "semantic_search"]);
+const KNOWN_STATIC_TOOLS = new Set(["read", "rg", "grep", "find", "ls", "semantic_search"]);
+const KNOWN_DIRECT_MUTATION_TOOLS = new Set(["edit", "write"]);
 const BUG_PATTERN =
   /\b(bug|fix|broken|regression|incorrect|wrong|failure|lost|crash|race|issue|repair)\b|(?:ошиб|баг|слом|невер|неправ|теря|паден|исправ)/iu;
 const HIGH_RISK_PATTERN =
@@ -132,6 +132,51 @@ const TEST_PATTERN =
 const FOCUSED_TEST_PATTERN =
   /(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
 const TEST_PATH_PATTERN = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[^/]+$/iu;
+
+function isShellTool(toolName: string): boolean {
+  return (
+    toolName === "bash" ||
+    toolName === "ctx_shell" ||
+    toolName === "run_command" ||
+    toolName === "exec" ||
+    toolName === "shell" ||
+    toolName === "terminal" ||
+    toolName.endsWith("_shell")
+  );
+}
+
+function isEvidenceTool(toolName: string): boolean {
+  if (KNOWN_EVIDENCE_TOOLS.has(toolName) || isShellTool(toolName)) return true;
+  const lower = toolName.toLowerCase();
+  return (
+    lower.includes("read") ||
+    lower.includes("grep") ||
+    lower.includes("search") ||
+    lower.includes("view") ||
+    lower.includes("list") ||
+    lower.includes("glob")
+  );
+}
+
+function isStaticTool(toolName: string): boolean {
+  if (KNOWN_STATIC_TOOLS.has(toolName)) return true;
+  if (isShellTool(toolName)) return false;
+  const lower = toolName.toLowerCase();
+  return (
+    lower.includes("read") ||
+    lower.includes("grep") ||
+    lower.includes("search") ||
+    lower.includes("view") ||
+    lower.includes("list") ||
+    lower.includes("glob")
+  );
+}
+
+function isDirectMutationTool(toolName: string): boolean {
+  if (KNOWN_DIRECT_MUTATION_TOOLS.has(toolName)) return true;
+  const lower = toolName.toLowerCase();
+  return lower.includes("edit") || lower.includes("write") || lower.includes("patch") || lower.includes("replace");
+}
 
 function emptyState(): TaskVerificationState {
   return {
@@ -204,33 +249,36 @@ function argsRecord(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {};
 }
 
-function bashCommand(args: unknown): string {
-  const value = argsRecord(args).command;
+function shellCommand(args: unknown): string {
+  const rec = argsRecord(args);
+  const value = rec.command ?? rec.cmd ?? rec.script ?? rec.code ?? rec.CommandLine;
   return typeof value === "string" ? value.trim() : "";
 }
 
 function isPublishCommand(toolName: string, args: unknown): boolean {
-  return toolName === "bash" && PUBLISH_PATTERN.test(bashCommand(args));
+  return isShellTool(toolName) && PUBLISH_PATTERN.test(shellCommand(args));
 }
 
 function isRecognizedBashMutation(args: unknown): boolean {
-  const command = bashCommand(args);
+  const command = shellCommand(args);
   return BASH_MUTATION_PATTERN.test(command) || WRITE_REDIRECT_PATTERN.test(command);
 }
 
 function isPotentialMutationTool(toolName: string, args: unknown): boolean {
-  return DIRECT_MUTATION_TOOLS.has(toolName) || (toolName === "bash" && !isPublishCommand(toolName, args));
+  return isDirectMutationTool(toolName) || (isShellTool(toolName) && !isPublishCommand(toolName, args));
 }
 
 function pathArgument(args: unknown): string | undefined {
-  const value = argsRecord(args).path;
+  const rec = argsRecord(args);
+  const value =
+    rec.path ?? rec.TargetFile ?? rec.targetFile ?? rec.target_file ?? rec.filePath ?? rec.file ?? rec.TargetDirectory;
   return typeof value === "string" && value.trim() ? value.trim() : undefined;
 }
 
 function describeToolCall(toolName: string, args: unknown): string {
-  if (toolName === "bash") return bashCommand(args) || "bash";
+  if (isShellTool(toolName)) return shellCommand(args) || toolName;
   const values = argsRecord(args);
-  const detail = typeof values.path === "string" ? values.path : typeof values.query === "string" ? values.query : "";
+  const detail = pathArgument(args) ?? (typeof values.query === "string" ? values.query : "");
   return detail ? `${toolName} ${detail}` : toolName;
 }
 
@@ -283,7 +331,7 @@ export class TaskVerificationController {
       if (verificationGate?.block) return verificationGate;
       const previousResult = await previousBeforeToolCall?.(context, signal);
       if (previousResult?.block) return previousResult;
-      if (context.toolCall.name === "bash" && !isPublishCommand(context.toolCall.name, context.args)) {
+      if (isShellTool(context.toolCall.name) && !isPublishCommand(context.toolCall.name, context.args)) {
         this.bashFingerprints.set(context.toolCall.id, await captureWorkspaceFingerprint(this.sessionManager.getCwd()));
       }
       return previousResult;
@@ -354,7 +402,7 @@ export class TaskVerificationController {
       return this.blocked(`Call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" before mutating code.`);
     }
     if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
-      if (toolName === "bash") return undefined;
+      if (isShellTool(toolName)) return undefined;
       if (this.isAuthorizedBaselineTestMutation(toolName, context.args)) return undefined;
       return this.blocked("Collect baseline evidence or authorize exact regression-test paths before implementation.");
     }
@@ -365,7 +413,18 @@ export class TaskVerificationController {
     context: AfterToolCallContext,
     previousResult: AfterToolCallResult | undefined,
   ): Promise<AfterToolCallResult | undefined> {
-    const effectiveIsError = previousResult?.isError ?? context.isError;
+    let effectiveIsError = previousResult?.isError ?? context.isError;
+    const content = previousResult?.content ?? context.result.content;
+    const descriptor = describeToolCall(context.toolCall.name, context.args);
+
+    if (!effectiveIsError && isShellTool(context.toolCall.name) && TEST_PATTERN.test(descriptor)) {
+      const textOutput = summarizeOutput(content);
+      const testFailurePattern = /\b(?:\d+\s+failed|FAIL(?:ED)?|AssertionError|Test suite failed)\b/iu;
+      if (testFailurePattern.test(textOutput)) {
+        effectiveIsError = true;
+      }
+    }
+
     const mutationDetected = await this.detectMutation(context, effectiveIsError);
     if (mutationDetected) {
       if (this.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
@@ -387,14 +446,13 @@ export class TaskVerificationController {
       return previousResult;
     }
 
-    if (!EVIDENCE_TOOLS.has(context.toolCall.name)) return previousResult;
-    const content = previousResult?.content ?? context.result.content;
+    if (!isEvidenceTool(context.toolCall.name)) return previousResult;
     const evidence: TaskVerificationEvidence = {
       version: 1,
       ref: `verification-evidence-${this.nextEvidence++}`,
       toolCallId: context.toolCall.id,
       toolName: context.toolCall.name,
-      descriptor: describeToolCall(context.toolCall.name, context.args),
+      descriptor,
       outputSummary: summarizeOutput(content),
       isError: effectiveIsError,
       mutationRevision: this.state.mutationRevision,
@@ -403,14 +461,39 @@ export class TaskVerificationController {
     this.evidence.set(evidence.ref, evidence);
     this.sessionManager.appendCustomEntry(TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, evidence);
 
+    const evidenceText = `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`;
+    const newContent = [...content];
+    let lastIndex = -1;
+    for (let i = newContent.length - 1; i >= 0; i--) {
+      if (newContent[i]!.type === "text") {
+        lastIndex = i;
+        break;
+      }
+    }
+    if (lastIndex !== -1) {
+      const lastItem = newContent[lastIndex]!;
+      if (lastItem.type === "text") {
+        const text = lastItem.text ?? "";
+        const footerMatch = text.match(/\n\n\[Showing lines [^\]]+\]$/);
+        if (footerMatch && footerMatch.index !== undefined) {
+          const head = text.slice(0, footerMatch.index);
+          const footer = text.slice(footerMatch.index);
+          newContent[lastIndex] = {
+            type: "text",
+            text: `${head}\n${evidenceText}${footer}`,
+          };
+        } else {
+          newContent.push({ type: "text", text: evidenceText });
+        }
+      } else {
+        newContent.push({ type: "text", text: evidenceText });
+      }
+    } else {
+      newContent.push({ type: "text", text: evidenceText });
+    }
+
     const result: AfterToolCallResult = {
-      content: [
-        ...content,
-        {
-          type: "text",
-          text: `Verification evidence handle: ${evidence.ref} (${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
-        },
-      ],
+      content: newContent,
       isError: effectiveIsError,
     };
     if (previousResult?.details !== undefined) result.details = previousResult.details;
@@ -421,8 +504,8 @@ export class TaskVerificationController {
 
   private async detectMutation(context: AfterToolCallContext, isError: boolean): Promise<boolean> {
     const toolName = context.toolCall.name;
-    if (DIRECT_MUTATION_TOOLS.has(toolName)) return !isError;
-    if (toolName !== "bash" || isPublishCommand(toolName, context.args)) return false;
+    if (isDirectMutationTool(toolName)) return !isError;
+    if (!isShellTool(toolName) || isPublishCommand(toolName, context.args)) return false;
 
     const hadFingerprint = this.bashFingerprints.has(context.toolCall.id);
     const beforeFingerprint = this.bashFingerprints.get(context.toolCall.id);
@@ -542,7 +625,7 @@ export class TaskVerificationController {
           "Static trace is insufficient for signal/restart/persistence/recovery/concurrency/indexing work.",
         );
       }
-      if (evidence.filter((item) => !item.isError && STATIC_TOOLS.has(item.toolName)).length < 2) {
+      if (evidence.filter((item) => !item.isError && isStaticTool(item.toolName)).length < 2) {
         return this.rejected("static_trace requires two non-error inspection evidence handles.");
       }
     }
@@ -550,7 +633,7 @@ export class TaskVerificationController {
       input.baseline_method === "runtime_reproduction" &&
       !evidence.some(
         (item) =>
-          item.toolName === "bash" &&
+          isShellTool(item.toolName) &&
           !item.isError &&
           !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
           !READ_ONLY_PATTERN.test(item.descriptor),
@@ -565,9 +648,19 @@ export class TaskVerificationController {
         return this.rejected("The authorized regression test was not created or modified before running it.");
       }
       if (
+        evidence.some(
+          (item) =>
+            isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && /\s*\|\s*/.test(item.descriptor),
+        )
+      ) {
+        return this.rejected(
+          "Pipelined test commands (containing '|') mask exit codes and cannot be used for test verification evidence. Rerun the test command directly without piping.",
+        );
+      }
+      if (
         !evidence.some(
           (item) =>
-            item.toolName === "bash" &&
+            isShellTool(item.toolName) &&
             item.isError &&
             TEST_PATTERN.test(item.descriptor) &&
             FOCUSED_TEST_PATTERN.test(item.descriptor),
@@ -639,7 +732,7 @@ export class TaskVerificationController {
     const behavioral = behavioralFinalRequired(this.state.taskKind, taskText);
     if (
       input.final_method === "static_review" &&
-      (behavioral || evidence.filter((item) => STATIC_TOOLS.has(item.toolName)).length < 2)
+      (behavioral || evidence.filter((item) => isStaticTool(item.toolName)).length < 2)
     ) {
       return this.rejected(
         "static_review cannot prove behavioral code changes and otherwise requires two inspection handles.",
@@ -647,9 +740,21 @@ export class TaskVerificationController {
     }
     if (
       input.final_method === "focused_test" &&
+      evidence.some(
+        (item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && /\s*\|\s*/.test(item.descriptor),
+      )
+    ) {
+      return this.rejected(
+        "Pipelined test commands (containing '|') mask exit codes and cannot be used for test verification evidence. Rerun the test command directly without piping.",
+      );
+    }
+    if (
+      input.final_method === "focused_test" &&
       !evidence.some(
         (item) =>
-          item.toolName === "bash" && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor),
+          isShellTool(item.toolName) &&
+          TEST_PATTERN.test(item.descriptor) &&
+          FOCUSED_TEST_PATTERN.test(item.descriptor),
       )
     ) {
       return this.rejected("focused_test requires evidence from a specific test file or test name.");
@@ -658,7 +763,7 @@ export class TaskVerificationController {
       input.final_method === "test_suite" &&
       (behavioral ||
         HIGH_RISK_PATTERN.test(taskText) ||
-        !evidence.some((item) => item.toolName === "bash" && TEST_PATTERN.test(item.descriptor)))
+        !evidence.some((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor)))
     ) {
       return this.rejected("A broad test suite alone is insufficient for this behavioral task.");
     }
@@ -666,7 +771,7 @@ export class TaskVerificationController {
       input.final_method === "manual_reproduction" &&
       !evidence.some(
         (item) =>
-          item.toolName === "bash" &&
+          isShellTool(item.toolName) &&
           !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
           !READ_ONLY_PATTERN.test(item.descriptor),
       )
@@ -679,19 +784,19 @@ export class TaskVerificationController {
       .filter((item): item is TaskVerificationEvidence => item !== undefined);
     if (this.state.baseline.method === "runtime_reproduction") {
       const baselineCommands = new Set(
-        baselineEvidence.filter((item) => item.toolName === "bash" && !item.isError).map((item) => item.descriptor),
+        baselineEvidence.filter((item) => isShellTool(item.toolName) && !item.isError).map((item) => item.descriptor),
       );
-      if (!evidence.some((item) => item.toolName === "bash" && baselineCommands.has(item.descriptor))) {
+      if (!evidence.some((item) => isShellTool(item.toolName) && baselineCommands.has(item.descriptor))) {
         return this.rejected("Final verification must rerun the same command that established the runtime baseline.");
       }
     }
     if (this.state.baseline.method === "failing_regression_test") {
       const baselineTests = new Set(
         baselineEvidence
-          .filter((item) => item.toolName === "bash" && item.isError && TEST_PATTERN.test(item.descriptor))
+          .filter((item) => isShellTool(item.toolName) && item.isError && TEST_PATTERN.test(item.descriptor))
           .map((item) => item.descriptor),
       );
-      if (!evidence.some((item) => item.toolName === "bash" && baselineTests.has(item.descriptor))) {
+      if (!evidence.some((item) => isShellTool(item.toolName) && baselineTests.has(item.descriptor))) {
         return this.rejected("Final verification must rerun the same focused test that failed at baseline.");
       }
     }
@@ -717,7 +822,7 @@ export class TaskVerificationController {
     if (
       this.state.baseline.status !== "pending" ||
       this.state.baseline.authorizedTestPaths.length === 0 ||
-      !DIRECT_MUTATION_TOOLS.has(toolName)
+      !isDirectMutationTool(toolName)
     ) {
       return false;
     }
@@ -732,9 +837,31 @@ export class TaskVerificationController {
   private resolveEvidence(refs: readonly string[] | undefined): TaskVerificationEvidence[] | string {
     const normalizedRefs = normalizeStrings(refs);
     if (normalizedRefs.length === 0) return "At least one evidence_refs handle is required.";
-    const missingRefs = normalizedRefs.filter((ref) => !this.evidence.has(ref));
-    if (missingRefs.length > 0) return `Unknown evidence handle(s): ${missingRefs.join(", ")}.`;
-    return normalizedRefs.map((ref) => this.evidence.get(ref)!);
+    const missingRefs: string[] = [];
+    const resolved: TaskVerificationEvidence[] = [];
+
+    for (const ref of normalizedRefs) {
+      const cleanedRef = ref.replace(/^@/u, "").trim();
+      let found = this.evidence.get(ref);
+      if (!found) found = this.evidence.get(cleanedRef);
+      if (!found) {
+        found = [...this.evidence.values()].find((e) => e.toolCallId === ref || e.toolCallId === cleanedRef);
+      }
+      if (found) {
+        resolved.push(found);
+      } else {
+        missingRefs.push(ref);
+      }
+    }
+
+    if (missingRefs.length > 0) {
+      const available = [...this.evidence.values()]
+        .slice(-8)
+        .map((e) => `${e.ref} (@${e.toolCallId})`)
+        .join(", ");
+      return `Unknown evidence handle(s): ${missingRefs.join(", ")}.${available ? ` Available handles: ${available}` : ""}`;
+    }
+    return resolved;
   }
 
   private finalGate(action: string): BeforeToolCallResult | undefined {
@@ -776,7 +903,7 @@ export class TaskVerificationController {
       .slice(-8)
       .map(
         (item) =>
-          `${item.ref}: ${item.isError ? "FAILED" : "passed"} ${item.toolName} at revision ${item.mutationRevision} — ${item.descriptor}${item.outputSummary ? ` — ${item.outputSummary}` : ""}`,
+          `${item.ref} (@${item.toolCallId}): ${item.isError ? "FAILED" : "passed"} ${item.toolName} at revision ${item.mutationRevision} — ${item.descriptor}${item.outputSummary ? ` — ${item.outputSummary}` : ""}`,
       );
     return [
       `Task: ${this.state.taskKind ?? "undeclared"}${this.state.taskSummary ? ` — ${this.state.taskSummary}` : ""}`,
@@ -808,21 +935,22 @@ export class TaskVerificationController {
       const failingEvidence = this.findEvidence(
         (item) =>
           item.mutationRevision === 0 &&
-          item.toolName === "bash" &&
+          isShellTool(item.toolName) &&
           item.isError &&
           TEST_PATTERN.test(item.descriptor) &&
-          FOCUSED_TEST_PATTERN.test(item.descriptor),
+          FOCUSED_TEST_PATTERN.test(item.descriptor) &&
+          !/\s*\|\s*/.test(item.descriptor),
       );
       const runtimeEvidence = this.findEvidence(
         (item) =>
           item.mutationRevision === 0 &&
-          item.toolName === "bash" &&
+          isShellTool(item.toolName) &&
           !item.isError &&
           !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
           !READ_ONLY_PATTERN.test(item.descriptor),
       );
       const staticEvidence = [...this.evidence.values()].filter(
-        (item) => item.mutationRevision === 0 && !item.isError && STATIC_TOOLS.has(item.toolName),
+        (item) => item.mutationRevision === 0 && !item.isError && isStaticTool(item.toolName),
       );
 
       if (failingEvidence) {
@@ -869,6 +997,7 @@ export class TaskVerificationController {
           "NEXT REQUIRED ACTION: run the authorized regression test in isolation and obtain a FAILED evidence handle.",
           `Authorized test paths: ${this.state.baseline.authorizedTestPaths.join(", ")}.`,
           "The command must target a specific test file or test name; a broad suite does not satisfy this baseline.",
+          "Run the test command directly without piping (pipelined commands containing '|' are not accepted).",
           "After the failing run, call action status again to receive the exact record_baseline payload.",
         ].join("\n");
       }
@@ -903,7 +1032,7 @@ export class TaskVerificationController {
       const replayEvidence = this.findEvidence(
         (item) =>
           item.mutationRevision === this.state.mutationRevision &&
-          item.toolName === "bash" &&
+          isShellTool(item.toolName) &&
           item.descriptor === replayDescriptor,
       );
 
@@ -922,6 +1051,7 @@ export class TaskVerificationController {
           `Required exact replay command: ${replayDescriptor}`,
           `Only evidence from mutation revision ${this.state.mutationRevision} is eligible.`,
           "Do not substitute another focused test, broad suite, lint, or typecheck for this replay.",
+          "Run the command directly without piping.",
           "After the successful replay, call action status again to receive the exact record_final payload.",
         ].join("\n");
       }
@@ -954,12 +1084,13 @@ export class TaskVerificationController {
     if (this.state.baseline.method === "runtime_reproduction") {
       return this.state.baseline.evidenceRefs
         .map((ref) => this.evidence.get(ref))
-        .find((item) => item?.toolName === "bash" && !item.isError)?.descriptor;
+        .find((item) => item && isShellTool(item.toolName) && !item.isError)?.descriptor;
     }
     if (this.state.baseline.method === "failing_regression_test") {
       return this.state.baseline.evidenceRefs
         .map((ref) => this.evidence.get(ref))
-        .find((item) => item?.toolName === "bash" && item.isError && TEST_PATTERN.test(item.descriptor))?.descriptor;
+        .find((item) => item && isShellTool(item.toolName) && item.isError && TEST_PATTERN.test(item.descriptor))
+        ?.descriptor;
     }
     return undefined;
   }
@@ -971,13 +1102,16 @@ export class TaskVerificationController {
     const newestFirst = current.slice().reverse();
     const focusedTest = newestFirst.find(
       (item) =>
-        item.toolName === "bash" && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor),
+        isShellTool(item.toolName) &&
+        TEST_PATTERN.test(item.descriptor) &&
+        FOCUSED_TEST_PATTERN.test(item.descriptor) &&
+        !/\s*\|\s*/.test(item.descriptor),
     );
     if (focusedTest) return [focusedTest];
 
     const manualReproduction = newestFirst.find(
       (item) =>
-        item.toolName === "bash" &&
+        isShellTool(item.toolName) &&
         !TEST_PATTERN.test(item.descriptor) &&
         !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
         !READ_ONLY_PATTERN.test(item.descriptor),
@@ -988,31 +1122,31 @@ export class TaskVerificationController {
     const behavioral = this.state.taskKind ? behavioralFinalRequired(this.state.taskKind, taskText) : true;
     const highRisk = HIGH_RISK_PATTERN.test(taskText);
     if (!behavioral && !highRisk) {
-      const testSuite = newestFirst.find((item) => item.toolName === "bash" && TEST_PATTERN.test(item.descriptor));
+      const testSuite = newestFirst.find((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor));
       if (testSuite) return [testSuite];
     }
 
     if (!behavioral) {
-      const staticEvidence = current.filter((item) => STATIC_TOOLS.has(item.toolName));
+      const staticEvidence = current.filter((item) => isStaticTool(item.toolName));
       if (staticEvidence.length >= 2) return staticEvidence.slice(-2);
     }
     return undefined;
   }
 
   private finalMethodForEvidence(evidence: readonly TaskVerificationEvidence[]): FinalMethod {
-    if (evidence.length >= 2 && evidence.every((item) => STATIC_TOOLS.has(item.toolName))) {
+    if (evidence.length >= 2 && evidence.every((item) => isStaticTool(item.toolName))) {
       return "static_review";
     }
     const primary = evidence[0];
     if (!primary) return "manual_reproduction";
     if (
-      primary.toolName === "bash" &&
+      isShellTool(primary.toolName) &&
       TEST_PATTERN.test(primary.descriptor) &&
       FOCUSED_TEST_PATTERN.test(primary.descriptor)
     ) {
       return "focused_test";
     }
-    if (primary.toolName === "bash" && TEST_PATTERN.test(primary.descriptor)) return "test_suite";
+    if (isShellTool(primary.toolName) && TEST_PATTERN.test(primary.descriptor)) return "test_suite";
     return "manual_reproduction";
   }
 
