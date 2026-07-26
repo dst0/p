@@ -15,7 +15,7 @@ describe("holiday themes", () => {
     { name: "halloween", symbol: "🎃" },
     { name: "thanksgiving", symbol: "🍂" },
     { name: "valentine", symbol: "❤️" },
-    { name: "shamrock", symbol: "☘️" },
+    { name: "st-patricks-day", symbol: "☘️" },
     { name: "sakura", symbol: "🌸" },
     { name: "newyear", symbol: "✨" },
   ];

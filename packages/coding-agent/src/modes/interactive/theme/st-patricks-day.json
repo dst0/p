@@ -1,6 +1,6 @@
 {
   "$schema": "https://raw.githubusercontent.com/dst0/p/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
-  "name": "shamrock",
+  "name": "st-patricks-day",
   "symbol": "☘️",
   "vars": {
     "emerald": "#00c853",
