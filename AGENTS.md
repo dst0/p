@@ -74,6 +74,7 @@ Multiple p sessions may be running in this cwd at the same time, each modifying 
 
 Committing:
 
+- Always submit changes via PRs, except critical cases where the PR workflow does not work and CI must be fixed by pushing directly to `main`.
 - Only commit files YOU changed in THIS session.
 - Stage explicit paths (`git add <path1> <path2>`); never `git add -A` / `git add .`.
 - Before committing, run `git status` and verify you are only staging your files.
