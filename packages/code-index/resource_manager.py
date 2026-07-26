@@ -175,7 +175,7 @@ def build_runtime_plan(
         )
 
     default_cpu_thread_limit = (
-        min(4, max(1, logical_cpu_count // 2)) if max_cpu_threads is None else max_cpu_threads
+        min(2, max(1, logical_cpu_count // 4)) if max_cpu_threads is None else max_cpu_threads
     )
     thread_limit = min(logical_cpu_count, default_cpu_thread_limit)
     selected_model_bytes = cpu_model_bytes if selected_backend == "cpu" else accelerator_model_bytes
@@ -189,9 +189,8 @@ def build_runtime_plan(
         remaining_workspace = max(0, workspace - cpu_threads * CPU_THREAD_WORKSPACE_BYTES)
         batch_item_bytes = max(1, int(CPU_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, remaining_workspace // batch_item_bytes)
-        # Dynamic CPU batch limit: scales with CPU cores (2 items/thread base),
-        # inversely scaled by sequence length and model size.
-        cpu_core_batch_cap = max(1, int((cpu_threads * 2) / (sequence_scale * model_scale)))
+        # Strict CPU batch limit (max 2 items) to keep individual embedding requests under 100ms
+        cpu_core_batch_cap = min(2, max(1, int((cpu_threads * 2) / (sequence_scale * model_scale))))
         effective_max_batch = min(max_batch_size, cpu_core_batch_cap)
     else:
         accelerator_free = memory.accelerator_free_bytes or 0

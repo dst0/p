@@ -46,7 +46,8 @@ class ResourceManagerTest(unittest.TestCase):
 
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
-        self.assertEqual(plan.cpu_threads, 4)
+        self.assertEqual(plan.cpu_threads, 2)
+        self.assertEqual(plan.batch_size, 2)
         self.assertIn("below the safety reserve", plan.reason or "")
 
     def test_uses_rocm_apu_unified_memory_when_system_memory_has_headroom(self):
@@ -82,7 +83,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
         self.assertEqual(plan.cpu_threads, 8)
-        self.assertEqual(plan.batch_size, 16)
+        self.assertEqual(plan.batch_size, 2)
 
     def test_refuses_to_load_when_neither_accelerator_nor_system_memory_is_safe(self):
         plan = build_runtime_plan(
@@ -116,15 +117,17 @@ class ResourceManagerTest(unittest.TestCase):
         )
 
         self.assertEqual(plan.cpu_threads, 12)
-        self.assertEqual(plan.batch_size, 16)
+        self.assertEqual(plan.batch_size, 2)
 
     def test_reduces_batch_for_longer_sequence_length(self):
         common_options = {
-            "preferred_backend": "cpu",
+            "preferred_backend": "rocm",
             "logical_cpu_count": 32,
             "memory": MemorySnapshot(
-                system_total_bytes=16 * GIB,
-                system_available_bytes=8 * GIB,
+                system_total_bytes=64 * GIB,
+                system_available_bytes=48 * GIB,
+                accelerator_total_bytes=16 * GIB,
+                accelerator_free_bytes=12 * GIB,
             ),
             "model_parameter_count": 600_000_000,
         }
@@ -132,8 +135,8 @@ class ResourceManagerTest(unittest.TestCase):
         default_context = build_runtime_plan(**common_options, sequence_length=2048)
         long_context = build_runtime_plan(**common_options, sequence_length=4096)
 
-        self.assertEqual(default_context.batch_size, 8)
-        self.assertEqual(long_context.batch_size, 2)
+        self.assertEqual(default_context.batch_size, 64)
+        self.assertLess(long_context.batch_size, default_context.batch_size)
 
     def test_estimates_parameter_count_from_model_name(self):
         self.assertEqual(estimate_model_parameter_count("Qwen/Qwen3-Embedding-0.6B"), 600_000_000)
