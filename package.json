@@ -55,7 +55,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.4.86",
+  "version": "0.4.87",
   "overrides": {
     "esbuild": "0.28.1",
     "rimraf": "6.1.2",

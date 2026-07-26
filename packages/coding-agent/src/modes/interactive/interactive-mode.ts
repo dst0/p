@@ -4557,6 +4557,8 @@ export class InteractiveMode {
           },
           onShowHarnessMessagesChange: (enabled) => {
             this.settingsManager.setShowHarnessMessages(enabled);
+            this.rebuildChatFromMessages();
+            this.ui.requestRender();
           },
           onWarningsChange: (warnings) => {
             this.settingsManager.setWarnings(warnings);
