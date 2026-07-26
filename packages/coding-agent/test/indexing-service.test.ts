@@ -262,7 +262,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 20,
       retryMs: 50,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot);
         services.set(workspaceRoot, service);
@@ -308,7 +308,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 10,
       retryMs: 50,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot);
         services.set(workspaceRoot, service);
@@ -348,7 +348,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 10,
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot, (root) => starts.push(root));
         service.blockRefresh();
@@ -399,7 +399,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       pythonExecutable: "unused",
       embeddingModel: "unused",
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot, (root) => starts.push(root), true);
         service.blockRefresh();
@@ -457,7 +457,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       pythonExecutable: "unused",
       embeddingModel: "unused",
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot, (root) => starts.push(root));
         service.blockRefresh();
@@ -515,7 +515,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       pythonExecutable: "unused",
       embeddingModel: "unused",
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service =
           workspaceRoot === currentRepository
@@ -590,7 +590,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       repositoryTimeoutMs: 25,
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         service = new AbortAwareRagService(workspaceRoot);
         return service;
@@ -619,7 +619,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       repositoryTimeoutMs: 50,
       retryMs: 60_000,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         service = new ProgressingRagService(workspaceRoot);
         return service;
@@ -648,7 +648,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
       pythonExecutable: "unused",
       embeddingModel: "unused",
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       ensureBackends: async () => {},
       disposeBackends: async () => {},
     };
@@ -676,7 +676,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 10,
       retryMs: 50,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         const service = new FakeRagService(workspaceRoot);
         services.push(service);
@@ -708,7 +708,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 10,
       retryMs: 50,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         service = new FakeRagService(workspaceRoot);
         service.blockRefresh();
@@ -801,7 +801,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       embeddingModel: "unused",
       debounceMs: 10,
       retryMs: 50,
-      reconcileMs: 60_000,
+      reconcileMs: 100,
       serviceFactory: (workspaceRoot) => {
         service = new PreIndexedService(workspaceRoot);
         service.blockRefresh();
