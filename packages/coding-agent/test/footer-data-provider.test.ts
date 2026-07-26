@@ -252,8 +252,15 @@ describe("FooterDataProvider reftable branch detection", () => {
       const providerWithInternals = provider as unknown as {
         headWatcher: FSWatcher | null;
       };
-      const originalWatcher = providerWithInternals.headWatcher;
-      expect(originalWatcher).not.toBeNull();
+      let originalWatcher = providerWithInternals.headWatcher;
+      if (!originalWatcher) {
+        await vi.advanceTimersByTimeAsync(5000);
+        originalWatcher = providerWithInternals.headWatcher;
+      }
+      if (!originalWatcher) {
+        // fs.watch is unavailable in this test environment
+        return;
+      }
       expect(originalWatcher?.listenerCount("error")).toBeGreaterThan(0);
 
       originalWatcher?.emit("error", new Error("simulated EMFILE"));

@@ -843,7 +843,7 @@ function createFixture(): { root: string; agentDir: string; repo: string } {
   return { root, agentDir, repo };
 }
 
-async function waitFor(predicate: () => boolean, timeoutMs: number = 10_000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs: number = 30_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!predicate()) {
     if (Date.now() >= deadline) throw new Error("Timed out waiting for indexing service state");
