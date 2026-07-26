@@ -19,10 +19,10 @@ describe("fuzzyFindText line-trimmed matching", () => {
     expect(result.usedFuzzyMatch).toBe(true);
   });
 
-  it("applies edits successfully when indentation differs slightly", () => {
+  it("applies edits successfully when indentation differs slightly and preserves original indentation", () => {
     const content = "class Foo {\n    bar() {\n        return 'baz';\n    }\n}";
     const edits = [{ oldText: "  bar() {\n    return 'baz';\n  }", newText: "  bar() {\n    return 'qux';\n  }" }];
     const res = applyEditsToNormalizedContent(content, edits, "test.ts");
-    expect(res.newContent).toContain("return 'qux'");
+    expect(res.newContent).toContain("    bar() {\n      return 'qux';\n    }");
   });
 });

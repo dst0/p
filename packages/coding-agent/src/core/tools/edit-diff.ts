@@ -212,6 +212,44 @@ function getNoChangeError(path: string, totalEdits: number): Error {
   return new Error(`No changes made to ${path}. The replacements produced identical content.`);
 }
 
+function extractLeadingIndent(line: string): string {
+  const match = line.match(/^[ \t]+/);
+  return match ? match[0] : "";
+}
+
+export function adjustNewTextIndentation(newText: string, oldText: string, originalMatchedText: string): string {
+  const oldLines = oldText.split("\n").filter((l) => l.trim().length > 0);
+  const origLines = originalMatchedText.split("\n").filter((l) => l.trim().length > 0);
+
+  if (oldLines.length === 0 || origLines.length === 0) return newText;
+
+  const oldIndent = extractLeadingIndent(oldLines[0]);
+  const origIndent = extractLeadingIndent(origLines[0]);
+
+  if (oldIndent === origIndent) return newText;
+
+  if (origIndent.startsWith(oldIndent)) {
+    const indentToAdd = origIndent.slice(oldIndent.length);
+    return newText
+      .split("\n")
+      .map((line) => (line.length > 0 ? indentToAdd + line : line))
+      .join("\n");
+  }
+
+  if (oldIndent.startsWith(origIndent)) {
+    const extraIndent = oldIndent.slice(origIndent.length);
+    return newText
+      .split("\n")
+      .map((line) => (line.startsWith(extraIndent) ? line.slice(extraIndent.length) : line))
+      .join("\n");
+  }
+
+  return newText
+    .split("\n")
+    .map((line) => (line.startsWith(oldIndent) ? origIndent + line.slice(oldIndent.length) : line))
+    .join("\n");
+}
+
 /**
  * Apply one or more exact-text replacements to LF-normalized content.
  *
@@ -254,11 +292,16 @@ export function applyEditsToNormalizedContent(
       throw getDuplicateError(path, i, normalizedEdits.length, occurrences);
     }
 
+    const matchedText = baseContent.substring(matchResult.index, matchResult.index + matchResult.matchLength);
+    const adjustedNewText = matchResult.usedFuzzyMatch
+      ? adjustNewTextIndentation(edit.newText, edit.oldText, matchedText)
+      : edit.newText;
+
     matchedEdits.push({
       editIndex: i,
       matchIndex: matchResult.index,
       matchLength: matchResult.matchLength,
-      newText: edit.newText,
+      newText: adjustedNewText,
     });
   }
 

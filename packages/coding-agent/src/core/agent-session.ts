@@ -1480,16 +1480,7 @@ export class AgentSession {
         toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME &&
         toolCall.name !== SLEEP_TOOL_NAME
       ) {
-        if (toolCall.name === FINISH_WORK_TOOL_NAME) {
-          this._autoExecuteUpdateSessionStateForFinishWork();
-        } else {
-          return {
-            block: true,
-            reason:
-              `After receiving the latest user message, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
-              "record or revise the goal, plan, and next action before attempting any other tool call.",
-          };
-        }
+        this._autoExecuteUpdateSessionStateForFinishWork();
       }
       if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
         this._autoExecuteUpdateSessionStateForFinishWork();
