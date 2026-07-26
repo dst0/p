@@ -80,6 +80,8 @@ interface RepositoryRuntime {
   indexingStartedAt?: string;
   progressSamples?: Array<{ timestamp: number; percent: number }>;
   lastError?: string;
+  /** Consecutive resource (OOM/disk/fd) failures for exponential backoff retry. */
+  consecutiveResourceFailureCount: number;
   updatedAt: string;
   debounceTimer?: ReturnType<typeof setTimeout>;
   retryTimer?: ReturnType<typeof setTimeout>;
@@ -90,6 +92,38 @@ const DRAIN_MAX_CONCURRENCY = 2;
 const MANUAL_PRIORITY_OFFSET = 1_000_000_000_000_000;
 const DEFAULT_REPOSITORY_TIMEOUT_MS = 30 * 60_000;
 const DAEMON_LOCK_INITIALIZATION_GRACE_MS = 10_000;
+
+// Exponential backoff intervals for resource failures (OOM, disk full, file descriptor exhaustion)
+// Sequence: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 24h (capped at 24h)
+const RESOURCE_BACKOFF_INTERVALS_SECONDS = [
+  60,
+  5 * 60,
+  15 * 60,
+  30 * 60,
+  60 * 60,
+  2 * 60 * 60,
+  4 * 60 * 60,
+  8 * 60 * 60,
+  24 * 60 * 60,
+];
+
+export function getResourceBackoffMs(consecutiveFailureCount: number): number {
+  const index = Math.min(Math.max(consecutiveFailureCount - 1, 0), RESOURCE_BACKOFF_INTERVALS_SECONDS.length - 1);
+  return RESOURCE_BACKOFF_INTERVALS_SECONDS[index] * 1000;
+}
+
+export function isResourceFailure(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof Error && "kind" in error && (error as any).kind === "resource") return true;
+  // Match resource error messages by content
+  return (
+    /\b(out of memory|oom|OOM)\b/i.test(message) ||
+    /\bno space left on device\b/i.test(message) ||
+    /\bfailed to allocate\b/i.test(message) ||
+    /\b(EMFILE|ENOSPC|ENFILE)\b/i.test(message) ||
+    /(?:Aborted \(core dumped\)|process died with exit code \d+ and signal SIGABRT)/i.test(message)
+  );
+}
 
 const IGNORED_WATCH_PATH_SEGMENTS = new Set([
   ".git",
@@ -325,6 +359,7 @@ export class IndexingDaemon {
         indexedFiles: 0,
         indexedChunks: 0,
         readyValidated: false,
+        consecutiveResourceFailureCount: 0,
         updatedAt: new Date().toISOString(),
       };
       this.runtimes.set(root, runtime);
@@ -505,6 +540,7 @@ export class IndexingDaemon {
           runtime.readyValidated = summary.status.state === "ready";
           delete runtime.progress;
           delete runtime.lastError;
+          runtime.consecutiveResourceFailureCount = 0;
         });
       } catch (error) {
         if (this.disposed || this.quiescing || w.stop) return;
@@ -513,15 +549,30 @@ export class IndexingDaemon {
           delete runtime.progress;
           delete runtime.lastError;
         } else {
+          const isResourceError = isResourceFailure(error);
           runtime.state = "error";
           delete runtime.progress;
           runtime.lastError = safeErrorMessage(error);
           this.log("error", `Indexing failed for ${runtime.root}: ${runtime.lastError}`);
           if (!this.disposed && !this.quiescing && this.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
-            runtime.retryTimer = setTimeout(() => {
-              runtime.retryTimer = undefined;
-              this.requestRefresh(runtime, false);
-            }, this.options.retryMs);
+            if (isResourceError) {
+              runtime.consecutiveResourceFailureCount += 1;
+              const backoffMs = getResourceBackoffMs(runtime.consecutiveResourceFailureCount);
+              this.log(
+                "error",
+                `Resource failure #${runtime.consecutiveResourceFailureCount} for ${runtime.root}, retrying in ${backoffMs / 1000}s`,
+              );
+              runtime.retryTimer = setTimeout(() => {
+                runtime.retryTimer = undefined;
+                this.requestRefresh(runtime, false);
+              }, backoffMs);
+            } else {
+              runtime.consecutiveResourceFailureCount = 0;
+              runtime.retryTimer = setTimeout(() => {
+                runtime.retryTimer = undefined;
+                this.requestRefresh(runtime, false);
+              }, this.options.retryMs);
+            }
           }
         }
       } finally {
