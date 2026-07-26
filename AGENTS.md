@@ -48,6 +48,13 @@
 - After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
 - `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step.
 
+## Code Indexing & Daemon Versioning
+
+- `computeIndexingVersion()` in `packages/coding-agent/src/core/indexing-service.ts` calculates a deterministic SHA-256 hash of all indexing runtime files (daemon core `indexing*.ts`/`js` modules, `code-index` build/Python/config files, installer scripts).
+- This hash determines whether `./reinstall.sh` can safely skip restarting the background daemon (`com.dst.p.code-index`) and rebuilding vector stores.
+- Package version bumps (`scripts/version-bump.js`) must NEVER modify source files in `packages/code-index/src/` or invalidate `computeIndexingVersion()`. Release version bumps only update `package.json` and `package-lock.json`.
+- When adding or modifying indexing files, run `node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts` from `packages/coding-agent` to verify test coverage. Any new indexing daemon module matching `packages/coding-agent/src/core/indexing*` is automatically tracked by `computeIndexingVersion()`.
+
 ## Dependency and Install Security
 
 - Treat npm dep and lockfile changes as reviewed code. Direct external deps stay pinned to exact versions.

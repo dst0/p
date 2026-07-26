@@ -67,6 +67,7 @@ Never use `__dirname` directly for package assets.
 ./test.sh                         # Run non-LLM tests (no API keys needed)
 npm test                          # Run all tests
 npm test -- test/specific.test.ts # Run specific test
+node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts # Test indexing version hash
 ```
 
 ## Project Structure
