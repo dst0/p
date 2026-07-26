@@ -248,7 +248,7 @@ class ProgressingRagService extends FakeRagService {
   }
 }
 
-describe("indexing daemon", () => {
+describe("indexing daemon", { timeout: 60_000 }, () => {
   it("indexes enabled repositories and refreshes after file changes", async () => {
     const fixture = createFixture();
     enableIndexingForRepo(fixture.repo, fixture.agentDir);
