@@ -744,7 +744,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
               "indexing",
               15 + (70 * copiedChunks) / Math.max(reusableChunkTotal, 1),
               { processedFiles: changedFiles.length, totalFiles: scanned.length },
-              { processedChunks: copiedChunks, totalChunks },
+              {
+                processedChunks: copiedChunks,
+                totalChunks,
+                reusedChunks: copiedChunks,
+                recalculatedChunks: 0,
+                recalculatedTotal: changedChunks.length,
+              },
             );
           }
         }
@@ -755,7 +761,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
           "indexing",
           85,
           { processedFiles: plan.unchanged.length + changedFiles.length, totalFiles: scanned.length },
-          { processedChunks: reusableChunkTotal, totalChunks },
+          {
+            processedChunks: reusableChunkTotal,
+            totalChunks,
+            reusedChunks: reusableChunkTotal,
+            recalculatedChunks: 0,
+            recalculatedTotal: changedChunks.length,
+          },
         );
 
         await this.encodeAndUpsert(collection, changedChunks, vocabulary, signal, (completed, total) => {
@@ -764,7 +776,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
             "indexing",
             85 + (14.8 * completed) / Math.max(total, 1),
             { processedFiles: scanned.length, totalFiles: scanned.length },
-            { processedChunks: reusableChunkTotal + completed, totalChunks },
+            {
+              processedChunks: reusableChunkTotal + completed,
+              totalChunks,
+              reusedChunks: reusableChunkTotal,
+              recalculatedChunks: completed,
+              recalculatedTotal: total,
+            },
           );
         });
         this.reportProgress(
@@ -772,7 +790,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
           "finalizing",
           99.9,
           { processedFiles: scanned.length, totalFiles: scanned.length },
-          { processedChunks: totalChunks, totalChunks },
+          {
+            processedChunks: totalChunks,
+            totalChunks,
+            reusedChunks: reusableChunkTotal,
+            recalculatedChunks: changedChunks.length,
+            recalculatedTotal: changedChunks.length,
+          },
         );
 
         const now = this.now().toISOString();
@@ -1045,7 +1069,13 @@ export class WorkspaceCodeRagService implements CodeRagService {
     phase: IndexingProgress["phase"],
     percent: number,
     filesInfo?: { processedFiles?: number; totalFiles?: number },
-    chunksInfo?: { processedChunks?: number; totalChunks?: number },
+    chunksInfo?: {
+      processedChunks?: number;
+      totalChunks?: number;
+      reusedChunks?: number;
+      recalculatedChunks?: number;
+      recalculatedTotal?: number;
+    },
   ): void {
     try {
       const roundedPercent = Math.max(0, Math.min(100, Math.round(percent * 10) / 10));
@@ -1056,6 +1086,9 @@ export class WorkspaceCodeRagService implements CodeRagService {
         totalFiles: filesInfo?.totalFiles,
         processedChunks: chunksInfo?.processedChunks,
         totalChunks: chunksInfo?.totalChunks,
+        reusedChunks: chunksInfo?.reusedChunks,
+        recalculatedChunks: chunksInfo?.recalculatedChunks,
+        recalculatedTotal: chunksInfo?.recalculatedTotal,
       });
     } catch {
       // Progress reporting must not interrupt indexing.

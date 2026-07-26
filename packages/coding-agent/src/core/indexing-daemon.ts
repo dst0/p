@@ -717,12 +717,18 @@ export class IndexingDaemon {
       phase: progress.phase,
       percent,
       startedAt: runtime.indexingStartedAt,
+      ...(progress.reusedChunks !== undefined ? { reusedChunks: progress.reusedChunks } : {}),
+      ...(progress.recalculatedChunks !== undefined ? { recalculatedChunks: progress.recalculatedChunks } : {}),
+      ...(progress.recalculatedTotal !== undefined ? { recalculatedTotal: progress.recalculatedTotal } : {}),
       ...(etaSeconds !== undefined ? { etaSeconds } : {}),
     };
     if (
       runtime.progress?.phase === normalized.phase &&
       runtime.progress.percent === normalized.percent &&
-      runtime.progress.etaSeconds === normalized.etaSeconds
+      runtime.progress.etaSeconds === normalized.etaSeconds &&
+      runtime.progress.reusedChunks === normalized.reusedChunks &&
+      runtime.progress.recalculatedChunks === normalized.recalculatedChunks &&
+      runtime.progress.recalculatedTotal === normalized.recalculatedTotal
     ) {
       return;
     }

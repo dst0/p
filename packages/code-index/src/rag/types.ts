@@ -113,6 +113,12 @@ export interface IndexingProgress {
   processedFiles?: number;
   totalChunks?: number;
   processedChunks?: number;
+  /** Chunks reused directly from an existing index without re-embedding. */
+  reusedChunks?: number;
+  /** Chunks freshly embedded/recalculated in this run. */
+  recalculatedChunks?: number;
+  /** Total chunks requiring recalculation in this run. */
+  recalculatedTotal?: number;
   /** Timestamp when this indexing run started. */
   startedAt?: string;
   /** Estimated remaining seconds to completion based on recent processing speed. */

@@ -184,7 +184,13 @@ function isIndexingProgress(value: unknown): value is IndexingProgress {
     candidate.percent <= 100 &&
     (candidate.startedAt === undefined || typeof candidate.startedAt === "string") &&
     (candidate.etaSeconds === undefined ||
-      (typeof candidate.etaSeconds === "number" && Number.isFinite(candidate.etaSeconds)))
+      (typeof candidate.etaSeconds === "number" && Number.isFinite(candidate.etaSeconds))) &&
+    (candidate.reusedChunks === undefined ||
+      (typeof candidate.reusedChunks === "number" && Number.isFinite(candidate.reusedChunks))) &&
+    (candidate.recalculatedChunks === undefined ||
+      (typeof candidate.recalculatedChunks === "number" && Number.isFinite(candidate.recalculatedChunks))) &&
+    (candidate.recalculatedTotal === undefined ||
+      (typeof candidate.recalculatedTotal === "number" && Number.isFinite(candidate.recalculatedTotal)))
   );
 }
 
