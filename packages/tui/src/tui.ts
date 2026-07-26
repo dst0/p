@@ -1465,10 +1465,31 @@ export class TUI extends Container {
     }
 
     // Differential rendering can only touch what was actually visible.
-    // If the first changed line is above the previous viewport, we need a full redraw.
+    // If the first changed line is above the previous viewport, redraw only the visible screen rows
+    // without clearing scrollback (\x1b[3J) or replaying the full history into stdout.
     if (firstChanged < prevViewportTop) {
       logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
-      fullRender(true);
+      const newViewportTop = Math.max(0, newLines.length - height);
+      let buffer = "\x1b[?2026h\x1b[2J\x1b[H";
+      buffer += this.deleteChangedKittyImages(0, newLines.length - 1);
+      const visibleEnd = Math.min(newLines.length, newViewportTop + height);
+      for (let i = newViewportTop; i < visibleEnd; i++) {
+        buffer += newLines[i];
+        if (i < visibleEnd - 1) {
+          buffer += "\r\n";
+        }
+      }
+      buffer += "\x1b[?2026l";
+      this.terminal.write(buffer);
+      this.previousLines = newLines;
+      this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+      this.previousWidth = width;
+      this.previousHeight = height;
+      this.previousViewportTop = newViewportTop;
+      this.cursorRow = Math.max(0, visibleEnd - 1);
+      this.hardwareCursorRow = this.cursorRow;
+      this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+      this.positionHardwareCursor(cursorPos, newLines.length);
       return;
     }
 

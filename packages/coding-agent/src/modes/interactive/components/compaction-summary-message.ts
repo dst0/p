@@ -31,6 +31,7 @@ export class CompactionSummaryMessageComponent extends Box {
 
   override invalidate(): void {
     super.invalidate();
+    this.markdownTheme = getMarkdownTheme();
     this.updateDisplay();
   }
 

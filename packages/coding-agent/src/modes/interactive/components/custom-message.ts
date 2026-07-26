@@ -49,6 +49,7 @@ export class CustomMessageComponent extends Container {
 
   override invalidate(): void {
     super.invalidate();
+    this.markdownTheme = getMarkdownTheme();
     this.rebuild();
   }
 

@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Fixed interactive components (`AssistantMessage`, `UserMessage`, summary messages) storing stale `markdownTheme` instances across theme switches.
 - Update terminal background color (OSC 11) when switching or previewing themes in `/settings`, not just on startup.
 - Rebuild Code RAG sparse generations without re-embedding unchanged files: stream existing Qdrant points, reuse their dense vectors, recompute BM25 vectors against the new corpus vocabulary, and atomically swap generations with validated full-rebuild fallback.
 - Extract the managed Qdrant binary without applying archive ownership, so reinstall works in rootless and containerized environments.

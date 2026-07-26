@@ -9,19 +9,32 @@ const OSC133_ZONE_FINAL = "\x1b]133;C\x07";
  * Component that renders a user message
  */
 export class UserMessageComponent extends Container {
+  private text: string;
   private contentBox: Box;
 
   constructor(text: string, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
     super();
+    this.text = text;
     this.contentBox = new Box(
       1,
       1,
       (content: string) => theme.bg("userMessageBg", content),
       (content: string) => theme.fg("accent", content),
     );
+    this.rebuild(markdownTheme);
+    this.addChild(this.contentBox);
+  }
+
+  override invalidate(): void {
+    super.invalidate();
+    this.rebuild(getMarkdownTheme());
+  }
+
+  private rebuild(markdownTheme: MarkdownTheme): void {
+    this.contentBox.clear();
     this.contentBox.addChild(
       new Markdown(
-        text,
+        this.text,
         0,
         0,
         markdownTheme,
@@ -31,7 +44,6 @@ export class UserMessageComponent extends Container {
         { preserveOrderedListMarkers: true },
       ),
     );
-    this.addChild(this.contentBox);
   }
 
   override render(width: number): string[] {

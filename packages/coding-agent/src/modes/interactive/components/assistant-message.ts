@@ -40,6 +40,7 @@ export class AssistantMessageComponent extends Container {
 
   override invalidate(): void {
     super.invalidate();
+    this.markdownTheme = getMarkdownTheme();
     if (this.lastMessage) {
       this.updateContent(this.lastMessage);
     }

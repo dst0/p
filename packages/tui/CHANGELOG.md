@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Fixed theme changes triggering scrollback clear and full transcript re-scrolling by using in-place viewport redraw when off-screen lines change.
 - Prevented surrogate pair splitting in `Input.setValue` by aligning cursor to grapheme boundaries.
 - Fixed `SettingsList` space key hijacking search input when `enableSearch` is true: space now inserts into the search box instead of activating the selected item, and multi-word searches are supported.
 - Added 5-second timeout recovery for bracketed paste mode in `StdinBuffer` to prevent permanent input freeze when the paste end marker is lost.
