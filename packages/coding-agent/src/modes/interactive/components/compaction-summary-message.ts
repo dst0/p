@@ -13,7 +13,12 @@ export class CompactionSummaryMessageComponent extends Box {
   private markdownTheme: MarkdownTheme;
 
   constructor(message: CompactionSummaryMessage, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
-    super(1, 1, (t) => theme.bg("customMessageBg", t));
+    super(
+      1,
+      1,
+      (t) => theme.bg("customMessageBg", t),
+      (t) => theme.fg("borderAccent", t),
+    );
     this.message = message;
     this.markdownTheme = markdownTheme;
     this.updateDisplay();

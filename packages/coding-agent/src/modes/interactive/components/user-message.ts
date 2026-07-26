@@ -13,7 +13,12 @@ export class UserMessageComponent extends Container {
 
   constructor(text: string, markdownTheme: MarkdownTheme = getMarkdownTheme()) {
     super();
-    this.contentBox = new Box(1, 1, (content: string) => theme.bg("userMessageBg", content));
+    this.contentBox = new Box(
+      1,
+      1,
+      (content: string) => theme.bg("userMessageBg", content),
+      (content: string) => theme.fg("accent", content),
+    );
     this.contentBox.addChild(
       new Markdown(
         text,

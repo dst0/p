@@ -5,6 +5,7 @@ type RenderCache = {
   childLines: string[];
   width: number;
   bgSample: string | undefined;
+  accentSample: string | undefined;
   lines: string[];
 };
 
@@ -16,14 +17,16 @@ export class Box implements Component {
   private paddingX: number;
   private paddingY: number;
   private bgFn?: (text: string) => string;
+  private accentFn?: (text: string) => string;
 
   // Cache for rendered output
   private cache?: RenderCache;
 
-  constructor(paddingX = 1, paddingY = 1, bgFn?: (text: string) => string) {
+  constructor(paddingX = 1, paddingY = 1, bgFn?: (text: string) => string, accentFn?: (text: string) => string) {
     this.paddingX = paddingX;
     this.paddingY = paddingY;
     this.bgFn = bgFn;
+    this.accentFn = accentFn;
   }
 
   addChild(component: Component): void {
@@ -49,16 +52,26 @@ export class Box implements Component {
     // Don't invalidate here - we'll detect bgFn changes by sampling output
   }
 
+  setAccentFn(accentFn?: (text: string) => string): void {
+    this.accentFn = accentFn;
+  }
+
   private invalidateCache(): void {
     this.cache = undefined;
   }
 
-  private matchCache(width: number, childLines: string[], bgSample: string | undefined): boolean {
+  private matchCache(
+    width: number,
+    childLines: string[],
+    bgSample: string | undefined,
+    accentSample: string | undefined,
+  ): boolean {
     const cache = this.cache;
     return (
       !!cache &&
       cache.width === width &&
       cache.bgSample === bgSample &&
+      cache.accentSample === accentSample &&
       cache.childLines.length === childLines.length &&
       cache.childLines.every((line, i) => line === childLines[i])
     );
@@ -76,7 +89,8 @@ export class Box implements Component {
       return [];
     }
 
-    const contentWidth = Math.max(1, width - this.paddingX * 2);
+    const accentWidth = this.accentFn ? 1 : 0;
+    const contentWidth = Math.max(1, width - this.paddingX * 2 - accentWidth);
     const leftPad = " ".repeat(this.paddingX);
 
     // Render all children
@@ -92,34 +106,36 @@ export class Box implements Component {
       return [];
     }
 
-    // Check if bgFn output changed by sampling
+    // Check if bgFn/accentFn output changed by sampling
     const bgSample = this.bgFn ? this.bgFn("test") : undefined;
+    const accentSample = this.accentFn ? this.accentFn("test") : undefined;
 
     // Check cache validity
-    if (this.matchCache(width, childLines, bgSample)) {
+    if (this.matchCache(width, childLines, bgSample, accentSample)) {
       return this.cache!.lines;
     }
 
-    // Apply background and padding
+    // Apply background, accent bar, and padding
     const result: string[] = [];
+    const accentPrefix = this.accentFn ? this.accentFn("\u258e") : "";
 
     // Top padding
     for (let i = 0; i < this.paddingY; i++) {
-      result.push(this.applyBg("", width));
+      result.push(this.applyBg(accentPrefix, width));
     }
 
     // Content
     for (const line of childLines) {
-      result.push(this.applyBg(line, width));
+      result.push(this.applyBg(accentPrefix + line, width));
     }
 
     // Bottom padding
     for (let i = 0; i < this.paddingY; i++) {
-      result.push(this.applyBg("", width));
+      result.push(this.applyBg(accentPrefix, width));
     }
 
     // Update cache
-    this.cache = { childLines, width, bgSample, lines: result };
+    this.cache = { childLines, width, bgSample, accentSample, lines: result };
 
     return result;
   }

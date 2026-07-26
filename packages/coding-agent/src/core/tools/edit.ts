@@ -226,6 +226,23 @@ function formatEditResult(
   return undefined;
 }
 
+function getEditHeaderAccent(
+  preview: EditPreview | undefined,
+  settledError: boolean | undefined,
+  theme: Theme,
+): (text: string) => string {
+  if (preview) {
+    if ("error" in preview) {
+      return (text: string) => theme.fg("error", text);
+    }
+    return (text: string) => theme.fg("success", text);
+  }
+  if (settledError) {
+    return (text: string) => theme.fg("error", text);
+  }
+  return (text: string) => theme.fg("dim", text);
+}
+
 function getEditHeaderBg(
   preview: EditPreview | undefined,
   settledError: boolean | undefined,
@@ -250,6 +267,7 @@ function buildEditCallComponent(
   cwd: string,
 ): EditCallRenderComponent {
   component.setBgFn(getEditHeaderBg(component.preview, component.settledError, theme));
+  component.setAccentFn(getEditHeaderAccent(component.preview, component.settledError, theme));
   component.clear();
   component.addChild(new Text(formatEditCall(args, theme, cwd), 0, 0));
 
