@@ -650,13 +650,18 @@ function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[], base
   const parentName = isSkillFile ? basename(parentDir!) : undefined;
   const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-  return compiledPatterns.some((compiled) => {
+  for (let i = 0; i < compiledPatterns.length; i++) {
+    const compiled = compiledPatterns[i];
     if (compiled.match(rel) || compiled.match(name) || compiled.match(filePathPosix)) {
       return true;
     }
-    if (!isSkillFile) return false;
-    return compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!);
-  });
+    if (isSkillFile) {
+      if (compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!)) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function normalizeExactPattern(pattern: string): string {
@@ -674,38 +679,22 @@ function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: s
   const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
   const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-  return patterns.some((pattern) => {
-    const normalized = normalizeExactPattern(pattern);
+  for (let i = 0; i < patterns.length; i++) {
+    const normalized = normalizeExactPattern(patterns[i]);
     if (normalized === rel || normalized === filePathPosix) {
       return true;
     }
-    if (!isSkillFile) return false;
-    return normalized === parentRel || normalized === parentDirPosix;
-  });
+    if (isSkillFile) {
+      if (normalized === parentRel || normalized === parentDirPosix) {
+        return true;
+      }
+    }
+  }
+  return false;
 }
 
 function getOverridePatterns(entries: string[]): string[] {
   return entries.filter((pattern) => pattern.startsWith("!") || pattern.startsWith("+") || pattern.startsWith("-"));
-}
-
-function isEnabledByOverrides(filePath: string, patterns: string[], baseDir: string): boolean {
-  const overrides = getOverridePatterns(patterns);
-  const excludes = overrides.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
-  const compiledExcludes = excludes.map((pattern) => new Minimatch(toPosixPath(pattern)));
-  const forceIncludes = overrides.filter((pattern) => pattern.startsWith("+")).map((pattern) => pattern.slice(1));
-  const forceExcludes = overrides.filter((pattern) => pattern.startsWith("-")).map((pattern) => pattern.slice(1));
-
-  let enabled = true;
-  if (excludes.length > 0 && matchesAnyPattern(filePath, compiledExcludes, baseDir)) {
-    enabled = false;
-  }
-  if (forceIncludes.length > 0 && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
-    enabled = true;
-  }
-  if (forceExcludes.length > 0 && matchesAnyExactPattern(filePath, forceExcludes, baseDir)) {
-    enabled = false;
-  }
-  return enabled;
 }
 
 /**
@@ -2281,8 +2270,29 @@ export class DefaultPackageManager implements PackageManager {
       baseDir: string,
     ) => {
       const target = this.getTargetMap(accumulator, resourceType);
+
+      // ⚡ Bolt: Pre-compile Minimatch instances outside of tight per-file loops
+      const overridePatterns = getOverridePatterns(overrides);
+      const excludes = overridePatterns.filter((pattern) => pattern.startsWith("!")).map((pattern) => pattern.slice(1));
+      const compiledExcludes = excludes.map((pattern) => new Minimatch(toPosixPath(pattern)));
+      const forceIncludes = overridePatterns
+        .filter((pattern) => pattern.startsWith("+"))
+        .map((pattern) => pattern.slice(1));
+      const forceExcludes = overridePatterns
+        .filter((pattern) => pattern.startsWith("-"))
+        .map((pattern) => pattern.slice(1));
+
       for (const path of paths) {
-        const enabled = isEnabledByOverrides(path, overrides, baseDir);
+        let enabled = true;
+        if (excludes.length > 0 && matchesAnyPattern(path, compiledExcludes, baseDir)) {
+          enabled = false;
+        }
+        if (forceIncludes.length > 0 && matchesAnyExactPattern(path, forceIncludes, baseDir)) {
+          enabled = true;
+        }
+        if (forceExcludes.length > 0 && matchesAnyExactPattern(path, forceExcludes, baseDir)) {
+          enabled = false;
+        }
         this.addResource(target, path, metadata, enabled);
       }
     };
