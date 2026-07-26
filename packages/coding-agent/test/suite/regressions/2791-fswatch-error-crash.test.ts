@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -89,11 +89,14 @@ process.exit(0);
 `,
     );
 
+    const tsxCli = join(__dirname, "../../../../../node_modules/tsx/dist/cli.mjs");
+    const execArgs = existsSync(tsxCli) ? [tsxCli, scriptPath] : [scriptPath];
+
     let _stdout = "";
     let stderr = "";
     let exitCode: number;
     try {
-      _stdout = execFileSync(process.execPath, [scriptPath], {
+      _stdout = execFileSync(process.execPath, execArgs, {
         timeout: 10000,
         encoding: "utf-8",
         env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
