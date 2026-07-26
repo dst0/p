@@ -165,24 +165,28 @@ def build_runtime_plan(
     sequence_scale = max(0.25, (sequence_length / 2048) ** 2)
     model_scale = max(0.5, (model_parameter_count / 600_000_000) ** 0.5)
     if selected_backend == "cpu":
-        workspace = max(0, cpu_workspace)
+        max_cpu_workspace = int(memory.system_available_bytes * 0.50)
+        workspace = max(0, min(cpu_workspace, max_cpu_workspace))
         memory_thread_limit = max(1, workspace // CPU_THREAD_HEADROOM_BYTES)
         cpu_threads = min(thread_limit, memory_thread_limit)
         remaining_workspace = max(0, workspace - cpu_threads * CPU_THREAD_WORKSPACE_BYTES)
         batch_item_bytes = max(1, int(CPU_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, remaining_workspace // batch_item_bytes)
+        effective_max_batch = min(max_batch_size, 16)
     else:
         accelerator_free = memory.accelerator_free_bytes or 0
+        max_accelerator_workspace = int(accelerator_free * 0.50)
         accelerator_workspace = max(
             0,
-            accelerator_free - accelerator_reserve - accelerator_load_bytes,
+            min(accelerator_free - accelerator_reserve - accelerator_load_bytes, max_accelerator_workspace),
         )
         backend_thread_limit = 4 if selected_backend == "mps" else 8
         cpu_threads = min(thread_limit, backend_thread_limit)
         batch_item_bytes = max(1, int(ACCELERATOR_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, accelerator_workspace // batch_item_bytes)
+        effective_max_batch = max_batch_size
 
-    batch_size = _power_of_two_floor(min(max_batch_size, batch_capacity))
+    batch_size = _power_of_two_floor(min(effective_max_batch, batch_capacity))
     if reason is None and (cpu_threads < thread_limit or batch_size < max_batch_size):
         reason = "parallelism reduced to preserve memory headroom"
 

@@ -47,7 +47,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "cpu")
         self.assertEqual(plan.cpu_threads, 32)
-        self.assertEqual(plan.batch_size, 64)
+        self.assertEqual(plan.batch_size, 16)
         self.assertIn("below the safety reserve", plan.reason or "")
 
     def test_reduces_cpu_parallelism_when_system_memory_is_limited(self):
@@ -125,6 +125,22 @@ class ResourceManagerTest(unittest.TestCase):
         with patch.dict(os.environ, {"P_CODE_RAG_MAX_EMBED_BATCH_SIZE": "0"}):
             with self.assertRaisesRegex(ValueError, "must be a positive integer"):
                 read_positive_int_environment("P_CODE_RAG_MAX_EMBED_BATCH_SIZE", 64)
+
+    def test_caps_workspace_to_fifty_percent_max(self):
+        plan = build_runtime_plan(
+            preferred_backend="rocm",
+            logical_cpu_count=32,
+            memory=MemorySnapshot(
+                system_total_bytes=64 * GIB,
+                system_available_bytes=48 * GIB,
+                accelerator_total_bytes=16 * GIB,
+                accelerator_free_bytes=4 * GIB,
+            ),
+            model_parameter_count=600_000_000,
+        )
+        self.assertTrue(plan.usable)
+        self.assertEqual(plan.backend, "rocm")
+        self.assertLessEqual(plan.batch_size, 32)
 
 
 if __name__ == "__main__":
