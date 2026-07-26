@@ -1097,7 +1097,6 @@ export class AgentSession {
   private _planModePreviousActiveToolNames: string[] | undefined;
   private _stateUpdateRequiredForCurrentUserTurn = false;
   private _progressUpdateRequiredBeforeFinish = false;
-  private _latestUserTurnText?: string;
 
   // Model registry for API key resolution
   private _modelRegistry: ModelRegistry;
@@ -1481,7 +1480,16 @@ export class AgentSession {
         toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME &&
         toolCall.name !== SLEEP_TOOL_NAME
       ) {
-        this._autoExecuteUpdateSessionStateForFinishWork();
+        if (toolCall.name === FINISH_WORK_TOOL_NAME) {
+          this._autoExecuteUpdateSessionStateForFinishWork();
+        } else {
+          return {
+            block: true,
+            reason:
+              `After receiving the latest user message, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
+              "record or revise the goal, plan, and next action before attempting any other tool call.",
+          };
+        }
       }
       if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
         this._autoExecuteUpdateSessionStateForFinishWork();
@@ -1744,7 +1752,6 @@ export class AgentSession {
         this._stateUpdateRequiredForCurrentUserTurn =
           this.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME);
         this._progressUpdateRequiredBeforeFinish = false;
-        this._latestUserTurnText = this._extractUserMessageText(event.message.content);
       } else if (event.message.role === "assistant") {
         this._lastAssistantMessage = event.message;
         if (assistantStateUpdateText && persistedEntryId) {
@@ -3572,8 +3579,7 @@ Plan mode is active because the user invoked /plan.
     const state = getLatestStructuredSessionState(this.sessionManager.getBranch());
     const isNewTurn = this._stateUpdateRequiredForCurrentUserTurn;
     const action = isNewTurn ? (state?.canonicalRequest.current ? "replan" : "initial_plan") : "progress_update";
-    const userGoal =
-      isNewTurn && this._latestUserTurnText ? this._latestUserTurnText : (state?.canonicalRequest.current ?? "");
+    const userGoal = state?.canonicalRequest.current ?? "";
 
     const params: UpdateSessionStateInput = {
       action,
