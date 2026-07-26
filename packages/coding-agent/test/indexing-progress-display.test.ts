@@ -92,6 +92,38 @@ describe("formatIndexingStatus", () => {
     ).toContain("🔎 75.0%");
   });
 
+  it("formats reused vs new chunk breakdown when chunk stats are present", () => {
+    expect(
+      formatIndexingStatus({
+        decision: "enabled",
+        indexed: true,
+        serviceRunning: true,
+        ragState: "updating",
+        progress: { phase: "indexing", percent: 16.4, reusedChunks: 57817, recalculatedTotal: 9686 },
+      }),
+    ).toContain("🔎 16.4% (58k reused, 9.7k new)");
+
+    expect(
+      formatIndexingStatus({
+        decision: "enabled",
+        indexed: true,
+        serviceRunning: true,
+        ragState: "updating",
+        progress: { phase: "indexing", percent: 50.0, reusedChunks: 1200 },
+      }),
+    ).toContain("🔎 50.0% (1.2k reused)");
+
+    expect(
+      formatIndexingStatus({
+        decision: "enabled",
+        indexed: true,
+        serviceRunning: true,
+        ragState: "updating",
+        progress: { phase: "indexing", percent: 20.0, recalculatedTotal: 500 },
+      }),
+    ).toContain("🔎 20.0% (500 new)");
+  });
+
   it("shows 0.0% for updating state with zero progress", () => {
     expect(
       formatIndexingStatus({

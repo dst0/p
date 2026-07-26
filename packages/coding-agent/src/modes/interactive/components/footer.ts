@@ -93,6 +93,17 @@ export function formatIndexingStatus(status: IndexStatus): string {
     const percent = status.progress?.percent;
     if (percent !== undefined) {
       const percentStr = `${Math.min(100, Math.max(0, percent)).toFixed(1)}%`;
+      const reused = status.progress?.reusedChunks;
+      const recalculatedTotal = status.progress?.recalculatedTotal;
+      let breakdownStr = "";
+      if (reused !== undefined && reused > 0 && recalculatedTotal !== undefined && recalculatedTotal > 0) {
+        breakdownStr = ` (${formatTokens(reused)} reused, ${formatTokens(recalculatedTotal)} new)`;
+      } else if (reused !== undefined && reused > 0) {
+        breakdownStr = ` (${formatTokens(reused)} reused)`;
+      } else if (recalculatedTotal !== undefined && recalculatedTotal > 0) {
+        breakdownStr = ` (${formatTokens(recalculatedTotal)} new)`;
+      }
+
       // Compute ETA from progress.etaSeconds (recent speed) or startedAt timestamp
       let etaStr = "";
       const etaSeconds =
@@ -103,7 +114,7 @@ export function formatIndexingStatus(status: IndexStatus): string {
       if (etaSeconds !== undefined && etaSeconds > 0) {
         etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
       }
-      return `🔎 ${percentStr}${etaStr}`;
+      return `🔎 ${percentStr}${breakdownStr}${etaStr}`;
     }
     if (status.ragState === "queued") return "🔎 queued";
     if (status.ragState === "initializing") return "🔎 init";
