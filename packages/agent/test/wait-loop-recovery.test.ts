@@ -201,23 +201,29 @@ describe("wait-loop recovery", () => {
         .filter((name) => name !== FINISH_WORK_TOOL_NAME),
     ).toEqual(["sleep", "echo"]);
     expect(
-      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_stop"),
+      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
     ).toHaveLength(0);
   });
 
-  it("stops repeated wait-only turns without using the generic malformed-response limit", async () => {
+  it("warns on repeated wait-only turns without breaking session execution", async () => {
     const executed: string[] = [];
     const waitOnly = createAssistantMessage([createToolCall("wait-event", "wait_event")]);
-    const { events, contexts } = await runWaitScript([waitOnly, waitOnly, waitOnly], createTestTools(executed));
+    const finish = createAssistantMessage([
+      createToolCall("finish-1", FINISH_WORK_TOOL_NAME, { status: "success", summary: "done" }),
+    ]);
+    const { events, contexts } = await runWaitScript([waitOnly, waitOnly, waitOnly, finish], createTestTools(executed));
 
     expect(executed).toEqual(["wait_event", "wait_event", "wait_event"]);
-    expect(contexts).toHaveLength(3);
+    expect(contexts).toHaveLength(4);
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
     ).toHaveLength(0);
     expect(
-      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_stop"),
+      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
     ).toHaveLength(1);
+    expect(JSON.stringify(contexts[3].messages)).toContain(
+      "Executed 3 consecutive wait-only turns without new evidence",
+    );
   });
 
   it("rejects bare and recursive sleeps before waiting", async () => {
@@ -269,7 +275,7 @@ describe("wait-loop recovery", () => {
     expect(executed).toHaveLength(8);
     expect(contexts).toHaveLength(9);
     expect(
-      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_stop"),
+      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
     ).toHaveLength(0);
   });
 });

@@ -496,7 +496,8 @@ export type AgentEvent =
         | "malformed_tool_call_retry"
         | "max_turns_without_finish_work"
         | "no_progress_stop"
-        | "waiting_loop_stop";
+        | "waiting_loop_stop"
+        | "waiting_loop_warning";
       retry?: number;
       maxRetries?: number;
       reason?: string;

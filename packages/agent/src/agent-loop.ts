@@ -473,17 +473,20 @@ async function runLoop(
         completionState.consecutiveWaitingTurns++;
       }
       if (completionState.consecutiveWaitingTurns >= completionLimits.maxConsecutiveWaitingTurns) {
-        await emitProtocolFailure(
-          currentContext,
-          newMessages,
-          config,
-          emit,
+        const warningMessage = `Warning: Executed ${completionState.consecutiveWaitingTurns} consecutive wait-only turns without new evidence. Use an event-driven process wait, inspect concrete state, or interrupt the pending operation before continuing.`;
+        await emit({
+          type: "completion_protocol",
           completionMode,
-          "waiting_loop_stop",
-          `Agent stopped a repeated waiting loop after ${completionState.consecutiveWaitingTurns} consecutive wait-only turns without new evidence. Use an event-driven process wait, inspect concrete state, or interrupt the pending operation before continuing.`,
-          false,
-        );
-        return;
+          event: "waiting_loop_warning",
+          reason: warningMessage,
+        });
+        const repairMessage = createProtocolRepairMessage(warningMessage);
+        await emit({ type: "message_start", message: repairMessage });
+        await emit({ type: "message_end", message: repairMessage });
+        currentContext.messages.push(repairMessage);
+        newMessages.push(repairMessage);
+        completionState.consecutiveWaitingTurns = 0;
+        hasMoreToolCalls = true;
       }
 
       if (isCompletionProtocolEnabled(completionMode) && !completionState.allowImplicitCompletion) {
