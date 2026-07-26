@@ -113,6 +113,7 @@ export interface StatePatch {
       matchText?: string;
       status?: PlanStatus;
       text?: string;
+      parentId?: string;
       evidenceEntryIds?: string[];
     }>;
     remove?: Array<string | { id?: string; text: string }>;
@@ -1355,6 +1356,7 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
         id: item.id,
         text: item.text,
         status: item.status,
+        parentId: item.parentId,
         evidenceEntryIds: item.evidenceEntryIds ?? [],
       }),
     );
@@ -1376,6 +1378,7 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
         id: existing?.id ?? item.id,
         text: item.text,
         status: item.status,
+        parentId: item.parentId ?? existing?.parentId,
         evidenceEntryIds: mergeStringList(existing?.evidenceEntryIds ?? [], item.evidenceEntryIds),
       });
     }
@@ -1399,6 +1402,9 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     if (existing.id === item.id) {
       existing.text = item.text;
     }
+    if (item.parentId !== undefined) {
+      existing.parentId = item.parentId;
+    }
     existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, item.evidenceEntryIds);
     rememberOrder(existing);
   }
@@ -1410,6 +1416,9 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     }
     if (update.text && existing.id === update.id) {
       existing.text = update.text;
+    }
+    if (update.parentId !== undefined) {
+      existing.parentId = update.parentId;
     }
     if (update.status && shouldReplacePlanStatus(existing.status, update.status)) existing.status = update.status;
     existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);

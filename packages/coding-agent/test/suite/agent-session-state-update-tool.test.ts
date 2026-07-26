@@ -303,4 +303,34 @@ describe("AgentSession default session-state tool", () => {
       harness.cleanup();
     }
   });
+
+  it("preserves task parentId and id through update_session_state tool calls", async () => {
+    const harness = await createHarness();
+    try {
+      harness.setResponses([
+        fauxAssistantMessage(
+          fauxToolCall(UPDATE_TOOL, {
+            action: "initial_plan",
+            goal: "Test tree task hierarchy",
+            plan: [
+              { id: "parent-1", text: "Parent Task 1", status: "in_progress" },
+              { id: "child-1", parentId: "parent-1", text: "Subtask 1.1", status: "not_started" },
+            ],
+          }),
+          { stopReason: "toolUse" },
+        ),
+        fauxAssistantMessage(finishCall("completed state tree"), { stopReason: "toolUse" }),
+      ]);
+
+      await harness.session.prompt("Create task tree with subtasks");
+
+      const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+      expect(state?.plan).toHaveLength(2);
+      expect(state?.plan[0]?.id).toBe("parent-1");
+      expect(state?.plan[1]?.id).toBe("child-1");
+      expect(state?.plan[1]?.parentId).toBe("parent-1");
+    } finally {
+      harness.cleanup();
+    }
+  });
 });
