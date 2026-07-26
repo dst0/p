@@ -50,11 +50,15 @@ describe("issue #2791 fs.watch error event crashes process", () => {
     writeFileSync(
       scriptPath,
       `
-import { setTheme, stopThemeWatcher } from "${themeModulePath}";
-
 process.env.${ENV_AGENT_DIR} = "${agentDir}";
 
-setTheme("custom-test", true);
+const { setTheme, stopThemeWatcher } = await import("${themeModulePath}");
+
+const result = setTheme("custom-test", true);
+if (!result.success) {
+	process.stderr.write("setTheme failed: " + result.error + "\\n");
+	process.exit(3);
+}
 
 // Find the FSWatcher among active handles
 const handles = (process as any)._getActiveHandles();
