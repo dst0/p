@@ -45,3 +45,10 @@ collect.sh
 .qdrant-initialized
 p-session-*.html
 /user-updates.md
+
+# Python
+__pycache__/
+*.pyc
+
+# Agent metadata
+.agents/
