@@ -532,7 +532,7 @@ function getFinishWorkRemainingWork(args: unknown): string[] {
     .filter((item) => item.length > 0);
 }
 
-function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
+export function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
   return (
     message.role === "user" && isRecord(message.metadata) && message.metadata.pInternal === "completion_protocol_repair"
   );
