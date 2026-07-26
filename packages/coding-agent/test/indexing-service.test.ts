@@ -42,8 +42,27 @@ class FakeRagService implements CodeRagService {
     this.abortable = abortable;
   }
 
-  async initialize(): Promise<RagStatus> {
-    return this.createStatus();
+  private lastIndexedMtime = 0;
+
+  private getLatestMtime(): number {
+    try {
+      const indexPath = path.join(this.workspaceRoot, "index.ts");
+      if (fs.existsSync(indexPath)) {
+        return fs.statSync(indexPath).mtimeMs;
+      }
+    } catch {}
+    return 0;
+  }
+
+  async initialize(options?: { checkFreshness?: boolean }): Promise<RagStatus> {
+    const status = this.createStatus();
+    if (options?.checkFreshness) {
+      const currentMtime = this.getLatestMtime();
+      if (this.lastIndexedMtime > 0 && currentMtime > this.lastIndexedMtime) {
+        return { ...status, state: "stale" };
+      }
+    }
+    return status;
   }
 
   async status(): Promise<RagStatus> {
@@ -62,6 +81,7 @@ class FakeRagService implements CodeRagService {
 
   async refresh(options: RefreshIndexOptions = {}, signal?: AbortSignal): Promise<IndexUpdateSummary> {
     this.refreshing = true;
+    this.lastIndexedMtime = this.getLatestMtime();
     this.onRefreshStart?.(this.workspaceRoot);
     try {
       options.onProgress?.({ phase: "scanning", percent: 0 });
