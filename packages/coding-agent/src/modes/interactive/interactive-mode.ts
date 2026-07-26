@@ -3370,6 +3370,7 @@ export class InteractiveMode {
         anchor: "top-right",
         width: 50,
         margin: 1,
+        nonCapturing: true,
       });
       this.ui.requestRender();
     }
