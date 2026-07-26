@@ -278,4 +278,42 @@ describe("wait-loop recovery", () => {
       events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
     ).toHaveLength(0);
   });
+
+  it("handles long sequences of wait turns without triggering no_progress_stop", async () => {
+    const executed: string[] = [];
+    const waitOnly = createAssistantMessage([createToolCall("wait-event", "wait_event")]);
+    const finish = createAssistantMessage([
+      createToolCall("finish-1", FINISH_WORK_TOOL_NAME, { status: "success", summary: "done" }),
+    ]);
+    const waitTurns = Array.from({ length: 7 }, () => waitOnly);
+    const { events, contexts } = await runWaitScript([...waitTurns, finish], createTestTools(executed), 3);
+
+    expect(executed).toHaveLength(7);
+    expect(contexts).toHaveLength(8);
+    expect(
+      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
+    ).toHaveLength(2);
+    expect(
+      events.filter((event) => event.type === "completion_protocol" && event.event === "no_progress_stop"),
+    ).toHaveLength(0);
+  });
+
+  it("resets consecutive waiting turns counter when progress is made", async () => {
+    const executed: string[] = [];
+    const waitOnly = createAssistantMessage([createToolCall("wait-event", "wait_event")]);
+    const echoProgress = createAssistantMessage([createToolCall("echo-1", "echo", { value: "progress" })]);
+    const finish = createAssistantMessage([
+      createToolCall("finish-1", FINISH_WORK_TOOL_NAME, { status: "success", summary: "done" }),
+    ]);
+    const { events } = await runWaitScript(
+      [waitOnly, waitOnly, echoProgress, waitOnly, waitOnly, finish],
+      createTestTools(executed),
+      3,
+    );
+
+    expect(executed).toEqual(["wait_event", "wait_event", "progress", "wait_event", "wait_event"]);
+    expect(
+      events.filter((event) => event.type === "completion_protocol" && event.event === "waiting_loop_warning"),
+    ).toHaveLength(0);
+  });
 });

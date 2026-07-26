@@ -512,6 +512,8 @@ async function runLoop(
           }
         } else if (executedToolBatch?.madeProgress) {
           resetCompletionProgress(completionState);
+        } else if (executedToolBatch?.waiting) {
+          // Wait-only turns are managed by waiting_loop_warning and do not count towards no_progress_stop
         } else if (toolCalls.length > 0) {
           completionState.noProgressTurns++;
         }
