@@ -58,7 +58,8 @@ setTheme("custom-test", true);
 
 // Find the FSWatcher among active handles
 const handles = (process as any)._getActiveHandles();
-const fsWatcher = handles.find((h: any) => h.constructor?.name === "FSWatcher");
+const watchers = handles.filter((h: any) => h.constructor?.name === "FSWatcher");
+const fsWatcher = watchers.find((h: any) => h.listenerCount("error") > 0) || watchers[0];
 
 if (!fsWatcher) {
 	process.stderr.write("no FSWatcher found among active handles\\n");
