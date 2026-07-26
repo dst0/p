@@ -833,7 +833,7 @@ function startThemeWatcher(): void {
   stopThemeWatcher();
 
   // Only watch if it's a custom theme (not built-in)
-  if (!currentThemeName || currentThemeName === "dark" || currentThemeName === "light") {
+  if (!currentThemeName || currentThemeName in getBuiltinThemes()) {
     return;
   }
 
