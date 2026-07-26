@@ -1,6 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/dst0/p/main/packages/coding-agent/src/modes/interactive/theme/theme-schema.json",
   "name": "halloween",
+  "symbol": "🎃",
   "vars": {
     "orange": "#ff8c00",
     "deepOrange": "#e65100",

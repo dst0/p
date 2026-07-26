@@ -30,6 +30,7 @@ type ColorValue = Static<typeof ColorValueSchema>;
 const ThemeJsonSchema = Type.Object({
   $schema: Type.Optional(Type.String()),
   name: Type.String(),
+  symbol: Type.Optional(Type.String()),
   vars: Type.Optional(Type.Record(Type.String(), ColorValueSchema)),
   colors: Type.Object({
     // Core UI (10 colors)
@@ -456,6 +457,7 @@ export function getAvailableThemes(): string[] {
 export interface ThemeInfo {
   name: string;
   path: string | undefined;
+  symbol?: string;
 }
 
 export function getAvailableThemesWithPaths(): ThemeInfo[] {
@@ -471,8 +473,9 @@ export function getAvailableThemesWithPaths(): ThemeInfo[] {
   };
 
   // Built-in themes
-  for (const name of Object.keys(getBuiltinThemes())) {
-    addTheme({ name, path: path.join(themesDir, `${name}.json`) });
+  const builtinThemes = getBuiltinThemes();
+  for (const name of Object.keys(builtinThemes)) {
+    addTheme({ name, path: path.join(themesDir, `${name}.json`), symbol: builtinThemes[name].symbol });
   }
 
   // Custom themes
@@ -502,7 +505,15 @@ function getCustomThemeInfos(): ThemeInfo[] {
     try {
       const customTheme = loadThemeFromPath(themePath);
       if (customTheme.name) {
-        result.push({ name: customTheme.name, path: themePath });
+        // Read symbol from JSON
+        let symbol: string | undefined;
+        try {
+          const json = JSON.parse(fs.readFileSync(themePath, "utf-8")) as Record<string, unknown>;
+          if (typeof json.symbol === "string") symbol = json.symbol;
+        } catch {
+          // Ignore parse errors for symbol
+        }
+        result.push({ name: customTheme.name, path: themePath, symbol });
       }
     } catch {
       // Invalid themes are ignored here; the resource loader reports them

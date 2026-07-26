@@ -1,5 +1,5 @@
 import { Container, type SelectItem, SelectList, type SelectListLayoutOptions } from "@dst0/p-tui";
-import { getAvailableThemes, getSelectListTheme } from "../theme/theme.ts";
+import { getAvailableThemesWithPaths, getSelectListTheme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
 
 const THEME_SELECT_LIST_LAYOUT: SelectListLayoutOptions = {
@@ -23,11 +23,11 @@ export class ThemeSelectorComponent extends Container {
     super();
     this.onPreview = onPreview;
 
-    // Get available themes and create select items
-    const themes = getAvailableThemes();
-    const themeItems: SelectItem[] = themes.map((name) => ({
+    // Get available themes with paths and create select items
+    const themes = getAvailableThemesWithPaths();
+    const themeItems: SelectItem[] = themes.map(({ name, symbol }) => ({
       value: name,
-      label: name,
+      label: symbol ? `${symbol} ${name}` : name,
       description: name === currentTheme ? "(current)" : undefined,
     }));
 
@@ -38,7 +38,7 @@ export class ThemeSelectorComponent extends Container {
     this.selectList = new SelectList(themeItems, 10, getSelectListTheme(), THEME_SELECT_LIST_LAYOUT);
 
     // Preselect current theme
-    const currentIndex = themes.indexOf(currentTheme);
+    const currentIndex = themes.findIndex((t) => t.name === currentTheme);
     if (currentIndex !== -1) {
       this.selectList.setSelectedIndex(currentIndex);
     }
