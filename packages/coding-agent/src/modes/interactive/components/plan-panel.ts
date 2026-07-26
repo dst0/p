@@ -77,7 +77,14 @@ export class PlanPanel implements Component {
   invalidate(): void {}
 
   render(width: number): string[] {
+    if (width < 4) {
+      return [theme.fg("borderAccent", "─".repeat(width))];
+    }
+
     const lines: string[] = [];
+    const border = (str: string) => theme.fg("borderAccent", str);
+    const innerW = width - 2;
+    const wrapRow = (content: string) => border("│") + truncateToWidth(content, innerW, "…", true) + border("│");
 
     const C = {
       green: "\x1b[32m",
@@ -95,17 +102,22 @@ export class PlanPanel implements Component {
     const completedSteps = this.tracker.steps.filter((s) => s.status === "completed" || s.status === "done").length;
     const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
-    // Header with theme colors
+    // Header with contrast top border
     const titleText = `[ ${completedSteps}/${totalSteps} Steps Complete (${percent}%) ]`;
-    const decorativeLine = "━".repeat(Math.max(0, width - visibleWidth(titleText) - 2));
     const formattedTitle = theme.fg("accent", theme.bold(titleText));
-    const formattedLine = theme.fg("muted", decorativeLine);
-    lines.push(truncateToWidth(`${formattedTitle} ${formattedLine}`, width, ""));
-    lines.push("");
+    const vTitleW = visibleWidth(titleText);
+
+    if (width >= vTitleW + 4) {
+      const topFill = "─".repeat(width - vTitleW - 4);
+      lines.push(border("╭─ ") + formattedTitle + border(` ${topFill}╮`));
+    } else {
+      lines.push(border(`╭${"─".repeat(innerW)}╮`));
+      lines.push(wrapRow(formattedTitle));
+    }
 
     // Plan steps
     if (this.tracker.steps.length === 0) {
-      lines.push(truncateToWidth(`  ${C.gray}No plan steps defined.${C.reset}`, width, ""));
+      lines.push(wrapRow(` ${C.gray}No plan steps defined.${C.reset}`));
     } else {
       for (const step of this.tracker.steps) {
         let icon = "";
@@ -141,19 +153,25 @@ export class PlanPanel implements Component {
         const stepDesc = isActive ? `${C.bold}${theme.fg("accent", step.description)}${C.reset}` : step.description;
 
         const stepText = ` ${C.gray}${treeIndent}${C.reset}${icon} ${stepDesc}${activeMarker}`;
-        lines.push(truncateToWidth(stepText, width, "..."));
+        lines.push(wrapRow(stepText));
       }
     }
 
-    lines.push("");
-
-    // Execution log summary
+    // Execution log summary section
     const logHeader = `[ Recent Tool Executions ]`;
-    const logLine = "━".repeat(Math.max(0, width - visibleWidth(logHeader) - 2));
-    lines.push(truncateToWidth(`${theme.fg("muted", logHeader)} ${theme.fg("muted", logLine)}`, width, ""));
+    const logHeaderFormatted = theme.fg("muted", logHeader);
+    const vLogW = visibleWidth(logHeader);
+
+    if (width >= vLogW + 4) {
+      const logFill = "─".repeat(width - vLogW - 4);
+      lines.push(border("├─ ") + logHeaderFormatted + border(` ${logFill}┤`));
+    } else {
+      lines.push(border(`├${"─".repeat(innerW)}┤`));
+      lines.push(wrapRow(logHeaderFormatted));
+    }
 
     if (this.tracker.toolEvents.length === 0) {
-      lines.push(truncateToWidth(`  ${C.gray}No recent executions.${C.reset}`, width, ""));
+      lines.push(wrapRow(` ${C.gray}No recent executions.${C.reset}`));
     } else {
       for (const event of this.tracker.toolEvents) {
         let statusIcon = "";
@@ -176,13 +194,15 @@ export class PlanPanel implements Component {
         }
 
         const argsText = event.argsSummary ? ` ${C.gray}${event.argsSummary}${C.reset}` : "";
-        const eventText = `  ${statusIcon} ${event.name}${argsText}${durationStr}`;
-        lines.push(truncateToWidth(eventText, width, "..."));
+        const eventText = ` ${statusIcon} ${event.name}${argsText}${durationStr}`;
+        lines.push(wrapRow(eventText));
       }
     }
 
-    lines.push("");
-    lines.push(truncateToWidth(`  ${theme.fg("dim", "[F2] Toggle plan view")}`, width, ""));
+    // Footer section and bottom border
+    lines.push(border(`├${"─".repeat(innerW)}┤`));
+    lines.push(wrapRow(` ${theme.fg("dim", "[F2] Toggle plan view")}`));
+    lines.push(border(`╰${"─".repeat(innerW)}╯`));
 
     return lines;
   }
