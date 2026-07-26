@@ -647,6 +647,8 @@ const UPDATE_SESSION_STATE_SCHEMA = Type.Object({
   plan: Type.Optional(
     Type.Array(
       Type.Object({
+        id: Type.Optional(Type.String({ description: "Optional unique task ID" })),
+        parentId: Type.Optional(Type.String({ description: "Optional parent task ID for subtasks" })),
         text: Type.String(),
         op: Type.Optional(Type.Union([Type.Literal("add"), Type.Literal("update"), Type.Literal("remove")])),
         status: Type.Optional(UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA),
@@ -693,7 +695,13 @@ const MARK_SESSION_PROGRESS_SCHEMA = Type.Object({
 interface UpdateSessionStateInput {
   action: "initial_plan" | "replan" | "progress_update" | "none";
   goal?: string;
-  plan?: Array<{ text: string; op?: "add" | "update" | "remove"; status?: PlanStatus }>;
+  plan?: Array<{
+    id?: string;
+    parentId?: string;
+    text: string;
+    op?: "add" | "update" | "remove";
+    status?: PlanStatus;
+  }>;
   decisions?: Array<{ decision: string; rationale?: string }>;
   risks?: string[];
   touchedFiles?: Array<{ path: string; status?: FileTouchStatus; summary?: string }>;
@@ -3641,7 +3649,8 @@ Plan mode is active because the user invoked /plan.
     const rawPlanItems = (input.plan ?? [])
       .map((item) => ({
         op: item.op ?? "add",
-        id: createStateToolStableId("plan", item.text),
+        id: item.id?.trim() || createStateToolStableId("plan", item.text),
+        parentId: item.parentId?.trim() || undefined,
         text: capStateToolText(item.text, 280),
         status: item.status ?? "not_started",
         evidenceEntryIds: [...sourceEntryIds],

@@ -1351,6 +1351,33 @@ export class TUI extends Container {
       return;
     }
 
+    // When an overlay is active and viewport top shifts, redraw only the visible screen rows (last height lines)
+    // with synchronized output without clearing scrollback history (\x1b[3J). This prevents whole-transcript replays.
+    const newViewportTop = Math.max(0, newLines.length - height);
+    if (this.overlayStack.length > 0 && newViewportTop !== prevViewportTop) {
+      logRedraw(`overlay viewport shift (${prevViewportTop} -> ${newViewportTop})`);
+      let buffer = "\x1b[?2026h\x1b[2J\x1b[H";
+      const visibleEnd = Math.min(newLines.length, newViewportTop + height);
+      for (let i = newViewportTop; i < visibleEnd; i++) {
+        buffer += newLines[i];
+        if (i < visibleEnd - 1) {
+          buffer += "\r\n";
+        }
+      }
+      buffer += "\x1b[?2026l";
+      this.terminal.write(buffer);
+      this.previousLines = newLines;
+      this.previousKittyImageIds = this.collectKittyImageIds(newLines);
+      this.previousWidth = width;
+      this.previousHeight = height;
+      this.previousViewportTop = newViewportTop;
+      this.cursorRow = Math.max(0, visibleEnd - 1);
+      this.hardwareCursorRow = this.cursorRow;
+      this.maxLinesRendered = Math.max(this.maxLinesRendered, newLines.length);
+      this.positionHardwareCursor(cursorPos, newLines.length);
+      return;
+    }
+
     // Find first and last changed lines
     let firstChanged = -1;
     let lastChanged = -1;

@@ -3,6 +3,8 @@ import type { EvidencePointer } from "../../src/core/compaction/compaction.ts";
 import {
   createInitialStructuredSessionState,
   createStructuredSessionState,
+  getOrderedPlanTree,
+  renderWorkingSessionState,
 } from "../../src/core/compaction/structured-state.ts";
 import type { SessionEntry } from "../../src/core/session-manager.ts";
 
@@ -247,5 +249,28 @@ describe("structured-state normalization", () => {
     const matches = state.codebase.touchedFiles.filter((f) => f.path === "packages/foo.ts");
     expect(matches).toHaveLength(1);
     expect(matches[0]!.summary).toBe("very detailed summary of what was changed in this file");
+  });
+
+  it("orders plan tree depth-first and highlights active working subtask", () => {
+    const plan = [
+      { id: "parent1", text: "Top task 1", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "sub1.1", text: "Subtask 1.1", status: "done" as const, parentId: "parent1", evidenceEntryIds: [] },
+      { id: "sub1.2", text: "Subtask 1.2", status: "in_progress" as const, parentId: "parent1", evidenceEntryIds: [] },
+      { id: "parent2", text: "Top task 2", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["parent1", "sub1.1", "sub1.2", "parent2"]);
+    expect(ordered.find((o) => o.item.id === "sub1.2")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "sub1.2")?.active).toBe(true);
+
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test Goal";
+    state.plan = plan;
+
+    const rendered = renderWorkingSessionState(state, 1000);
+    expect(rendered).toContain("⏳ Top task 1");
+    expect(rendered).toContain("├─ ✅ Subtask 1.1");
+    expect(rendered).toContain("├─ ⏳ Subtask 1.2 👈 (active)");
   });
 });

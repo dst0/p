@@ -37,6 +37,7 @@ export interface PlanItem {
   id: string;
   text: string;
   status: PlanStatus;
+  parentId?: string;
   evidenceEntryIds: string[];
 }
 
@@ -112,6 +113,7 @@ export interface StatePatch {
       matchText?: string;
       status?: PlanStatus;
       text?: string;
+      parentId?: string;
       evidenceEntryIds?: string[];
     }>;
     remove?: Array<string | { id?: string; text: string }>;
@@ -301,14 +303,77 @@ export function mergeStructuredSessionState(
   return next;
 }
 
+export interface OrderedPlanItem {
+  item: PlanItem;
+  depth: number;
+  isLastChild: boolean;
+  active: boolean;
+}
+
+export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
+  if (plan.length === 0) return [];
+
+  const itemMap = new Map<string, PlanItem>();
+  const childrenMap = new Map<string | undefined, PlanItem[]>();
+
+  for (const item of plan) {
+    itemMap.set(item.id, item);
+  }
+
+  for (const item of plan) {
+    const parentId = item.parentId && itemMap.has(item.parentId) ? item.parentId : undefined;
+    if (!childrenMap.has(parentId)) {
+      childrenMap.set(parentId, []);
+    }
+    childrenMap.get(parentId)!.push(item);
+  }
+
+  const result: OrderedPlanItem[] = [];
+
+  function traverse(parentId: string | undefined, depth: number) {
+    const children = childrenMap.get(parentId) ?? [];
+    for (let i = 0; i < children.length; i++) {
+      const child = children[i]!;
+      const isLastChild = i === children.length - 1;
+      const active = child.status === "in_progress";
+      result.push({
+        item: child,
+        depth,
+        isLastChild,
+        active,
+      });
+      traverse(child.id, depth + 1);
+    }
+  }
+
+  traverse(undefined, 0);
+
+  const visited = new Set(result.map((r) => r.item.id));
+  for (const item of plan) {
+    if (!visited.has(item.id)) {
+      result.push({
+        item,
+        depth: 0,
+        isLastChild: true,
+        active: item.status === "in_progress",
+      });
+    }
+  }
+
+  return result;
+}
+
 export function findMatchingPlanItem(plan: PlanItem[], text: string): PlanItem | undefined {
   return findPlanItemByIdOrText(plan, undefined, text);
 }
 
 export function renderStructuredSessionCheckpoint(state: StructuredSessionState, maxTokens: number): string {
-  const plan = state.plan
-    .slice(0, 12)
-    .map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
+  const orderedTree = getOrderedPlanTree(state.plan);
+  const plan = orderedTree.slice(0, 12).map(({ item, depth, active }) => {
+    const indent = depth > 0 ? `${"  ".repeat(depth)}├─ ` : "";
+    const activeText = active ? " 👈 (active)" : "";
+    return `${indent}${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}${activeText}`;
+  });
   const decisions = state.decisions
     .filter((decision) => decision.status === "active")
     .slice(-8)
@@ -341,9 +406,12 @@ export function renderWorkingSessionState(state: StructuredSessionState, maxToke
   if (!hasMeaningfulStructuredSessionState(state)) {
     return undefined;
   }
-  const plan = state.plan
-    .slice(0, 12)
-    .map((item) => `${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}`);
+  const orderedTree = getOrderedPlanTree(state.plan);
+  const plan = orderedTree.slice(0, 12).map(({ item, depth, active }) => {
+    const indent = depth > 0 ? `${"  ".repeat(depth)}├─ ` : "";
+    const activeText = active ? " 👈 (active)" : "";
+    return `${indent}${renderPlanStatusMarker(item.status)} ${capPromptLine(item.text, 220)}${activeText}`;
+  });
   const touchedFiles = state.codebase.touchedFiles
     .slice(-16)
     .map((file) => `${file.status}: ${file.path} - ${capPromptLine(file.summary, 180)}`);
@@ -597,10 +665,14 @@ function parsePlanItemsFromUpdate(
       ? (getStringField(item, ["op", "operation"]) as "add" | "update" | "remove" | undefined)
       : undefined;
     const entryIds = isRecord(item) ? getStringListField(item, ["evidenceEntryIds", "evidence_entry_ids"]) : [];
+    const parentId = isRecord(item)
+      ? getStringField(item, ["parentId", "parent_id", "parent"]) || undefined
+      : undefined;
     items.push({
       id: isRecord(item) ? getStringField(item, ["id"]) || createStableId("plan", text) : createStableId("plan", text),
       text: capSentence(compactWhitespace(text), 280),
       status,
+      parentId,
       op,
       evidenceEntryIds: mergeStringList([...sourceEntryIds], entryIds),
     });
@@ -1284,6 +1356,7 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
         id: item.id,
         text: item.text,
         status: item.status,
+        parentId: item.parentId,
         evidenceEntryIds: item.evidenceEntryIds ?? [],
       }),
     );
@@ -1305,6 +1378,7 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
         id: existing?.id ?? item.id,
         text: item.text,
         status: item.status,
+        parentId: item.parentId ?? existing?.parentId,
         evidenceEntryIds: mergeStringList(existing?.evidenceEntryIds ?? [], item.evidenceEntryIds),
       });
     }
@@ -1328,6 +1402,9 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     if (existing.id === item.id) {
       existing.text = item.text;
     }
+    if (item.parentId !== undefined) {
+      existing.parentId = item.parentId;
+    }
     existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, item.evidenceEntryIds);
     rememberOrder(existing);
   }
@@ -1339,6 +1416,9 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     }
     if (update.text && existing.id === update.id) {
       existing.text = update.text;
+    }
+    if (update.parentId !== undefined) {
+      existing.parentId = update.parentId;
     }
     if (update.status && shouldReplacePlanStatus(existing.status, update.status)) existing.status = update.status;
     existing.evidenceEntryIds = mergeStringList(existing.evidenceEntryIds, update.evidenceEntryIds);
