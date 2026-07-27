@@ -105,11 +105,15 @@ function cgroupAvailableMemoryBytes(): number | undefined {
 export function detectFilePreparationResources(): FilePreparationResourceSnapshot {
   const hostAvailable = os.freemem();
   const cgroupAvailable = cgroupAvailableMemoryBytes();
+  const hostAvailableEstimated =
+    process.platform === "darwin" && hostAvailable < 256 * MEBIBYTE
+      ? Math.max(hostAvailable, Math.floor(os.totalmem() * 0.125))
+      : hostAvailable;
   return {
     logicalCpus: Math.max(1, os.availableParallelism()),
     availableMemoryBytes: Math.max(
       0,
-      cgroupAvailable === undefined ? hostAvailable : Math.min(hostAvailable, cgroupAvailable),
+      cgroupAvailable === undefined ? hostAvailableEstimated : Math.min(hostAvailableEstimated, cgroupAvailable),
     ),
   };
 }
