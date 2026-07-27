@@ -1469,6 +1469,7 @@ export class TUI extends Container {
     // without clearing scrollback (\x1b[3J) or replaying the full history into stdout.
     if (firstChanged < prevViewportTop) {
       logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
+      this.fullRedrawCount += 1;
       const newViewportTop = Math.max(0, newLines.length - height);
       let buffer = "\x1b[?2026h\x1b[2J\x1b[H";
       buffer += this.deleteChangedKittyImages(0, newLines.length - 1);
