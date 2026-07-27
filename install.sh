@@ -185,16 +185,28 @@ echo ""
 # Prompt here so the chosen value is exported to reinstall.sh, which skips its
 # own prompt when P_CODE_RAG_DEVICE is already set in the environment.
 if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
-    EMBED_CHOICES=("cpu (recommended – leaves GPU free for inference)")
-    EMBED_VALUES=("cpu")
-    if [[ -e /dev/kfd ]]; then
-        EMBED_CHOICES+=("rocm (AMD GPU – uses VRAM for embedding)")
-        EMBED_VALUES+=("rocm")
+    EMBED_CHOICES=()
+    EMBED_VALUES=()
+    if [[ "$(uname)" == "Darwin" ]]; then
+        if [[ "$(uname -m)" == "arm64" ]]; then
+            EMBED_CHOICES+=("mps (Apple Silicon Metal – uses unified memory)")
+            EMBED_VALUES+=("mps")
+            EMBED_CHOICES+=("cpu (CPU only)")
+            EMBED_VALUES+=("cpu")
+        fi
+    else
+        EMBED_CHOICES+=("cpu (recommended – leaves GPU free for inference)")
+        EMBED_VALUES+=("cpu")
+        if [[ -e /dev/kfd ]]; then
+            EMBED_CHOICES+=("rocm (AMD GPU – uses VRAM for embedding)")
+            EMBED_VALUES+=("rocm")
+        fi
+        if [[ -e /dev/nvidiactl ]]; then
+            EMBED_CHOICES+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
+            EMBED_VALUES+=("cuda")
+        fi
     fi
-    if [[ -e /dev/nvidiactl ]]; then
-        EMBED_CHOICES+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
-        EMBED_VALUES+=("cuda")
-    fi
+
     if [[ "${#EMBED_CHOICES[@]}" -gt 1 ]]; then
         echo "=== Embedding device for code indexing ==="
         for i in "${!EMBED_CHOICES[@]}"; do

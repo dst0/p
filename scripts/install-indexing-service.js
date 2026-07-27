@@ -59,19 +59,27 @@ export function selectTorchInstallPlan(options = {}) {
 	const requestedBackend =
 		options.requestedBackend ??
 		process.env.P_CODE_RAG_TORCH_BACKEND ??
-		(process.env.P_CODE_RAG_DEVICE === "cpu" ? "cpu" : "auto");
+		(process.env.P_CODE_RAG_DEVICE === "cpu"
+			? "cpu"
+			: process.env.P_CODE_RAG_DEVICE === "mps"
+				? "mps"
+				: "auto");
 	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
 	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
-	if (!["auto", "cpu", "rocm", "cuda"].includes(requestedBackend)) {
-		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda");
+	if (!["auto", "cpu", "rocm", "cuda", "mps"].includes(requestedBackend)) {
+		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda, mps");
 	}
 
 	let backend = requestedBackend;
 	if (backend === "auto") {
 		if (platform === "linux" && architecture === "x64" && hasAmdComputeDevice) backend = "rocm";
 		else if (platform === "linux" && architecture === "x64" && hasNvidiaComputeDevice) backend = "cuda";
+		else if (platform === "darwin" && architecture === "arm64") backend = "mps";
 		else if (platform === "linux") backend = "cpu";
 		else backend = "default";
+	}
+	if (backend === "mps") {
+		backend = "default";
 	}
 	if (backend === "rocm" && (platform !== "linux" || architecture !== "x64")) {
 		throw new Error("ROCm PyTorch is supported only on Linux x64");
@@ -228,11 +236,13 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
+	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "mps" : "cpu";
+	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? defaultDevice;
+	process.env.P_CODE_RAG_DEVICE = ragDevice;
 	const python = findCompatiblePython();
 	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
-	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? "cpu";
 	const environment = {
 		P_CODING_AGENT_DIR: AGENT_DIR,
 		P_CODE_RAG_PYTHON: venvPython,

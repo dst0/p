@@ -144,7 +144,8 @@ export function createFilePreparationPlan(
   const cpuWorkers = Math.max(1, resources.logicalCpus - 1);
   const memoryBudget = Math.max(0, resources.availableMemoryBytes - limits.memoryReserveBytes);
   const memoryWorkers = Math.floor(memoryBudget / limits.workerMemoryBytes);
-  const workers = Math.min(fileCount, limits.maxWorkers, cpuWorkers, memoryWorkers);
+  const maxPossibleWorkers = Math.min(fileCount, limits.maxWorkers, cpuWorkers);
+  const workers = Math.max(1, Math.min(maxPossibleWorkers, memoryWorkers));
   return {
     mode: "worker_threads",
     workers,
