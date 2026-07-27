@@ -127,6 +127,43 @@ else
     node scripts/prepare-indexing-service-reinstall.js
 fi
 
+# ---------- embedding device selection ----------
+# Prompt unless already set in the environment or running non-interactively.
+if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
+    EMBED_CHOICES=("cpu (recommended – leaves GPU free for inference)")
+    EMBED_VALUES=("cpu")
+    if [[ -e /dev/kfd ]]; then
+        EMBED_CHOICES+=("rocm (AMD GPU – uses VRAM for embedding)")
+        EMBED_VALUES+=("rocm")
+    fi
+    if [[ -e /dev/nvidiactl ]]; then
+        EMBED_CHOICES+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
+        EMBED_VALUES+=("cuda")
+    fi
+    if [[ "${#EMBED_CHOICES[@]}" -gt 1 ]]; then
+        echo ""
+        echo "=== Embedding device for code indexing ==="
+        for i in "${!EMBED_CHOICES[@]}"; do
+            echo "  $((i+1))) ${EMBED_CHOICES[$i]}"
+        done
+        while true; do
+            read -rp "Choose [1-${#EMBED_CHOICES[@]}] (default: 1): " EMBED_CHOICE
+            EMBED_CHOICE="${EMBED_CHOICE:-1}"
+            if [[ "$EMBED_CHOICE" =~ ^[0-9]+$ ]] && \
+               [[ "$EMBED_CHOICE" -ge 1 ]] && \
+               [[ "$EMBED_CHOICE" -le "${#EMBED_CHOICES[@]}" ]]; then
+                export P_CODE_RAG_DEVICE="${EMBED_VALUES[$((EMBED_CHOICE-1))]}"
+                echo "Using embedding device: $P_CODE_RAG_DEVICE"
+                break
+            fi
+            echo "Invalid choice, enter a number between 1 and ${#EMBED_CHOICES[@]}."
+        done
+    else
+        export P_CODE_RAG_DEVICE="cpu"
+        echo "Embedding device: cpu (no GPU compute device detected)"
+    fi
+fi
+
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js
 node scripts/prepare-indexing-service-reinstall.js --clear

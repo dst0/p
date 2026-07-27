@@ -29,6 +29,10 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
+if os.environ.get("P_CODE_RAG_DEVICE", "cpu").lower() == "cpu":
+    os.environ["CUDA_VISIBLE_DEVICES"] = "99"
+    os.environ["HIP_VISIBLE_DEVICES"] = "99"
+    os.environ["ROCR_VISIBLE_DEVICES"] = "99"
 
 try:
     import torch
@@ -197,6 +201,8 @@ class EmbeddingServer:
     def _select_preferred_backend(self, requested_device: str) -> tuple[str, MemorySnapshot]:
         if requested_device not in {"auto", "cpu", "cuda", "rocm", "mps"}:
             raise ValueError("P_CODE_RAG_DEVICE must be one of: auto, cpu, cuda, rocm, mps")
+        if requested_device == "cpu":
+            return "cpu", system_memory_snapshot()
         detected_backend, memory = self._detect_accelerator()
         expected_backend = os.environ.get("P_CODE_RAG_EXPECTED_BACKEND")
         if (
@@ -210,8 +216,6 @@ class EmbeddingServer:
             )
             self._record_warning(warning)
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
-        if requested_device == "cpu":
-            return "cpu", memory
         if requested_device == "auto":
             return detected_backend or "cpu", memory
         if requested_device in {"cuda", "rocm", "mps"} and detected_backend == requested_device:
@@ -222,6 +226,8 @@ class EmbeddingServer:
         return "cpu", memory
 
     def _detect_accelerator(self) -> tuple[str | None, MemorySnapshot]:
+        if os.environ.get("P_CODE_RAG_DEVICE", "cpu").lower() == "cpu":
+            return None, system_memory_snapshot()
         now = time.monotonic()
         if hasattr(self, "_cached_accelerator") and self._cached_accelerator is not None:
             cached_backend, cached_memory, cached_time = self._cached_accelerator

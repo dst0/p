@@ -89,6 +89,8 @@ export class EmbeddingServerManager {
         settle(() => reject(signal?.reason ?? new Error("Embedding server startup cancelled")));
       };
       signal?.addEventListener("abort", onAbort, { once: true });
+      const ragDevice = (process.env.P_CODE_RAG_DEVICE ?? "cpu").toLowerCase();
+      const hideGpu = ragDevice === "cpu";
       const child = spawn(
         this.options.pythonExecutable,
         [this.scriptPath, "--port", String(this.port), "--model", this.model],
@@ -98,6 +100,13 @@ export class EmbeddingServerManager {
           env: {
             ...process.env,
             PYTORCH_ENABLE_MPS_FALLBACK: "1",
+            ...(hideGpu
+              ? {
+                  CUDA_VISIBLE_DEVICES: "99",
+                  HIP_VISIBLE_DEVICES: "99",
+                  ROCR_VISIBLE_DEVICES: "99",
+                }
+              : {}),
           },
         },
       );

@@ -181,6 +181,44 @@ echo ""
 echo "=== All dependencies satisfied ==="
 echo ""
 
+# ---------- embedding device selection ----------
+# Prompt here so the chosen value is exported to reinstall.sh, which skips its
+# own prompt when P_CODE_RAG_DEVICE is already set in the environment.
+if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
+    EMBED_CHOICES=("cpu (recommended – leaves GPU free for inference)")
+    EMBED_VALUES=("cpu")
+    if [[ -e /dev/kfd ]]; then
+        EMBED_CHOICES+=("rocm (AMD GPU – uses VRAM for embedding)")
+        EMBED_VALUES+=("rocm")
+    fi
+    if [[ -e /dev/nvidiactl ]]; then
+        EMBED_CHOICES+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
+        EMBED_VALUES+=("cuda")
+    fi
+    if [[ "${#EMBED_CHOICES[@]}" -gt 1 ]]; then
+        echo "=== Embedding device for code indexing ==="
+        for i in "${!EMBED_CHOICES[@]}"; do
+            echo "  $((i+1))) ${EMBED_CHOICES[$i]}"
+        done
+        while true; do
+            read -rp "Choose [1-${#EMBED_CHOICES[@]}] (default: 1): " EMBED_CHOICE
+            EMBED_CHOICE="${EMBED_CHOICE:-1}"
+            if [[ "$EMBED_CHOICE" =~ ^[0-9]+$ ]] && \
+               [[ "$EMBED_CHOICE" -ge 1 ]] && \
+               [[ "$EMBED_CHOICE" -le "${#EMBED_CHOICES[@]}" ]]; then
+                export P_CODE_RAG_DEVICE="${EMBED_VALUES[$((EMBED_CHOICE-1))]}"
+                echo "Using embedding device: $P_CODE_RAG_DEVICE"
+                break
+            fi
+            echo "Invalid choice, enter a number between 1 and ${#EMBED_CHOICES[@]}."
+        done
+    else
+        export P_CODE_RAG_DEVICE="cpu"
+        echo "Embedding device: cpu (no GPU compute device detected)"
+    fi
+    echo ""
+fi
+
 # ---------- run reinstall ----------
 echo "=== Running reinstall.sh ==="
 bash "$SCRIPT_DIR/reinstall.sh"

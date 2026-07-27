@@ -56,7 +56,10 @@ export function getQdrantAsset(platform = process.platform, architecture = proce
 export function selectTorchInstallPlan(options = {}) {
 	const platform = options.platform ?? process.platform;
 	const architecture = options.architecture ?? process.arch;
-	const requestedBackend = options.requestedBackend ?? process.env.P_CODE_RAG_TORCH_BACKEND ?? "auto";
+	const requestedBackend =
+		options.requestedBackend ??
+		process.env.P_CODE_RAG_TORCH_BACKEND ??
+		(process.env.P_CODE_RAG_DEVICE === "cpu" ? "cpu" : "auto");
 	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
 	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
 	if (!["auto", "cpu", "rocm", "cuda"].includes(requestedBackend)) {
@@ -229,12 +232,21 @@ async function main() {
 	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
+	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? "cpu";
 	const environment = {
 		P_CODING_AGENT_DIR: AGENT_DIR,
 		P_CODE_RAG_PYTHON: venvPython,
 		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
 		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
 		P_CODE_RAG_EXPECTED_BACKEND: torchPlan.backend,
+		P_CODE_RAG_DEVICE: ragDevice,
+		...(ragDevice === "cpu"
+			? {
+					CUDA_VISIBLE_DEVICES: "99",
+					HIP_VISIBLE_DEVICES: "99",
+					ROCR_VISIBLE_DEVICES: "99",
+				}
+			: {}),
 		...collectResourceEnvironment(),
 	};
 	const values = {
