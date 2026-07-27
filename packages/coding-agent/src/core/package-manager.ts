@@ -669,26 +669,20 @@ function normalizeExactPattern(pattern: string): string {
   return toPosixPath(normalized);
 }
 
-function matchesAnyExactPattern(filePath: string, patterns: string[], baseDir: string): boolean {
-  if (patterns.length === 0) return false;
+// ⚡ Bolt: Use precompiled Set to avoid O(N*M) normalizations and array lookups
+function matchesAnyExactPattern(filePath: string, normalizedPatterns: Set<string>, baseDir: string): boolean {
+  if (normalizedPatterns.size === 0) return false;
   const rel = toPosixPath(relative(baseDir, filePath));
   const name = basename(filePath);
   const filePathPosix = toPosixPath(filePath);
-  const isSkillFile = name === "SKILL.md";
-  const parentDir = isSkillFile ? dirname(filePath) : undefined;
-  const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-  const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
-  for (let i = 0; i < patterns.length; i++) {
-    const normalized = normalizeExactPattern(patterns[i]);
-    if (normalized === rel || normalized === filePathPosix) {
-      return true;
-    }
-    if (isSkillFile) {
-      if (normalized === parentRel || normalized === parentDirPosix) {
-        return true;
-      }
-    }
+  if (normalizedPatterns.has(rel) || normalizedPatterns.has(filePathPosix)) return true;
+
+  if (name === "SKILL.md") {
+    const parentDir = dirname(filePath);
+    const parentRel = toPosixPath(relative(baseDir, parentDir));
+    const parentDirPosix = toPosixPath(parentDir);
+    if (normalizedPatterns.has(parentRel) || normalizedPatterns.has(parentDirPosix)) return true;
   }
   return false;
 }
@@ -727,6 +721,10 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
   const compiledIncludes = includes.map((pattern) => new Minimatch(toPosixPath(pattern)));
   const compiledExcludes = excludes.map((pattern) => new Minimatch(toPosixPath(pattern)));
 
+  // ⚡ Bolt: Pre-calculate normalized patterns into Sets for O(1) lookups
+  const forceIncludesSet = new Set(forceIncludes.map(normalizeExactPattern));
+  const forceExcludesSet = new Set(forceExcludes.map(normalizeExactPattern));
+
   // Step 1: Apply includes (or all if no includes)
   let result: string[];
   if (includes.length === 0) {
@@ -741,17 +739,17 @@ function applyPatterns(allPaths: string[], patterns: string[], baseDir: string):
   }
 
   // Step 3: Force-include (add back from allPaths, overriding exclusions)
-  if (forceIncludes.length > 0) {
+  if (forceIncludesSet.size > 0) {
     for (const filePath of allPaths) {
-      if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludes, baseDir)) {
+      if (!result.includes(filePath) && matchesAnyExactPattern(filePath, forceIncludesSet, baseDir)) {
         result.push(filePath);
       }
     }
   }
 
   // Step 4: Force-exclude (remove even if included or force-included)
-  if (forceExcludes.length > 0) {
-    result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludes, baseDir));
+  if (forceExcludesSet.size > 0) {
+    result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludesSet, baseDir));
   }
 
   return new Set(result);
@@ -2282,15 +2280,19 @@ export class DefaultPackageManager implements PackageManager {
         .filter((pattern) => pattern.startsWith("-"))
         .map((pattern) => pattern.slice(1));
 
+      // ⚡ Bolt: Pre-calculate normalized patterns into Sets for O(1) lookups
+      const forceIncludesSet = new Set(forceIncludes.map(normalizeExactPattern));
+      const forceExcludesSet = new Set(forceExcludes.map(normalizeExactPattern));
+
       for (const path of paths) {
         let enabled = true;
         if (excludes.length > 0 && matchesAnyPattern(path, compiledExcludes, baseDir)) {
           enabled = false;
         }
-        if (forceIncludes.length > 0 && matchesAnyExactPattern(path, forceIncludes, baseDir)) {
+        if (forceIncludesSet.size > 0 && matchesAnyExactPattern(path, forceIncludesSet, baseDir)) {
           enabled = true;
         }
-        if (forceExcludes.length > 0 && matchesAnyExactPattern(path, forceExcludes, baseDir)) {
+        if (forceExcludesSet.size > 0 && matchesAnyExactPattern(path, forceExcludesSet, baseDir)) {
           enabled = false;
         }
         this.addResource(target, path, metadata, enabled);

@@ -20,3 +20,7 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+
+## 2024-07-28 - Precompile exact pattern arrays into Sets in hot loops
+**Learning:** Checking an array of strings in a hot loop (like `matchesAnyExactPattern`) causes repetitive iterations and function calls inside the loop. When filtering arrays based on matching paths, an O(N*M) loop becomes a huge bottleneck. Converting the string array into a pre-normalized `Set` outside the loop turns the O(N) array search into an O(1) Set lookup.
+**Action:** Always precompile sets of matchable items outside loops for exact string matches instead of looping over the matches array inside a file or item processing loop.
