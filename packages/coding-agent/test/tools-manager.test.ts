@@ -114,6 +114,14 @@ describe("cross-process tool download lock", () => {
     expect(existsSync(lock.path)).toBe(false);
   });
 
+  it("propagates unexpected lock removal errors", async () => {
+    const lock = await acquireDownloadLock("fd");
+    rmSync(lock.path);
+    mkdirSync(lock.path);
+    expect(() => releaseDownloadLock(lock)).toThrow();
+    rmSync(lock.path, { recursive: true });
+  });
+
   it("replaces stale and broken lock entries", async () => {
     mkdirSync(binDirectory, { recursive: true });
     const lockPath = join(binDirectory, ".fd.download.lock");

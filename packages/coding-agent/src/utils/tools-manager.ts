@@ -11,6 +11,7 @@ import {
   renameSync,
   rmSync,
   statSync,
+  unlinkSync,
 } from "fs";
 import { arch, platform } from "os";
 import { join } from "path";
@@ -54,11 +55,11 @@ export async function acquireDownloadLock(
       if (!(error instanceof Error && "code" in error && error.code === "EEXIST")) throw error;
       try {
         if (now() - statSync(lockPath).mtimeMs >= staleMs) {
-          rmSync(lockPath, { force: true });
+          removeDownloadLock(lockPath);
           continue;
         }
       } catch {
-        rmSync(lockPath, { force: true });
+        removeDownloadLock(lockPath);
         continue;
       }
       if (now() >= deadline) throw new Error(`Timed out waiting for the ${tool} download lock`);
@@ -69,7 +70,15 @@ export async function acquireDownloadLock(
 
 export function releaseDownloadLock(lock: { fd: number; path: string }): void {
   closeSync(lock.fd);
-  rmSync(lock.path, { force: true });
+  removeDownloadLock(lock.path);
+}
+
+function removeDownloadLock(lockPath: string): void {
+  try {
+    unlinkSync(lockPath);
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
+  }
 }
 
 interface ToolConfig {

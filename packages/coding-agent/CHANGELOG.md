@@ -5,6 +5,7 @@
 ### Changed
 
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
+- Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
 
 ### Fixed
 
@@ -19,6 +20,8 @@
 - Respect `XDG_CONFIG_HOME` when installing the Linux user service.
 - Install SOCKS support for the managed embedding environment so model downloads work behind SOCKS proxies.
 - Ignore empty `.git` placeholders when detecting source checkouts and indexing roots.
+- Wait for daemon-published ready status in indexing lifecycle tests instead of racing refresh completion against the status file.
+- Remove broken tool-download lock symlinks without entering a tight retry loop.
 - Extract downloaded `fd` and `rg` archives without applying archive ownership.
 - Treat zombie indexing daemons as stopped during reinstall.
 - Filtered out lone surrogates (0xD800-0xDFFF), DEL, and C1 control characters in `sanitizeBinaryOutput`.

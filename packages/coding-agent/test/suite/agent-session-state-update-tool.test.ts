@@ -4,6 +4,7 @@ import { fauxAssistantMessage, fauxToolCall, type Message, type TextContent } fr
 import { describe, expect, it } from "vitest";
 import {
   getLatestStructuredSessionState,
+  getOrderedPlanTree,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
 } from "../../src/core/compaction/index.ts";
 import { createHarness, type Harness } from "./harness.ts";
@@ -234,10 +235,10 @@ describe("AgentSession default session-state tool", () => {
       await harness.session.prompt("Clean session state");
 
       const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-      // replan uses add, so "Old task" is preserved alongside "Run checks"
+      // replan uses add, so "Old task" is preserved after the reprioritized "Run checks" item
       expect(state?.plan.map((item) => [item.text, item.status])).toEqual([
-        ["Old task", "done"],
         ["Run checks", "done"],
+        ["Old task", "done"],
       ]);
       expect(toolEndEvents(harness, "finish_work").at(-1)?.isError).toBe(false);
     } finally {
@@ -329,6 +330,47 @@ describe("AgentSession default session-state tool", () => {
       expect(state?.plan[0]?.id).toBe("parent-1");
       expect(state?.plan[1]?.id).toBe("child-1");
       expect(state?.plan[1]?.parentId).toBe("parent-1");
+    } finally {
+      harness.cleanup();
+    }
+  });
+
+  it("resolves a model-supplied parent task text to the parent's stable ID", async () => {
+    const harness = await createHarness();
+    try {
+      harness.setResponses([
+        fauxAssistantMessage(
+          fauxToolCall(UPDATE_TOOL, {
+            action: "initial_plan",
+            goal: "Create a nested plan",
+            plan: [{ text: "Parent task", status: "not_started" }],
+          }),
+          { stopReason: "toolUse" },
+        ),
+        fauxAssistantMessage(
+          fauxToolCall(UPDATE_TOOL, {
+            action: "replan",
+            plan: [
+              { text: "Parent task", status: "not_started" },
+              { parentId: "Parent task", text: "Child task", status: "not_started" },
+            ],
+          }),
+          { stopReason: "toolUse" },
+        ),
+        fauxAssistantMessage(finishCall("completed nested plan"), { stopReason: "toolUse" }),
+      ]);
+
+      await harness.session.prompt("Create a parent task with one child");
+
+      const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
+      expect(state?.plan).toHaveLength(2);
+      const parent = state?.plan.find((item) => item.text === "Parent task");
+      const child = state?.plan.find((item) => item.text === "Child task");
+      expect(child?.parentId).toBe(parent?.id);
+      expect(getOrderedPlanTree(state?.plan ?? []).map(({ item, depth }) => [item.text, depth])).toEqual([
+        ["Parent task", 0],
+        ["Child task", 1],
+      ]);
     } finally {
       harness.cleanup();
     }
