@@ -5937,7 +5937,11 @@ export class InteractiveMode {
     appendSection(
       "Plan",
       state.plan.length > 0
-        ? state.plan.map((item) => `${renderPlanStatusMarker(item.status)} ${item.text}`)
+        ? getOrderedPlanTree(state.plan).map(({ item, depth, isLastChild, active }) => {
+            const indent = depth > 0 ? `${"  ".repeat(depth - 1)}${isLastChild ? "└─ " : "├─ "}` : "";
+            const activeText = active ? " 👈 (active)" : "";
+            return `${indent}${renderPlanStatusMarker(item.status)} ${item.text}${activeText}`;
+          })
         : [`${STATE_RENDER_MARKERS.notStarted} (none)`],
     );
     appendSection(

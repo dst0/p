@@ -517,7 +517,10 @@ function createSessionStateUpdateBlockRegex(): RegExp {
   return /<session_state_update>\s*([\s\S]*?)\s*<\/session_state_update>/g;
 }
 
-function createStatePatchFromSessionStateUpdate(value: unknown, sourceEntryIds: string[]): StatePatch | undefined {
+export function createStatePatchFromSessionStateUpdate(
+  value: unknown,
+  sourceEntryIds: string[],
+): StatePatch | undefined {
   if (!isRecord(value)) {
     throw new Error("session_state_update must be an object");
   }
@@ -1404,7 +1407,11 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
       rememberOrder(added);
       continue;
     }
-    if (item.status === "done" && item.evidenceEntryIds.length === 0) continue;
+    if (item.status === "done" && item.evidenceEntryIds.length === 0) {
+      // Allow reordering even when status update is suppressed
+      rememberOrder(existing);
+      continue;
+    }
     if (shouldReplacePlanStatus(existing.status, item.status)) {
       existing.status = item.status;
     }
@@ -1421,6 +1428,8 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     const existing = findPlanItemByIdOrText(state.plan, update.id, update.matchText ?? update.text ?? "");
     if (!existing) continue;
     if (update.status === "done" && (update.evidenceEntryIds?.length ?? existing.evidenceEntryIds.length) === 0) {
+      // Allow reordering even when status update is suppressed
+      rememberOrder(existing);
       continue;
     }
     if (update.text && existing.id === update.id) {
@@ -1439,7 +1448,7 @@ function mergePlan(state: StructuredSessionState, patch: NonNullable<StatePatch[
     const matchText = typeof removal === "string" ? removal : removal.text;
     state.plan = state.plan.filter((item) => !findPlanItemByIdOrText([item], matchId, matchText));
   }
-  if ((patch.add?.length ?? 0) > 1 && orderedIds.length > 1) {
+  if (orderedIds.length > 0) {
     reorderPlan(state, orderedIds);
   }
   // Prune dead evidenceEntryIds (entryIds that don't match any evidence pointer)

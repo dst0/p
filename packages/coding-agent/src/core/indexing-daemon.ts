@@ -92,6 +92,10 @@ const DRAIN_MAX_CONCURRENCY = 2;
 const MANUAL_PRIORITY_OFFSET = 1_000_000_000_000_000;
 const DEFAULT_REPOSITORY_TIMEOUT_MS = 30 * 60_000;
 const DAEMON_LOCK_INITIALIZATION_GRACE_MS = 10_000;
+// Stop the Python embedding server after this many milliseconds without indexing work.
+// Qdrant stays running so search is never interrupted.
+// The embedding server will be restarted on-demand by EmbeddingProviderHttp.autoStart.
+const EMBEDDING_IDLE_TIMEOUT_MS = Number(process.env.EMBEDDING_IDLE_TIMEOUT_MS) || 15 * 60_000;
 
 // Exponential backoff intervals for resource failures (OOM, disk full, file descriptor exhaustion)
 // Sequence: 1m, 5m, 15m, 30m, 1h, 2h, 4h, 8h, 24h (capped at 24h)
@@ -144,9 +148,10 @@ export class IndexingDaemon {
     Pick<IndexingDaemonOptions, "agentDir" | "debounceMs" | "retryMs" | "reconcileMs" | "repositoryTimeoutMs">
   >;
   private readonly serviceFactory: (workspaceRoot: string) => CodeRagService;
-  private readonly ensureBackends: (signal?: AbortSignal) => Promise<void>;
+  private readonly _ensureBackendsRaw: (signal?: AbortSignal) => Promise<void>;
   private readonly disposeBackends: () => Promise<void>;
   private readonly watchFactory: WatchFactory;
+  private readonly embeddingManager: EmbeddingServerManager;
   private readonly runtimes = new Map<string, RepositoryRuntime>();
   private readonly startedAt = new Date().toISOString();
   private readonly indexingVersion: string;
@@ -161,6 +166,7 @@ export class IndexingDaemon {
   private daemonLock: DaemonLock | undefined;
   private quiescing = false;
   private disposed = false;
+  private embeddingIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: IndexingDaemonOptions) {
     this.options = {
@@ -176,7 +182,7 @@ export class IndexingDaemon {
       startupTimeoutMs: 30_000,
       onLog: (level, message) => this.log(level, message),
     });
-    const embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {
+    this.embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {
       pythonExecutable: options.pythonExecutable,
       startupTimeoutMs: 5 * 60_000,
       onLog: (level, message) => this.log(level, message),
@@ -191,21 +197,28 @@ export class IndexingDaemon {
           manageLocalBackends: false,
           allowSearchRefresh: false,
         }));
-    this.ensureBackends =
+    this._ensureBackendsRaw =
       options.ensureBackends ??
       (async (signal) => {
         await qdrantManager.ensureStarted(signal);
-        await embeddingManager.ensureStarted(signal);
+        await this.embeddingManager.ensureStarted(signal);
       });
     this.disposeBackends =
       options.disposeBackends ??
       (async () => {
-        await Promise.all([embeddingManager.stop(), qdrantManager.stop()]);
+        await Promise.all([this.embeddingManager.stop(), qdrantManager.stop()]);
       });
     this.watchFactory =
       options.watchFactory ??
       ((target, watchOptions, listener) => fs.watch(target, { ...watchOptions, encoding: "utf8" }, listener));
     this.indexingVersion = computeIndexingVersion();
+  }
+
+  /** Ensure backends are running; cancels the idle timer before and resets it after. */
+  private async ensureBackends(signal?: AbortSignal): Promise<void> {
+    this.cancelEmbeddingIdleTimer();
+    await this._ensureBackendsRaw(signal);
+    this.resetEmbeddingIdleTimer();
   }
 
   async start(): Promise<void> {
@@ -216,6 +229,7 @@ export class IndexingDaemon {
       this.watchRegistry();
       await this.syncRegistry();
       this.reconcileTimer = setInterval(() => void this.reconcile(), this.options.reconcileMs);
+      this.resetEmbeddingIdleTimer();
       this.writeStatus();
     } catch (error) {
       try {
@@ -247,6 +261,7 @@ export class IndexingDaemon {
     this.disposed = true;
     this.quiescing = true;
     this.pauseIntake();
+    if (this.embeddingIdleTimer) clearTimeout(this.embeddingIdleTimer);
     const registrySyncPromise = this.registrySyncPromise;
     try {
       if (registrySyncPromise) await Promise.allSettled([registrySyncPromise]);
@@ -592,6 +607,7 @@ export class IndexingDaemon {
         runtime.active = false;
         runtime.activePriority = 0;
         if (w.runtime === runtime) w.runtime = undefined;
+        this.resetEmbeddingIdleTimer();
       }
       runtime.updatedAt = new Date().toISOString();
       this.writeStatus();
@@ -788,6 +804,26 @@ export class IndexingDaemon {
     const line = `[code-index:${level}] ${message}`;
     if (level === "error") console.error(line);
     else console.log(line);
+  }
+
+  private resetEmbeddingIdleTimer(): void {
+    this.cancelEmbeddingIdleTimer();
+    this.embeddingIdleTimer = setTimeout(async () => {
+      this.log("debug", "Embedding server idle timeout reached; stopping Python embedding server");
+      try {
+        await this.embeddingManager.stop();
+      } catch (error) {
+        this.log("error", `Failed to stop embedding server on idle: ${safeErrorMessage(error)}`);
+      }
+    }, EMBEDDING_IDLE_TIMEOUT_MS);
+    if (this.embeddingIdleTimer) this.embeddingIdleTimer.unref?.();
+  }
+
+  private cancelEmbeddingIdleTimer(): void {
+    if (this.embeddingIdleTimer) {
+      clearTimeout(this.embeddingIdleTimer);
+      this.embeddingIdleTimer = undefined;
+    }
   }
 }
 

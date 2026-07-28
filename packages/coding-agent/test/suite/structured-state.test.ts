@@ -2,8 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { EvidencePointer } from "../../src/core/compaction/compaction.ts";
 import {
   createInitialStructuredSessionState,
+  createStatePatchFromSessionStateUpdate,
   createStructuredSessionState,
   getOrderedPlanTree,
+  mergeStructuredSessionState,
   renderWorkingSessionState,
 } from "../../src/core/compaction/structured-state.ts";
 import type { SessionEntry } from "../../src/core/session-manager.ts";
@@ -270,9 +272,9 @@ describe("structured-state normalization", () => {
     state.plan = plan;
 
     const rendered = renderWorkingSessionState(state, 1000);
-    expect(rendered).toContain("⏳ Top task 1");
-    expect(rendered).toContain("├─ ✅ Subtask 1.1");
-    expect(rendered).toContain("└─ ⏳ Subtask 1.2 👈 (active)");
+    expect(rendered!).toContain("⏳ Top task 1");
+    expect(rendered!).toContain("├─ ✅ Subtask 1.1");
+    expect(rendered!).toContain("└─ ⏳ Subtask 1.2 👈 (active)");
 
     // Test cycle protection: A -> B -> A should not throw stack overflow
     const cyclicPlan = [
@@ -280,5 +282,156 @@ describe("structured-state normalization", () => {
       { id: "B", text: "Task B", status: "not_started" as const, parentId: "A", evidenceEntryIds: [] },
     ];
     expect(() => getOrderedPlanTree(cyclicPlan)).not.toThrow();
+  });
+
+  it("reorders plan even for a single-item add", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test Goal";
+    state.plan = [
+      { id: "a", text: "Task A", status: "done" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    // Single-item add that matches existing item by text should reorder it
+    const merged = mergeStructuredSessionState(
+      state,
+      createStatePatchFromSessionStateUpdate({ type: "patch", plan: [{ text: "Task C", status: "in_progress" }] }, [])!,
+    );
+
+    // Task C should now be before Task B (since it's the only item in orderedIds)
+    const ids = merged.plan.map((p) => p.id);
+    expect(ids).toEqual(["c", "a", "b"]);
+  });
+
+  it("maintains execution order across multiple single-item adds", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test Goal";
+    state.plan = [
+      { id: "a", text: "Task A", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    // Simulate agent adding items one at a time, each matching existing by text
+    let merged = mergeStructuredSessionState(
+      state,
+      createStatePatchFromSessionStateUpdate({ type: "patch", plan: [{ text: "Task B", status: "in_progress" }] }, [])!,
+    );
+    merged = mergeStructuredSessionState(
+      merged,
+      createStatePatchFromSessionStateUpdate({ type: "patch", plan: [{ text: "Task C", status: "in_progress" }] }, [])!,
+    );
+
+    // After single-item adds, the array should be reordered
+    // Task B was added first (moved to front), then Task C was added (moved to front)
+    const ids = merged.plan.map((p) => p.id);
+    expect(ids).toEqual(["c", "b", "a"]);
+  });
+
+  it("renders plan with tree indentation for parent-child relationships", () => {
+    const plan = [
+      { id: "parent", text: "Parent task", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "child1", text: "Child 1", status: "done" as const, parentId: "parent", evidenceEntryIds: [] },
+      { id: "child2", text: "Child 2", status: "in_progress" as const, parentId: "parent", evidenceEntryIds: [] },
+      { id: "sibling", text: "Sibling task", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test Goal";
+    state.plan = plan;
+
+    const rendered = renderWorkingSessionState(state, 1000)!;
+    // Tree-ordered: parent, child1, child2, sibling
+    expect(rendered).toContain("⏳ Parent task");
+    expect(rendered).toContain("├─ ✅ Child 1");
+    expect(rendered).toContain("└─ ⏳ Child 2 👈 (active)");
+    expect(rendered).toContain("• Sibling task");
+
+    // Verify tree order: parent comes before children, sibling comes after parent subtree
+    const parentIdx = rendered.indexOf("Parent task");
+    const child1Idx = rendered.indexOf("Child 1");
+    const child2Idx = rendered.indexOf("Child 2");
+    const siblingIdx = rendered.indexOf("Sibling task");
+    expect(parentIdx).toBeLessThan(child1Idx);
+    expect(child1Idx).toBeLessThan(child2Idx);
+    expect(child2Idx).toBeLessThan(siblingIdx);
+  });
+
+  it("getOrderedPlanTree preserves sibling order from flat array", () => {
+    const plan = [
+      { id: "a", text: "Task A", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["a", "b", "c"]);
+    expect(ordered.every((o) => o.depth === 0)).toBe(true);
+  });
+
+  it("getOrderedPlanTree orders children after their parent in DFS", () => {
+    const plan = [
+      { id: "root", text: "Root", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "sub1", text: "Sub 1", status: "done" as const, parentId: "root", evidenceEntryIds: [] },
+      { id: "sub2", text: "Sub 2", status: "not_started" as const, parentId: "root", evidenceEntryIds: [] },
+      { id: "peer", text: "Peer", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    // DFS order: root -> sub1 -> sub2 -> peer
+    expect(ordered.map((o) => o.item.id)).toEqual(["root", "sub1", "sub2", "peer"]);
+    expect(ordered.find((o) => o.item.id === "root")?.depth).toBe(0);
+    expect(ordered.find((o) => o.item.id === "sub1")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "sub2")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "peer")?.depth).toBe(0);
+  });
+
+  it("reorders plan when LLM sends full plan in execution order", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test Goal";
+    state.plan = [
+      { id: "a", text: "Task A", status: "done" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "done" as const, evidenceEntryIds: [] },
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    // LLM sends all 3 items in a different execution order: C > B > A
+    const merged = mergeStructuredSessionState(
+      state,
+      createStatePatchFromSessionStateUpdate(
+        {
+          type: "patch",
+          plan: [
+            { text: "Task C", status: "in_progress" },
+            { text: "Task B", status: "done" },
+            { text: "Task A", status: "done" },
+          ],
+        },
+        [],
+      )!,
+    );
+
+    const ids = merged.plan.map((p) => p.id);
+    expect(ids).toEqual(["c", "b", "a"]);
+  });
+
+  it("/state rendering uses tree order with indentation for parent-child plans", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Investigate ordering bug";
+    state.plan = [
+      { id: "1", text: "Research codebase", status: "done" as const, evidenceEntryIds: [] },
+      { id: "2", text: "Implement fix", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "3", text: "Find root cause", status: "done" as const, parentId: "2", evidenceEntryIds: [] },
+      { id: "4", text: "Write tests", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const rendered = renderWorkingSessionState(state, 1000)!;
+    // "Find root cause" is a child of "Implement fix", so it should be indented
+    const implementIdx = rendered.indexOf("Implement fix");
+    const rootCauseIdx = rendered.indexOf("Find root cause");
+    expect(rootCauseIdx).toBeGreaterThan(implementIdx);
+    // Child should have tree connector
+    expect(rendered).toContain("└─");
   });
 });
