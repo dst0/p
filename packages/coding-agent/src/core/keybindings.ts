@@ -21,6 +21,12 @@ export interface AppKeybindings {
   "app.model.select": true;
   "app.tools.expand": true;
   "app.plan.toggle": true;
+  "app.plan.scrollUp": true;
+  "app.plan.scrollDown": true;
+  "app.plan.resizeNarrower": true;
+  "app.plan.resizeWider": true;
+  "app.plan.resizeShorter": true;
+  "app.plan.resizeTaller": true;
   "app.thinking.toggle": true;
   "app.session.toggleNamedFilter": true;
   "app.editor.external": true;
@@ -85,6 +91,30 @@ export const KEYBINDINGS = {
   "app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
   "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
   "app.plan.toggle": { defaultKeys: "f2", description: "Toggle plan panel" },
+  "app.plan.scrollUp": {
+    defaultKeys: "shift+ctrl+up",
+    description: "Scroll plan panel up",
+  },
+  "app.plan.scrollDown": {
+    defaultKeys: "shift+ctrl+down",
+    description: "Scroll plan panel down",
+  },
+  "app.plan.resizeNarrower": {
+    defaultKeys: "alt+shift+ctrl+left",
+    description: "Make plan panel narrower",
+  },
+  "app.plan.resizeWider": {
+    defaultKeys: "alt+shift+ctrl+right",
+    description: "Make plan panel wider",
+  },
+  "app.plan.resizeShorter": {
+    defaultKeys: "alt+shift+ctrl+up",
+    description: "Make plan panel shorter",
+  },
+  "app.plan.resizeTaller": {
+    defaultKeys: "alt+shift+ctrl+down",
+    description: "Make plan panel taller",
+  },
   "app.thinking.toggle": {
     defaultKeys: "ctrl+t",
     description: "Toggle thinking blocks",

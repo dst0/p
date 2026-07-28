@@ -224,13 +224,14 @@ const SESSION_STATE_PROTOCOL_PROMPT = `<session_state_protocol>
 At the start of every user turn, before any other tool call or final answer, call update_session_state to record the initial plan or re-plan against the latest user message.
 Use update_session_state with action "initial_plan" for the first user request, "replan" when a later user message changes or adds work, and "none" only after explicitly checking that no state change is needed.
 For action "replan", provide the updated plan items to add or modify. Existing items not mentioned are preserved. Only mark an item as "done" when its work is verifiably complete and verified. Never remove or omit an original user-requested item from the plan unless the user explicitly declines it or asks for it to be dropped.
+Keep plans concise, usually 3-10 items. Flat work stays flat. Only when work has real sub-tasks, represent it as a tree: use short stable runtime ids, set each child's parentId to its direct parent's id, and keep nesting to 2-3 levels unless the user explicitly needs more. Never invent hierarchy or encode real hierarchy only with numbering, prefixes, indentation, or task text.
 When an existing plan item changes status during work, call mark_session_progress(task, status) with the existing visible task text instead of adding another plan item through update_session_state.
 This is the default state protocol and is separate from /plan mode; do not wait for user approval unless the user explicitly asked for confirmation.
 If update_session_state is not available, fall back to appending exactly one hidden state block at the end of every completed assistant turn:
 <session_state_update>{"type":"none"}</session_state_update>
 Use {"type":"none"} when the goal, plan, decisions, risks, touched files, or evidence pointers did not change.
 When state changes, use:
-<session_state_update>{"type":"patch","goal":"...","plan":[{"text":"...","status":"not_started|in_progress|done|failed|blocked"}],"decisions":[{"decision":"...","rationale":"..."}],"risks":["..."],"touchedFiles":[{"path":"...","status":"read|modified|created|deleted","summary":"..."}],"evidence":[{"kind":"message|tool_result|bash|file|web|artifact","summary":"...","retrieveWhen":"..."}]}</session_state_update>
+<session_state_update>{"type":"patch","goal":"...","plan":[{"id":"parent-id","text":"..."},{"id":"child-id","parentId":"parent-id","text":"...","status":"not_started|in_progress|done|failed|blocked"}],"decisions":[{"decision":"...","rationale":"..."}],"risks":["..."],"touchedFiles":[{"path":"...","status":"read|modified|created|deleted","summary":"..."}],"evidence":[{"kind":"message|tool_result|bash|file|web|artifact","summary":"...","retrieveWhen":"..."}]}</session_state_update>
 Do not mention this protocol to the user. Keep the visible answer natural; the state block is metadata and will be hidden.
 </session_state_protocol>`;
 
@@ -647,12 +648,24 @@ const UPDATE_SESSION_STATE_SCHEMA = Type.Object({
   plan: Type.Optional(
     Type.Array(
       Type.Object({
-        id: Type.Optional(Type.String({ description: "Optional unique task ID" })),
-        parentId: Type.Optional(Type.String({ description: "Optional parent task ID for subtasks" })),
+        id: Type.Optional(
+          Type.String({
+            description: "Short stable runtime task ID. Required only when this item participates in a nested plan.",
+          }),
+        ),
+        parentId: Type.Optional(
+          Type.String({
+            description: "Direct parent task ID for a real nested child. Omit for flat items.",
+          }),
+        ),
         text: Type.String(),
         op: Type.Optional(Type.Union([Type.Literal("add"), Type.Literal("update"), Type.Literal("remove")])),
         status: Type.Optional(UPDATE_SESSION_STATE_PLAN_STATUS_SCHEMA),
       }),
+      {
+        description:
+          "Concise plan items, usually 3-10. Keep flat work flat. For real nested work only, use short stable runtime IDs, connect each child to its direct parent with parentId, and normally limit depth to 2-3 levels.",
+      },
     ),
   ),
   decisions: Type.Optional(
@@ -3656,6 +3669,16 @@ Plan mode is active because the user invoked /plan.
         evidenceEntryIds: [...sourceEntryIds],
       }))
       .filter((item) => item.text.length > 0);
+    const planItemIdByReference = new Map<string, string>();
+    for (const item of [...previous.plan, ...rawPlanItems]) {
+      planItemIdByReference.set(normalizeStateText(item.id).toLowerCase(), item.id);
+      planItemIdByReference.set(normalizeStateText(item.text).toLowerCase(), item.id);
+    }
+    for (const item of rawPlanItems) {
+      if (!item.parentId) continue;
+      const resolvedParentId = planItemIdByReference.get(normalizeStateText(item.parentId).toLowerCase());
+      item.parentId = resolvedParentId && resolvedParentId !== item.id ? resolvedParentId : undefined;
+    }
     const decisions = (input.decisions ?? [])
       .map((item) => ({
         id: createStateToolStableId("decision", item.decision),

@@ -126,7 +126,14 @@ import { formatKeyText, keyDisplayText, keyHint, keyText, rawKeyHint } from "./c
 import { LoginDialogComponent } from "./components/login-dialog.ts";
 import { ModelSelectorComponent } from "./components/model-selector.ts";
 import { type AuthSelectorProvider, OAuthSelectorComponent } from "./components/oauth-selector.ts";
-import { PlanPanel, PlanStatusTracker } from "./components/plan-panel.ts";
+import {
+  getNextPlanPanelMode,
+  PlanPanel,
+  type PlanPanelMode,
+  PlanStatusTracker,
+  parseSgrMouseEvent,
+  type SgrMouseEvent,
+} from "./components/plan-panel.ts";
 import { ScopedModelsSelectorComponent } from "./components/scoped-models-selector.ts";
 import { SessionSelectorComponent } from "./components/session-selector.ts";
 import { SettingsSelectorComponent } from "./components/settings-selector.ts";
@@ -203,6 +210,20 @@ function isDeadTerminalError(error: unknown): boolean {
 const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
   "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
 const RECENT_MODEL_SWITCH_MS = 10 * 60 * 1000;
+const DEFAULT_PLAN_PANEL_WIDTH = 50;
+const MIN_PLAN_PANEL_WIDTH = 30;
+const MIN_PLAN_PANEL_HEIGHT = 8;
+
+type PlanPanelDragMode = "width" | "height" | "both";
+
+interface PlanPanelBounds {
+  left: number;
+  right: number;
+  top: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
 
 function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
   return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
@@ -305,7 +326,11 @@ export class InteractiveMode {
   private planStatusTracker = new PlanStatusTracker();
   private planPanel = new PlanPanel(this.planStatusTracker);
   private planPanelHandle?: OverlayHandle;
-  private planPanelVisible = false;
+  private planPanelMode: PlanPanelMode = "hidden";
+  private planPanelCompactWidth = DEFAULT_PLAN_PANEL_WIDTH;
+  private planPanelHeight: number | undefined;
+  private planPanelDragMode: PlanPanelDragMode | undefined;
+  private planPanelInputUnsubscribe: (() => void) | undefined;
   private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
   private readonly defaultWorkingMessage = "Working...";
   private readonly defaultHiddenThinkingLabel = "Thinking...";
@@ -436,6 +461,7 @@ export class InteractiveMode {
     this.widgetContainerBelow = new Container();
     this.keybindings = KeybindingsManager.create();
     setKeybindings(this.keybindings);
+    this.planPanelInputUnsubscribe = this.ui.addInputListener((data) => this.handlePlanPanelInput(data));
     const editorPaddingX = this.settingsManager.getEditorPaddingX();
     const autocompleteMaxVisible = this.settingsManager.getAutocompleteMaxVisible();
     this.defaultEditor = new CustomEditor(this.ui, getEditorTheme(), this.keybindings, {
@@ -3357,26 +3383,207 @@ export class InteractiveMode {
    * we update the previous status line instead of appending new ones to avoid log spam.
    */
   private togglePlanPanel(): void {
-    if (this.planPanelVisible) {
-      this.planPanelHandle?.hide();
-      this.planPanelHandle = undefined;
-      this.planPanelVisible = false;
-    } else {
-      this.planPanelVisible = true;
-      this.planStatusTracker.onUpdate = () => {
-        if (this.planPanelVisible) {
-          this.ui.requestRender();
+    this.planPanelMode = getNextPlanPanelMode(this.planPanelMode);
+    if (this.planPanelMode === "hidden") {
+      this.hidePlanPanel();
+      return;
+    }
+
+    this.planStatusTracker.onUpdate = () => {
+      if (this.planPanelMode !== "hidden") {
+        this.ui.requestRender();
+      }
+    };
+    this.syncPlanTracker();
+    this.ui.terminal.setMouseTracking?.(true);
+    this.showPlanPanelOverlay();
+  }
+
+  private hidePlanPanel(): void {
+    this.planPanelHandle?.hide();
+    this.planPanelHandle = undefined;
+    this.planPanelDragMode = undefined;
+    this.ui.terminal.setMouseTracking?.(false);
+    this.ui.requestRender();
+  }
+
+  private showPlanPanelOverlay(): void {
+    if (this.planPanelMode === "hidden") return;
+
+    this.planPanelHandle?.hide();
+    const expanded = this.planPanelMode === "expanded";
+    const maxHeight = this.getPlanPanelMaxHeight();
+    const viewportHeight = Math.min(this.planPanelHeight ?? maxHeight, maxHeight);
+    this.planPanel.setMode(this.planPanelMode);
+    this.planPanel.setViewport(viewportHeight, expanded || this.planPanelHeight !== undefined);
+    this.planPanel.setKeyHints({
+      toggle: this.getAppKeyDisplay("app.plan.toggle"),
+      scrollUp: this.getAppKeyDisplay("app.plan.scrollUp"),
+      scrollDown: this.getAppKeyDisplay("app.plan.scrollDown"),
+      resizeNarrower: this.getAppKeyDisplay("app.plan.resizeNarrower"),
+      resizeWider: this.getAppKeyDisplay("app.plan.resizeWider"),
+      resizeShorter: this.getAppKeyDisplay("app.plan.resizeShorter"),
+      resizeTaller: this.getAppKeyDisplay("app.plan.resizeTaller"),
+    });
+
+    const options: OverlayOptions = expanded
+      ? {
+          anchor: "top-left",
+          width: "100%",
+          maxHeight: "66.6667%",
+          margin: 0,
+          nonCapturing: true,
         }
-      };
-      this.syncPlanTracker();
-      this.planPanelHandle = this.ui.showOverlay(this.planPanel, {
-        anchor: "top-right",
-        width: 50,
-        margin: 1,
-        nonCapturing: true,
-      });
+      : {
+          anchor: "top-right",
+          width: this.getPlanPanelCompactWidth(),
+          maxHeight: "66.6667%",
+          margin: 1,
+          nonCapturing: true,
+        };
+    this.planPanelHandle = this.ui.showOverlay(this.planPanel, options);
+    this.ui.requestRender();
+  }
+
+  private getPlanPanelMaxHeight(): number {
+    return Math.max(1, Math.floor((this.ui.terminal.rows * 2) / 3));
+  }
+
+  private getPlanPanelCompactWidth(): number {
+    const maxWidth = Math.max(4, this.ui.terminal.columns - 2);
+    const minWidth = Math.min(MIN_PLAN_PANEL_WIDTH, maxWidth);
+    return Math.max(minWidth, Math.min(maxWidth, this.planPanelCompactWidth));
+  }
+
+  private getPlanPanelBounds(): PlanPanelBounds {
+    const expanded = this.planPanelMode === "expanded";
+    const width = expanded ? this.ui.terminal.columns : this.getPlanPanelCompactWidth();
+    const right = expanded ? this.ui.terminal.columns : this.ui.terminal.columns - 1;
+    const left = Math.max(1, right - width + 1);
+    const top = expanded ? 1 : 2;
+    const height = Math.max(1, this.planPanel.getRenderedHeight());
+    return {
+      left,
+      right,
+      top,
+      bottom: top + height - 1,
+      width,
+      height,
+    };
+  }
+
+  private handlePlanPanelInput(data: string): { consume: boolean } | undefined {
+    if (this.planPanelMode === "hidden") return undefined;
+
+    const mouseEvent = parseSgrMouseEvent(data);
+    if (mouseEvent) {
+      this.handlePlanPanelMouse(mouseEvent);
+      return { consume: true };
+    }
+
+    if (this.keybindings.matches(data, "app.plan.scrollUp")) {
+      this.scrollPlanPanel(-1);
+      return { consume: true };
+    }
+    if (this.keybindings.matches(data, "app.plan.scrollDown")) {
+      this.scrollPlanPanel(1);
+      return { consume: true };
+    }
+    if (this.keybindings.matches(data, "app.plan.resizeNarrower")) {
+      this.resizePlanPanel(-4, 0);
+      return { consume: true };
+    }
+    if (this.keybindings.matches(data, "app.plan.resizeWider")) {
+      this.resizePlanPanel(4, 0);
+      return { consume: true };
+    }
+    if (this.keybindings.matches(data, "app.plan.resizeShorter")) {
+      this.resizePlanPanel(0, -2);
+      return { consume: true };
+    }
+    if (this.keybindings.matches(data, "app.plan.resizeTaller")) {
+      this.resizePlanPanel(0, 2);
+      return { consume: true };
+    }
+    return undefined;
+  }
+
+  private scrollPlanPanel(direction: -1 | 1): void {
+    if (this.planPanel.scrollBy(direction * 3)) {
       this.ui.requestRender();
     }
+  }
+
+  private resizePlanPanel(widthDelta: number, heightDelta: number): void {
+    const bounds = this.getPlanPanelBounds();
+    const width = widthDelta === 0 ? undefined : bounds.width + widthDelta;
+    const height = heightDelta === 0 ? undefined : (this.planPanelHeight ?? bounds.height) + heightDelta;
+    this.setPlanPanelSize(width, height);
+  }
+
+  private setPlanPanelSize(width: number | undefined, height: number | undefined): void {
+    let changed = false;
+    if (width !== undefined && this.planPanelMode === "compact") {
+      const maxWidth = Math.max(4, this.ui.terminal.columns - 2);
+      const minWidth = Math.min(MIN_PLAN_PANEL_WIDTH, maxWidth);
+      const nextWidth = Math.max(minWidth, Math.min(maxWidth, Math.round(width)));
+      if (nextWidth !== this.planPanelCompactWidth) {
+        this.planPanelCompactWidth = nextWidth;
+        changed = true;
+      }
+    }
+
+    if (height !== undefined) {
+      const maxHeight = this.getPlanPanelMaxHeight();
+      const minHeight = Math.min(MIN_PLAN_PANEL_HEIGHT, maxHeight);
+      const nextHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(height)));
+      if (nextHeight !== this.planPanelHeight) {
+        this.planPanelHeight = nextHeight;
+        changed = true;
+      }
+    }
+
+    if (changed) {
+      this.showPlanPanelOverlay();
+    }
+  }
+
+  private handlePlanPanelMouse(event: SgrMouseEvent): void {
+    const bounds = this.getPlanPanelBounds();
+    const inside =
+      event.x >= bounds.left && event.x <= bounds.right && event.y >= bounds.top && event.y <= bounds.bottom;
+    const isWheel = (event.button & 64) !== 0;
+    if (isWheel) {
+      if (inside) {
+        this.scrollPlanPanel((event.button & 1) === 0 ? -1 : 1);
+      }
+      return;
+    }
+
+    const button = event.button & 3;
+    if (event.released || button === 3) {
+      this.planPanelDragMode = undefined;
+      return;
+    }
+
+    const isMotion = (event.button & 32) !== 0;
+    if (isMotion) {
+      if (!this.planPanelDragMode) return;
+      const width =
+        this.planPanelDragMode === "width" || this.planPanelDragMode === "both"
+          ? bounds.right - event.x + 1
+          : undefined;
+      const height =
+        this.planPanelDragMode === "height" || this.planPanelDragMode === "both" ? event.y - bounds.top + 1 : undefined;
+      this.setPlanPanelSize(width, height);
+      return;
+    }
+
+    if (button !== 0 || !inside) return;
+    const onWidthHandle = this.planPanelMode === "compact" && event.x === bounds.left;
+    const onHeightHandle = event.y === bounds.bottom;
+    this.planPanelDragMode =
+      onWidthHandle && onHeightHandle ? "both" : onWidthHandle ? "width" : onHeightHandle ? "height" : undefined;
   }
 
   private syncPlanTracker(): void {
@@ -6554,6 +6761,9 @@ export class InteractiveMode {
     if (this.settingsManager.getShowTerminalProgress()) {
       this.ui.terminal.setProgress(false);
     }
+    this.ui.terminal.setMouseTracking?.(false);
+    this.planPanelInputUnsubscribe?.();
+    this.planPanelInputUnsubscribe = undefined;
     if (this.queuedFooterSpinnerTimer) {
       clearInterval(this.queuedFooterSpinnerTimer);
       this.queuedFooterSpinnerTimer = undefined;
