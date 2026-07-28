@@ -434,4 +434,89 @@ describe("structured-state normalization", () => {
     // Child should have tree connector
     expect(rendered).toContain("└─");
   });
+
+  it("getOrderedPlanTree sorts siblings by status: done first, then in_progress, then not_started", () => {
+    const plan = [
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "a", text: "Task A", status: "done" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "in_progress" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("getOrderedPlanTree sorts all status values: done > in_progress > failed > blocked > not_started", () => {
+    const plan = [
+      { id: "e", text: "E", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "d", text: "D", status: "blocked" as const, evidenceEntryIds: [] },
+      { id: "a", text: "A", status: "done" as const, evidenceEntryIds: [] },
+      { id: "b", text: "B", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "c", text: "C", status: "failed" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["a", "b", "c", "d", "e"]);
+  });
+
+  it("getOrderedPlanTree sorts children within each parent by status", () => {
+    const plan = [
+      { id: "root", text: "Root", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "child3", text: "Child 3", status: "not_started" as const, parentId: "root", evidenceEntryIds: [] },
+      { id: "child1", text: "Child 1", status: "done" as const, parentId: "root", evidenceEntryIds: [] },
+      { id: "child2", text: "Child 2", status: "in_progress" as const, parentId: "root", evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["root", "child1", "child2", "child3"]);
+    expect(ordered.find((o) => o.item.id === "child1")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "child2")?.depth).toBe(1);
+    expect(ordered.find((o) => o.item.id === "child3")?.depth).toBe(1);
+  });
+
+  it("getOrderedPlanTree preserves order for siblings with same status", () => {
+    const plan = [
+      { id: "a", text: "Task A", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "b", text: "Task B", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "c", text: "Task C", status: "not_started" as const, evidenceEntryIds: [] },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    expect(ordered.map((o) => o.item.id)).toEqual(["a", "b", "c"]);
+  });
+
+  it("getOrderedPlanTree sorts orphans by status", () => {
+    const plan = [
+      { id: "a", text: "A", status: "in_progress" as const, evidenceEntryIds: [] },
+      { id: "b", text: "B", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "c", text: "C", status: "done" as const, evidenceEntryIds: [], parentId: "nonexistent" },
+    ];
+
+    const ordered = getOrderedPlanTree(plan);
+    // "c" references nonexistent parent, becomes orphan
+    // Sorted by status: done(c), in_progress(a), not_started(b)
+    const ids = ordered.map((o) => o.item.id);
+    const doneIdx = ids.indexOf("c");
+    const inProgressIdx = ids.indexOf("a");
+    const notStartedIdx = ids.indexOf("b");
+    expect(doneIdx).toBeLessThan(inProgressIdx);
+    expect(inProgressIdx).toBeLessThan(notStartedIdx);
+  });
+
+  it("renderWorkingSessionState displays plan items sorted by status", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.canonicalRequest.current = "Test status sorting";
+    state.plan = [
+      { id: "3", text: "Write tests", status: "not_started" as const, evidenceEntryIds: [] },
+      { id: "1", text: "Research", status: "done" as const, evidenceEntryIds: [] },
+      { id: "2", text: "Implement", status: "in_progress" as const, evidenceEntryIds: [] },
+    ];
+
+    const rendered = renderWorkingSessionState(state, 1000)!;
+    const researchIdx = rendered.indexOf("Research");
+    const implementIdx = rendered.indexOf("Implement");
+    const testsIdx = rendered.indexOf("Write tests");
+    expect(researchIdx).toBeLessThan(implementIdx);
+    expect(implementIdx).toBeLessThan(testsIdx);
+  });
 });

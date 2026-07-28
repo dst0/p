@@ -310,6 +310,21 @@ export interface OrderedPlanItem {
   active: boolean;
 }
 
+function planStatusPriority(status: PlanStatus): number {
+  switch (status) {
+    case "done":
+      return 0;
+    case "in_progress":
+      return 1;
+    case "failed":
+      return 2;
+    case "blocked":
+      return 3;
+    case "not_started":
+      return 4;
+  }
+}
+
 export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
   if (plan.length === 0) return [];
 
@@ -332,7 +347,9 @@ export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
   const visiting = new Set<string>();
 
   function traverse(parentId: string | undefined, depth: number) {
-    const children = childrenMap.get(parentId) ?? [];
+    const children = (childrenMap.get(parentId) ?? [])
+      .slice()
+      .sort((a, b) => planStatusPriority(a.status) - planStatusPriority(b.status));
     for (let i = 0; i < children.length; i++) {
       const child = children[i]!;
       if (visiting.has(child.id)) continue;
@@ -352,15 +369,16 @@ export function getOrderedPlanTree(plan: PlanItem[]): OrderedPlanItem[] {
   traverse(undefined, 0);
 
   const visited = new Set(result.map((r) => r.item.id));
-  for (const item of plan) {
-    if (!visited.has(item.id)) {
-      result.push({
-        item,
-        depth: 0,
-        isLastChild: true,
-        active: false,
-      });
-    }
+  const orphans = plan
+    .filter((item) => !visited.has(item.id))
+    .sort((a, b) => planStatusPriority(a.status) - planStatusPriority(b.status));
+  for (const item of orphans) {
+    result.push({
+      item,
+      depth: 0,
+      isLastChild: true,
+      active: false,
+    });
   }
 
   const activeCandidate = result.filter((r) => r.item.status === "in_progress").sort((a, b) => b.depth - a.depth)[0];
