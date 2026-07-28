@@ -46,6 +46,18 @@ describe("Box component", () => {
     assert.equal(lines[0].includes("\x1b[0m\x1b[44m"), true);
   });
 
+  it("renders a continuous box-drawing glyph for the accent bar", () => {
+    const box = new Box(0, 1, undefined, (text) => `[ACCENT]${text}[/ACCENT]`);
+    box.addChild(new Text("Hello", 0, 0));
+
+    const lines = box.render(10);
+    assert.equal(lines.length, 3);
+    for (const line of lines) {
+      assert.equal(line.startsWith("[ACCENT]│[/ACCENT]"), true);
+      assert.equal(line.includes("▎"), false);
+    }
+  });
+
   it("handles child management and cache invalidation", () => {
     const box = new Box();
     let invalidations = 0;

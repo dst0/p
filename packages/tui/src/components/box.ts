@@ -117,7 +117,7 @@ export class Box implements Component {
 
     // Apply background, accent bar, and padding
     const result: string[] = [];
-    const accentPrefix = this.accentFn ? this.accentFn("\u258e") : "";
+    const accentPrefix = this.accentFn ? this.accentFn("\u2502") : "";
 
     // Top padding
     for (let i = 0; i < this.paddingY; i++) {
