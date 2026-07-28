@@ -293,10 +293,11 @@ class EmbeddingServer:
     def _load_model(self, plan: RuntimePlan):
         if plan.backend == "cpu":
             return SentenceTransformer(self.model_name, device="cpu")
+        dtype = torch.float32 if plan.dtype == "float32" else torch.float16
         return SentenceTransformer(
             self.model_name,
             device=plan.device,
-            model_kwargs={"torch_dtype": torch.float16},
+            model_kwargs={"torch_dtype": dtype},
         )
 
     def _refresh_active_plan(self):

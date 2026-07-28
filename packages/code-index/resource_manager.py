@@ -106,7 +106,7 @@ def build_runtime_plan(
     )
 
     cpu_model_bytes = model_parameter_count * 4
-    accelerator_model_bytes = model_parameter_count * 2
+    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend == "mps" else 2)
     cpu_load_bytes = 0 if model_resident else int(cpu_model_bytes * 1.20)
     accelerator_load_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.20)
     cpu_workspace = memory.system_available_bytes - system_reserve - cpu_load_bytes
@@ -214,7 +214,7 @@ def build_runtime_plan(
         preferred_backend=preferred_backend,
         backend=selected_backend,
         device="cuda" if selected_backend in {"cuda", "rocm"} else selected_backend,
-        dtype="float32" if selected_backend == "cpu" else "float16",
+        dtype="float32" if selected_backend in {"cpu", "mps"} else "float16",
         batch_size=batch_size,
         cpu_threads=cpu_threads,
         model_bytes=selected_model_bytes,

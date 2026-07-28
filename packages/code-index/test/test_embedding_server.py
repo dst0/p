@@ -1,6 +1,7 @@
 import sys
 import types
 import unittest
+from unittest.mock import Mock, patch
 
 
 class FakeAccelerator:
@@ -105,6 +106,32 @@ class EmbeddingServerTest(unittest.TestCase):
         self.assertEqual(health["resource_plan"]["cpu_threads"], 4)
         self.assertEqual(health["memory"]["system_available_bytes"], 20 * GIB)
         self.assertEqual(health["runtime"]["oom_backoffs"], 3)
+
+    def test_loads_mps_model_with_the_planned_float32_dtype(self):
+        server = EmbeddingServer("test/embed-0.6B")
+        plan = RuntimePlan(
+            usable=True,
+            preferred_backend="mps",
+            backend="mps",
+            device="mps",
+            dtype="float32",
+            batch_size=8,
+            cpu_threads=4,
+            model_bytes=2_400_000_000,
+            system_reserve_bytes=GIB,
+            accelerator_reserve_bytes=GIB,
+            reason=None,
+        )
+
+        transformer = Mock()
+        with patch.dict(EmbeddingServer._load_model.__globals__, {"SentenceTransformer": transformer}):
+            server._load_model(plan)
+
+        transformer.assert_called_once_with(
+            "test/embed-0.6B",
+            device="mps",
+            model_kwargs={"torch_dtype": fake_torch.float32},
+        )
 
 
 if __name__ == "__main__":
