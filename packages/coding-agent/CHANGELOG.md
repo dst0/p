@@ -9,8 +9,7 @@
 
 ### Fixed
 
-- Regenerate the coding-agent npm shrinkwrap automatically during version bumps.
-- Keep macOS Code RAG progress advancing by counting reclaimable VM pages for worker planning and using float32 MPS embeddings to avoid Qwen mixed-dtype restarts.
+- Fixed tool and message left accent bars rendering as disconnected segments in terminals with visible line spacing.
 - Fixed chaotic plan item ordering in `/state` command by using `getOrderedPlanTree()` with tree indentation instead of raw insertion order.
 - Fixed `mergePlan` reordering to trigger on single-item adds and to include done-without-evidence items in reorder tracking.
 - Fixed interactive components (`AssistantMessage`, `UserMessage`, summary messages) storing stale `markdownTheme` instances across theme switches.
