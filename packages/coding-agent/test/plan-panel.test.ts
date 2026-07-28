@@ -122,6 +122,44 @@ describe("PlanPanel", () => {
     expect(panel.getRenderedHeight()).toBe(12);
   });
 
+  it("renders narrow, empty, status, and tool-event variants", () => {
+    const emptyPanel = new PlanPanel(new PlanStatusTracker());
+    expect(emptyPanel.render(3).map(stripAnsi)).toEqual(["───"]);
+    expect(emptyPanel.render(10).map(stripAnsi).join("\n")).toContain("No pla…");
+
+    const tracker = new PlanStatusTracker();
+    tracker.steps = [
+      { id: "completed", description: "Completed", status: "completed" },
+      { id: "done", description: "Done", status: "done" },
+      { id: "failed", description: "Failed", status: "failed" },
+      { id: "checkpoint", description: "Checkpoint", status: "checkpoint" },
+      { id: "blocked", description: "Blocked", status: "blocked" },
+      { id: "cancelled", description: "Cancelled", status: "cancelled" },
+    ];
+    tracker.toolEvents = [
+      { id: "running", name: "running tool", status: "running" },
+      {
+        id: "success",
+        name: "successful tool",
+        argsSummary: "--flag",
+        status: "success",
+        durationMs: 12,
+      },
+      { id: "error", name: "failed tool", status: "error" },
+    ];
+
+    const rendered = new PlanPanel(tracker).render(60).map(stripAnsi).join("\n");
+    expect(rendered).toContain("✅ Completed");
+    expect(rendered).toContain("✅ Done");
+    expect(rendered).toContain("❌ Failed");
+    expect(rendered).toContain("💎 Checkpoint");
+    expect(rendered).toContain("🔒 Blocked");
+    expect(rendered).toContain("🚫 Cancelled");
+    expect(rendered).toContain("⚡ running tool");
+    expect(rendered).toContain("✅ successful tool --flag (12ms)");
+    expect(rendered).toContain("❌ failed tool");
+  });
+
   it("parses SGR mouse press, drag, wheel, and release events", () => {
     expect(parseSgrMouseEvent("\x1b[<0;12;7M")).toEqual({
       button: 0,

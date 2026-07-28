@@ -302,6 +302,15 @@ describe("ProcessTerminal methods", () => {
     }
   });
 
+  it("setMouseTracking toggles SGR button-motion reporting once per state", () => {
+    terminal.setMouseTracking(true);
+    terminal.setMouseTracking(true);
+    terminal.setMouseTracking(false);
+
+    assert.equal(writes.filter((write) => write === "\x1b[?1002h\x1b[?1006h").length, 1);
+    assert.equal(writes.filter((write) => write === "\x1b[?1006l\x1b[?1002l").length, 1);
+  });
+
   it("start and stop lifecycle", () => {
     let _resized = false;
     terminal.start(
@@ -346,6 +355,7 @@ describe("ProcessTerminal drainInput", () => {
       // Force kitty active
       (terminal as any)._kittyProtocolActive = true;
       (terminal as any).keyboardProtocolPushed = true;
+      terminal.setMouseTracking(true);
 
       // Use fast real timeouts instead of mocking timers for V8 coverage
       const drainPromise = terminal.drainInput(10, 5);
