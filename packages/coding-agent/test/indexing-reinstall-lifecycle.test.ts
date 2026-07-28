@@ -192,8 +192,9 @@ describe("indexing reinstall lifecycle", () => {
 
     try {
       await daemon.start();
-      await waitFor(() => service?.refreshCount === 1);
-      expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).ragState).toBe("ready");
+      const client = new IndexingService(fixture.agentDir);
+      await waitFor(() => client.getStatus(fixture.repo).ragState === "ready");
+      expect(service?.refreshCount).toBe(1);
     } finally {
       await daemon.stop({ graceful: true });
     }

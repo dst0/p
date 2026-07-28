@@ -777,7 +777,8 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     });
 
     await daemon.start();
-    await waitFor(() => service?.refreshCount === 1);
+    await waitFor(() => client.getStatus(fixture.repo).ragState === "ready");
+    expect(service?.refreshCount).toBe(1);
     expect(client.getStatus(fixture.repo)).toMatchObject({
       ragState: "ready",
     });

@@ -91,6 +91,9 @@ export interface Terminal {
 
   // Progress indicator (OSC 9;4)
   setProgress(active: boolean): void;
+
+  // Mouse button-motion and SGR coordinate reporting
+  setMouseTracking?(active: boolean): void;
 }
 
 /**
@@ -108,6 +111,7 @@ export class ProcessTerminal implements Terminal {
   private stdinBuffer?: StdinBuffer;
   private stdinDataHandler?: (data: string) => void;
   private progressInterval?: ReturnType<typeof setInterval>;
+  private mouseTrackingActive = false;
   private writeLogPath = (() => {
     const env = process.env.PI_TUI_WRITE_LOG || "";
     if (!env) return "";
@@ -369,6 +373,7 @@ export class ProcessTerminal implements Terminal {
   /* c8 ignore stop */
   /* c8 ignore start */
   async drainInput(maxMs = 1000, idleMs = 50): Promise<void> {
+    this.setMouseTracking(false);
     const shouldDisableKittyProtocol = this.keyboardProtocolPushed || this._kittyProtocolActive;
     this.clearKeyboardProtocolNegotiationBuffer();
     if (shouldDisableKittyProtocol) {
@@ -413,6 +418,8 @@ export class ProcessTerminal implements Terminal {
     if (this.clearProgressInterval()) {
       process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
     }
+
+    this.setMouseTracking(false);
 
     // Disable bracketed paste mode
     process.stdout.write("\x1b[?2004l");
@@ -527,6 +534,12 @@ export class ProcessTerminal implements Terminal {
       // OSC 9;4;0 - clear progress
       process.stdout.write(TERMINAL_PROGRESS_CLEAR_SEQUENCE);
     }
+  }
+
+  setMouseTracking(active: boolean): void {
+    if (active === this.mouseTrackingActive) return;
+    this.mouseTrackingActive = active;
+    process.stdout.write(active ? "\x1b[?1002h\x1b[?1006h" : "\x1b[?1006l\x1b[?1002l");
   }
 
   private clearProgressInterval(): boolean {

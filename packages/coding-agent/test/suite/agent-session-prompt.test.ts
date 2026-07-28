@@ -129,6 +129,10 @@ describe("AgentSession prompt characterization", () => {
     await harness.session.prompt("Fix durable state tracking");
 
     expect(firstSystemPrompt).toContain("<session_state_protocol>");
+    expect(firstSystemPrompt).toContain("Flat work stays flat");
+    expect(firstSystemPrompt).toContain("Only when work has real sub-tasks");
+    expect(firstSystemPrompt).toContain("set each child's parentId to its direct parent's id");
+    expect(firstSystemPrompt).toContain("keep nesting to 2-3 levels");
     expect(getMessageText(harness.session.messages[1]!)).toBe("Recorded.");
     expect(
       harness.sessionManager
