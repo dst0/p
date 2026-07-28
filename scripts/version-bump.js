@@ -9,6 +9,7 @@
  */
 
 import { readFileSync, writeFileSync, readdirSync } from 'fs';
+import { execFileSync } from 'child_process';
 import { join } from 'path';
 import { inc } from 'semver';
 
@@ -135,5 +136,10 @@ for (const [name, version] of Object.entries(versionMap)) {
 }
 
 writeFileSync(lockfilePath, JSON.stringify(lockfile, null, 2) + '\n');
+
+// Keep the published coding-agent dependency snapshot in lockstep with package versions.
+execFileSync(process.execPath, [join(process.cwd(), 'scripts/generate-coding-agent-shrinkwrap.js')], {
+	stdio: 'inherit',
+});
 
 console.log(`\n✅ Bumped all packages to ${targetVersion}`);

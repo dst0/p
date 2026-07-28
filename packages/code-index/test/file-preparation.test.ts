@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createFilePreparationPlan,
   detectFilePreparationResources,
+  parseDarwinAvailableMemoryBytes,
   processFilePreparationTasks,
 } from "../src/rag/file-preparation.ts";
 import { executeFilePreparationTask, type FilePreparationTask } from "../src/rag/file-preparation-core.ts";
@@ -53,6 +54,18 @@ describe("file preparation resource planning", () => {
     expect(resources.availableMemoryBytes).toBeGreaterThanOrEqual(0);
   });
 
+  it("counts reclaimable macOS pages as available memory", () => {
+    const output = `Mach Virtual Memory Statistics: (page size of 16384 bytes)
+Pages free:                               100.
+Pages active:                            999.
+Pages inactive:                          200.
+Pages speculative:                        50.
+Pages purgeable:                          25.
+`;
+
+    expect(parseDarwinAvailableMemoryBytes(output, 24 * 1024 * MEBIBYTE)).toBe(375 * 16_384);
+  });
+
   it("falls back from unavailable cgroup files to host memory", () => {
     vi.spyOn(fs, "readFileSync").mockImplementation(() => {
       throw new Error("cgroup unavailable");
@@ -60,10 +73,9 @@ describe("file preparation resource planning", () => {
     vi.spyOn(os, "freemem").mockReturnValue(768 * MEBIBYTE);
     vi.spyOn(os, "availableParallelism").mockReturnValue(6);
 
-    expect(detectFilePreparationResources()).toEqual({
-      logicalCpus: 6,
-      availableMemoryBytes: 768 * MEBIBYTE,
-    });
+    const resources = detectFilePreparationResources();
+    expect(resources.logicalCpus).toBe(6);
+    expect(resources.availableMemoryBytes).toBeGreaterThanOrEqual(768 * MEBIBYTE);
   });
 
   it("uses cgroup v1 headroom when v2 has no finite limit", () => {

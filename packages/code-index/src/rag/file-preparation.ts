@@ -1,3 +1,4 @@
+import { spawnSync } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import { Worker } from "node:worker_threads";
@@ -102,13 +103,42 @@ function cgroupAvailableMemoryBytes(): number | undefined {
   return undefined;
 }
 
+export function parseDarwinAvailableMemoryBytes(output: string, totalMemoryBytes: number): number | undefined {
+  const pageSizeMatch = /page size of (\d+) bytes/.exec(output);
+  if (!pageSizeMatch) return undefined;
+  const pageSize = Number.parseInt(pageSizeMatch[1], 10);
+  if (!Number.isSafeInteger(pageSize) || pageSize <= 0) return undefined;
+
+  let availablePages = 0;
+  for (const name of ["Pages free", "Pages inactive", "Pages speculative", "Pages purgeable"]) {
+    const valueMatch = new RegExp(`^${name}:\\s+(\\d+)\\.`, "m").exec(output);
+    if (valueMatch) availablePages += Number.parseInt(valueMatch[1], 10);
+  }
+  const availableBytes = availablePages * pageSize;
+  if (!Number.isSafeInteger(availableBytes) || availableBytes <= 0) return undefined;
+  return Math.min(totalMemoryBytes, availableBytes);
+}
+
+function darwinAvailableMemoryBytes(totalMemoryBytes: number): number | undefined {
+  const result = spawnSync("/usr/bin/vm_stat", [], {
+    encoding: "utf8",
+    timeout: 2_000,
+    maxBuffer: MEBIBYTE,
+  });
+  if (result.error || result.status !== 0) return undefined;
+  return parseDarwinAvailableMemoryBytes(result.stdout, totalMemoryBytes);
+}
+
 export function detectFilePreparationResources(): FilePreparationResourceSnapshot {
   const hostAvailable = os.freemem();
   const cgroupAvailable = cgroupAvailableMemoryBytes();
+  const darwinAvailable = process.platform === "darwin" ? darwinAvailableMemoryBytes(os.totalmem()) : undefined;
   const hostAvailableEstimated =
-    process.platform === "darwin" && hostAvailable < 256 * MEBIBYTE
-      ? Math.max(hostAvailable, Math.floor(os.totalmem() * 0.125))
-      : hostAvailable;
+    darwinAvailable !== undefined
+      ? Math.max(hostAvailable, darwinAvailable)
+      : process.platform === "darwin" && hostAvailable < 256 * MEBIBYTE
+        ? Math.max(hostAvailable, Math.floor(os.totalmem() * 0.125))
+        : hostAvailable;
   return {
     logicalCpus: Math.max(1, os.availableParallelism()),
     availableMemoryBytes: Math.max(

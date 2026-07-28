@@ -84,6 +84,15 @@ def _install_fake_torch(builder: FakeTorchBuilder):
 class DeviceSelectionTest(unittest.TestCase):
     """Verify explicit device requests are not silently redirected."""
 
+    def setUp(self):
+        self.previous_device = os.environ.get("P_CODE_RAG_DEVICE")
+        os.environ["P_CODE_RAG_DEVICE"] = "auto"
+
+    def tearDown(self):
+        if self.previous_device is None:
+            os.environ.pop("P_CODE_RAG_DEVICE", None)
+        else:
+            os.environ["P_CODE_RAG_DEVICE"] = self.previous_device
     # -- CUDA requested, ROCm detected ----------------------------------
 
     def test_cuda_requested_rocm_detected_falls_back_to_cpu(self):
