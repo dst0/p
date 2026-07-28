@@ -19,9 +19,13 @@ import { gzipSync } from "node:zlib";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
+const codingAgentPackage = join(repoRoot, "packages", "coding-agent", "package.json");
 const defaultModelsFile = join(homedir(), ".p", "agent", "models.json");
 const defaultAuthFile = join(homedir(), ".p", "agent", "auth.json");
-const defaultOriginalVersion = "0.73.1";
+const defaultKiloConfigFile = join(homedir(), ".config", "kilo", "kilo.jsonc");
+const defaultPiVersion = "0.82.1";
+const defaultKiloVersion = "7.4.16";
+const supportedAgents = ["pi", "p", "kilo"];
 const defaultTimeoutSeconds = 300;
 const defaultMaxRuntimeSeconds = 900;
 
@@ -29,14 +33,21 @@ function printHelp() {
 	console.log(`Usage:
   npm run benchmark:agents -- --model <provider/id> [options]
 
-Compare this checkout (p) with the upstream p-coding-agent package using
-the same model and two deterministic, long-form TypeScript coding fixtures.
+Compare this checkout (p) with PI and optionally Kilo Code CLI using the same
+underlying model and two deterministic, long-form TypeScript coding fixtures.
 
 Options:
-  --model <provider/id>       Model to use for both agents (required)
+  --model <provider/id>       PI/P model alias (required when either is selected)
+  --agents <list>             Comma-separated sequential order
+                              (default: pi,p; supported: ${supportedAgents.join(",")})
   --models-file <path>        Custom models.json copied into temporary agent dirs
                               (default: ~/.p/agent/models.json)
-  --original-version <ver>    Upstream package version (default: ${defaultOriginalVersion})
+  --pi-version <ver>          PI package version (default: ${defaultPiVersion})
+  --kilo-model <provider/id>  Kilo model alias (required when Kilo is selected)
+  --kilo-version <ver>        Required installed Kilo version
+                              (default: ${defaultKiloVersion})
+  --kilo-config <path>        Kilo config copied into an isolated temporary XDG home
+                              (default: ~/.config/kilo/kilo.jsonc)
   --task <id>                 Run only one fixture (optional)
   --runs <n>                  Complete repetitions (default: 1)
   --timeout-seconds <n>       Per-agent task timeout (default: ${defaultTimeoutSeconds})
@@ -63,8 +74,12 @@ function parsePositiveInteger(value, name) {
 function parseArgs(argv) {
 	const options = {
 		model: process.env.PI_BENCHMARK_MODEL,
+		agents: ["pi", "p"],
 		modelsFile: defaultModelsFile,
-		originalVersion: defaultOriginalVersion,
+		piVersion: defaultPiVersion,
+		kiloModel: process.env.KILO_BENCHMARK_MODEL,
+		kiloVersion: defaultKiloVersion,
+		kiloConfig: defaultKiloConfigFile,
 		task: undefined,
 		runs: 1,
 		timeoutSeconds: defaultTimeoutSeconds,
@@ -78,12 +93,26 @@ function parseArgs(argv) {
 			options.help = true;
 			continue;
 		}
-		if (arg === "--model" || arg === "--models-file" || arg === "--original-version" || arg === "--task" || arg === "--output") {
+		if (
+			arg === "--model"
+			|| arg === "--agents"
+			|| arg === "--models-file"
+			|| arg === "--pi-version"
+			|| arg === "--kilo-model"
+			|| arg === "--kilo-version"
+			|| arg === "--kilo-config"
+			|| arg === "--task"
+			|| arg === "--output"
+		) {
 			if (index + 1 >= argv.length) throw new Error(`${arg} requires a value`);
 			const value = argv[++index];
 			if (arg === "--model") options.model = value;
+			if (arg === "--agents") options.agents = value.split(",").map((agent) => agent.trim()).filter(Boolean);
 			if (arg === "--models-file") options.modelsFile = resolve(value);
-			if (arg === "--original-version") options.originalVersion = value;
+			if (arg === "--pi-version") options.piVersion = value;
+			if (arg === "--kilo-model") options.kiloModel = value;
+			if (arg === "--kilo-version") options.kiloVersion = value;
+			if (arg === "--kilo-config") options.kiloConfig = resolve(value);
 			if (arg === "--task") options.task = value;
 			if (arg === "--output") options.output = resolve(value);
 			continue;
@@ -99,7 +128,18 @@ function parseArgs(argv) {
 		throw new Error(`Unknown option: ${arg}`);
 	}
 
-	if (!options.model && !options.help) throw new Error("--model is required");
+	if (options.help) return options;
+	if (options.agents.length === 0) throw new Error("--agents must include at least one agent");
+	if (new Set(options.agents).size !== options.agents.length) throw new Error("--agents must not contain duplicates");
+	for (const agent of options.agents) {
+		if (!supportedAgents.includes(agent)) throw new Error(`Unsupported agent: ${agent}`);
+	}
+	if (options.agents.some((agent) => agent === "pi" || agent === "p") && !options.model) {
+		throw new Error("--model is required when PI or P is selected");
+	}
+	if (options.agents.includes("kilo") && !options.kiloModel) {
+		throw new Error("--kilo-model is required when Kilo is selected");
+	}
 	return options;
 }
 
@@ -559,20 +599,52 @@ function runFixtureCommand(workspace, args) {
 	});
 }
 
-function createAgentDirs(modelsFile) {
+function createAgentDirs(options) {
 	const root = mkdtempSync(join(tmpdir(), "p-agent-benchmark-config-"));
 	const dirs = {};
-	for (const agent of ["p", "original"]) {
+	for (const agent of ["pi", "p"]) {
 		const dir = join(root, agent);
 		ensureDir(dir);
-		if (existsSync(modelsFile)) copyFileSync(modelsFile, join(dir, "models.json"));
+		if (existsSync(options.modelsFile)) copyFileSync(options.modelsFile, join(dir, "models.json"));
 		if (existsSync(defaultAuthFile)) copyFileSync(defaultAuthFile, join(dir, "auth.json"));
 		dirs[agent] = dir;
 	}
+	const kiloDir = join(root, "kilo");
+	const kiloConfigDir = join(kiloDir, "config", "kilo");
+	ensureDir(kiloConfigDir);
+	if (existsSync(options.kiloConfig)) copyFileSync(options.kiloConfig, join(kiloConfigDir, "kilo.jsonc"));
+	dirs.kilo = kiloDir;
 	return { root, dirs };
 }
 
 function commandFor(agent, options, task, configDir, workspace) {
+	if (agent === "kilo") {
+		const env = {
+			...process.env,
+			NO_COLOR: "1",
+			XDG_CACHE_HOME: join(configDir, "cache"),
+			XDG_CONFIG_HOME: join(configDir, "config"),
+			XDG_DATA_HOME: join(configDir, "data"),
+			XDG_STATE_HOME: join(configDir, "state"),
+		};
+		return {
+			executable: "kilo",
+			args: [
+				"run",
+				"--model",
+				options.kiloModel,
+				"--format",
+				"json",
+				"--pure",
+				"--auto",
+				"--dir",
+				workspace,
+				task.prompt,
+			],
+			env,
+			cwd: workspace,
+		};
+	}
 	const commonArgs = [
 		"--mode",
 		"json",
@@ -601,9 +673,9 @@ function commandFor(agent, options, task, configDir, workspace) {
 		args: [
 			"exec",
 			"--yes",
-			`--package=@mariozechner/p-coding-agent@${options.originalVersion}`,
+			`--package=@earendil-works/pi-coding-agent@${options.piVersion}`,
 			"--",
-			"p",
+			"pi",
 			...commonArgs,
 		],
 		env,
@@ -666,7 +738,7 @@ function extractText(content) {
 		.join("\n");
 }
 
-function parseRecording(stdout) {
+function parseRecording(stdout, agent) {
 	const events = [];
 	for (const line of stdout.split(/\r?\n/)) {
 		if (!line.trim()) continue;
@@ -677,7 +749,10 @@ function parseRecording(stdout) {
 			// Preserve malformed lines in the recording while ignoring them in metrics.
 		}
 	}
+	return agent === "kilo" ? parseKiloRecording(events) : parsePiRecording(events);
+}
 
+function parsePiRecording(events) {
 	const counts = {};
 	const toolNames = {};
 	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
@@ -729,6 +804,67 @@ function parseRecording(stdout) {
 	};
 }
 
+function parseKiloRecording(rawEvents) {
+	const events = [];
+	const seenEvents = new Set();
+	for (const event of rawEvents) {
+		const part = event.part;
+		const key = part?.id
+			? `${event.type}:${part.id}:${part.state?.status ?? ""}`
+			: JSON.stringify(event);
+		if (seenEvents.has(key)) continue;
+		seenEvents.add(key);
+		events.push(event);
+	}
+
+	const counts = {};
+	const toolNames = {};
+	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+	const stopReasons = {};
+	const assistantTexts = [];
+	const errors = [];
+	const seenToolIds = new Set();
+	let toolErrors = 0;
+	for (const event of events) {
+		if (typeof event.type === "string") counts[event.type] = (counts[event.type] ?? 0) + 1;
+		const part = event.part;
+		if (event.type === "tool_use" && part?.type === "tool" && !seenToolIds.has(part.id)) {
+			seenToolIds.add(part.id);
+			const toolName = typeof part.tool === "string" ? part.tool : "unknown";
+			toolNames[toolName] = (toolNames[toolName] ?? 0) + 1;
+			if (part.state?.status === "error") toolErrors += 1;
+		}
+		if (event.type === "step_finish" && part?.type === "step-finish") {
+			const tokens = part.tokens;
+			usage.input += Number(tokens?.input ?? 0);
+			usage.output += Number(tokens?.output ?? 0);
+			usage.cacheRead += Number(tokens?.cache?.read ?? 0);
+			usage.cacheWrite += Number(tokens?.cache?.write ?? 0);
+			usage.totalTokens += Number(tokens?.total ?? 0);
+			if (part.reason) stopReasons[part.reason] = (stopReasons[part.reason] ?? 0) + 1;
+			if (part.reason === "error") errors.push("Kilo step failed");
+		}
+		if (event.type === "text" && typeof part?.text === "string") assistantTexts.push(part.text);
+		if (event.type === "error") errors.push(String(event.error?.message ?? event.message ?? "Kilo error"));
+	}
+	return {
+		eventCount: events.length,
+		rawEventCount: rawEvents.length,
+		eventTypes: counts,
+		model: undefined,
+		responseModel: undefined,
+		usage,
+		turns: counts.step_finish ?? 0,
+		assistantMessages: counts.step_finish ?? 0,
+		toolCalls: seenToolIds.size,
+		toolErrors,
+		toolNames,
+		stopReasons,
+		errors,
+		finalText: assistantTexts.at(-1) ?? "",
+	};
+}
+
 function formatMs(value) {
 	return `${Math.round(value)} ms`;
 }
@@ -742,11 +878,9 @@ function average(rows, selector) {
 	return rows.reduce((total, row) => total + selector(row), 0) / rows.length;
 }
 
-function createReport(options, results, output, benchmarkTasks = tasks) {
+function createReport(options, versions, results, output, benchmarkTasks = tasks) {
 	const completed = results.filter((result) => result.status !== "skipped");
 	const byAgent = (agent) => completed.filter((result) => result.agent === agent);
-	const pResults = byAgent("p");
-	const originalResults = byAgent("original");
 	const summary = (rows) => ({
 		runs: rows.length,
 		passed: rows.filter((row) => row.quality.passed).length,
@@ -757,27 +891,32 @@ function createReport(options, results, output, benchmarkTasks = tasks) {
 		averageToolCalls: average(rows, (row) => row.metrics.toolCalls),
 		averageToolErrors: average(rows, (row) => row.metrics.toolErrors),
 	});
-	const pSummary = summary(pResults);
-	const originalSummary = summary(originalResults);
-	const winner = (pSummary.passed !== originalSummary.passed)
-		? (pSummary.passed > originalSummary.passed ? "p" : "original")
-		: pSummary.averageTotalTokens !== originalSummary.averageTotalTokens
-			? (pSummary.averageTotalTokens < originalSummary.averageTotalTokens ? "p" : "original")
-			: pSummary.averageWallMs <= originalSummary.averageWallMs
-				? "p"
-				: "original";
+	const summaries = Object.fromEntries(options.agents.map((agent) => [agent, summary(byAgent(agent))]));
+	const rankedAgents = options.agents
+		.filter((agent) => summaries[agent].runs > 0)
+		.toSorted((leftAgent, rightAgent) => {
+			const left = summaries[leftAgent];
+			const right = summaries[rightAgent];
+			return right.passed - left.passed
+				|| left.averageTotalTokens - right.averageTotalTokens
+				|| left.averageWallMs - right.averageWallMs;
+		});
+	const winner = rankedAgents[0];
 
 	let report = `# Agent benchmark report\n\n`;
 	report += `Generated: ${new Date().toISOString()}\n\n`;
-	report += `Model: \`${options.model}\`\n\n`;
-	report += `Upstream: \`@mariozechner/p-coding-agent@${options.originalVersion}\`\n\n`;
+	report += `PI/P model alias: \`${options.model ?? "not selected"}\`\n\n`;
+	if (options.agents.includes("kilo")) report += `Kilo model alias: \`${options.kiloModel}\`\n\n`;
+	report += `Versions: ${options.agents.map((agent) => `\`${agent} ${versions[agent]}\``).join(", ")}\n\n`;
+	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
 	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
 	report += `## Summary\n\n`;
 	report += `| Agent | Passed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
-	for (const [agent, data] of [["p", pSummary], ["original", originalSummary]]) {
+	for (const agent of options.agents) {
+		const data = summaries[agent];
 		report += `| ${agent} | ${data.passed}/${data.runs} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
 	}
-	report += `\nSimple winner by pass count, then tokens, then time: **${winner}**. This is a directional result, not a general model or agent ranking.\n\n`;
+	report += `\nSimple winner by pass count, then tokens, then time: **${winner ?? "none"}**. This is a directional result, not a general model or agent ranking.\n\n`;
 	report += `## Per-task results\n\n`;
 	report += `| Run | Agent | Task | Status | Wall time | Total tokens | Tool calls | Checks |\n| ---: | --- | --- | --- | ---: | ---: | ---: | --- |\n`;
 	for (const result of results) {
@@ -787,10 +926,13 @@ function createReport(options, results, output, benchmarkTasks = tasks) {
 	report += `\n## Interpretation\n\n`;
 	report += `- Session recordings are the compressed JSONL files under [recordings](./recordings). They contain the event stream used to calculate these metrics.\n`;
 	report += `- Fixture checks run the TypeScript test suite and typecheck; the calculator also has a CLI acceptance check, while the refactor checks its focused modules, added tests, reduced facade, and unchanged contract files.\n`;
-	report += `- The run uses one model, one repetition by default, fresh fixture workspaces, and sequential execution. Repeat with \`--runs 2 --max-runtime-seconds 1800\` before treating small differences as meaningful.\n`;
-	report += `- Provider latency, model sampling, cache state, and upstream version can dominate this small sample.\n`;
+	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
+	if (options.agents.includes("kilo")) {
+		report += `- Kilo currently emits duplicate JSONL events. Raw recordings preserve them; calculated Kilo metrics deduplicate events by event type, part ID, and state.\n`;
+	}
+	report += `- Provider latency, model sampling, cache state, agent order, and package versions can dominate this small sample.\n`;
 	writeFileSync(join(output, "report.md"), report, "utf8");
-	return { p: pSummary, original: originalSummary, winner };
+	return { ...summaries, winner };
 }
 
 async function main() {
@@ -802,8 +944,24 @@ async function main() {
 	if (!existsSync(codingAgentCli)) {
 		throw new Error(`Missing ${codingAgentCli}; build packages/coding-agent before running the benchmark`);
 	}
-	if (!existsSync(options.modelsFile)) {
+	if (options.agents.some((agent) => agent === "pi" || agent === "p") && !existsSync(options.modelsFile)) {
 		console.warn(`Warning: models file not found at ${options.modelsFile}; built-in provider configuration will be used`);
+	}
+	if (options.agents.includes("kilo") && !existsSync(options.kiloConfig)) {
+		throw new Error(`Kilo config not found at ${options.kiloConfig}`);
+	}
+	const versions = {
+		pi: options.piVersion,
+		p: JSON.parse(readFileSync(codingAgentPackage, "utf8")).version,
+	};
+	if (options.agents.includes("kilo")) {
+		const kiloVersionResult = spawnSync("kilo", ["--version"], { encoding: "utf8" });
+		if (kiloVersionResult.status !== 0) throw new Error("Unable to run kilo --version");
+		const installedKiloVersion = kiloVersionResult.stdout.trim();
+		if (installedKiloVersion !== options.kiloVersion) {
+			throw new Error(`Installed Kilo version is ${installedKiloVersion}; expected ${options.kiloVersion}`);
+		}
+		versions.kilo = installedKiloVersion;
 	}
 	const benchmarkTasks = options.task ? tasks.filter((task) => task.id === options.task) : tasks;
 	if (benchmarkTasks.length === 0) throw new Error(`Unknown task: ${options.task}`);
@@ -811,19 +969,19 @@ async function main() {
 	ensureDir(output);
 	ensureDir(join(output, "recordings"));
 	ensureDir(join(output, "stderr"));
-	const agentDirs = createAgentDirs(options.modelsFile);
+	const agentDirs = createAgentDirs(options);
 	const results = [];
 	const startedAt = performance.now();
 	const deadline = startedAt + options.maxRuntimeSeconds * 1000;
 	console.log(`Benchmark output: ${output}`);
-	console.log(`Model: ${options.model}`);
-	console.log(`Upstream: @mariozechner/p-coding-agent@${options.originalVersion}`);
+	console.log(`PI/P model: ${options.model ?? "not selected"}`);
+	if (options.agents.includes("kilo")) console.log(`Kilo model: ${options.kiloModel}`);
+	console.log(`Versions: ${options.agents.map((agent) => `${agent} ${versions[agent]}`).join(", ")}`);
+	console.log(`Sequential order: ${options.agents.join(" -> ")}`);
 	try {
 		for (let run = 1; run <= options.runs; run += 1) {
-			for (let taskIndex = 0; taskIndex < benchmarkTasks.length; taskIndex += 1) {
-				const task = benchmarkTasks[taskIndex];
-				const agentOrder = (run + taskIndex) % 2 === 1 ? ["p", "original"] : ["original", "p"];
-				for (const agent of agentOrder) {
+			for (const agent of options.agents) {
+				for (const task of benchmarkTasks) {
 					const remainingMs = deadline - performance.now();
 					if (remainingMs <= 0) {
 						results.push({ run, agent, task: task.id, status: "skipped" });
@@ -839,7 +997,7 @@ async function main() {
 					const stderrName = `${agent}-run-${run}-${task.id}.log`;
 					writeFileSync(join(output, "recordings", recordingName), gzipSync(result.stdout), "utf8");
 					writeFileSync(join(output, "stderr", stderrName), result.stderr, "utf8");
-					const metrics = parseRecording(result.stdout);
+					const metrics = parseRecording(result.stdout, agent);
 					cleanupGeneratedWorkspaceState(workspace);
 					const quality = task.verify(workspace, baseline, metrics.finalText);
 					const status = result.timedOut ? "timed_out" : result.code === 0 && metrics.errors.length === 0 && quality.passed ? "passed" : "failed";
@@ -854,6 +1012,7 @@ async function main() {
 						signal: result.signal,
 						timedOut: result.timedOut,
 						error: result.error,
+						modelAlias: agent === "kilo" ? options.kiloModel : options.model,
 						recording: join("recordings", recordingName),
 						stderr: join("stderr", stderrName),
 						workspace: workspace.slice(output.length + 1),
@@ -868,11 +1027,16 @@ async function main() {
 	} finally {
 		rmSync(agentDirs.root, { recursive: true, force: true });
 	}
-	const summaries = createReport(options, results, output, benchmarkTasks);
+	const summaries = createReport(options, versions, results, output, benchmarkTasks);
 	const resultDocument = {
 		generatedAt: new Date().toISOString(),
-		model: options.model,
-		originalVersion: options.originalVersion,
+		agents: options.agents,
+		models: {
+			pi: options.model,
+			p: options.model,
+			kilo: options.agents.includes("kilo") ? options.kiloModel : undefined,
+		},
+		versions,
 		runs: options.runs,
 		timeoutSeconds: options.timeoutSeconds,
 		maxRuntimeSeconds: options.maxRuntimeSeconds,

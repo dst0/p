@@ -1,0 +1,549 @@
+{
+  "generatedAt": "2026-07-28T20:47:12.282Z",
+  "agents": [
+    "pi",
+    "p",
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/model",
+    "p": "mini-pc/model",
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.108",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 3600,
+  "tasks": [
+    {
+      "id": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification"
+    },
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior"
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 2,
+      "passed": 2,
+      "averageWallMs": 362599.991958,
+      "averageInputTokens": 9210,
+      "averageOutputTokens": 9849,
+      "averageTotalTokens": 252555.5,
+      "averageToolCalls": 22.5,
+      "averageToolErrors": 2
+    },
+    "p": {
+      "runs": 2,
+      "passed": 2,
+      "averageWallMs": 351253.8556245001,
+      "averageInputTokens": 27030.5,
+      "averageOutputTokens": 8504,
+      "averageTotalTokens": 433327,
+      "averageToolCalls": 28,
+      "averageToolErrors": 7
+    },
+    "kilo": {
+      "runs": 2,
+      "passed": 0,
+      "averageWallMs": 450046.396209,
+      "averageInputTokens": 0,
+      "averageOutputTokens": 0,
+      "averageTotalTokens": 0,
+      "averageToolCalls": 0,
+      "averageToolErrors": 0
+    },
+    "winner": "pi"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 193053.08633299998,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/model",
+      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/pi-run-1-typescript-calculator.log",
+      "workspace": "workspaces/pi/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 5127,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 11,
+          "message_start": 25,
+          "message_end": 25,
+          "message_update": 5007,
+          "tool_execution_start": 13,
+          "tool_execution_end": 13,
+          "turn_end": 11,
+          "tool_execution_update": 18,
+          "agent_end": 1,
+          "agent_settled": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 5093,
+          "output": 5539,
+          "cacheRead": 58726,
+          "cacheWrite": 0,
+          "totalTokens": 69358
+        },
+        "turns": 11,
+        "assistantMessages": 11,
+        "toolCalls": 13,
+        "toolErrors": 1,
+        "toolNames": {
+          "read": 4,
+          "bash": 5,
+          "write": 3,
+          "edit": 1
+        },
+        "stopReasons": {
+          "toolUse": 10,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Everything works:\n\n- **34/34 tests pass** (5 contract + 29 unit tests)\n- **Type check passes** with no errors\n- **CLI** prints `11` for `\"2 + 3 * (4 - 1)\"`\n- **Error handling** exits with code 1 and writes a useful message to stderr\n\nHere's a summary of what was implemented:\n\n**`src/calculator.ts`** — Recursive descent parser with:\n- Tokenizer handling numbers (int/decimal), operators (+, −, *, /), parentheses, whitespace\n- Grammar: `additive → multiplicative (('+'|'-') multiplicative)*`, `multiplicative → unary (('*'|'/') unary)*`, `unary → '-' unary | primary`, `primary → NUMBER | '(' expr ')'`\n- Standard precedence, left associativity, chained unary minus\n- Errors for malformed input, invalid characters, mismatched parens, division by zero\n\n**`src/cli.ts`** — Joins CLI args into an expression, prints result, or exits 1 with error on stderr.\n\n**`test/calculator.test.ts`** — 29 unit tests covering arithmetic operations, precedence, associativity, parentheses, decimals, unary minus, whitespace, and error cases."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 532146.897583,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/model",
+      "recording": "recordings/pi-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/pi-run-1-monolith-split.log",
+      "workspace": "workspaces/pi/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 13305,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 30,
+          "message_start": 63,
+          "message_end": 63,
+          "message_update": 13006,
+          "tool_execution_start": 32,
+          "tool_execution_update": 45,
+          "tool_execution_end": 32,
+          "turn_end": 30,
+          "agent_end": 1,
+          "agent_settled": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 13327,
+          "output": 14159,
+          "cacheRead": 408267,
+          "cacheWrite": 0,
+          "totalTokens": 435753
+        },
+        "turns": 30,
+        "assistantMessages": 30,
+        "toolCalls": 32,
+        "toolErrors": 3,
+        "toolNames": {
+          "bash": 14,
+          "read": 6,
+          "write": 7,
+          "edit": 5
+        },
+        "stopReasons": {
+          "toolUse": 29,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Done. Here's a summary of the split:\n\n**Source modules** (clean DAG: parser ← query ← report):\n\n| File | Lines | Responsibility |\n|---|---|---|\n| `src/parser.ts` | 95 | Types (`Task`, `TaskStatus`, `SortKey`, `TaskSummary`, `ReportOptions`), parsing functions (`parseTaskLine`, `parseTaskFile`), and internal helpers |\n| `src/query.ts` | 60 | Filtering, sorting, grouping (`filterTasks`, `sortTasks`, `groupTasksByStatus`, `selectLargest`) |\n| `src/report.ts` | 119 | Summarizing, formatting, reporting (`summarizeTasks`, `formatSummary`, `serializeTasks`, `renderDashboard`, `runReport`) |\n| `src/monolith.ts` | 30 | Compatibility facade — re-exports all public symbols |\n\n**Tests added** (3 contract tests preserved + 34 new):\n\n| File | Tests | Coverage |\n|---|---|---|\n| `test/parser.test.ts` | 16 | Parsing, validation, normalization, cloning |\n| `test/query.test.ts` | 12 | Filtering by status/tag/query, sorting, grouping, edge cases |\n| `test/report.test.ts` | 15 | Summaries, formatting, serialization, dashboard, full report |\n\nAll **47 tests pass**, typecheck is clean, and no behavior or contract tests were modified."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 205895.1442910001,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/model",
+      "recording": "recordings/p-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/p-run-1-typescript-calculator.log",
+      "workspace": "workspaces/p/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 4638,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 13,
+          "message_start": 45,
+          "message_end": 45,
+          "completion_protocol": 2,
+          "request_start": 13,
+          "message_update": 4461,
+          "tool_execution_start": 16,
+          "tool_execution_end": 16,
+          "turn_end": 13,
+          "tool_execution_update": 11,
+          "agent_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 18594,
+          "output": 4929,
+          "cacheRead": 144661,
+          "cacheWrite": 0,
+          "totalTokens": 168184
+        },
+        "turns": 13,
+        "assistantMessages": 13,
+        "toolCalls": 16,
+        "toolErrors": 2,
+        "toolNames": {
+          "update_session_state": 1,
+          "read": 4,
+          "bash": 4,
+          "record_task_verification": 3,
+          "write": 3,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 13
+        },
+        "errors": [],
+        "finalText": "Everything is complete. Here's a summary:\n\n**Files created:**\n- `src/calculator.ts` — Recursive-descent parser with tokenizer, supporting decimal literals, `+`, `-`, `*`, `/`, unary minus, parentheses, proper precedence, and left associativity. Throws descriptive errors for malformed input, unknown characters, and division by zero.\n- `src/cli.ts` — CLI that reads expression from argv, prints result to stdout, or writes error to stderr and exits nonzero.\n- `test/calculator.test.ts` — 24 unit tests covering: basic arithmetic, precedence, parentheses (nested), decimals, unary/double unary minus, whitespace, single numbers, and error handling (empty, trailing operator, bad chars, incomplete parens, division by zero, trailing junk).\n\n**Verification results:**\n- `npm run typecheck` — ✅ clean (0 errors)\n- `npm test` — ✅ 29/29 pass (5 contract + 24 unit)\n- `npm run calc -- \"2 + 3 * (4 - 1)\"` — ✅ prints `11`"
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 496612.56695800007,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/model",
+      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 11370,
+        "eventTypes": {
+          "session": 1,
+          "agent_start": 1,
+          "turn_start": 31,
+          "message_start": 110,
+          "message_end": 110,
+          "completion_protocol": 2,
+          "request_start": 31,
+          "message_update": 10952,
+          "tool_execution_start": 40,
+          "tool_execution_end": 40,
+          "turn_end": 31,
+          "tool_execution_update": 20,
+          "agent_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "model",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 35467,
+          "output": 12079,
+          "cacheRead": 650924,
+          "cacheWrite": 0,
+          "totalTokens": 698470
+        },
+        "turns": 31,
+        "assistantMessages": 31,
+        "toolCalls": 40,
+        "toolErrors": 12,
+        "toolNames": {
+          "read": 11,
+          "update_session_state": 3,
+          "bash": 7,
+          "record_task_verification": 7,
+          "write": 7,
+          "edit": 4,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 31
+        },
+        "errors": [],
+        "finalText": "Split src/monolith.ts into three focused modules:\n- **src/parser.ts** — Types (Task, TaskStatus, SortKey, TaskSummary, ReportOptions) and parsing functions (parseTaskLine, parseTaskFile, parseId, parseStatus, parseEstimate, parseTags, normalizeTitle, cloneTask, normalizeTask)\n- **src/query.ts** — Query functions (filterTasks, sortTasks, matchesStatus, matchesTag, matchesQuery)\n- **src/report.ts** — Reporting functions (summarizeTasks, formatSummary, serializeTasks, renderDashboard, runReport, groupTasksByStatus, selectLargest)\n- **src/monolith.ts** — Slim compatibility facade re-exporting everything from the three modules\n\nAdded unit tests:\n- **test/parser.test.ts** — 10 tests for parsing functions\n- **test/query.test.ts** — 8 tests for filter/sort functions\n- **test/report.test.ts** — 12 tests for reporting functions\n\nAll 33 tests pass, typecheck clean. Contract tests unchanged."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "timed_out",
+      "elapsedMs": 300050.78933399986,
+      "exitCode": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-typescript-calculator.log",
+      "workspace": "workspaces/kilo/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 0,
+        "rawEventCount": 0,
+        "eventTypes": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 0,
+        "assistantMessages": 0,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {},
+        "errors": [],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "library and CLI source files exist",
+            "passed": false
+          },
+          {
+            "name": "agent added calculator unit tests",
+            "passed": false
+          },
+          {
+            "name": "npm test passes",
+            "passed": false
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "name": "CLI evaluates the acceptance expression",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 600042.0030840002,
+      "exitCode": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-monolith-split.log",
+      "workspace": "workspaces/kilo/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 0,
+        "rawEventCount": 0,
+        "eventTypes": {},
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 0,
+        "assistantMessages": 0,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {},
+        "errors": [],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": false
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": false
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": false
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

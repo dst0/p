@@ -6,6 +6,7 @@
 
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
 - Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
+- Update the agent benchmark for current PI releases and add optional sequential Kilo Code CLI runs with isolated state and deduplicated metrics.
 
 ### Fixed
 
