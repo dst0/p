@@ -21,6 +21,7 @@ export interface AppKeybindings {
   "app.model.select": true;
   "app.tools.expand": true;
   "app.plan.toggle": true;
+  "app.plan.mouseToggle": true;
   "app.plan.scrollUp": true;
   "app.plan.scrollDown": true;
   "app.plan.resizeNarrower": true;
@@ -91,6 +92,7 @@ export const KEYBINDINGS = {
   "app.model.select": { defaultKeys: "ctrl+l", description: "Open model selector" },
   "app.tools.expand": { defaultKeys: "ctrl+o", description: "Toggle tool output" },
   "app.plan.toggle": { defaultKeys: "f2", description: "Toggle plan panel" },
+  "app.plan.mouseToggle": { defaultKeys: "ctrl+f2", description: "Toggle plan panel mouse mode" },
   "app.plan.scrollUp": {
     defaultKeys: "shift+ctrl+up",
     description: "Scroll plan panel up",

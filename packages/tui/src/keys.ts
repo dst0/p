@@ -391,6 +391,21 @@ const LEGACY_KEY_SEQUENCES = {
   f12: ["\x1b[24~"],
 } as const;
 
+const MODIFIED_FUNCTION_KEY_CODES = {
+  f1: "P",
+  f2: "Q",
+  f3: "R",
+  f4: "S",
+  f5: "15~",
+  f6: "17~",
+  f7: "18~",
+  f8: "19~",
+  f9: "20~",
+  f10: "21~",
+  f11: "23~",
+  f12: "24~",
+} as const;
+
 const LEGACY_SHIFT_SEQUENCES = {
   up: ["\x1b[a"],
   down: ["\x1b[b"],
@@ -1133,11 +1148,16 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
     case "f10":
     case "f11":
     case "f12": {
-      if (modifier !== 0) {
-        return false;
+      const functionKey = key as keyof typeof MODIFIED_FUNCTION_KEY_CODES;
+      if (modifier === 0) {
+        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]);
       }
-      const functionKey = key as keyof typeof LEGACY_KEY_SEQUENCES;
-      return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]);
+      const modifiedCode = MODIFIED_FUNCTION_KEY_CODES[functionKey];
+      const encodedModifier = modifier + 1;
+      if (modifiedCode.endsWith("~")) {
+        return data === `\x1b[${modifiedCode.slice(0, -1)};${encodedModifier}~`;
+      }
+      return data === `\x1b[1;${encodedModifier}${modifiedCode}`;
     }
   }
 

@@ -276,6 +276,7 @@ function collectIndexingFiles(projectRoot: string): string[] {
   // Service installer and helper scripts
   const installerScripts = [
     path.join(projectRoot, "scripts", "install-indexing-service.js"),
+    path.join(projectRoot, "scripts", "indexing-device-selection.sh"),
     path.join(projectRoot, "scripts", "prepare-indexing-service-reinstall.js"),
     path.join(projectRoot, "scripts", "compute-indexing-version.js"),
   ];

@@ -45,17 +45,12 @@ for ARG in "$@"; do
 done
 
 # ---------------------------------------------------------------------------
-# Load or prompt for P_CODE_RAG_DEVICE
 # ---------------------------------------------------------------------------
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
 INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"
+source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
+initialize_indexing_device_selection "$SELECT_INDEXING"
 
-# If we have a saved device and --select-indexing is not set, load it.
-if [[ "$SELECT_INDEXING" != true ]] && [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -f "$INDEXING_DEVICE_FILE" ]]; then
-    P_CODE_RAG_DEVICE=$(cat "$INDEXING_DEVICE_FILE")
-    export P_CODE_RAG_DEVICE
-    echo "Loaded saved embedding device: $P_CODE_RAG_DEVICE"
-fi
 
 # ---------------------------------------------------------------------------
 # Main reinstall flow
