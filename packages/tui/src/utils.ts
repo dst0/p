@@ -291,8 +291,13 @@ export function extractAnsiCode(str: string, pos: number): { code: string; lengt
   // CSI sequence: ESC [ ... m/G/K/H/J
   if (next === "[") {
     let j = pos + 2;
-    while (j < str.length && !/[mGKHJ]/.test(str[j]!)) j++;
-    if (j < str.length) return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+    while (j < str.length) {
+      const c = str[j]!;
+      if (c === "m" || c === "G" || c === "K" || c === "H" || c === "J") {
+        return { code: str.substring(pos, j + 1), length: j + 1 - pos };
+      }
+      j++;
+    }
     return null;
   }
 
