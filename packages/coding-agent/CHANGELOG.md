@@ -6,9 +6,11 @@
 
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
 - Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
+- Persist the selected code-indexing device across installs and add `--select-indexing` to replace the saved choice.
 
 ### Fixed
 
+- Keep terminal mouse tracking off while the plan panel is visible unless `Ctrl+F2` mouse mode is active, preserving native session scrolling and text selection.
 - Fixed tool and message left accent bars rendering as disconnected segments in terminals with visible line spacing.
 - Fixed chaotic plan item ordering in `/state` command by using `getOrderedPlanTree()` with tree indentation instead of raw insertion order.
 - Fixed `mergePlan` reordering to trigger on single-item adds and to include done-without-evidence items in reorder tracking.

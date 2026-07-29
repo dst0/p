@@ -36,7 +36,6 @@ echo "Detected platform: $PLATFORM"
 # Flag parsing
 # ---------------------------------------------------------------------------
 SELECT_INDEXING=false
-INSTALL_ARGS=()
 for ARG in "$@"; do
     case "$ARG" in
         --help|-h)
@@ -57,7 +56,6 @@ for ARG in "$@"; do
             ;;
         --select-indexing)
             SELECT_INDEXING=true
-            INSTALL_ARGS+=("--select-indexing")
             ;;
         *)
             echo "Unknown option: $ARG. Use --help for usage." >&2
@@ -68,13 +66,9 @@ done
 
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
 INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"
+source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
+initialize_indexing_device_selection "$SELECT_INDEXING"
 
-# If we have a saved device and --select-indexing is not set, load it.
-if [[ "$SELECT_INDEXING" != true ]] && [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -f "$INDEXING_DEVICE_FILE" ]]; then
-    P_CODE_RAG_DEVICE=$(cat "$INDEXING_DEVICE_FILE")
-    export P_CODE_RAG_DEVICE
-    echo "Loaded saved embedding device: $P_CODE_RAG_DEVICE"
-fi
 
 # ---------- ensure curl ----------
 if ! command -v curl &>/dev/null; then
@@ -282,7 +276,7 @@ fi
 
 # ---------- run reinstall ----------
 echo "=== Running reinstall.sh ==="
-bash "$SCRIPT_DIR/reinstall.sh" "${INSTALL_ARGS[@]}"
+bash "$SCRIPT_DIR/reinstall.sh"
 
 echo ""
 echo "=== p installed successfully ==="

@@ -126,6 +126,9 @@ describe("PlanPanel", () => {
     const emptyPanel = new PlanPanel(new PlanStatusTracker());
     expect(emptyPanel.render(3).map(stripAnsi)).toEqual(["───"]);
     expect(emptyPanel.render(10).map(stripAnsi).join("\n")).toContain("No pla…");
+    expect(emptyPanel.render(220).map(stripAnsi).join("\n")).toContain("[Ctrl+F2] Mouse off");
+    emptyPanel.setMouseMode(true);
+    expect(emptyPanel.render(220).map(stripAnsi).join("\n")).toContain("[Ctrl+F2] Mouse on");
 
     const tracker = new PlanStatusTracker();
     tracker.steps = [

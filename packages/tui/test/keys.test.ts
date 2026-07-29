@@ -474,6 +474,8 @@ describe("matchesKey", () => {
 
     it("should match legacy function keys and clear", () => {
       assert.strictEqual(matchesKey("\x1bOP", "f1"), true);
+      assert.strictEqual(matchesKey("\x1b[1;5Q", "ctrl+f2"), true);
+      assert.strictEqual(matchesKey("\x1b[24;3~", "alt+f12"), true);
       assert.strictEqual(matchesKey("\x1b[24~", "f12"), true);
       assert.strictEqual(matchesKey("\x1b[E", "clear"), true);
     });

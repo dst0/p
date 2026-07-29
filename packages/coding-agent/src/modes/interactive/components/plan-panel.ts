@@ -36,6 +36,7 @@ export type PlanPanelMode = "hidden" | "compact" | "expanded";
 
 export interface PlanPanelKeyHints {
   toggle: string;
+  mouseToggle: string;
   scrollUp: string;
   scrollDown: string;
   resizeNarrower: string;
@@ -118,8 +119,10 @@ export class PlanPanel implements Component {
   private lastBodyCapacity = 0;
   private lastBodyLineCount = 0;
   private lastRenderedHeight = 0;
+  private mouseModeActive = false;
   private keyHints: PlanPanelKeyHints = {
     toggle: "F2",
+    mouseToggle: "Ctrl+F2",
     scrollUp: "Ctrl+Shift+Up",
     scrollDown: "Ctrl+Shift+Down",
     resizeNarrower: "Ctrl+Alt+Shift+Left",
@@ -143,6 +146,10 @@ export class PlanPanel implements Component {
 
   setKeyHints(hints: PlanPanelKeyHints): void {
     this.keyHints = hints;
+  }
+
+  setMouseMode(active: boolean): void {
+    this.mouseModeActive = active;
   }
 
   scrollBy(delta: number): boolean {
@@ -326,9 +333,9 @@ export class PlanPanel implements Component {
     const toggleAction = this.mode === "compact" ? "Expand" : "Hide";
     const keyHint =
       `[${this.keyHints.toggle}] ${toggleAction}` +
+      ` · [${this.keyHints.mouseToggle}] Mouse ${this.mouseModeActive ? "on" : "off"}` +
       ` · [${this.keyHints.scrollUp}/${this.keyHints.scrollDown}] Scroll` +
-      ` · [${this.keyHints.resizeNarrower}/${this.keyHints.resizeWider}/${this.keyHints.resizeShorter}/${this.keyHints.resizeTaller}] Resize` +
-      " · Mouse wheel/drag";
+      ` · [${this.keyHints.resizeNarrower}/${this.keyHints.resizeWider}/${this.keyHints.resizeShorter}/${this.keyHints.resizeTaller}] Resize`;
     const footerLines = [
       border(`├${"─".repeat(innerW)}┤`),
       wrapRow(` ${theme.fg("dim", `${scrollHint.trim()}${scrollHint ? " · " : ""}${keyHint}`)}`),

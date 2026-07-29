@@ -43,6 +43,7 @@ function populateMockFiles(root: string): void {
 
   // Installer scripts
   fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install');\n");
+  fs.writeFileSync(path.join(root, "scripts", "indexing-device-selection.sh"), "select_indexing_device() { :; }\n");
   fs.writeFileSync(path.join(root, "scripts", "prepare-indexing-service-reinstall.js"), "console.log('prepare');\n");
   fs.writeFileSync(path.join(root, "scripts", "compute-indexing-version.js"), "console.log('compute');\n");
 
@@ -117,6 +118,20 @@ describe("computeIndexingVersion", () => {
     const before = computeIndexingVersion(root);
 
     fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install v2');\n");
+
+    const after = computeIndexingVersion(root);
+    expect(after).not.toBe(before);
+  });
+
+  it("changes the hash when indexing-device-selection.sh changes", () => {
+    const root = createMockProjectRoot();
+    populateMockFiles(root);
+    const before = computeIndexingVersion(root);
+
+    fs.writeFileSync(
+      path.join(root, "scripts", "indexing-device-selection.sh"),
+      "select_indexing_device() { true; }\n",
+    );
 
     const after = computeIndexingVersion(root);
     expect(after).not.toBe(before);

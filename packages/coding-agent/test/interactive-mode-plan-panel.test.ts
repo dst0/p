@@ -21,8 +21,10 @@ interface SgrMouseEvent {
 
 const togglePlanPanel = Reflect.get(InteractiveMode.prototype, "togglePlanPanel") as (this: {
   planPanelMode: PlanPanelMode;
+  planPanelMouseMode: boolean;
   hidePlanPanel(): void;
   planStatusTracker: { onUpdate?: () => void };
+  settingsManager: { setPlanPanelMode(mode: PlanPanelMode): void };
   syncPlanTracker(): void;
   ui: {
     requestRender(): void;
@@ -34,6 +36,7 @@ const togglePlanPanel = Reflect.get(InteractiveMode.prototype, "togglePlanPanel"
 const hidePlanPanel = Reflect.get(InteractiveMode.prototype, "hidePlanPanel") as (this: {
   planPanelHandle?: { hide(): void };
   planPanelDragMode?: "width" | "height" | "both";
+  planPanelMouseMode: boolean;
   ui: {
     requestRender(): void;
     terminal: { setMouseTracking?(active: boolean): void };
@@ -42,6 +45,7 @@ const hidePlanPanel = Reflect.get(InteractiveMode.prototype, "hidePlanPanel") as
 
 const showPlanPanelOverlay = Reflect.get(InteractiveMode.prototype, "showPlanPanelOverlay") as (this: {
   planPanelMode: PlanPanelMode;
+  planPanelMouseMode: boolean;
   planPanelHandle?: { hide(): void };
   planPanelHeight?: number;
   getPlanPanelMaxHeight(): number;
@@ -51,6 +55,7 @@ const showPlanPanelOverlay = Reflect.get(InteractiveMode.prototype, "showPlanPan
     setMode(mode: "compact" | "expanded"): void;
     setViewport(height: number, fill: boolean): void;
     setKeyHints(hints: Record<string, string>): void;
+    setMouseMode(active: boolean): void;
   };
   ui: {
     requestRender(): void;
@@ -86,10 +91,12 @@ const getPlanPanelBounds = Reflect.get(InteractiveMode.prototype, "getPlanPanelB
 const handlePlanPanelInput = Reflect.get(InteractiveMode.prototype, "handlePlanPanelInput") as (
   this: {
     planPanelMode: PlanPanelMode;
-    handlePlanPanelMouse(event: SgrMouseEvent): void;
+    planPanelMouseMode: boolean;
+    handlePlanPanelMouse(event: SgrMouseEvent): boolean;
     keybindings: { matches(data: string, action: string): boolean };
     resizePlanPanel(widthDelta: number, heightDelta: number): void;
     scrollPlanPanel(direction: -1 | 1): void;
+    setPlanPanelMouseMode(active: boolean): void;
   },
   data: string,
 ) => { consume: boolean } | undefined;
@@ -118,6 +125,10 @@ const setPlanPanelSize = Reflect.get(InteractiveMode.prototype, "setPlanPanelSiz
     planPanelCompactWidth: number;
     planPanelHeight?: number;
     getPlanPanelMaxHeight(): number;
+    settingsManager: {
+      setPlanPanelCompactWidth(width: number): void;
+      setPlanPanelHeight(height: number): void;
+    };
     showPlanPanelOverlay(): void;
     ui: { terminal: { columns: number } };
   },
@@ -134,6 +145,19 @@ const handlePlanPanelMouse = Reflect.get(InteractiveMode.prototype, "handlePlanP
     setPlanPanelSize(width: number | undefined, height: number | undefined): void;
   },
   event: SgrMouseEvent,
+) => boolean;
+
+const setPlanPanelMouseMode = Reflect.get(InteractiveMode.prototype, "setPlanPanelMouseMode") as (
+  this: {
+    planPanelDragMode?: "width" | "height" | "both";
+    planPanelMouseMode: boolean;
+    planPanel: { setMouseMode(active: boolean): void };
+    ui: {
+      requestRender(): void;
+      terminal: { setMouseTracking?(active: boolean): void };
+    };
+  },
+  active: boolean,
 ) => void;
 
 const stop = Reflect.get(InteractiveMode.prototype, "stop") as (this: {
@@ -162,8 +186,10 @@ describe("InteractiveMode plan panel", () => {
     const hide = vi.fn();
     const context = {
       planPanelMode: "hidden" as PlanPanelMode,
+      planPanelMouseMode: false,
       hidePlanPanel: hide,
       planStatusTracker: { onUpdate: undefined as (() => void) | undefined },
+      settingsManager: { setPlanPanelMode: vi.fn() },
       syncPlanTracker: vi.fn(),
       ui: {
         requestRender,
@@ -174,7 +200,8 @@ describe("InteractiveMode plan panel", () => {
 
     togglePlanPanel.call(context);
     expect(context.planPanelMode).toBe("compact");
-    expect(context.ui.terminal.setMouseTracking).toHaveBeenCalledWith(true);
+    expect(context.settingsManager.setPlanPanelMode).toHaveBeenLastCalledWith("compact");
+    expect(context.ui.terminal.setMouseTracking).not.toHaveBeenCalledWith(true);
     context.planStatusTracker.onUpdate?.();
     expect(requestRender).toHaveBeenCalledOnce();
 
@@ -188,6 +215,7 @@ describe("InteractiveMode plan panel", () => {
     const hideContext = {
       planPanelHandle: handle as { hide(): void } | undefined,
       planPanelDragMode: "both" as "width" | "height" | "both" | undefined,
+      planPanelMouseMode: true,
       ui: {
         requestRender: vi.fn(),
         terminal: { setMouseTracking: vi.fn() },
@@ -197,6 +225,7 @@ describe("InteractiveMode plan panel", () => {
     expect(handle.hide).toHaveBeenCalledOnce();
     expect(hideContext.planPanelHandle).toBeUndefined();
     expect(hideContext.planPanelDragMode).toBeUndefined();
+    expect(hideContext.planPanelMouseMode).toBe(false);
     expect(hideContext.ui.terminal.setMouseTracking).toHaveBeenCalledWith(false);
   });
 
@@ -207,10 +236,12 @@ describe("InteractiveMode plan panel", () => {
       setMode: vi.fn(),
       setViewport: vi.fn(),
       setKeyHints: vi.fn(),
+      setMouseMode: vi.fn(),
     };
     const showOverlay = vi.fn(() => nextHandle);
     const context = {
       planPanelMode: "hidden" as PlanPanelMode,
+      planPanelMouseMode: false,
       planPanelHandle: priorHandle as { hide(): void } | undefined,
       planPanelHeight: undefined as number | undefined,
       getPlanPanelMaxHeight: () => 20,
@@ -230,6 +261,7 @@ describe("InteractiveMode plan panel", () => {
     showPlanPanelOverlay.call(context);
     expect(priorHandle.hide).toHaveBeenCalledOnce();
     expect(planPanel.setViewport).toHaveBeenLastCalledWith(20, false);
+    expect(planPanel.setMouseMode).toHaveBeenLastCalledWith(false);
     expect(showOverlay).toHaveBeenLastCalledWith(
       planPanel,
       expect.objectContaining({ anchor: "top-right", width: 50, margin: 1 }),
@@ -286,21 +318,39 @@ describe("InteractiveMode plan panel", () => {
   it("routes keyboard and mouse input to plan operations", () => {
     const scroll = vi.fn();
     const resize = vi.fn();
-    const mouse = vi.fn();
+    const mouse = vi.fn().mockReturnValue(false);
     const context = {
       planPanelMode: "hidden" as PlanPanelMode,
+      planPanelMouseMode: false,
       handlePlanPanelMouse: mouse,
       keybindings: {
         matches: (data: string, action: string) => data === action,
       },
       resizePlanPanel: resize,
       scrollPlanPanel: scroll,
+      setPlanPanelMouseMode: vi.fn(),
     };
 
     expect(handlePlanPanelInput.call(context, "app.plan.scrollUp")).toBeUndefined();
     context.planPanelMode = "compact";
-    expect(handlePlanPanelInput.call(context, "\x1b[<0;12;7M")).toEqual({ consume: true });
+
+    expect(handlePlanPanelInput.call(context, "app.plan.mouseToggle")).toEqual({ consume: true });
+    expect(context.setPlanPanelMouseMode).toHaveBeenLastCalledWith(true);
+
+    expect(handlePlanPanelInput.call(context, "\x1b[<0;12;7M")).toBeUndefined();
+    expect(mouse).not.toHaveBeenCalled();
+
+    context.planPanelMouseMode = true;
+    mouse.mockReturnValue(true);
+    expect(handlePlanPanelInput.call(context, "\x1b[<0;50;5M")).toEqual({ consume: true });
     expect(mouse).toHaveBeenCalledOnce();
+    mouse.mockReturnValue(false);
+    expect(handlePlanPanelInput.call(context, "\x1b[<0;12;7M")).toBeUndefined();
+
+    expect(handlePlanPanelInput.call(context, "app.interrupt")).toEqual({ consume: true });
+    expect(context.setPlanPanelMouseMode).toHaveBeenLastCalledWith(false);
+
+    mouse.mockReturnValue(false);
 
     const actions = [
       ["app.plan.scrollUp", [-1]],
@@ -316,6 +366,33 @@ describe("InteractiveMode plan panel", () => {
       else expect(resize).toHaveBeenLastCalledWith(...args);
     }
     expect(handlePlanPanelInput.call(context, "unmatched")).toBeUndefined();
+  });
+
+  it("enables mouse tracking only while plan panel mouse mode is active", () => {
+    const context = {
+      planPanelDragMode: "width" as "width" | "height" | "both" | undefined,
+      planPanelMouseMode: false,
+      planPanel: { setMouseMode: vi.fn() },
+      ui: {
+        requestRender: vi.fn(),
+        terminal: { setMouseTracking: vi.fn() },
+      },
+    };
+
+    setPlanPanelMouseMode.call(context, true);
+    expect(context.planPanelMouseMode).toBe(true);
+    expect(context.ui.terminal.setMouseTracking).toHaveBeenLastCalledWith(true);
+    expect(context.planPanel.setMouseMode).toHaveBeenLastCalledWith(true);
+
+    setPlanPanelMouseMode.call(context, false);
+    expect(context.planPanelMouseMode).toBe(false);
+    expect(context.planPanelDragMode).toBeUndefined();
+    expect(context.ui.terminal.setMouseTracking).toHaveBeenLastCalledWith(false);
+    expect(context.planPanel.setMouseMode).toHaveBeenLastCalledWith(false);
+    expect(context.ui.requestRender).toHaveBeenCalledTimes(2);
+
+    setPlanPanelMouseMode.call(context, false);
+    expect(context.ui.terminal.setMouseTracking).toHaveBeenCalledTimes(2);
   });
 
   it("scrolls and clamps keyboard resizing", () => {
@@ -356,12 +433,18 @@ describe("InteractiveMode plan panel", () => {
       planPanelCompactWidth: 50,
       planPanelHeight: undefined as number | undefined,
       getPlanPanelMaxHeight: () => 20,
+      settingsManager: {
+        setPlanPanelCompactWidth: vi.fn(),
+        setPlanPanelHeight: vi.fn(),
+      },
       showPlanPanelOverlay: overlay,
       ui: { terminal: { columns: 100 } },
     };
     setPlanPanelSize.call(sizeContext, 60, 12);
     expect(sizeContext.planPanelCompactWidth).toBe(60);
     expect(sizeContext.planPanelHeight).toBe(12);
+    expect(sizeContext.settingsManager.setPlanPanelCompactWidth).toHaveBeenLastCalledWith(60);
+    expect(sizeContext.settingsManager.setPlanPanelHeight).toHaveBeenLastCalledWith(12);
     expect(overlay).toHaveBeenCalledOnce();
 
     setPlanPanelSize.call(sizeContext, 60, 12);
@@ -400,38 +483,39 @@ describe("InteractiveMode plan panel", () => {
       released,
     });
 
-    handlePlanPanelMouse.call(context, event(64, 60, 5));
-    handlePlanPanelMouse.call(context, event(65, 60, 5));
-    handlePlanPanelMouse.call(context, event(64, 1, 1));
+    expect(handlePlanPanelMouse.call(context, event(64, 60, 5))).toBe(true);
+    expect(handlePlanPanelMouse.call(context, event(65, 60, 5))).toBe(true);
+    expect(handlePlanPanelMouse.call(context, event(64, 1, 1))).toBe(false);
     expect(scroll.mock.calls).toEqual([[-1], [1]]);
 
     context.planPanelDragMode = "both";
-    handlePlanPanelMouse.call(context, event(0, 60, 5, true));
+    expect(handlePlanPanelMouse.call(context, event(0, 60, 5, true))).toBe(true);
     expect(context.planPanelDragMode).toBeUndefined();
-    handlePlanPanelMouse.call(context, event(3, 60, 5));
+    expect(handlePlanPanelMouse.call(context, event(3, 60, 5))).toBe(false);
 
-    handlePlanPanelMouse.call(context, event(32, 70, 8));
+    expect(handlePlanPanelMouse.call(context, event(32, 70, 8))).toBe(false);
     expect(setSize).not.toHaveBeenCalled();
     context.planPanelDragMode = "width";
-    handlePlanPanelMouse.call(context, event(32, 70, 8));
+    expect(handlePlanPanelMouse.call(context, event(32, 70, 8))).toBe(true);
     expect(setSize).toHaveBeenLastCalledWith(30, undefined);
     context.planPanelDragMode = "height";
-    handlePlanPanelMouse.call(context, event(32, 70, 8));
+    expect(handlePlanPanelMouse.call(context, event(32, 70, 8))).toBe(true);
     expect(setSize).toHaveBeenLastCalledWith(undefined, 7);
     context.planPanelDragMode = "both";
-    handlePlanPanelMouse.call(context, event(32, 70, 8));
+    expect(handlePlanPanelMouse.call(context, event(32, 70, 8))).toBe(true);
     expect(setSize).toHaveBeenLastCalledWith(30, 7);
 
-    handlePlanPanelMouse.call(context, event(1, 60, 5));
-    handlePlanPanelMouse.call(context, event(0, 1, 1));
-    handlePlanPanelMouse.call(context, event(0, 50, 11));
+    expect(handlePlanPanelMouse.call(context, event(1, 60, 5))).toBe(false);
+    expect(handlePlanPanelMouse.call(context, event(0, 1, 1))).toBe(false);
+    expect(handlePlanPanelMouse.call(context, event(0, 50, 11))).toBe(true);
     expect(context.planPanelDragMode).toBe("both");
-    handlePlanPanelMouse.call(context, event(0, 50, 5));
+    expect(handlePlanPanelMouse.call(context, event(0, 50, 5))).toBe(true);
     expect(context.planPanelDragMode).toBe("width");
-    handlePlanPanelMouse.call(context, event(0, 70, 11));
+    expect(handlePlanPanelMouse.call(context, event(0, 70, 11))).toBe(true);
     expect(context.planPanelDragMode).toBe("height");
-    handlePlanPanelMouse.call(context, event(0, 70, 5));
+    expect(handlePlanPanelMouse.call(context, event(0, 70, 5))).toBe(false);
     expect(context.planPanelDragMode).toBeUndefined();
+    expect(handlePlanPanelMouse.call(context, event(0, 70, 5, true))).toBe(false);
   });
 
   it("disables plan mouse handling during shutdown", () => {

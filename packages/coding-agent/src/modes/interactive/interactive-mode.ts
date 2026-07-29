@@ -330,6 +330,7 @@ export class InteractiveMode {
   private planPanelCompactWidth = DEFAULT_PLAN_PANEL_WIDTH;
   private planPanelHeight: number | undefined;
   private planPanelDragMode: PlanPanelDragMode | undefined;
+  private planPanelMouseMode = false;
   private planPanelInputUnsubscribe: (() => void) | undefined;
   private workingIndicatorOptions: LoaderIndicatorOptions | undefined = undefined;
   private readonly defaultWorkingMessage = "Working...";
@@ -3401,7 +3402,6 @@ export class InteractiveMode {
       }
     };
     this.syncPlanTracker();
-    this.ui.terminal.setMouseTracking?.(true);
     this.showPlanPanelOverlay();
   }
 
@@ -3409,6 +3409,7 @@ export class InteractiveMode {
     this.planPanelHandle?.hide();
     this.planPanelHandle = undefined;
     this.planPanelDragMode = undefined;
+    this.planPanelMouseMode = false;
     this.ui.terminal.setMouseTracking?.(false);
     this.ui.requestRender();
   }
@@ -3424,6 +3425,7 @@ export class InteractiveMode {
     this.planPanel.setViewport(viewportHeight, expanded || this.planPanelHeight !== undefined);
     this.planPanel.setKeyHints({
       toggle: this.getAppKeyDisplay("app.plan.toggle"),
+      mouseToggle: this.getAppKeyDisplay("app.plan.mouseToggle"),
       scrollUp: this.getAppKeyDisplay("app.plan.scrollUp"),
       scrollDown: this.getAppKeyDisplay("app.plan.scrollDown"),
       resizeNarrower: this.getAppKeyDisplay("app.plan.resizeNarrower"),
@@ -3431,6 +3433,7 @@ export class InteractiveMode {
       resizeShorter: this.getAppKeyDisplay("app.plan.resizeShorter"),
       resizeTaller: this.getAppKeyDisplay("app.plan.resizeTaller"),
     });
+    this.planPanel.setMouseMode(this.planPanelMouseMode);
 
     const options: OverlayOptions = expanded
       ? {
@@ -3481,10 +3484,21 @@ export class InteractiveMode {
   private handlePlanPanelInput(data: string): { consume: boolean } | undefined {
     if (this.planPanelMode === "hidden") return undefined;
 
+    if (this.keybindings.matches(data, "app.plan.mouseToggle")) {
+      this.setPlanPanelMouseMode(!this.planPanelMouseMode);
+      return { consume: true };
+    }
+    if (this.planPanelMouseMode && this.keybindings.matches(data, "app.interrupt")) {
+      this.setPlanPanelMouseMode(false);
+      return { consume: true };
+    }
+
     const mouseEvent = parseSgrMouseEvent(data);
     if (mouseEvent) {
-      this.handlePlanPanelMouse(mouseEvent);
-      return { consume: true };
+      if (!this.planPanelMouseMode) return undefined;
+      const consumed = this.handlePlanPanelMouse(mouseEvent);
+      if (consumed) return { consume: true };
+      return undefined;
     }
 
     if (this.keybindings.matches(data, "app.plan.scrollUp")) {
@@ -3512,6 +3526,15 @@ export class InteractiveMode {
       return { consume: true };
     }
     return undefined;
+  }
+
+  private setPlanPanelMouseMode(active: boolean): void {
+    if (this.planPanelMouseMode === active) return;
+    this.planPanelMouseMode = active;
+    if (!active) this.planPanelDragMode = undefined;
+    this.ui.terminal.setMouseTracking?.(active);
+    this.planPanel.setMouseMode(active);
+    this.ui.requestRender();
   }
 
   private scrollPlanPanel(direction: -1 | 1): void {
@@ -3556,7 +3579,7 @@ export class InteractiveMode {
     }
   }
 
-  private handlePlanPanelMouse(event: SgrMouseEvent): void {
+  private handlePlanPanelMouse(event: SgrMouseEvent): boolean {
     const bounds = this.getPlanPanelBounds();
     const inside =
       event.x >= bounds.left && event.x <= bounds.right && event.y >= bounds.top && event.y <= bounds.bottom;
@@ -3564,19 +3587,21 @@ export class InteractiveMode {
     if (isWheel) {
       if (inside) {
         this.scrollPlanPanel((event.button & 1) === 0 ? -1 : 1);
+        return true;
       }
-      return;
+      return false;
     }
 
     const button = event.button & 3;
     if (event.released || button === 3) {
+      const wasDragging = this.planPanelDragMode !== undefined;
       this.planPanelDragMode = undefined;
-      return;
+      return wasDragging;
     }
 
     const isMotion = (event.button & 32) !== 0;
     if (isMotion) {
-      if (!this.planPanelDragMode) return;
+      if (!this.planPanelDragMode) return false;
       const width =
         this.planPanelDragMode === "width" || this.planPanelDragMode === "both"
           ? bounds.right - event.x + 1
@@ -3584,14 +3609,15 @@ export class InteractiveMode {
       const height =
         this.planPanelDragMode === "height" || this.planPanelDragMode === "both" ? event.y - bounds.top + 1 : undefined;
       this.setPlanPanelSize(width, height);
-      return;
+      return true;
     }
 
-    if (button !== 0 || !inside) return;
+    if (button !== 0 || !inside) return false;
     const onWidthHandle = this.planPanelMode === "compact" && event.x === bounds.left;
     const onHeightHandle = event.y === bounds.bottom;
     this.planPanelDragMode =
       onWidthHandle && onHeightHandle ? "both" : onWidthHandle ? "width" : onHeightHandle ? "height" : undefined;
+    return this.planPanelDragMode !== undefined;
   }
 
   private syncPlanTracker(): void {
@@ -4049,6 +4075,7 @@ export class InteractiveMode {
 
     try {
       // Stop the TUI (restore terminal to normal mode)
+      if (this.planPanelMouseMode) this.setPlanPanelMouseMode(false);
       this.ui.stop();
 
       // Send SIGTSTP to process group (pid=0 means all processes in group)
