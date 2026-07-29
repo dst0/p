@@ -1,0 +1,128 @@
+{
+  "generatedAt": "2026-07-29T10:40:10.571Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b",
+    "p": "mini-pc/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.110"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 1900,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 1800
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 1640262.4020830002,
+      "averageInputTokens": 43516,
+      "averageOutputTokens": 42082,
+      "averageTotalTokens": 701918,
+      "averageToolCalls": 34,
+      "averageToolErrors": 8
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 1640262.4020830002,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b",
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 225,
+        "eventTypes": {
+          "message_end": 99,
+          "request_start": 29,
+          "tool_execution_start": 34,
+          "tool_execution_end": 34,
+          "turn_end": 29
+        },
+        "model": {
+          "provider": "benchmark-mini-pc",
+          "id": "mini-pc/sokann-qwen-27b",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 43516,
+          "output": 42082,
+          "cacheRead": 616320,
+          "cacheWrite": 0,
+          "totalTokens": 701918
+        },
+        "turns": 29,
+        "assistantMessages": 29,
+        "toolCalls": 34,
+        "toolErrors": 8,
+        "toolNames": {
+          "read": 5,
+          "update_session_state": 2,
+          "bash": 14,
+          "record_task_verification": 4,
+          "write": 4,
+          "edit": 4,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 28,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": "Implemented complete event-sourced inventory engine with:\n\n- **src/store.ts** — `EventStore` class with deterministic SHA-256 hash-chained JSONL event log, `exportLog()` producing JSONL + manifest, and `fromLog()` with full validation (structure, positions, stream versions, hash chain integrity, command-ID uniqueness, manifest consistency)\n- **src/engine.ts** — `InventoryEngine` with domain behavior: idempotency (exact same command+commandId returns cached result; different command with same ID throws), atomic multi-SKU batch rollback (snapshot/restore on any failure), optimistic concurrency (expectedVersion checks), deep immutability (all returns are `structuredClone`), and all five command types (create-sku, receive, reserve, release, ship) with rigorous validation\n- **src/index.ts** — public API exports: `InventoryEngine`, `ConcurrencyError`, `ValidationError`, and all types\n- **test/inventory.test.ts** — 36 additional tests covering idempotency, concurrency, validation, deep immutability, batch atomicity/rollback, log export/import, tamper detection, continuation after restore, hash chain integrity, and full lifecycle\n\nAll 39 tests pass (3 contract + 36 additional). Typecheck passes clean.",
+        "rawEventCount": 49268
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "name": "hidden transactional, replay, and tamper checks pass",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}

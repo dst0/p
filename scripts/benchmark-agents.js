@@ -2,6 +2,7 @@
 
 import {
 	copyFileSync,
+	createWriteStream,
 	existsSync,
 	mkdirSync,
 	mkdtempSync,
@@ -15,7 +16,7 @@ import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
-import { gzipSync } from "node:zlib";
+import { createGzip } from "node:zlib";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
@@ -34,7 +35,8 @@ function printHelp() {
   npm run benchmark:agents -- --model <provider/id> [options]
 
 Compare this checkout (p) with PI and optionally Kilo Code CLI using the same
-underlying model and two deterministic, long-form TypeScript coding fixtures.
+underlying model and three deterministic TypeScript coding fixtures, including
+a 30-minute transactional event-sourcing challenge.
 
 Options:
   --model <provider/id>       PI/P model alias (required when either is selected)
@@ -494,6 +496,235 @@ export function selectLargest(tasks: readonly Task[], limit: number): Task[] {
 }
 `;
 
+const inventoryContract = `import * as assert from "node:assert/strict";
+import { test } from "node:test";
+import { ConcurrencyError, InventoryEngine, ValidationError } from "../src/index.ts";
+
+test("executes the basic inventory lifecycle", () => {
+  const engine = new InventoryEngine();
+  engine.execute({ type: "create-sku", sku: "BOOK" }, { commandId: "create", expectedVersion: 0 });
+  engine.execute({ type: "receive", sku: "BOOK", quantity: 10 }, { commandId: "receive", expectedVersion: 1 });
+  engine.execute({ type: "reserve", sku: "BOOK", orderId: "order-1", quantity: 4 }, { commandId: "reserve", expectedVersion: 2 });
+  engine.execute({ type: "ship", sku: "BOOK", orderId: "order-1", quantity: 3 }, { commandId: "ship", expectedVersion: 3 });
+
+  assert.deepEqual(engine.state("BOOK"), {
+    sku: "BOOK",
+    onHand: 7,
+    reserved: 1,
+    available: 6,
+    reservations: { "order-1": 1 },
+    version: 4,
+  });
+});
+
+test("enforces optimistic concurrency and inventory invariants", () => {
+  const engine = new InventoryEngine();
+  engine.execute({ type: "create-sku", sku: "CHAIR" }, { commandId: "create", expectedVersion: 0 });
+  assert.throws(
+    () => engine.execute({ type: "receive", sku: "CHAIR", quantity: 2 }, { commandId: "stale", expectedVersion: 0 }),
+    ConcurrencyError,
+  );
+  assert.throws(
+    () => engine.execute({ type: "reserve", sku: "CHAIR", orderId: "order-2", quantity: 1 }, { commandId: "reserve", expectedVersion: 1 }),
+    ValidationError,
+  );
+});
+
+test("replays an exported log", () => {
+  const original = new InventoryEngine();
+  original.execute({ type: "create-sku", sku: "LAMP" }, { commandId: "create", expectedVersion: 0 });
+  original.execute({ type: "receive", sku: "LAMP", quantity: 5 }, { commandId: "receive", expectedVersion: 1 });
+
+  const restored = InventoryEngine.fromLog(original.exportLog());
+  assert.deepEqual(restored.state("LAMP"), original.state("LAMP"));
+  assert.deepEqual(restored.history("LAMP"), original.history("LAMP"));
+});
+`;
+
+const inventoryHiddenVerification = `import * as assert from "node:assert/strict";
+import { createHash } from "node:crypto";
+import { test } from "node:test";
+import { ConcurrencyError, InventoryEngine, ValidationError } from "../src/index.ts";
+
+function execute(engine, command, commandId, expectedVersion) {
+  return engine.execute(command, { commandId, expectedVersion });
+}
+
+test("idempotency is exact and conflicting command reuse is rejected", () => {
+  const engine = new InventoryEngine();
+  execute(engine, { type: "create-sku", sku: "A" }, "same", 0);
+  const first = execute(engine, { type: "receive", sku: "A", quantity: 8 }, "receive", 1);
+  const before = engine.exportLog();
+  const retried = execute(engine, { type: "receive", sku: "A", quantity: 8 }, "receive", 1);
+  assert.deepEqual(retried, first);
+  assert.equal(engine.exportLog(), before);
+  assert.equal(engine.state("A").version, 2);
+  assert.throws(
+    () => execute(engine, { type: "receive", sku: "A", quantity: 9 }, "receive", 2),
+    ValidationError,
+  );
+  assert.throws(
+    () => execute(engine, { type: "receive", sku: "A", quantity: 8 }, "same", 2),
+    ValidationError,
+  );
+});
+
+test("batch execution commits all commands or rolls back every observable effect", () => {
+  const engine = new InventoryEngine();
+  execute(engine, { type: "create-sku", sku: "A" }, "create-a", 0);
+  execute(engine, { type: "create-sku", sku: "B" }, "create-b", 0);
+  execute(engine, { type: "receive", sku: "A", quantity: 10 }, "receive-a", 1);
+  execute(engine, { type: "receive", sku: "B", quantity: 3 }, "receive-b", 1);
+  const beforeStateA = engine.state("A");
+  const beforeStateB = engine.state("B");
+  const beforeLog = engine.exportLog();
+
+  assert.throws(
+    () => engine.executeBatch([
+      {
+        command: { type: "reserve", sku: "A", orderId: "batch-order", quantity: 4 },
+        commandId: "batch-a",
+        expectedVersion: 2,
+      },
+      {
+        command: { type: "reserve", sku: "B", orderId: "batch-order", quantity: 4 },
+        commandId: "batch-b",
+        expectedVersion: 2,
+      },
+    ]),
+    ValidationError,
+  );
+  assert.deepEqual(engine.state("A"), beforeStateA);
+  assert.deepEqual(engine.state("B"), beforeStateB);
+  assert.equal(engine.exportLog(), beforeLog);
+
+  const results = engine.executeBatch([
+    {
+      command: { type: "reserve", sku: "A", orderId: "batch-order", quantity: 4 },
+      commandId: "batch-a",
+      expectedVersion: 2,
+    },
+    {
+      command: { type: "reserve", sku: "B", orderId: "batch-order", quantity: 2 },
+      commandId: "batch-b",
+      expectedVersion: 2,
+    },
+  ]);
+  assert.equal(results.length, 2);
+  assert.equal(engine.state("A").available, 6);
+  assert.equal(engine.state("B").available, 1);
+});
+
+test("release and ship validate reservations without overselling", () => {
+  const engine = new InventoryEngine();
+  execute(engine, { type: "create-sku", sku: "A" }, "create", 0);
+  execute(engine, { type: "receive", sku: "A", quantity: 10 }, "receive", 1);
+  execute(engine, { type: "reserve", sku: "A", orderId: "one", quantity: 6 }, "reserve-one", 2);
+  execute(engine, { type: "reserve", sku: "A", orderId: "two", quantity: 4 }, "reserve-two", 3);
+  assert.throws(
+    () => execute(engine, { type: "reserve", sku: "A", orderId: "three", quantity: 1 }, "oversell", 4),
+    ValidationError,
+  );
+  assert.throws(
+    () => execute(engine, { type: "release", sku: "A", orderId: "one", quantity: 7 }, "over-release", 4),
+    ValidationError,
+  );
+  assert.throws(
+    () => execute(engine, { type: "ship", sku: "A", orderId: "two", quantity: 5 }, "over-ship", 4),
+    ValidationError,
+  );
+  execute(engine, { type: "release", sku: "A", orderId: "one", quantity: 2 }, "release", 4);
+  execute(engine, { type: "ship", sku: "A", orderId: "two", quantity: 3 }, "ship", 5);
+  assert.deepEqual(engine.state("A"), {
+    sku: "A",
+    onHand: 7,
+    reserved: 5,
+    available: 2,
+    reservations: { one: 4, two: 1 },
+    version: 6,
+  });
+});
+
+test("reads are deeply isolated and histories have contiguous versions and positions", () => {
+  const engine = new InventoryEngine();
+  execute(engine, { type: "create-sku", sku: "A" }, "create-a", 0);
+  execute(engine, { type: "create-sku", sku: "B" }, "create-b", 0);
+  execute(engine, { type: "receive", sku: "A", quantity: 3 }, "receive-a", 1);
+  execute(engine, { type: "reserve", sku: "A", orderId: "one", quantity: 1 }, "reserve-a", 2);
+  const state = engine.state("A");
+  state.reservations.one = 99;
+  assert.equal(engine.state("A").reservations.one, 1);
+  const history = engine.history("A");
+  history[0].sku = "MUTATED";
+  assert.equal(engine.history("A")[0].sku, "A");
+  assert.deepEqual(engine.history("A").map((event) => event.version), [1, 2, 3]);
+  assert.deepEqual(engine.history("A").map((event) => event.position), [1, 3, 4]);
+  assert.deepEqual(engine.history("B").map((event) => event.position), [2]);
+});
+
+test("hash-chained JSONL is deterministic, tamper evident, and resumable", () => {
+  const engine = new InventoryEngine();
+  execute(engine, { type: "create-sku", sku: "A" }, "create", 0);
+  execute(engine, { type: "receive", sku: "A", quantity: 7 }, "receive", 1);
+  execute(engine, { type: "reserve", sku: "A", orderId: "one", quantity: 2 }, "reserve", 2);
+  const exported = engine.exportLog();
+  assert.equal(exported, engine.exportLog());
+  assert.ok(exported.endsWith("\\n"));
+  const lines = exported.trimEnd().split("\\n").map((line) => JSON.parse(line));
+  assert.equal(lines.at(-1).type, "manifest");
+  assert.equal(lines.at(-1).eventCount, 3);
+  assert.match(lines.at(-1).headHash, /^[a-f0-9]{64}$/);
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    assert.match(lines[index].hash, /^[a-f0-9]{64}$/);
+    assert.equal(lines[index].previousHash, index === 0 ? null : lines[index - 1].hash);
+  }
+
+  const restored = InventoryEngine.fromLog(exported);
+  assert.equal(restored.exportLog(), exported);
+  execute(restored, { type: "receive", sku: "A", quantity: 1 }, "after-restore", 3);
+  const resumedLines = restored.exportLog().trimEnd().split("\\n").map((line) => JSON.parse(line));
+  assert.equal(resumedLines.at(-1).eventCount, 4);
+  assert.equal(resumedLines.at(-2).position, 4);
+  assert.equal(resumedLines.at(-2).previousHash, lines.at(-2).hash);
+
+  const tampered = exported.replace('"quantity":7', '"quantity":70');
+  assert.notEqual(tampered, exported);
+  assert.throws(() => InventoryEngine.fromLog(tampered), ValidationError);
+  assert.throws(() => InventoryEngine.fromLog(exported.replace(/.$/, "")), ValidationError);
+  assert.throws(() => InventoryEngine.fromLog(exported + "{}\\n"), ValidationError);
+
+  const digest = createHash("sha256").update(exported).digest("hex");
+  assert.match(digest, /^[a-f0-9]{64}$/);
+});
+
+test("invalid input and stale batches do not consume positions or command IDs", () => {
+  const engine = new InventoryEngine();
+  assert.throws(
+    () => execute(engine, { type: "create-sku", sku: "  " }, "invalid", 0),
+    ValidationError,
+  );
+  execute(engine, { type: "create-sku", sku: "A" }, "create", 0);
+  assert.throws(
+    () => engine.executeBatch([
+      {
+        command: { type: "receive", sku: "A", quantity: 2 },
+        commandId: "batch-good",
+        expectedVersion: 1,
+      },
+      {
+        command: { type: "receive", sku: "A", quantity: 3 },
+        commandId: "batch-stale",
+        expectedVersion: 1,
+      },
+    ]),
+    ConcurrencyError,
+  );
+  assert.equal(engine.history("A").length, 1);
+  execute(engine, { type: "receive", sku: "A", quantity: 2 }, "batch-good", 1);
+  assert.equal(engine.history("A").at(-1).position, 2);
+});
+`;
+
 const tasks = [
 	{
 		id: "typescript-calculator",
@@ -559,6 +790,90 @@ const tasks = [
 				{ name: "agent added extracted-module tests", passed: addedTests },
 				{ name: "npm test passes", passed: testsPass },
 				{ name: "npm run typecheck passes", passed: typecheckPasses },
+			]);
+		},
+	},
+	{
+		id: "event-sourced-inventory",
+		timeoutSeconds: 1800,
+		description: "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+		files: {
+			"README.md": `# Event-sourced inventory engine
+
+Build a production-quality in-memory TypeScript inventory engine. The public API and required behavior are below.
+
+## Public API
+
+Export these from \`src/index.ts\`:
+
+- \`InventoryEngine\`
+- \`ConcurrencyError extends Error\`
+- \`ValidationError extends Error\`
+- all public command, state, event, result, and option types
+
+\`InventoryEngine\` must provide:
+
+- \`execute(command, { commandId, expectedVersion })\`
+- \`executeBatch(items)\`, where each item contains \`command\`, \`commandId\`, and \`expectedVersion\`
+- \`state(sku)\`
+- \`history(sku)\`
+- \`exportLog()\`
+- \`static fromLog(log)\`
+
+Commands are discriminated unions:
+
+- \`{ type: "create-sku", sku }\`
+- \`{ type: "receive", sku, quantity }\`
+- \`{ type: "reserve", sku, orderId, quantity }\`
+- \`{ type: "release", sku, orderId, quantity }\`
+- \`{ type: "ship", sku, orderId, quantity }\`
+
+State has exactly \`sku\`, \`onHand\`, \`reserved\`, \`available\`, \`reservations\`, and \`version\`. A new SKU starts at version 1. Every successful command emits one event and increments that SKU's version. Events have a global one-based \`position\`, per-SKU \`version\`, \`commandId\`, \`type\`, \`sku\`, command-specific data, \`previousHash\`, and \`hash\`.
+
+## Required semantics
+
+- Quantities must be positive integers. SKU, order ID, and command ID must be non-empty after trimming.
+- A command's \`expectedVersion\` must equal the current SKU version; creating a SKU expects version 0. Stale commands throw \`ConcurrencyError\`.
+- Receiving increases \`onHand\`. Reserving cannot exceed \`available\`. Releasing and shipping cannot exceed that order's reservation. Shipping reduces both \`onHand\` and the reservation.
+- Retrying the exact same command with the same command ID and options returns the original result without appending an event. Reusing a command ID for anything different throws \`ValidationError\`.
+- A batch is atomic across all SKUs: either all commands and idempotency records commit in order, or no observable state changes. Within a batch, each expected version is checked against effects of earlier items.
+- Returned state, results, and history must be deep copies; callers cannot mutate engine state.
+- \`exportLog()\` returns deterministic newline-terminated JSONL: one line per event followed by a manifest line with \`type: "manifest"\`, \`eventCount\`, and \`headHash\`. Event hashes are lowercase SHA-256 hashes over a documented canonical representation that includes the preceding hash. The first \`previousHash\` is \`null\`.
+- \`fromLog()\` validates structure, positions, stream versions, invariants, every hash link, the manifest, and command-ID consistency before restoring. Any truncation, extra data, malformed JSON, impossible transition, or tampering throws \`ValidationError\`. A restored engine must export byte-for-byte identical JSONL and continue positions and hash links correctly.
+
+Keep storage/event-log concerns in \`src/store.ts\`, domain behavior in \`src/engine.ts\`, and the public facade in \`src/index.ts\`. You may add focused modules. Add substantial tests beyond the contract test. Do not change the README, project configuration, or contract test. Use only Node built-ins and the existing toolchain; do not install dependencies. Run \`npm test\` and \`npm run typecheck\` before finishing.
+`,
+			"package.json": fixturePackageJson,
+			"tsconfig.json": fixtureTsconfig,
+			"test/inventory.contract.test.ts": inventoryContract,
+		},
+		prompt: `Implement the complete production-quality event-sourced inventory engine described in README.md. Read every provided file first. Preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep event-log storage in src/store.ts, domain behavior in src/engine.ts, and exports in src/index.ts; additional focused modules are allowed. Pay particular attention to exact idempotency, atomic multi-SKU rollback, optimistic concurrency within batches, deep immutability, deterministic hash-chained JSONL, rigorous replay validation, and continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.`,
+		verify(workspace, baseline) {
+			const preservedFiles = ["README.md", "package.json", "tsconfig.json", "test/inventory.contract.test.ts"];
+			const preserved = preservedFiles.every((file) => readText(join(workspace, file)) === baseline[file]);
+			const sourceFiles = ["src/index.ts", "src/engine.ts", "src/store.ts"].every((file) => existsSync(join(workspace, file)));
+			const testFiles = listFiles(join(workspace, "test")).filter((file) => file !== "inventory.contract.test.ts");
+			const addedTests = testFiles.some((file) => /test\(/.test(readText(join(workspace, "test", file)) ?? ""));
+			const visibleTests = runFixtureCommand(workspace, ["test"]);
+			const typecheck = runFixtureCommand(workspace, ["run", "typecheck"]);
+			const hiddenTestPath = join(workspace, "test", "inventory.hidden.test.ts");
+			let hiddenTests;
+			try {
+				writeFileSync(hiddenTestPath, inventoryHiddenVerification, "utf8");
+				hiddenTests = runFixtureCommand(workspace, ["test"]);
+			} finally {
+				rmSync(hiddenTestPath, { force: true });
+			}
+			const testsPass = visibleTests.status === 0;
+			const typecheckPasses = typecheck.status === 0;
+			const hiddenTestsPass = hiddenTests.status === 0;
+			return taskResult(preserved && sourceFiles && addedTests && testsPass && typecheckPasses && hiddenTestsPass, [
+				{ name: "README, config, and contract preserved", passed: preserved },
+				{ name: "index, engine, and store modules exist", passed: sourceFiles },
+				{ name: "agent added substantial inventory tests", passed: addedTests },
+				{ name: "visible npm test passes", passed: testsPass },
+				{ name: "npm run typecheck passes", passed: typecheckPasses },
+				{ name: "hidden transactional, replay, and tamper checks pass", passed: hiddenTestsPass },
 			]);
 		},
 	},
@@ -683,18 +998,37 @@ function commandFor(agent, options, task, configDir, workspace) {
 	};
 }
 
-function runCommand(command, timeoutMs) {
+const metricEventTypes = new Set([
+	"auto_retry_end",
+	"error",
+	"message_end",
+	"request_start",
+	"step_finish",
+	"text",
+	"tool_execution_end",
+	"tool_execution_start",
+	"tool_use",
+	"turn_end",
+]);
+
+function runCommand(command, timeoutMs, recordingPath) {
 	return new Promise((resolveResult) => {
 		const startedAt = performance.now();
+		const recording = createWriteStream(recordingPath);
+		const compressor = createGzip();
+		compressor.pipe(recording);
 		const child = spawn(command.executable, command.args, {
 			cwd: command.cwd,
 			env: command.env,
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout = "";
+		let stdoutBuffer = "";
 		let stderr = "";
+		let rawEventCount = 0;
 		let timedOut = false;
 		let settled = false;
+		let childResult;
 		let killTimer;
 		const timer = setTimeout(() => {
 			timedOut = true;
@@ -704,28 +1038,63 @@ function runCommand(command, timeoutMs) {
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
-			stdout += chunk;
+			compressor.write(chunk);
+			stdoutBuffer += chunk;
+			const lines = stdoutBuffer.split(/\r?\n/);
+			stdoutBuffer = lines.pop() ?? "";
+			for (const line of lines) {
+				if (!line.trim()) continue;
+				rawEventCount += 1;
+				try {
+					const event = JSON.parse(line);
+					if (metricEventTypes.has(event?.type)) stdout += `${line}\n`;
+				} catch {
+					// The complete malformed line remains available in the raw recording.
+				}
+			}
 		});
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk;
 		});
-		const finish = (error, code, signal) => {
+		const resolveWhenRecorded = () => {
 			if (settled) return;
+			if (!childResult) return;
 			settled = true;
 			clearTimeout(timer);
 			if (killTimer) clearTimeout(killTimer);
 			resolveResult({
 				stdout,
 				stderr,
-				code,
-				signal,
-				error: error ? String(error.message ?? error) : undefined,
+				code: childResult.code,
+				signal: childResult.signal,
+				error: childResult.error,
 				timedOut,
+				rawEventCount,
 				elapsedMs: performance.now() - startedAt,
 			});
 		};
-		child.once("error", (error) => finish(error, undefined, undefined));
-		child.once("close", (code, signal) => finish(undefined, code, signal));
+		recording.once("finish", resolveWhenRecorded);
+		recording.once("error", (error) => {
+			childResult ??= { code: undefined, signal: undefined, error: String(error.message ?? error) };
+			resolveWhenRecorded();
+		});
+		child.once("error", (error) => {
+			childResult = { code: undefined, signal: undefined, error: String(error.message ?? error) };
+			compressor.end();
+		});
+		child.once("close", (code, signal) => {
+			if (stdoutBuffer.trim()) {
+				rawEventCount += 1;
+				try {
+					const event = JSON.parse(stdoutBuffer);
+					if (metricEventTypes.has(event?.type)) stdout += `${stdoutBuffer}\n`;
+				} catch {
+					// The complete malformed line remains available in the raw recording.
+				}
+			}
+			childResult = { code, signal, error: undefined };
+			compressor.end();
+		});
 	});
 }
 
@@ -883,7 +1252,10 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	const byAgent = (agent) => completed.filter((result) => result.agent === agent);
 	const summary = (rows) => ({
 		runs: rows.length,
-		passed: rows.filter((row) => row.quality.passed).length,
+		passed: rows.filter((row) => row.status === "passed").length,
+		qualityPassed: rows.filter((row) => row.quality.passed).length,
+		timedOut: rows.filter((row) => row.status === "timed_out").length,
+		failed: rows.filter((row) => row.status === "failed").length,
 		averageWallMs: average(rows, (row) => row.elapsedMs),
 		averageInputTokens: average(rows, (row) => row.metrics.usage.input),
 		averageOutputTokens: average(rows, (row) => row.metrics.usage.output),
@@ -898,6 +1270,7 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 			const left = summaries[leftAgent];
 			const right = summaries[rightAgent];
 			return right.passed - left.passed
+				|| right.qualityPassed - left.qualityPassed
 				|| left.averageTotalTokens - right.averageTotalTokens
 				|| left.averageWallMs - right.averageWallMs;
 		});
@@ -911,12 +1284,12 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
 	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
 	report += `## Summary\n\n`;
-	report += `| Agent | Passed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
+	report += `| Agent | Completed passes | Quality passes | Timed out | Failed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
 	for (const agent of options.agents) {
 		const data = summaries[agent];
-		report += `| ${agent} | ${data.passed}/${data.runs} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
+		report += `| ${agent} | ${data.passed}/${data.runs} | ${data.qualityPassed}/${data.runs} | ${data.timedOut} | ${data.failed} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
 	}
-	report += `\nSimple winner by pass count, then tokens, then time: **${winner ?? "none"}**. This is a directional result, not a general model or agent ranking.\n\n`;
+	report += `\nSimple winner by completed pass count, then quality pass count, tokens, and time: **${winner ?? "none"}**. This is a directional result, not a general model or agent ranking.\n\n`;
 	report += `## Per-task results\n\n`;
 	report += `| Run | Agent | Task | Status | Wall time | Total tokens | Tool calls | Checks |\n| ---: | --- | --- | --- | ---: | ---: | ---: | --- |\n`;
 	for (const result of results) {
@@ -925,7 +1298,8 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	}
 	report += `\n## Interpretation\n\n`;
 	report += `- Session recordings are the compressed JSONL files under [recordings](./recordings). They contain the event stream used to calculate these metrics.\n`;
-	report += `- Fixture checks run the TypeScript test suite and typecheck; the calculator also has a CLI acceptance check, while the refactor checks its focused modules, added tests, reduced facade, and unchanged contract files.\n`;
+	report += `- Completed passes require a clean agent exit before the timeout. Quality passes report the final workspace checks independently, so a timed-out agent can still leave a passing artifact.\n`;
+	report += `- Fixture checks run the TypeScript test suite and typecheck; the calculator also has a CLI acceptance check, the refactor checks its focused modules and reduced facade, and the inventory challenge adds hidden checks for idempotency, atomic rollback, immutability, replay, and hash-chain tamper detection.\n`;
 	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
 	if (options.agents.includes("kilo")) {
 		report += `- Kilo currently emits duplicate JSONL events. Raw recordings preserve them; calculated Kilo metrics deduplicate events by event type, part ID, and state.\n`;
@@ -992,12 +1366,16 @@ async function main() {
 					const baseline = createBaseline(task);
 					const command = commandFor(agent, options, task, agentDirs.dirs[agent], workspace);
 					const taskTimeout = task.timeoutSeconds ?? options.timeoutSeconds;
-				const result = await runCommand(command, Math.min(taskTimeout * 1000, remainingMs));
 					const recordingName = `${agent}-run-${run}-${task.id}.jsonl.gz`;
 					const stderrName = `${agent}-run-${run}-${task.id}.log`;
-					writeFileSync(join(output, "recordings", recordingName), gzipSync(result.stdout), "utf8");
+					const result = await runCommand(
+						command,
+						Math.min(taskTimeout * 1000, remainingMs),
+						join(output, "recordings", recordingName),
+					);
 					writeFileSync(join(output, "stderr", stderrName), result.stderr, "utf8");
 					const metrics = parseRecording(result.stdout, agent);
+					metrics.rawEventCount = result.rawEventCount;
 					cleanupGeneratedWorkspaceState(workspace);
 					const quality = task.verify(workspace, baseline, metrics.finalText);
 					const status = result.timedOut ? "timed_out" : result.code === 0 && metrics.errors.length === 0 && quality.passed ? "passed" : "failed";
@@ -1040,7 +1418,7 @@ async function main() {
 		runs: options.runs,
 		timeoutSeconds: options.timeoutSeconds,
 		maxRuntimeSeconds: options.maxRuntimeSeconds,
-		tasks: benchmarkTasks.map(({ id, description }) => ({ id, description })),
+		tasks: benchmarkTasks.map(({ id, description, timeoutSeconds }) => ({ id, description, timeoutSeconds })),
 		summaries,
 		results,
 	};

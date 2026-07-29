@@ -1,0 +1,115 @@
+{
+  "generatedAt": "2026-07-29T10:53:06.492Z",
+  "agents": [
+    "kilo"
+  ],
+  "models": {
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.110",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 1900,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 1800
+    }
+  ],
+  "summaries": {
+    "kilo": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 688777.848541,
+      "averageInputTokens": 17970,
+      "averageOutputTokens": 16856,
+      "averageTotalTokens": 84216,
+      "averageToolCalls": 6,
+      "averageToolErrors": 0
+    },
+    "winner": "kilo"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 688777.848541,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/kilo/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 10,
+        "rawEventCount": 28,
+        "eventTypes": {
+          "tool_use": 6,
+          "step_finish": 4
+        },
+        "usage": {
+          "input": 17970,
+          "output": 16856,
+          "cacheRead": 49390,
+          "cacheWrite": 0,
+          "totalTokens": 84216
+        },
+        "turns": 4,
+        "assistantMessages": 4,
+        "toolCalls": 6,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 5,
+          "glob": 1
+        },
+        "stopReasons": {
+          "tool-calls": 3,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "index, engine, and store modules exist",
+            "passed": false
+          },
+          {
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "name": "hidden transactional, replay, and tamper checks pass",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}
