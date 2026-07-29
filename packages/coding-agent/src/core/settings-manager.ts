@@ -162,9 +162,10 @@ export interface Settings {
   sessionDir?: string; // Custom session storage directory (same format as --session-dir CLI flag)
   httpIdleTimeoutMs?: number; // HTTP header/body idle timeout in milliseconds; 0 disables it
   websocketConnectTimeoutMs?: number; // WebSocket connect/open handshake timeout in milliseconds; 0 disables it
+  planPanelMode?: "hidden" | "compact" | "expanded"; // Plan panel visibility state (persisted across sessions)
+  planPanelCompactWidth?: number; // Compact plan panel width in columns (default: 50)
+  planPanelHeight?: number; // Plan panel custom height in rows (undefined = auto)
 }
-
-/** Deep merge settings: project/overrides take precedence, nested objects merge recursively */
 function deepMergeSettings(base: Settings, overrides: Settings): Settings {
   const result: Settings = { ...base };
 
@@ -1460,6 +1461,46 @@ export class SettingsManager {
   setWarnings(warnings: WarningSettings): void {
     this.globalSettings.warnings = { ...warnings };
     this.markModified("warnings");
+    this.save();
+  }
+
+  getPlanPanelMode(): "hidden" | "compact" | "expanded" {
+    const mode = this.settings.planPanelMode;
+    if (mode === "hidden" || mode === "compact" || mode === "expanded") {
+      return mode;
+    }
+    return "hidden";
+  }
+
+  setPlanPanelMode(mode: "hidden" | "compact" | "expanded"): void {
+    this.globalSettings.planPanelMode = mode;
+    this.markModified("planPanelMode");
+    this.save();
+  }
+
+  getPlanPanelCompactWidth(): number {
+    return this.settings.planPanelCompactWidth ?? 50;
+  }
+
+  setPlanPanelCompactWidth(width: number): void {
+    this.globalSettings.planPanelCompactWidth = Math.max(30, Math.floor(width));
+    this.markModified("planPanelCompactWidth");
+    this.save();
+  }
+
+  getPlanPanelHeight(): number | undefined {
+    const height = this.settings.planPanelHeight;
+    if (height === undefined || height === null) return undefined;
+    return Math.max(8, Math.floor(height));
+  }
+
+  setPlanPanelHeight(height: number | undefined): void {
+    if (height === undefined) {
+      delete this.globalSettings.planPanelHeight;
+    } else {
+      this.globalSettings.planPanelHeight = Math.max(8, Math.floor(height));
+    }
+    this.markModified("planPanelHeight");
     this.save();
   }
 }

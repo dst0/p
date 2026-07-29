@@ -485,6 +485,11 @@ export class InteractiveMode {
     setRegisteredThemes(this.session.resourceLoader.getThemes().themes);
     initTheme(this.settingsManager.getTheme(), true);
     this.updateTerminalBackground();
+
+    // Load plan panel settings from persistent storage
+    this.planPanelMode = this.settingsManager.getPlanPanelMode();
+    this.planPanelCompactWidth = this.settingsManager.getPlanPanelCompactWidth();
+    this.planPanelHeight = this.settingsManager.getPlanPanelHeight();
   }
 
   private updateTerminalBackground(): void {
@@ -3384,6 +3389,7 @@ export class InteractiveMode {
    */
   private togglePlanPanel(): void {
     this.planPanelMode = getNextPlanPanelMode(this.planPanelMode);
+    this.settingsManager.setPlanPanelMode(this.planPanelMode);
     if (this.planPanelMode === "hidden") {
       this.hidePlanPanel();
       return;
@@ -3529,6 +3535,7 @@ export class InteractiveMode {
       const nextWidth = Math.max(minWidth, Math.min(maxWidth, Math.round(width)));
       if (nextWidth !== this.planPanelCompactWidth) {
         this.planPanelCompactWidth = nextWidth;
+        this.settingsManager.setPlanPanelCompactWidth(nextWidth);
         changed = true;
       }
     }
@@ -3539,6 +3546,7 @@ export class InteractiveMode {
       const nextHeight = Math.max(minHeight, Math.min(maxHeight, Math.round(height)));
       if (nextHeight !== this.planPanelHeight) {
         this.planPanelHeight = nextHeight;
+        this.settingsManager.setPlanPanelHeight(nextHeight);
         changed = true;
       }
     }

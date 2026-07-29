@@ -185,7 +185,7 @@ export class PlanPanel implements Component {
     const percent = totalSteps > 0 ? Math.round((completedSteps / totalSteps) * 100) : 0;
 
     const headerLines: string[] = [];
-    const titleText = `[ ${completedSteps}/${totalSteps} Steps Complete (${percent}%) ]`;
+    const titleText = `Plan [ ${completedSteps}/${totalSteps} Steps Complete (${percent}%) ]`;
     const formattedTitle = theme.fg("accent", theme.bold(titleText));
     const vTitleW = visibleWidth(titleText);
 
