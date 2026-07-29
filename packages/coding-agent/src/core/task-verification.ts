@@ -265,7 +265,11 @@ function isRecognizedBashMutation(args: unknown): boolean {
 }
 
 function isPotentialMutationTool(toolName: string, args: unknown): boolean {
-  return isDirectMutationTool(toolName) || (isShellTool(toolName) && !isPublishCommand(toolName, args));
+  if (isDirectMutationTool(toolName)) return true;
+  if (isShellTool(toolName) && !isPublishCommand(toolName, args)) {
+    return isRecognizedBashMutation(args);
+  }
+  return false;
 }
 
 function pathArgument(args: unknown): string | undefined {

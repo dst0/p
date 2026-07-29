@@ -584,4 +584,44 @@ describe("task verification controller", () => {
     expect(baseline.isError).toBe(true);
     expect(baseline.text).toContain("Pipelined test commands (containing '|') mask exit codes");
   });
+
+  it("allows read-only shell commands after declare_task without blocking", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix read-only shell passthrough",
+    });
+
+    const readOnlyCommands = [
+      { command: "ls /tmp" },
+      { command: "git log --oneline -5" },
+      { command: "git status" },
+      { command: "git diff" },
+      { command: "git show HEAD" },
+      { command: "find . -name '*.ts' | head" },
+      { command: "grep 'foo' src/foo.ts" },
+      { command: "cat README.md" },
+      { command: "head -50 src/main.ts" },
+      { command: "tail -20 src/main.ts" },
+      { command: "curl -s https://example.com/api/status" },
+      { command: "echo hello" },
+      { command: "pwd" },
+    ];
+
+    for (const args of readOnlyCommands) {
+      const result = await beforeTool(agent, "bash", args);
+      expect(result?.block).not.toBe(true);
+    }
+    for (const args of readOnlyCommands) {
+      const result = await beforeTool(agent, "ctx_shell", args);
+      expect(result?.block).not.toBe(true);
+    }
+
+    // Shell commands (even mutations) are allowed before baseline;
+    // mutations are detected via workspace fingerprints in afterToolCall.
+    // Direct mutation tools (edit, write) ARE blocked before baseline.
+    expect((await beforeTool(agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
+    expect((await beforeTool(agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
+  });
 });
