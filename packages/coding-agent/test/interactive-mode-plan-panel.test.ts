@@ -344,6 +344,8 @@ describe("InteractiveMode plan panel", () => {
     mouse.mockReturnValue(true);
     expect(handlePlanPanelInput.call(context, "\x1b[<0;50;5M")).toEqual({ consume: true });
     expect(mouse).toHaveBeenCalledOnce();
+    mouse.mockReturnValue(false);
+    expect(handlePlanPanelInput.call(context, "\x1b[<0;12;7M")).toBeUndefined();
 
     expect(handlePlanPanelInput.call(context, "app.interrupt")).toEqual({ consume: true });
     expect(context.setPlanPanelMouseMode).toHaveBeenLastCalledWith(false);
