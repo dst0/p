@@ -1,6 +1,23 @@
 import assert from "node:assert";
 import { describe, it } from "node:test";
-import { truncateToWidth, wrapTextWithAnsi } from "../src/utils.ts";
+import { extractAnsiCode, truncateToWidth, wrapTextWithAnsi } from "../src/utils.ts";
+
+describe("extractAnsiCode", () => {
+  it("extracts every supported CSI terminator", () => {
+    for (const terminator of ["m", "G", "K", "H", "J"]) {
+      const sequence = `\x1b[12;34${terminator}`;
+      assert.deepEqual(extractAnsiCode(sequence, 0), {
+        code: sequence,
+        length: sequence.length,
+      });
+    }
+  });
+
+  it("returns null for incomplete or unsupported CSI sequences", () => {
+    assert.equal(extractAnsiCode("\x1b[12;34", 0), null);
+    assert.equal(extractAnsiCode("\x1b[12;34u", 0), null);
+  });
+});
 
 describe("truncateFragmentToWidth (via truncateToWidth)", () => {
   it("truncates ellipsis with ANSI and tabs correctly", () => {

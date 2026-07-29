@@ -12,6 +12,7 @@
 - `SelectList.setFilter()` now uses fuzzy matching (via `fuzzyFilter`) against both label and value instead of prefix-only matching on value.
 - `SelectList` primary column width is now computed from all items, not just filtered items, preventing column jumps during scrolling.
 - `truncateToWidth()` default ellipsis changed from `...` (3 columns) to `…` (1 column).
+- Reduced ANSI CSI parsing overhead by replacing per-character regular-expression checks with direct terminator comparisons.
 
 ### Fixed
 

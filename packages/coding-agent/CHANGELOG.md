@@ -7,6 +7,7 @@
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
 - Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
 - Persist the selected code-indexing device across installs and add `--select-indexing` to replace the saved choice.
+- Precompile exact package resource override patterns for constant-time matching.
 
 ### Fixed
 
@@ -31,6 +32,7 @@
 
 ### Added
 
+- Added fixed-order PI, P, and Kilo Code benchmark support with isolated configuration, pinned CLI versions, and duplicate-event-safe Kilo metrics.
 - Added classic light and Japanese aesthetic built-in themes (GitHub Light, Solarized Light, Catppuccin Latte, One Light, Sakura, Kanagawa, Matcha, Cyberpunk Tokyo).
 - Added classic built-in themes (Catppuccin, Darcula, Dracula, Gruvbox, Monokai, Nord, One Dark, Solarized Dark, Tokyo Night, VS Code Dark+) and dynamic built-in theme discovery.
 - Added `rg` as an explicit tool name alias for `grep` (`createRgTool`, `createRgToolDefinition`, and `rg` tool registration).
