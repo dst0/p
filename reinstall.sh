@@ -12,6 +12,54 @@ cleanup_indexing_reinstall_marker() {
 }
 trap cleanup_indexing_reinstall_marker EXIT
 
+# ---------------------------------------------------------------------------
+# Flag parsing
+# ---------------------------------------------------------------------------
+SELECT_INDEXING=false
+for ARG in "$@"; do
+    case "$ARG" in
+        --help|-h)
+            echo "Usage: reinstall.sh [OPTIONS]"
+            echo ""
+            echo "Reinstall the p CLI and update the code-indexing service."
+            echo ""
+            echo "Options:"
+            echo "  --help, -h             Show this help message."
+            echo "  --select-indexing      Re-prompt for the embedding device"
+            echo "                         selection, overwriting the saved"
+            echo "                         choice in ~/.p/agent/indexing-device."
+            echo ""
+            echo "The embedding device (P_CODE_RAG_DEVICE) is saved after the"
+            echo "first selection and reused automatically on subsequent runs."
+            echo "Use --select-indexing to change it without editing the file."
+            exit 0
+            ;;
+        --select-indexing)
+            SELECT_INDEXING=true
+            ;;
+        *)
+            echo "Unknown option: $ARG. Use --help for usage." >&2
+            exit 1
+            ;;
+    esac
+done
+
+# ---------------------------------------------------------------------------
+# Load or prompt for P_CODE_RAG_DEVICE
+# ---------------------------------------------------------------------------
+AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
+INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"
+
+# If we have a saved device and --select-indexing is not set, load it.
+if [[ "$SELECT_INDEXING" != true ]] && [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -f "$INDEXING_DEVICE_FILE" ]]; then
+    P_CODE_RAG_DEVICE=$(cat "$INDEXING_DEVICE_FILE")
+    export P_CODE_RAG_DEVICE
+    echo "Loaded saved embedding device: $P_CODE_RAG_DEVICE"
+fi
+
+# ---------------------------------------------------------------------------
+# Main reinstall flow
+# ---------------------------------------------------------------------------
 echo "=== Using current checkout (no git pull) ==="
 
 echo "=== Reinstalling Monorepo Dependencies ==="
@@ -174,6 +222,11 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
         export P_CODE_RAG_DEVICE="cpu"
         echo "Embedding device: cpu (no GPU compute device detected)"
     fi
+
+    # Save the device choice for future reinstall.sh runs
+    mkdir -p "$AGENT_DIR"
+    echo "$P_CODE_RAG_DEVICE" > "$INDEXING_DEVICE_FILE"
+    echo "Saved embedding device to $INDEXING_DEVICE_FILE"
 fi
 
 # Install or update the persistent code-indexing service (launchd/systemd)
