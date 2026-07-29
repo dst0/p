@@ -3483,8 +3483,9 @@ export class InteractiveMode {
 
     const mouseEvent = parseSgrMouseEvent(data);
     if (mouseEvent) {
-      this.handlePlanPanelMouse(mouseEvent);
-      return { consume: true };
+      const consumed = this.handlePlanPanelMouse(mouseEvent);
+      if (consumed) return { consume: true };
+      return undefined;
     }
 
     if (this.keybindings.matches(data, "app.plan.scrollUp")) {
@@ -3556,7 +3557,7 @@ export class InteractiveMode {
     }
   }
 
-  private handlePlanPanelMouse(event: SgrMouseEvent): void {
+  private handlePlanPanelMouse(event: SgrMouseEvent): boolean {
     const bounds = this.getPlanPanelBounds();
     const inside =
       event.x >= bounds.left && event.x <= bounds.right && event.y >= bounds.top && event.y <= bounds.bottom;
@@ -3564,19 +3565,20 @@ export class InteractiveMode {
     if (isWheel) {
       if (inside) {
         this.scrollPlanPanel((event.button & 1) === 0 ? -1 : 1);
+        return true;
       }
-      return;
+      return false;
     }
 
     const button = event.button & 3;
     if (event.released || button === 3) {
       this.planPanelDragMode = undefined;
-      return;
+      return true;
     }
 
     const isMotion = (event.button & 32) !== 0;
     if (isMotion) {
-      if (!this.planPanelDragMode) return;
+      if (!this.planPanelDragMode) return false;
       const width =
         this.planPanelDragMode === "width" || this.planPanelDragMode === "both"
           ? bounds.right - event.x + 1
@@ -3584,14 +3586,15 @@ export class InteractiveMode {
       const height =
         this.planPanelDragMode === "height" || this.planPanelDragMode === "both" ? event.y - bounds.top + 1 : undefined;
       this.setPlanPanelSize(width, height);
-      return;
+      return true;
     }
 
-    if (button !== 0 || !inside) return;
+    if (button !== 0 || !inside) return false;
     const onWidthHandle = this.planPanelMode === "compact" && event.x === bounds.left;
     const onHeightHandle = event.y === bounds.bottom;
     this.planPanelDragMode =
       onWidthHandle && onHeightHandle ? "both" : onWidthHandle ? "width" : onHeightHandle ? "height" : undefined;
+    return true;
   }
 
   private syncPlanTracker(): void {
