@@ -51,6 +51,12 @@ const MALFORMED_TOOL_CALL_REPAIR_MESSAGE =
   "Re-emit the intended tool call in valid form, or call `finish_work` if the task is complete.\n" +
   "Do not explain. Call a tool.";
 
+const REPETITIVE_MODEL_OUTPUT_REPAIR_MESSAGE =
+  "Your previous response entered a repetitive text loop and was stopped by the runtime.\n" +
+  "Continue from the last useful step without repeating or restating the looped text.\n" +
+  "Call the next appropriate tool, or call `finish_work` if the task is complete.\n" +
+  "Do not explain. Continue with a tool call.";
+
 const MIXED_FINISH_WORK_REPAIR_MESSAGE =
   "Do not mix `finish_work` with other tool calls.\n" +
   "Call non-terminal tools first, or call only `finish_work` when the task is complete.\n" +
@@ -194,7 +200,11 @@ type CompletionProtocolState = {
 type CompletionProtocolLimits = Required<NonNullable<AgentLoopConfig["completionLimits"]>>;
 
 type CompletionProtocolRepair = {
-  reason: "malformed_or_truncated_tool_call" | "missing_finish_work_or_tool_call" | "mixed_finish_work_tool_call";
+  reason:
+    | "malformed_or_truncated_tool_call"
+    | "missing_finish_work_or_tool_call"
+    | "mixed_finish_work_tool_call"
+    | "repetitive_model_output";
   message: string;
   event: "malformed_tool_call_retry" | "missing_finish_work_retry";
 };
@@ -284,11 +294,26 @@ function hasMalformedOrTruncatedToolCall(message: AssistantMessage, toolCalls: A
   );
 }
 
+function hasRepetitiveModelOutput(message: AssistantMessage): boolean {
+  return (
+    message.stopReason === "length" &&
+    /streamed (?:text|reasoning) entered a repetitive loop/i.test(message.errorMessage ?? "")
+  );
+}
+
 function detectCompletionProtocolRepair(
   message: AssistantMessage,
   toolCalls: AgentToolCall[],
   hasMoreToolCalls: boolean,
 ): CompletionProtocolRepair | undefined {
+  if (hasRepetitiveModelOutput(message)) {
+    return {
+      reason: "repetitive_model_output",
+      message: REPETITIVE_MODEL_OUTPUT_REPAIR_MESSAGE,
+      event: "malformed_tool_call_retry",
+    };
+  }
+
   if (hasMalformedOrTruncatedToolCall(message, toolCalls)) {
     return {
       reason: "malformed_or_truncated_tool_call",
@@ -523,7 +548,9 @@ async function runLoop(
         const noProgressExceeded = completionState.noProgressTurns > completionLimits.maxNoProgressTurns;
         if (malformedExceeded || emptyExceeded || noProgressExceeded) {
           const diagnostic = malformedExceeded
-            ? `Agent stopped because the provider repeatedly reported tool use without returning a valid tool call after ${completionState.malformedToolRetries} attempts.`
+            ? protocolRepair?.reason === "repetitive_model_output"
+              ? `Agent stopped because the model entered a repetitive output loop ${completionState.malformedToolRetries} times.`
+              : `Agent stopped because the provider repeatedly reported tool use without returning a valid tool call after ${completionState.malformedToolRetries} attempts.`
             : emptyExceeded
               ? `Agent stopped because the provider returned ${completionState.emptyAssistantRetries} empty responses without a valid tool call.`
               : `Agent stopped because the model did not call \`finish_work\` and made no progress for ${completionState.noProgressTurns} turns.`;

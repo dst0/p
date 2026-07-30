@@ -86,8 +86,36 @@ Kilo achieved 6/6 with no tool errors but did not exit before 600 seconds.
 
 No agent passed. P was decisively best on implementation quality: it created
 the required modules and its own tests, and both visible tests and typecheck
-passed. It failed only the combined hidden transactional, replay, and
-tamper-detection gate.
+passed. A replay of the individual hidden tests localized its sole miss:
+`fromLog()` accepted an otherwise valid event log after its required final
+newline was removed. The task required every truncation to throw
+`ValidationError`; P tested malformed and partially truncated event lines, but
+not this serialization boundary.
+
+The original hidden assertion used `exported.replace(/.$/, "")`. Because the
+export ends in a newline and JavaScript's `$` matches before that newline, this
+expression did not remove anything. The harness now uses
+`exported.slice(0, -1)`. Replaying the corrected assertion still leaves P at
+29/30 fixed checks and 95/100 weighted points: the only miss is the legitimate
+missing-final-newline defect rather than the impossible original assertion.
+
+#### Follow-up: P 0.4.112 verification-automation rerun
+
+The follow-up run used the same exact non-cache model and the same 30-minute
+limit after P's verification workflow was simplified and the quality rubric
+was expanded to 30 fixed weighted checks. It timed out at 1,800.0 seconds with
+59/100 points. This is not a quality improvement over the original run: the
+model produced a new `executeBatch()` temporal-dead-zone bug, did not finish
+typechecking or add its own tests, threw plain `Error` rather than
+`ValidationError` for some replay violations, and still accepted a missing
+final newline.
+
+The controller changes did reduce operational overhead (25 tool calls and
+392,165 total tokens, versus 34 and 701,918 in the original P run), but they
+cannot compensate for an incomplete generated implementation. The trace shows
+an oversized malformed edit-tool call that reached the model output limit;
+this is the next P runtime reliability problem to address rather than treating
+the retry as a successful benchmark improvement.
 
 PI and Kilo did not create a substantive implementation. P used approximately
 24 times PI's tokens and eight times Kilo's tokens on this task. P and Kilo
@@ -140,5 +168,7 @@ PI/P recordings are intentionally not committed.
   [`../2026-07-29-pi-event-sourced-inventory-exact-v2/results.json`](../2026-07-29-pi-event-sourced-inventory-exact-v2/results.json)
 - P event-sourcing task:
   [`../2026-07-29-p-event-sourced-inventory-exact/results.json`](../2026-07-29-p-event-sourced-inventory-exact/results.json)
+- P 0.4.112 follow-up event-sourcing task:
+  [`../2026-07-29-p-event-sourced-inventory-requirement-audit/results.json`](../2026-07-29-p-event-sourced-inventory-requirement-audit/results.json)
 - Kilo event-sourcing task:
   [`../2026-07-29-kilo-event-sourced-inventory-exact/results.json`](../2026-07-29-kilo-event-sourced-inventory-exact/results.json)

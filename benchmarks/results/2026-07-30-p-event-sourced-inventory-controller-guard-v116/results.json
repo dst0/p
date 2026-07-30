@@ -1,0 +1,257 @@
+{
+  "generatedAt": "2026-07-30T08:30:46.577Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b",
+    "p": "mini-pc/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.116"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 1900,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 1800
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 64,
+      "qualityMaxScore": 100,
+      "timedOut": 1,
+      "failed": 0,
+      "averageWallMs": 1800038.167166,
+      "averageInputTokens": 55844,
+      "averageOutputTokens": 41033,
+      "averageTotalTokens": 685745,
+      "averageToolCalls": 27,
+      "averageToolErrors": 3
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "timed_out",
+      "elapsedMs": 1800038.167166,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b",
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 188,
+        "eventTypes": {
+          "message_end": 84,
+          "request_start": 25,
+          "tool_execution_start": 27,
+          "tool_execution_end": 27,
+          "turn_end": 25
+        },
+        "model": {
+          "provider": "benchmark-mini-pc",
+          "id": "mini-pc/sokann-qwen-27b",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 55844,
+          "output": 41033,
+          "cacheRead": 588868,
+          "cacheWrite": 0,
+          "totalTokens": 685745
+        },
+        "turns": 25,
+        "assistantMessages": 25,
+        "toolCalls": 27,
+        "toolErrors": 3,
+        "toolNames": {
+          "read": 7,
+          "update_session_state": 2,
+          "bash": 7,
+          "write": 5,
+          "edit": 6
+        },
+        "stopReasons": {
+          "toolUse": 24,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": "Now fix the batch method's idempotency checks:",
+        "rawEventCount": 48306
+      },
+      "quality": {
+        "passed": false,
+        "score": 64,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": false,
+            "details": "dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:309:27)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Test.start (node:internal/test_runner/test:1003:17)\n        node:internal/test_runner/test:1516:71\n        node:internal/per_context/primordials:466:82\n        new Promise (<anonymous>)\n        new SafePromise (node:internal/per_context/primordials:435:3)\n        node:internal/per_context/primordials:466:9\n      ...\n    # Subtest: batch across multiple SKUs\n    not ok 2 - batch across multiple SKUs\n      ---\n      duration_ms: 0.122042\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:10970'\n      failureType: 'testCodeFailure'\n      error: 'Command ID \"c1\" already used for a different command.'\n      code: 'ERR_TEST_FAILURE'\n      name: 'ValidationError'\n      stack: |-\n        InventoryEngine.executeBatch (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/src/engine.ts:221:17)\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:322:12)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Promise.all (index 0)\n        async Suite.run (node:internal/test_runner/test:1518:7)\n        async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n      ...\n    # Subtest: batch rollback on concurrency error\n    not ok 3 - batch rollback on concurrency error\n      ---\n      duration_ms: 0.301208\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:11453'\n      failureType: 'testCodeFailure'\n      error: |-\n        The error is expected to be an instance of \"ConcurrencyError\". Received \"ValidationError\"\n        \n        Error message:\n        \n        Command ID \"c2\" already used for a different command.\n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      stack: |-\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:338:12)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:788:7)\n      ...\n    # Subtest: batch rollback on validation error\n    ok 4 - batch rollback on validation error\n      ---\n      duration_ms: 0.31125\n      type: 'test'\n      ...\n    # Subtest: batch with idempotent retry inside\n    not ok 5 - batch with idempotent retry inside\n      ---\n      duration_ms: 0.190417\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:12329'\n      failureType: 'testCodeFailure'\n      error: 'Command ID \"c1\" already used for a different command.'\n      code: 'ERR_TEST_FAILURE'\n      name: 'ValidationError'\n      stack: |-\n        InventoryEngine.executeBatch (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/src/engine.ts:221:17)\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:365:12)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:788:7)\n      ...\n    # Subtest: batch within-batch version tracking\n    not ok 6 - batch within-batch version tracking\n      ---\n      duration_ms: 0.199542\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:12809'\n      failureType: 'testCodeFailure'\n      error: 'Command ID \"c1\" already used for a different command.'\n      code: 'ERR_TEST_FAILURE'\n      name: 'ValidationError'\n      stack: |-\n        InventoryEngine.executeBatch (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/src/engine.ts:221:17)\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:381:12)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:788:7)\n      ...\n    1..6\nnot ok 33 - batch execution\n  ---\n  duration_ms: 1.626083\n  type: 'suite'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:10407'\n  failureType: 'subtestsFailed'\n  error: '5 subtests failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# Subtest: export and restore\n    # Subtest: byte-for-byte identical re-export\n    ok 1 - byte-for-byte identical re-export\n      ---\n      duration_ms: 0.292\n      type: 'test'\n      ...\n    # Subtest: continuation after restore appends correctly\n    ok 2 - continuation after restore appends correctly\n      ---\n      duration_ms: 0.24675\n      type: 'test'\n      ...\n    # Subtest: restore with multiple SKUs\n    ok 3 - restore with multiple SKUs\n      ---\n      duration_ms: 0.309416\n      type: 'test'\n      ...\n    # Subtest: fromLog rejects empty string\n    ok 4 - fromLog rejects empty string\n      ---\n      duration_ms: 0.067958\n      type: 'test'\n      ...\n    # Subtest: fromLog rejects truncated log\n    not ok 5 - fromLog rejects truncated log\n      ---\n      duration_ms: 0.192583\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:15199'\n      failureType: 'testCodeFailure'\n      error: 'Missing expected exception (ValidationError).'\n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      stack: |-\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:452:12)\n        Test.runInAsyncScope (node:async_hooks:214:14)\n        Test.run (node:internal/test_runner/test:1106:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:788:18)\n        Test.postRun (node:internal/test_runner/test:1235:19)\n        Test.run (node:internal/test_runner/test:1163:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:788:7)\n      ...\n    # Subtest: fromLog rejects tampered event data\n    ok 6 - fromLog rejects tampered event data\n      ---\n      duration_ms: 0.127708\n      type: 'test'\n      ...\n    # Subtest: fromLog rejects tampered hash chain\n    ok 7 - fromLog rejects tampered hash chain\n      ---\n      duration_ms: 0.102666\n      type: 'test'\n      ...\n    # Subtest: fromLog rejects duplicate commandIds in log\n    ok 8 - fromLog rejects duplicate commandIds in log\n      ---\n      duration_ms: 0.086708\n      type: 'test'\n      ...\n    1..8\nnot ok 34 - export and restore\n  ---\n  duration_ms: 1.615875\n  type: 'suite'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-07-30-p-event-sourced-inventory-controller-guard-v116/workspaces/p/run-1/event-sourced-inventory/test/inventory.test.ts:1:13232'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# Subtest: history\n    # Subtest: returns events filtered by SKU\n    ok 1 - returns events filtered by SKU\n      ---\n      duration_ms: 0.113667\n      type: 'test'\n      ...\n    # Subtest: history events are deep copies\n    ok 2 - history events are deep copies\n      ---\n      duration_ms: 0.055083\n      type: 'test'\n      ...\n    1..2\nok 35 - history\n  ---\n  duration_ms: 0.212667\n  type: 'suite'\n  ...\n# Subtest: deep immutability\n    # Subtest: returned state cannot mutate engine\n    ok 1 - returned state cannot mutate engine\n      ---\n      duration_ms: 0.087834\n      type: 'test'\n      ...\n    # Subtest: returned event cannot mutate engine\n    ok 2 - returned event cannot mutate engine\n      ---\n      duration_ms: 0.067875\n      type: 'test'\n      ...\n    1..2\nok 36 - deep immutability\n  ---\n  duration_ms: 0.206417\n  type: 'suite'\n  ...\n# Subtest: log format\n    # Subtest: exportLog is newline-terminated JSONL\n    ok 1 - exportLog is newline-terminated JSONL\n      ---\n      duration_ms: 0.137625\n      type: 'test'\n      ...\n    # Subtest: manifest headHash matches last event hash\n    ok 2 - manifest headHash matches last event hash\n      ---\n      duration_ms: 0.094333\n      type: 'test'\n      ...\n    # Subtest: positions are sequential\n    ok 3 - positions are sequential\n      ---\n      duration_ms: 0.081292\n      type: 'test'\n      ...\n    # Subtest: first event has null previousHash\n    ok 4 - first event has null previousHash\n      ---\n      duration_ms: 0.044208\n      type: 'test'\n      ...\n    # Subtest: subsequent events reference preceding hash\n    ok 5 - subsequent events reference preceding hash\n      ---\n      duration_ms: 0.087875\n      type: 'test'\n      ...\n    1..5\nok 37 - log format\n  ---\n  duration_ms: 0.521833\n  type: 'suite'\n  ...\n# Subtest: edge cases\n    # Subtest: state of non-existent SKU returns zeros\n    ok 1 - state of non-existent SKU returns zeros\n      ---\n      duration_ms: 0.489958\n      type: 'test'\n      ...\n    # Subtest: history of non-existent SKU returns empty array\n    ok 2 - history of non-existent SKU returns empty array\n      ---\n      duration_ms: 0.048083\n      type: 'test'\n      ...\n    # Subtest: trimming SKU whitespace\n    ok 3 - trimming SKU whitespace\n      ---\n      duration_ms: 0.049875\n      type: 'test'\n      ...\n    # Subtest: multiple reservations for same order accumulate\n    ok 4 - multiple reservations for same order accumulate\n      ---\n      duration_ms: 0.202458\n      type: 'test'\n      ...\n    # Subtest: release entire reservation removes order from map\n    ok 5 - release entire reservation removes order from map\n      ---\n      duration_ms: 0.353583\n      type: 'test'\n      ...\n    1..5\nok 38 - edge cases\n  ---\n  duration_ms: 1.28325\n  type: 'suite'\n  ...\n1..38\n# tests 81\n# suites 10\n# pass 66\n# fail 15\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 215.723875\n"
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}

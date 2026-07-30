@@ -1501,24 +1501,15 @@ export class AgentSession {
         toolCall.name !== UPDATE_SESSION_STATE_TOOL_NAME &&
         toolCall.name !== SLEEP_TOOL_NAME
       ) {
-        if (toolCall.name === FINISH_WORK_TOOL_NAME) {
-          this._autoExecuteUpdateSessionStateForFinishWork();
-        } else {
-          return {
-            block: true,
-            reason:
-              `After receiving the latest user message, call ${UPDATE_SESSION_STATE_TOOL_NAME} first to ` +
-              "record or revise the goal, plan, and next action before attempting any other tool call.",
-          };
-        }
+        this._autoExecuteUpdateSessionState();
       }
       if (this._progressUpdateRequiredBeforeFinish && toolCall.name === FINISH_WORK_TOOL_NAME) {
-        this._autoExecuteUpdateSessionStateForFinishWork();
+        this._autoExecuteUpdateSessionState();
       }
       if (toolCall.name === FINISH_WORK_TOOL_NAME) {
         const blockReason = this._getFinishWorkSessionStateBlockReason(args);
         if (blockReason) {
-          this._autoExecuteUpdateSessionStateForFinishWork();
+          this._autoExecuteUpdateSessionState();
           const updatedBlockReason = this._getFinishWorkSessionStateBlockReason(args);
           if (updatedBlockReason) {
             return { block: true, reason: updatedBlockReason };
@@ -3555,7 +3546,9 @@ Plan mode is active because the user invoked /plan.
   }
 
   private _applyUpdateSessionState(input: UpdateSessionStateInput): UpdateSessionStateResult {
-    const branchEntries = this.sessionManager.getBranch();
+    const branchEntries = this.sessionManager
+      .getBranch()
+      .filter((entry) => entry.type !== "message" || !isInternalCompletionProtocolRepairMessage(entry.message));
     const previous =
       getLatestStructuredSessionState(branchEntries) ??
       createInitialStructuredSessionState(this.sessionManager.getSessionId());
@@ -3589,18 +3582,28 @@ Plan mode is active because the user invoked /plan.
   }
 
   /**
-   * Silently execute update_session_state using current session state as defaults.
-   * Clears the blocking flags so that a subsequent finish_work call can proceed.
+   * Silently execute update_session_state using live session state as defaults.
+   * Clears the blocking flags so the model's requested tool call can proceed
+   * without a bookkeeping-only failure and repair turn.
    */
-  private _autoExecuteUpdateSessionStateForFinishWork(): void {
+  private _autoExecuteUpdateSessionState(): void {
     if (!this._progressUpdateRequiredBeforeFinish && !this._stateUpdateRequiredForCurrentUserTurn) {
       return;
     }
 
-    const state = getLatestStructuredSessionState(this.sessionManager.getBranch());
+    const branchEntries = this.sessionManager
+      .getBranch()
+      .filter((entry) => entry.type !== "message" || !isInternalCompletionProtocolRepairMessage(entry.message));
+    const state = getLatestStructuredSessionState(branchEntries);
+    const liveState = createLiveStructuredSessionState({
+      sessionId: this.sessionManager.getSessionId(),
+      previous: state ?? createInitialStructuredSessionState(this.sessionManager.getSessionId()),
+      entries: branchEntries,
+      timestamp: new Date().toISOString(),
+    });
     const isNewTurn = this._stateUpdateRequiredForCurrentUserTurn;
     const action = isNewTurn ? (state?.canonicalRequest.current ? "replan" : "initial_plan") : "progress_update";
-    const userGoal = state?.canonicalRequest.current ?? "";
+    const userGoal = liveState.canonicalRequest.current || state?.canonicalRequest.current || "";
 
     const params: UpdateSessionStateInput = {
       action,

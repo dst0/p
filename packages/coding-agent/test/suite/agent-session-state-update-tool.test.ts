@@ -11,9 +11,6 @@ import { createHarness, type Harness } from "./harness.ts";
 
 const UPDATE_TOOL = "update_session_state";
 const PROGRESS_TOOL = "mark_session_progress";
-const STATE_UPDATE_REMINDER =
-  "After receiving the latest user message, call update_session_state first to record or revise the goal, plan, and next action before attempting any other tool call.";
-
 function updateStateCall(goal: string, action: "initial_plan" | "replan" = "initial_plan") {
   return fauxToolCall(UPDATE_TOOL, {
     action,
@@ -50,13 +47,11 @@ function getUserTexts(messages: Message[]): string[] {
 }
 
 describe("AgentSession default session-state tool", () => {
-  it("requires update_session_state before first-turn tool use", async () => {
+  it("auto-records session state before first-turn tool use without a repair turn", async () => {
     const harness = await createHarness();
     try {
       writeFileSync(join(harness.tempDir, "note.txt"), "state tool smoke\n");
       harness.setResponses([
-        fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
-        fauxAssistantMessage(updateStateCall("Read note.txt and report the result"), { stopReason: "toolUse" }),
         fauxAssistantMessage(fauxToolCall("read", { path: "note.txt" }), { stopReason: "toolUse" }),
         fauxAssistantMessage(finishCall("read note"), { stopReason: "toolUse" }),
       ]);
@@ -64,20 +59,15 @@ describe("AgentSession default session-state tool", () => {
       await harness.session.prompt("Read note.txt and report the result");
 
       const readEnds = toolEndEvents(harness, "read");
-      expect(readEnds).toHaveLength(2);
-      expect(readEnds[0]?.isError).toBe(true);
-      const reminder = JSON.stringify(readEnds[0]?.result.content);
-      expect(reminder).toContain(STATE_UPDATE_REMINDER);
-      expect(reminder).not.toContain("Before calling");
-      expect(readEnds[1]?.isError).toBe(false);
-      expect(toolEndEvents(harness, UPDATE_TOOL)[0]?.isError).toBe(false);
-      // Auto-reconciliation: finish_work('success') auto-transitions in_progress items to done, succeeds in one call
+      expect(readEnds).toHaveLength(1);
+      expect(readEnds[0]?.isError).toBe(false);
+      expect(toolEndEvents(harness, UPDATE_TOOL)).toHaveLength(0);
       const finishEnds = toolEndEvents(harness, "finish_work");
       expect(finishEnds).toHaveLength(1);
       expect(finishEnds[0]?.isError).toBe(false);
       const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
       expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
-      expect(state?.plan.map((item) => [item.text, item.status])).toEqual([["Inspect the requested file", "done"]]);
+      expect(state?.plan).toEqual([]);
     } finally {
       harness.cleanup();
     }
@@ -246,16 +236,15 @@ describe("AgentSession default session-state tool", () => {
     }
   });
 
-  it("requires update_session_state again for follow-up user messages without overwriting the durable goal", async () => {
+  it("auto-records follow-up user messages without overwriting the durable goal", async () => {
     const harness = await createHarness();
     try {
+      writeFileSync(join(harness.tempDir, "follow-up.txt"), "follow-up\n");
       harness.setResponses([
         fauxAssistantMessage(updateStateCall("Preserve the primary goal"), { stopReason: "toolUse" }),
         fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
         fauxAssistantMessage(finishCall("seeded state"), { stopReason: "toolUse" }),
         fauxAssistantMessage(fauxToolCall("read", { path: "follow-up.txt" }), { stopReason: "toolUse" }),
-        fauxAssistantMessage(updateStateCall("Preserve the primary goal", "replan"), { stopReason: "toolUse" }),
-        fauxAssistantMessage(markProgressCall("Inspect the requested file", "done"), { stopReason: "toolUse" }),
         fauxAssistantMessage(finishCall("follow-up handled"), { stopReason: "toolUse" }),
       ]);
 
@@ -264,10 +253,7 @@ describe("AgentSession default session-state tool", () => {
 
       const readEnds = toolEndEvents(harness, "read");
       expect(readEnds).toHaveLength(1);
-      expect(readEnds[0]?.isError).toBe(true);
-      const reminder = JSON.stringify(readEnds[0]?.result.content);
-      expect(reminder).toContain(STATE_UPDATE_REMINDER);
-      expect(reminder).not.toContain("Before calling");
+      expect(readEnds[0]?.isError).toBe(false);
 
       const stateEntries = harness.sessionManager
         .getEntries()
@@ -297,9 +283,8 @@ describe("AgentSession default session-state tool", () => {
       expect(finishEnds).toHaveLength(1);
       expect(finishEnds[0]?.isError).toBe(false);
 
-      // Auto-prepend creates state from current values; on first turn there is no prior state
       const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
-      expect(state?.canonicalRequest.current).toBe("");
+      expect(state?.canonicalRequest.current).toBe("Answer directly after recording the goal");
     } finally {
       harness.cleanup();
     }

@@ -107,7 +107,7 @@ const VerificationSchema = Type.Object({
 });
 type VerificationInput = Static<typeof VerificationSchema>;
 interface VerificationResult {
-  status: "updated" | "rejected";
+  status: "updated" | "needs_action";
   message: string;
   state: TaskVerificationState;
 }
@@ -117,6 +117,10 @@ const KNOWN_STATIC_TOOLS = new Set(["read", "rg", "grep", "find", "ls", "semanti
 const KNOWN_DIRECT_MUTATION_TOOLS = new Set(["edit", "write"]);
 const BUG_PATTERN =
   /\b(bug|fix|broken|regression|incorrect|wrong|failure|lost|crash|race|issue|repair)\b|(?:ошиб|баг|слом|невер|неправ|теря|паден|исправ)/iu;
+const REFACTOR_PATTERN = /\brefactor|restructure|reorganize\b|(?:рефактор|перестро|реорганиз)/iu;
+const DOCS_PATTERN = /\b(?:docs?|documentation|readme|changelog)\b|(?:документ|ридми|чейнджлог)/iu;
+const INVESTIGATION_PATTERN =
+  /\b(?:investigat|diagnos|analy[sz]|audit|explain|find the cause)\b|(?:исслед|диагност|анализ|аудит|объясн|причин)/iu;
 const HIGH_RISK_PATTERN =
   /\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;
 const BASH_MUTATION_PATTERN =
@@ -124,11 +128,11 @@ const BASH_MUTATION_PATTERN =
 const WRITE_REDIRECT_PATTERN = /(?:^|[;&|]\s*)(?:echo|printf|cat)\b[^\n;]*(?:>|>>)\s*(?!\/dev\/null\b)/iu;
 const PUBLISH_PATTERN = /(?:^|[;&|]\s*)git\s+(?:commit|push)\b/iu;
 const GENERIC_CHECK_PATTERN =
-  /^\s*(?:npm\s+run\s+check|pnpm\s+run\s+check|yarn\s+check|tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
+  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:check|typecheck)|pnpm\s+(?:run\s+)?(?:check|typecheck)|yarn\s+(?:run\s+)?(?:check|typecheck)|(?:npx\s+|npm\s+exec\s+)?tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
 const READ_ONLY_PATTERN =
-  /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|git\s+(?:status|diff|show|log)\b)/iu;
+  /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|stat\b|wc\b|md5\b|md5sum\b|shasum\b|sha256sum\b|git\s+(?:status|diff|show|log)\b)/iu;
 const TEST_PATTERN =
-  /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+test|npm\s+test|pnpm\s+test|yarn\s+test|\.\/test\.sh)\b/iu;
+  /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|\.\/test\.sh)\b/iu;
 const FOCUSED_TEST_PATTERN =
   /(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
 const TEST_PATH_PATTERN = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[^/]+$/iu;
@@ -200,6 +204,14 @@ function normalizeText(value: string | undefined): string {
 
 function normalizeStrings(values: readonly string[] | undefined): string[] {
   return [...new Set((values ?? []).map(normalizeText).filter(Boolean))];
+}
+
+function inferTaskKind(taskText: string): TaskKind {
+  if (BUG_PATTERN.test(taskText)) return "bug_fix";
+  if (REFACTOR_PATTERN.test(taskText)) return "refactor";
+  if (DOCS_PATTERN.test(taskText)) return "docs";
+  if (INVESTIGATION_PATTERN.test(taskText)) return "investigation";
+  return "feature";
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -373,22 +385,23 @@ export class TaskVerificationController {
         "record_task_verification(action, ...): declare mutation intent, inspect exact next requirements with action status, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
       promptGuidelines: [
         `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
-        `Before edit, write, or mutating bash, call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task".`,
-        "Workflow steps: 1. declare_task -> 2. record_baseline -> 3. apply file edits -> 4. rerun exact baseline command -> 5. record_final.",
+        `The controller automatically records mutation intent before the first mutating tool call. Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override its classification before mutation.`,
+        "Workflow steps: 1. collect the required baseline -> 2. apply file edits -> 3. rerun the exact baseline command. A successful exact replay automatically records final verification.",
         'When using static_trace for record_baseline, you MUST provide at least two non-error inspection evidence handles (e.g. evidence_refs: ["verification-evidence-1", "verification-evidence-2"]).',
         "Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
         'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
         "Signal, restart, persistence, recovery, transaction, concurrency, migration, and indexing tasks require runtime reproduction or a failing focused regression test.",
         "Final verification must rerun the exact same reproduction command or focused regression test that established the baseline. Do not substitute static_review or generic npm run check.",
         "Evidence handles from prior mutation revisions become stale after any file edit. Re-run your verification command after editing to produce fresh handles for the current revision.",
+        "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
         "Successful finish_work and git commit/push are blocked until final verification passes for the current mutation revision.",
       ],
       parameters: VerificationSchema,
       executionMode: "sequential",
       execute: async (_id, params) => {
         const result = this.applyInput(params);
-        if (result.status === "rejected") throw new Error(this.withGuidance(result.message));
-        return { content: [{ type: "text", text: result.message }], details: result };
+        const message = result.status === "needs_action" ? this.withGuidance(result.message) : result.message;
+        return { content: [{ type: "text", text: message }], details: result };
       },
     };
   }
@@ -405,7 +418,13 @@ export class TaskVerificationController {
     }
     if (!isPotentialMutationTool(toolName, context.args)) return undefined;
     if (!this.state.taskKind) {
-      return this.blocked(`Call ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" before mutating code.`);
+      const taskSummary =
+        normalizeText(this.latestUserPrompt).slice(0, 500) || "Implement the requested workspace change.";
+      this.declareTask({
+        action: "declare_task",
+        task_kind: inferTaskKind(taskSummary),
+        task_summary: taskSummary,
+      });
     }
     if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
       if (isShellTool(toolName)) return undefined;
@@ -419,17 +438,9 @@ export class TaskVerificationController {
     context: AfterToolCallContext,
     previousResult: AfterToolCallResult | undefined,
   ): Promise<AfterToolCallResult | undefined> {
-    let effectiveIsError = previousResult?.isError ?? context.isError;
+    const effectiveIsError = previousResult?.isError ?? context.isError;
     const content = previousResult?.content ?? context.result.content;
     const descriptor = describeToolCall(context.toolCall.name, context.args);
-
-    if (!effectiveIsError && isShellTool(context.toolCall.name) && TEST_PATTERN.test(descriptor)) {
-      const textOutput = summarizeOutput(content);
-      const testFailurePattern = /\b(?:\d+\s+failed|FAIL(?:ED)?|AssertionError|Test suite failed)\b/iu;
-      if (testFailurePattern.test(textOutput)) {
-        effectiveIsError = true;
-      }
-    }
 
     const mutationDetected = await this.detectMutation(context, effectiveIsError);
     if (mutationDetected) {
@@ -466,8 +477,16 @@ export class TaskVerificationController {
     };
     this.evidence.set(evidence.ref, evidence);
     this.sessionManager.appendCustomEntry(TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, evidence);
+    const autoFinalized = this.tryAutoFinalizeExactReplay(evidence) ?? this.tryAutoFinalizeFocusedTest(evidence);
+    const acceptanceAudit = autoFinalized ? undefined : this.highRiskAcceptanceAudit(evidence);
 
-    const evidenceText = `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`;
+    const evidenceText = [
+      `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
+      autoFinalized,
+      acceptanceAudit,
+    ]
+      .filter((text): text is string => text !== undefined)
+      .join("\n");
     const newContent = [...content];
     let lastIndex = -1;
     for (let i = newContent.length - 1; i >= 0; i--) {
@@ -696,31 +715,36 @@ export class TaskVerificationController {
     if (!this.state.taskKind || !this.state.taskSummary || this.state.mutationRevision === 0) {
       return this.rejected("Final verification requires a declared task and at least one production mutation.");
     }
-    if (!isFinalMethod(input.final_method) || (input.final_status !== "passed" && input.final_status !== "failed")) {
-      return this.rejected("record_final requires final_method and final_status.");
-    }
-    const expectedBehavior = normalizeText(input.expected_behavior);
-    const observedBehavior = normalizeText(input.observed_behavior);
-    if (!expectedBehavior || !observedBehavior) {
-      return this.rejected("record_final requires expected_behavior and observed_behavior.");
-    }
-    const unresolvedFailures = normalizeStrings(input.unresolved_failures);
-    const evidence = this.resolveEvidence(input.evidence_refs);
+    const evidence = this.resolveFinalEvidence(input.evidence_refs, input.final_status === "failed");
     if (typeof evidence === "string") return this.rejected(evidence);
+    const finalMethod = isFinalMethod(input.final_method) ? input.final_method : this.finalMethodForEvidence(evidence);
+    const finalStatus =
+      input.final_status === "passed" || input.final_status === "failed"
+        ? input.final_status
+        : evidence.some((item) => item.isError)
+          ? "failed"
+          : "passed";
+    const expectedBehavior = normalizeText(input.expected_behavior) || this.state.taskSummary;
+    const observedBehavior =
+      normalizeText(input.observed_behavior) ||
+      evidence
+        .map((item) => `${item.descriptor}: ${item.outputSummary || (item.isError ? "failed" : "passed")}`)
+        .join("; ");
+    const unresolvedFailures = normalizeStrings(input.unresolved_failures);
     if (evidence.some((item) => item.mutationRevision !== this.state.mutationRevision)) {
       return this.rejected(
         `Final evidence is stale; all handles must come from mutation revision ${this.state.mutationRevision}.`,
       );
     }
 
-    if (input.final_status === "failed") {
+    if (finalStatus === "failed") {
       this.state = {
         ...this.state,
         final: {
           status: "failed",
           expectedBehavior,
           observedBehavior,
-          method: input.final_method,
+          method: finalMethod,
           evidenceRefs: evidence.map((item) => item.ref),
           unresolvedFailures,
           verifiedMutationRevision: this.state.mutationRevision,
@@ -737,7 +761,7 @@ export class TaskVerificationController {
     const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary}`;
     const behavioral = behavioralFinalRequired(this.state.taskKind, taskText);
     if (
-      input.final_method === "static_review" &&
+      finalMethod === "static_review" &&
       (behavioral || evidence.filter((item) => isStaticTool(item.toolName)).length < 2)
     ) {
       return this.rejected(
@@ -745,7 +769,7 @@ export class TaskVerificationController {
       );
     }
     if (
-      input.final_method === "focused_test" &&
+      finalMethod === "focused_test" &&
       evidence.some(
         (item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && /\s*\|\s*/.test(item.descriptor),
       )
@@ -755,7 +779,7 @@ export class TaskVerificationController {
       );
     }
     if (
-      input.final_method === "focused_test" &&
+      finalMethod === "focused_test" &&
       !evidence.some(
         (item) =>
           isShellTool(item.toolName) &&
@@ -766,7 +790,7 @@ export class TaskVerificationController {
       return this.rejected("focused_test requires evidence from a specific test file or test name.");
     }
     if (
-      input.final_method === "test_suite" &&
+      finalMethod === "test_suite" &&
       (behavioral ||
         HIGH_RISK_PATTERN.test(taskText) ||
         !evidence.some((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor)))
@@ -774,7 +798,7 @@ export class TaskVerificationController {
       return this.rejected("A broad test suite alone is insufficient for this behavioral task.");
     }
     if (
-      input.final_method === "manual_reproduction" &&
+      finalMethod === "manual_reproduction" &&
       !evidence.some(
         (item) =>
           isShellTool(item.toolName) &&
@@ -813,7 +837,7 @@ export class TaskVerificationController {
         status: "passed",
         expectedBehavior,
         observedBehavior,
-        method: input.final_method,
+        method: finalMethod,
         evidenceRefs: evidence.map((item) => item.ref),
         unresolvedFailures: [],
         verifiedMutationRevision: this.state.mutationRevision,
@@ -838,6 +862,37 @@ export class TaskVerificationController {
     return this.state.baseline.authorizedTestPaths.some(
       (authorizedPath) => resolve(this.sessionManager.getCwd(), authorizedPath) === absolutePath,
     );
+  }
+
+  private resolveFinalEvidence(
+    refs: readonly string[] | undefined,
+    includeFailed: boolean = false,
+  ): TaskVerificationEvidence[] | string {
+    if (normalizeStrings(refs).length > 0) return this.resolveEvidence(refs);
+
+    const replayDescriptor = this.requiredBaselineReplayDescriptor();
+    if (replayDescriptor) {
+      const replayEvidence = this.findEvidence(
+        (item) =>
+          item.mutationRevision === this.state.mutationRevision &&
+          isShellTool(item.toolName) &&
+          item.descriptor === replayDescriptor &&
+          (includeFailed || !item.isError),
+      );
+      return replayEvidence
+        ? [replayEvidence]
+        : `No eligible current-revision evidence reruns the required exact baseline command: ${replayDescriptor}`;
+    }
+
+    const eligibleEvidence = this.findEligibleFinalEvidence();
+    if (eligibleEvidence) return eligibleEvidence;
+    if (includeFailed) {
+      const failedEvidence = this.findEvidence(
+        (item) => item.mutationRevision === this.state.mutationRevision && item.isError,
+      );
+      if (failedEvidence) return [failedEvidence];
+    }
+    return `No eligible semantic evidence exists for mutation revision ${this.state.mutationRevision}.`;
   }
 
   private resolveEvidence(refs: readonly string[] | undefined): TaskVerificationEvidence[] | string {
@@ -930,10 +985,9 @@ export class TaskVerificationController {
   private formatNextRequirement(): string {
     if (!this.state.taskKind || !this.state.taskSummary) {
       return [
-        "NEXT REQUIRED ACTION: declare the task before any mutation.",
-        `Call ${TASK_VERIFICATION_TOOL_NAME} with:`,
-        'Allowed task_kind values: "bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation".',
-        '{"action":"declare_task","task_kind":"bug_fix","task_summary":"concrete task scope and behavior"}',
+        "Task classification is pending.",
+        "Continue with inspection or baseline checks; the controller will classify the task before the first mutation.",
+        `Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override that classification before mutation.`,
       ].join("\n");
     }
 
@@ -1101,6 +1155,85 @@ export class TaskVerificationController {
     return undefined;
   }
 
+  private tryAutoFinalizeExactReplay(evidence: TaskVerificationEvidence): string | undefined {
+    if (
+      evidence.isError ||
+      evidence.mutationRevision === 0 ||
+      !this.state.taskKind ||
+      !this.state.taskSummary ||
+      this.state.baseline.status !== "satisfied" ||
+      evidence.descriptor !== this.requiredBaselineReplayDescriptor()
+    ) {
+      return undefined;
+    }
+
+    this.state = {
+      ...this.state,
+      final: {
+        status: "passed",
+        expectedBehavior: this.state.taskSummary,
+        observedBehavior: `${evidence.descriptor}: ${evidence.outputSummary || "passed"}`,
+        method: this.state.baseline.method === "failing_regression_test" ? "focused_test" : "manual_reproduction",
+        evidenceRefs: [evidence.ref],
+        unresolvedFailures: [],
+        verifiedMutationRevision: this.state.mutationRevision,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    this.persistState();
+    return "Exact baseline replay passed and final verification was recorded automatically. Call finish_work now unless another acceptance check remains.";
+  }
+
+  private tryAutoFinalizeFocusedTest(evidence: TaskVerificationEvidence): string | undefined {
+    if (
+      evidence.isError ||
+      evidence.mutationRevision === 0 ||
+      !this.state.taskKind ||
+      !this.state.taskSummary ||
+      this.state.baseline.status === "pending" ||
+      !isShellTool(evidence.toolName) ||
+      !TEST_PATTERN.test(evidence.descriptor) ||
+      !FOCUSED_TEST_PATTERN.test(evidence.descriptor) ||
+      /\s*\|\s*/u.test(evidence.descriptor)
+    ) {
+      return undefined;
+    }
+
+    const result = this.recordFinal({
+      action: "record_final",
+      final_method: "focused_test",
+      final_status: "passed",
+      evidence_refs: [evidence.ref],
+      unresolved_failures: [],
+    });
+    if (result.status !== "updated" || this.state.final.status !== "passed") return undefined;
+    return "Focused semantic verification passed and final verification was recorded automatically. Call finish_work now unless another acceptance check remains.";
+  }
+
+  private highRiskAcceptanceAudit(evidence: TaskVerificationEvidence): string | undefined {
+    if (
+      evidence.isError ||
+      evidence.mutationRevision === 0 ||
+      !this.state.taskKind ||
+      !this.state.taskSummary ||
+      !isShellTool(evidence.toolName) ||
+      !TEST_PATTERN.test(evidence.descriptor) ||
+      FOCUSED_TEST_PATTERN.test(evidence.descriptor)
+    ) {
+      return undefined;
+    }
+    const taskText = `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary}`;
+    if (!HIGH_RISK_PATTERN.test(taskText)) return undefined;
+    return [
+      "HIGH-RISK ACCEPTANCE AUDIT REQUIRED before completion: a broad suite passed, but it does not prove every explicit guarantee.",
+      "Re-read the original task and run focused adversarial tests for each absolute or negative requirement.",
+      "Preserve exact public API return shapes without invented wrappers; use lossless identities containing every relevant input and option.",
+      "Test the literal smallest boundary mutation (for a newline-terminated serialization, remove exactly one final byte rather than a whole line or record).",
+      "After failed atomic operations, retry every attempted identity with both identical and changed payloads to prove complete rollback.",
+      "A successful focused test command will record final verification automatically.",
+    ].join("\n");
+  }
+
   private findEligibleFinalEvidence(): TaskVerificationEvidence[] | undefined {
     const current = [...this.evidence.values()].filter(
       (item) => item.mutationRevision === this.state.mutationRevision && !item.isError,
@@ -1203,7 +1336,7 @@ export class TaskVerificationController {
   }
 
   private rejected(message: string): VerificationResult {
-    return { status: "rejected", message, state: this.currentState };
+    return { status: "needs_action", message, state: this.currentState };
   }
 }
 
