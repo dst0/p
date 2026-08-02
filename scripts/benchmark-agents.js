@@ -29,6 +29,7 @@ const defaultKiloVersion = "7.4.16";
 const supportedAgents = ["pi", "p", "kilo"];
 const defaultTimeoutSeconds = 300;
 const defaultMaxRuntimeSeconds = 900;
+const defaultKiloStartupTimeoutSeconds = 60;
 
 function printHelp() {
 	console.log(`Usage:
@@ -50,6 +51,11 @@ Options:
                               (default: ${defaultKiloVersion})
   --kilo-config <path>        Kilo config copied into an isolated temporary XDG home
                               (default: ~/.config/kilo/kilo.jsonc)
+  --expected-resolved-model <provider/id>
+                              Backend model Kilo must resolve before fixtures start
+  --kilo-startup-timeout-seconds <n>
+                              Bounded timeout for each Kilo startup probe
+                              (default: ${defaultKiloStartupTimeoutSeconds})
   --task <id>                 Run only one fixture (optional)
   --runs <n>                  Complete repetitions (default: 1)
   --timeout-seconds <n>       Per-agent task timeout (default: ${defaultTimeoutSeconds})
@@ -82,6 +88,8 @@ function parseArgs(argv) {
 		kiloModel: process.env.KILO_BENCHMARK_MODEL,
 		kiloVersion: defaultKiloVersion,
 		kiloConfig: defaultKiloConfigFile,
+		expectedResolvedModel: process.env.BENCHMARK_RESOLVED_MODEL,
+		kiloStartupTimeoutSeconds: defaultKiloStartupTimeoutSeconds,
 		task: undefined,
 		runs: 1,
 		timeoutSeconds: defaultTimeoutSeconds,
@@ -103,6 +111,7 @@ function parseArgs(argv) {
 			|| arg === "--kilo-model"
 			|| arg === "--kilo-version"
 			|| arg === "--kilo-config"
+			|| arg === "--expected-resolved-model"
 			|| arg === "--task"
 			|| arg === "--output"
 		) {
@@ -115,16 +124,23 @@ function parseArgs(argv) {
 			if (arg === "--kilo-model") options.kiloModel = value;
 			if (arg === "--kilo-version") options.kiloVersion = value;
 			if (arg === "--kilo-config") options.kiloConfig = resolve(value);
+			if (arg === "--expected-resolved-model") options.expectedResolvedModel = value;
 			if (arg === "--task") options.task = value;
 			if (arg === "--output") options.output = resolve(value);
 			continue;
 		}
-		if (arg === "--runs" || arg === "--timeout-seconds" || arg === "--max-runtime-seconds") {
+		if (
+			arg === "--runs"
+			|| arg === "--timeout-seconds"
+			|| arg === "--max-runtime-seconds"
+			|| arg === "--kilo-startup-timeout-seconds"
+		) {
 			if (index + 1 >= argv.length) throw new Error(`${arg} requires a value`);
 			const value = parsePositiveInteger(argv[++index], arg);
 			if (arg === "--runs") options.runs = value;
 			if (arg === "--timeout-seconds") options.timeoutSeconds = value;
 			if (arg === "--max-runtime-seconds") options.maxRuntimeSeconds = value;
+			if (arg === "--kilo-startup-timeout-seconds") options.kiloStartupTimeoutSeconds = value;
 			continue;
 		}
 		throw new Error(`Unknown option: ${arg}`);
@@ -141,6 +157,12 @@ function parseArgs(argv) {
 	}
 	if (options.agents.includes("kilo") && !options.kiloModel) {
 		throw new Error("--kilo-model is required when Kilo is selected");
+	}
+	if (options.agents.includes("kilo")) {
+		options.expectedResolvedModel ??= options.model;
+		if (!options.expectedResolvedModel) {
+			throw new Error("--expected-resolved-model is required when Kilo runs without PI/P");
+		}
 	}
 	return options;
 }
@@ -1099,16 +1121,19 @@ function createAgentDirs(options) {
 	return { root, dirs };
 }
 
+function kiloEnvironment(configDir) {
+	return {
+		...process.env,
+		NO_COLOR: "1",
+		XDG_CACHE_HOME: join(configDir, "cache"),
+		XDG_CONFIG_HOME: join(configDir, "config"),
+		XDG_DATA_HOME: join(configDir, "data"),
+		XDG_STATE_HOME: join(configDir, "state"),
+	};
+}
+
 function commandFor(agent, options, task, configDir, workspace) {
 	if (agent === "kilo") {
-		const env = {
-			...process.env,
-			NO_COLOR: "1",
-			XDG_CACHE_HOME: join(configDir, "cache"),
-			XDG_CONFIG_HOME: join(configDir, "config"),
-			XDG_DATA_HOME: join(configDir, "data"),
-			XDG_STATE_HOME: join(configDir, "state"),
-		};
 		return {
 			executable: "kilo",
 			args: [
@@ -1123,7 +1148,7 @@ function commandFor(agent, options, task, configDir, workspace) {
 				workspace,
 				task.prompt,
 			],
-			env,
+			env: kiloEnvironment(configDir),
 			cwd: workspace,
 		};
 	}
@@ -1165,6 +1190,55 @@ function commandFor(agent, options, task, configDir, workspace) {
 	};
 }
 
+function commandForKiloModelResolution(options, configDir, workspace) {
+	const separator = options.kiloModel.indexOf("/");
+	const provider = separator === -1 ? options.kiloModel : options.kiloModel.slice(0, separator);
+	return {
+		executable: "kilo",
+		args: ["models", provider, "--verbose", "--pure"],
+		env: kiloEnvironment(configDir),
+		cwd: workspace,
+	};
+}
+
+function parseJsonObjectAfterLine(output, line) {
+	const lineStart = output.split(/\r?\n/u).findIndex((candidate) => candidate.trim() === line);
+	if (lineStart === -1) return undefined;
+	const lines = output.split(/\r?\n/u);
+	const jsonStart = output.indexOf("{", lines.slice(0, lineStart + 1).join("\n").length);
+	if (jsonStart === -1) return undefined;
+	let depth = 0;
+	let inString = false;
+	let escaped = false;
+	for (let index = jsonStart; index < output.length; index += 1) {
+		const character = output[index];
+		if (inString) {
+			if (escaped) escaped = false;
+			else if (character === "\\") escaped = true;
+			else if (character === '"') inString = false;
+			continue;
+		}
+		if (character === '"') inString = true;
+		else if (character === "{") depth += 1;
+		else if (character === "}") {
+			depth -= 1;
+			if (depth === 0) return JSON.parse(output.slice(jsonStart, index + 1));
+		}
+	}
+	return undefined;
+}
+
+function copyEvidenceTree(source, destination) {
+	if (!existsSync(source)) return;
+	ensureDir(destination);
+	for (const entry of readdirSync(source, { withFileTypes: true })) {
+		const sourcePath = join(source, entry.name);
+		const destinationPath = join(destination, entry.name);
+		if (entry.isDirectory()) copyEvidenceTree(sourcePath, destinationPath);
+		else if (entry.isFile()) copyFileSync(sourcePath, destinationPath);
+	}
+}
+
 const metricEventTypes = new Set([
 	"auto_retry_end",
 	"error",
@@ -1178,7 +1252,7 @@ const metricEventTypes = new Set([
 	"turn_end",
 ]);
 
-function runCommand(command, timeoutMs, recordingPath) {
+function runCommand(command, timeoutMs, recordingPath, options = {}) {
 	return new Promise((resolveResult) => {
 		const startedAt = performance.now();
 		const recording = createWriteStream(recordingPath);
@@ -1190,6 +1264,7 @@ function runCommand(command, timeoutMs, recordingPath) {
 			stdio: ["ignore", "pipe", "pipe"],
 		});
 		let stdout = "";
+		let rawStdout = "";
 		let stdoutBuffer = "";
 		let stderr = "";
 		let rawEventCount = 0;
@@ -1206,6 +1281,7 @@ function runCommand(command, timeoutMs, recordingPath) {
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
 			compressor.write(chunk);
+			if (options.collectRawStdout) rawStdout += chunk;
 			stdoutBuffer += chunk;
 			const lines = stdoutBuffer.split(/\r?\n/);
 			stdoutBuffer = lines.pop() ?? "";
@@ -1237,6 +1313,7 @@ function runCommand(command, timeoutMs, recordingPath) {
 				error: childResult.error,
 				timedOut,
 				rawEventCount,
+				rawStdout: options.collectRawStdout ? rawStdout : undefined,
 				elapsedMs: performance.now() - startedAt,
 			});
 		};
@@ -1286,6 +1363,99 @@ function parseRecording(stdout, agent) {
 		}
 	}
 	return agent === "kilo" ? parseKiloRecording(events) : parsePiRecording(events);
+}
+
+function commandProbeEvidence(result, recording, stderr) {
+	return {
+		status: result.timedOut ? "timed_out" : result.code === 0 ? "passed" : "failed",
+		elapsedMs: result.elapsedMs,
+		exitCode: result.code,
+		signal: result.signal,
+		timedOut: result.timedOut,
+		error: result.error,
+		rawEventCount: result.rawEventCount,
+		recording,
+		stderr,
+	};
+}
+
+async function runKiloStartupProbe(options, configDir, output, deadline) {
+	const diagnosticsDir = join(output, "diagnostics", "kilo-startup");
+	const workspace = join(configDir, "startup-probe-workspace");
+	ensureDir(diagnosticsDir);
+	ensureDir(workspace);
+	const evidence = {
+		status: "running",
+		expectedResolvedModel: options.expectedResolvedModel,
+		kiloModelAlias: options.kiloModel,
+		timeoutSeconds: options.kiloStartupTimeoutSeconds,
+		diagnostics: join("diagnostics", "kilo-startup"),
+	};
+	try {
+		const resolutionRecording = "model-resolution.log.gz";
+		const resolutionStderr = "model-resolution.stderr.log";
+		const resolutionResult = await runCommand(
+			commandForKiloModelResolution(options, configDir, workspace),
+			Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
+			join(diagnosticsDir, resolutionRecording),
+			{ collectRawStdout: true },
+		);
+		writeFileSync(join(diagnosticsDir, resolutionStderr), resolutionResult.stderr, "utf8");
+		evidence.modelResolution = commandProbeEvidence(resolutionResult, resolutionRecording, resolutionStderr);
+		if (resolutionResult.timedOut || resolutionResult.code !== 0) {
+			throw new Error(`Kilo model-resolution probe ${evidence.modelResolution.status}`);
+		}
+		const metadata = parseJsonObjectAfterLine(resolutionResult.rawStdout ?? "", options.kiloModel);
+		const resolvedModel = metadata?.api?.id;
+		if (typeof resolvedModel !== "string" || !resolvedModel) {
+			throw new Error(`Kilo model-resolution probe did not describe ${options.kiloModel}`);
+		}
+		evidence.resolvedModel = resolvedModel;
+		if (resolvedModel !== options.expectedResolvedModel) {
+			throw new Error(`Kilo resolved ${resolvedModel}; expected ${options.expectedResolvedModel}`);
+		}
+
+		const requestRecording = "request.jsonl.gz";
+		const requestStderr = "request.stderr.log";
+		const marker = "benchmark-startup-ok";
+		const requestResult = await runCommand(
+			commandFor("kilo", options, { prompt: `Reply exactly: ${marker}` }, configDir, workspace),
+			Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
+			join(diagnosticsDir, requestRecording),
+		);
+		writeFileSync(join(diagnosticsDir, requestStderr), requestResult.stderr, "utf8");
+		const metrics = parseRecording(requestResult.stdout, "kilo");
+		const responseMatched = metrics.finalText.trim() === marker;
+		const requestPassed = !requestResult.timedOut
+			&& requestResult.code === 0
+			&& metrics.errors.length === 0
+			&& responseMatched;
+		evidence.request = {
+			...commandProbeEvidence(requestResult, requestRecording, requestStderr),
+			status: requestPassed ? "passed" : requestResult.timedOut ? "timed_out" : "failed",
+			responseMatched,
+			errors: metrics.errors,
+		};
+		if (!requestPassed) {
+			throw new Error(`Kilo request startup probe ${evidence.request.status}`);
+		}
+		evidence.status = "passed";
+		return evidence;
+	} catch (error) {
+		evidence.status = "failed";
+		evidence.error = error instanceof Error ? error.message : String(error);
+		throw new Error(`${evidence.error}; evidence: ${diagnosticsDir}`);
+	} finally {
+		const dataRoot = join(configDir, "data");
+		const stateRoot = join(configDir, "state");
+		evidence.runtimeFiles = {
+			data: existsSync(dataRoot) ? listFiles(dataRoot) : [],
+			state: existsSync(stateRoot) ? listFiles(stateRoot) : [],
+		};
+		copyEvidenceTree(join(dataRoot, "kilo", "log"), join(diagnosticsDir, "runtime-logs"));
+		copyEvidenceTree(stateRoot, join(diagnosticsDir, "runtime-state"));
+		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+	}
 }
 
 function parsePiRecording(events) {
@@ -1414,7 +1584,7 @@ function average(rows, selector) {
 	return rows.reduce((total, row) => total + selector(row), 0) / rows.length;
 }
 
-function createReport(options, versions, results, output, benchmarkTasks = tasks) {
+function createReport(options, versions, results, output, benchmarkTasks = tasks, startupProbes = {}) {
 	const completed = results.filter((result) => result.status !== "skipped");
 	const byAgent = (agent) => completed.filter((result) => result.agent === agent);
 	const summary = (rows) => ({
@@ -1450,6 +1620,9 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `Generated: ${new Date().toISOString()}\n\n`;
 	report += `PI/P model alias: \`${options.model ?? "not selected"}\`\n\n`;
 	if (options.agents.includes("kilo")) report += `Kilo model alias: \`${options.kiloModel}\`\n\n`;
+	if (startupProbes.kilo) {
+		report += `Kilo resolved backend model: \`${startupProbes.kilo.resolvedModel}\` (startup probe: ${startupProbes.kilo.status})\n\n`;
+	}
 	report += `Versions: ${options.agents.map((agent) => `\`${agent} ${versions[agent]}\``).join(", ")}\n\n`;
 	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
 	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
@@ -1473,6 +1646,7 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `- Fixture checks run the TypeScript test suite and typecheck; the calculator also has a CLI acceptance check, the refactor checks its focused modules and reduced facade, and the inventory challenge scores each fixed hidden invariant independently with higher weights for atomicity and tamper/truncation safety.\n`;
 	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
 	if (options.agents.includes("kilo")) {
+		report += `- Kilo fixtures start only after bounded model-resolution and request probes pass. Probe recordings, stderr, runtime logs, and state evidence are under [diagnostics/kilo-startup](./diagnostics/kilo-startup).\n`;
 		report += `- Kilo currently emits duplicate JSONL events. Raw recordings preserve them; calculated Kilo metrics deduplicate events by event type, part ID, and state.\n`;
 	}
 	report += `- Provider latency, model sampling, cache state, agent order, and package versions can dominate this small sample.\n`;
@@ -1516,6 +1690,7 @@ async function main() {
 	ensureDir(join(output, "stderr"));
 	const agentDirs = createAgentDirs(options);
 	const results = [];
+	const startupProbes = {};
 	const startedAt = performance.now();
 	const deadline = startedAt + options.maxRuntimeSeconds * 1000;
 	console.log(`Benchmark output: ${output}`);
@@ -1524,6 +1699,10 @@ async function main() {
 	console.log(`Versions: ${options.agents.map((agent) => `${agent} ${versions[agent]}`).join(", ")}`);
 	console.log(`Sequential order: ${options.agents.join(" -> ")}`);
 	try {
+		if (options.agents.includes("kilo")) {
+			startupProbes.kilo = await runKiloStartupProbe(options, agentDirs.dirs.kilo, output, deadline);
+			console.log(`Kilo startup probe: passed, resolved ${startupProbes.kilo.resolvedModel}`);
+		}
 		for (let run = 1; run <= options.runs; run += 1) {
 			for (const agent of options.agents) {
 				for (const task of benchmarkTasks) {
@@ -1576,7 +1755,7 @@ async function main() {
 	} finally {
 		rmSync(agentDirs.root, { recursive: true, force: true });
 	}
-	const summaries = createReport(options, versions, results, output, benchmarkTasks);
+	const summaries = createReport(options, versions, results, output, benchmarkTasks, startupProbes);
 	const resultDocument = {
 		generatedAt: new Date().toISOString(),
 		agents: options.agents,
@@ -1586,6 +1765,7 @@ async function main() {
 			kilo: options.agents.includes("kilo") ? options.kiloModel : undefined,
 		},
 		versions,
+		startupProbes,
 		runs: options.runs,
 		timeoutSeconds: options.timeoutSeconds,
 		maxRuntimeSeconds: options.maxRuntimeSeconds,

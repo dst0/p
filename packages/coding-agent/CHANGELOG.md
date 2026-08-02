@@ -13,6 +13,7 @@
 
 ### Fixed
 
+- Gate Kilo benchmark fixtures behind bounded model-resolution and request startup probes that preserve stderr, runtime logs, and state evidence while enforcing backend-model parity with PI and P.
 - Correct the event-sourced inventory benchmark's truncation check so it removes the final byte, score 25 fixed hidden invariants independently with severity weights, and retain hidden-test diagnostics in quality results.
 - Classify `npm run typecheck` and package-manager test variants correctly in task verification, rely on tool exit status instead of output-text heuristics, and return bookkeeping rejections as `needs_action` results instead of tool errors.
 - Stream benchmark JSONL recordings directly to gzip files so long cumulative-delta sessions cannot exhaust the Node.js string limit, and report clean completion separately from final-workspace quality.
