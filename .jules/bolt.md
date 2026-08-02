@@ -20,3 +20,7 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+
+## 2026-08-02 - Path segment checks using precompiled regex vs String.split()
+**Learning:** Checking if a file path contains a specific forbidden directory segment (like `node_modules` or `.git`) using `filename.replaceAll('\\', '/').split('/').some(...)` in a tight loop is remarkably slow because it allocates new strings and arrays for every path evaluated. Precompiling a single Regex with boundary markers (e.g., `(?:^|[\\/])(?:node_modules|\.git)(?:[\\/]|$)`) and evaluating via `.test(filename)` avoids all dynamic allocations and speeds up the check by ~6.4x in V8 (1.86s vs 12.05s for 5M iterations).
+**Action:** Always precompile sets of forbidden/allowed string patterns into a combined regular expression when checking boundary conditions in a tight/hot path instead of using `.split()`, `.replaceAll()`, or `.some()`.

@@ -143,6 +143,11 @@ const IGNORED_WATCH_PATH_SEGMENTS = new Set([
   "target",
 ]);
 
+// ⚡ Bolt: Precompile regex to avoid slow string allocation and arrays in hot path
+const IGNORED_WATCH_PATTERN = new RegExp(
+  `(?:^|[\\\\/])(?:${[...IGNORED_WATCH_PATH_SEGMENTS].map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&")).join("|")})(?:[\\\\/]|$)`,
+);
+
 export class IndexingDaemon {
   private readonly options: Required<
     Pick<IndexingDaemonOptions, "agentDir" | "debounceMs" | "retryMs" | "reconcileMs" | "repositoryTimeoutMs">
@@ -855,10 +860,7 @@ function canonicalizePath(value: string): string {
 }
 
 function isIgnoredWatchPath(filename: string): boolean {
-  return filename
-    .replaceAll("\\", "/")
-    .split("/")
-    .some((segment) => IGNORED_WATCH_PATH_SEGMENTS.has(segment));
+  return IGNORED_WATCH_PATTERN.test(filename);
 }
 
 function safeErrorMessage(error: unknown): string {
