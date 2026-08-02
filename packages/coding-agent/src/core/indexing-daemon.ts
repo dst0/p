@@ -867,6 +867,9 @@ function safeErrorMessage(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).replace(/[\r\n]+/g, " ").slice(0, 500);
 }
 
+// Used by tests
+export const __testIsIgnoredWatchPath = isIgnoredWatchPath;
+
 function parseRequestPriority(updatedAt: string): number {
   const parsed = Date.parse(updatedAt);
   return Number.isFinite(parsed) ? parsed : 0;

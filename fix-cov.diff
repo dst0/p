@@ -1,0 +1,8 @@
+<<<<<<< SEARCH
+export function testIsIgnoredWatchPath(filename: string): boolean {
+  return IGNORED_WATCH_PATTERN.test(filename);
+}
+=======
+// Used by tests
+export const __testIsIgnoredWatchPath = isIgnoredWatchPath;
+>>>>>>> REPLACE
