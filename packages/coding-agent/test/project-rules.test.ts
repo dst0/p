@@ -70,3 +70,58 @@ describe("project rules resolver", () => {
     expect(result.issues.map((issue) => issue.code)).not.toContain("guardrail_candidate");
   });
 });
+
+describe("project rules conflict detection unit", () => {
+  it("detects false conflict path", () => {
+    const cwd = createTempProject();
+    mkdirSync(join(cwd, ".pdev/rules"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pdev/rules/local.md"),
+      ["# Local", "- This rule should not conflict", "- Another rule with completely different wording entirely"].join(
+        "\\n",
+      ),
+    );
+    const result = lintProjectRules(cwd);
+    expect(result.issues.map((issue) => issue.code)).not.toContain("conflicting_rule");
+  });
+});
+
+describe("project rules conflict detection branch coverage", () => {
+  it("covers same-condition early return false paths", () => {
+    const cwd = createTempProject();
+    mkdirSync(join(cwd, ".pdev/rules"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pdev/rules/local.md"),
+      [
+        "# Local",
+        "- You must always do A and B and C and D",
+        "- You must always do A and B and C and D too", // isAlways === isAlways => true
+        "- Do not ever ever ever do A and B and C and D",
+        "- Do not ever ever ever do A and B and C and D either", // isNever === isNever => true
+        "- This rule just exists",
+        "- This rule just exists too", // neither => true
+      ].join("\\n"),
+    );
+    // This will hit `if (a.isNever === b.isNever || a.isAlways === b.isAlways) return false;` heavily
+    const result = lintProjectRules(cwd);
+    expect(result.issues.map(i => i.code)).not.toContain("conflicting_rule"); // none conflict because they are same polarity
+  });
+});
+
+describe("project rules conflict detection branch coverage", () => {
+  it("covers terms overlap false path (overlap < 3)", () => {
+    const cwd = createTempProject();
+    mkdirSync(join(cwd, ".pdev/rules"), { recursive: true });
+    writeFileSync(
+      join(cwd, ".pdev/rules/local.md"),
+      [
+        "# Local",
+        "- You must always test testing tested tests",
+        "- You must never test testing tested something else entirely",
+      ].join("\\n"),
+    );
+    // overlap=2 (test, testing) or so, which is < 3
+    const result = lintProjectRules(cwd);
+    expect(result.issues.map(i => i.code)).not.toContain("conflicting_rule");
+  });
+});
