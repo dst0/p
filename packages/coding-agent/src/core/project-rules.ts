@@ -120,9 +120,12 @@ export function lintProjectRules(cwd: string): RuleLintResult {
   }
 
   const snippets = index.snippets;
+  // ⚡ Bolt: Pre-calculate string normalization outside O(N^2) conflict detection loop
+  const precomputedRules = snippets.map((s) => precomputeRule(s.text));
+
   for (let indexA = 0; indexA < snippets.length; indexA++) {
     for (let indexB = indexA + 1; indexB < snippets.length; indexB++) {
-      if (rulesConflict(snippets[indexA].text, snippets[indexB].text)) {
+      if (rulesConflict(precomputedRules[indexA], precomputedRules[indexB])) {
         issues.push({
           severity: "warning",
           code: "conflicting_rule",
@@ -308,17 +311,31 @@ function isGuardrailCandidate(text: string): boolean {
   return isDirective && hasExecutableSurface;
 }
 
-function rulesConflict(a: string, b: string): boolean {
-  const normalizedA = normalizeRule(a);
-  const normalizedB = normalizeRule(b);
-  const aNever = /\b(never|do not|don't|cannot)\b/i.test(a);
-  const bNever = /\b(never|do not|don't|cannot)\b/i.test(b);
-  const aAlways = /\b(always|must|required)\b/i.test(a);
-  const bAlways = /\b(always|must|required)\b/i.test(b);
-  if (aNever === bNever || aAlways === bAlways) return false;
-  const termsA = new Set(tokenize(normalizedA).filter((term) => term.length > 3));
-  const overlap = tokenize(normalizedB).filter((term) => termsA.has(term)).length;
-  return overlap >= 3;
+interface PrecomputedRule {
+  text: string;
+  isNever: boolean;
+  isAlways: boolean;
+  terms: Set<string>;
+}
+
+function precomputeRule(text: string): PrecomputedRule {
+  const normalized = normalizeRule(text);
+  const isNever = /\b(never|do not|don't|cannot)\b/i.test(text);
+  const isAlways = /\b(always|must|required)\b/i.test(text);
+  const terms = new Set(tokenize(normalized).filter((term) => term.length > 3));
+  return { text, isNever, isAlways, terms };
+}
+
+function rulesConflict(a: PrecomputedRule, b: PrecomputedRule): boolean {
+  if (a.isNever === b.isNever || a.isAlways === b.isAlways) return false;
+  let overlap = 0;
+  for (const term of b.terms) {
+    if (a.terms.has(term)) {
+      overlap++;
+      if (overlap >= 3) return true;
+    }
+  }
+  return false;
 }
 
 function tokenize(value: string): string[] {
