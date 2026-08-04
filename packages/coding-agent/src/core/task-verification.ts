@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { isAbsolute, resolve } from "node:path";
 import type {
   AfterToolCallContext,
@@ -23,6 +24,11 @@ type TaskKind = (typeof TASK_KINDS)[number];
 type BaselineMethod = (typeof BASELINE_METHODS)[number];
 type FinalMethod = (typeof FINAL_METHODS)[number];
 
+export interface TaskVerificationAcceptanceCheck {
+  criterion: string;
+  evidenceRefs: string[];
+}
+
 export interface TaskVerificationState {
   version: 1;
   taskKind?: TaskKind;
@@ -47,6 +53,12 @@ export interface TaskVerificationState {
     method?: FinalMethod;
     evidenceRefs: string[];
     unresolvedFailures: string[];
+    verifiedMutationRevision?: number;
+  };
+  readiness?: {
+    status: "pending" | "ready";
+    token?: string;
+    acceptanceChecks: TaskVerificationAcceptanceCheck[];
     verifiedMutationRevision?: number;
   };
   updatedAt: string;
@@ -83,12 +95,17 @@ const FinalMethodSchema = Type.Union([
   Type.Literal("manual_reproduction"),
   Type.Literal("static_review"),
 ]);
+const AcceptanceCheckSchema = Type.Object({
+  criterion: Type.String({ minLength: 1 }),
+  evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
+});
 const VerificationSchema = Type.Object({
   action: Type.Union([
     Type.Literal("declare_task"),
     Type.Literal("authorize_baseline_test"),
     Type.Literal("record_baseline"),
     Type.Literal("record_final"),
+    Type.Literal("ready_to_finish"),
     Type.Literal("status"),
   ]),
   task_kind: Type.Optional(TaskKindSchema),
@@ -104,6 +121,7 @@ const VerificationSchema = Type.Object({
   final_method: Type.Optional(FinalMethodSchema),
   final_status: Type.Optional(Type.Union([Type.Literal("passed"), Type.Literal("failed")])),
   unresolved_failures: Type.Optional(Type.Array(Type.String())),
+  acceptance_checks: Type.Optional(Type.Array(AcceptanceCheckSchema, { minItems: 1, maxItems: 32 })),
 });
 type VerificationInput = Static<typeof VerificationSchema>;
 interface VerificationResult {
@@ -129,13 +147,25 @@ const WRITE_REDIRECT_PATTERN = /(?:^|[;&|]\s*)(?:echo|printf|cat)\b[^\n;]*(?:>|>
 const PUBLISH_PATTERN = /(?:^|[;&|]\s*)git\s+(?:commit|push)\b/iu;
 const GENERIC_CHECK_PATTERN =
   /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:check|typecheck)|pnpm\s+(?:run\s+)?(?:check|typecheck)|yarn\s+(?:run\s+)?(?:check|typecheck)|(?:npx\s+|npm\s+exec\s+)?tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
+const TYPECHECK_PATTERN =
+  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?typecheck|pnpm\s+(?:run\s+)?typecheck|yarn\s+(?:run\s+)?typecheck|(?:npx\s+|npm\s+exec\s+)?tsc\b)/iu;
 const READ_ONLY_PATTERN =
   /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|stat\b|wc\b|md5\b|md5sum\b|shasum\b|sha256sum\b|git\s+(?:status|diff|show|log)\b)/iu;
 const TEST_PATTERN =
-  /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|\.\/test\.sh)\b/iu;
+  /\b(?:vitest|jest|pytest|cargo\s+test|go\s+test|node\s+--test|bun\s+(?:run\s+)?test|npm\s+(?:run\s+)?test|pnpm\s+(?:run\s+)?test|yarn\s+(?:run\s+)?test|\.\/test\.sh)\b/iu;
 const FOCUSED_TEST_PATTERN =
   /(?:test\/|tests\/|\.test\.[cm]?[jt]sx?|\.spec\.[cm]?[jt]sx?|--test-name-pattern\b|\s-t\s+\S+)/iu;
 const TEST_PATH_PATTERN = /(?:^|\/)(?:test|tests|__tests__)(?:\/|$)|\.(?:test|spec)\.[^/]+$/iu;
+const TEST_REQUEST_PATTERN =
+  /\b(?:run|execute|add|write|include|pass|rerun)?\s*(?:the\s+)?(?:focused\s+|full\s+|unit\s+|integration\s+|regression\s+)?tests?\b|(?:запуст|добав|напис|прогон|покр)[^\n.]{0,30}\bтест/iu;
+const TEST_OPT_OUT_PATTERN =
+  /\b(?:do not|don't|dont|skip|avoid|without|no need to)\s+(?:run|add|write|execute)?\s*(?:the\s+)?tests?\b|(?:не\s+(?:запуска|добавля|пиши)|без)\w*[^\n.]{0,20}\bтест/iu;
+const TYPECHECK_REQUEST_PATTERN =
+  /\b(?:run|pass|rerun)?\s*(?:the\s+)?(?:typecheck|type-check|type check|tsc)\b|(?:проверк\w*\s+тип|тайпчек)/iu;
+const TYPECHECK_OPT_OUT_PATTERN =
+  /\b(?:do not|don't|dont|skip|avoid|without|no need to)[^\n.]{0,60}\b(?:typecheck|type-check|type check|tsc)\b|(?:не\s+запуска\w*|без)[^\n.]{0,40}(?:проверк\w*\s+тип|тайпчек)/iu;
+const ACCEPTANCE_SIGNAL_PATTERN =
+  /\b(?:exact\w*|every|all|must|never|reject\w*|atomic\w*|rollback\w*|idempoten\w*|truncat\w*|tamper\w*|deep\w*|reverse\w*|monotonic\w*|stale|fenc\w*|persist\w*|recover\w*)\b|(?:точн\w*|кажд\w*|все|весь|долж\w*|никогд\w*|отклон\w*|атомар\w*|откат\w*|идемпотент\w*|обрез\w*|подмен\w*|глубок\w*|обратн\w*|монотон\w*|устар\w*|персист\w*|восстанов\w*)/giu;
 
 function isShellTool(toolName: string): boolean {
   return (
@@ -182,6 +212,13 @@ function isDirectMutationTool(toolName: string): boolean {
   return lower.includes("edit") || lower.includes("write") || lower.includes("patch") || lower.includes("replace");
 }
 
+function emptyReadiness(): NonNullable<TaskVerificationState["readiness"]> {
+  return {
+    status: "pending",
+    acceptanceChecks: [],
+  };
+}
+
 function emptyState(): TaskVerificationState {
   return {
     version: 1,
@@ -194,6 +231,7 @@ function emptyState(): TaskVerificationState {
       testSetupChanged: false,
     },
     final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
+    readiness: emptyReadiness(),
     updatedAt: new Date().toISOString(),
   };
 }
@@ -316,6 +354,24 @@ function behavioralFinalRequired(kind: TaskKind, taskText: string): boolean {
   return kind !== "docs" && kind !== "investigation" && (kind !== "feature" || BUG_PATTERN.test(taskText));
 }
 
+function isCodeTask(kind: TaskKind | undefined): boolean {
+  return kind !== undefined && kind !== "docs" && kind !== "investigation";
+}
+
+function requiredAcceptanceCheckCount(taskText: string): number {
+  const signals = taskText.match(ACCEPTANCE_SIGNAL_PATTERN) ?? [];
+  const uniqueSignals = new Set(signals.map((signal) => signal.toLowerCase()));
+  return Math.max(1, Math.min(4, uniqueSignals.size));
+}
+
+function testsRequested(taskText: string): boolean {
+  return TEST_REQUEST_PATTERN.test(taskText) && !TEST_OPT_OUT_PATTERN.test(taskText);
+}
+
+function typecheckRequested(taskText: string): boolean {
+  return TYPECHECK_REQUEST_PATTERN.test(taskText) && !TYPECHECK_OPT_OUT_PATTERN.test(taskText);
+}
+
 export class TaskVerificationController {
   readonly toolDefinition: ToolDefinition;
   private readonly sessionManager: SessionManager;
@@ -380,9 +436,9 @@ export class TaskVerificationController {
       name: TASK_VERIFICATION_TOOL_NAME,
       label: "Task Verification",
       description:
-        'Record or inspect evidence-backed baseline and final semantic verification for mutating tasks. Use action "status" whenever the required next step is unclear, especially after compaction or session restore.',
+        'Record or inspect evidence-backed baseline, final semantic verification, and finish readiness for mutating tasks. Use action "status" whenever the required next step is unclear, especially after compaction or session restore.',
       promptSnippet:
-        "record_task_verification(action, ...): declare mutation intent, inspect exact next requirements with action status, optionally authorize test-only baseline setup, then prove baseline and final behavior.",
+        "record_task_verification(action, ...): declare mutation intent, prove baseline and final behavior, then call ready_to_finish with requirement-to-evidence mappings before successful finish_work.",
       promptGuidelines: [
         `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
         `The controller automatically records mutation intent before the first mutating tool call. Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override its classification before mutation.`,
@@ -394,7 +450,8 @@ export class TaskVerificationController {
         "Final verification must rerun the exact same reproduction command or focused regression test that established the baseline. Do not substitute static_review or generic npm run check.",
         "Evidence handles from prior mutation revisions become stale after any file edit. Re-run your verification command after editing to produce fresh handles for the current revision.",
         "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
-        "Successful finish_work and git commit/push are blocked until final verification passes for the current mutation revision.",
+        "After final verification passes, call action 'ready_to_finish' with one acceptance_checks entry for every explicit requirement and fresh evidence_refs proving it.",
+        "Successful finish_work and git commit/push are blocked until ready_to_finish issues a readiness certificate for the current mutation revision.",
       ],
       parameters: VerificationSchema,
       executionMode: "sequential",
@@ -414,7 +471,8 @@ export class TaskVerificationController {
       argsRecord(context.args).status !== "partial" &&
       argsRecord(context.args).status !== "failed"
     ) {
-      return this.finalGate("finish successfully");
+      const token = argsRecord(context.args).verification_token;
+      return this.finalGate("finish successfully", typeof token === "string" ? token : undefined, true);
     }
     if (!isPotentialMutationTool(toolName, context.args)) return undefined;
     if (!this.state.taskKind) {
@@ -457,6 +515,7 @@ export class TaskVerificationController {
         ...this.state,
         mutationRevision: this.state.mutationRevision + 1,
         final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
+        readiness: emptyReadiness(),
         updatedAt: new Date().toISOString(),
       };
       this.persistState();
@@ -552,6 +611,8 @@ export class TaskVerificationController {
         return this.recordBaseline(input);
       case "record_final":
         return this.recordFinal(input);
+      case "ready_to_finish":
+        return this.readyToFinish(input);
       case "status":
         return this.updated(this.formatStatus(), false);
     }
@@ -749,6 +810,7 @@ export class TaskVerificationController {
           unresolvedFailures,
           verifiedMutationRevision: this.state.mutationRevision,
         },
+        readiness: emptyReadiness(),
         updatedAt: new Date().toISOString(),
       };
       this.persistState();
@@ -842,10 +904,118 @@ export class TaskVerificationController {
         unresolvedFailures: [],
         verifiedMutationRevision: this.state.mutationRevision,
       },
+      readiness: emptyReadiness(),
       updatedAt: new Date().toISOString(),
     };
     this.persistState();
     return this.updated("Final semantic verification passed for the current mutation revision.");
+  }
+
+  private readyToFinish(input: VerificationInput): VerificationResult {
+    if (!isCodeTask(this.state.taskKind)) {
+      return this.updated("Finish readiness certificates are not required for documentation or investigation tasks.");
+    }
+    if (!this.state.taskSummary || this.state.mutationRevision === 0) {
+      return this.rejected("ready_to_finish requires a declared code task and at least one production mutation.");
+    }
+    const finalError = this.finalVerificationError("prepare successful completion");
+    if (finalError) return this.rejected(finalError);
+
+    const unresolvedFailures = normalizeStrings(input.unresolved_failures);
+    if (unresolvedFailures.length > 0) {
+      return this.rejected("ready_to_finish cannot pass with unresolved_failures.");
+    }
+
+    const requestedChecks = input.acceptance_checks ?? [];
+    const requiredCheckCount = requiredAcceptanceCheckCount(this.taskText());
+    if (requestedChecks.length < requiredCheckCount) {
+      return this.rejected(
+        `ready_to_finish requires at least ${requiredCheckCount} distinct acceptance_checks for the explicit guarantees in this task; received ${requestedChecks.length}.`,
+      );
+    }
+
+    const acceptanceChecks: TaskVerificationAcceptanceCheck[] = [];
+    const seenCriteria = new Set<string>();
+    const mappedEvidence = new Map<string, TaskVerificationEvidence>();
+    for (const requestedCheck of requestedChecks) {
+      const criterion = normalizeText(requestedCheck.criterion);
+      if (!criterion) return this.rejected("Every acceptance check requires a concrete criterion.");
+      const criterionKey = criterion.toLowerCase();
+      if (seenCriteria.has(criterionKey)) {
+        return this.rejected(`Duplicate acceptance criterion: ${criterion}`);
+      }
+      seenCriteria.add(criterionKey);
+
+      const evidence = this.resolveEvidence(requestedCheck.evidence_refs);
+      if (typeof evidence === "string") return this.rejected(`${criterion}: ${evidence}`);
+      if (evidence.some((item) => item.mutationRevision !== this.state.mutationRevision)) {
+        return this.rejected(
+          `${criterion}: all readiness evidence must come from mutation revision ${this.state.mutationRevision}.`,
+        );
+      }
+      if (evidence.some((item) => item.isError)) {
+        return this.rejected(`${criterion}: failed evidence cannot prove readiness.`);
+      }
+      for (const item of evidence) mappedEvidence.set(item.ref, item);
+      acceptanceChecks.push({ criterion, evidenceRefs: evidence.map((item) => item.ref) });
+    }
+
+    const failedVerifications = this.latestFailedVerificationEvidence();
+    if (failedVerifications.length > 0) {
+      return this.rejected(
+        [
+          "ready_to_finish is blocked by verification commands whose latest execution still failed:",
+          ...failedVerifications.map((item) => `- ${item.descriptor}: ${item.outputSummary || "failed"}`),
+          "Repair the implementation and rerun each exact command successfully.",
+        ].join("\n"),
+      );
+    }
+
+    const mappedValues = [...mappedEvidence.values()];
+    const unmappedFinalEvidence = this.state.final.evidenceRefs.filter((ref) => !mappedEvidence.has(ref));
+    if (unmappedFinalEvidence.length > 0) {
+      return this.rejected(
+        `Acceptance checks must include the final semantic verification evidence: ${unmappedFinalEvidence.join(", ")}.`,
+      );
+    }
+    const taskText = this.taskText();
+    if (
+      testsRequested(taskText) &&
+      !mappedValues.some((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor))
+    ) {
+      return this.rejected(
+        "The task explicitly requires tests, but no successful current-revision test evidence is mapped to an acceptance check.",
+      );
+    }
+    if (
+      typecheckRequested(taskText) &&
+      !mappedValues.some((item) => isShellTool(item.toolName) && TYPECHECK_PATTERN.test(item.descriptor))
+    ) {
+      return this.rejected(
+        "The task explicitly requires type checking, but no successful current-revision typecheck evidence is mapped to an acceptance check.",
+      );
+    }
+
+    const token = randomUUID();
+    this.state = {
+      ...this.state,
+      readiness: {
+        status: "ready",
+        token,
+        acceptanceChecks,
+        verifiedMutationRevision: this.state.mutationRevision,
+      },
+      updatedAt: new Date().toISOString(),
+    };
+    this.persistState();
+    return this.updated(
+      [
+        `Finish readiness passed for mutation revision ${this.state.mutationRevision}.`,
+        `verification_token: ${token}`,
+        "Pass this token unchanged to finish_work. Any subsequent workspace mutation invalidates it.",
+      ].join("\n"),
+      false,
+    );
   }
 
   private isAuthorizedBaselineTestMutation(toolName: string, args: unknown): boolean {
@@ -925,17 +1095,60 @@ export class TaskVerificationController {
     return resolved;
   }
 
-  private finalGate(action: string): BeforeToolCallResult | undefined {
-    if (this.state.mutationRevision === 0) return undefined;
+  private taskText(): string {
+    return `${this.state.taskContext ?? this.latestUserPrompt}\n${this.state.taskSummary ?? ""}`;
+  }
+
+  private latestFailedVerificationEvidence(): TaskVerificationEvidence[] {
+    const latestByCommand = new Map<string, TaskVerificationEvidence>();
+    for (const item of this.evidence.values()) {
+      if (
+        item.mutationRevision === this.state.mutationRevision &&
+        isShellTool(item.toolName) &&
+        (TEST_PATTERN.test(item.descriptor) || GENERIC_CHECK_PATTERN.test(item.descriptor))
+      ) {
+        latestByCommand.set(item.descriptor, item);
+      }
+    }
+    return [...latestByCommand.values()].filter((item) => item.isError);
+  }
+
+  private finalVerificationError(action: string): string | undefined {
     if (this.state.baseline.required && this.state.baseline.status !== "satisfied") {
-      return this.blocked(`Cannot ${action}: baseline verification is incomplete.`);
+      return `Cannot ${action}: baseline verification is incomplete.`;
     }
     if (
       this.state.final.status !== "passed" ||
       this.state.final.verifiedMutationRevision !== this.state.mutationRevision
     ) {
+      return `Cannot ${action}: semantic verification has not passed after mutation revision ${this.state.mutationRevision}.`;
+    }
+    return undefined;
+  }
+
+  private finalGate(
+    action: string,
+    verificationToken?: string,
+    requireToken: boolean = false,
+  ): BeforeToolCallResult | undefined {
+    if (this.state.mutationRevision === 0) return undefined;
+    const finalError = this.finalVerificationError(action);
+    if (finalError) return this.blocked(finalError);
+    if (!isCodeTask(this.state.taskKind)) return undefined;
+
+    const readiness = this.state.readiness ?? emptyReadiness();
+    if (
+      readiness.status !== "ready" ||
+      readiness.verifiedMutationRevision !== this.state.mutationRevision ||
+      !readiness.token
+    ) {
       return this.blocked(
-        `Cannot ${action}: semantic verification has not passed after mutation revision ${this.state.mutationRevision}.`,
+        `Cannot ${action}: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" and map every explicit acceptance criterion to fresh evidence first.`,
+      );
+    }
+    if (requireToken && verificationToken !== readiness.token) {
+      return this.blocked(
+        `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${this.state.mutationRevision}.`,
       );
     }
     return undefined;
@@ -945,7 +1158,10 @@ export class TaskVerificationController {
     for (const entry of this.sessionManager.getBranch()) {
       if (entry.type !== "custom") continue;
       if (entry.customType === TASK_VERIFICATION_STATE_CUSTOM_TYPE && isTaskVerificationState(entry.data)) {
-        this.state = entry.data;
+        this.state = {
+          ...entry.data,
+          readiness: entry.data.readiness ?? emptyReadiness(),
+        };
       }
       if (entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE && isTaskVerificationEvidence(entry.data)) {
         this.evidence.set(entry.data.ref, entry.data);
@@ -972,6 +1188,7 @@ export class TaskVerificationController {
       `Baseline: ${this.state.baseline.status}`,
       `Authorized baseline tests: ${this.state.baseline.authorizedTestPaths.join(", ") || "none"}`,
       `Final: ${this.state.final.status}`,
+      `Readiness: ${(this.state.readiness ?? emptyReadiness()).status}`,
       this.state.final.unresolvedFailures.length > 0
         ? `Unresolved failures: ${this.state.final.unresolvedFailures.join("; ")}`
         : undefined,
@@ -1084,7 +1301,39 @@ export class TaskVerificationController {
       this.state.final.status === "passed" &&
       this.state.final.verifiedMutationRevision === this.state.mutationRevision
     ) {
-      return "NEXT REQUIRED ACTION: none. Final semantic verification is current; successful finish_work and git commit/push are unblocked.";
+      if (!isCodeTask(this.state.taskKind)) {
+        return "NEXT REQUIRED ACTION: none. Final semantic verification is current; successful finish_work and git commit/push are unblocked.";
+      }
+      const readiness = this.state.readiness ?? emptyReadiness();
+      if (
+        readiness.status === "ready" &&
+        readiness.verifiedMutationRevision === this.state.mutationRevision &&
+        readiness.token
+      ) {
+        return [
+          "NEXT REQUIRED ACTION: readiness is current; git commit/push are unblocked.",
+          `Call finish_work with verification_token "${readiness.token}".`,
+        ].join("\n");
+      }
+      const requiredCheckCount = requiredAcceptanceCheckCount(this.taskText());
+      const currentEvidence = [...this.evidence.values()]
+        .filter((item) => item.mutationRevision === this.state.mutationRevision && !item.isError)
+        .slice(-8)
+        .map((item) => `${item.ref}: ${item.descriptor}`);
+      return [
+        `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish".`,
+        `Re-read the original request and provide at least ${requiredCheckCount} distinct acceptance_checks covering every explicit requirement, negative guarantee, and boundary condition.`,
+        "Map every criterion to fresh current-revision evidence_refs and pass unresolved_failures: [].",
+        testsRequested(this.taskText())
+          ? "The original task requests tests, so acceptance evidence must include a successful test command."
+          : undefined,
+        typecheckRequested(this.taskText())
+          ? "The original task requests type checking, so acceptance evidence must include a successful typecheck command."
+          : undefined,
+        currentEvidence.length > 0 ? `Fresh evidence:\n- ${currentEvidence.join("\n- ")}` : "Fresh evidence: none",
+      ]
+        .filter((line): line is string => line !== undefined)
+        .join("\n");
     }
 
     const replayDescriptor = this.requiredBaselineReplayDescriptor();
@@ -1178,10 +1427,11 @@ export class TaskVerificationController {
         unresolvedFailures: [],
         verifiedMutationRevision: this.state.mutationRevision,
       },
+      readiness: emptyReadiness(),
       updatedAt: new Date().toISOString(),
     };
     this.persistState();
-    return "Exact baseline replay passed and final verification was recorded automatically. Call finish_work now unless another acceptance check remains.";
+    return "Exact baseline replay passed and final verification was recorded automatically. Complete ready_to_finish before finish_work.";
   }
 
   private tryAutoFinalizeFocusedTest(evidence: TaskVerificationEvidence): string | undefined {
@@ -1207,7 +1457,7 @@ export class TaskVerificationController {
       unresolved_failures: [],
     });
     if (result.status !== "updated" || this.state.final.status !== "passed") return undefined;
-    return "Focused semantic verification passed and final verification was recorded automatically. Call finish_work now unless another acceptance check remains.";
+    return "Focused semantic verification passed and final verification was recorded automatically. Complete ready_to_finish before finish_work.";
   }
 
   private highRiskAcceptanceAudit(evidence: TaskVerificationEvidence): string | undefined {
@@ -1230,7 +1480,7 @@ export class TaskVerificationController {
       "Preserve exact public API return shapes without invented wrappers; use lossless identities containing every relevant input and option.",
       "Test the literal smallest boundary mutation (for a newline-terminated serialization, remove exactly one final byte rather than a whole line or record).",
       "After failed atomic operations, retry every attempted identity with both identical and changed payloads to prove complete rollback.",
-      "A successful focused test command will record final verification automatically.",
+      "A successful focused test command records final verification, but ready_to_finish still requires explicit requirement-to-evidence mappings.",
     ].join("\n");
   }
 

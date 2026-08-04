@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Require a revision-bound `ready_to_finish` acceptance audit before successful code completion or publishing, map every claimed criterion to fresh evidence, reject unresolved test/typecheck failures, and invalidate readiness after any subsequent mutation.
 - Require a requirement-to-evidence audit and adversarial boundary tests for absolute or negative acceptance guarantees before final verification, automatically finalize successful exact baseline replays, and infer eligible current-revision evidence for `record_final`.
 - Auto-record initial and follow-up session state before the requested tool executes, auto-classify verification intent before the first mutation, and require literal smallest-byte and full transactional-registry rollback checks.
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.

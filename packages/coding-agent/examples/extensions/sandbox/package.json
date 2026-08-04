@@ -1,7 +1,7 @@
 {
   "name": "p-extension-sandbox",
   "private": true,
-  "version": "0.4.120",
+  "version": "0.4.121",
   "type": "module",
   "scripts": {
     "clean": "echo 'nothing to clean'",
