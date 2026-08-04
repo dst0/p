@@ -1,0 +1,150 @@
+[
+  {
+    "agent": "pi",
+    "task": "typescript-calculator",
+    "recording": "pi-run-1-typescript-calculator.jsonl.gz",
+    "elapsedMs": 650820.3334960938,
+    "eventCount": 4316,
+    "usage": {
+      "input": 3403,
+      "output": 4740,
+      "cacheRead": 24510,
+      "cacheWrite": 0,
+      "totalTokens": 32653
+    },
+    "toolCalls": 15,
+    "toolErrors": 0,
+    "stopReasons": {
+      "toolUse": 6,
+      "stop": 1
+    },
+    "errors": [],
+    "sessionStartedAt": "2026-08-04T06:02:02.791Z",
+    "finalText": "All done. Here's a summary:\n\n**35/35 tests pass** — 5 contract tests + 30 unit tests, 0 failures.\n\n**Type check**: clean (no errors).\n\n**CLI**: `npm run calc -- \"2 + 3 * (4 - 1)\"` prints `11` ✓\n\n### Implementation overview\n\n**`src/calculator.ts`** — Recursive-descent parser with:\n- **Lexer**: Tokenizes numbers (integers + decimals), operators (`+`, `-`, `*`, `/`), parentheses, and whitespace. Rejects invalid characters.\n- **Parser**: Grammar with proper precedence — `additive` → `multiplicative` → `unary` → `primary`. Left-associative, supports nested parentheses, unary minus (including `--5` and `-(...)`), and unary plus.\n- **Error handling**: Throws `Error` for empty input, invalid characters, mismatched parentheses, trailing operators, division by zero, and two adjacent numbers without an operator.\n\n**`src/cli.ts`** — Reads CLI args, calls `evaluate()`, prints result to stdout, or prints error to stderr and exits nonzero.\n\n**`test/calculator.test.ts`** — 30 unit tests covering basic ops, precedence, left-associativity, parentheses, decimals, unary minus variants, whitespace handling, and 10 distinct error cases.",
+    "finishSummary": ""
+  },
+  {
+    "agent": "pi",
+    "task": "monolith-split",
+    "recording": "pi-run-1-monolith-split.jsonl.gz",
+    "elapsedMs": 143092.07104492188,
+    "eventCount": 32,
+    "usage": {
+      "input": 0,
+      "output": 0,
+      "cacheRead": 0,
+      "cacheWrite": 0,
+      "totalTokens": 0
+    },
+    "toolCalls": 0,
+    "toolErrors": 0,
+    "stopReasons": {
+      "error": 4
+    },
+    "errors": [
+      "Connection error.",
+      "Connection error.",
+      "503: {\"message\":\"Loading model\",\"type\":\"unavailable_error\",\"code\":503}",
+      "503: {\"message\":\"Loading model\",\"type\":\"unavailable_error\",\"code\":503}",
+      "503: {\"message\":\"Loading model\",\"type\":\"unavailable_error\",\"code\":503}"
+    ],
+    "sessionStartedAt": "2026-08-04T06:13:01.131Z",
+    "finalText": "",
+    "finishSummary": ""
+  },
+  {
+    "agent": "pi",
+    "task": "event-sourced-inventory",
+    "recording": "pi-run-1-event-sourced-inventory.jsonl.gz",
+    "elapsedMs": 730989.0361328125,
+    "eventCount": 16734,
+    "usage": {
+      "input": 3547,
+      "output": 16785,
+      "cacheRead": 8401,
+      "cacheWrite": 0,
+      "totalTokens": 28733
+    },
+    "toolCalls": 5,
+    "toolErrors": 0,
+    "stopReasons": {
+      "toolUse": 3,
+      "length": 1
+    },
+    "errors": [],
+    "sessionStartedAt": "2026-08-04T06:15:30.649Z",
+    "finalText": "",
+    "finishSummary": ""
+  },
+  {
+    "agent": "p",
+    "task": "typescript-calculator",
+    "recording": "p-run-1-typescript-calculator.jsonl.gz",
+    "elapsedMs": 309114.7043457031,
+    "eventCount": 6043,
+    "usage": {
+      "input": 32666,
+      "output": 6096,
+      "cacheRead": 341145,
+      "cacheWrite": 0,
+      "totalTokens": 379907
+    },
+    "toolCalls": 20,
+    "toolErrors": 2,
+    "stopReasons": {
+      "toolUse": 16
+    },
+    "errors": [],
+    "sessionStartedAt": "2026-08-04T06:27:44.661Z",
+    "finalText": "",
+    "finishSummary": "Implemented complete TypeScript calculator library and CLI with a real recursive-descent parser.\n\nCreated files:\n- **src/calculator.ts** — Tokenizer + recursive-descent parser with proper precedence (expression → term → factor), left associativity, unary minus, parentheses, decimal literals, and error handling\n- **src/cli.ts** — CLI entry point: reads expression from argv, prints result; writes errors to stderr with nonzero exit\n- **test/calculator.test.ts** — 34 unit tests covering arithmetic, precedence, associativity, parentheses nesting, unary minus variants, decimals, whitespace, and error cases\n\nVerification results:\n- `npm test`: 39/39 pass (5 contract + 34 unit tests)\n- `npm run typecheck`: clean\n- `npm run calc -- \"2 + 3 * (4 - 1)\"`: outputs `11`"
+  },
+  {
+    "agent": "p",
+    "task": "monolith-split",
+    "recording": "p-run-1-monolith-split.jsonl.gz",
+    "elapsedMs": 544878.5627441406,
+    "eventCount": 12748,
+    "usage": {
+      "input": 23023,
+      "output": 13078,
+      "cacheRead": 355372,
+      "cacheWrite": 0,
+      "totalTokens": 391473
+    },
+    "toolCalls": 31,
+    "toolErrors": 2,
+    "stopReasons": {
+      "toolUse": 17
+    },
+    "errors": [],
+    "sessionStartedAt": "2026-08-04T06:32:56.851Z",
+    "finalText": "",
+    "finishSummary": "Split src/monolith.ts into focused modules:\n\n- **src/types.ts** — shared type definitions (TaskStatus, SortKey, Task, TaskSummary, ReportOptions)\n- **src/parser.ts** — parsing logic (parseTaskLine, parseTaskFile, STATUS_ORDER, field-level parsers)\n- **src/query.ts** — query/filter/sort/aggregation (filterTasks, sortTasks, summarizeTasks, groupTasksByStatus, selectLargest)\n- **src/report.ts** — reporting/formatting (formatSummary, serializeTasks, renderDashboard, runReport)\n- **src/monolith.ts** — thin compatibility facade re-exporting all public symbols\n\nNo contract tests or project config modified. Added 61 new tests across 3 test files. All 64 tests pass, typecheck clean."
+  },
+  {
+    "agent": "p",
+    "task": "event-sourced-inventory",
+    "recording": "p-run-1-event-sourced-inventory.jsonl.gz",
+    "elapsedMs": 2398754.047607422,
+    "eventCount": 61272,
+    "usage": {
+      "input": 31291,
+      "output": 58896,
+      "cacheRead": 397663,
+      "cacheWrite": 0,
+      "totalTokens": 487850
+    },
+    "toolCalls": 25,
+    "toolErrors": 1,
+    "stopReasons": {
+      "toolUse": 22,
+      "length": 2,
+      "stop": 1
+    },
+    "errors": [],
+    "sessionStartedAt": "2026-08-04T06:42:04.380Z",
+    "finalText": "",
+    "finishSummary": ""
+  }
+]
