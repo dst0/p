@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop OpenAI-compatible streamed tool calls, reasoning, and response text when they enter a repetitive loop, trim the looped suffix, and allow bounded completion-protocol recovery before the output limit is exhausted.
+- Stop long reasoning turns that repeatedly alternate between promising implementation and reconsidering the same plan without producing a tool call.
+
 ## [0.4.40] - 2026-07-24
 
 ## [0.4.38] - 2026-07-23

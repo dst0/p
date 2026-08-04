@@ -1,0 +1,117 @@
+{
+  "generatedAt": "2026-07-29T10:12:24.514Z",
+  "agents": [
+    "pi"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b",
+    "p": "mini-pc/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.110"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 1900,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 1800
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 608519.406167,
+      "averageInputTokens": 2669,
+      "averageOutputTokens": 16813,
+      "averageTotalTokens": 28805,
+      "averageToolCalls": 5,
+      "averageToolErrors": 0
+    },
+    "winner": "pi"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 608519.406167,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b",
+      "recording": "recordings/pi-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/pi-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/pi/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 24,
+        "eventTypes": {
+          "message_end": 10,
+          "tool_execution_start": 5,
+          "tool_execution_end": 5,
+          "turn_end": 4
+        },
+        "usage": {
+          "input": 2669,
+          "output": 16813,
+          "cacheRead": 9323,
+          "cacheWrite": 0,
+          "totalTokens": 28805
+        },
+        "turns": 4,
+        "assistantMessages": 4,
+        "toolCalls": 5,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 4,
+          "bash": 1
+        },
+        "stopReasons": {
+          "toolUse": 3,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": "",
+        "rawEventCount": 16769
+      },
+      "quality": {
+        "passed": false,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "index, engine, and store modules exist",
+            "passed": false
+          },
+          {
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "name": "hidden transactional, replay, and tamper checks pass",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}

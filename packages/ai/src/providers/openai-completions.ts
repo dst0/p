@@ -34,6 +34,12 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
+import {
+  findReasoningActionLoop,
+  findRepetitiveOutputSuffix,
+  findRepetitiveToolCallSuffix,
+  trimRepetitiveSuffix,
+} from "../utils/repetition.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
@@ -115,6 +121,12 @@ type ProgressChunk = Extract<
 
 const COLD_PREFILL_MIN_TOKENS = 512;
 const PREFERRED_MIN_ELAPSED_MS = 100;
+const TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS = 256;
+const OUTPUT_REPETITION_CHECK_INTERVAL_CHARS = 512;
+const TOOL_CALL_REPETITION_MESSAGE =
+  "Stopped a malformed tool call after its streamed arguments entered a repetitive loop.";
+const TEXT_REPETITION_MESSAGE = "Stopped a response after its streamed text entered a repetitive loop.";
+const THINKING_REPETITION_MESSAGE = "Stopped a response after its streamed reasoning entered a repetitive loop.";
 
 function readBoolean(fields: Record<string, unknown>, ...names: string[]): boolean | undefined {
   for (const name of names) {
@@ -391,6 +403,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
       let textBlock: TextContent | null = null;
       let thinkingBlock: ThinkingContent | null = null;
       let hasFinishReason = false;
+      let repetitiveStreamDetected = false;
       const toolCallBlocksByIndex = new Map<number, StreamingToolCallBlock>();
       const toolCallBlocksById = new Map<string, StreamingToolCallBlock>();
       const blocks = output.content as StreamingBlock[];
@@ -526,13 +539,29 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
         if (choice.delta) {
           if (choice.delta.content !== null && choice.delta.content !== undefined && choice.delta.content.length > 0) {
             const block = ensureTextBlock();
+            const previousLength = block.text.length;
             block.text += choice.delta.content;
+            const crossedRepetitionCheckBoundary =
+              Math.floor(previousLength / OUTPUT_REPETITION_CHECK_INTERVAL_CHARS) !==
+              Math.floor(block.text.length / OUTPUT_REPETITION_CHECK_INTERVAL_CHARS);
+            const repetition = crossedRepetitionCheckBoundary ? findRepetitiveOutputSuffix(block.text) : undefined;
+            if (repetition) {
+              block.text = trimRepetitiveSuffix(block.text, repetition);
+              output.stopReason = "length";
+              output.errorMessage = TEXT_REPETITION_MESSAGE;
+              hasFinishReason = true;
+              repetitiveStreamDetected = true;
+            }
             stream.push({
               type: "text_delta",
               contentIndex: getContentIndex(block),
               delta: choice.delta.content,
               partial: output,
             });
+          }
+
+          if (repetitiveStreamDetected) {
+            break;
           }
 
           // Some endpoints return reasoning in reasoning_content (llama.cpp),
@@ -558,7 +587,25 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
                   ? "reasoning_content"
                   : foundReasoningField;
               const block = ensureThinkingBlock(thinkingSignature);
+              const previousLength = block.thinking.length;
               block.thinking += delta;
+              const crossedRepetitionCheckBoundary =
+                Math.floor(previousLength / OUTPUT_REPETITION_CHECK_INTERVAL_CHARS) !==
+                Math.floor(block.thinking.length / OUTPUT_REPETITION_CHECK_INTERVAL_CHARS);
+              const repetition = crossedRepetitionCheckBoundary
+                ? findRepetitiveOutputSuffix(block.thinking)
+                : undefined;
+              const actionLoop =
+                crossedRepetitionCheckBoundary && !repetition ? findReasoningActionLoop(block.thinking) : undefined;
+              if (repetition || actionLoop) {
+                block.thinking = repetition
+                  ? trimRepetitiveSuffix(block.thinking, repetition)
+                  : block.thinking.slice(0, actionLoop!.start);
+                output.stopReason = "length";
+                output.errorMessage = THINKING_REPETITION_MESSAGE;
+                hasFinishReason = true;
+                repetitiveStreamDetected = true;
+              }
               stream.push({
                 type: "thinking_delta",
                 contentIndex: getContentIndex(block),
@@ -566,6 +613,10 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
                 partial: output,
               });
             }
+          }
+
+          if (repetitiveStreamDetected) {
+            break;
           }
 
           if (choice?.delta?.tool_calls) {
@@ -582,8 +633,23 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
               let delta = "";
               if (toolCall.function?.arguments) {
                 delta = toolCall.function.arguments;
-                block.partialArgs = (block.partialArgs ?? "") + toolCall.function.arguments;
+                const previousLength = block.partialArgs?.length ?? 0;
+                block.partialArgs = (block.partialArgs ?? "") + delta;
                 block.arguments = parseStreamingJson(block.partialArgs);
+                const crossedRepetitionCheckBoundary =
+                  Math.floor(previousLength / TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS) !==
+                  Math.floor(block.partialArgs.length / TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS);
+                const repetition = crossedRepetitionCheckBoundary
+                  ? findRepetitiveToolCallSuffix(block.partialArgs)
+                  : undefined;
+                if (repetition) {
+                  block.partialArgs = trimRepetitiveSuffix(block.partialArgs, repetition);
+                  block.arguments = parseStreamingJson(block.partialArgs);
+                  output.stopReason = "length";
+                  output.errorMessage = TOOL_CALL_REPETITION_MESSAGE;
+                  hasFinishReason = true;
+                  repetitiveStreamDetected = true;
+                }
               }
               stream.push({
                 type: "toolcall_delta",
@@ -591,7 +657,14 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
                 delta,
                 partial: output,
               });
+              if (repetitiveStreamDetected) {
+                break;
+              }
             }
+          }
+
+          if (repetitiveStreamDetected) {
+            break;
           }
 
           const reasoningDetails = (choice.delta as any).reasoning_details;

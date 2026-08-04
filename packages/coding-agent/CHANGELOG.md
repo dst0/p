@@ -4,6 +4,8 @@
 
 ### Changed
 
+- Require a requirement-to-evidence audit and adversarial boundary tests for absolute or negative acceptance guarantees before final verification, automatically finalize successful exact baseline replays, and infer eligible current-revision evidence for `record_final`.
+- Auto-record initial and follow-up session state before the requested tool executes, auto-classify verification intent before the first mutation, and require literal smallest-byte and full transactional-registry rollback checks.
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
 - Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
 - Persist the selected code-indexing device across installs and add `--select-indexing` to replace the saved choice.
@@ -11,6 +13,10 @@
 
 ### Fixed
 
+- Gate Kilo benchmark fixtures behind bounded model-resolution and request startup probes that preserve stderr, runtime logs, and state evidence while enforcing backend-model parity with PI and P.
+- Correct the event-sourced inventory benchmark's truncation check so it removes the final byte, score 25 fixed hidden invariants independently with severity weights, and retain hidden-test diagnostics in quality results.
+- Classify `npm run typecheck` and package-manager test variants correctly in task verification, rely on tool exit status instead of output-text heuristics, and return bookkeeping rejections as `needs_action` results instead of tool errors.
+- Stream benchmark JSONL recordings directly to gzip files so long cumulative-delta sessions cannot exhaust the Node.js string limit, and report clean completion separately from final-workspace quality.
 - Keep terminal mouse tracking off while the plan panel is visible unless `Ctrl+F2` mouse mode is active, preserving native session scrolling and text selection.
 - Fixed tool and message left accent bars rendering as disconnected segments in terminals with visible line spacing.
 - Fixed chaotic plan item ordering in `/state` command by using `getOrderedPlanTree()` with tree indentation instead of raw insertion order.
@@ -32,6 +38,7 @@
 
 ### Added
 
+- Add a 30-minute event-sourced inventory benchmark with hidden transactional, idempotency, replay, and tamper-detection checks.
 - Added fixed-order PI, P, and Kilo Code benchmark support with isolated configuration, pinned CLI versions, and duplicate-event-safe Kilo metrics.
 - Added classic light and Japanese aesthetic built-in themes (GitHub Light, Solarized Light, Catppuccin Latte, One Light, Sakura, Kanagawa, Matcha, Cyberpunk Tokyo).
 - Added classic built-in themes (Catppuccin, Darcula, Dracula, Gruvbox, Monokai, Nord, One Dark, Solarized Dark, Tokyo Night, VS Code Dark+) and dynamic built-in theme discovery.
