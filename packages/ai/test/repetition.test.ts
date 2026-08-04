@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  findReasoningActionLoop,
   findRepetitiveOutputSuffix,
   findRepetitiveToolCallSuffix,
   trimRepetitiveSuffix,
@@ -76,5 +77,58 @@ describe("tool-call repetition detection", () => {
     ).join("\n");
 
     expect(findRepetitiveOutputSuffix(output)).toBeUndefined();
+  });
+
+  it("detects repeated commitment and reconsideration cycles in long reasoning", () => {
+    const reasoning = Array.from({ length: 8 }, (_, index) => {
+      const variedAnalysis = Array.from(
+        { length: 40 },
+        (__, detail) => `Invariant ${index}-${detail} uses value ${((index + 1) * (detail + 17)).toString(36)}.`,
+      ).join(" ");
+      return [
+        `Let me implement module ${index} now.`,
+        variedAnalysis,
+        `Actually, I need to think more carefully about invariant ${index}.`,
+        variedAnalysis,
+        `Now I will write the code for module ${index}.`,
+      ].join("\n\n");
+    }).join("\n\n");
+
+    const loop = findReasoningActionLoop(reasoning);
+
+    expect(loop).toBeDefined();
+    expect(loop!.start).toBeGreaterThan(0);
+    expect(loop!.start).toBeLessThan(reasoning.length / 2);
+  });
+
+  it("does not flag long reasoning that keeps making concrete progress", () => {
+    const reasoning = Array.from(
+      { length: 800 },
+      (_, index) =>
+        `Observation ${index} verifies invariant ${(index * 7919).toString(36)} against case ${(index * 104729).toString(36)}.`,
+    ).join("\n");
+
+    expect(findReasoningActionLoop(reasoning)).toBeUndefined();
+  });
+
+  it("does not count action language inside generated code fences", () => {
+    const code = Array.from(
+      { length: 300 },
+      (_, index) =>
+        `// Let me implement branch ${index}. Actually, I should think about it. Now I will write the code.\nconst value${index} = ${index};`,
+    ).join("\n");
+    const reasoning = `Implementation follows:\n\n\`\`\`typescript\n${code}\n\`\`\``;
+
+    expect(findReasoningActionLoop(reasoning)).toBeUndefined();
+  });
+
+  it("does not flag a long implementation plan without reconsideration cycles", () => {
+    const commitments = Array.from(
+      { length: 20 },
+      (_, index) =>
+        `I will implement module ${index} after verifying requirement ${(index * 1543).toString(36)}. ${"Specific implementation detail. ".repeat(30)}`,
+    ).join("\n");
+
+    expect(findReasoningActionLoop(commitments)).toBeUndefined();
   });
 });

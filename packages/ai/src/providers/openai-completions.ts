@@ -34,7 +34,12 @@ import type {
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { parseStreamingJson } from "../utils/json-parse.ts";
-import { findRepetitiveOutputSuffix, findRepetitiveToolCallSuffix, trimRepetitiveSuffix } from "../utils/repetition.ts";
+import {
+  findReasoningActionLoop,
+  findRepetitiveOutputSuffix,
+  findRepetitiveToolCallSuffix,
+  trimRepetitiveSuffix,
+} from "../utils/repetition.ts";
 import { sanitizeSurrogates } from "../utils/sanitize-unicode.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "./github-copilot-headers.ts";
@@ -590,8 +595,12 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
               const repetition = crossedRepetitionCheckBoundary
                 ? findRepetitiveOutputSuffix(block.thinking)
                 : undefined;
-              if (repetition) {
-                block.thinking = trimRepetitiveSuffix(block.thinking, repetition);
+              const actionLoop =
+                crossedRepetitionCheckBoundary && !repetition ? findReasoningActionLoop(block.thinking) : undefined;
+              if (repetition || actionLoop) {
+                block.thinking = repetition
+                  ? trimRepetitiveSuffix(block.thinking, repetition)
+                  : block.thinking.slice(0, actionLoop!.start);
                 output.stopReason = "length";
                 output.errorMessage = THINKING_REPETITION_MESSAGE;
                 hasFinishReason = true;

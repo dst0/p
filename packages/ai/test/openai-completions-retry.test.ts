@@ -289,6 +289,56 @@ describe("openai-completions provider retries", () => {
     expect(mockState.yieldedChunks).toBeLessThan(100);
   });
 
+  it("stops a streamed reasoning action loop with varied analysis", async () => {
+    mockState.streamChunks = [
+      ...Array.from({ length: 8 }, (_, index) => {
+        const variedAnalysis = Array.from(
+          { length: 40 },
+          (__, detail) => `Invariant ${index}-${detail} uses value ${((index + 1) * (detail + 17)).toString(36)}.`,
+        ).join(" ");
+        return {
+          id: "chatcmpl-thinking-action-loop",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                reasoning_content: [
+                  `Let me implement module ${index} now.`,
+                  variedAnalysis,
+                  `Actually, I need to think more carefully about invariant ${index}.`,
+                  variedAnalysis,
+                  `Now I will write the code for module ${index}.`,
+                ].join("\n\n"),
+              },
+            },
+          ],
+        };
+      }),
+      {
+        id: "chatcmpl-thinking-action-loop",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("streamed reasoning entered a repetitive loop"),
+      },
+    });
+    if (done?.type !== "done") {
+      throw new Error("Expected done event");
+    }
+    const thinking = done.message.content.find((block) => block.type === "thinking");
+    expect(thinking?.type === "thinking" ? thinking.thinking.length : Number.POSITIVE_INFINITY).toBeLessThan(6_000);
+    expect(mockState.yieldedChunks).toBeLessThan(9);
+  });
+
   it("maps orchestrator progress chunks to assistant progress events", async () => {
     mockState.streamChunks = [
       {
