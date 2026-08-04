@@ -24,9 +24,10 @@ const codingAgentPackage = join(repoRoot, "packages", "coding-agent", "package.j
 const defaultModelsFile = join(homedir(), ".p", "agent", "models.json");
 const defaultAuthFile = join(homedir(), ".p", "agent", "auth.json");
 const defaultKiloConfigFile = join(homedir(), ".config", "kilo", "kilo.jsonc");
+const defaultCodexConfigFile = join(homedir(), ".codex", "config.toml");
 const defaultPiVersion = "0.82.1";
 const defaultKiloVersion = "7.4.16";
-const supportedAgents = ["pi", "p", "kilo"];
+const supportedAgents = ["pi", "p", "kilo", "codex", "agy"];
 const defaultTimeoutSeconds = 300;
 const defaultMaxRuntimeSeconds = 900;
 const defaultKiloStartupTimeoutSeconds = 60;
@@ -35,9 +36,9 @@ function printHelp() {
 	console.log(`Usage:
   npm run benchmark:agents -- --model <provider/id> [options]
 
-Compare this checkout (p) with PI and optionally Kilo Code CLI using the same
-underlying model and three deterministic TypeScript coding fixtures, including
-a 30-minute transactional event-sourcing challenge.
+Compare this checkout (p) with PI, optionally Kilo Code CLI and Codex CLI, using the same
+underlying model and four deterministic TypeScript coding fixtures, including
+transactional event sourcing and an extreme durable workflow/saga challenge.
 
 Options:
   --model <provider/id>       PI/P model alias (required when either is selected)
@@ -56,6 +57,9 @@ Options:
   --kilo-startup-timeout-seconds <n>
                               Bounded timeout for each Kilo startup probe
                               (default: ${defaultKiloStartupTimeoutSeconds})
+  --codex-model <provider/id> Codex model alias (required when Codex is selected)
+  --codex-config <path>       Codex config.toml (default: ~/.codex/config.toml)
+  --agy-model <model-id>      Google Antigravity model (required when AGY is selected)
   --task <id>                 Run only one fixture (optional)
   --runs <n>                  Complete repetitions (default: 1)
   --timeout-seconds <n>       Per-agent task timeout (default: ${defaultTimeoutSeconds})
@@ -90,6 +94,9 @@ function parseArgs(argv) {
 		kiloConfig: defaultKiloConfigFile,
 		expectedResolvedModel: process.env.BENCHMARK_RESOLVED_MODEL,
 		kiloStartupTimeoutSeconds: defaultKiloStartupTimeoutSeconds,
+		codexModel: process.env.CODEX_BENCHMARK_MODEL,
+		codexConfig: defaultCodexConfigFile,
+		agyModel: process.env.AGY_BENCHMARK_MODEL,
 		task: undefined,
 		runs: 1,
 		timeoutSeconds: defaultTimeoutSeconds,
@@ -112,6 +119,9 @@ function parseArgs(argv) {
 			|| arg === "--kilo-version"
 			|| arg === "--kilo-config"
 			|| arg === "--expected-resolved-model"
+			|| arg === "--codex-model"
+			|| arg === "--codex-config"
+			|| arg === "--agy-model"
 			|| arg === "--task"
 			|| arg === "--output"
 		) {
@@ -125,6 +135,9 @@ function parseArgs(argv) {
 			if (arg === "--kilo-version") options.kiloVersion = value;
 			if (arg === "--kilo-config") options.kiloConfig = resolve(value);
 			if (arg === "--expected-resolved-model") options.expectedResolvedModel = value;
+			if (arg === "--codex-model") options.codexModel = value;
+			if (arg === "--codex-config") options.codexConfig = resolve(value);
+			if (arg === "--agy-model") options.agyModel = value;
 			if (arg === "--task") options.task = value;
 			if (arg === "--output") options.output = resolve(value);
 			continue;
@@ -163,6 +176,12 @@ function parseArgs(argv) {
 		if (!options.expectedResolvedModel) {
 			throw new Error("--expected-resolved-model is required when Kilo runs without PI/P");
 		}
+	}
+	if (options.agents.includes("codex") && !options.codexModel) {
+		throw new Error("--codex-model is required when Codex is selected");
+	}
+	if (options.agents.includes("agy") && !options.agyModel) {
+		throw new Error("--agy-model is required when AGY is selected");
 	}
 	return options;
 }
@@ -247,6 +266,12 @@ const fixtureTsconfig = `{
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }
 `;
+
+const workflowFixtureDir = join(repoRoot, "benchmarks", "fixtures", "durable-workflow");
+const workflowRequirements = readFileSync(join(workflowFixtureDir, "requirements.md"), "utf8");
+const workflowContract = readFileSync(join(workflowFixtureDir, "contract.test.ts"), "utf8");
+const workflowHiddenVerification = readFileSync(join(workflowFixtureDir, "hidden.test.ts"), "utf8");
+const workflowHiddenRubric = JSON.parse(readFileSync(join(workflowFixtureDir, "rubric.json"), "utf8"));
 
 const calculatorContract = `import * as assert from "node:assert/strict";
 import { test } from "node:test";
@@ -906,7 +931,7 @@ const inventoryHiddenRubric = [
 const tasks = [
 	{
 		id: "typescript-calculator",
-		timeoutSeconds: 300,
+		timeoutSeconds: 900,
 		description: "Build a tested TypeScript calculator library and CLI from a written specification",
 		files: {
 			"requirements.md": `# TypeScript calculator\n\nBuild a small calculator library and CLI.\n\n- Export evaluate(expression: string): number from src/calculator.ts.\n- Support decimal literals, whitespace, binary +, -, *, /, unary minus, and parentheses.\n- Use normal precedence and left associativity.\n- Throw an Error for malformed expressions and division by zero.\n- Add src/cli.ts. npm run calc -- \"2 + 3 * (4 - 1)\" must print 11. Invalid input must exit nonzero and write a useful message to stderr.\n- Add meaningful tests in test/calculator.test.ts without changing the contract test.\n- Run npm test and npm run typecheck before finishing.\n`,
@@ -939,7 +964,7 @@ const tasks = [
 	},
 	{
 		id: "monolith-split",
-		timeoutSeconds: 600,
+		timeoutSeconds: 1200,
 		description: "Split a large existing TypeScript module into focused files without changing its public behavior",
 		files: {
 			"README.md": `# Task report repository\n\nThis is an existing TypeScript repository. The public API currently lives in src/monolith.ts, which has grown into a large mixed-responsibility module.\n\nSplit it into focused modules for parsing, querying, and reporting. Keep src/monolith.ts as a compatibility facade so existing consumers do not change their import path. Preserve behavior, exports, and output. Do not change the contract tests. Add tests for the extracted modules and run npm test and npm run typecheck.\n`,
@@ -973,7 +998,7 @@ const tasks = [
 	},
 	{
 		id: "event-sourced-inventory",
-		timeoutSeconds: 1800,
+		timeoutSeconds: 2400,
 		description: "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
 		files: {
 			"README.md": `# Event-sourced inventory engine
@@ -1066,6 +1091,60 @@ Keep storage/event-log concerns in \`src/store.ts\`, domain behavior in \`src/en
 			]);
 		},
 	},
+	{
+		id: "durable-workflow-saga",
+		timeoutSeconds: 3600,
+		description:
+			"Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+		files: {
+			"README.md": workflowRequirements,
+			"package.json": fixturePackageJson,
+			"tsconfig.json": fixtureTsconfig,
+			"test/workflow.contract.test.ts": workflowContract,
+		},
+		prompt: `Implement the complete production-quality durable workflow and saga engine described in README.md. Read every supplied file first and preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep orchestration in src/engine.ts, deterministic scheduling and fenced leases in src/scheduler.ts, durable hash-chained log validation in src/store.ts, and public exports in src/index.ts. Pay particular attention to full DAG validation, global command idempotency, virtual-time retry backoff, stale lease fencing, reverse-order compensation, deep immutability, deterministic JSONL, adversarial restore validation, and exact continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.`,
+		verify(workspace, baseline) {
+			const preservedFiles = ["README.md", "package.json", "tsconfig.json", "test/workflow.contract.test.ts"];
+			const preserved = preservedFiles.every((file) => readText(join(workspace, file)) === baseline[file]);
+			const sourceFiles = ["src/index.ts", "src/engine.ts", "src/scheduler.ts", "src/store.ts"].every((file) =>
+				existsSync(join(workspace, file)),
+			);
+			const testFiles = listFiles(join(workspace, "test")).filter((file) => file !== "workflow.contract.test.ts");
+			const addedTests = testFiles.some((file) => /test\(/.test(readText(join(workspace, "test", file)) ?? ""));
+			const visibleTests = runFixtureCommand(workspace, ["test"]);
+			const typecheck = runFixtureCommand(workspace, ["run", "typecheck"]);
+			const hiddenTestPath = join(workspace, "test", "workflow.hidden.test.ts");
+			let hiddenTests;
+			try {
+				writeFileSync(hiddenTestPath, workflowHiddenVerification, "utf8");
+				hiddenTests = runFixtureCommand(workspace, ["test"], {
+					NODE_OPTIONS: [process.env.NODE_OPTIONS, "--test-reporter=tap"].filter(Boolean).join(" "),
+				});
+			} finally {
+				rmSync(hiddenTestPath, { force: true });
+			}
+			const testsPass = visibleTests.status === 0;
+			const typecheckPasses = typecheck.status === 0;
+			const hiddenOutput = [hiddenTests.stdout, hiddenTests.stderr].filter(Boolean).join("\n");
+			const hiddenResults = parseNamedNodeTests(hiddenOutput, "workflow");
+			const hiddenChecks = workflowHiddenRubric.map((rubric) => ({
+				name: rubric.name,
+				passed: hiddenResults.get(rubric.id) === true,
+				weight: rubric.weight,
+			}));
+			const hiddenTestsPass = hiddenTests.status === 0 && hiddenChecks.every((check) => check.passed);
+			const firstFailedHiddenCheck = hiddenChecks.find((check) => !check.passed);
+			if (firstFailedHiddenCheck) firstFailedHiddenCheck.details = hiddenOutput.slice(-12_000);
+			return taskResult(preserved && sourceFiles && addedTests && testsPass && typecheckPasses && hiddenTestsPass, [
+				{ name: "README, config, and contract preserved", passed: preserved, weight: 3 },
+				{ name: "index, engine, scheduler, and store modules exist", passed: sourceFiles, weight: 8 },
+				{ name: "agent added substantial workflow tests", passed: addedTests, weight: 3 },
+				{ name: "visible npm test passes", passed: testsPass, weight: 10 },
+				{ name: "npm run typecheck passes", passed: typecheckPasses, weight: 8 },
+				...hiddenChecks,
+			]);
+		},
+	},
 ];
 
 function createWorkspace(root, agent, runNumber, task) {
@@ -1118,6 +1197,12 @@ function createAgentDirs(options) {
 	ensureDir(kiloConfigDir);
 	if (existsSync(options.kiloConfig)) copyFileSync(options.kiloConfig, join(kiloConfigDir, "kilo.jsonc"));
 	dirs.kilo = kiloDir;
+	const codexDir = join(root, "codex");
+	ensureDir(codexDir);
+	if (existsSync(options.codexConfig)) copyFileSync(options.codexConfig, join(codexDir, "config.toml"));
+	dirs.codex = codexDir;
+	dirs.agy = join(root, "agy");
+	ensureDir(dirs.agy);
 	return { root, dirs };
 }
 
@@ -1133,6 +1218,25 @@ function kiloEnvironment(configDir) {
 }
 
 function commandFor(agent, options, task, configDir, workspace) {
+	if (agent === "agy") {
+		return {
+			executable: "agy",
+			args: [
+				"--model",
+				options.agyModel,
+				"--new-project",
+				"--dangerously-skip-permissions",
+				"--output-format",
+				"stream-json",
+				"--print-timeout",
+				`${task.timeoutSeconds}s`,
+				"-p",
+				task.prompt,
+			],
+			env: { ...process.env, NO_COLOR: "1" },
+			cwd: workspace,
+		};
+	}
 	if (agent === "kilo") {
 		return {
 			executable: "kilo",
@@ -1149,6 +1253,32 @@ function commandFor(agent, options, task, configDir, workspace) {
 				task.prompt,
 			],
 			env: kiloEnvironment(configDir),
+			cwd: workspace,
+		};
+	}
+	if (agent === "codex") {
+		const env = {
+			...process.env,
+			NO_COLOR: "1",
+			CODEX_HOME: configDir,
+		};
+		return {
+			executable: "codex",
+			args: [
+				"exec",
+				"-c",
+				"model_provider=\"blackbox-ai-gateway\"",
+				"-m",
+				options.codexModel,
+				"--json",
+				"--dangerously-bypass-approvals-and-sandbox",
+				"--color",
+				"never",
+				"-C",
+				workspace,
+				task.prompt,
+			],
+			env,
 			cwd: workspace,
 		};
 	}
@@ -1242,9 +1372,12 @@ function copyEvidenceTree(source, destination) {
 const metricEventTypes = new Set([
 	"auto_retry_end",
 	"error",
+	"init",
 	"message_end",
 	"request_start",
+	"result",
 	"step_finish",
+	"step_update",
 	"text",
 	"tool_execution_end",
 	"tool_execution_start",
@@ -1290,7 +1423,7 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 				rawEventCount += 1;
 				try {
 					const event = JSON.parse(line);
-					if (metricEventTypes.has(event?.type)) stdout += `${line}\n`;
+					if (metricEventTypes.has(event?.type ?? event?.event)) stdout += `${line}\n`;
 				} catch {
 					// The complete malformed line remains available in the raw recording.
 				}
@@ -1331,7 +1464,7 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 				rawEventCount += 1;
 				try {
 					const event = JSON.parse(stdoutBuffer);
-					if (metricEventTypes.has(event?.type)) stdout += `${stdoutBuffer}\n`;
+					if (metricEventTypes.has(event?.type ?? event?.event)) stdout += `${stdoutBuffer}\n`;
 				} catch {
 					// The complete malformed line remains available in the raw recording.
 				}
@@ -1351,6 +1484,60 @@ function extractText(content) {
 		.join("\n");
 }
 
+function parseAgyRecording(events) {
+	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+	const toolNames = {};
+	const seenToolSteps = new Set();
+	const errors = [];
+	let toolErrors = 0;
+	let finalText = "";
+	let model;
+	let turns = 0;
+	for (const event of events) {
+		if (event.event === "init") model = event.init?.model;
+		if (event.event === "step_update") {
+			const step = event.step_update;
+			if (step?.step_type === "tool" && !seenToolSteps.has(step.step_index)) {
+				seenToolSteps.add(step.step_index);
+				const toolName = step.tool_name ?? step.tool_info?.name ?? "unknown";
+				toolNames[toolName] = (toolNames[toolName] ?? 0) + 1;
+			}
+			if (step?.step_type === "tool" && (step.state === "ERROR" || step.state === "FAILED")) toolErrors += 1;
+		}
+		if (event.event === "result") {
+			turns = Number(event.result?.num_turns ?? 0);
+			finalText = typeof event.result?.response === "string" ? event.result.response : "";
+			const resultUsage = event.result?.usage ?? {};
+			usage.input = Number(resultUsage.input_tokens ?? 0);
+			usage.output = Number(resultUsage.output_tokens ?? 0);
+			usage.cacheRead = Number(resultUsage.cache_read_tokens ?? 0);
+			usage.totalTokens = Number(resultUsage.total_tokens ?? 0);
+			if (event.result?.status !== "SUCCESS") errors.push(`AGY result status: ${event.result?.status ?? "unknown"}`);
+		}
+		if (event.event === "error") errors.push(String(event.error?.message ?? event.message ?? "AGY error"));
+	}
+	return {
+		eventCount: events.length,
+		eventTypes: Object.fromEntries(
+			events.reduce(
+				(counts, event) => counts.set(event.event ?? "unknown", (counts.get(event.event ?? "unknown") ?? 0) + 1),
+				new Map(),
+			),
+		),
+		model: model ? { provider: "google-antigravity", id: model, api: "agy-cli" } : undefined,
+		responseModel: model,
+		usage,
+		turns,
+		assistantMessages: turns,
+		toolCalls: seenToolSteps.size,
+		toolErrors,
+		toolNames,
+		stopReasons: {},
+		errors,
+		finalText,
+	};
+}
+
 function parseRecording(stdout, agent) {
 	const events = [];
 	for (const line of stdout.split(/\r?\n/)) {
@@ -1362,7 +1549,13 @@ function parseRecording(stdout, agent) {
 			// Preserve malformed lines in the recording while ignoring them in metrics.
 		}
 	}
-	return agent === "kilo" ? parseKiloRecording(events) : parsePiRecording(events);
+	return agent === "kilo"
+		? parseKiloRecording(events)
+		: agent === "codex"
+			? parseCodexRecording(events)
+			: agent === "agy"
+				? parseAgyRecording(events)
+				: parsePiRecording(events);
 }
 
 function commandProbeEvidence(result, recording, stderr) {
@@ -1454,6 +1647,51 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 		};
 		copyEvidenceTree(join(dataRoot, "kilo", "log"), join(diagnosticsDir, "runtime-logs"));
 		copyEvidenceTree(stateRoot, join(diagnosticsDir, "runtime-state"));
+		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+	}
+}
+
+async function runAgyStartupProbe(options, configDir, output, deadline) {
+	const diagnosticsDir = join(output, "diagnostics", "agy-startup");
+	const workspace = join(configDir, "startup-probe-workspace");
+	ensureDir(diagnosticsDir);
+	ensureDir(workspace);
+	const recording = "request.jsonl.gz";
+	const stderr = "request.stderr.log";
+	const marker = "benchmark-startup-ok";
+	const evidence = {
+		status: "running",
+		requestedModel: options.agyModel,
+		recording,
+		stderr,
+	};
+	try {
+		const result = await runCommand(
+			commandFor("agy", options, { prompt: `Reply exactly: ${marker}`, timeoutSeconds: 60 }, configDir, workspace),
+			Math.min(60_000, Math.max(1, deadline - performance.now())),
+			join(diagnosticsDir, recording),
+		);
+		writeFileSync(join(diagnosticsDir, stderr), result.stderr, "utf8");
+		const metrics = parseRecording(result.stdout, "agy");
+		const responseMatched = metrics.finalText.trim() === marker;
+		const modelMatched = metrics.responseModel === options.agyModel;
+		Object.assign(evidence, {
+			...commandProbeEvidence(result, recording, stderr),
+			responseMatched,
+			modelMatched,
+			resolvedModel: metrics.responseModel,
+			errors: metrics.errors,
+		});
+		if (result.timedOut || result.code !== 0 || metrics.errors.length > 0 || !responseMatched || !modelMatched) {
+			throw new Error("AGY startup probe failed");
+		}
+		evidence.status = "passed";
+		return evidence;
+	} catch (error) {
+		evidence.status = "failed";
+		evidence.error = error instanceof Error ? error.message : String(error);
+		throw new Error(`${evidence.error}; evidence: ${diagnosticsDir}`);
+	} finally {
 		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 	}
 }
@@ -1571,6 +1809,86 @@ function parseKiloRecording(rawEvents) {
 	};
 }
 
+function parseCodexRecording(rawEvents) {
+	const events = rawEvents.filter(
+		(event) =>
+			typeof event === "object" &&
+			event !== null &&
+			("type" in event || "message_type" in event) &&
+			!String(event.type ?? "").startsWith("node:") &&
+			!String(event.type ?? "").startsWith("nodejs")
+	);
+	const counts = {};
+	const toolNames = {};
+	const stopReasons = {};
+	const usage = { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, totalTokens: 0 };
+	const assistantTexts = [];
+	const errors = [];
+	const seenToolIds = new Set();
+	let toolErrors = 0;
+	for (const event of events) {
+		const type = event.message_type ?? event.type;
+		if (typeof type === "string") counts[type] = (counts[type] ?? 0) + 1;
+
+		// Tool use events - Codex uses "tool_use" type with name parameter
+		if (type === "tool_use" && event.tool_name) {
+			const id = event.tool_use_id ?? event.id;
+			if (id && !seenToolIds.has(id)) {
+				seenToolIds.add(id);
+				toolNames[event.tool_name] = (toolNames[event.tool_name] ?? 0) + 1;
+			}
+		}
+
+		// Tool result events - check for errors
+		if (type === "tool_result" && event.status === "error") {
+			toolErrors += 1;
+		}
+
+		// Assistant text content
+		if (type === "assistant" || type === "text") {
+			if (typeof event.content === "string") {
+				assistantTexts.push(event.content);
+			} else if (Array.isArray(event.content)) {
+				for (const part of event.content) {
+					if (part.type === "text" && typeof part.text === "string") {
+						assistantTexts.push(part.text);
+					}
+				}
+			}
+		}
+
+		// Token usage from finish/reasoning events
+		if (type === "finish" || type === "turn_end" || type === "step_finish") {
+			if (event.usage || event.token_usage) {
+				const u = event.usage ?? event.token_usage;
+				usage.input += Number(u.input_tokens ?? u.prompt_tokens ?? 0);
+				usage.output += Number(u.output_tokens ?? u.completion_tokens ?? 0);
+				usage.totalTokens += Number(u.total_tokens ?? (u.input_tokens && u.output_tokens ? u.input_tokens + u.output_tokens : 0));
+			}
+			if (event.stop_reason) {
+				stopReasons[event.stop_reason] = (stopReasons[event.stop_reason] ?? 0) + 1;
+			}
+		}
+
+		// Error events
+		if (type === "error" || event.error) {
+			errors.push(String(event.error?.message ?? event.message ?? "Codex error"));
+		}
+	}
+	return {
+		eventCount: events.length,
+		rawEventCount: rawEvents.length,
+		eventTypes: counts,
+		usage,
+		toolCalls: seenToolIds.size,
+		toolErrors,
+		toolNames,
+		stopReasons,
+		errors,
+		finalText: assistantTexts.at(-1) ?? "",
+	};
+}
+
 function formatMs(value) {
 	return `${Math.round(value)} ms`;
 }
@@ -1620,8 +1938,12 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `Generated: ${new Date().toISOString()}\n\n`;
 	report += `PI/P model alias: \`${options.model ?? "not selected"}\`\n\n`;
 	if (options.agents.includes("kilo")) report += `Kilo model alias: \`${options.kiloModel}\`\n\n`;
+	if (options.agents.includes("agy")) report += `AGY model: \`${options.agyModel}\`\n\n`;
 	if (startupProbes.kilo) {
 		report += `Kilo resolved backend model: \`${startupProbes.kilo.resolvedModel}\` (startup probe: ${startupProbes.kilo.status})\n\n`;
+	}
+	if (startupProbes.agy) {
+		report += `AGY resolved model: \`${startupProbes.agy.resolvedModel}\` (startup probe: ${startupProbes.agy.status})\n\n`;
 	}
 	report += `Versions: ${options.agents.map((agent) => `\`${agent} ${versions[agent]}\``).join(", ")}\n\n`;
 	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
@@ -1643,11 +1965,14 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `\n## Interpretation\n\n`;
 	report += `- Session recordings are the compressed JSONL files under [recordings](./recordings). They contain the event stream used to calculate these metrics.\n`;
 	report += `- Completed passes require a clean agent exit before the timeout. Quality passes report the final workspace checks independently, so a timed-out agent can still leave a passing artifact.\n`;
-	report += `- Fixture checks run the TypeScript test suite and typecheck; the calculator also has a CLI acceptance check, the refactor checks its focused modules and reduced facade, and the inventory challenge scores each fixed hidden invariant independently with higher weights for atomicity and tamper/truncation safety.\n`;
+	report += `- Fixture checks run the TypeScript test suite and typecheck; advanced fixtures score each hidden invariant independently. Inventory emphasizes atomicity and tamper safety; durable workflow adds DAG scheduling, lease fencing, retry timing, compensation, and adversarial recovery.\n`;
 	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
 	if (options.agents.includes("kilo")) {
 		report += `- Kilo fixtures start only after bounded model-resolution and request probes pass. Probe recordings, stderr, runtime logs, and state evidence are under [diagnostics/kilo-startup](./diagnostics/kilo-startup).\n`;
 		report += `- Kilo currently emits duplicate JSONL events. Raw recordings preserve them; calculated Kilo metrics deduplicate events by event type, part ID, and state.\n`;
+	}
+	if (options.agents.includes("agy")) {
+		report += `- AGY fixtures start only after a bounded request probe confirms the exact requested model. Probe recording, stderr, and state evidence are under [diagnostics/agy-startup](./diagnostics/agy-startup).\n`;
 	}
 	report += `- Provider latency, model sampling, cache state, agent order, and package versions can dominate this small sample.\n`;
 	writeFileSync(join(output, "report.md"), report, "utf8");
@@ -1682,6 +2007,16 @@ async function main() {
 		}
 		versions.kilo = installedKiloVersion;
 	}
+	if (options.agents.includes("codex")) {
+		const codexVersionResult = spawnSync("codex", ["--version"], { encoding: "utf8" });
+		if (codexVersionResult.status !== 0) throw new Error("Unable to run codex --version");
+		versions.codex = codexVersionResult.stdout.trim();
+	}
+	if (options.agents.includes("agy")) {
+		const agyVersionResult = spawnSync("agy", ["--version"], { encoding: "utf8" });
+		if (agyVersionResult.status !== 0) throw new Error("Unable to run agy --version");
+		versions.agy = agyVersionResult.stdout.trim();
+	}
 	const benchmarkTasks = options.task ? tasks.filter((task) => task.id === options.task) : tasks;
 	if (benchmarkTasks.length === 0) throw new Error(`Unknown task: ${options.task}`);
 	const output = options.output ?? join(repoRoot, "benchmarks", "results", timestampLabel());
@@ -1696,12 +2031,18 @@ async function main() {
 	console.log(`Benchmark output: ${output}`);
 	console.log(`PI/P model: ${options.model ?? "not selected"}`);
 	if (options.agents.includes("kilo")) console.log(`Kilo model: ${options.kiloModel}`);
+	if (options.agents.includes("codex")) console.log(`Codex model: ${options.codexModel}`);
+	if (options.agents.includes("agy")) console.log(`AGY model: ${options.agyModel}`);
 	console.log(`Versions: ${options.agents.map((agent) => `${agent} ${versions[agent]}`).join(", ")}`);
 	console.log(`Sequential order: ${options.agents.join(" -> ")}`);
 	try {
 		if (options.agents.includes("kilo")) {
 			startupProbes.kilo = await runKiloStartupProbe(options, agentDirs.dirs.kilo, output, deadline);
 			console.log(`Kilo startup probe: passed, resolved ${startupProbes.kilo.resolvedModel}`);
+		}
+		if (options.agents.includes("agy")) {
+			startupProbes.agy = await runAgyStartupProbe(options, agentDirs.dirs.agy, output, deadline);
+			console.log(`AGY startup probe: passed, resolved ${startupProbes.agy.resolvedModel}`);
 		}
 		for (let run = 1; run <= options.runs; run += 1) {
 			for (const agent of options.agents) {
@@ -1740,7 +2081,7 @@ async function main() {
 						signal: result.signal,
 						timedOut: result.timedOut,
 						error: result.error,
-						modelAlias: agent === "kilo" ? options.kiloModel : options.model,
+						modelAlias: agent === "kilo" ? options.kiloModel : agent === "agy" ? options.agyModel : options.model,
 						recording: join("recordings", recordingName),
 						stderr: join("stderr", stderrName),
 						workspace: workspace.slice(output.length + 1),
@@ -1763,6 +2104,7 @@ async function main() {
 			pi: options.model,
 			p: options.model,
 			kilo: options.agents.includes("kilo") ? options.kiloModel : undefined,
+			agy: options.agents.includes("agy") ? options.agyModel : undefined,
 		},
 		versions,
 		startupProbes,
