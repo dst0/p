@@ -763,4 +763,69 @@ describe("task verification controller", () => {
     expect((await beforeTool(agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
     expect((await beforeTool(agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
   });
+
+  it("resolves implicit failed evidence when final_status is failed", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix a bug and verify it with a failing regression test",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/main.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const command = "npm run test -- test/bug.test.ts";
+    await afterTool(agent, "bash", { command }, { isError: true, text: "failed" });
+
+    const final = await callVerificationTool(controller, {
+      action: "record_final",
+      final_status: "failed",
+    });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final.status).toBe("failed");
+  });
+
+  it("resolves a failed exact baseline replay when final_status is failed", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix an exact replay regression",
+    });
+    await callVerificationTool(controller, {
+      action: "authorize_baseline_test",
+      test_paths: ["test/exact-failure.test.ts"],
+    });
+    await afterTool(agent, "edit", {
+      path: "test/exact-failure.test.ts",
+      edits: [{ oldText: "old", newText: "failing regression" }],
+    });
+    const command = "npm run test -- test/exact-failure.test.ts";
+    const baselineEvidence = evidenceHandle(
+      await afterTool(agent, "bash", { command }, { isError: true, text: "baseline failure" }),
+    );
+    await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "The exact focused regression exposes the defect",
+      conclusion: "The baseline fails with the expected defect",
+      evidence_refs: [baselineEvidence],
+      unresolved_assumptions: [],
+    });
+    await afterTool(agent, "edit", {
+      path: "src/main.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    await afterTool(agent, "bash", { command }, { isError: true, text: "current failure" });
+
+    const final = await callVerificationTool(controller, {
+      action: "record_final",
+      final_status: "failed",
+    });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final.status).toBe("failed");
+  });
 });
