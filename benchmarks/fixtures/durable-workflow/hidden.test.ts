@@ -40,7 +40,7 @@ named("dag-order", () => {
     { id: "deploy", dependsOn: ["test"] },
   ]);
   assert.equal(claim(engine, "w", 0).taskId, "compile");
-  assert.equal(engine.claim("other", 0, 10), undefined);
+  assert.ok(engine.claim("other", 0, 10) == null);
 });
 
 named("deterministic-order", () => {
@@ -97,7 +97,7 @@ named("monotonic-time", () => {
 named("exclusive-lease", () => {
   const engine = start([{ id: "a" }]);
   const first = claim(engine, "w1", 0);
-  assert.equal(engine.claim("w2", 9, 10), undefined);
+  assert.ok(engine.claim("w2", 9, 10) == null);
   assert.equal(first.leaseExpiresAt, 10);
 });
 
@@ -106,7 +106,7 @@ named("heartbeat", () => {
   const first = claim(engine, "w1", 0);
   const renewed = engine.heartbeat(first, 5, 20);
   assert.equal(renewed.leaseExpiresAt, 25);
-  assert.equal(engine.claim("w2", 20, 10), undefined);
+  assert.ok(engine.claim("w2", 20, 10) == null);
   assert.throws(() => engine.heartbeat({ ...first, workerId: "other" }, 20, 10), ConcurrencyError);
 });
 
@@ -148,10 +148,10 @@ named("retry-backoff", () => {
   const engine = start([{ id: "a", maxAttempts: 3, retryDelayMs: 10 }]);
   const first = claim(engine, "w", 0);
   engine.fail(first, "first", { commandId: "f1", now: 1 });
-  assert.equal(engine.claim("w", 10, 10), undefined);
+  assert.ok(engine.claim("w", 10, 10) == null);
   const second = claim(engine, "w", 11);
   engine.fail(second, "second", { commandId: "f2", now: 12 });
-  assert.equal(engine.claim("w", 31, 10), undefined);
+  assert.ok(engine.claim("w", 31, 10) == null);
   assert.equal(claim(engine, "w", 32).attempt, 3);
 });
 
@@ -159,13 +159,13 @@ named("attempt-exhaustion", () => {
   const engine = start([{ id: "a", maxAttempts: 1 }]);
   engine.fail(claim(engine, "w", 0), "fatal", { commandId: "fail", now: 1 });
   assert.equal(engine.state("wf").status, "failed");
-  assert.equal(engine.claim("w", 1, 10), undefined);
+  assert.ok(engine.claim("w", 1, 10) == null);
 });
 
 named("cancel-forward", () => {
   const engine = start([{ id: "a" }, { id: "b" }]);
   engine.cancel("wf", { commandId: "cancel", now: 1, reason: "operator" });
-  assert.equal(engine.claim("w", 1, 10), undefined);
+  assert.ok(engine.claim("w", 1, 10) == null);
   assert.equal(engine.state("wf").status, "cancelled");
 });
 
@@ -188,7 +188,10 @@ named("compensation-order", () => {
 });
 
 named("compensation-fencing", () => {
-  const engine = start([{ id: "a", compensate: true, maxAttempts: 3 }]);
+  const engine = start([
+    { id: "a", compensate: true, maxAttempts: 3 },
+    { id: "b", dependsOn: ["a"] },
+  ]);
   complete(engine, "w", 0, "ok");
   engine.cancel("wf", { commandId: "cancel", now: 2, reason: "stop" });
   const stale = claim(engine, "w1", 2, 5);
@@ -261,13 +264,17 @@ named("restore-continuation", () => {
   const engine = start([{ id: "a" }, { id: "b", dependsOn: ["a"] }]);
   complete(engine, "w", 0, "a");
   const restored = WorkflowEngine.fromLog(engine.exportLog());
-  const before = lines(restored);
+  const beforeEvents = lines(restored).slice(0, -1);
   const current = claim(restored, "w", 2);
   assert.equal(current.taskId, "b");
   restored.complete(current, "ok", { commandId: "b", now: 3 });
-  const after = lines(restored);
-  assert.equal(after.at(-2)?.position, before.length);
-  assert.equal(after.at(-2)?.previousHash, before.at(-2)?.hash);
+  const afterEvents = lines(restored).slice(0, -1);
+  const appended = afterEvents.slice(beforeEvents.length);
+  assert.deepEqual(
+    appended.map((event) => event.position),
+    appended.map((_, index) => beforeEvents.length + index + 1),
+  );
+  assert.equal(appended[0]?.previousHash, beforeEvents.at(-1)?.hash);
 });
 
 named("content-tamper", () => {

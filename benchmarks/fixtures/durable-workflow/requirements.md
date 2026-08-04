@@ -35,6 +35,7 @@ Claims contain `workflowId`, `taskId`, `mode` (`execute` or `compensate`), `atte
 
 - Validate the complete DAG before starting. Reject duplicate IDs, missing dependencies, self-dependencies, cycles, invalid retry settings, reused workflow IDs, and non-monotonic time without partial mutation.
 - Scheduling is deterministic across workflows: lexicographically smallest workflow ID, then lexicographically smallest runnable task ID. A task becomes runnable only after all dependencies succeed.
+- `claim` returns `null` or `undefined` when no work is currently runnable.
 - Claims are exclusive leases. Heartbeats extend only the current matching lease. Expired work may be reclaimed with a new token and incremented attempt. Stale, foreign, expired, or already-consumed claims throw `ConcurrencyError`.
 - `complete` stores a deep-copied output. `fail` retries after `retryDelayMs * 2 ** (attempt - 1)`. No claim may occur before that virtual time. Exhausting attempts fails the workflow and starts compensation when required.
 - `cancel` prevents new forward work. Successfully completed compensatable tasks are then claimed in reverse completion order with `mode: "compensate"`. Compensation uses the same fencing and retry rules. Final status is `compensated` after failure or `cancelled` after cancellation.
