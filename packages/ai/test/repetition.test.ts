@@ -131,4 +131,17 @@ describe("tool-call repetition detection", () => {
 
     expect(findReasoningActionLoop(commitments)).toBeUndefined();
   });
+
+  it("requires commitments and reconsiderations to alternate repeatedly", () => {
+    const commitments = Array.from(
+      { length: 6 },
+      (_, index) => `I will implement module ${index}. ${"Concrete implementation detail. ".repeat(50)}`,
+    ).join("\n");
+    const reconsiderations = Array.from(
+      { length: 5 },
+      (_, index) => `Actually, constraint ${index} needs review. ${"Independent verification detail. ".repeat(30)}`,
+    ).join("\n");
+
+    expect(findReasoningActionLoop(`${commitments}\n${reconsiderations}`)).toBeUndefined();
+  });
 });
