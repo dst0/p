@@ -930,6 +930,12 @@ export class TaskVerificationController {
       updatedAt: new Date().toISOString(),
     };
     this.persistState();
+    if (isCodeTask(this.state.taskKind)) {
+      return this.updated(
+        "Final semantic verification passed for the current mutation revision.\n\n" +
+          `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to review all user requirements and obtain a verification_token before calling finish_work.`,
+      );
+    }
     return this.updated("Final semantic verification passed for the current mutation revision.");
   }
 
