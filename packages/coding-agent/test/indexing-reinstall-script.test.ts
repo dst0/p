@@ -219,7 +219,51 @@ describe("indexing reinstall scripts", () => {
       expect(command).toContain("--loglevel=error");
     }
   });
+
+  it("initializes max embed batch size from environment or saved file and validates values", () => {
+    const fixture = createFixture();
+    fs.mkdirSync(fixture.agentDir, { recursive: true });
+
+    const envRes = runBatchSizeSelection(false, false, fixture.agentDir, "16");
+    expect(envRes.status).toBe(0);
+    expect(envRes.stdout).toContain("batch_size=16");
+
+    const batchFile = path.join(fixture.agentDir, "indexing-max-batch-size");
+    fs.writeFileSync(batchFile, "32\n", "utf8");
+    const savedRes = runBatchSizeSelection(false, false, fixture.agentDir);
+    expect(savedRes.status).toBe(0);
+    expect(savedRes.stdout).toContain("batch_size=32");
+
+    fs.writeFileSync(batchFile, "invalid\n", "utf8");
+    const invalidRes = runBatchSizeSelection(false, false, fixture.agentDir);
+    expect(invalidRes.status).toBe(1);
+    expect(invalidRes.stderr).toContain("Invalid saved embedding batch size");
+  });
 });
+
+function runBatchSizeSelection(
+  forceSelection: boolean,
+  interactive: boolean,
+  agentDir: string,
+  batchSize?: string,
+): ReturnType<typeof spawnSync> & { stdout: string; stderr: string } {
+  const env: NodeJS.ProcessEnv = { ...process.env, P_CODING_AGENT_DIR: agentDir };
+  if (batchSize === undefined) delete env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE;
+  else env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = batchSize;
+  const result = spawnSync(
+    "bash",
+    [
+      "-c",
+      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; INDEXING_BATCH_SIZE_FILE="$AGENT_DIR/indexing-max-batch-size"; initialize_indexing_batch_size_selection "$2" "$3"; if declare -p P_CODE_RAG_MAX_EMBED_BATCH_SIZE >/dev/null 2>&1; then printf "batch_size=%s\\n" "$P_CODE_RAG_MAX_EMBED_BATCH_SIZE"; else echo "batch_size=<unset>"; fi',
+      "bash",
+      indexingDeviceSelectionScript,
+      String(forceSelection),
+      String(interactive),
+    ],
+    { encoding: "utf8", env },
+  );
+  return result as ReturnType<typeof spawnSync> & { stdout: string; stderr: string };
+}
 
 function runDeviceSelection(
   forceSelection: boolean,
