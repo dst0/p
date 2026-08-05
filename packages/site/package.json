@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-site",
-  "version": "0.4.132",
+  "version": "0.4.134",
   "description": "Official documentation and showcase site for the p agent monorepo (p.pages.dev)",
   "private": true,
   "type": "module",
