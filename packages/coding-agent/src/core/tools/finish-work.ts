@@ -8,7 +8,6 @@ export interface FinishWorkPayload {
   status: "success" | "partial" | "failed";
   summary: string;
   verification_token?: string;
-  result?: string;
   files_changed?: string[];
   tests_run?: string[];
   remaining_work?: string[];
@@ -26,7 +25,6 @@ const finishWorkSchema = Type.Object({
         "Readiness certificate returned by record_task_verification(action: 'ready_to_finish') for successful code completion",
     }),
   ),
-  result: Type.Optional(Type.String({ description: "Detailed result or output" })),
   files_changed: Type.Optional(Type.Array(Type.String({ description: "Files changed during this task" }))),
   tests_run: Type.Optional(Type.Array(Type.String({ description: "Tests run during this task" }))),
   remaining_work: Type.Optional(Type.Array(Type.String({ description: "Remaining incomplete work items" }))),
@@ -79,12 +77,6 @@ function formatFinishWorkResult(payload: FinishWorkPayload, theme: Theme): strin
   // Summary
   if (payload.summary) {
     lines.push(theme.fg("text", payload.summary));
-  }
-
-  // Result (if different from summary)
-  if (payload.result && payload.result !== payload.summary) {
-    lines.push("");
-    lines.push(payload.result);
   }
 
   // Files changed

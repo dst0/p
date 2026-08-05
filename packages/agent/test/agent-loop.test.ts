@@ -2052,7 +2052,6 @@ describe("Explicit Completion Protocol", () => {
             createFinishWorkCall({
               status: "success",
               summary: "finished",
-              result: "final result",
               files_changed: ["src/file.ts"],
               tests_run: ["npm run check"],
             }),
@@ -2068,7 +2067,7 @@ describe("Explicit Completion Protocol", () => {
     expect(messages[messages.length - 1].role).toBe("toolResult");
     expect(messages[messages.length - 1]).toMatchObject({
       toolName: FINISH_WORK_TOOL_NAME,
-      details: { status: "success", summary: "finished", result: "final result" },
+      details: { status: "success", summary: "finished" },
     });
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "finish_work_called"),
