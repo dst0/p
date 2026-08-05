@@ -379,7 +379,11 @@ class EmbeddingServer:
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
                 from transformers import AutoTokenizer
                 onnx_cache_dir = os.path.expanduser(f"~/.p/agent/indexing-service/onnx-cache/{self.model_name.replace('/', '_')}")
-                tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                hf_onnx_repos = {
+                    "Qwen/Qwen3-Embedding-0.6B": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
+                }
+                pre_exported_hf = hf_onnx_repos.get(self.model_name)
+                tokenizer = AutoTokenizer.from_pretrained(pre_exported_hf or self.model_name)
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):
                     print(f"Loading cached ONNX model for CoreML: {onnx_cache_dir}", flush=True)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
@@ -388,6 +392,18 @@ class EmbeddingServer:
                         file_name="model.onnx",
                         provider="CoreMLExecutionProvider",
                     )
+                elif pre_exported_hf:
+                    print(f"Loading pre-exported ONNX model from Hugging Face: {pre_exported_hf}", flush=True)
+                    ort_model = ORTModelForFeatureExtraction.from_pretrained(
+                        pre_exported_hf,
+                        export=False,
+                        provider="CoreMLExecutionProvider",
+                    )
+                    try:
+                        os.makedirs(onnx_cache_dir, exist_ok=True)
+                        ort_model.save_pretrained(onnx_cache_dir)
+                    except Exception:
+                        pass
                 else:
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         self.model_name,
