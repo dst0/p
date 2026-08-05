@@ -379,16 +379,16 @@ class EmbeddingServer:
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
                 from transformers import AutoTokenizer
                 onnx_cache_dir = os.path.expanduser(f"~/.p/agent/indexing-service/onnx-cache/{self.model_name.replace('/', '_')}")
+                tokenizer = AutoTokenizer.from_pretrained(self.model_name)
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):
                     print(f"Loading cached ONNX model for CoreML: {onnx_cache_dir}", flush=True)
-                    tokenizer = AutoTokenizer.from_pretrained(onnx_cache_dir)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         onnx_cache_dir,
                         export=False,
+                        file_name="model.onnx",
                         provider="CoreMLExecutionProvider",
                     )
                 else:
-                    tokenizer = AutoTokenizer.from_pretrained(self.model_name)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         self.model_name,
                         export=True,
@@ -397,7 +397,6 @@ class EmbeddingServer:
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)
                         ort_model.save_pretrained(onnx_cache_dir)
-                        tokenizer.save_pretrained(onnx_cache_dir)
                         print(f"Saved ONNX model to cache: {onnx_cache_dir}", flush=True)
                     except Exception as cache_err:
                         print(f"Note: ONNX caching skipped: {cache_err}", flush=True)
