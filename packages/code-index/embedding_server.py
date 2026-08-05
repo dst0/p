@@ -57,14 +57,14 @@ from resource_manager import (
 )
 
 
-class CoreMLEmbeddingWrapper:
-    """Wraps an ONNX Runtime model with CoreMLExecutionProvider for Apple Neural Engine inference."""
+class ONNXEmbeddingWrapper:
+    """Wraps an ONNX Runtime model for fast inference on CPU, GPU, or NPU."""
 
-    def __init__(self, model, tokenizer):
+    def __init__(self, model, tokenizer, device_name: str = "npu:0 (CoreML/ANE)"):
         import numpy as np
         self.model = model
         self.tokenizer = tokenizer
-        self.device = "npu:0 (CoreML/ANE)"
+        self.device = device_name
         self.max_seq_length = getattr(tokenizer, "model_max_length", 2048)
         self._np = np
 
@@ -108,10 +108,9 @@ class CoreMLEmbeddingWrapper:
             embeddings = sum_embeddings / sum_mask
             if normalize_embeddings:
                 norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
-                norms = self._np.clip(norms, a_min=1e-9, a_max=None)
-                embeddings = embeddings / norms
+                embeddings = embeddings / self._np.clip(norms, a_min=1e-9, a_max=None)
             all_embeddings.append(embeddings)
-        return self._np.concatenate(all_embeddings, axis=0)
+        return self._np.vstack(all_embeddings) if all_embeddings else self._np.array([])
 
     def to(self, device=None, dtype=None):
         # CoreML runs on the ANE/GPU via ONNX Runtime; device migration is a no-op.
@@ -374,30 +373,46 @@ class EmbeddingServer:
                 return OVSentenceTransformer.from_pretrained(self.model_name, device="NPU")
             except Exception as error:
                 self._record_warning(f"OpenVINO NPU load failed; falling back: {_error_summary(error)}")
-        if plan.backend in {"coreml", "npu"} and sys.platform == "darwin" and _coreml_ane_available():
+        # Attempt ONNX Runtime load for CoreML/NPU/CPU/GPU if optimum.onnxruntime is available and model is cached or pre-exported
+        onnx_cache_dir = os.path.expanduser(f"~/.p/agent/indexing-service/onnx-cache/{self.model_name.replace('/', '_')}")
+        hf_onnx_repos = {
+            "Qwen/Qwen3-Embedding-0.6B": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
+        }
+        pre_exported_hf = hf_onnx_repos.get(self.model_name)
+        has_onnx_source = pre_exported_hf or os.path.exists(os.path.join(onnx_cache_dir, "model.onnx"))
+
+        if has_onnx_source or plan.backend in {"coreml", "npu"}:
             try:
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
                 from transformers import AutoTokenizer
-                onnx_cache_dir = os.path.expanduser(f"~/.p/agent/indexing-service/onnx-cache/{self.model_name.replace('/', '_')}")
-                hf_onnx_repos = {
-                    "Qwen/Qwen3-Embedding-0.6B": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
-                }
-                pre_exported_hf = hf_onnx_repos.get(self.model_name)
+
+                provider = "CPUExecutionProvider"
+                device_label = "cpu (ONNX Runtime)"
+                if plan.backend in {"coreml", "npu"} and sys.platform == "darwin" and _coreml_ane_available():
+                    provider = "CoreMLExecutionProvider"
+                    device_label = "npu:0 (CoreML/ANE)"
+                elif plan.backend in {"cuda", "gpu"}:
+                    provider = "CUDAExecutionProvider"
+                    device_label = "cuda:0 (ONNX Runtime)"
+                elif plan.backend in {"openvino", "npu"} and sys.platform == "linux":
+                    provider = "OpenVINOExecutionProvider"
+                    device_label = "openvino (ONNX Runtime)"
+
                 tokenizer = AutoTokenizer.from_pretrained(pre_exported_hf or self.model_name)
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):
-                    print(f"Loading cached ONNX model for CoreML: {onnx_cache_dir}", flush=True)
+                    print(f"Loading cached ONNX model ({provider}): {onnx_cache_dir}", flush=True)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         onnx_cache_dir,
                         export=False,
                         file_name="model.onnx",
-                        provider="CoreMLExecutionProvider",
+                        provider=provider,
                     )
                 elif pre_exported_hf:
-                    print(f"Loading pre-exported ONNX model from Hugging Face: {pre_exported_hf}", flush=True)
+                    print(f"Loading pre-exported ONNX model from Hugging Face ({provider}): {pre_exported_hf}", flush=True)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         pre_exported_hf,
                         export=False,
-                        provider="CoreMLExecutionProvider",
+                        provider=provider,
                     )
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)
@@ -408,7 +423,7 @@ class EmbeddingServer:
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
                         self.model_name,
                         export=True,
-                        provider="CoreMLExecutionProvider",
+                        provider=provider,
                     )
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)
@@ -416,15 +431,16 @@ class EmbeddingServer:
                         print(f"Saved ONNX model to cache: {onnx_cache_dir}", flush=True)
                     except Exception as cache_err:
                         print(f"Note: ONNX caching skipped: {cache_err}", flush=True)
-                wrapper = CoreMLEmbeddingWrapper(ort_model, tokenizer)
-                # Verify that CoreML execution provider can actually compute predictions for this model ONNX graph
+
+                wrapper = ONNXEmbeddingWrapper(ort_model, tokenizer, device_name=device_label)
                 wrapper.encode(["probe"], batch_size=1)
-                print("Loaded model on Apple Neural Engine (CoreML/NPU)", flush=True)
+                print(f"Loaded model on {device_label}", flush=True)
                 return wrapper
             except Exception as error:
-                warning = f"CoreML NPU execution/load failed ({_error_summary(error)}); falling back to mps (Metal)"
+                warning = f"ONNX Runtime load failed ({_error_summary(error)}); falling back to standard PyTorch backend"
                 self._record_warning(warning)
                 print(f"WARNING: {warning}", file=sys.stderr, flush=True)
+
         target_device = plan.device
         if target_device in {"npu", "openvino", "coreml", "vitisai"}:
             if _mps_available():
