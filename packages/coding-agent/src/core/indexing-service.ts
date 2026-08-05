@@ -20,6 +20,8 @@ export interface IndexStatus {
   decision: RepoIndexingDecision;
   indexed: boolean;
   serviceRunning: boolean;
+  configuredDevice?: string;
+  configuredMaxBatchSize?: number;
   ragState?: RagState | "queued" | "error";
   ragFiles?: number;
   ragChunks?: number;
@@ -27,6 +29,28 @@ export interface IndexStatus {
   totalChunks?: number;
   progress?: IndexingProgress;
   lastError?: string;
+}
+
+export function getConfiguredIndexingDevice(agentDir: string = getAgentDir()): string | undefined {
+  try {
+    const filePath = path.join(agentDir, "indexing-device");
+    if (!fs.existsSync(filePath)) return undefined;
+    const val = fs.readFileSync(filePath, "utf-8").trim();
+    return val || undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+export function getConfiguredIndexingBatchSize(agentDir: string = getAgentDir()): number | undefined {
+  try {
+    const filePath = path.join(agentDir, "indexing-max-batch-size");
+    if (!fs.existsSync(filePath)) return undefined;
+    const val = parseInt(fs.readFileSync(filePath, "utf-8").trim(), 10);
+    return Number.isFinite(val) && val > 0 ? val : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export interface RepositoryServiceStatus {
@@ -70,10 +94,14 @@ export class IndexingService {
     const decision = this.getDecision(resolved);
     const daemonStatus = readServiceStatus(this.agentDir);
     const repoStatus = daemonStatus?.repos.find((entry) => canonicalizePath(entry.path) === resolved);
+    const configuredDevice = getConfiguredIndexingDevice(this.agentDir);
+    const configuredMaxBatchSize = getConfiguredIndexingBatchSize(this.agentDir);
     return {
       decision,
       indexed: decision === "enabled",
       serviceRunning: daemonStatus?.running === true,
+      configuredDevice,
+      configuredMaxBatchSize,
       ragState: repoStatus?.state,
       ragFiles: repoStatus?.indexedFiles,
       ragChunks: repoStatus?.indexedChunks,
