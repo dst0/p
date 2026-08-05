@@ -1122,4 +1122,31 @@ describe("task verification controller", () => {
       "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests",
     );
   });
+
+  it("blocks ready_to_finish if a mutated source file exceeds 250 lines unless user requested an override", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs/promises");
+    const tmpDir = await fs.mkdtemp(`${os.tmpdir()}/test-oversized-`);
+    const sourceFile = `${tmpDir}/src/large_module.ts`;
+
+    await fs.mkdir(`${tmpDir}/src`, { recursive: true });
+    const lines = Array.from({ length: 260 }, (_, i) => `export const val${i} = ${i};`).join("\n");
+    await fs.writeFile(sourceFile, lines, "utf-8");
+
+    const { findOversizedSourceFiles } = await import("../src/core/task-verification.ts");
+    const oversized = findOversizedSourceFiles(tmpDir, "Build feature", ["src/large_module.ts"], 250);
+    expect(oversized.length).toBe(1);
+    expect(oversized[0]?.path).toBe("src/large_module.ts");
+    expect(oversized[0]?.lineCount).toBe(260);
+
+    const overridden = findOversizedSourceFiles(
+      tmpDir,
+      "Build single file without limits",
+      ["src/large_module.ts"],
+      250,
+    );
+    expect(overridden.length).toBe(0);
+
+    await fs.rm(tmpDir, { recursive: true, force: true });
+  });
 });

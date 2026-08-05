@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
-import { isAbsolute, resolve } from "node:path";
+import { readdirSync, readFileSync, statSync } from "node:fs";
+import { extname, isAbsolute, join, relative, resolve } from "node:path";
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -13,6 +14,145 @@ import type { SessionManager } from "./session-manager.ts";
 import { captureWorkspaceFingerprint } from "./workspace-fingerprint.ts";
 
 export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
+
+const USER_FILE_SIZE_OVERRIDE_PATTERN =
+  /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
+
+const CHECKED_SOURCE_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".py",
+  ".go",
+  ".rs",
+  ".java",
+  ".c",
+  ".cpp",
+  ".cc",
+  ".cxx",
+  ".h",
+  ".hpp",
+  ".cs",
+  ".kt",
+  ".swift",
+  ".rb",
+  ".php",
+  ".vue",
+  ".svelte",
+]);
+
+const EXCLUDED_DIRS = new Set([
+  "node_modules",
+  ".git",
+  "dist",
+  "build",
+  "out",
+  ".next",
+  "coverage",
+  "vendor",
+  "test",
+  "tests",
+  "__tests__",
+  "fixtures",
+  "benchmarks",
+  ".gemini",
+  ".agents",
+]);
+
+export function findOversizedSourceFiles(
+  cwd: string,
+  taskText: string,
+  mutatedFilePaths?: readonly string[],
+  maxLines = 250,
+): Array<{ path: string; lineCount: number }> {
+  if (USER_FILE_SIZE_OVERRIDE_PATTERN.test(taskText)) {
+    return [];
+  }
+
+  const oversizedFiles: Array<{ path: string; lineCount: number }> = [];
+
+  const isExcludedPath = (fullPath: string, entry: string): boolean => {
+    const rel = relative(cwd, fullPath).replace(/\\/g, "/");
+    const parts = rel.split("/");
+    for (let i = 0; i < parts.length; i++) {
+      if (EXCLUDED_DIRS.has(parts[i]!)) return true;
+    }
+    if (
+      entry.endsWith(".test.ts") ||
+      entry.endsWith(".test.js") ||
+      entry.endsWith(".test.tsx") ||
+      entry.endsWith(".test.jsx") ||
+      entry.endsWith(".spec.ts") ||
+      entry.endsWith(".spec.js") ||
+      entry.endsWith("_test.go") ||
+      entry.startsWith("test_") ||
+      entry.endsWith(".generated.ts") ||
+      entry.endsWith(".d.ts")
+    ) {
+      return true;
+    }
+    return false;
+  };
+
+  const checkFile = (fullPath: string) => {
+    const entry = fullPath.split(/[/\\]/).pop() || "";
+    const ext = extname(entry).toLowerCase();
+    if (!CHECKED_SOURCE_EXTENSIONS.has(ext)) return;
+    if (isExcludedPath(fullPath, entry)) return;
+
+    try {
+      const content = readFileSync(fullPath, "utf-8");
+      const lineCount = content.split("\n").length;
+      if (lineCount > maxLines) {
+        const relPath = relative(cwd, fullPath) || entry;
+        oversizedFiles.push({ path: relPath, lineCount });
+      }
+    } catch {
+      // ignore unreadable files
+    }
+  };
+
+  if (mutatedFilePaths !== undefined) {
+    for (const rawPath of mutatedFilePaths) {
+      const absPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath);
+      try {
+        const stat = statSync(absPath);
+        if (stat.isFile()) {
+          checkFile(absPath);
+        }
+      } catch {}
+    }
+    return oversizedFiles;
+  }
+
+  function walk(dir: string) {
+    let entries: string[];
+    try {
+      entries = readdirSync(dir);
+    } catch {
+      return;
+    }
+
+    for (const entry of entries) {
+      if (EXCLUDED_DIRS.has(entry) || entry.startsWith(".")) continue;
+      const fullPath = join(dir, entry);
+      try {
+        const stat = statSync(fullPath);
+        if (stat.isDirectory()) {
+          walk(fullPath);
+        } else if (stat.isFile()) {
+          checkFile(fullPath);
+        }
+      } catch {}
+    }
+  }
+
+  walk(cwd);
+  return oversizedFiles;
+}
 export const TASK_VERIFICATION_STATE_CUSTOM_TYPE = "task_verification_state";
 export const TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE = "task_verification_evidence";
 
@@ -380,6 +520,7 @@ export class TaskVerificationController {
   private readonly sessionManager: SessionManager;
   private readonly evidence = new Map<string, TaskVerificationEvidence>();
   private readonly bashFingerprints = new Map<string, string | undefined>();
+  private readonly mutatedSourceFiles = new Set<string>();
   private state = emptyState();
   private latestUserPrompt = "";
   private nextEvidence = 1;
@@ -518,6 +659,11 @@ export class TaskVerificationController {
 
     const mutationDetected = await this.detectMutation(context, effectiveIsError);
     if (mutationDetected) {
+      const filePath = pathArgument(context.args);
+      if (filePath) {
+        const relPath = relative(this.sessionManager.getCwd(), resolve(this.sessionManager.getCwd(), filePath));
+        this.mutatedSourceFiles.add(relPath);
+      }
       if (this.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
         this.state = {
           ...this.state,
@@ -1021,6 +1167,23 @@ export class TaskVerificationController {
     ) {
       return this.rejected(
         "The task explicitly requires type checking, but no successful current-revision typecheck evidence is mapped to an acceptance check.",
+      );
+    }
+
+    const oversizedFiles = findOversizedSourceFiles(
+      this.sessionManager.getCwd(),
+      taskText,
+      Array.from(this.mutatedSourceFiles),
+      250,
+    );
+    if (oversizedFiles.length > 0) {
+      const fileList = oversizedFiles.map((f) => `- ${f.path}: ${f.lineCount} lines (limit: 250)`).join("\n");
+      return this.rejected(
+        [
+          "ready_to_finish is blocked because the following source code file(s) exceed the 250-line file size limit:",
+          fileList,
+          "Please refactor and split large source files into focused, modular components (recommended target ~150 lines per file) before finishing, unless the user explicitly requested a single large file or ignoring file size limits.",
+        ].join("\n"),
       );
     }
 
