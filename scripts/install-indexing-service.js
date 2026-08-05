@@ -234,13 +234,31 @@ export function collectResourceEnvironment(source = process.env) {
 	return environment;
 }
 
+function readSavedSetting(fileName) {
+	try {
+		const filePath = path.join(AGENT_DIR, fileName);
+		if (!fs.existsSync(filePath)) return undefined;
+		const value = fs.readFileSync(filePath, "utf-8").trim();
+		return value || undefined;
+	} catch {
+		return undefined;
+	}
+}
+
 async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
+	const savedDevice = readSavedSetting("indexing-device");
 	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "mps" : "cpu";
-	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? defaultDevice;
+	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
+
+	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
+	if (!process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE && savedBatchSize) {
+		process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = savedBatchSize;
+	}
+
 	const python = findCompatiblePython();
 	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
