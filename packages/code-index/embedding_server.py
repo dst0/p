@@ -99,7 +99,19 @@ class ONNXEmbeddingWrapper:
                 inputs = {k: v for k, v in tok.items() if k in model_input_names}
             else:
                 inputs = dict(tok)
-            outputs = self.model(**inputs)
+            try:
+                outputs = self.model(**inputs)
+            except Exception as ort_err:
+                # If CoreML Execution Provider fails on unsupported tensor shapes or ops (error code -1),
+                # fallback to CPU session execution for this batch.
+                if hasattr(self.model, "model") and hasattr(self.model.model, "set_providers"):
+                    try:
+                        self.model.model.set_providers(["CPUExecutionProvider"])
+                        outputs = self.model(**inputs)
+                    except Exception:
+                        raise ort_err
+                else:
+                    raise ort_err
             token_embeddings = outputs[0]
             attention_mask = tok["attention_mask"]
             input_mask_expanded = self._np.expand_dims(attention_mask, -1)
