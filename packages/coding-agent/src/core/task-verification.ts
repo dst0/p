@@ -1049,7 +1049,7 @@ export class TaskVerificationController {
       "",
       "VERIFICATION CHECKLIST:",
       "1. Have you fulfilled EVERY single user requirement and constraint above?",
-      "2. Is every modified file and feature covered by unit/integration tests across all lines and branches (unless the user explicitly asked NOT to write tests)?",
+      "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests — including happy paths, unhappy paths (error handling, invalid inputs, rollbacks, corrupt data), and all edge cases (unless the user explicitly asked NOT to write tests)?",
       "3. Are all tests passing and is there zero remaining work or unresolved code issues?",
       "If ALL items above are true, call finish_work with status 'success' and pass verification_token.",
       "--------------------------------------------------------------------------------",

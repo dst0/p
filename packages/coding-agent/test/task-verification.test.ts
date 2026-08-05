@@ -1118,6 +1118,8 @@ describe("task verification controller", () => {
     expect(ready.text).toContain("[Requirement 2]: Also support exponentiation and handle division by zero.");
     expect(ready.text).toContain("VERIFICATION CHECKLIST:");
     expect(ready.text).toContain("1. Have you fulfilled EVERY single user requirement and constraint above?");
-    expect(ready.text).toContain("2. Is every modified file and feature covered by unit/integration tests");
+    expect(ready.text).toContain(
+      "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests",
+    );
   });
 });
