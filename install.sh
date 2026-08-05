@@ -264,6 +264,9 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
                [[ "$EMBED_CHOICE" -le "${#EMBED_CHOICES[@]}" ]]; then
                 export P_CODE_RAG_DEVICE="${EMBED_VALUES[$((EMBED_CHOICE-1))]}"
                 echo "Using embedding device: $P_CODE_RAG_DEVICE"
+                if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname)" == "Darwin" ]]; then
+                    echo "[Notice] On macOS, NPU acceleration is handled via CoreML / Apple Neural Engine (ANE) using ONNX Runtime. If a model feature is unsupported by CoreML runtime, execution will automatically fall back to mps (Metal Performance Shaders) with a console warning."
+                fi
                 break
             fi
             echo "Invalid choice, enter a number between 1 and ${#EMBED_CHOICES[@]}."
@@ -301,6 +304,39 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
     echo "$P_CODE_RAG_MAX_EMBED_BATCH_SIZE" > "$INDEXING_BATCH_SIZE_FILE"
     echo "Saved max embedding batch size to $INDEXING_BATCH_SIZE_FILE"
     echo ""
+fi
+
+# Check for missing Python dependencies for the selected device and prompt user
+VENV_PYTHON="${AGENT_DIR:-$HOME/.p/agent}/indexing-service/venv/bin/python"
+MISSING_DEPS=()
+if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" && -t 0 ]]; then
+    if [[ "$(uname)" == "Darwin" ]]; then
+        if [[ -f "$VENV_PYTHON" ]] && ! "$VENV_PYTHON" -c "import onnxruntime" 2>/dev/null; then
+            MISSING_DEPS+=("onnxruntime")
+        fi
+        if [[ -f "$VENV_PYTHON" ]] && ! "$VENV_PYTHON" -c "import optimum" 2>/dev/null; then
+            MISSING_DEPS+=("optimum")
+        fi
+    else
+        if [[ -f "$VENV_PYTHON" ]] && ! "$VENV_PYTHON" -c "import openvino" 2>/dev/null; then
+            MISSING_DEPS+=("openvino")
+        fi
+        if [[ -f "$VENV_PYTHON" ]] && ! "$VENV_PYTHON" -c "import optimum" 2>/dev/null; then
+            MISSING_DEPS+=("optimum")
+        fi
+    fi
+fi
+
+if [[ "${#MISSING_DEPS[@]}" -gt 0 ]]; then
+    echo ""
+    echo "=== Missing Dependencies for $P_CODE_RAG_DEVICE ==="
+    echo "The following Python package(s) are recommended/required for $P_CODE_RAG_DEVICE acceleration: ${MISSING_DEPS[*]}"
+    read -rp "Do you want to install ${MISSING_DEPS[*]} into the indexing Python environment now? [Y/n]: " INSTALL_MISSING
+    INSTALL_MISSING="${INSTALL_MISSING:-y}"
+    if [[ "$INSTALL_MISSING" =~ ^[Yy]$ ]]; then
+        echo "Installing missing dependencies: ${MISSING_DEPS[*]}..."
+        "$VENV_PYTHON" -m pip install "${MISSING_DEPS[@]}"
+    fi
 fi
 
 # ---------- run reinstall ----------

@@ -85,6 +85,11 @@ named("definition-validation", () => {
       ValidationError,
     );
   }
+  const engine = start([{ id: "a" }], "dup");
+  assert.throws(
+    () => engine.start({ workflowId: "dup", tasks: [{ id: "b" }] }, { commandId: "dup-start", now: 1 }),
+    ValidationError,
+  );
 });
 
 named("monotonic-time", () => {
@@ -142,6 +147,7 @@ named("conflicting-command", () => {
   const current = claim(engine, "w", 0);
   engine.complete(current, "ok", { commandId: "done", now: 1 });
   assert.throws(() => engine.cancel("wf", { commandId: "done", now: 1, reason: "different" }), ValidationError);
+  assert.throws(() => engine.complete(current, "different", { commandId: "done", now: 1 }), ValidationError);
 });
 
 named("retry-backoff", () => {
@@ -178,13 +184,30 @@ named("compensation-order", () => {
   complete(engine, "w", 0, "a-ok");
   complete(engine, "w", 2, "b-ok");
   engine.cancel("wf", { commandId: "cancel", now: 4, reason: "stop" });
+  assert.equal(engine.state("wf").status, "compensating");
   const first = claim(engine, "w", 4);
   assert.deepEqual([first.mode, first.taskId], ["compensate", "b"]);
   engine.complete(first, "undone", { commandId: "b-undo", now: 5 });
+  assert.equal(engine.state("wf").status, "compensating");
   const second = claim(engine, "w", 5);
   assert.deepEqual([second.mode, second.taskId], ["compensate", "a"]);
   engine.complete(second, "undone", { commandId: "a-undo", now: 6 });
   assert.equal(engine.state("wf").status, "cancelled");
+});
+
+named("failure-compensation", () => {
+  const engine = start([
+    { id: "a", compensate: true },
+    { id: "b", dependsOn: ["a"], maxAttempts: 1 },
+  ]);
+  complete(engine, "w", 0, "a-ok");
+  const bClaim = claim(engine, "w", 2);
+  engine.fail(bClaim, "failed", { commandId: "b-fail", now: 3 });
+  assert.equal(engine.state("wf").status, "compensating");
+  const comp = claim(engine, "w", 3);
+  assert.deepEqual([comp.mode, comp.taskId], ["compensate", "a"]);
+  engine.complete(comp, "undone", { commandId: "a-undo", now: 4 });
+  assert.equal(engine.state("wf").status, "compensated");
 });
 
 named("compensation-fencing", () => {

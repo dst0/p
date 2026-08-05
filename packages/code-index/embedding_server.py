@@ -57,6 +57,71 @@ from resource_manager import (
 )
 
 
+class CoreMLEmbeddingWrapper:
+    """Wraps an ONNX Runtime model with CoreMLExecutionProvider for Apple Neural Engine inference."""
+
+    def __init__(self, model, tokenizer):
+        import numpy as np
+        self.model = model
+        self.tokenizer = tokenizer
+        self.device = "npu:0 (CoreML/ANE)"
+        self.max_seq_length = getattr(tokenizer, "model_max_length", 2048)
+        self._np = np
+
+    def _get_model_input_names(self):
+        """Return the set of input names expected by the underlying ONNX session."""
+        try:
+            # optimum ORTModel exposes the session inputs
+            return {inp.name for inp in self.model.model.get_inputs()}
+        except Exception:
+            return None
+
+    def encode(self, texts: list[str], normalize_embeddings: bool = True, batch_size: int = 8, show_progress_bar: bool = False):
+        all_embeddings = []
+        model_input_names = self._get_model_input_names()
+        for i in range(0, len(texts), batch_size):
+            batch = texts[i : i + batch_size]
+            tok = self.tokenizer(
+                batch,
+                padding=True,
+                truncation=True,
+                max_length=self.max_seq_length,
+                return_tensors="np",
+            )
+            # Build position_ids if the model needs them but the tokenizer did not return them.
+            if model_input_names and "position_ids" in model_input_names and "position_ids" not in tok:
+                seq_len = tok["input_ids"].shape[1]
+                tok["position_ids"] = self._np.tile(
+                    self._np.arange(seq_len, dtype=self._np.int64), (len(batch), 1)
+                )
+            # Pass only inputs the model expects (avoid unknown-input errors).
+            if model_input_names:
+                inputs = {k: v for k, v in tok.items() if k in model_input_names}
+            else:
+                inputs = dict(tok)
+            outputs = self.model(**inputs)
+            token_embeddings = outputs[0]
+            attention_mask = tok["attention_mask"]
+            input_mask_expanded = self._np.expand_dims(attention_mask, -1)
+            sum_embeddings = self._np.sum(token_embeddings * input_mask_expanded, axis=1)
+            sum_mask = self._np.clip(input_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
+            embeddings = sum_embeddings / sum_mask
+            if normalize_embeddings:
+                norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
+                norms = self._np.clip(norms, a_min=1e-9, a_max=None)
+                embeddings = embeddings / norms
+            all_embeddings.append(embeddings)
+        return self._np.concatenate(all_embeddings, axis=0)
+
+    def to(self, device=None, dtype=None):
+        # CoreML runs on the ANE/GPU via ONNX Runtime; device migration is a no-op.
+        return self
+
+    def parameters(self):
+        # No torch parameters in CoreML ONNX model; return empty iterator.
+        return iter([])
+
+
 class EmbeddingServer:
     def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B"):
         self.model_name = model_name
@@ -102,7 +167,7 @@ class EmbeddingServer:
             self._record_warning(warning)
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
             self._clear_accelerator_cache()
-            cpu_plan = self._build_plan("cpu", system_memory_snapshot(), model_resident=False)
+            cpu_plan = self._build_plan("cpu", system_memory_snapshot(), model_resident=True)
             if not cpu_plan.usable:
                 raise RuntimeError(f"{warning}; CPU fallback is unsafe: {cpu_plan.reason}") from error
             self.plan = cpu_plan
@@ -190,7 +255,8 @@ class EmbeddingServer:
                 "torch_version": str(torch.__version__),
                 "torch_cuda_version": getattr(torch.version, "cuda", None),
                 "torch_hip_version": getattr(torch.version, "hip", None),
-                "accelerator_available": bool(torch.cuda.is_available() or _mps_available()),
+                "accelerator_available": bool(torch.cuda.is_available() or _mps_available() or _npu_available("npu")),
+                "npu_available": _npu_available("npu"),
                 "oom_backoffs": self.oom_backoffs,
                 "oom_batch_ceiling": self.oom_batch_ceiling,
                 "startup_reason": self.startup_reason,
@@ -199,8 +265,9 @@ class EmbeddingServer:
         }
 
     def _select_preferred_backend(self, requested_device: str) -> tuple[str, MemorySnapshot]:
-        if requested_device not in {"auto", "cpu", "cuda", "rocm", "mps"}:
-            raise ValueError("P_CODE_RAG_DEVICE must be one of: auto, cpu, cuda, rocm, mps")
+        valid_devices = {"auto", "cpu", "cuda", "rocm", "mps", "npu", "openvino", "coreml", "vitisai"}
+        if requested_device not in valid_devices:
+            raise ValueError(f"P_CODE_RAG_DEVICE must be one of: {', '.join(sorted(valid_devices))}")
         if requested_device == "cpu":
             return "cpu", system_memory_snapshot()
         detected_backend, memory = self._detect_accelerator()
@@ -218,8 +285,16 @@ class EmbeddingServer:
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
         if requested_device == "auto":
             return detected_backend or "cpu", memory
-        if requested_device in {"cuda", "rocm", "mps"} and detected_backend == requested_device:
-            return detected_backend, memory
+        if (
+            (requested_device in {"cuda", "rocm", "mps"} and detected_backend == requested_device)
+            or (requested_device in {"npu", "openvino", "coreml", "vitisai"} and _npu_available(requested_device))
+        ):
+            return requested_device, memory
+        if requested_device in {"npu", "coreml"} and _mps_available():
+            warning = f"requested {requested_device} backend is unavailable or not natively supported by PyTorch; falling back to mps (Metal)"
+            self._record_warning(warning)
+            print(f"WARNING: {warning}", file=sys.stderr, flush=True)
+            return "mps", memory
         warning = f"requested {requested_device} backend is unavailable; using CPU"
         self._record_warning(warning)
         print(f"WARNING: {warning}", file=sys.stderr, flush=True)
@@ -293,10 +368,44 @@ class EmbeddingServer:
     def _load_model(self, plan: RuntimePlan):
         if plan.backend == "cpu":
             return SentenceTransformer(self.model_name, device="cpu")
+        if plan.backend in {"openvino", "npu"} and _openvino_npu_available():
+            try:
+                from optimum.intel import OVSentenceTransformer
+                return OVSentenceTransformer.from_pretrained(self.model_name, device="NPU")
+            except Exception as error:
+                self._record_warning(f"OpenVINO NPU load failed; falling back: {_error_summary(error)}")
+        if plan.backend in {"coreml", "npu"} and sys.platform == "darwin" and _coreml_ane_available():
+            try:
+                from optimum.onnxruntime import ORTModelForFeatureExtraction
+                from transformers import AutoTokenizer
+                tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+                ort_model = ORTModelForFeatureExtraction.from_pretrained(
+                    self.model_name,
+                    export=True,
+                    provider="CoreMLExecutionProvider",
+                )
+                wrapper = CoreMLEmbeddingWrapper(ort_model, tokenizer)
+                # Verify that CoreML execution provider can actually compute predictions for this model ONNX graph
+                wrapper.encode(["probe"], batch_size=1)
+                print("Loaded model on Apple Neural Engine (CoreML/NPU)", flush=True)
+                return wrapper
+            except Exception as error:
+                warning = f"CoreML NPU execution/load failed ({_error_summary(error)}); falling back to mps (Metal)"
+                self._record_warning(warning)
+                print(f"WARNING: {warning}", file=sys.stderr, flush=True)
+        target_device = plan.device
+        if target_device in {"npu", "openvino", "coreml", "vitisai"}:
+            if _mps_available():
+                warning = f"{target_device} device not natively supported by SentenceTransformer; using mps (Metal)"
+                self._record_warning(warning)
+                print(f"WARNING: {warning}", file=sys.stderr, flush=True)
+                target_device = "mps"
+            else:
+                target_device = "cpu"
         dtype = torch.float32 if plan.dtype == "float32" else torch.float16
         return SentenceTransformer(
             self.model_name,
-            device=plan.device,
+            device=target_device,
             model_kwargs={"torch_dtype": dtype},
         )
 
@@ -455,6 +564,63 @@ class Handler(BaseHTTPRequestHandler):
 
 def _mps_available() -> bool:
     return bool(hasattr(torch.backends, "mps") and torch.backends.mps.is_available())
+
+
+def _openvino_npu_available() -> bool:
+    try:
+        import openvino as ov
+        core = ov.Core()
+        return "NPU" in core.available_devices
+    except Exception:
+        return False
+
+
+def _coreml_ane_available() -> bool:
+    """Return True if CoreML execution via ONNX Runtime is available.
+
+    We intentionally do NOT rely on coremltools importability as the sole signal:
+    coremltools 9.x ships without its native extension (.so) on Python 3.14+,
+    so `import coremltools` succeeds but all CoreML operations fail at runtime.
+    The definitive check is whether onnxruntime exposes CoreMLExecutionProvider.
+    """
+    if sys.platform != "darwin":
+        return False
+    try:
+        import onnxruntime as ort
+        if "CoreMLExecutionProvider" in ort.get_available_providers():
+            return True
+    except Exception:
+        pass
+    # Fallback: coremltools can drive CoreML directly if its native lib works.
+    try:
+        import coremltools  # noqa: F401
+        # Verify the native extension is actually loaded (not just the pure-Python stub).
+        import coremltools.libcoremlpython  # noqa: F401
+        return True
+    except Exception:
+        return False
+
+
+def _vitisai_npu_available() -> bool:
+    if "AMD_VITISAI" in os.environ:
+        return True
+    if os.path.exists("/dev/accel/accel0") or os.path.exists("/dev/amdxdna"):
+        return True
+    try:
+        import onnxruntime as ort
+        return "VitisAIExecutionProvider" in ort.get_available_providers()
+    except Exception:
+        return False
+
+
+def _npu_available(backend: str = "npu") -> bool:
+    if backend in {"openvino", "npu"} and _openvino_npu_available():
+        return True
+    if backend in {"coreml", "npu"} and _coreml_ane_available():
+        return True
+    if backend in {"vitisai", "npu"} and _vitisai_npu_available():
+        return True
+    return False
 
 
 def _is_out_of_memory(error: Exception) -> bool:

@@ -14,6 +14,7 @@
   { "id": "attempt-exhaustion", "name": "max attempts transition the workflow out of forward execution", "weight": 4 },
   { "id": "cancel-forward", "name": "cancellation prevents new forward claims", "weight": 4 },
   { "id": "compensation-order", "name": "compensation follows reverse completion order", "weight": 7 },
+  { "id": "failure-compensation", "name": "failure triggers compensation to compensated status", "weight": 6 },
   { "id": "compensation-fencing", "name": "compensation claims obey lease fencing", "weight": 5 },
   { "id": "output-isolation", "name": "stored and returned task outputs are deeply isolated", "weight": 4 },
   { "id": "state-history-isolation", "name": "state and history are deep copies", "weight": 3 },

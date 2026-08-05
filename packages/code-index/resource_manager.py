@@ -50,6 +50,9 @@ class RuntimePlan:
         return asdict(self)
 
 
+SUPPORTED_BACKENDS = {"cpu", "cuda", "rocm", "mps", "npu", "openvino", "coreml", "vitisai"}
+
+
 def estimate_model_parameter_count(model_name: str) -> int:
     size_match = re.search(r"(?<![a-z0-9])(\d+(?:\.\d+)?)b(?![a-z0-9])", model_name.lower())
     if size_match:
@@ -83,7 +86,7 @@ def build_runtime_plan(
     min_accelerator_reserve_bytes: int = MIN_ACCELERATOR_RESERVE_BYTES,
     model_resident: bool = False,
 ) -> RuntimePlan:
-    if preferred_backend not in {"cpu", "cuda", "rocm", "mps"}:
+    if preferred_backend not in SUPPORTED_BACKENDS:
         raise ValueError(f"Unsupported backend: {preferred_backend}")
     if logical_cpu_count <= 0:
         raise ValueError("logical_cpu_count must be positive")
@@ -106,7 +109,7 @@ def build_runtime_plan(
     )
 
     cpu_model_bytes = model_parameter_count * 4
-    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend == "mps" else 2)
+    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend in {"mps", "coreml"} else 2)
     cpu_load_bytes = 0 if model_resident else int(cpu_model_bytes * 1.20)
     accelerator_load_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.20)
     cpu_workspace = memory.system_available_bytes - system_reserve - cpu_load_bytes
@@ -116,10 +119,10 @@ def build_runtime_plan(
     reason = None
     if preferred_backend != "cpu":
         accelerator_free = memory.accelerator_free_bytes
-        # On ROCm APUs (unified memory architecture), PyTorch may report a small static VRAM window
-        # while ROCm can dynamically allocate from system RAM. If system available memory has enough
-        # headroom, treat ROCm free memory as available system memory minus system reserve.
-        if (
+        # On ROCm APUs or NPU accelerators (OpenVINO, CoreML, Vitis AI),
+        # hardware shares system RAM or reports no separate VRAM pool.
+        # If system available memory has enough headroom, treat free accelerator memory as system headroom.
+        if preferred_backend in {"npu", "openvino", "coreml", "vitisai"} or (
             preferred_backend == "rocm"
             and accelerator_free is not None
             and accelerator_total >= 2 * GIB
@@ -127,12 +130,12 @@ def build_runtime_plan(
         ):
             system_apu_headroom = memory.system_available_bytes - system_reserve - accelerator_load_bytes
             if system_apu_headroom >= MIN_RUNTIME_WORKSPACE_BYTES:
-                accelerator_free = max(accelerator_free, memory.system_available_bytes - system_reserve)
+                accelerator_free = max(accelerator_free or 0, memory.system_available_bytes - system_reserve)
                 accelerator_reserve = min(accelerator_reserve, MIN_ACCELERATOR_RESERVE_BYTES)
 
         accelerator_fits = (
             accelerator_free is not None
-            and accelerator_total > 0
+            and (accelerator_total > 0 or preferred_backend in {"npu", "openvino", "coreml", "vitisai"})
             and accelerator_free - accelerator_reserve - accelerator_load_bytes >= MIN_RUNTIME_WORKSPACE_BYTES
         )
         system_staging_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.10)
@@ -214,7 +217,7 @@ def build_runtime_plan(
         preferred_backend=preferred_backend,
         backend=selected_backend,
         device="cuda" if selected_backend in {"cuda", "rocm"} else selected_backend,
-        dtype="float32" if selected_backend in {"cpu", "mps"} else "float16",
+        dtype="float32" if selected_backend in {"cpu", "mps", "coreml"} else "float16",
         batch_size=batch_size,
         cpu_threads=cpu_threads,
         model_bytes=selected_model_bytes,
