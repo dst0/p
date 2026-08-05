@@ -141,6 +141,14 @@ test("selects bounded CPU and CUDA builds for non-AMD Linux hosts", () => {
 		}).backend,
 		"cuda",
 	);
+	assert.equal(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "npu",
+		}).backend,
+		"default",
+	);
 });
 
 test("keeps the compatible native PyTorch build on Intel macOS", () => {

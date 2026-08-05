@@ -63,11 +63,13 @@ export function selectTorchInstallPlan(options = {}) {
 			? "cpu"
 			: process.env.P_CODE_RAG_DEVICE === "mps"
 				? "mps"
-				: "auto");
+				: process.env.P_CODE_RAG_DEVICE === "npu"
+					? "npu"
+					: "auto");
 	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
 	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
-	if (!["auto", "cpu", "rocm", "cuda", "mps"].includes(requestedBackend)) {
-		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda, mps");
+	if (!["auto", "cpu", "rocm", "cuda", "mps", "npu"].includes(requestedBackend)) {
+		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda, mps, npu");
 	}
 
 	let backend = requestedBackend;
@@ -78,7 +80,7 @@ export function selectTorchInstallPlan(options = {}) {
 		else if (platform === "linux") backend = "cpu";
 		else backend = "default";
 	}
-	if (backend === "mps") {
+	if (backend === "mps" || backend === "npu") {
 		backend = "default";
 	}
 	if (backend === "rocm" && (platform !== "linux" || architecture !== "x64")) {
