@@ -66,8 +66,10 @@ done
 
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
 INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"
+INDEXING_BATCH_SIZE_FILE="$AGENT_DIR/indexing-max-batch-size"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
+initialize_indexing_batch_size_selection "$SELECT_INDEXING"
 
 
 # ---------- ensure curl ----------
@@ -271,6 +273,29 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
     mkdir -p "$AGENT_DIR"
     echo "$P_CODE_RAG_DEVICE" > "$INDEXING_DEVICE_FILE"
     echo "Saved embedding device to $INDEXING_DEVICE_FILE"
+
+    BATCH_CHOICES=("64 (default: maximum throughput)" "32 (balanced memory & speed)" "16 (low memory)" "8 (ultra-low memory)" "4 (minimal memory)" "1 (single item, zero batch overhead)")
+    BATCH_VALUES=(64 32 16 8 4 1)
+    echo ""
+    echo "=== Max Embedding Batch Size for code indexing ==="
+    for i in "${!BATCH_CHOICES[@]}"; do
+        echo "  $((i+1))) ${BATCH_CHOICES[$i]}"
+    done
+    while true; do
+        read -rp "Choose [1-${#BATCH_CHOICES[@]}] (default: 1 [64]): " BATCH_CHOICE
+        BATCH_CHOICE="${BATCH_CHOICE:-1}"
+        if [[ "$BATCH_CHOICE" =~ ^[0-9]+$ ]] && \
+           [[ "$BATCH_CHOICE" -ge 1 ]] && \
+           [[ "$BATCH_CHOICE" -le "${#BATCH_CHOICES[@]}" ]]; then
+            export P_CODE_RAG_MAX_EMBED_BATCH_SIZE="${BATCH_VALUES[$((BATCH_CHOICE-1))]}"
+            echo "Using max embedding batch size: $P_CODE_RAG_MAX_EMBED_BATCH_SIZE"
+            break
+        fi
+        echo "Invalid choice, enter a number between 1 and ${#BATCH_CHOICES[@]}."
+    done
+
+    echo "$P_CODE_RAG_MAX_EMBED_BATCH_SIZE" > "$INDEXING_BATCH_SIZE_FILE"
+    echo "Saved max embedding batch size to $INDEXING_BATCH_SIZE_FILE"
     echo ""
 fi
 

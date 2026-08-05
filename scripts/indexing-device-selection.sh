@@ -53,3 +53,55 @@ initialize_indexing_device_selection() {
   export P_CODE_RAG_DEVICE="$saved_device"
   echo "Loaded saved embedding device: $P_CODE_RAG_DEVICE"
 }
+
+is_valid_indexing_batch_size() {
+  [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]
+}
+
+initialize_indexing_batch_size_selection() {
+  local force_selection="$1"
+  local interactive="${2:-}"
+  local saved_batch_size
+
+  if [[ -z "$interactive" ]]; then
+    if [[ -t 0 ]]; then
+      interactive=true
+    else
+      interactive=false
+    fi
+  fi
+
+  if [[ "$force_selection" == true ]]; then
+    if [[ "$interactive" != true ]]; then
+      return 0
+    fi
+    unset P_CODE_RAG_MAX_EMBED_BATCH_SIZE
+    return 0
+  fi
+
+  if [[ -n "${P_CODE_RAG_MAX_EMBED_BATCH_SIZE:-}" ]]; then
+    if ! is_valid_indexing_batch_size "$P_CODE_RAG_MAX_EMBED_BATCH_SIZE"; then
+      echo "Invalid P_CODE_RAG_MAX_EMBED_BATCH_SIZE: $P_CODE_RAG_MAX_EMBED_BATCH_SIZE" >&2
+      echo "Expected a positive integer." >&2
+      return 1
+    fi
+    export P_CODE_RAG_MAX_EMBED_BATCH_SIZE
+    return 0
+  fi
+
+  local batch_file="${INDEXING_BATCH_SIZE_FILE:-${AGENT_DIR:-$HOME/.p/agent}/indexing-max-batch-size}"
+  if [[ ! -f "$batch_file" ]]; then
+    return 0
+  fi
+
+  IFS= read -r saved_batch_size < "$batch_file" || true
+  if ! is_valid_indexing_batch_size "$saved_batch_size"; then
+    echo "Invalid saved embedding batch size in $batch_file: $saved_batch_size" >&2
+    echo "Run with --select-indexing to replace it." >&2
+    return 1
+  fi
+
+  export P_CODE_RAG_MAX_EMBED_BATCH_SIZE="$saved_batch_size"
+  echo "Loaded saved embedding max batch size: $P_CODE_RAG_MAX_EMBED_BATCH_SIZE"
+}
+
