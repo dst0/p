@@ -134,7 +134,7 @@ export function createFinishWorkToolDefinition(
     promptSnippet: "Explicitly terminate the task with final status and user-visible result",
     promptGuidelines: [
       "Call finish_work exactly once when the task is complete, partially complete, or blocked.",
-      "For successful code changes, first call record_task_verification with action 'ready_to_finish', then pass its verification_token unchanged.",
+      "For successful code changes, first call record_task_verification with action 'ready_to_finish', re-audit all user requirements and test coverage, then pass its verification_token unchanged.",
       "status 'success' is incompatible with non-empty remaining_work.",
       "summary is required and must not be empty.",
     ],

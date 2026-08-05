@@ -1050,4 +1050,74 @@ describe("task verification controller", () => {
     expect(final.isError).toBe(false);
     expect(controller.currentState.final.status).toBe("failed");
   });
+
+  it("accumulates user prompts and includes semantic audit checklist in ready_to_finish output", async () => {
+    const sessionManager = SessionManager.inMemory();
+    const controller = createTaskVerificationController(sessionManager);
+    let capturedSubscriber: Parameters<Agent["subscribe"]>[0] | undefined;
+    const agent = new Agent();
+    const originalSubscribe = agent.subscribe.bind(agent);
+    agent.subscribe = (listener: Parameters<Agent["subscribe"]>[0]) => {
+      capturedSubscriber = listener;
+      return originalSubscribe(listener);
+    };
+    controller.install(agent);
+
+    // Simulate user messages during session
+    if (capturedSubscriber) {
+      const signal = new AbortController().signal;
+      capturedSubscriber(
+        {
+          type: "message_start",
+          message: { role: "user", content: "Build a calculator with 100% test coverage." },
+        } as never,
+        signal,
+      );
+      capturedSubscriber(
+        {
+          type: "message_start",
+          message: { role: "user", content: "Also support exponentiation and handle division by zero." },
+        } as never,
+        signal,
+      );
+    }
+
+    expect(controller.currentState.taskPrompts).toEqual([
+      "Build a calculator with 100% test coverage.",
+      "Also support exponentiation and handle division by zero.",
+    ]);
+
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Build calculator with exponentiation and zero division handling",
+    });
+
+    await afterTool(agent, "edit", {
+      path: "src/calc.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const testEvidence = evidenceHandle(
+      await afterTool(agent, "bash", { command: "vitest --run test/calc.test.ts" }, { text: "passed" }),
+    );
+
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Calculator with exponentiation and zero division handled",
+          evidence_refs: [testEvidence],
+        },
+      ],
+      unresolved_failures: [],
+    });
+
+    expect(ready.isError).toBe(false);
+    expect(ready.text).toContain("SEMANTIC AUDIT REQUIREMENT (RE-READ ORIGINAL USER INSTRUCTIONS):");
+    expect(ready.text).toContain("[Requirement 1]: Build a calculator with 100% test coverage.");
+    expect(ready.text).toContain("[Requirement 2]: Also support exponentiation and handle division by zero.");
+    expect(ready.text).toContain("VERIFICATION CHECKLIST:");
+    expect(ready.text).toContain("1. Have you fulfilled EVERY single user requirement and constraint above?");
+    expect(ready.text).toContain("2. Is every modified file and feature covered by unit/integration tests");
+  });
 });

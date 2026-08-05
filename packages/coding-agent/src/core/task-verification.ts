@@ -35,6 +35,8 @@ export interface TaskVerificationState {
   taskSummary?: string;
   /** Original user task context retained across compaction/session restore. */
   taskContext?: string;
+  /** Accumulated user prompts since task start or last finish_work. */
+  taskPrompts?: string[];
   mutationRevision: number;
   baseline: {
     required: boolean;
@@ -223,6 +225,7 @@ function emptyState(): TaskVerificationState {
   return {
     version: 1,
     mutationRevision: 0,
+    taskPrompts: [],
     baseline: {
       required: false,
       status: "not_required",
@@ -417,15 +420,28 @@ export class TaskVerificationController {
     agent.subscribe((event) => {
       if (event.type !== "message_start" || event.message.role !== "user") return;
       const content = event.message.content;
-      this.latestUserPrompt =
+      const promptText =
         typeof content === "string"
           ? content
           : content
               .filter((part) => part.type === "text")
               .map((part) => part.text)
               .join("\n");
+      this.latestUserPrompt = promptText;
+      const cleanPrompt = normalizeText(promptText);
+      if (cleanPrompt) {
+        if (!this.state.taskPrompts) {
+          this.state.taskPrompts = [];
+        }
+        if (!this.state.taskPrompts.includes(cleanPrompt)) {
+          this.state.taskPrompts.push(cleanPrompt);
+        }
+      }
       if (this.state.final.status === "passed") {
         this.state = emptyState();
+        if (cleanPrompt) {
+          this.state.taskPrompts = [cleanPrompt];
+        }
         this.persistState();
       }
     });
@@ -627,11 +643,17 @@ export class TaskVerificationController {
     }
     const taskSummary = normalizeText(input.task_summary);
     const required = baselineRequired(input.task_kind, `${this.latestUserPrompt}\n${taskSummary}`);
+    const currentPrompts = this.state.taskPrompts?.length
+      ? this.state.taskPrompts
+      : normalizeText(this.latestUserPrompt)
+        ? [normalizeText(this.latestUserPrompt)]
+        : [];
     this.state = {
       ...emptyState(),
       taskKind: input.task_kind,
       taskSummary,
       taskContext: normalizeText(this.latestUserPrompt).slice(0, 2_000) || undefined,
+      taskPrompts: currentPrompts,
       baseline: {
         required,
         status: required ? "pending" : "not_required",
@@ -1008,11 +1030,32 @@ export class TaskVerificationController {
       updatedAt: new Date().toISOString(),
     };
     this.persistState();
+    const promptHistoryText = (this.state.taskPrompts?.length ? this.state.taskPrompts : [this.latestUserPrompt])
+      .filter(Boolean)
+      .map((p, i) => `[Requirement ${i + 1}]: ${p}`)
+      .join("\n\n");
+
+    const auditPrompt = [
+      "--------------------------------------------------------------------------------",
+      "SEMANTIC AUDIT REQUIREMENT (RE-READ ORIGINAL USER INSTRUCTIONS):",
+      "Before calling finish_work, re-read the accumulated user requirements below:",
+      promptHistoryText ? promptHistoryText : "(No explicit prompt text captured)",
+      "",
+      "VERIFICATION CHECKLIST:",
+      "1. Have you fulfilled EVERY single user requirement and constraint above?",
+      "2. Is every modified file and feature covered by unit/integration tests across all lines and branches (unless the user explicitly asked NOT to write tests)?",
+      "3. Are all tests passing and is there zero remaining work or unresolved code issues?",
+      "If ALL items above are true, call finish_work with status 'success' and pass verification_token.",
+      "--------------------------------------------------------------------------------",
+    ].join("\n");
+
     return this.updated(
       [
         `Finish readiness passed for mutation revision ${this.state.mutationRevision}.`,
         `verification_token: ${token}`,
         "Pass this token unchanged to finish_work. Any subsequent workspace mutation invalidates it.",
+        "",
+        auditPrompt,
       ].join("\n"),
       false,
     );
@@ -1160,6 +1203,7 @@ export class TaskVerificationController {
       if (entry.customType === TASK_VERIFICATION_STATE_CUSTOM_TYPE && isTaskVerificationState(entry.data)) {
         this.state = {
           ...entry.data,
+          taskPrompts: entry.data.taskPrompts ?? [],
           readiness: entry.data.readiness ?? emptyReadiness(),
         };
       }
