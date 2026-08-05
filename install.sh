@@ -233,6 +233,8 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
             EMBED_VALUES+=("mps")
             EMBED_CHOICES+=("cpu (CPU only)")
             EMBED_VALUES+=("cpu")
+            EMBED_CHOICES+=("npu (Neural Processing Unit / NPU accelerator)")
+            EMBED_VALUES+=("npu")
         fi
     else
         EMBED_CHOICES+=("cpu (recommended – leaves GPU free for inference)")
@@ -245,6 +247,8 @@ if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
             EMBED_CHOICES+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
             EMBED_VALUES+=("cuda")
         fi
+        EMBED_CHOICES+=("npu (Neural Processing Unit / NPU accelerator)")
+        EMBED_VALUES+=("npu")
     fi
 
     if [[ "${#EMBED_CHOICES[@]}" -gt 1 ]]; then

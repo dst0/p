@@ -2,7 +2,7 @@
 
 is_valid_indexing_device() {
   case "$1" in
-    auto|cpu|cuda|rocm|mps) return 0 ;;
+    auto|cpu|cuda|rocm|mps|npu) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -32,7 +32,7 @@ initialize_indexing_device_selection() {
   if [[ -n "${P_CODE_RAG_DEVICE:-}" ]]; then
     if ! is_valid_indexing_device "$P_CODE_RAG_DEVICE"; then
       echo "Invalid P_CODE_RAG_DEVICE: $P_CODE_RAG_DEVICE" >&2
-      echo "Expected one of: auto, cpu, cuda, rocm, mps." >&2
+      echo "Expected one of: auto, cpu, cuda, rocm, mps, npu." >&2
       return 1
     fi
     export P_CODE_RAG_DEVICE
