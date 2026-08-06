@@ -287,11 +287,32 @@ class EmbeddingServer:
     def health(self) -> dict:
         plan = self.plan.to_dict() if self.plan is not None else None
         memory = self._current_memory()
+        backend_health: dict = {}
+        if hasattr(self.model, "health"):
+            try:
+                from embedding_backends.health import format_backend_health
+                bh = self.model.health()
+                backend_health = format_backend_health(bh)
+            except Exception:
+                pass
+
+        exec_device = (
+            backend_health.get("executionDevice")
+            or (plan.get("backend") if plan else None)
+            or str(getattr(self.model, "device", "none"))
+        )
+
         return {
             "status": "ready" if self.model is not None else "loading",
             "model": self.model_name,
             "dim": self.dim,
-            "device": str(getattr(self.model, "device", "none")),
+            "device": exec_device,
+            "executionDevice": exec_device,
+            "requestedBackend": backend_health.get("requestedBackend") or (plan.get("preferred_backend") if plan else None),
+            "selectedBackend": backend_health.get("selectedBackend") or (plan.get("backend") if plan else None),
+            "gpuAllowed": backend_health.get("gpuAllowed", False),
+            "fallbackOccurred": backend_health.get("fallbackOccurred", False),
+            "fallbackReason": backend_health.get("fallbackReason"),
             "resource_plan": plan,
             "memory": {
                 "system_total_bytes": memory.system_total_bytes,
