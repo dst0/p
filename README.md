@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://p.pages.dev">
-    <img alt="p logo" src="https://p.pages.dev/logo-auto.svg" width="128">
+  <a href="https://p-agent.pages.dev">
+    <img alt="p logo" src="https://p-agent.pages.dev/logo-auto.svg" width="128">
   </a>
 </p>
 <p align="center">
@@ -22,8 +22,8 @@ This is the home of the `p` agent harness project, an opinionated fork of the [p
 
 To learn more:
 
-- [Visit p.pages.dev](https://p.pages.dev), the project website
-- [Read the documentation](https://p.pages.dev/docs/latest), or ask the agent to explain itself
+- [Visit p-agent.pages.dev](https://p-agent.pages.dev), the project website
+- [Read the documentation](https://p-agent.pages.dev/docs/latest), or ask the agent to explain itself
 
 ## Share your OSS coding agent sessions
 
