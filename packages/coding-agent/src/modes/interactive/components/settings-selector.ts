@@ -227,9 +227,11 @@ class SelectSubmenu extends Container {
  */
 export class SettingsSelectorComponent extends Container {
   private settingsList: SettingsList;
+  public readonly callbacks: SettingsCallbacks;
 
   constructor(config: SettingsConfig, callbacks: SettingsCallbacks) {
     super();
+    this.callbacks = callbacks;
 
     const supportsImages = getCapabilities().images;
     const followUpKey = keyDisplayText("app.message.followUp");

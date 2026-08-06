@@ -1,12 +1,17 @@
 import type { AgentMessage, CustomMessage } from "@dst0/p-agent-core";
+import { Container } from "@dst0/p-tui";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isInternalCompletionProtocolRepairMessage } from "../src/core/agent-session.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { formatEditResult } from "../src/core/tools/edit.ts";
 import { getTextOutput, stripHarnessMessages } from "../src/core/tools/render-utils.ts";
+import { createWriteToolDefinition, formatWriteResult } from "../src/core/tools/write.ts";
 import { SettingsSelectorComponent } from "../src/modes/interactive/components/settings-selector.ts";
-import { initTheme } from "../src/modes/interactive/theme/theme.ts";
+import { ToolExecutionComponent } from "../src/modes/interactive/components/tool-execution.ts";
+import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
+import { initTheme, theme } from "../src/modes/interactive/theme/theme.ts";
 
 describe("showHarnessMessages functionality & coverage", () => {
   const testDir = join(process.cwd(), "test-harness-messages-tmp");
@@ -279,6 +284,174 @@ describe("showHarnessMessages functionality & coverage", () => {
       };
       const textTrue = getTextOutput(result, false, true);
       expect(textTrue).toContain(evidenceLine);
+    });
+
+    it("formatEditResult filters harness messages on error when showHarnessMessages is false", () => {
+      initTheme("dark");
+      const errorContent = `Edit failed: File not found\n${evidenceLine}`;
+      const result = {
+        content: [{ type: "text", text: errorContent }],
+      };
+      const formattedFalse = formatEditResult(undefined, undefined, result, theme, true, false);
+      expect(formattedFalse).not.toContain(evidenceLine);
+      expect(formattedFalse).toContain("Edit failed: File not found");
+
+      const formattedTrue = formatEditResult(undefined, undefined, result, theme, true, true);
+      expect(formattedTrue).toContain(evidenceLine);
+    });
+
+    it("formatWriteResult and writeTool.renderResult filter harness messages when showHarnessMessages is false", () => {
+      initTheme("dark");
+      const errorContent = `Write failed: Permission denied\n${evidenceLine}`;
+      const result = {
+        content: [{ type: "text" as const, text: errorContent }],
+        details: undefined,
+      };
+      const formattedFalse = formatWriteResult({ ...result, isError: true }, theme, false);
+      expect(formattedFalse).not.toContain(evidenceLine);
+      expect(formattedFalse).toContain("Write failed: Permission denied");
+
+      const formattedTrue = formatWriteResult({ ...result, isError: true }, theme, true);
+      expect(formattedTrue).toContain(evidenceLine);
+
+      const writeTool = createWriteToolDefinition(process.cwd());
+      const renderContext = {
+        isError: true,
+        showHarnessMessages: false,
+        lastComponent: undefined,
+        expanded: false,
+        isPartial: false,
+        argsComplete: true,
+        cwd: process.cwd(),
+        details: undefined,
+      };
+      const component = writeTool.renderResult?.(
+        result,
+        { expanded: false, isPartial: false },
+        theme,
+        renderContext as any,
+      );
+      expect(component).toBeDefined();
+    });
+
+    it("ToolExecutionComponent.setShowHarnessMessages updates state and display", () => {
+      initTheme("dark");
+      const comp = new ToolExecutionComponent(
+        "read",
+        "tool-1",
+        { path: "test.txt" },
+        { showHarnessMessages: false },
+        undefined,
+        { requestRender: () => {} } as any,
+        process.cwd(),
+      );
+      comp.updateResult({ content: [{ type: "text", text: sampleOutput }], isError: false });
+
+      comp.setShowHarnessMessages(true);
+      const textOutput = getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages);
+      expect(textOutput).toContain(evidenceLine);
+
+      comp.setShowHarnessMessages(false);
+      const textOutputFalse = getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages);
+      expect(textOutputFalse).not.toContain(evidenceLine);
+    });
+
+    it("toggling showHarnessMessages updates ToolExecutionComponent children in container", () => {
+      initTheme("dark");
+      const chatContainer = new Container();
+      const comp = new ToolExecutionComponent(
+        "read",
+        "tool-1",
+        { path: "test.txt" },
+        { showHarnessMessages: false },
+        undefined,
+        { requestRender: () => {} } as any,
+        process.cwd(),
+      );
+      comp.updateResult({ content: [{ type: "text", text: sampleOutput }], isError: false });
+      chatContainer.addChild(comp);
+
+      const onShowHarnessMessagesChange = (enabled: boolean) => {
+        for (const child of chatContainer.children) {
+          if (child instanceof ToolExecutionComponent) {
+            child.setShowHarnessMessages(enabled);
+          }
+        }
+      };
+
+      onShowHarnessMessagesChange(true);
+      const textOutputTrue = getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages);
+      expect(textOutputTrue).toContain(evidenceLine);
+
+      onShowHarnessMessagesChange(false);
+      const textOutputFalse = getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages);
+      expect(textOutputFalse).not.toContain(evidenceLine);
+    });
+
+    it("InteractiveMode.setShowHarnessMessages updates settings and child ToolExecutionComponent instances", () => {
+      initTheme("dark");
+      const manager = SettingsManager.create(projectDir, agentDir);
+      const chatContainer = new Container();
+      const comp = new ToolExecutionComponent(
+        "read",
+        "tool-1",
+        { path: "test.txt" },
+        { showHarnessMessages: false },
+        undefined,
+        { requestRender: () => {} } as any,
+        process.cwd(),
+      );
+      comp.updateResult({ content: [{ type: "text", text: sampleOutput }], isError: false });
+      chatContainer.addChild(comp);
+
+      const fakeInteractiveMode = {
+        settingsManager: manager,
+        chatContainer,
+        rebuildChatFromMessages: vi.fn(),
+        ui: { requestRender: vi.fn() },
+      };
+
+      InteractiveMode.prototype.setShowHarnessMessages.call(fakeInteractiveMode as any, true);
+      expect(manager.getShowHarnessMessages()).toBe(true);
+      expect(getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages)).toContain(evidenceLine);
+
+      InteractiveMode.prototype.setShowHarnessMessages.call(fakeInteractiveMode as any, false);
+      expect(manager.getShowHarnessMessages()).toBe(false);
+      expect(getTextOutput((comp as any).result, false, (comp as any).showHarnessMessages)).not.toContain(evidenceLine);
+    });
+
+    it("showSettingsSelector wires onShowHarnessMessagesChange callback to setShowHarnessMessages", () => {
+      initTheme("dark");
+      const manager = SettingsManager.create(projectDir, agentDir);
+      let selectorComponent: any;
+      const fakeInteractiveMode = {
+        settingsManager: manager,
+        chatContainer: new Container(),
+        editorContainer: new Container(),
+        editor: new Container(),
+        session: {
+          autoCompactionEnabled: true,
+          steeringMode: "all",
+          followUpMode: "all",
+          thinkingLevel: "medium",
+          getAvailableThinkingLevels: () => ["off", "minimal", "low", "medium", "high"],
+        },
+        hideThinkingBlock: false,
+        rebuildChatFromMessages: vi.fn(),
+        ui: { requestRender: vi.fn(), setFocus: vi.fn() },
+        footer: { invalidate: vi.fn(), setShowIndexingInfo: vi.fn(), setShowVersion: vi.fn() },
+        showSelector: (fn: (done: () => void) => any) => {
+          const res = fn(() => {});
+          selectorComponent = res.component;
+        },
+        setShowHarnessMessages: vi.fn(),
+        updateEditorBorderColor: vi.fn(),
+      };
+
+      (InteractiveMode.prototype as any).showSettingsSelector.call(fakeInteractiveMode);
+      selectorComponent.callbacks.onShowHarnessMessagesChange(true);
+      selectorComponent.callbacks.onWarningsChange({});
+      expect(fakeInteractiveMode.setShowHarnessMessages).toHaveBeenCalledWith(true);
     });
   });
 });

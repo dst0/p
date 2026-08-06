@@ -4808,13 +4808,7 @@ export class InteractiveMode {
             this.ui.requestRender();
           },
           onShowHarnessMessagesChange: (enabled) => {
-            this.settingsManager.setShowHarnessMessages(enabled);
-            for (const child of this.chatContainer.children) {
-              if (child instanceof ToolExecutionComponent) {
-                child.setShowHarnessMessages(enabled);
-              }
-            }
-            this.rebuildChatFromMessages();
+            this.setShowHarnessMessages(enabled);
             this.ui.requestRender();
           },
           onWarningsChange: (warnings) => {
@@ -4828,6 +4822,17 @@ export class InteractiveMode {
       );
       return { component: selector, focus: selector.getSettingsList() };
     });
+  }
+
+  setShowHarnessMessages(enabled: boolean): void {
+    this.settingsManager.setShowHarnessMessages(enabled);
+    for (const child of this.chatContainer.children) {
+      if (child instanceof ToolExecutionComponent) {
+        child.setShowHarnessMessages(enabled);
+      }
+    }
+    this.rebuildChatFromMessages();
+    this.ui.requestRender();
   }
 
   private async handleModelCommand(searchTerm?: string): Promise<void> {
