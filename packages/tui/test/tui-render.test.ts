@@ -764,4 +764,29 @@ describe("TUI differential rendering", () => {
 
     tui.stop();
   });
+
+  it("does not emit \\x1b[2J when redrawing viewport in-place for off-screen line changes", async () => {
+    const terminal = new LoggingVirtualTerminal(80, 10);
+    const tui = new TUI(terminal);
+    const comp = new TestComponent();
+    tui.addChild(comp);
+
+    // Create 30 lines (more than 10-line viewport)
+    comp.lines = Array.from({ length: 30 }, (_, i) => `Line ${i + 1}`);
+    tui.start();
+    await terminal.waitForRender();
+    terminal.clearWrites();
+
+    // Change an off-screen line by assigning a new array
+    comp.lines = ["Line 1 - modified off-screen", ...comp.lines.slice(1)];
+    tui.requestRender();
+    await terminal.waitForRender();
+
+    const writes = terminal.getWrites();
+    assert.ok(!writes.includes("\x1b[2J"), "Viewport redraw should not use \\x1b[2J to clear screen");
+    assert.ok(writes.includes("\x1b[H"), "Viewport redraw should position cursor home with \\x1b[H");
+    assert.ok(writes.includes("\x1b[2K"), "Viewport redraw should clear lines in-place with \\x1b[2K");
+
+    tui.stop();
+  });
 });

@@ -1352,16 +1352,27 @@ export class TUI extends Container {
     }
 
     // When an overlay is active and viewport top shifts, redraw only the visible screen rows (last height lines)
-    // with synchronized output without clearing scrollback history (\x1b[3J). This prevents whole-transcript replays.
+    // with synchronized output without clearing scrollback history (\x1b[3J) or dumping screen to scrollback (\x1b[2J).
     const newViewportTop = Math.max(0, newLines.length - height);
     if (this.overlayStack.length > 0 && newViewportTop !== prevViewportTop) {
       logRedraw(`overlay viewport shift (${prevViewportTop} -> ${newViewportTop})`);
-      let buffer = "\x1b[?2026h\x1b[2J\x1b[H";
+      let buffer = "\x1b[?2026h\x1b[H";
       const visibleEnd = Math.min(newLines.length, newViewportTop + height);
       for (let i = newViewportTop; i < visibleEnd; i++) {
+        buffer += "\x1b[2K";
         buffer += newLines[i];
         if (i < visibleEnd - 1) {
           buffer += "\r\n";
+        }
+      }
+      const renderedCount = visibleEnd - newViewportTop;
+      if (renderedCount < height) {
+        for (let i = renderedCount; i < height; i++) {
+          buffer += "\r\n\x1b[2K";
+        }
+        const moveBack = height - renderedCount;
+        if (moveBack > 0) {
+          buffer += `\x1b[${moveBack}A`;
         }
       }
       buffer += "\x1b[?2026l";
@@ -1466,18 +1477,29 @@ export class TUI extends Container {
 
     // Differential rendering can only touch what was actually visible.
     // If the first changed line is above the previous viewport, redraw only the visible screen rows
-    // without clearing scrollback (\x1b[3J) or replaying the full history into stdout.
+    // without clearing scrollback (\x1b[3J) or replaying the full history into stdout / dumping visible screen (\x1b[2J).
     if (firstChanged < prevViewportTop) {
       logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
       this.fullRedrawCount += 1;
       const newViewportTop = Math.max(0, newLines.length - height);
-      let buffer = "\x1b[?2026h\x1b[2J\x1b[H";
+      let buffer = "\x1b[?2026h\x1b[H";
       buffer += this.deleteChangedKittyImages(0, newLines.length - 1);
       const visibleEnd = Math.min(newLines.length, newViewportTop + height);
       for (let i = newViewportTop; i < visibleEnd; i++) {
+        buffer += "\x1b[2K";
         buffer += newLines[i];
         if (i < visibleEnd - 1) {
           buffer += "\r\n";
+        }
+      }
+      const renderedCount = visibleEnd - newViewportTop;
+      if (renderedCount < height) {
+        for (let i = renderedCount; i < height; i++) {
+          buffer += "\r\n\x1b[2K";
+        }
+        const moveBack = height - renderedCount;
+        if (moveBack > 0) {
+          buffer += `\x1b[${moveBack}A`;
         }
       }
       buffer += "\x1b[?2026l";
