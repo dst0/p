@@ -39,6 +39,7 @@
 
 ### Added
 
+- Added hardware-aware code indexing backend layer (`apple-ane`, `nvidia-cuda`, `amd-rocm`, `apple-mps`, `intel-openvino-cpu`, `cpu`) with native Swift Apple Neural Engine worker, 1024-dim golden parity test suite, and detailed `/index` telemetry.
 - Add a 30-minute event-sourced inventory benchmark with hidden transactional, idempotency, replay, and tamper-detection checks.
 - Added fixed-order PI, P, and Kilo Code benchmark support with isolated configuration, pinned CLI versions, and duplicate-event-safe Kilo metrics.
 - Added classic light and Japanese aesthetic built-in themes (GitHub Light, Solarized Light, Catppuccin Latte, One Light, Sakura, Kanagawa, Matcha, Cyberpunk Tokyo).
