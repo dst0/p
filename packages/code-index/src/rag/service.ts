@@ -179,12 +179,17 @@ export class WorkspaceCodeRagService implements CodeRagService {
           pythonExecutable: this.settings.pythonExecutable,
           startupTimeoutMs: this.settings.embeddingStartupTimeoutMs,
           requestTimeoutMs: this.settings.embeddingTimeoutMs,
+          batchSize: this.settings.encodeBatchSize,
         },
       );
     this.ownsVectorStore = options.vectorStore === undefined;
     this.vectorStore =
       options.vectorStore ??
-      new QdrantVectorStore({ url: this.settings.qdrantUrl, timeoutMs: this.settings.searchTimeoutMs });
+      new QdrantVectorStore({
+        url: this.settings.qdrantUrl,
+        timeoutMs: this.settings.searchTimeoutMs,
+        upsertBatchSize: this.settings.upsertBatchSize,
+      });
     const qdrantUrl = new URL(this.settings.qdrantUrl);
     const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
     const managesLocalQdrant =

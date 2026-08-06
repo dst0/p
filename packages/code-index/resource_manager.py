@@ -50,7 +50,21 @@ class RuntimePlan:
         return asdict(self)
 
 
-SUPPORTED_BACKENDS = {"cpu", "cuda", "rocm", "mps", "npu", "openvino", "coreml", "vitisai"}
+SUPPORTED_BACKENDS = {
+    "cpu",
+    "cuda",
+    "rocm",
+    "mps",
+    "npu",
+    "openvino",
+    "coreml",
+    "vitisai",
+    "apple-ane",
+    "nvidia-cuda",
+    "amd-rocm",
+    "apple-mps",
+    "intel-openvino-cpu",
+}
 
 
 def estimate_model_parameter_count(model_name: str) -> int:

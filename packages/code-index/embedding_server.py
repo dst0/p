@@ -57,6 +57,23 @@ from resource_manager import (
 )
 
 
+def get_current_rss_mb() -> float:
+    """Return the current process RSS memory in megabytes."""
+    try:
+        import psutil
+        return psutil.Process(os.getpid()).memory_info().rss / 1024 / 1024
+    except Exception:
+        pass
+    try:
+        import resource
+        rusage = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+        if sys.platform == "darwin":
+            return rusage / 1024 / 1024
+        return rusage / 1024
+    except Exception:
+        return 0.0
+
+
 class ONNXEmbeddingWrapper:
     """Wraps an ONNX Runtime model for fast inference on CPU, GPU, or NPU."""
 
@@ -122,7 +139,12 @@ class ONNXEmbeddingWrapper:
                 norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
                 embeddings = embeddings / self._np.clip(norms, a_min=1e-9, a_max=None)
             all_embeddings.append(embeddings)
-        return self._np.vstack(all_embeddings) if all_embeddings else self._np.array([])
+            del tok, inputs, outputs, token_embeddings, attention_mask, input_mask_expanded, sum_embeddings, sum_mask
+        result = self._np.vstack(all_embeddings) if all_embeddings else self._np.array([])
+        del all_embeddings
+        import gc
+        gc.collect()
+        return result
 
     def to(self, device=None, dtype=None):
         # CoreML runs on the ANE/GPU via ONNX Runtime; device migration is a no-op.
@@ -187,10 +209,12 @@ class EmbeddingServer:
 
         # Keep enough context for metadata-enriched code chunks while retaining a
         # conservative default for CPU and unified-memory machines.
-        tokenizer_limit = getattr(self.model.tokenizer, "model_max_length", self.sequence_length)
+        tokenizer = getattr(self.model, "tokenizer", None)
+        tokenizer_limit = getattr(tokenizer, "model_max_length", self.sequence_length)
         if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 10_000_000:
             self.sequence_length = min(self.sequence_length, tokenizer_limit)
-        self.model.max_seq_length = self.sequence_length
+        if hasattr(self.model, "max_seq_length"):
+            self.model.max_seq_length = self.sequence_length
 
         exact_parameter_count = self._exact_parameter_count()
         if exact_parameter_count > 0:
@@ -200,8 +224,8 @@ class EmbeddingServer:
         self.dim = len(sample[0])
         print(
             "Model loaded. "
-            f"Dim: {self.dim}, max_seq: {self.model.max_seq_length}, "
-            f"resources: {json.dumps(self.health()['resource_plan'], sort_keys=True)}",
+            f"Dim: {self.dim}, max_seq: {getattr(self.model, 'max_seq_length', self.sequence_length)}, "
+            f"resources: {json.dumps(self.plan.to_dict(), sort_keys=True)}",
             flush=True,
         )
 
@@ -215,12 +239,22 @@ class EmbeddingServer:
         while offset < len(texts):
             batch_size = min(self._effective_batch_size(), len(texts) - offset)
             try:
-                embeddings = self.model.encode(
-                    texts[offset : offset + batch_size],
-                    normalize_embeddings=normalize,
-                    batch_size=batch_size,
-                    show_progress_bar=False,
-                )
+                if hasattr(self.model, "backend_id"):
+                    # Custom EmbeddingBackend protocol implementation (e.g. AppleANEBackend)
+                    raw_vecs = self.model.encode(
+                        texts[offset : offset + batch_size],
+                        normalize=normalize,
+                        batch_size=batch_size,
+                    )
+                    embeddings = list(raw_vecs)
+                else:
+                    raw_vecs = self.model.encode(
+                        texts[offset : offset + batch_size],
+                        normalize_embeddings=normalize,
+                        batch_size=batch_size,
+                        show_progress_bar=False,
+                    )
+                    embeddings = raw_vecs.tolist() if hasattr(raw_vecs, "tolist") else list(raw_vecs)
             except Exception as error:
                 if not _is_out_of_memory(error):
                     raise
@@ -237,8 +271,11 @@ class EmbeddingServer:
                     "Embedding ran out of memory at batch size 1; "
                     "free more RAM or reduce P_CODE_RAG_MAX_SEQUENCE_LENGTH"
                 ) from error
-            output.extend(embeddings.tolist())
+            output.extend(embeddings)
             offset += batch_size
+            import gc
+            gc.collect()
+            self._clear_accelerator_cache()
 
         if not request_had_oom and self.oom_batch_ceiling is not None:
             self.successful_requests_since_oom += 1
@@ -276,7 +313,22 @@ class EmbeddingServer:
         }
 
     def _select_preferred_backend(self, requested_device: str) -> tuple[str, MemorySnapshot]:
-        valid_devices = {"auto", "cpu", "cuda", "rocm", "mps", "npu", "openvino", "coreml", "vitisai"}
+        valid_devices = {
+            "auto",
+            "cpu",
+            "cuda",
+            "rocm",
+            "mps",
+            "npu",
+            "openvino",
+            "coreml",
+            "vitisai",
+            "apple-ane",
+            "nvidia-cuda",
+            "amd-rocm",
+            "apple-mps",
+            "intel-openvino-cpu",
+        }
         if requested_device not in valid_devices:
             raise ValueError(f"P_CODE_RAG_DEVICE must be one of: {', '.join(sorted(valid_devices))}")
         if requested_device == "cpu":
@@ -296,8 +348,10 @@ class EmbeddingServer:
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
         if requested_device == "auto":
             return detected_backend or "cpu", memory
+        if requested_device in {"apple-ane", "npu"} and sys.platform == "darwin":
+            return "apple-ane", memory
         if (
-            (requested_device in {"cuda", "rocm", "mps"} and detected_backend == requested_device)
+            (requested_device in {"cuda", "nvidia-cuda", "rocm", "amd-rocm", "mps", "apple-mps"} and detected_backend == requested_device)
             or (requested_device in {"npu", "openvino", "coreml", "vitisai"} and _npu_available(requested_device))
         ):
             return requested_device, memory
@@ -352,7 +406,7 @@ class EmbeddingServer:
         return memory
 
     def _build_plan(self, backend: str, memory: MemorySnapshot, model_resident: bool) -> RuntimePlan:
-        max_batch_size = read_positive_int_environment("P_CODE_RAG_MAX_EMBED_BATCH_SIZE", 64)
+        max_batch_size = read_positive_int_environment("P_CODE_RAG_MAX_EMBED_BATCH_SIZE", 8)
         max_cpu_threads = read_positive_int_environment(
             "P_CODE_RAG_MAX_CPU_THREADS",
             os.cpu_count() or 1,
@@ -377,6 +431,13 @@ class EmbeddingServer:
         )
 
     def _load_model(self, plan: RuntimePlan):
+        if plan.backend == "apple-ane":
+            from embedding_backends.apple_ane_backend import AppleANEBackend
+            from embedding_backends.base import ModelSpec
+            ane_backend = AppleANEBackend("apple-ane", strict=False)
+            ane_backend.load(ModelSpec(model_name=self.model_name, dimensions=self.dim))
+            return ane_backend
+
         if plan.backend == "cpu":
             return SentenceTransformer(self.model_name, device="cpu")
         if plan.backend in {"openvino", "npu"} and _openvino_npu_available():
@@ -395,15 +456,22 @@ class EmbeddingServer:
 
         if has_onnx_source or plan.backend in {"coreml", "npu"}:
             try:
+                import onnxruntime as ort
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
                 from transformers import AutoTokenizer
 
+                session_options = ort.SessionOptions()
+                session_options.enable_cpu_mem_arena = False
+
+                # NOTE: CoreMLExecutionProvider is deliberately NOT used here.
+                # For Qwen3-Embedding-0.6B it supports only ~50% of graph nodes
+                # (1834/3644), compiling 197 subgraphs into separate CoreML models.
+                # This causes 30+ GB virtual memory and forces the entire OS into
+                # swap. CPUExecutionProvider with disabled arena is predictable and
+                # stays under 1.5 GB RSS.
                 provider = "CPUExecutionProvider"
                 device_label = "cpu (ONNX Runtime)"
-                if plan.backend in {"coreml", "npu"} and sys.platform == "darwin" and _coreml_ane_available():
-                    provider = "CoreMLExecutionProvider"
-                    device_label = "npu:0 (CoreML/ANE)"
-                elif plan.backend in {"cuda", "gpu"}:
+                if plan.backend in {"cuda", "gpu"}:
                     provider = "CUDAExecutionProvider"
                     device_label = "cuda:0 (ONNX Runtime)"
                 elif plan.backend in {"openvino", "npu"} and sys.platform == "linux":
@@ -418,6 +486,7 @@ class EmbeddingServer:
                         export=False,
                         file_name="model.onnx",
                         provider=provider,
+                        session_options=session_options,
                     )
                 elif pre_exported_hf:
                     print(f"Loading pre-exported ONNX model from Hugging Face ({provider}): {pre_exported_hf}", flush=True)
@@ -425,6 +494,7 @@ class EmbeddingServer:
                         pre_exported_hf,
                         export=False,
                         provider=provider,
+                        session_options=session_options,
                     )
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)
@@ -599,6 +669,9 @@ class Handler(BaseHTTPRequestHandler):
                 "dim": server.dim,
                 "embeddings": embeddings,
             })
+
+            import gc
+            gc.collect()
         except (BrokenPipeError, ConnectionResetError):
             # Client disconnected — don't crash the server
             self.close_connection = True

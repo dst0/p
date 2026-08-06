@@ -155,6 +155,10 @@ function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
   }
   const remoteBackendsAllowed = parseBooleanEnvironment("P_CODE_RAG_REMOTE_BACKENDS_ALLOWED");
   if (remoteBackendsAllowed !== undefined) settings.remoteBackendsAllowed = remoteBackendsAllowed;
+  const encodeBatchSize = parsePositiveIntegerEnvironment("P_CODE_RAG_ENCODE_BATCH_SIZE");
+  if (encodeBatchSize !== undefined) settings.encodeBatchSize = encodeBatchSize;
+  const upsertBatchSize = parsePositiveIntegerEnvironment("P_CODE_RAG_UPSERT_BATCH_SIZE");
+  if (upsertBatchSize !== undefined) settings.upsertBatchSize = upsertBatchSize;
   return settings;
 }
 

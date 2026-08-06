@@ -49,7 +49,9 @@ describe("EmbeddingProviderHttp.encodeQuery", () => {
 describe("EmbeddingProviderHttp.encode", () => {
   it("lets the resource-aware server micro-batch the configured 64-item encode batch", async () => {
     const requests = captureEmbeddingRequests();
-    const provider = new EmbeddingProviderHttp("http://127.0.0.1:18742", 3, false);
+    const provider = new EmbeddingProviderHttp("http://127.0.0.1:18742", 3, false, "Qwen/Qwen3-Embedding-0.6B", {
+      batchSize: 64,
+    });
 
     await provider.encode(Array.from({ length: 65 }, (_, index) => `chunk ${index}`));
 

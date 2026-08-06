@@ -331,6 +331,18 @@ function collectIndexingFiles(projectRoot: string): string[] {
     collectJsFiles(codeIndexPyDir, files, [".py"]);
   }
 
+  // code-index Python backends package
+  const embeddingBackendsDir = path.join(codeIndexDir, "embedding_backends");
+  if (dirExists(embeddingBackendsDir)) {
+    collectJsFiles(embeddingBackendsDir, files, [".py"]);
+  }
+
+  // code-index Swift worker
+  const swiftWorkerDir = path.join(codeIndexDir, "apple-ane-worker", "Sources");
+  if (dirExists(swiftWorkerDir)) {
+    collectJsFiles(swiftWorkerDir, files, [".swift"]);
+  }
+
   // code-index config
   const configFiles = ["requirements.txt", "pyproject.toml"];
   for (const file of configFiles) {

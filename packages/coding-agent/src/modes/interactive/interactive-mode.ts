@@ -6418,11 +6418,30 @@ export class InteractiveMode {
         if (res.ok) {
           const health = (await res.json()) as {
             device?: string;
+            requestedBackend?: string;
+            selectedBackend?: string;
+            executionDevice?: string;
+            gpuAllowed?: boolean;
+            fallbackOccurred?: boolean;
+            fallbackReason?: string;
             resource_plan?: { batch_size?: number };
             runtime?: { warnings?: string[] };
           };
-          if (health.device) {
-            text += `Active compute device: ${theme.bold(health.device)}\n`;
+          if (health.requestedBackend) {
+            text += `Requested backend: ${theme.bold(health.requestedBackend)}\n`;
+          }
+          if (health.selectedBackend) {
+            text += `Selected backend: ${theme.bold(health.selectedBackend)}\n`;
+          }
+          const deviceLabel = health.executionDevice ?? health.device;
+          if (deviceLabel) {
+            text += `Execution device: ${theme.bold(deviceLabel)}\n`;
+          }
+          if (health.gpuAllowed !== undefined) {
+            text += `GPU allowed: ${health.gpuAllowed ? theme.fg("success", "yes") : theme.fg("warning", "no (GPU-deny policy)")}\n`;
+          }
+          if (health.fallbackOccurred) {
+            text += `Fallback occurred: ${theme.fg("warning", "yes")} (${health.fallbackReason ?? "CPU fallback"})\n`;
           }
           if (health.resource_plan?.batch_size !== undefined) {
             text += `Current used batch size: ${theme.bold(String(health.resource_plan.batch_size))}\n`;

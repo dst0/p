@@ -11,6 +11,7 @@ import type {
 export interface QdrantVectorStoreOptions {
   url: string;
   timeoutMs: number;
+  upsertBatchSize?: number;
   fetch?: typeof fetch;
 }
 
@@ -204,9 +205,11 @@ export class StoredPointError extends Error {
 
 export class QdrantVectorStore implements RagVectorStore {
   private client: QdrantRestClient;
+  private upsertBatchSize: number;
 
   constructor(options: QdrantVectorStoreOptions) {
     this.client = new FetchQdrantRestClient(options);
+    this.upsertBatchSize = options.upsertBatchSize ?? 128;
   }
 
   async collectionExists(collection: string): Promise<boolean> {
@@ -275,14 +278,18 @@ export class QdrantVectorStore implements RagVectorStore {
 
   async upsert(collection: string, points: VectorPoint[]): Promise<void> {
     if (points.length === 0) return;
-    await this.client.upsert(collection, {
-      wait: true,
-      points: points.map((point) => ({
-        id: point.id,
-        vector: point.vectors,
-        payload: point.payload as unknown as Record<string, unknown>,
-      })),
-    });
+    const batchSize = Math.max(1, this.upsertBatchSize);
+    for (let i = 0; i < points.length; i += batchSize) {
+      const chunk = points.slice(i, i + batchSize);
+      await this.client.upsert(collection, {
+        wait: true,
+        points: chunk.map((point) => ({
+          id: point.id,
+          vector: point.vectors,
+          payload: point.payload as unknown as Record<string, unknown>,
+        })),
+      });
+    }
   }
 
   async deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void> {
