@@ -156,7 +156,7 @@ function formatCompactReadCall(
   );
 }
 
-function formatReadResult(
+export function formatReadResult(
   args: ReadRenderArgs | undefined,
   result: { content: (TextContent | ImageContent)[]; details?: ReadToolDetails },
   options: ToolRenderResultOptions,
@@ -164,13 +164,14 @@ function formatReadResult(
   showImages: boolean,
   _cwd: string,
   isError: boolean,
+  showHarnessMessages?: boolean,
 ): string {
   if (!options.expanded && !isError) {
     return "";
   }
 
   const rawPath = str(args?.file_path ?? args?.path);
-  const output = getTextOutput(result, showImages);
+  const output = getTextOutput(result, showImages, options.showHarnessMessages ?? showHarnessMessages);
   const lang = rawPath ? getLanguageFromPath(rawPath) : undefined;
   const renderedLines = lang ? highlightCode(replaceTabs(output), lang) : output.split("\n");
   const lines = trimTrailingEmptyLines(renderedLines);
@@ -346,7 +347,16 @@ export function createReadToolDefinition(
     renderResult(result, options, theme, context) {
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
       text.setText(
-        formatReadResult(context.args, result, options, theme, context.showImages, context.cwd, context.isError),
+        formatReadResult(
+          context.args,
+          result,
+          options,
+          theme,
+          context.showImages,
+          context.cwd,
+          context.isError,
+          context.showHarnessMessages,
+        ),
       );
       return text;
     },

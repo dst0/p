@@ -3085,6 +3085,7 @@ export class InteractiveMode {
                   {
                     showImages: this.settingsManager.getShowImages(),
                     imageWidthCells: this.settingsManager.getImageWidthCells(),
+                    showHarnessMessages: this.settingsManager?.getShowHarnessMessages?.() ?? false,
                   },
                   this.getRegisteredToolDefinition(content.name),
                   this.ui,
@@ -3176,6 +3177,7 @@ export class InteractiveMode {
             {
               showImages: this.settingsManager.getShowImages(),
               imageWidthCells: this.settingsManager.getImageWidthCells(),
+              showHarnessMessages: this.settingsManager?.getShowHarnessMessages?.() ?? false,
             },
             this.getRegisteredToolDefinition(event.toolName),
             this.ui,
@@ -3785,6 +3787,7 @@ export class InteractiveMode {
               {
                 showImages: this.settingsManager.getShowImages(),
                 imageWidthCells: this.settingsManager.getImageWidthCells(),
+                showHarnessMessages: this.settingsManager?.getShowHarnessMessages?.() ?? false,
               },
               this.getRegisteredToolDefinition(content.name),
               this.ui,
@@ -4806,6 +4809,11 @@ export class InteractiveMode {
           },
           onShowHarnessMessagesChange: (enabled) => {
             this.settingsManager.setShowHarnessMessages(enabled);
+            for (const child of this.chatContainer.children) {
+              if (child instanceof ToolExecutionComponent) {
+                child.setShowHarnessMessages(enabled);
+              }
+            }
             this.rebuildChatFromMessages();
             this.ui.requestRender();
           },

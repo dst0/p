@@ -1481,7 +1481,10 @@ export class TUI extends Container {
     if (firstChanged < prevViewportTop) {
       logRedraw(`firstChanged < viewportTop (${firstChanged} < ${prevViewportTop})`);
       this.fullRedrawCount += 1;
-      const newViewportTop = Math.max(0, newLines.length - height);
+      // Preserve the user's scroll position by adjusting for lines added/removed above the viewport.
+      // Do NOT scroll to bottom just because content above changed (e.g., tool output expansion).
+      const lineDelta = newLines.length - this.previousLines.length;
+      const newViewportTop = Math.max(0, Math.min(prevViewportTop + lineDelta, Math.max(0, newLines.length - height)));
       let buffer = "\x1b[?2026h\x1b[H";
       buffer += this.deleteChangedKittyImages(0, newLines.length - 1);
       const visibleEnd = Math.min(newLines.length, newViewportTop + height);

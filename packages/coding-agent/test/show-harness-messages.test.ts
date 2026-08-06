@@ -4,6 +4,7 @@ import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isInternalCompletionProtocolRepairMessage } from "../src/core/agent-session.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { getTextOutput, stripHarnessMessages } from "../src/core/tools/render-utils.ts";
 import { SettingsSelectorComponent } from "../src/modes/interactive/components/settings-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
 
@@ -246,6 +247,38 @@ describe("showHarnessMessages functionality & coverage", () => {
       expect(shouldDisplayMessage(normalUserMsg, true)).toBe(true);
       expect(shouldDisplayMessage(normalCustomMsg, false)).toBe(true);
       expect(shouldDisplayMessage(normalCustomMsg, true)).toBe(true);
+    });
+  });
+
+  describe("Tool Output Harness Message Filtering", () => {
+    const evidenceLine =
+      "Verification evidence handle: verification-evidence-414 (@VGCiyJEeuEctpwRatH3kdS4uSULCw90q, ctx_search, mutation revision 0).";
+    const sampleOutput = `Found 2 matches in src/main.rs:\nline 10: fn main()\n${evidenceLine}`;
+
+    it("stripHarnessMessages removes Verification evidence handle lines", () => {
+      const stripped = stripHarnessMessages(sampleOutput);
+      expect(stripped).not.toContain(evidenceLine);
+      expect(stripped).toContain("Found 2 matches in src/main.rs:");
+    });
+
+    it("getTextOutput filters Verification evidence handle lines when showHarnessMessages is false", () => {
+      const result = {
+        content: [{ type: "text", text: sampleOutput }],
+      };
+      const textDefault = getTextOutput(result, false);
+      expect(textDefault).not.toContain(evidenceLine);
+      expect(textDefault).toContain("Found 2 matches in src/main.rs:");
+
+      const textExplicitFalse = getTextOutput(result, false, false);
+      expect(textExplicitFalse).not.toContain(evidenceLine);
+    });
+
+    it("getTextOutput includes Verification evidence handle lines when showHarnessMessages is true", () => {
+      const result = {
+        content: [{ type: "text", text: sampleOutput }],
+      };
+      const textTrue = getTextOutput(result, false, true);
+      expect(textTrue).toContain(evidenceLine);
     });
   });
 });

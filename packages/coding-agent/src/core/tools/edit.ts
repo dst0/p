@@ -21,7 +21,7 @@ import {
 } from "./edit-diff.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
-import { renderToolPath, str } from "./render-utils.ts";
+import { renderToolPath, str, stripHarnessMessages } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 type EditPreview = EditDiffResult | EditDiffError;
@@ -197,21 +197,25 @@ function formatEditCall(args: RenderableEditArgs | undefined, theme: Theme, cwd:
   return `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 }
 
-function formatEditResult(
+export function formatEditResult(
   args: RenderableEditArgs | undefined,
   preview: EditPreview | undefined,
   result: EditToolResultLike,
   theme: Theme,
   isError: boolean,
+  showHarnessMessages?: boolean,
 ): string | undefined {
   const rawPath = str(args?.file_path ?? args?.path);
   const previewDiff = preview && !("error" in preview) ? preview.diff : undefined;
   const previewError = preview && "error" in preview ? preview.error : undefined;
   if (isError) {
-    const errorText = result.content
+    let errorText = result.content
       .filter((c) => c.type === "text")
       .map((c) => c.text || "")
       .join("\n");
+    if (!showHarnessMessages) {
+      errorText = stripHarnessMessages(errorText);
+    }
     if (!errorText || errorText === previewError) {
       return undefined;
     }
@@ -427,7 +431,14 @@ export function createEditToolDefinition(
         }
       }
 
-      const output = formatEditResult(context.args, callComponent?.preview, typedResult, theme, context.isError);
+      const output = formatEditResult(
+        context.args,
+        callComponent?.preview,
+        typedResult,
+        theme,
+        context.isError,
+        context.showHarnessMessages,
+      );
       const component = (context.lastComponent as Container | undefined) ?? new Container();
       component.clear();
       if (!output) {

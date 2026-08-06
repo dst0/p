@@ -8,6 +8,7 @@ import { theme } from "../theme/theme.ts";
 export interface ToolExecutionOptions {
   showImages?: boolean;
   imageWidthCells?: number;
+  showHarnessMessages?: boolean;
 }
 
 export class ToolExecutionComponent extends Container {
@@ -25,6 +26,7 @@ export class ToolExecutionComponent extends Container {
   private expanded = false;
   private showImages: boolean;
   private imageWidthCells: number;
+  private showHarnessMessages: boolean;
   private isPartial = true;
   private toolDefinition?: ToolDefinition<any, any>;
   private builtInToolDefinition?: ToolDefinition<any, any>;
@@ -59,6 +61,7 @@ export class ToolExecutionComponent extends Container {
       defs[toolName as ToolName] ?? (toolName === "finish_work" ? defs.finish_work : undefined);
     this.showImages = options.showImages ?? true;
     this.imageWidthCells = options.imageWidthCells ?? 60;
+    this.showHarnessMessages = options.showHarnessMessages ?? false;
     this.ui = ui;
     this.cwd = cwd;
 
@@ -135,6 +138,7 @@ export class ToolExecutionComponent extends Container {
       isPartial: this.isPartial,
       expanded: this.expanded,
       showImages: this.showImages,
+      showHarnessMessages: this.showHarnessMessages,
       isError: this.result?.isError ?? false,
     };
   }
@@ -222,6 +226,11 @@ export class ToolExecutionComponent extends Container {
 
   setShowImages(show: boolean): void {
     this.showImages = show;
+    this.updateDisplay();
+  }
+
+  setShowHarnessMessages(show: boolean): void {
+    this.showHarnessMessages = show;
     this.updateDisplay();
   }
 
@@ -383,7 +392,7 @@ export class ToolExecutionComponent extends Container {
   }
 
   private getTextOutput(): string {
-    return getRenderedTextOutput(this.result, this.showImages);
+    return getRenderedTextOutput(this.result, this.showImages, this.showHarnessMessages);
   }
 
   private formatToolExecution(): string {
