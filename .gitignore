@@ -54,6 +54,7 @@ __pycache__/
 # Benchmark artifacts (keep results.json, exclude large recordings/workspaces)
 benchmarks/results/*/recordings/
 benchmarks/results/*/workspaces/
+benchmarks/results/2026-08-05*
 
 # Agent metadata
 .agents/
