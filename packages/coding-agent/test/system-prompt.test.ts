@@ -21,7 +21,7 @@ describe("buildSystemPrompt", () => {
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain(
-      "- Always write tests for new functionality and bug fixes unless the user explicitly asks not to",
+      "- Always write comprehensive tests for new functionality and bug fixes across happy paths",
     );
     expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
     expect(prompt).toContain(

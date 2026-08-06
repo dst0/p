@@ -44,7 +44,7 @@ afterEach(() => {
 describe("InteractiveMode code-indexing prompt", () => {
   beforeAll(() => initTheme("dark"));
 
-  it("moves an enabled repository to the top with /index up", () => {
+  it("moves an enabled repository to the top with /index up", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-command-"));
     temporaryDirectories.push(root);
     const agentDir = path.join(root, "agent");
@@ -53,11 +53,11 @@ describe("InteractiveMode code-indexing prompt", () => {
     const indexingService = new IndexingService(agentDir);
     const context = { indexingService };
 
-    expect(interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
+    expect(await interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
       "Indexing is not enabled",
     );
     indexingService.enableIndexing(repository);
-    expect(interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
+    expect(await interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
       "top of the indexing queue",
     );
   });
@@ -121,7 +121,7 @@ describe("InteractiveMode code-indexing prompt", () => {
     expect(indexingService.getDecision(repository)).toBe("enabled");
   });
 
-  it("formats files indexed and chunks indexed with out of X", () => {
+  it("formats files indexed and chunks indexed with out of X", async () => {
     const indexingService = {
       getStatus: () => ({
         decision: "enabled" as const,
@@ -136,7 +136,7 @@ describe("InteractiveMode code-indexing prompt", () => {
     } as unknown as IndexingService;
     const context = { indexingService };
 
-    const text = interactiveModePrototype.buildIndexStatusText.call(context, "/repository", "");
+    const text = await interactiveModePrototype.buildIndexStatusText.call(context, "/repository", "");
     expect(text).toContain("Files indexed: 1041 out of 1041");
     expect(text).toContain("Chunks indexed: 58072 out of 58072");
   });

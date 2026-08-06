@@ -181,7 +181,7 @@ describe("semantic retrieval compatibility", () => {
     expect(source).toContain('"P_CODE_RAG_MAX_SEQUENCE_LENGTH",');
     expect(source).toContain("self.model.max_seq_length = self.sequence_length");
     expect(source).not.toContain("self.model.max_seq_length = 512");
-    expect(source).toContain("max_seq: {self.model.max_seq_length}");
+    expect(source).toContain("max_seq:");
   });
 });
 

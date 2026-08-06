@@ -257,7 +257,7 @@ class DeviceSelectionTest(unittest.TestCase):
         server = EmbeddingServer("test/model")
 
         from unittest.mock import patch
-        with patch("embedding_server._npu_available", return_value=False):
+        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=False):
             for dev in ("npu", "openvino", "coreml", "vitisai"):
                 backend, _ = server._select_preferred_backend(dev)
                 self.assertEqual(backend, "cpu")
@@ -270,7 +270,7 @@ class DeviceSelectionTest(unittest.TestCase):
         server = EmbeddingServer("test/model")
 
         from unittest.mock import patch
-        with patch("embedding_server._npu_available", return_value=True):
+        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=True):
             for dev in ("npu", "openvino", "coreml", "vitisai"):
                 backend, _ = server._select_preferred_backend(dev)
                 self.assertEqual(backend, dev)
