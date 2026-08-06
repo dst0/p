@@ -8,15 +8,7 @@ import * as fs from "node:fs";
 import * as os from "node:os";
 import * as path from "node:path";
 import type { AgentMessage } from "@dst0/p-agent-core";
-import {
-  type AssistantMessage,
-  getProviders,
-  type ImageContent,
-  type Message,
-  type Model,
-  type OAuthProviderId,
-  type OAuthSelectPrompt,
-} from "@dst0/p-ai";
+import type { AssistantMessage, Message, Model, OAuthProviderId, OAuthSelectPrompt } from "@dst0/p-ai";
 import type {
   AutocompleteItem,
   AutocompleteProvider,
@@ -87,7 +79,6 @@ import { type AppKeybinding, KeybindingsManager } from "../../core/keybindings.t
 import { SLEEP_TOOL_NAME } from "../../core/messages.ts";
 import { defaultModelPerProvider, findExactModelReferenceMatch, resolveModelScope } from "../../core/model-resolver.ts";
 import { DefaultPackageManager } from "../../core/package-manager.ts";
-import { BUILT_IN_PROVIDER_DISPLAY_NAMES } from "../../core/provider-display-names.ts";
 import type { ResourceDiagnostic } from "../../core/resource-loader.ts";
 import { formatMissingSessionCwdPrompt, MissingSessionCwdError } from "../../core/session-cwd.ts";
 import { type SessionContext, SessionManager } from "../../core/session-manager.ts";
@@ -144,6 +135,29 @@ import { TrustSelectorComponent } from "./components/trust-selector.ts";
 import { UserMessageComponent } from "./components/user-message.ts";
 import { UserMessageSelectorComponent } from "./components/user-message-selector.ts";
 import {
+  ANTHROPIC_SUBSCRIPTION_AUTH_WARNING,
+  DEFAULT_PLAN_PANEL_WIDTH,
+  MIN_PLAN_PANEL_HEIGHT,
+  MIN_PLAN_PANEL_WIDTH,
+  RECENT_MODEL_SWITCH_MS,
+} from "./modules/constants.ts";
+import type {
+  CompactionQueuedMessage,
+  InteractiveModeOptions,
+  PlanPanelBounds,
+  PlanPanelDragMode,
+} from "./modules/types.ts";
+import {
+  ExpandableText,
+  formatResumeCommand,
+  hasDefaultModelProvider,
+  isAnthropicSubscriptionAuthKey,
+  isApiKeyLoginProvider,
+  isDeadTerminalError,
+  isExpandable,
+  isUnknownModel,
+} from "./modules/utils.ts";
+import {
   detectTerminalBackgroundTheme,
   getAvailableThemes,
   getAvailableThemesWithPaths,
@@ -161,141 +175,6 @@ import {
   type ThemeColor,
   theme,
 } from "./theme/theme.ts";
-
-/** Interface for components that can be expanded/collapsed */
-interface Expandable {
-  setExpanded(expanded: boolean): void;
-}
-
-function isExpandable(obj: unknown): obj is Expandable {
-  return typeof obj === "object" && obj !== null && "setExpanded" in obj && typeof obj.setExpanded === "function";
-}
-
-class ExpandableText extends Text implements Expandable {
-  private readonly getCollapsedText: () => string;
-  private readonly getExpandedText: () => string;
-
-  constructor(
-    getCollapsedText: () => string,
-    getExpandedText: () => string,
-    expanded = false,
-    paddingX = 0,
-    paddingY = 0,
-  ) {
-    super(expanded ? getExpandedText() : getCollapsedText(), paddingX, paddingY);
-    this.getCollapsedText = getCollapsedText;
-    this.getExpandedText = getExpandedText;
-  }
-
-  setExpanded(expanded: boolean): void {
-    this.setText(expanded ? this.getExpandedText() : this.getCollapsedText());
-  }
-}
-
-type CompactionQueuedMessage = {
-  text: string;
-  mode: "steer" | "followUp";
-};
-
-const DEAD_TERMINAL_ERROR_CODES = new Set(["EIO", "EPIPE", "ENOTCONN"]);
-
-function isDeadTerminalError(error: unknown): boolean {
-  if (!error || typeof error !== "object" || !("code" in error)) {
-    return false;
-  }
-  const code = (error as NodeJS.ErrnoException).code;
-  return code !== undefined && DEAD_TERMINAL_ERROR_CODES.has(code);
-}
-
-const ANTHROPIC_SUBSCRIPTION_AUTH_WARNING =
-  "Anthropic subscription auth is active. Third-party harness usage draws from extra usage and is billed per token, not your Claude plan limits. Manage extra usage at https://claude.ai/settings/usage.";
-const RECENT_MODEL_SWITCH_MS = 10 * 60 * 1000;
-const DEFAULT_PLAN_PANEL_WIDTH = 50;
-const MIN_PLAN_PANEL_WIDTH = 30;
-const MIN_PLAN_PANEL_HEIGHT = 8;
-
-type PlanPanelDragMode = "width" | "height" | "both";
-
-interface PlanPanelBounds {
-  left: number;
-  right: number;
-  top: number;
-  bottom: number;
-  width: number;
-  height: number;
-}
-
-function isAnthropicSubscriptionAuthKey(apiKey: string | undefined): boolean {
-  return typeof apiKey === "string" && apiKey.startsWith("sk-ant-oat");
-}
-
-function isUnknownModel(model: Model<any> | undefined): boolean {
-  return !!model && model.provider === "unknown" && model.id === "unknown" && model.api === "unknown";
-}
-
-function quoteIfNeeded(value: string): string {
-  if (value.length > 0 && !/[^a-zA-Z0-9_\-./~:@]/.test(value)) {
-    return value;
-  }
-  return `'${value.replace(/'/g, `'\\''`)}'`;
-}
-
-export function formatResumeCommand(sessionManager: SessionManager): string | undefined {
-  if (!process.stdout.isTTY) return undefined;
-  if (!sessionManager.isPersisted()) return undefined;
-
-  const sessionFile = sessionManager.getSessionFile();
-  if (!sessionFile || !fs.existsSync(sessionFile)) return undefined;
-
-  const args = [APP_NAME];
-  if (!sessionManager.usesDefaultSessionDir()) {
-    args.push("--session-dir", quoteIfNeeded(sessionManager.getSessionDir()));
-  }
-  args.push("--session", sessionManager.getSessionId());
-  return args.join(" ");
-}
-
-function hasDefaultModelProvider(providerId: string): providerId is keyof typeof defaultModelPerProvider {
-  return providerId in defaultModelPerProvider;
-}
-
-const BEDROCK_PROVIDER_ID = "amazon-bedrock";
-
-const BUILT_IN_MODEL_PROVIDERS = new Set<string>(getProviders());
-
-export function isApiKeyLoginProvider(
-  providerId: string,
-  oauthProviderIds: ReadonlySet<string>,
-  builtInProviderIds: ReadonlySet<string> = BUILT_IN_MODEL_PROVIDERS,
-): boolean {
-  if (BUILT_IN_PROVIDER_DISPLAY_NAMES[providerId]) {
-    return true;
-  }
-  if (builtInProviderIds.has(providerId)) {
-    return false;
-  }
-  return !oauthProviderIds.has(providerId);
-}
-
-/**
- * Options for InteractiveMode initialization.
- */
-export interface InteractiveModeOptions {
-  /** Providers that were migrated to auth.json (shows warning) */
-  migratedProviders?: string[];
-  /** Warning message if session model couldn't be restored */
-  modelFallbackMessage?: string;
-  /** Cwd to trust after reload if it gained a .p directory during this implicitly trusted session. */
-  autoTrustOnReloadCwd?: string;
-  /** Initial message to send on startup (can include @file content) */
-  initialMessage?: string;
-  /** Images to attach to the initial message */
-  initialImages?: ImageContent[];
-  /** Additional messages to send after the initial message */
-  initialMessages?: string[];
-  /** Force verbose startup (overrides quietStartup setting) */
-  verbose?: boolean;
-}
 
 export class InteractiveMode {
   private runtimeHost: AgentSessionRuntime;
@@ -5446,7 +5325,7 @@ export class InteractiveMode {
 
           if (providerOption.authType === "oauth") {
             await this.showLoginDialog(providerOption.id, providerOption.name);
-          } else if (providerOption.id === BEDROCK_PROVIDER_ID) {
+          } else if (providerOption.id === "amazon-bedrock") {
             this.showBedrockSetupDialog(providerOption.id, providerOption.name);
           } else {
             await this.showApiKeyLoginDialog(providerOption.id, providerOption.name);
