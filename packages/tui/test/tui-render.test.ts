@@ -789,4 +789,86 @@ describe("TUI differential rendering", () => {
 
     tui.stop();
   });
+
+  it("handles overlay viewport shift with full height in-place redraw", async () => {
+    const terminal = new LoggingVirtualTerminal(80, 10);
+    const tui = new TUI(terminal);
+    const comp = new TestComponent();
+    tui.addChild(comp);
+
+    comp.lines = Array.from({ length: 20 }, (_, i) => `Line ${i + 1}`);
+    tui.start();
+    await terminal.waitForRender();
+
+    const overlayComp = new TestComponent();
+    overlayComp.lines = ["Overlay 1", "Overlay 2"];
+    tui.showOverlay(overlayComp);
+    await terminal.waitForRender();
+    terminal.clearWrites();
+
+    // Trigger overlay viewport shift by appending lines (renderedCount = 10 === height)
+    comp.lines = [...comp.lines, "Line 21", "Line 22", "Line 23"];
+    tui.requestRender();
+    await terminal.waitForRender();
+
+    const writes = terminal.getWrites();
+    assert.ok(!writes.includes("\x1b[2J"), "Overlay viewport shift should not emit \\x1b[2J");
+    assert.ok(writes.includes("\x1b[H"), "Overlay viewport shift should use cursor home");
+    assert.ok(writes.includes("\x1b[2K"), "Overlay viewport shift should use in-place line clearing");
+
+    tui.stop();
+  });
+
+  it("handles overlay viewport shift when rendered count is less than terminal height", async () => {
+    const terminal = new LoggingVirtualTerminal(80, 10);
+    const tui = new TUI(terminal);
+    const comp = new TestComponent();
+    tui.addChild(comp);
+
+    // Initial 15 lines in 10-line viewport (prevViewportTop = 5)
+    comp.lines = Array.from({ length: 15 }, (_, i) => `Line ${i + 1}`);
+    tui.start();
+    await terminal.waitForRender();
+
+    const overlayComp = new TestComponent();
+    overlayComp.lines = ["Overlay"];
+    tui.showOverlay(overlayComp);
+    await terminal.waitForRender();
+    terminal.clearWrites();
+
+    // Shrink lines to 4 lines and shift viewport (newViewportTop = 0 !== 5, renderedCount = 4 < 10 height)
+    comp.lines = ["Modified Line 1", "Line 2", "Line 3", "Line 4"];
+    tui.requestRender();
+    await terminal.waitForRender();
+
+    const writes = terminal.getWrites();
+    assert.ok(!writes.includes("\x1b[2J"), "Redraw should not emit \\x1b[2J");
+    assert.ok(writes.includes("\x1b[2K"), "Redraw should clear remaining rows in-place");
+
+    tui.stop();
+  });
+
+  it("handles off-screen line changes when rendered count is less than terminal height", async () => {
+    const terminal = new LoggingVirtualTerminal(80, 10);
+    const tui = new TUI(terminal);
+    const comp = new TestComponent();
+    tui.addChild(comp);
+
+    // Initial 15 lines in 10-line viewport (prevViewportTop = 5)
+    comp.lines = Array.from({ length: 15 }, (_, i) => `Line ${i + 1}`);
+    tui.start();
+    await terminal.waitForRender();
+    terminal.clearWrites();
+
+    // Change line 0 and shrink to 4 lines (firstChanged = 0 < 5, renderedCount = 4 < 10 height)
+    comp.lines = ["Modified Line 1", "Line 2", "Line 3", "Line 4"];
+    tui.requestRender();
+    await terminal.waitForRender();
+
+    const writes = terminal.getWrites();
+    assert.ok(!writes.includes("\x1b[2J"), "Redraw should not emit \\x1b[2J");
+    assert.ok(writes.includes("\x1b[2K"), "Redraw should clear remaining rows in-place");
+
+    tui.stop();
+  });
 });
