@@ -2809,7 +2809,7 @@ export class InteractiveMode {
       }
       if (text === "/index" || text.startsWith("/index ")) {
         this.editor.setText("");
-        this.handleIndexCommand(text);
+        await this.handleIndexCommand(text);
         return;
       }
       if (text === "/debug") {
@@ -6349,17 +6349,17 @@ export class InteractiveMode {
     }
   }
 
-  private handleIndexCommand(text?: string): void {
+  private async handleIndexCommand(text?: string): Promise<void> {
     const args = (text ?? "").replace(/^\/index\s*/, "").trim();
     const workspaceRoot = findIndexWorkspaceRoot(this.sessionManager.getCwd());
-    const info = this.buildIndexStatusText(workspaceRoot, args);
+    const info = await this.buildIndexStatusText(workspaceRoot, args);
 
     this.chatContainer.addChild(new Spacer(1));
     this.chatContainer.addChild(new Text(info, 1, 0));
     this.ui.requestRender();
   }
 
-  private buildIndexStatusText(resolvedPath: string, args: string): string {
+  private async buildIndexStatusText(resolvedPath: string, args: string): Promise<string> {
     if (args === "enable") {
       this.indexingService.enableIndexing(resolvedPath);
       return (
@@ -6405,6 +6405,55 @@ export class InteractiveMode {
           : theme.fg("warning", "not configured");
     text += `Indexing: ${decision}\n`;
     text += `Background service: ${status.serviceRunning ? theme.fg("success", "running") : theme.fg("error", "not running")}\n`;
+    if (status.configuredDevice) {
+      text += `Selected device: ${theme.bold(status.configuredDevice)}\n`;
+    }
+    if (status.configuredMaxBatchSize !== undefined) {
+      text += `Configured max batch size: ${theme.bold(String(status.configuredMaxBatchSize))}\n`;
+    }
+
+    if (status.serviceRunning) {
+      try {
+        const res = await fetch("http://127.0.0.1:18742/health", { signal: AbortSignal.timeout(1000) });
+        if (res.ok) {
+          const health = (await res.json()) as {
+            device?: string;
+            requestedBackend?: string;
+            selectedBackend?: string;
+            executionDevice?: string;
+            gpuAllowed?: boolean;
+            fallbackOccurred?: boolean;
+            fallbackReason?: string;
+            resource_plan?: { batch_size?: number };
+            runtime?: { warnings?: string[] };
+          };
+          if (health.requestedBackend) {
+            text += `Requested backend: ${theme.bold(health.requestedBackend)}\n`;
+          }
+          if (health.selectedBackend) {
+            text += `Selected backend: ${theme.bold(health.selectedBackend)}\n`;
+          }
+          const deviceLabel = health.executionDevice ?? health.device;
+          if (deviceLabel) {
+            text += `Execution device: ${theme.bold(deviceLabel)}\n`;
+          }
+          if (health.gpuAllowed !== undefined) {
+            text += `GPU allowed: ${health.gpuAllowed ? theme.fg("success", "yes") : theme.fg("warning", "no (GPU-deny policy)")}\n`;
+          }
+          if (health.fallbackOccurred) {
+            text += `Fallback occurred: ${theme.fg("warning", "yes")} (${health.fallbackReason ?? "CPU fallback"})\n`;
+          }
+          if (health.resource_plan?.batch_size !== undefined) {
+            text += `Current used batch size: ${theme.bold(String(health.resource_plan.batch_size))}\n`;
+          }
+          if (health.runtime?.warnings?.length) {
+            text += `Embedding warnings: ${theme.fg("warning", health.runtime.warnings.join("; "))}\n`;
+          }
+        }
+      } catch {
+        // Embedding server status details optional if server is starting or idle
+      }
+    }
 
     if (status.ragState) {
       text += `Service state: ${status.ragState}\n`;

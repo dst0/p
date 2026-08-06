@@ -114,7 +114,7 @@ describe("runPrintMode", () => {
       createFinishWorkResult({ status: "success", summary: "summary", result: "result text" }),
     ]);
 
-    expect(output).toEqual({ text: "result text", exitCode: 0 });
+    expect(output).toEqual({ text: "summary", exitCode: 0 });
   });
 
   it("falls back to finish_work summary and returns non-zero for failed status", () => {

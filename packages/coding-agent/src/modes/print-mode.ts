@@ -36,7 +36,7 @@ export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextM
   const finishPayload = getFinishWorkPayload(messages);
   if (finishPayload) {
     return {
-      text: finishPayload.result ?? finishPayload.summary,
+      text: finishPayload.summary,
       exitCode: finishPayload.status === "failed" ? 1 : 0,
     };
   }

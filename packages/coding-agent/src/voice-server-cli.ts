@@ -138,7 +138,7 @@ function extractFinalText(event: unknown): string | undefined {
 
   const messages = event.messages as AgentMessage[];
   const finishPayload = getFinishWorkPayload(messages);
-  const finishText = finishPayload?.result ?? finishPayload?.summary;
+  const finishText = finishPayload?.summary;
   if (finishText?.trim()) {
     return finishText.trim();
   }

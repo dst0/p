@@ -5,6 +5,7 @@ import { EmbeddingServerManager, type EmbeddingServerManagerOptions } from "./se
 export interface EmbeddingProviderHttpOptions extends EmbeddingServerManagerOptions {
   requestTimeoutMs: number;
   maxRetries: number;
+  batchSize?: number;
 }
 
 /**
@@ -18,7 +19,7 @@ const QUERY_INSTRUCTION =
 
 const DEFAULT_HTTP_OPTIONS: EmbeddingProviderHttpOptions = {
   requestTimeoutMs: 30_000,
-  maxRetries: 2,
+  maxRetries: 4,
   startupTimeoutMs: 120_000,
   pythonExecutable: "python3",
 };
@@ -71,7 +72,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
   async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
     if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-    const batchSize = 64;
+    const batchSize = Math.max(1, this.options.batchSize ?? 8);
     const allVectors: Float32Array[] = [];
 
     for (let i = 0; i < texts.length; i += batchSize) {
@@ -104,10 +105,10 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
   }
 
   private async request(input: string[], signal?: AbortSignal): Promise<Float32Array[]> {
-    await this.ensureReady(signal);
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
       try {
+        await this.ensureReady(signal);
         const requestSignal = AbortSignal.any([
           AbortSignal.timeout(this.options.requestTimeoutMs),
           ...(signal ? [signal] : []),

@@ -183,7 +183,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   // Always include these
   addGuideline("Be concise in your responses");
   addGuideline("Show file paths clearly when working with files");
-  addGuideline("Always write tests for new functionality and bug fixes unless the user explicitly asks not to");
+  addGuideline(
+    "Always write comprehensive tests for new functionality and bug fixes across happy paths, unhappy paths (error handling, invalid inputs, rollbacks, custom exception types), and all edge cases (boundaries, empty states, duplicate inputs) unless the user explicitly asks not to",
+  );
   addGuideline("Run tests after writing or modifying them to verify they pass before proceeding");
   addGuideline(
     "Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",

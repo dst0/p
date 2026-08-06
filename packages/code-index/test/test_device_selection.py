@@ -248,6 +248,33 @@ class DeviceSelectionTest(unittest.TestCase):
 
         self.assertEqual(backend, "cpu")
 
+    # -- NPU requested when unavailable falls back to CPU --------------
+
+    def test_npu_requested_when_unavailable_falls_back_to_cpu(self):
+        builder = FakeTorchBuilder()
+        EmbeddingServer = _install_fake_torch(builder)
+
+        server = EmbeddingServer("test/model")
+
+        from unittest.mock import patch
+        with patch("embedding_server._npu_available", return_value=False):
+            for dev in ("npu", "openvino", "coreml", "vitisai"):
+                backend, _ = server._select_preferred_backend(dev)
+                self.assertEqual(backend, "cpu")
+                self.assertIn(f"requested {dev} backend is unavailable; using CPU", server.warnings)
+
+    def test_npu_requested_when_available_returns_npu_device(self):
+        builder = FakeTorchBuilder()
+        EmbeddingServer = _install_fake_torch(builder)
+
+        server = EmbeddingServer("test/model")
+
+        from unittest.mock import patch
+        with patch("embedding_server._npu_available", return_value=True):
+            for dev in ("npu", "openvino", "coreml", "vitisai"):
+                backend, _ = server._select_preferred_backend(dev)
+                self.assertEqual(backend, dev)
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -179,6 +179,11 @@ export interface IndexManifest {
     model: string;
     version?: string;
     dimensions: number;
+    compatibilityGroup?: string;
+    modelRevision?: string;
+    tokenizerHash?: string;
+    pooling?: string;
+    normalization?: string;
   };
   sparse: {
     strategy: "frozen-bm25";

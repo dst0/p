@@ -16,7 +16,8 @@ test("runs a dependency-ordered workflow", () => {
   engine.start(definition, { commandId: "start", now: 0 });
   const build = engine.claim("worker-a", 0, 50);
   assert.equal(build?.taskId, "build");
-  engine.complete(build!, { artifact: "sha256:abc" }, { commandId: "build-ok", now: 1 });
+  const buildRes = engine.complete(build!, { artifact: "sha256:abc" }, { commandId: "build-ok", now: 1 });
+  assert.deepEqual(buildRes.output, { artifact: "sha256:abc" });
   const testClaim = engine.claim("worker-b", 1, 50);
   assert.equal(testClaim?.taskId, "test");
   engine.complete(testClaim!, { passed: true }, { commandId: "test-ok", now: 2 });
