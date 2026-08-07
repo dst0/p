@@ -1,3 +1,3 @@
 export { formatResumeCommand, isApiKeyLoginProvider } from "./helpers.ts";
 export { InteractiveMode } from "./interactivemode.ts";
-export { InteractiveModeOptions } from "./types.ts";
+export type { InteractiveModeOptions } from "./types.ts";

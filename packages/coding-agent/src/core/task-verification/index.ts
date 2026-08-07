@@ -6,4 +6,4 @@ export {
 export { findOversizedSourceFiles } from "./helpers-part1.ts";
 export { createTaskVerificationController } from "./helpers-part2.ts";
 export { TaskVerificationController } from "./taskverificationcontroller.ts";
-export { TaskVerificationAcceptanceCheck, TaskVerificationEvidence, TaskVerificationState } from "./types.ts";
+export type { TaskVerificationAcceptanceCheck, TaskVerificationEvidence, TaskVerificationState } from "./types.ts";
