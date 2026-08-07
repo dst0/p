@@ -24,5 +24,6 @@ export {
   renderWorkingSessionState,
   sanitizeStructuredSessionState,
 } from "./session-state-risk-filter.ts";
+export type { EvidenceKind } from "./structured-state.ts";
 export * from "./structured-state.ts";
 export * from "./utils.ts";

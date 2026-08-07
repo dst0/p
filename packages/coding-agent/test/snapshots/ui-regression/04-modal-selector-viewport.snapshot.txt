@@ -1,0 +1,24 @@
+ extend p.                                                                      
+
+
+────────────────────────────────────────────────────────────────────────────────
+>                                                                               
+
+→ Auto-compact            true
+  Auto-resize images      true
+  Block images            false
+  Skill commands          true
+  Show hardware cursor    false
+  Editor padding          0
+  Autocomplete max items  5
+  Clear on shrink         false
+  Terminal progress       false
+  Token progress          true
+  (1/29)
+
+  Automatically compact context when it gets too large
+
+  Type to search · Enter/Space to change · Esc to cancel
+────────────────────────────────────────────────────────────────────────────────
+~/dev/p/packages/coding-agent (main)
+🔎 static-indexing-status
