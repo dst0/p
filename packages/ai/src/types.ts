@@ -5,6 +5,7 @@ export type { AssistantMessageEventStream } from "./utils/event-stream.ts";
 
 export type KnownApi =
   | "openai-completions"
+  | "openai-chat"
   | "mistral-conversations"
   | "openai-responses"
   | "azure-openai-responses"
