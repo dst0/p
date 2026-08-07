@@ -321,6 +321,18 @@ const FUNCTIONAL_CODEPOINTS = {
   pageDown: -13,
   home: -14,
   end: -15,
+  f1: -20,
+  f2: -21,
+  f3: -22,
+  f4: -23,
+  f5: -24,
+  f6: -25,
+  f7: -26,
+  f8: -27,
+  f9: -28,
+  f10: -29,
+  f11: -30,
+  f12: -31,
 } as const;
 
 const KITTY_FUNCTIONAL_KEY_EQUIVALENTS = new Map<number, number>([
@@ -351,6 +363,18 @@ const KITTY_FUNCTIONAL_KEY_EQUIVALENTS = new Map<number, number>([
   [57424, FUNCTIONAL_CODEPOINTS.end],
   [57425, FUNCTIONAL_CODEPOINTS.insert],
   [57426, FUNCTIONAL_CODEPOINTS.delete],
+  [57344, FUNCTIONAL_CODEPOINTS.f1],
+  [57345, FUNCTIONAL_CODEPOINTS.f2],
+  [57346, FUNCTIONAL_CODEPOINTS.f3],
+  [57347, FUNCTIONAL_CODEPOINTS.f4],
+  [57348, FUNCTIONAL_CODEPOINTS.f5],
+  [57349, FUNCTIONAL_CODEPOINTS.f6],
+  [57350, FUNCTIONAL_CODEPOINTS.f7],
+  [57351, FUNCTIONAL_CODEPOINTS.f8],
+  [57352, FUNCTIONAL_CODEPOINTS.f9],
+  [57353, FUNCTIONAL_CODEPOINTS.f10],
+  [57354, FUNCTIONAL_CODEPOINTS.f11],
+  [57355, FUNCTIONAL_CODEPOINTS.f12],
 ]);
 
 function normalizeKittyFunctionalCodepoint(codepoint: number): number {
@@ -489,6 +513,22 @@ const LEGACY_SEQUENCE_KEY_IDS: Record<string, KeyId> = {
   "\x1b[21~": "f10",
   "\x1b[23~": "f11",
   "\x1b[24~": "f12",
+  "\x1b[1;5P": "ctrl+f1",
+  "\x1b[1;5Q": "ctrl+f2",
+  "\x1b[1;5R": "ctrl+f3",
+  "\x1b[1;5S": "ctrl+f4",
+  "\x1b[11;5~": "ctrl+f1",
+  "\x1b[12;5~": "ctrl+f2",
+  "\x1b[13;5~": "ctrl+f3",
+  "\x1b[14;5~": "ctrl+f4",
+  "\x1b[15;5~": "ctrl+f5",
+  "\x1b[17;5~": "ctrl+f6",
+  "\x1b[18;5~": "ctrl+f7",
+  "\x1b[19;5~": "ctrl+f8",
+  "\x1b[20;5~": "ctrl+f9",
+  "\x1b[21;5~": "ctrl+f10",
+  "\x1b[23;5~": "ctrl+f11",
+  "\x1b[24;5~": "ctrl+f12",
   "\x1bb": "alt+left",
   "\x1bf": "alt+right",
   "\x1bp": "alt+up",
@@ -644,12 +684,39 @@ function parseKittySequence(data: string): ParsedKittySequence | null {
       6: FUNCTIONAL_CODEPOINTS.pageDown,
       7: FUNCTIONAL_CODEPOINTS.home,
       8: FUNCTIONAL_CODEPOINTS.end,
+      11: FUNCTIONAL_CODEPOINTS.f1,
+      12: FUNCTIONAL_CODEPOINTS.f2,
+      13: FUNCTIONAL_CODEPOINTS.f3,
+      14: FUNCTIONAL_CODEPOINTS.f4,
+      15: FUNCTIONAL_CODEPOINTS.f5,
+      17: FUNCTIONAL_CODEPOINTS.f6,
+      18: FUNCTIONAL_CODEPOINTS.f7,
+      19: FUNCTIONAL_CODEPOINTS.f8,
+      20: FUNCTIONAL_CODEPOINTS.f9,
+      21: FUNCTIONAL_CODEPOINTS.f10,
+      23: FUNCTIONAL_CODEPOINTS.f11,
+      24: FUNCTIONAL_CODEPOINTS.f12,
     };
     const codepoint = funcCodes[keyNum];
     if (codepoint !== undefined) {
       _lastEventType = eventType;
       return { codepoint, modifier: modValue - 1, eventType };
     }
+  }
+
+  // Function keys F1-F4 with modifier: \x1b[1;<mod>P/Q/R/S or \x1bO<mod>P/Q/R/S
+  const fKeyMatch = data.match(/^(?:\x1b\[1;(\d+)(?::(\d+))?|\x1bO(\d+))([PQRS])$/);
+  if (fKeyMatch) {
+    const modValue = parseInt(fKeyMatch[1] ?? fKeyMatch[3]!, 10);
+    const eventType = parseEventType(fKeyMatch[2]);
+    const fCodes: Record<string, number> = {
+      P: FUNCTIONAL_CODEPOINTS.f1,
+      Q: FUNCTIONAL_CODEPOINTS.f2,
+      R: FUNCTIONAL_CODEPOINTS.f3,
+      S: FUNCTIONAL_CODEPOINTS.f4,
+    };
+    _lastEventType = eventType;
+    return { codepoint: fCodes[fKeyMatch[4]!]!, modifier: modValue - 1, eventType };
   }
 
   // Home/End with modifier: \x1b[1;<mod>H/F or \x1b[1;<mod>:<event>H/F
@@ -1148,16 +1215,36 @@ export function matchesKey(data: string, keyId: KeyId): boolean {
     case "f10":
     case "f11":
     case "f12": {
-      const functionKey = key as keyof typeof MODIFIED_FUNCTION_KEY_CODES;
+      const functionKey = key as keyof typeof FUNCTIONAL_CODEPOINTS & keyof typeof MODIFIED_FUNCTION_KEY_CODES;
+      const targetCodepoint = FUNCTIONAL_CODEPOINTS[functionKey];
       if (modifier === 0) {
-        return matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]);
+        return (
+          matchesLegacySequence(data, LEGACY_KEY_SEQUENCES[functionKey]) ||
+          matchesKittySequence(data, targetCodepoint, 0)
+        );
+      }
+      if (matchesKittySequence(data, targetCodepoint, modifier)) {
+        return true;
+      }
+      if (matchesModifyOtherKeys(data, targetCodepoint, modifier)) {
+        return true;
       }
       const modifiedCode = MODIFIED_FUNCTION_KEY_CODES[functionKey];
       const encodedModifier = modifier + 1;
       if (modifiedCode.endsWith("~")) {
-        return data === `\x1b[${modifiedCode.slice(0, -1)};${encodedModifier}~`;
+        const num = modifiedCode.slice(0, -1);
+        if (data === `\x1b[${num};${encodedModifier}~`) return true;
+        if (modifier === MODIFIERS.ctrl && data === `\x1b[${num}^`) return true;
+        if (modifier === MODIFIERS.shift && data === `\x1b[${num}$`) return true;
+      } else {
+        if (data === `\x1b[1;${encodedModifier}${modifiedCode}`) return true;
+        if (data === `\x1bO${encodedModifier}${modifiedCode}`) return true;
+        const legacyNum = functionKey === "f1" ? 11 : functionKey === "f2" ? 12 : functionKey === "f3" ? 13 : 14;
+        if (data === `\x1b[${legacyNum};${encodedModifier}~`) return true;
+        if (modifier === MODIFIERS.ctrl && data === `\x1b[${legacyNum}^`) return true;
+        if (modifier === MODIFIERS.shift && data === `\x1b[${legacyNum}$`) return true;
       }
-      return data === `\x1b[1;${encodedModifier}${modifiedCode}`;
+      return false;
     }
   }
 
@@ -1251,6 +1338,18 @@ function formatParsedKey(codepoint: number, modifier: number, baseLayoutKey?: nu
   else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.end) keyName = "end";
   else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageUp) keyName = "pageUp";
   else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.pageDown) keyName = "pageDown";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f1) keyName = "f1";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f2) keyName = "f2";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f3) keyName = "f3";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f4) keyName = "f4";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f5) keyName = "f5";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f6) keyName = "f6";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f7) keyName = "f7";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f8) keyName = "f8";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f9) keyName = "f9";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f10) keyName = "f10";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f11) keyName = "f11";
+  else if (effectiveCodepoint === FUNCTIONAL_CODEPOINTS.f12) keyName = "f12";
   else if (effectiveCodepoint === ARROW_CODEPOINTS.up) keyName = "up";
   else if (effectiveCodepoint === ARROW_CODEPOINTS.down) keyName = "down";
   else if (effectiveCodepoint === ARROW_CODEPOINTS.left) keyName = "left";

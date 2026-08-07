@@ -321,6 +321,7 @@ export class TUI extends Container {
   // Overlay stack for modal components rendered on top of base content
   private focusOrderCounter = 0;
   private overlayStack: OverlayStackEntry[] = [];
+  private previousOverlayCount = 0;
   private overlayFocusRestore: OverlayFocusRestoreState = { status: "inactive" };
 
   constructor(terminal: Terminal, showHardwareCursor?: boolean) {
@@ -1194,7 +1195,8 @@ export class TUI extends Container {
       " ".repeat(overlayPad) +
       r +
       base.after +
-      " ".repeat(afterPad);
+      " ".repeat(afterPad) +
+      r;
 
     // CRITICAL: Always verify and truncate to terminal width.
     // This is the final safeguard against width overflow which would crash the TUI.
@@ -1351,11 +1353,16 @@ export class TUI extends Container {
       return;
     }
 
-    // When an overlay is active and viewport top shifts, redraw only the visible screen rows (last height lines)
+    // When an overlay is active or was just active, redraw only the visible screen rows (last height lines)
     // with synchronized output without clearing scrollback history (\x1b[3J) or dumping screen to scrollback (\x1b[2J).
     const newViewportTop = Math.max(0, newLines.length - height);
-    if (this.overlayStack.length > 0 && newViewportTop !== prevViewportTop) {
-      logRedraw(`overlay viewport shift (${prevViewportTop} -> ${newViewportTop})`);
+    const visibleOverlayCount = this.overlayStack.filter((e) => this.isOverlayVisible(e)).length;
+    const hasVisibleOverlay = visibleOverlayCount > 0;
+    const hadVisibleOverlay = this.previousOverlayCount > 0;
+    this.previousOverlayCount = visibleOverlayCount;
+
+    if (hasVisibleOverlay || hadVisibleOverlay) {
+      logRedraw(`overlay active redraw (has=${hasVisibleOverlay}, had=${hadVisibleOverlay})`);
       let buffer = "\x1b[?2026h\x1b[H";
       const visibleEnd = Math.min(newLines.length, newViewportTop + height);
       for (let i = newViewportTop; i < visibleEnd; i++) {
@@ -1366,7 +1373,15 @@ export class TUI extends Container {
         }
       }
       const renderedCount = visibleEnd - newViewportTop;
-      if (renderedCount < height) {
+      if (renderedCount === 0) {
+        buffer += "\x1b[2K";
+        for (let i = 1; i < height; i++) {
+          buffer += "\r\n\x1b[2K";
+        }
+        if (height > 1) {
+          buffer += `\x1b[${height - 1}A`;
+        }
+      } else if (renderedCount < height) {
         for (let i = renderedCount; i < height; i++) {
           buffer += "\r\n\x1b[2K";
         }

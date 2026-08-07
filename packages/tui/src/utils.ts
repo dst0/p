@@ -1112,6 +1112,9 @@ export function sliceWithWidth(
     i = textEnd;
     if (currentCol >= endCol) break;
   }
+  if (result.includes("\x1b") && !result.endsWith("\x1b[0m")) {
+    result += "\x1b[0m";
+  }
   return { text: result, width: resultWidth };
 }
 
