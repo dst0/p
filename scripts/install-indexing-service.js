@@ -253,6 +253,7 @@ async function main() {
 		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
 	const defaultDevice =
 		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
+	const savedDevice = readSavedSetting("indexing-device");
 	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
 	if (ragDevice === "npu") {
