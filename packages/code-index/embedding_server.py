@@ -111,6 +111,16 @@ class ONNXEmbeddingWrapper:
                 tok["position_ids"] = self._np.tile(
                     self._np.arange(seq_len, dtype=self._np.int64), (len(batch), 1)
                 )
+            # Build dummy past_key_values if the ONNX graph expects them.
+            if model_input_names:
+                pkv_names = [n for n in model_input_names if n.startswith("past_key_values")]
+                if pkv_names:
+                    config = getattr(self.model, "config", None)
+                    num_heads = getattr(config, "num_key_value_heads", getattr(config, "num_attention_heads", 16))
+                    head_dim = getattr(config, "head_dim", 64)
+                    for pkv in pkv_names:
+                        if pkv not in tok:
+                            tok[pkv] = self._np.zeros((len(batch), num_heads, 0, head_dim), dtype=self._np.float32)
             # Pass only inputs the model expects (avoid unknown-input errors).
             if model_input_names:
                 inputs = {k: v for k, v in tok.items() if k in model_input_names}
@@ -514,7 +524,20 @@ class EmbeddingServer:
                         provider = "CPUExecutionProvider"
                         device_label = "cpu (ONNX Runtime fallback)"
 
+                from transformers import AutoConfig, AutoTokenizer
+
+                config = None
+                try:
+                    config = AutoConfig.from_pretrained(pre_exported_hf or self.model_name)
+                    config.use_cache = False
+                except Exception:
+                    pass
+
                 tokenizer = AutoTokenizer.from_pretrained(pre_exported_hf or self.model_name)
+                load_kwargs = {"use_cache": False}
+                if config is not None:
+                    load_kwargs["config"] = config
+
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):
                     print(f"Loading cached ONNX model ({provider}): {onnx_cache_dir}", flush=True)
                     ort_model = ORTModelForFeatureExtraction.from_pretrained(
@@ -523,6 +546,7 @@ class EmbeddingServer:
                         file_name="model.onnx",
                         provider=provider,
                         session_options=session_options,
+                        **load_kwargs,
                     )
                 elif pre_exported_hf:
                     print(f"Loading pre-exported ONNX model from Hugging Face ({provider}): {pre_exported_hf}", flush=True)
@@ -531,6 +555,7 @@ class EmbeddingServer:
                         export=False,
                         provider=provider,
                         session_options=session_options,
+                        **load_kwargs,
                     )
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)
@@ -542,6 +567,7 @@ class EmbeddingServer:
                         self.model_name,
                         export=True,
                         provider=provider,
+                        **load_kwargs,
                     )
                     try:
                         os.makedirs(onnx_cache_dir, exist_ok=True)

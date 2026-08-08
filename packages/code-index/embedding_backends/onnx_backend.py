@@ -37,10 +37,22 @@ class ONNXBackend:
         if not os.path.exists(model_path):
 
             from optimum.onnxruntime import ORTModelForFeatureExtraction
+            from transformers import AutoConfig
+
+            config = None
+            try:
+                config = AutoConfig.from_pretrained(spec.model_name)
+                config.use_cache = False
+            except Exception:
+                pass
+
+            load_kwargs = {"use_cache": False}
+            if config is not None:
+                load_kwargs["config"] = config
 
             hf_repo = "onnx-community/Qwen3-Embedding-0.6B-ONNX"
             self.model = ORTModelForFeatureExtraction.from_pretrained(
-                hf_repo, export=False, provider="CPUExecutionProvider"
+                hf_repo, export=False, provider="CPUExecutionProvider", **load_kwargs
             )
             self.model.save_pretrained(onnx_cache_dir)
             self.tokenizer.save_pretrained(onnx_cache_dir)
