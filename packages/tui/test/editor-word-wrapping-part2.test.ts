@@ -25,7 +25,7 @@ describe("Editor component - Word wrapping (Part 2)", () => {
     }
 
     // Verify no content is lost
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 
@@ -45,7 +45,7 @@ describe("Editor component - Word wrapping (Part 2)", () => {
     // "B" ends up on the last line (either alone or with the marker tail)
     assert.strictEqual(chunks[chunks.length - 1]!.text.includes("B"), true);
 
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 
@@ -64,7 +64,7 @@ describe("Editor component - Word wrapping (Part 2)", () => {
     }
     assert.strictEqual(chunks[0]!.text, "A");
 
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 
@@ -86,7 +86,7 @@ describe("Editor component - Word wrapping (Part 2)", () => {
       );
     }
 
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 
@@ -122,7 +122,7 @@ describe("Editor component - Word wrapping (Part 2)", () => {
     // Last chunk should contain "world" (normal wrapping resumes)
     assert.strictEqual(chunks[chunks.length - 1]!.text, "world");
 
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 });

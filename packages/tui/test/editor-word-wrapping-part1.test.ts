@@ -202,7 +202,7 @@ describe("Editor component - Word wrapping (Part 1)", () => {
       );
     }
     // Verify no content is lost
-    const reconstructed = chunks.map((c) => line.slice(c.startIndex, c.endIndex)).join("");
+    const reconstructed = chunks.map((c: any) => line.slice(c.startIndex, c.endIndex)).join("");
     assert.strictEqual(reconstructed, line);
   });
 });
