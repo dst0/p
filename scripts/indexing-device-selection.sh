@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 
+indexing_detection_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+source "$indexing_detection_script_dir/indexing-device-detection.sh"
+
 is_valid_indexing_device() {
   case "$1" in
-    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|cuda|rocm|mps|npu|vitisai|ryzenai) return 0 ;;
+    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|intel-openvino-npu|openvino|openvino-npu|cuda|rocm|mps|npu|vitisai|ryzenai) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -31,16 +34,20 @@ initialize_indexing_device_selection() {
 
   if [[ -n "${P_CODE_RAG_DEVICE:-}" ]]; then
     if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname -s)" == "Darwin" ]]; then
-      P_CODE_RAG_DEVICE="apple-ane"
-    fi
-    if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname -s)" == "Linux" ]]; then
-      echo "Linux NPU indexing is not automatically configured. Use cpu until an explicit AMD Ryzen AI/Vitis AI runtime is installed and validated." >&2
-      return 1
+      P_CODE_RAG_DEVICE="mps"
     fi
     if ! is_valid_indexing_device "$P_CODE_RAG_DEVICE"; then
       echo "Invalid P_CODE_RAG_DEVICE: $P_CODE_RAG_DEVICE" >&2
-      echo "Expected one of: auto, cpu, nvidia-cuda, amd-rocm, apple-ane, apple-mps, intel-openvino-cpu, vitisai, ryzenai." >&2
+      echo "Expected one of: auto, cpu, nvidia-cuda, amd-rocm, apple-ane, apple-mps, intel-openvino-cpu, intel-openvino-npu, vitisai, ryzenai." >&2
       return 1
+    fi
+    if [[ "$interactive" == true ]]; then
+      detect_supported_indexing_devices
+      if ! is_detected_indexing_device_supported "$P_CODE_RAG_DEVICE"; then
+        echo "Selected embedding device '$P_CODE_RAG_DEVICE' is unavailable: $(describe_unsupported_indexing_device "$P_CODE_RAG_DEVICE")"
+        unset P_CODE_RAG_DEVICE
+        return 0
+      fi
     fi
     export P_CODE_RAG_DEVICE
     return 0
@@ -52,18 +59,22 @@ initialize_indexing_device_selection() {
 
   IFS= read -r saved_device < "$INDEXING_DEVICE_FILE" || true
   if [[ "$saved_device" == "npu" && "$(uname -s)" == "Darwin" ]]; then
-    saved_device="apple-ane"
+    saved_device="mps"
     echo "$saved_device" > "$INDEXING_DEVICE_FILE" 2>/dev/null || true
   fi
-  if [[ "$saved_device" == "npu" && "$(uname -s)" == "Linux" ]]; then
-    echo "Saved Linux NPU indexing is no longer accepted in $INDEXING_DEVICE_FILE; using cpu until an explicit AMD Ryzen AI/Vitis AI runtime is installed and validated." >&2
-    saved_device="cpu"
-  fi
-
   if ! is_valid_indexing_device "$saved_device"; then
     echo "Invalid saved embedding device in $INDEXING_DEVICE_FILE: $saved_device" >&2
     echo "Run with --select-indexing to replace it." >&2
     return 1
+  fi
+
+  if [[ "$interactive" == true ]]; then
+    detect_supported_indexing_devices
+    if ! is_detected_indexing_device_supported "$saved_device"; then
+      echo "Saved embedding device '$saved_device' is unavailable: $(describe_unsupported_indexing_device "$saved_device")"
+      unset P_CODE_RAG_DEVICE
+      return 0
+    fi
   fi
 
   export P_CODE_RAG_DEVICE="$saved_device"
@@ -129,38 +140,34 @@ prompt_indexing_device_and_batch_size_selection() {
   if [[ -z "${P_CODE_RAG_DEVICE:-}" ]] && [[ -t 0 ]]; then
     local embed_choices=()
     local embed_values=()
-    if [[ "$(uname)" == "Darwin" ]]; then
-      if [[ "$(uname -m)" == "arm64" ]]; then
-        embed_choices+=("npu (recommended – Neural Processing Unit / Apple Neural Engine)")
-        embed_values+=("npu")
-        embed_choices+=("mps (Apple Silicon Metal – uses unified memory)")
-        embed_values+=("mps")
-        embed_choices+=("cpu (CPU only)")
-        embed_values+=("cpu")
-      fi
-    else
-      local has_npu=false
-      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
-        has_npu=true
-      fi
-
-      if [[ "$has_npu" == true ]]; then
-        echo "AMD XDNA NPU hardware detected, but Linux NPU indexing requires a separately installed and validated AMD Ryzen AI runtime."
-        embed_choices+=("cpu (recommended – Linux NPU not auto-configured)")
-        embed_values+=("cpu")
-      else
-        embed_choices+=("cpu (recommended – leaves GPU free for inference)")
-        embed_values+=("cpu")
-      fi
-      if [[ -e /dev/kfd ]]; then
-        embed_choices+=("rocm (AMD GPU – uses VRAM for embedding)")
-        embed_values+=("rocm")
-      fi
-      if [[ -e /dev/nvidiactl ]]; then
-        embed_choices+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
-        embed_values+=("cuda")
-      fi
+    detect_supported_indexing_devices
+    if [[ -n "$INDEXING_NPU_UNSUPPORTED_REASON" ]]; then
+      echo "NPU unavailable: $INDEXING_NPU_UNSUPPORTED_REASON"
     fi
+    if [[ "$INDEXING_HAS_AMD_NPU" == true ]]; then
+      echo "AMD XDNA NPU hardware and a supported host OS were detected."
+      embed_choices+=("ryzenai (recommended – automatic AMD NPU installation)")
+      embed_values+=("ryzenai")
+    fi
+    if [[ "$INDEXING_HAS_INTEL_NPU" == true ]]; then
+      echo "Intel Core Ultra NPU hardware and a supported host OS were detected."
+      embed_choices+=("intel-openvino-npu (recommended – automatic Intel NPU installation)")
+      embed_values+=("intel-openvino-npu")
+    fi
+    if [[ "$INDEXING_HAS_MPS" == true ]]; then
+      embed_choices+=("mps (recommended – Apple Silicon Metal acceleration)")
+      embed_values+=("mps")
+    fi
+    if [[ "$INDEXING_HAS_AMD_GPU" == true ]]; then
+      embed_choices+=("rocm (detected AMD GPU runtime)")
+      embed_values+=("rocm")
+    fi
+    if [[ "$INDEXING_HAS_NVIDIA_GPU" == true ]]; then
+      embed_choices+=("cuda (detected NVIDIA GPU runtime)")
+      embed_values+=("cuda")
+    fi
+    embed_choices+=("cpu (detected CPU)")
+    embed_values+=("cpu")
 
     if [[ "${#embed_choices[@]}" -gt 1 ]]; then
       echo ""
@@ -176,16 +183,13 @@ prompt_indexing_device_and_batch_size_selection() {
            [[ "$embed_choice" -le "${#embed_choices[@]}" ]]; then
           export P_CODE_RAG_DEVICE="${embed_values[$((embed_choice-1))]}"
           echo "Using embedding device: $P_CODE_RAG_DEVICE"
-          if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname)" == "Darwin" ]]; then
-            echo "[Notice] On macOS, NPU acceleration is handled via CoreML / Apple Neural Engine (ANE) using ONNX Runtime. If a model feature is unsupported by CoreML runtime, execution will automatically fall back to mps (Metal Performance Shaders) with a console warning."
-          fi
           break
         fi
         echo "Invalid choice, enter a number between 1 and ${#embed_choices[@]}."
       done
     else
       export P_CODE_RAG_DEVICE="cpu"
-      echo "Embedding device: cpu (no GPU compute device detected)"
+      echo "Embedding device: cpu (only supported indexing backend detected)"
     fi
 
     mkdir -p "$agent_dir"
@@ -231,15 +235,7 @@ check_and_prompt_missing_indexing_deps() {
         missing_deps+=("optimum[onnxruntime]")
       fi
     else
-      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import onnxruntime" 2>/dev/null; then
-        missing_deps+=("onnxruntime")
-      fi
-      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import openvino" 2>/dev/null; then
-        missing_deps+=("openvino")
-      fi
-      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import optimum.onnxruntime" 2>/dev/null; then
-        missing_deps+=("optimum[onnxruntime]")
-      fi
+      echo "The matching AMD Ryzen AI or Intel OpenVINO runtime will be installed by the indexing service installer."
     fi
   fi
 
@@ -255,9 +251,6 @@ check_and_prompt_missing_indexing_deps() {
     fi
   fi
 
-  if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" && -t 0 ]]; then
-    install_amd_xdna_npu_driver_if_needed
-  fi
 }
 
 install_amd_xdna_npu_driver_if_needed() {
@@ -265,11 +258,5 @@ install_amd_xdna_npu_driver_if_needed() {
     return 0
   fi
 
-  if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
-    echo ""
-    echo "=== AMD XDNA NPU Hardware Detected ==="
-    echo "p does not install or validate the AMD Ryzen AI/XRT/XDNA runtime automatically."
-    echo "Use CPU indexing until AMD's matched Ryzen AI runtime, XRT/plugin packages, firmware, and Vitis AI ONNX Runtime environment are installed and validated."
-    return 1
-  fi
+  echo "AMD XDNA and Intel OpenVINO NPU installation is handled automatically by scripts/install-indexing-service.js."
 }

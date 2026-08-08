@@ -6,6 +6,36 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+	collectResourceEnvironment,
+	resolveFallbackDeviceChoices,
+	resolveIndexingDevicePlan,
+	selectTorchInstallPlan,
+} from "./indexing-install-plans.js";
+export {
+	collectResourceEnvironment,
+	resolveFallbackDeviceChoices,
+	resolveIndexingDevicePlan,
+	selectTorchInstallPlan,
+} from "./indexing-install-plans.js";
+import {
+	AMD_RYZEN_AI_MANIFEST,
+	detectAmdNpuPciDevices,
+	installAmdRyzenAiPythonRuntime,
+	validateAmdRyzenAiPythonRuntime,
+} from "./install-amd-ryzen-ai.js";
+import {
+	INTEL_OPENVINO_NPU_MANIFEST,
+	detectIntelNpuPciDevices,
+	installIntelOpenVinoPythonRuntime,
+	validateIntelOpenVinoPythonRuntime,
+} from "./install-intel-openvino-npu.js";
+import {
+	buildServiceValues,
+	installSelectedNpuSystemRuntime,
+	isTorchAcceleratorDevice,
+	promptForDeviceFallback,
+} from "./indexing-install-fallback.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -27,7 +57,6 @@ const VERSION_UNCHANGED_FLAG_PATH = path.join(AGENT_DIR, "indexing-version-uncha
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const QDRANT_VERSION = "1.18.3";
-const TORCH_VERSION = "2.12.1";
 const DRY_RUN = process.argv.includes("--dry-run");
 
 const QDRANT_ASSETS = {
@@ -51,58 +80,6 @@ const QDRANT_ASSETS = {
 
 export function getQdrantAsset(platform = process.platform, architecture = process.arch) {
 	return QDRANT_ASSETS[`${platform}-${architecture}`];
-}
-
-export function selectTorchInstallPlan(options = {}) {
-	const platform = options.platform ?? process.platform;
-	const architecture = options.architecture ?? process.arch;
-	const requestedBackend =
-		options.requestedBackend ??
-		process.env.P_CODE_RAG_TORCH_BACKEND ??
-		(process.env.P_CODE_RAG_DEVICE === "cpu"
-			? "cpu"
-			: process.env.P_CODE_RAG_DEVICE === "mps"
-				? "mps"
-				: process.env.P_CODE_RAG_DEVICE === "npu"
-					? "npu"
-					: "auto");
-	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
-	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
-	if (!["auto", "cpu", "rocm", "cuda", "mps", "npu"].includes(requestedBackend)) {
-		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda, mps, npu");
-	}
-
-	let backend = requestedBackend;
-	if (backend === "auto") {
-		if (platform === "linux" && architecture === "x64" && hasAmdComputeDevice) backend = "rocm";
-		else if (platform === "linux" && architecture === "x64" && hasNvidiaComputeDevice) backend = "cuda";
-		else if (platform === "darwin" && architecture === "arm64") backend = "mps";
-		else if (platform === "linux") backend = "cpu";
-		else backend = "default";
-	}
-	if (backend === "mps" || backend === "npu") {
-		backend = "default";
-	}
-	if (backend === "rocm" && (platform !== "linux" || architecture !== "x64")) {
-		throw new Error("ROCm PyTorch is supported only on Linux x64");
-	}
-	if (backend === "cuda" && (platform !== "linux" || architecture !== "x64")) {
-		throw new Error("Managed CUDA PyTorch is supported only on Linux x64");
-	}
-	if (platform === "darwin" && backend === "cpu") {
-		backend = "default";
-	}
-
-	const indexUrls = {
-		cpu: "https://download.pytorch.org/whl/cpu",
-		rocm: "https://download.pytorch.org/whl/rocm7.2",
-		cuda: "https://download.pytorch.org/whl/cu126",
-	};
-	return {
-		backend,
-		version: platform === "darwin" && architecture === "x64" ? "2.2.2" : TORCH_VERSION,
-		indexUrl: indexUrls[backend],
-	};
 }
 
 export function getQdrantExtractionArgs(archive, destination) {
@@ -215,25 +192,6 @@ WantedBy=default.target
 `;
 }
 
-export function collectResourceEnvironment(source = process.env) {
-	const environment = {};
-	for (const key of [
-		"P_CODE_RAG_DEVICE",
-		"P_CODE_RAG_MAX_CPU_THREADS",
-		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
-		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
-		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
-		"P_CODE_RAG_PREPARATION_MAX_WORKERS",
-		"P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB",
-		"P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB",
-	]) {
-		if (source[key] !== undefined) environment[key] = source[key];
-	}
-	return environment;
-}
-
 function readSavedSetting(fileName) {
 	try {
 		const filePath = path.join(AGENT_DIR, fileName);
@@ -249,22 +207,25 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const hasLinuxAmdNpuDevice = linuxAmdNpuHardwarePresent();
-	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "npu" : "cpu";
+	const hasLinuxAmdNpuHardware = process.platform === "linux" && detectAmdNpuPciDevices().length > 0;
+	const hasLinuxIntelNpuHardware = process.platform === "linux" && detectIntelNpuPciDevices().length > 0;
 	const savedDevice = readSavedSetting("indexing-device");
-	const savedDeviceUnsupported = process.platform === "linux" && savedDevice === "npu";
-	if (savedDeviceUnsupported) {
-		console.log("Saved Linux NPU indexing selection is no longer accepted; using CPU until Ryzen AI is explicitly configured.");
-	}
-	const requestedDevice = process.env.P_CODE_RAG_DEVICE;
-	const ragDevice = requestedDevice ?? (savedDeviceUnsupported ? "cpu" : savedDevice) ?? defaultDevice;
-	process.env.P_CODE_RAG_DEVICE = ragDevice;
-	if (requestedDevice === "npu" && process.platform === "linux") {
-		const message = linuxNpuUnsupportedMessage(hasLinuxAmdNpuDevice);
-		if (DRY_RUN) console.log(message);
-		else throw new Error(message);
-	} else if (hasLinuxAmdNpuDevice && ragDevice === "cpu") {
-		console.log("AMD XDNA NPU hardware detected; using CPU indexing until a validated Ryzen AI runtime is configured.");
+	const planOptions = {
+		architecture: process.arch,
+		hasLinuxAmdNpuHardware,
+		hasLinuxIntelNpuHardware,
+		platform: process.platform,
+	};
+	let devicePlan;
+	try {
+		devicePlan = resolveIndexingDevicePlan({
+			...planOptions,
+			requestedDevice: process.env.P_CODE_RAG_DEVICE,
+			savedDevice,
+		});
+	} catch (error) {
+		const failedDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? "npu";
+		devicePlan = await promptForDeviceFallback(error, failedDevice, planOptions);
 	}
 
 	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
@@ -272,36 +233,27 @@ async function main() {
 		process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = savedBatchSize;
 	}
 
-	const python = findCompatiblePython({ allowInstall: !DRY_RUN });
-	const torchPlan = selectTorchInstallPlan();
+	let python;
+	let torchPlan;
+	while (true) {
+		process.env.P_CODE_RAG_DEVICE = devicePlan.ragDevice;
+		try {
+			installSelectedNpuSystemRuntime(devicePlan);
+			python = findCompatiblePython({
+				allowInstall: !DRY_RUN,
+				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
+			});
+			torchPlan = selectTorchInstallPlan();
+			break;
+		} catch (error) {
+			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
+		}
+	}
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
-	const environment = {
-		P_CODING_AGENT_DIR: AGENT_DIR,
-		P_CODE_RAG_PYTHON: venvPython,
-		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
-		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
-		P_CODE_RAG_EXPECTED_BACKEND: torchPlan.backend,
-		P_CODE_RAG_DEVICE: ragDevice,
-		...(ragDevice === "cpu"
-			? {
-					CUDA_VISIBLE_DEVICES: "99",
-					HIP_VISIBLE_DEVICES: "99",
-					ROCR_VISIBLE_DEVICES: "99",
-				}
-			: {}),
-		...collectResourceEnvironment(),
-	};
-	const values = {
-		node: process.execPath,
-		daemon: DAEMON,
-		root: ROOT,
-		environment,
-		stdout: path.join(LOG_DIR, "service.log"),
-		stderr: path.join(LOG_DIR, "service-error.log"),
-	};
 
 	if (DRY_RUN) {
+		const values = buildServiceValues(devicePlan, torchPlan, venvPython, qdrantBinary);
 		if (process.platform === "darwin") renderLaunchdPlist(values);
 		else renderSystemdUnit(values);
 		console.log(
@@ -316,7 +268,26 @@ async function main() {
 	fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
 	fs.mkdirSync(QDRANT_DATA_DIR, { recursive: true, mode: 0o700 });
 	await installQdrant(qdrantBinary);
-	installPythonEnvironment(python, venvPython, torchPlan);
+	while (true) {
+		try {
+			installPythonEnvironment(python, venvPython, torchPlan, {
+				installAmdRyzenAi: devicePlan.installAmdRyzenAi,
+				installIntelOpenVino: devicePlan.installIntelOpenVino,
+				requireTorchAccelerator: isTorchAcceleratorDevice(devicePlan.ragDevice),
+			});
+			break;
+		} catch (error) {
+			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
+			process.env.P_CODE_RAG_DEVICE = devicePlan.ragDevice;
+			installSelectedNpuSystemRuntime(devicePlan);
+			python = findCompatiblePython({
+				allowInstall: true,
+				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
+			});
+			torchPlan = selectTorchInstallPlan();
+		}
+	}
+	const values = buildServiceValues(devicePlan, torchPlan, venvPython, qdrantBinary);
 	mergeCodeRagConfig({
 		qdrantBinary,
 		qdrantDataDirectory: QDRANT_DATA_DIR,
@@ -354,13 +325,25 @@ async function installQdrant(qdrantBinary) {
 	}
 }
 
-function installPythonEnvironment(python, venvPython, torchPlan) {
+function installPythonEnvironment(python, venvPython, torchPlan, options = {}) {
+	const installAmdRyzenAi = options.installAmdRyzenAi ?? false;
+	const installIntelOpenVino = options.installIntelOpenVino ?? false;
+	const requireTorchAccelerator = options.requireTorchAccelerator ?? false;
 	const requirements = fs.readFileSync(REQUIREMENTS, "utf-8");
 	const markerPath = path.join(VENV_DIR, ".p-requirements");
 	const marker = createHash("sha256")
-		.update(`${python}\0${capture(python, ["--version"])}\0${requirements}\0${JSON.stringify(torchPlan)}`)
+		.update(
+			`${python}\0${capture(python, ["--version"])}\0${requirements}\0${JSON.stringify(torchPlan)}`
+			+ `\0${installAmdRyzenAi ? JSON.stringify(AMD_RYZEN_AI_MANIFEST) : "generic"}`
+			+ `\0${installIntelOpenVino ? JSON.stringify(INTEL_OPENVINO_NPU_MANIFEST) : "generic"}`,
+		)
 		.digest("hex");
-	if (fs.existsSync(venvPython) && readFileIfPresent(markerPath) === marker) return;
+	if (fs.existsSync(venvPython) && readFileIfPresent(markerPath) === marker) {
+		if (installAmdRyzenAi) validateAmdRyzenAiPythonRuntime(venvPython);
+		if (installIntelOpenVino) validateIntelOpenVinoPythonRuntime(venvPython);
+		validateTorchInstallation(venvPython, torchPlan, { requireAccelerator: requireTorchAccelerator });
+		return;
+	}
 	console.log(`Installing pinned code-index Python dependencies for ${torchPlan.backend}`);
 	run(python, ["-m", "venv", VENV_DIR]);
 	if (torchPlan.indexUrl) {
@@ -385,11 +368,13 @@ function installPythonEnvironment(python, venvPython, torchPlan) {
 		"--requirement",
 		REQUIREMENTS,
 	]);
-	validateTorchInstallation(venvPython, torchPlan);
+	if (installAmdRyzenAi) installAmdRyzenAiPythonRuntime(venvPython);
+	if (installIntelOpenVino) installIntelOpenVinoPythonRuntime(venvPython);
+	validateTorchInstallation(venvPython, torchPlan, { requireAccelerator: requireTorchAccelerator });
 	fs.writeFileSync(markerPath, marker, { mode: 0o600 });
 }
 
-function validateTorchInstallation(venvPython, torchPlan) {
+function validateTorchInstallation(venvPython, torchPlan, options = {}) {
 	const probe = JSON.parse(
 		capture(venvPython, [
 			"-c",
@@ -416,6 +401,9 @@ function validateTorchInstallation(venvPython, torchPlan) {
 	}
 	if (torchPlan.backend === "cpu" && (probe.hip || probe.cuda)) {
 		throw new Error("The installed PyTorch build is not CPU-only");
+	}
+	if (options.requireAccelerator && !probe.accelerator_available) {
+		throw new Error(`The installed PyTorch ${torchPlan.backend} accelerator is not available on this host`);
 	}
 	console.log(
 		`PyTorch ${probe.version} installed (${torchPlan.backend}); `
@@ -622,8 +610,11 @@ function isProcessRunning(pid) {
 
 function findCompatiblePython(options = {}) {
 	const allowInstall = options.allowInstall ?? true;
+	const requiredMinor = options.requiredMinor;
 	const search = () => {
-		const names = process.platform === "darwin" && process.arch === "x64"
+		const names = requiredMinor !== undefined
+			? [`python3.${requiredMinor}`, "python3"]
+			: process.platform === "darwin" && process.arch === "x64"
 			? ["python3.12", "python3.11", "python3.10", "python3"]
 			: ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
 		const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
@@ -633,6 +624,7 @@ function findCompatiblePython(options = {}) {
 			}).trim();
 			const [major, minor] = version.split(".").map(Number);
 			if (major !== 3 || minor < 10) continue;
+			if (requiredMinor !== undefined && minor !== requiredMinor) continue;
 			if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
 			return candidate;
 		}
@@ -647,7 +639,9 @@ function findCompatiblePython(options = {}) {
 	if (found) return found;
 
 	throw new Error(
-		process.platform === "darwin" && process.arch === "x64"
+		requiredMinor !== undefined
+			? `Code indexing requires Python 3.${requiredMinor} for the selected backend.`
+			: process.platform === "darwin" && process.arch === "x64"
 			? "Code indexing requires Python 3.10-3.12 on Intel macOS. Please install Python 3."
 			: "Code indexing requires Python 3.10 or newer. Please install Python 3.",
 	);
@@ -681,22 +675,6 @@ function tryAutoInstallPython() {
 			run(cmd, args, { allowFailure: true });
 		}
 	}
-}
-
-function linuxAmdNpuHardwarePresent() {
-	return process.platform === "linux" && (
-		fs.existsSync("/dev/accel/accel0") ||
-		fs.existsSync("/dev/amdxdna") ||
-		fs.existsSync("/sys/class/accel")
-	);
-}
-
-function linuxNpuUnsupportedMessage(hasNpuDevice) {
-	const prefix = hasNpuDevice
-		? "AMD XDNA NPU hardware was detected, but"
-		: "Linux NPU indexing was requested, but";
-	return `${prefix} p does not install or validate the AMD Ryzen AI/XRT/XDNA runtime automatically. `
-		+ "Use CPU indexing, or install AMD's matched Ryzen AI runtime and configure an explicit Vitis AI backend.";
 }
 
 function findOnPath(name) {

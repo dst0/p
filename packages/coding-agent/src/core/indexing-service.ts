@@ -1,7 +1,5 @@
-import { createHash } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import type { IndexingProgress, RagState } from "@dst0/p-code-index";
 import { getAgentDir } from "../config.ts";
 import {
@@ -11,6 +9,8 @@ import {
   prioritizeIndexingForRepo,
   type RepoIndexingDecision,
 } from "./indexed-repos.ts";
+
+export { computeIndexingVersion } from "./indexing-version.ts";
 
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
 export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
@@ -238,165 +238,4 @@ function canonicalizePath(value: string): string {
   } catch {
     return resolved;
   }
-}
-
-/**
- * Compute a deterministic content hash of all indexing-related code.
- * Used by the daemon and reinstall scripts to detect whether the indexing
- * runtime has actually changed, allowing them to skip disruptive operations.
- *
- * @param projectRoot - Root of the p monorepo (resolved automatically when omitted).
- */
-export function computeIndexingVersion(projectRoot?: string): string {
-  const root = projectRoot ?? resolveProjectRoot();
-  const files = collectIndexingFiles(root);
-  const hash = createHash("sha256");
-  for (const filePath of files.sort()) {
-    try {
-      const content = fs.readFileSync(filePath);
-      const relativePath = path.relative(root, filePath);
-      hash.update(relativePath);
-      hash.update(content);
-    } catch {
-      // If a file disappears during computation, skip it gracefully.
-    }
-  }
-  return hash.digest("hex");
-}
-
-function fileExists(filePath: string): boolean {
-  try {
-    const stat = fs.statSync(filePath);
-    return stat.isFile();
-  } catch {
-    return false;
-  }
-}
-
-function dirExists(dirPath: string): boolean {
-  try {
-    const stat = fs.statSync(dirPath);
-    return stat.isDirectory();
-  } catch {
-    return false;
-  }
-}
-
-function collectIndexingFiles(projectRoot: string): string[] {
-  const files: string[] = [];
-  const agentDistDir = path.join(projectRoot, "packages", "coding-agent", "dist");
-  const agentSrcDir = path.join(projectRoot, "packages", "coding-agent", "src");
-  const codeIndexDir = path.join(projectRoot, "packages", "code-index");
-
-  // Standalone daemon entry point
-  const standaloneDaemon = path.join(agentDistDir, "indexing-service-daemon.js");
-  if (fileExists(standaloneDaemon)) files.push(standaloneDaemon);
-
-  // Core daemon runtime files (discover all indexing*.js or indexing*.ts files)
-  const daemonCoreDistDir = path.join(agentDistDir, "core");
-  const daemonCoreSrcDir = path.join(agentSrcDir, "core");
-  if (dirExists(daemonCoreDistDir)) {
-    collectMatchingFiles(daemonCoreDistDir, files, (name) => name.startsWith("indexing") && name.endsWith(".js"));
-  } else if (dirExists(daemonCoreSrcDir)) {
-    collectMatchingFiles(daemonCoreSrcDir, files, (name) => name.startsWith("indexing") && name.endsWith(".ts"));
-  }
-
-  // Service installer and helper scripts
-  const installerScripts = [
-    path.join(projectRoot, "scripts", "install-indexing-service.js"),
-    path.join(projectRoot, "scripts", "indexing-device-selection.sh"),
-    path.join(projectRoot, "scripts", "prepare-indexing-service-reinstall.js"),
-    path.join(projectRoot, "scripts", "compute-indexing-version.js"),
-  ];
-  for (const file of installerScripts) {
-    if (fileExists(file)) files.push(file);
-  }
-
-  // code-index compiled files
-  const codeIndexDistDir = path.join(codeIndexDir, "dist");
-  if (dirExists(codeIndexDistDir)) {
-    collectJsFiles(codeIndexDistDir, files, [".js"]);
-  }
-
-  // code-index Python files
-  const pythonFiles = ["embedding_server.py", "resource_manager.py"];
-  for (const file of pythonFiles) {
-    const filePath = path.join(codeIndexDir, file);
-    if (fileExists(filePath)) files.push(filePath);
-  }
-
-  // code-index Python package
-  const codeIndexPyDir = path.join(codeIndexDir, "src", "code-index");
-  if (dirExists(codeIndexPyDir)) {
-    collectJsFiles(codeIndexPyDir, files, [".py"]);
-  }
-
-  // code-index Python backends package
-  const embeddingBackendsDir = path.join(codeIndexDir, "embedding_backends");
-  if (dirExists(embeddingBackendsDir)) {
-    collectJsFiles(embeddingBackendsDir, files, [".py"]);
-  }
-
-  // code-index Swift worker
-  const swiftWorkerDir = path.join(codeIndexDir, "apple-ane-worker", "Sources");
-  if (dirExists(swiftWorkerDir)) {
-    collectJsFiles(swiftWorkerDir, files, [".swift"]);
-  }
-
-  // code-index config
-  const configFiles = ["requirements.txt", "pyproject.toml"];
-  for (const file of configFiles) {
-    const filePath = path.join(codeIndexDir, file);
-    if (fileExists(filePath)) files.push(filePath);
-  }
-
-  return files;
-}
-
-function collectMatchingFiles(dir: string, result: string[], filter: (name: string) => boolean): void {
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isFile() && filter(entry.name)) {
-        result.push(path.join(dir, entry.name));
-      }
-    }
-  } catch {
-    // Directory may not exist in all environments.
-  }
-}
-
-function collectJsFiles(dir: string, result: string[], extensions: string[] = [".js"]): void {
-  try {
-    const entries = fs.readdirSync(dir, { withFileTypes: true });
-    for (const entry of entries) {
-      const fullPath = path.join(dir, entry.name);
-      if (entry.isDirectory()) {
-        collectJsFiles(fullPath, result, extensions);
-      } else if (extensions.some((ext) => entry.name.endsWith(ext))) {
-        result.push(fullPath);
-      }
-    }
-  } catch {
-    // Directory may not exist in all environments.
-  }
-}
-
-function resolveProjectRoot(): string {
-  // Navigate from this compiled file back to the monorepo root.
-  // Works for both source (src/) and compiled (dist/) locations.
-  let current = path.dirname(fileURLToPath(import.meta.url));
-  for (let i = 0; i < 10; i++) {
-    if (fs.existsSync(path.join(current, "packages"))) {
-      // Verify this is the p monorepo by checking for packages/coding-agent
-      if (fs.existsSync(path.join(current, "packages", "coding-agent"))) {
-        return current;
-      }
-    }
-    const parent = path.dirname(current);
-    if (parent === current) break;
-    current = parent;
-  }
-  // Fallback: use the agent dir's known ancestor
-  return path.dirname(path.dirname(path.dirname(getAgentDir())));
 }

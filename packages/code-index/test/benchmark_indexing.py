@@ -77,7 +77,7 @@ def run_benchmark(backend_id: str, iterations: int = 10, batch_size: int = 8) ->
 
 def main():
     parser = argparse.ArgumentParser(description="Benchmark code-index embedding backends.")
-    parser.add_argument("--backends", nargs="+", default=["apple-ane", "cpu"], help="Backends to benchmark")
+    parser.add_argument("--backends", nargs="+", default=["apple-mps", "cpu"], help="Backends to benchmark")
     parser.add_argument("--iterations", type=int, default=5, help="Number of benchmark iterations")
     parser.add_argument("--batch-size", type=int, default=8, help="Batch size")
     args = parser.parse_args()

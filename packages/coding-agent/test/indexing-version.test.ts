@@ -42,6 +42,8 @@ function populateMockFiles(root: string): void {
   );
 
   // Installer scripts
+  fs.writeFileSync(path.join(root, "scripts", "install-amd-ryzen-ai.js"), "console.log('install amd');\n");
+  fs.writeFileSync(path.join(root, "scripts", "install-intel-openvino-npu.js"), "console.log('install intel');\n");
   fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install');\n");
   fs.writeFileSync(path.join(root, "scripts", "indexing-device-selection.sh"), "select_indexing_device() { :; }\n");
   fs.writeFileSync(path.join(root, "scripts", "prepare-indexing-service-reinstall.js"), "console.log('prepare');\n");
@@ -120,6 +122,28 @@ describe("computeIndexingVersion", () => {
     fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install v2');\n");
 
     const after = computeIndexingVersion(root);
+    expect(after).not.toBe(before);
+  });
+
+  it("changes the hash when install-amd-ryzen-ai.js changes", () => {
+    const root = createMockProjectRoot();
+    populateMockFiles(root);
+    const before = computeIndexingVersion(root);
+
+    fs.writeFileSync(path.join(root, "scripts", "install-amd-ryzen-ai.js"), "console.log('install amd v2');\n");
+
+    const after = computeIndexingVersion(root);
+    expect(after).not.toBe(before);
+  });
+
+  it("changes the hash when install-intel-openvino-npu.js changes", () => {
+    const root = createMockProjectRoot();
+    populateMockFiles(root);
+    const before = computeIndexingVersion(root);
+
+    fs.writeFileSync(path.join(root, "scripts", "install-intel-openvino-npu.js"), "console.log('install intel v2');\n");
+    const after = computeIndexingVersion(root);
+
     expect(after).not.toBe(before);
   });
 

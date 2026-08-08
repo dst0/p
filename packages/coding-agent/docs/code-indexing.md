@@ -18,6 +18,15 @@ On supported macOS and Linux systems, this builds and relinks p, then installs t
 
 On Linux x64, the installer selects a PyTorch build from the available compute device: ROCm 7.2 when `/dev/kfd` exposes AMD compute, CUDA 12.6 when an NVIDIA compute device is present, and CPU-only otherwise. The selected flavor is part of the environment marker, so rerunning `./reinstall.sh` replaces an old CPU-only environment after ROCm or CUDA becomes available. Set `P_CODE_RAG_TORCH_BACKEND` to `cpu`, `rocm`, or `cuda` while reinstalling to override automatic selection.
 
+Device selection is hardware-aware. The interactive installer detects supported NPU, GPU, and CPU paths first and displays only choices that the current host can use. A saved accelerator selection is rejected and replaced when its hardware or supported host runtime is no longer present. NPU installation is automatic on supported Linux x64 hosts: the installer reads PCI vendor/device IDs, installs the matched system and Python components, verifies that the runtime enumerates the NPU, and then runs the same real semantic-search smoke test used by every reinstall. A generic `P_CODE_RAG_DEVICE=npu` selects the detected vendor. Use `ryzenai` or `intel-openvino-npu` when a machine exposes supported NPUs from both vendors or when an explicit backend is desired.
+
+- AMD Ryzen AI installs the pinned Ryzen AI 1.7.1 stack for supported Strix Point (STX) and Krackan Point (KRK) devices on Ubuntu 24.04. The installer builds the matched XRT/XDNA driver revision from AMD's public source, installs the public `onnxruntime-vitisai` and `voe` wheels into the managed Python 3.12 environment, configures XRT and the Vitis AI cache, and requires an actual `VitisAIExecutionProvider` session. Phoenix/Hawk Point devices are rejected because AMD's current Linux release does not support them.
+- Intel Core Ultra installs the pinned Intel NPU 1.32.1, Level Zero 1.27.0, OpenVINO 2026.1, and Optimum Intel 2.1 stack on Ubuntu 24.04. Meteor Lake, Arrow Lake, Lunar Lake, Panther Lake, and Wildcat Lake PCI devices are recognized. The installer configures `render` access and requires OpenVINO to enumerate and compile the embedding model for `NPU`.
+
+Both Linux NPU paths fail closed inside the embedding runtime: they never silently execute the requested NPU workload on CPU. If NPU driver installation, provider validation, model compilation, or the inference probe fails during an interactive install, the installer explains the reason and asks the user to choose from the detected GPU backends and CPU. The fallback is persisted and independently validated; a GPU whose PyTorch accelerator probe fails is removed from the next fallback prompt. Non-interactive installs still fail instead of choosing for the user. If the installed kernel is below the supported minimum, the installer installs Ubuntu's HWE kernel and offers the same fallback while reporting that a reboot and reinstall rerun are required before NPU validation can continue. Downloads are version-pinned and checksum-verified; the AMD source checkout is additionally revision-verified.
+
+On Apple Silicon, the installer uses the real PyTorch MPS embedding path. Existing `npu` and `apple-ane` selections are routed to MPS because the former bundled Swift ANE worker produced placeholder vectors rather than verified Qwen embeddings. Intel macOS continues to use its compatible CPU path.
+
 The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
 
 The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash. A per-agent-directory daemon lock prevents manual, launchd, and systemd starts from running overlapping index writers. Reinstall also stops validated stale daemon and managed-backend processes left by an older service installation before running its smoke test.
@@ -110,7 +119,7 @@ The daemon owns local backend processes and repository refreshes; repository and
 
 The embedding server measures currently available system and accelerator memory before loading the model. It keeps a safety reserve, uses FP16 on accelerators, selects CPU thread count and embedding micro-batch size from the remaining budget, and refuses to load when neither backend can safely fit. A detected GPU with too little free VRAM does not force an unsafe allocation: the server uses CPU and scales CPU parallelism from available RAM. During indexing it recalculates memory headroom before requests, halves the micro-batch after an out-of-memory error, and moves an accelerator-resident model to CPU if batch size 1 can no longer run safely. Repeated successful requests release the temporary OOM batch ceiling.
 
-Linux AMD XDNA NPU hardware is not treated as an operational indexing backend by device-node detection alone. The installer defaults Linux systems to CPU indexing, and `P_CODE_RAG_DEVICE=npu` fails closed on Linux instead of falling back silently. Experimental AMD Ryzen AI / Vitis AI runs must use an explicit `P_CODE_RAG_DEVICE=ryzenai` or `vitisai` environment, an ONNX Runtime build exposing `VitisAIExecutionProvider`, and provider configuration such as `P_CODE_RAG_VITISAI_CONFIG_FILE`; otherwise the embedding server refuses to start that backend. Health output reports the selected execution backend and any CPU fallback rather than the requested backend.
+NPU health is based on the active runtime, not merely a device node. AMD health reports `selectedBackend: vitisai` and `executionProvider: VitisAIExecutionProvider`; Intel health reports `selectedBackend: intel-openvino-npu`, `executionProvider: OpenVINO Runtime`, and an Intel OpenVINO NPU execution device. The runtime section independently reports whether each vendor runtime is currently available. `fallbackOccurred` remains false for a healthy NPU and no NPU request is allowed to start as CPU.
 
 Qwen3 embedding vectors use last non-padding token pooling with L2 normalization. Manifests include the embedding compatibility group, pooling, and normalization metadata; indexes created without matching metadata are stale and rebuild before search so vectors produced by different pooling rules are not mixed.
 
@@ -132,6 +141,10 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 | `code-rag/qdrant/` | Managed Qdrant configuration and database |
 | `indexing-service/bin/qdrant` | Managed Qdrant binary |
 | `indexing-service/venv/` | Managed Python environment |
+| `indexing-service/amd-ryzen-ai/` | Revision-pinned AMD XDNA/XRT source and installation record on AMD NPU hosts |
+| `indexing-service/intel-openvino-npu/` | Intel NPU installation record on Intel NPU hosts |
+| `indexing-service/vitisai-cache/` | Compiled AMD Vitis AI model cache |
+| `indexing-service/openvino-cache/` | Compiled Intel OpenVINO model cache |
 | `indexing-service/logs/` | Service stdout and stderr logs |
 
 Set `P_CODING_AGENT_DIR` to move the entire agent directory. The service installer records the selected absolute paths when it is installed, so rerun `./reinstall.sh` after changing that location or the checkout path.
@@ -184,7 +197,12 @@ Embedding resource controls are safe caps rather than fixed utilization targets:
 
 | Variable | Behavior |
 |---|---|
-| `P_CODE_RAG_DEVICE` | Prefer `auto` (default), `cpu`, `cuda`, `rocm`, or `mps`; an unavailable requested accelerator falls back to CPU |
+| `P_CODE_RAG_DEVICE` | Select `auto`, `cpu`, `cuda`, `rocm`, `mps`, `npu`, `ryzenai`, or `intel-openvino-npu`; Linux NPU selections install their matched runtime and fail closed, while unavailable GPU selections may fall back to CPU |
+| `P_CODE_RAG_OPENVINO_CACHE_DIR` | Override the persistent Intel OpenVINO compiled-model cache directory |
+| `P_CODE_RAG_VITISAI_CACHE_DIR` | Override the persistent AMD Vitis AI compiled-model cache directory |
+| `P_CODE_RAG_VITISAI_CACHE_KEY` | Override the AMD Vitis AI compiled-model cache key |
+| `P_CODE_RAG_VITISAI_CONFIG_FILE` | Optional Vitis AI provider configuration file for a custom validated deployment |
+| `P_CODE_RAG_VITISAI_LOG_LEVEL` | Vitis AI provider log level, default `error` |
 | `P_CODE_RAG_MAX_CPU_THREADS` | Maximum PyTorch CPU threads; the planner can select fewer when RAM is constrained |
 | `P_CODE_RAG_MAX_EMBED_BATCH_SIZE` | Maximum embedding micro-batch, default 64; the planner and OOM backoff can select less |
 | `P_CODE_RAG_MAX_SEQUENCE_LENGTH` | Maximum model context, default 2048 tokens; longer contexts reduce the planned batch budget |
@@ -212,7 +230,7 @@ The embedding endpoint exposes its decision directly:
 curl -s http://127.0.0.1:18742/health
 ```
 
-Inspect `resource_plan.backend`, `batch_size`, `cpu_threads`, the RAM/VRAM byte counts under `memory`, and `runtime.torch_hip_version`. On an AMD machine, a null HIP version means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or reinstall with `P_CODE_RAG_TORCH_BACKEND=rocm`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback, not failed GPU discovery.
+Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProvider`, `fallbackOccurred`, `resource_plan.backend`, the RAM/VRAM byte counts under `memory`, and the vendor availability fields under `runtime`. On an AMD GPU machine, a null `torch_hip_version` means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or reinstall with `P_CODE_RAG_TORCH_BACKEND=rocm`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback. An AMD or Intel NPU plan must never report CPU; inspect the service error log and rerun the automatic installer if it does not start.
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 

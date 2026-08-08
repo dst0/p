@@ -2,9 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- Automatically detect supported AMD and Intel Linux NPUs, install revision-pinned Ryzen AI/XDNA/Vitis AI or Intel NPU/Level Zero/OpenVINO runtimes, validate the actual accelerator backend, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
+
 ### Fixed
 
-- Make Linux AMD NPU code indexing fail closed unless a Vitis AI execution provider is explicitly configured, report CPU fallback truthfully in embedding health, use Qwen3 last-token pooling for ONNX embeddings, and invalidate indexes missing embedding compatibility metadata.
+- Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend truthfully in embedding health, use Qwen3 last-token pooling for ONNX embeddings, and invalidate indexes missing embedding compatibility metadata.
 
 ## [0.4.158] - 2026-08-06
 

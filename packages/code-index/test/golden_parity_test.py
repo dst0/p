@@ -40,11 +40,10 @@ class TestBackendContractAndParity(unittest.TestCase):
 
     def test_legacy_backend_id_migration(self):
         if sys.platform == "darwin":
-            self.assertEqual(resolve_legacy_backend_id("npu"), "apple-ane")
-            self.assertEqual(resolve_legacy_backend_id("auto"), "apple-ane")
+            self.assertEqual(resolve_legacy_backend_id("npu"), "apple-mps")
+            self.assertEqual(resolve_legacy_backend_id("auto"), "apple-mps")
         else:
-            with self.assertRaises(ValueError):
-                resolve_legacy_backend_id("npu")
+            self.assertEqual(resolve_legacy_backend_id("npu"), "npu")
         self.assertEqual(resolve_legacy_backend_id("cuda"), "nvidia-cuda")
         self.assertEqual(resolve_legacy_backend_id("rocm"), "amd-rocm")
         self.assertEqual(resolve_legacy_backend_id("mps"), "apple-mps")

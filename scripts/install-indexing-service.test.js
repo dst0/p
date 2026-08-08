@@ -145,9 +145,17 @@ test("selects bounded CPU and CUDA builds for non-AMD Linux hosts", () => {
 		selectTorchInstallPlan({
 			platform: "linux",
 			architecture: "x64",
-			requestedBackend: "npu",
+			requestedBackend: "ryzenai",
 		}).backend,
-		"default",
+		"cpu",
+	);
+	assert.equal(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "intel-openvino-npu",
+		}).backend,
+		"cpu",
 	);
 });
 
