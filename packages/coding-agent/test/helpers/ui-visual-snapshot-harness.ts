@@ -35,8 +35,9 @@ export function sanitizeUIOutput(text: string): string {
     .map((line) => line.trimEnd())
     .join("\n")
     .replace(/p v\d+\.\d+\.\d+/g, "p v0.4.169")
+    .replace(/([^\n\s]+)\/packages\/coding-agent/g, "~/dev/p/packages/coding-agent")
     .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
-      inner.includes("/") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
+      (inner.includes("/") || inner === "detached") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
     )
     .replace(/faux:\d+:[a-z0-9]+/g, "faux:static-id")
     .replace(/🔎[^\n]*/g, "🔎 static-indexing-status");
