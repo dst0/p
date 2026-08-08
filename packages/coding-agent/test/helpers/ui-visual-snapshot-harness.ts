@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { AgentSessionRuntime } from "../../src/core/agent-session-runtime.ts";
+import { findIndexWorkspaceRoot } from "../../src/core/indexed-repos.ts";
+import { IndexingService } from "../../src/core/indexing-service.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { createHarness, type Harness, type HarnessOptions } from "../suite/harness.ts";
 
@@ -45,6 +47,13 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
   const height = options.height ?? 24;
 
   const harness = await createHarness(options);
+  const indexingService = new IndexingService(harness.tempDir);
+  const root1 = findIndexWorkspaceRoot(harness.session.sessionManager.getCwd());
+  const root2 = findIndexWorkspaceRoot(process.cwd());
+  indexingService.disableIndexing(root1);
+  indexingService.disableIndexing(root2);
+  indexingService.disableIndexing("/Users/dst/dev/p/packages/coding-agent");
+
   const terminal = new VirtualTerminal(width, height);
 
   const runtimeHost = new AgentSessionRuntime(
