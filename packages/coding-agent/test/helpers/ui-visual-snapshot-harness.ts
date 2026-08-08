@@ -33,6 +33,7 @@ export function sanitizeUIOutput(text: string): string {
     .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
       inner.includes("/") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
     )
+    .replace(/[/~][^\n]*\/packages\/coding-agent/g, "~/dev/p/packages/coding-agent")
     .replace(/faux:\d+:[a-z0-9]+/g, "faux:static-id")
     .replace(/🔎[^\n]*/g, "🔎 static-indexing-status");
 }
