@@ -295,6 +295,8 @@ export interface WorkspaceCodeRagSettings {
   embeddingServerUrl: string;
   embeddingModel: string;
   embeddingDimensions: number;
+  embeddingPooling: string;
+  embeddingNormalization: string;
   pythonExecutable: string;
   defaultLimit: number;
   maxLimit: number;

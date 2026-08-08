@@ -251,32 +251,42 @@ class DeviceSelectionTest(unittest.TestCase):
 
         self.assertEqual(backend, "cpu")
 
-    # -- NPU requested when unavailable falls back to CPU --------------
+    # -- Linux NPU requests must fail closed ---------------------------
 
-    def test_npu_requested_when_unavailable_falls_back_to_cpu(self):
+    def test_linux_npu_requested_raises(self):
         builder = FakeTorchBuilder()
         EmbeddingServer = _install_fake_torch(builder)
 
         server = EmbeddingServer("test/model")
 
         from unittest.mock import patch
-        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=False):
-            for dev in ("npu", "openvino", "coreml", "vitisai"):
-                backend, _ = server._select_preferred_backend(dev)
-                self.assertEqual(backend, "cpu")
-                self.assertIn(f"requested {dev} backend is unavailable; using CPU", server.warnings)
+        with patch("sys.platform", "linux"):
+            with self.assertRaisesRegex(RuntimeError, "Generic Linux NPU selection is disabled"):
+                server._select_preferred_backend("npu")
 
-    def test_npu_requested_when_available_returns_npu_device(self):
+    def test_vitisai_requested_when_unavailable_raises(self):
         builder = FakeTorchBuilder()
         EmbeddingServer = _install_fake_torch(builder)
 
         server = EmbeddingServer("test/model")
 
         from unittest.mock import patch
-        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=True):
-            for dev in ("npu", "openvino", "coreml", "vitisai"):
+        with patch("sys.platform", "linux"), patch("embedding_server._vitisai_npu_available", return_value=False):
+            for dev in ("vitisai", "ryzenai"):
+                with self.assertRaisesRegex(RuntimeError, "VitisAIExecutionProvider is not available"):
+                    server._select_preferred_backend(dev)
+
+    def test_vitisai_requested_when_available_returns_vitisai(self):
+        builder = FakeTorchBuilder()
+        EmbeddingServer = _install_fake_torch(builder)
+
+        server = EmbeddingServer("test/model")
+
+        from unittest.mock import patch
+        with patch("sys.platform", "linux"), patch("embedding_server._vitisai_npu_available", return_value=True):
+            for dev in ("vitisai", "ryzenai"):
                 backend, _ = server._select_preferred_backend(dev)
-                self.assertEqual(backend, dev)
+                self.assertEqual(backend, "vitisai")
 
     def test_vitisai_npu_available_detects_hardware_nodes_and_execution_provider(self):
         from unittest.mock import MagicMock, patch
@@ -292,8 +302,8 @@ class DeviceSelectionTest(unittest.TestCase):
         with patch.dict("sys.modules", {"onnxruntime": mock_ort_with_vitis}), patch("os.path.exists", return_value=False):
             self.assertTrue(embedding_server._vitisai_npu_available())
 
-        with patch("os.path.exists", side_effect=lambda p: p == "/dev/accel/accel0"):
-            self.assertTrue(embedding_server._vitisai_npu_available())
+        with patch.dict("sys.modules", {"onnxruntime": mock_ort}), patch("os.path.exists", side_effect=lambda p: p == "/dev/accel/accel0"):
+            self.assertFalse(embedding_server._vitisai_npu_available())
 
 
 if __name__ == "__main__":

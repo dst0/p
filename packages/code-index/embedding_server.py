@@ -55,6 +55,27 @@ from resource_manager import (
     read_positive_int_environment,
     system_memory_snapshot,
 )
+from embedding_backends.base import BackendHealth
+from embedding_backends.model_contract import compute_compatibility_group, compute_tokenizer_hash
+
+
+EMBEDDING_POOLING = "last-non-padding-token"
+EMBEDDING_NORMALIZATION = "l2"
+
+
+def _last_token_pool_np(token_embeddings, attention_mask, np_module):
+    if token_embeddings.shape[0] == 0:
+        return token_embeddings[:, 0]
+    last_column_is_real_token = bool(np_module.all(attention_mask[:, -1] == 1))
+    if last_column_is_real_token:
+        return token_embeddings[:, -1]
+    sequence_lengths = np_module.clip(
+        attention_mask.sum(axis=1) - 1,
+        a_min=0,
+        a_max=token_embeddings.shape[1] - 1,
+    ).astype(np_module.int64)
+    batch_indices = np_module.arange(token_embeddings.shape[0])
+    return token_embeddings[batch_indices, sequence_lengths]
 
 
 def get_current_rss_mb() -> float:
@@ -77,13 +98,33 @@ def get_current_rss_mb() -> float:
 class ONNXEmbeddingWrapper:
     """Wraps an ONNX Runtime model for fast inference on CPU, GPU, or NPU."""
 
-    def __init__(self, model, tokenizer, device_name: str = "npu:0 (CoreML/ANE)"):
+    def __init__(
+        self,
+        model,
+        tokenizer,
+        device_name: str = "npu:0 (CoreML/ANE)",
+        *,
+        model_name: str = "Qwen/Qwen3-Embedding-0.6B",
+        dimensions: int = 1024,
+        requested_backend: str = "onnx",
+        selected_backend: str = "onnx",
+        provider: str = "CPUExecutionProvider",
+        allow_runtime_cpu_fallback: bool = True,
+    ):
         import numpy as np
         self.model = model
         self.tokenizer = tokenizer
         self.device = device_name
         self.max_seq_length = getattr(tokenizer, "model_max_length", 2048)
         self._np = np
+        self.model_name = model_name
+        self.dimensions = dimensions
+        self.requested_backend = requested_backend
+        self.selected_backend = selected_backend
+        self.provider = provider
+        self.allow_runtime_cpu_fallback = allow_runtime_cpu_fallback
+        self.fallback_occurred = False
+        self.fallback_reason: str | None = None
 
     def _get_model_input_names(self):
         """Return the set of input names expected by the underlying ONNX session."""
@@ -142,11 +183,14 @@ class ONNXEmbeddingWrapper:
                 else:
                     outputs = self.model(**inputs)
             except Exception as ort_err:
-                # If CoreML Execution Provider fails on unsupported tensor shapes or ops (error code -1),
-                # fallback to CPU session execution for this batch.
+                if not self.allow_runtime_cpu_fallback:
+                    raise
                 if hasattr(self.model, "model") and hasattr(self.model.model, "set_providers"):
                     try:
                         self.model.model.set_providers(["CPUExecutionProvider"])
+                        self._record_cpu_fallback(
+                            f"{self.provider} batch execution failed: {_error_summary(ort_err)}"
+                        )
                         if has_pkv and hasattr(self.model.model, "run"):
                             session = self.model.model
                             output_names = [o.name for o in session.get_outputs()]
@@ -161,28 +205,57 @@ class ONNXEmbeddingWrapper:
                     raise ort_err
             token_embeddings = outputs[0]
             attention_mask = tok["attention_mask"]
-            input_mask_expanded = self._np.expand_dims(attention_mask, -1)
-            sum_embeddings = self._np.sum(token_embeddings * input_mask_expanded, axis=1)
-            sum_mask = self._np.clip(input_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
-            embeddings = sum_embeddings / sum_mask
+            embeddings = _last_token_pool_np(token_embeddings, attention_mask, self._np)
             if normalize_embeddings:
                 norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
                 embeddings = embeddings / self._np.clip(norms, a_min=1e-9, a_max=None)
             all_embeddings.append(embeddings)
-            del tok, inputs, outputs, token_embeddings, attention_mask, input_mask_expanded, sum_embeddings, sum_mask
+            del tok, inputs, outputs, token_embeddings, attention_mask
         result = self._np.vstack(all_embeddings) if all_embeddings else self._np.array([])
         del all_embeddings
         import gc
         gc.collect()
         return result
 
+    def _record_cpu_fallback(self, reason: str):
+        self.fallback_occurred = True
+        self.fallback_reason = reason
+        self.selected_backend = "cpu"
+        self.provider = "CPUExecutionProvider"
+        self.device = "cpu (ONNX Runtime fallback)"
+
     def to(self, device=None, dtype=None):
-        # CoreML runs on the ANE/GPU via ONNX Runtime; device migration is a no-op.
+        if device == "cpu":
+            self._record_cpu_fallback("embedding server moved ONNX Runtime session to CPU")
         return self
 
     def parameters(self):
         # No torch parameters in CoreML ONNX model; return empty iterator.
         return iter([])
+
+    def health(self) -> BackendHealth:
+        tokenizer_hash = compute_tokenizer_hash(self.model_name)
+        compatibility_group = compute_compatibility_group(
+            self.model_name,
+            self.dimensions,
+            EMBEDDING_POOLING,
+            EMBEDDING_NORMALIZATION,
+        )
+        return BackendHealth(
+            status="ready",
+            requested_backend=self.requested_backend,
+            selected_backend=self.selected_backend,
+            execution_device=self.device,
+            gpu_allowed=self.selected_backend not in {"cpu", "onnx-cpu"},
+            fallback_occurred=self.fallback_occurred,
+            fallback_reason=self.fallback_reason,
+            model_name=self.model_name,
+            dimensions=self.dimensions,
+            tokenizer_hash=tokenizer_hash,
+            pooling=EMBEDDING_POOLING,
+            normalization=EMBEDDING_NORMALIZATION,
+            compatibility_group=compatibility_group,
+        )
 
 
 class EmbeddingServer:
@@ -196,13 +269,18 @@ class EmbeddingServer:
         self.oom_backoffs = 0
         self.oom_batch_ceiling: int | None = None
         self.successful_requests_since_oom = 0
-        self.successful_requests_since_warning = 0
         self.warnings: list[str] = []
         self.startup_reason: str | None = None
+        self.requested_backend: str | None = None
+        self.fail_closed_backend = False
+        self.fallback_occurred = False
+        self.fallback_reason: str | None = None
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
         requested_device = os.environ.get("P_CODE_RAG_DEVICE", "auto").lower()
+        self.requested_backend = requested_device
+        self.fail_closed_backend = requested_device in {"npu", "vitisai", "ryzenai"}
         preferred_backend, memory = self._select_preferred_backend(requested_device)
         self.model_parameter_count = read_positive_int_environment(
             "P_CODE_RAG_MODEL_PARAMETER_COUNT",
@@ -220,6 +298,11 @@ class EmbeddingServer:
                 f"System available: {_format_bytes(memory.system_available_bytes)}; "
                 f"accelerator free: {_format_optional_bytes(memory.accelerator_free_bytes)}"
             )
+        if self.fail_closed_backend and self.plan.backend != preferred_backend:
+            raise RuntimeError(
+                f"Requested {requested_device} backend selected {self.plan.backend}; "
+                f"refusing CPU fallback: {self.plan.reason or 'backend did not remain selected'}"
+            )
         self._apply_cpu_threads(self.plan.cpu_threads)
         self._configure_mps_limit(self.plan, memory)
         try:
@@ -227,7 +310,12 @@ class EmbeddingServer:
         except Exception as error:
             if self.plan.backend == "cpu":
                 raise
+            if self.fail_closed_backend:
+                raise RuntimeError(
+                    f"Requested {requested_device} backend failed; refusing CPU fallback: {_error_summary(error)}"
+                ) from error
             warning = f"{self.plan.backend} model initialization failed; falling back to CPU: {_error_summary(error)}"
+            self._record_cpu_fallback(warning)
             self._record_warning(warning)
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
             self._clear_accelerator_cache()
@@ -314,12 +402,6 @@ class EmbeddingServer:
                 self.oom_batch_ceiling = None
                 self.successful_requests_since_oom = 0
 
-        # Clear startup/fallback warnings after N consecutive successful encode requests
-        if not request_had_oom and len(self.warnings) > 0:
-            self.successful_requests_since_warning += 1
-            if self.successful_requests_since_warning >= 8:
-                self.warnings.clear()
-                self.successful_requests_since_warning = 0
         return output
 
     def health(self) -> dict:
@@ -334,11 +416,13 @@ class EmbeddingServer:
             except Exception:
                 pass
 
-        exec_device = (
-            backend_health.get("executionDevice")
-            or (plan.get("backend") if plan else None)
-            or str(getattr(self.model, "device", "none"))
-        )
+        actual_device = str(getattr(self.model, "device", "none"))
+        exec_device = backend_health.get("executionDevice") or actual_device or (plan.get("backend") if plan else None)
+        selected_backend = backend_health.get("selectedBackend") or (plan.get("backend") if plan else None)
+        fallback_occurred = bool(backend_health.get("fallbackOccurred", False) or self.fallback_occurred)
+        fallback_reason = backend_health.get("fallbackReason") or self.fallback_reason
+        if fallback_occurred and selected_backend != "cpu" and actual_device.lower().startswith("cpu"):
+            selected_backend = "cpu"
 
         return {
             "status": "ready" if self.model is not None else "loading",
@@ -346,11 +430,11 @@ class EmbeddingServer:
             "dim": self.dim,
             "device": exec_device,
             "executionDevice": exec_device,
-            "requestedBackend": backend_health.get("requestedBackend") or (plan.get("preferred_backend") if plan else None),
-            "selectedBackend": backend_health.get("selectedBackend") or (plan.get("backend") if plan else None),
+            "requestedBackend": backend_health.get("requestedBackend") or self.requested_backend or (plan.get("preferred_backend") if plan else None),
+            "selectedBackend": selected_backend,
             "gpuAllowed": backend_health.get("gpuAllowed", False),
-            "fallbackOccurred": backend_health.get("fallbackOccurred", False),
-            "fallbackReason": backend_health.get("fallbackReason"),
+            "fallbackOccurred": fallback_occurred,
+            "fallbackReason": fallback_reason,
             "resource_plan": plan,
             "memory": {
                 "system_total_bytes": memory.system_total_bytes,
@@ -362,8 +446,9 @@ class EmbeddingServer:
                 "torch_version": str(torch.__version__),
                 "torch_cuda_version": getattr(torch.version, "cuda", None),
                 "torch_hip_version": getattr(torch.version, "hip", None),
-                "accelerator_available": bool(torch.cuda.is_available() or _mps_available() or _npu_available("npu")),
+                "accelerator_available": bool(torch.cuda.is_available() or _mps_available()),
                 "npu_available": _npu_available("npu"),
+                "amd_vitisai_provider_available": _vitisai_npu_available(),
                 "oom_backoffs": self.oom_backoffs,
                 "oom_batch_ceiling": self.oom_batch_ceiling,
                 "startup_reason": self.startup_reason,
@@ -382,6 +467,7 @@ class EmbeddingServer:
             "openvino",
             "coreml",
             "vitisai",
+            "ryzenai",
             "apple-ane",
             "nvidia-cuda",
             "amd-rocm",
@@ -392,6 +478,11 @@ class EmbeddingServer:
             raise ValueError(f"P_CODE_RAG_DEVICE must be one of: {', '.join(sorted(valid_devices))}")
         if requested_device == "cpu":
             return "cpu", system_memory_snapshot()
+        if requested_device == "npu" and sys.platform != "darwin":
+            raise RuntimeError(
+                "Generic Linux NPU selection is disabled because it cannot prove AMD Ryzen AI execution. "
+                "Use CPU, or configure an explicit Ryzen AI/Vitis AI runtime and set P_CODE_RAG_DEVICE=ryzenai."
+            )
         detected_backend, memory = self._detect_accelerator()
         expected_backend = os.environ.get("P_CODE_RAG_EXPECTED_BACKEND")
         if (
@@ -409,9 +500,18 @@ class EmbeddingServer:
             return detected_backend or "cpu", memory
         if requested_device in {"apple-ane", "npu"} and sys.platform == "darwin":
             return "apple-ane", memory
+        if requested_device in {"vitisai", "ryzenai"}:
+            if sys.platform != "linux":
+                raise RuntimeError("AMD Ryzen AI/Vitis AI indexing is supported only on Linux")
+            if not _vitisai_npu_available():
+                raise RuntimeError(
+                    "AMD Ryzen AI/Vitis AI requested, but VitisAIExecutionProvider is not available "
+                    "in the indexing Python environment"
+                )
+            return "vitisai", memory
         if (
             (requested_device in {"cuda", "nvidia-cuda", "rocm", "amd-rocm", "mps", "apple-mps"} and detected_backend == requested_device)
-            or (requested_device in {"npu", "openvino", "coreml", "vitisai"} and _npu_available(requested_device))
+            or (requested_device in {"openvino", "coreml"} and _npu_available(requested_device))
         ):
             return requested_device, memory
         if requested_device in {"npu", "coreml"} and _mps_available():
@@ -420,6 +520,7 @@ class EmbeddingServer:
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
             return "mps", memory
         warning = f"requested {requested_device} backend is unavailable; using CPU"
+        self._record_cpu_fallback(warning)
         self._record_warning(warning)
         print(f"WARNING: {warning}", file=sys.stderr, flush=True)
         return "cpu", memory
@@ -449,13 +550,6 @@ class EmbeddingServer:
             )
         elif _mps_available():
             backend = "mps"
-            memory = replace(
-                memory,
-                accelerator_total_bytes=memory.system_total_bytes,
-                accelerator_free_bytes=memory.system_available_bytes,
-            )
-        elif _npu_available("npu"):
-            backend = "npu"
             memory = replace(
                 memory,
                 accelerator_total_bytes=memory.system_total_bytes,
@@ -506,7 +600,7 @@ class EmbeddingServer:
 
         if plan.backend == "cpu":
             return SentenceTransformer(self.model_name, device="cpu")
-        if plan.backend in {"openvino", "npu"} and _openvino_npu_available():
+        if plan.backend == "openvino" and _openvino_npu_available():
             try:
                 from optimum.intel import OVSentenceTransformer
                 return OVSentenceTransformer.from_pretrained(self.model_name, device="NPU")
@@ -520,7 +614,7 @@ class EmbeddingServer:
         pre_exported_hf = hf_onnx_repos.get(self.model_name)
         has_onnx_source = pre_exported_hf or os.path.exists(os.path.join(onnx_cache_dir, "model.onnx"))
 
-        if has_onnx_source or plan.backend in {"coreml", "npu"}:
+        if has_onnx_source or plan.backend in {"coreml", "openvino", "vitisai"}:
             try:
                 import onnxruntime as ort
                 from optimum.onnxruntime import ORTModelForFeatureExtraction
@@ -537,20 +631,25 @@ class EmbeddingServer:
                 # stays under 1.5 GB RSS.
                 provider = "CPUExecutionProvider"
                 device_label = "cpu (ONNX Runtime)"
+                provider_options = None
                 if plan.backend in {"cuda", "gpu"}:
                     provider = "CUDAExecutionProvider"
                     device_label = "cuda:0 (ONNX Runtime)"
-                elif plan.backend in {"openvino", "npu", "vitisai"} and sys.platform == "linux":
+                elif plan.backend == "vitisai" and sys.platform == "linux":
                     available_providers = ort.get_available_providers()
                     if "VitisAIExecutionProvider" in available_providers:
                         provider = "VitisAIExecutionProvider"
                         device_label = "vitisai (AMD XDNA NPU via ONNX Runtime)"
-                    elif "OpenVINOExecutionProvider" in available_providers:
-                        provider = "OpenVINOExecutionProvider"
-                        device_label = "openvino (ONNX Runtime)"
+                        provider_options = _vitisai_provider_options(self.model_name)
                     else:
-                        provider = "CPUExecutionProvider"
-                        device_label = "cpu (ONNX Runtime fallback)"
+                        raise RuntimeError("VitisAIExecutionProvider is not available in this Python environment")
+                elif plan.backend == "openvino" and sys.platform == "linux":
+                    available_providers = ort.get_available_providers()
+                    if "OpenVINOExecutionProvider" in available_providers:
+                        provider = "OpenVINOExecutionProvider"
+                        device_label = "openvino (Intel ONNX Runtime)"
+                    else:
+                        raise RuntimeError("OpenVINOExecutionProvider is not available in this Python environment")
 
                 from transformers import AutoConfig
 
@@ -565,6 +664,8 @@ class EmbeddingServer:
                 load_kwargs = {}
                 if config is not None:
                     load_kwargs["config"] = config
+                if provider_options is not None:
+                    load_kwargs["provider_options"] = provider_options
 
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):
                     print(f"Loading cached ONNX model ({provider}): {onnx_cache_dir}", flush=True)
@@ -604,11 +705,23 @@ class EmbeddingServer:
                     except Exception as cache_err:
                         print(f"Note: ONNX caching skipped: {cache_err}", flush=True)
 
-                wrapper = ONNXEmbeddingWrapper(ort_model, tokenizer, device_name=device_label)
+                wrapper = ONNXEmbeddingWrapper(
+                    ort_model,
+                    tokenizer,
+                    device_name=device_label,
+                    model_name=self.model_name,
+                    dimensions=self.dim,
+                    requested_backend=self.requested_backend or plan.preferred_backend,
+                    selected_backend=plan.backend,
+                    provider=provider,
+                    allow_runtime_cpu_fallback=plan.backend != "vitisai",
+                )
                 wrapper.encode(["probe"], batch_size=1)
                 print(f"Loaded model on {device_label}", flush=True)
                 return wrapper
             except Exception as error:
+                if plan.backend == "vitisai":
+                    raise
                 warning = f"ONNX Runtime load failed ({_error_summary(error)}); falling back to standard PyTorch backend"
                 self._record_warning(warning)
                 print(f"WARNING: {warning}", file=sys.stderr, flush=True)
@@ -621,6 +734,10 @@ class EmbeddingServer:
                 print(f"WARNING: {warning}", file=sys.stderr, flush=True)
                 target_device = "mps"
             else:
+                warning = f"{target_device} device not natively supported by SentenceTransformer; using CPU"
+                self._record_cpu_fallback(warning)
+                self._record_warning(warning)
+                print(f"WARNING: {warning}", file=sys.stderr, flush=True)
                 target_device = "cpu"
         dtype = torch.float32 if plan.dtype == "float32" else torch.float16
         return SentenceTransformer(
@@ -665,7 +782,13 @@ class EmbeddingServer:
         self.oom_batch_ceiling = None
         self.successful_requests_since_oom = 0
         self._apply_cpu_threads(cpu_plan.cpu_threads)
-        self._record_warning(f"{reason}; moved model to CPU")
+        warning = f"{reason}; moved model to CPU"
+        self._record_cpu_fallback(warning)
+        self._record_warning(warning)
+
+    def _record_cpu_fallback(self, reason: str):
+        self.fallback_occurred = True
+        self.fallback_reason = reason
 
     def _effective_batch_size(self) -> int:
         if self.plan is None:
@@ -826,10 +949,6 @@ def _coreml_ane_available() -> bool:
 
 
 def _vitisai_npu_available() -> bool:
-    if "AMD_VITISAI" in os.environ:
-        return True
-    if os.path.exists("/dev/accel/accel0") or os.path.exists("/dev/amdxdna") or os.path.exists("/sys/class/accel"):
-        return True
     try:
         import onnxruntime as ort
         return "VitisAIExecutionProvider" in ort.get_available_providers()
@@ -838,13 +957,36 @@ def _vitisai_npu_available() -> bool:
 
 
 def _npu_available(backend: str = "npu") -> bool:
-    if backend in {"openvino", "npu"} and _openvino_npu_available():
+    if backend == "npu":
+        return sys.platform == "darwin" and _coreml_ane_available()
+    if backend == "openvino" and _openvino_npu_available():
         return True
-    if backend in {"coreml", "npu"} and _coreml_ane_available():
+    if backend == "coreml" and _coreml_ane_available():
         return True
-    if backend in {"vitisai", "npu"} and _vitisai_npu_available():
+    if backend in {"vitisai", "ryzenai"} and _vitisai_npu_available():
         return True
     return False
+
+
+def _vitisai_provider_options(model_name: str) -> dict[str, str]:
+    config_file = os.environ.get("P_CODE_RAG_VITISAI_CONFIG_FILE")
+    if not config_file:
+        raise RuntimeError(
+            "P_CODE_RAG_VITISAI_CONFIG_FILE is required for AMD Ryzen AI/Vitis AI execution"
+        )
+    if not os.path.exists(config_file):
+        raise RuntimeError(f"Vitis AI config file does not exist: {config_file}")
+    cache_dir = os.environ.get(
+        "P_CODE_RAG_VITISAI_CACHE_DIR",
+        os.path.expanduser("~/.p/agent/indexing-service/vitisai-cache"),
+    )
+    cache_key = os.environ.get("P_CODE_RAG_VITISAI_CACHE_KEY", model_name.replace("/", "_"))
+    os.makedirs(cache_dir, exist_ok=True)
+    return {
+        "config_file": config_file,
+        "cache_dir": cache_dir,
+        "cache_key": cache_key,
+    }
 
 
 def _is_out_of_memory(error: Exception) -> bool:

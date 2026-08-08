@@ -6,6 +6,19 @@ from embedding_backends.base import BackendHealth, ModelSpec
 from embedding_backends.model_contract import compute_compatibility_group, compute_tokenizer_hash
 
 
+def _last_token_pool_np(token_embeddings, attention_mask, np_module):
+    last_column_is_real_token = bool(np_module.all(attention_mask[:, -1] == 1))
+    if last_column_is_real_token:
+        return token_embeddings[:, -1]
+    sequence_lengths = np_module.clip(
+        attention_mask.sum(axis=1) - 1,
+        a_min=0,
+        a_max=token_embeddings.shape[1] - 1,
+    ).astype(np_module.int64)
+    batch_indices = np_module.arange(token_embeddings.shape[0])
+    return token_embeddings[batch_indices, sequence_lengths]
+
+
 class ONNXBackend:
     """ONNX Runtime backend for CPU and GPU inference."""
 
@@ -106,17 +119,14 @@ class ONNXBackend:
 
             token_embeddings = outputs[0]
             attention_mask = tok["attention_mask"]
-            input_mask_expanded = self._np.expand_dims(attention_mask, -1)
-            sum_embeddings = self._np.sum(token_embeddings * input_mask_expanded, axis=1)
-            sum_mask = self._np.clip(input_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
-            embeddings = sum_embeddings / sum_mask
+            embeddings = _last_token_pool_np(token_embeddings, attention_mask, self._np)
 
             if normalize:
                 norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)
                 embeddings = embeddings / self._np.clip(norms, a_min=1e-9, a_max=None)
 
             all_embeddings.extend(embeddings.tolist())
-            del tok, inputs, outputs, token_embeddings, attention_mask, input_mask_expanded, sum_embeddings, sum_mask
+            del tok, inputs, outputs, token_embeddings, attention_mask
 
         import gc
         gc.collect()
@@ -135,10 +145,7 @@ class ONNXBackend:
         outputs = self.model(**tok)
         token_embeddings = outputs[0]
         attention_mask = tok["attention_mask"]
-        input_mask_expanded = self._np.expand_dims(attention_mask, -1)
-        sum_embeddings = self._np.sum(token_embeddings * input_mask_expanded, axis=1)
-        sum_mask = self._np.clip(input_mask_expanded.sum(axis=1), a_min=1e-9, a_max=None)
-        embeddings = sum_embeddings / sum_mask
+        embeddings = _last_token_pool_np(token_embeddings, attention_mask, self._np)
 
         if normalize:
             norms = self._np.linalg.norm(embeddings, axis=1, keepdims=True)

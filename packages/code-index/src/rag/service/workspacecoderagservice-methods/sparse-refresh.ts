@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BM25Vocabulary } from "../../../bm25.ts";
 import { getGitInfo } from "../../../discover.ts";
+import { computeEmbeddingCompatibilityGroup } from "../../config.ts";
 import type { ScannedFile } from "../../file-preparation-core.ts";
 import { CHUNKER_NAME, CHUNKER_VERSION, INDEX_MANIFEST_SCHEMA_VERSION, writeManifestAtomic } from "../../manifest.ts";
 import type {
@@ -197,6 +198,14 @@ export async function do_performSparseGenerationRefresh(
           provider: "local-python-http",
           model: self.settings.embeddingModel,
           dimensions: self.settings.embeddingDimensions,
+          compatibilityGroup: computeEmbeddingCompatibilityGroup(
+            self.settings.embeddingModel,
+            self.settings.embeddingDimensions,
+            self.settings.embeddingPooling,
+            self.settings.embeddingNormalization,
+          ),
+          pooling: self.settings.embeddingPooling,
+          normalization: self.settings.embeddingNormalization,
         },
         sparse: {
           strategy: "frozen-bm25",

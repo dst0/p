@@ -188,6 +188,8 @@ function createService(
   vectorStore: FakeVectorStore,
   options: {
     embeddingModel?: string;
+    embeddingPooling?: string;
+    embeddingNormalization?: string;
     allowSearchRefresh?: boolean;
     sparseRebuildDriftRatio?: number;
     fullSparseRebuildChangeRatio?: number;
@@ -208,6 +210,8 @@ function createService(
       autoRefresh: false,
       embeddingDimensions: 3,
       embeddingModel: options.embeddingModel ?? "test-embedding-v1",
+      embeddingPooling: options.embeddingPooling ?? "last-non-padding-token",
+      embeddingNormalization: options.embeddingNormalization ?? "l2",
       fullSparseRebuildChangeRatio: options.fullSparseRebuildChangeRatio ?? 1,
       sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
       ...(options.upsertBatchSize === undefined ? {} : { upsertBatchSize: options.upsertBatchSize }),
@@ -878,6 +882,41 @@ describe("WorkspaceCodeRagService", () => {
     const rebuilt = await secondService.refresh();
     expect(rebuilt.fullRebuild).toBe(true);
     expect(rebuilt.status.collection).not.toBe(firstCollection);
+  });
+
+  it("marks missing embedding compatibility metadata incompatible and rebuilds", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const original = createService(root, data, embedding, store);
+    await original.rebuild();
+    const originalStatus = await original.status();
+    await original.dispose();
+
+    const manifestPath = join(data, originalStatus.repoId, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+      embedding: {
+        compatibilityGroup?: string;
+        pooling?: string;
+        normalization?: string;
+      };
+    };
+    delete manifest.embedding.compatibilityGroup;
+    delete manifest.embedding.pooling;
+    delete manifest.embedding.normalization;
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const migrated = createService(root, data, embedding, store);
+    const stale = await migrated.initialize();
+    expect(stale).toMatchObject({
+      state: "stale",
+      lastError: { code: "RAG_INCOMPATIBLE_INDEX", message: "Embedding compatibility metadata changed" },
+    });
+
+    const rebuilt = await migrated.refresh();
+    expect(rebuilt.fullRebuild).toBe(true);
+    expect(rebuilt.status.collection).not.toBe(originalStatus.collection);
+    await migrated.dispose();
   });
 
   it("invalidates and rebuilds an index created with the previous chunker version", async () => {

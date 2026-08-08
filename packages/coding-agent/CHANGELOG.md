@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Make Linux AMD NPU code indexing fail closed unless a Vitis AI execution provider is explicitly configured, report CPU fallback truthfully in embedding health, use Qwen3 last-token pooling for ONNX embeddings, and invalidate indexes missing embedding compatibility metadata.
+
 ## [0.4.158] - 2026-08-06
 
 ### Changed

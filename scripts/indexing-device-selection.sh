@@ -2,7 +2,7 @@
 
 is_valid_indexing_device() {
   case "$1" in
-    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|cuda|rocm|mps|npu) return 0 ;;
+    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|cuda|rocm|mps|npu|vitisai|ryzenai) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -33,9 +33,13 @@ initialize_indexing_device_selection() {
     if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname -s)" == "Darwin" ]]; then
       P_CODE_RAG_DEVICE="apple-ane"
     fi
+    if [[ "$P_CODE_RAG_DEVICE" == "npu" && "$(uname -s)" == "Linux" ]]; then
+      echo "Linux NPU indexing is not automatically configured. Use cpu until an explicit AMD Ryzen AI/Vitis AI runtime is installed and validated." >&2
+      return 1
+    fi
     if ! is_valid_indexing_device "$P_CODE_RAG_DEVICE"; then
       echo "Invalid P_CODE_RAG_DEVICE: $P_CODE_RAG_DEVICE" >&2
-      echo "Expected one of: auto, cpu, nvidia-cuda, amd-rocm, apple-ane, apple-mps, intel-openvino-cpu." >&2
+      echo "Expected one of: auto, cpu, nvidia-cuda, amd-rocm, apple-ane, apple-mps, intel-openvino-cpu, vitisai, ryzenai." >&2
       return 1
     fi
     export P_CODE_RAG_DEVICE
@@ -50,6 +54,10 @@ initialize_indexing_device_selection() {
   if [[ "$saved_device" == "npu" && "$(uname -s)" == "Darwin" ]]; then
     saved_device="apple-ane"
     echo "$saved_device" > "$INDEXING_DEVICE_FILE" 2>/dev/null || true
+  fi
+  if [[ "$saved_device" == "npu" && "$(uname -s)" == "Linux" ]]; then
+    echo "Saved Linux NPU indexing is no longer accepted in $INDEXING_DEVICE_FILE; using cpu until an explicit AMD Ryzen AI/Vitis AI runtime is installed and validated." >&2
+    saved_device="cpu"
   fi
 
   if ! is_valid_indexing_device "$saved_device"; then
@@ -137,9 +145,8 @@ prompt_indexing_device_and_batch_size_selection() {
       fi
 
       if [[ "$has_npu" == true ]]; then
-        embed_choices+=("npu (recommended – Neural Processing Unit / NPU accelerator)")
-        embed_values+=("npu")
-        embed_choices+=("cpu (CPU only – leaves GPU free for inference)")
+        echo "AMD XDNA NPU hardware detected, but Linux NPU indexing requires a separately installed and validated AMD Ryzen AI runtime."
+        embed_choices+=("cpu (recommended – Linux NPU not auto-configured)")
         embed_values+=("cpu")
       else
         embed_choices+=("cpu (recommended – leaves GPU free for inference)")
@@ -259,36 +266,10 @@ install_amd_xdna_npu_driver_if_needed() {
   fi
 
   if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
-    if ! command -v xrt-smi &>/dev/null && [[ ! -f /opt/xilinx/xrt/setup.sh ]]; then
-      echo ""
-      echo "=== AMD XDNA NPU Hardware Detected ==="
-      echo "AMD XDNA NPU (/dev/accel/accel0) detected on this system."
-      echo "To enable native hardware acceleration via AMD Vitis AI / XRT, system driver packages can be installed."
-      if [[ -t 0 ]]; then
-        read -rp "Do you want to install AMD XDNA driver dependencies now? [Y/n]: " install_xdna
-        install_xdna="${install_xdna:-y}"
-        if [[ "$install_xdna" =~ ^[Yy]$ ]]; then
-          echo "Installing AMD XDNA driver build tools..."
-          local sudo_cmd=""
-          if [[ "$(id -u)" != "0" ]]; then sudo_cmd="sudo"; fi
-          if command -v apt-get &>/dev/null; then
-            $sudo_cmd apt-get update -qq && $sudo_cmd apt-get install -y -qq dkms cmake gcc g++ libboost-dev protobuf-compiler debhelper devscripts || true
-          fi
-          if [[ -d /opt/xilinx/xrt ]]; then
-            echo "AMD XRT already installed at /opt/xilinx/xrt"
-          else
-            echo "Cloning and preparing amd/xdna-driver..."
-            local tmpdir
-            tmpdir="$(mktemp -d)"
-            git clone --recursive https://github.com/amd/xdna-driver.git "$tmpdir/xdna-driver" 2>/dev/null || true
-            if [[ -f "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" ]]; then
-              $sudo_cmd bash "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" || true
-            fi
-            rm -rf "$tmpdir"
-          fi
-        fi
-      fi
-    fi
+    echo ""
+    echo "=== AMD XDNA NPU Hardware Detected ==="
+    echo "p does not install or validate the AMD Ryzen AI/XRT/XDNA runtime automatically."
+    echo "Use CPU indexing until AMD's matched Ryzen AI runtime, XRT/plugin packages, firmware, and Vitis AI ONNX Runtime environment are installed and validated."
+    return 1
   fi
 }
-

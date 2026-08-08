@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
+export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
+export const DEFAULT_EMBEDDING_NORMALIZATION = "l2";
+
 export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   enabled: true,
   autoRefresh: true,
@@ -15,6 +18,8 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   embeddingServerUrl: "http://127.0.0.1:18742",
   embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
   embeddingDimensions: 1024,
+  embeddingPooling: DEFAULT_EMBEDDING_POOLING,
+  embeddingNormalization: DEFAULT_EMBEDDING_NORMALIZATION,
   pythonExecutable: "python3",
   defaultLimit: 15,
   maxLimit: 20,
@@ -73,9 +78,21 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "qdrantDataDirectory",
   "embeddingServerUrl",
   "embeddingModel",
+  "embeddingPooling",
+  "embeddingNormalization",
   "pythonExecutable",
   "collectionPrefix",
 ]);
+
+export function computeEmbeddingCompatibilityGroup(
+  model: string,
+  dimensions: number,
+  pooling: string,
+  normalization: string,
+): string {
+  const slug = model.toLowerCase().replaceAll("/", "_").replaceAll("-", "_");
+  return `${slug}-${dimensions}-${pooling}-${normalization}`;
+}
 
 function parseConfigFile(configPath: string | undefined): Partial<WorkspaceCodeRagSettings> {
   if (!configPath || !fs.existsSync(configPath)) return {};

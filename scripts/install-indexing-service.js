@@ -249,15 +249,22 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const hasNpuDevice =
-		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
-	const defaultDevice =
-		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
+	const hasLinuxAmdNpuDevice = linuxAmdNpuHardwarePresent();
+	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "npu" : "cpu";
 	const savedDevice = readSavedSetting("indexing-device");
-	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
+	const savedDeviceUnsupported = process.platform === "linux" && savedDevice === "npu";
+	if (savedDeviceUnsupported) {
+		console.log("Saved Linux NPU indexing selection is no longer accepted; using CPU until Ryzen AI is explicitly configured.");
+	}
+	const requestedDevice = process.env.P_CODE_RAG_DEVICE;
+	const ragDevice = requestedDevice ?? (savedDeviceUnsupported ? "cpu" : savedDevice) ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
-	if (ragDevice === "npu") {
-		ensureAmdXdnaDriverInstalled();
+	if (requestedDevice === "npu" && process.platform === "linux") {
+		const message = linuxNpuUnsupportedMessage(hasLinuxAmdNpuDevice);
+		if (DRY_RUN) console.log(message);
+		else throw new Error(message);
+	} else if (hasLinuxAmdNpuDevice && ragDevice === "cpu") {
+		console.log("AMD XDNA NPU hardware detected; using CPU indexing until a validated Ryzen AI runtime is configured.");
 	}
 
 	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
@@ -265,7 +272,7 @@ async function main() {
 		process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = savedBatchSize;
 	}
 
-	const python = findCompatiblePython();
+	const python = findCompatiblePython({ allowInstall: !DRY_RUN });
 	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
@@ -613,7 +620,8 @@ function isProcessRunning(pid) {
 	}
 }
 
-function findCompatiblePython() {
+function findCompatiblePython(options = {}) {
+	const allowInstall = options.allowInstall ?? true;
 	const search = () => {
 		const names = process.platform === "darwin" && process.arch === "x64"
 			? ["python3.12", "python3.11", "python3.10", "python3"]
@@ -632,7 +640,7 @@ function findCompatiblePython() {
 	};
 
 	let found = search();
-	if (!found) {
+	if (!found && allowInstall) {
 		tryAutoInstallPython();
 		found = search();
 	}
@@ -675,24 +683,20 @@ function tryAutoInstallPython() {
 	}
 }
 
-function ensureAmdXdnaDriverInstalled() {
-	if (process.platform !== "linux") return;
-	const hasNpuDevice =
-		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
-	if (!hasNpuDevice) return;
-	if (fs.existsSync("/opt/xilinx/xrt") || findOnPath("xrt-smi")) return;
+function linuxAmdNpuHardwarePresent() {
+	return process.platform === "linux" && (
+		fs.existsSync("/dev/accel/accel0") ||
+		fs.existsSync("/dev/amdxdna") ||
+		fs.existsSync("/sys/class/accel")
+	);
+}
 
-	console.log("AMD XDNA NPU hardware detected. Ensuring AMD XDNA driver dependencies are installed...");
-	const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-	if (findOnPath("apt-get")) {
-		const cmd = isRoot ? "apt-get" : "sudo";
-		const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
-		const argsInstall = isRoot
-			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "libboost-dev", "protobuf-compiler", "debhelper", "devscripts"]
-			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "libboost-dev", "protobuf-compiler", "debhelper", "devscripts"];
-		run(cmd, argsUpdate, { allowFailure: true });
-		run(cmd, argsInstall, { allowFailure: true });
-	}
+function linuxNpuUnsupportedMessage(hasNpuDevice) {
+	const prefix = hasNpuDevice
+		? "AMD XDNA NPU hardware was detected, but"
+		: "Linux NPU indexing was requested, but";
+	return `${prefix} p does not install or validate the AMD Ryzen AI/XRT/XDNA runtime automatically. `
+		+ "Use CPU indexing, or install AMD's matched Ryzen AI runtime and configure an explicit Vitis AI backend.";
 }
 
 function findOnPath(name) {
