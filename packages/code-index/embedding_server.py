@@ -126,15 +126,35 @@ class ONNXEmbeddingWrapper:
                 inputs = {k: v for k, v in tok.items() if k in model_input_names}
             else:
                 inputs = dict(tok)
+            # ORTModelForFeatureExtraction.forward() only accepts known args
+            # (input_ids, attention_mask, position_ids, etc.) and silently drops
+            # unknown **kwargs (including past_key_values.*).  When the ONNX graph
+            # requires past_key_values we must call the raw InferenceSession
+            # directly so every input reaches the runtime.
+            has_pkv = any(k.startswith("past_key_values") for k in inputs)
             try:
-                outputs = self.model(**inputs)
+                if has_pkv and hasattr(self.model, "model") and hasattr(self.model.model, "run"):
+                    session = self.model.model
+                    output_names = [o.name for o in session.get_outputs()]
+                    np_feeds = {k: v if isinstance(v, self._np.ndarray) else self._np.asarray(v) for k, v in inputs.items()}
+                    raw_outputs = session.run(output_names, np_feeds)
+                    outputs = (raw_outputs[0],)
+                else:
+                    outputs = self.model(**inputs)
             except Exception as ort_err:
                 # If CoreML Execution Provider fails on unsupported tensor shapes or ops (error code -1),
                 # fallback to CPU session execution for this batch.
                 if hasattr(self.model, "model") and hasattr(self.model.model, "set_providers"):
                     try:
                         self.model.model.set_providers(["CPUExecutionProvider"])
-                        outputs = self.model(**inputs)
+                        if has_pkv and hasattr(self.model.model, "run"):
+                            session = self.model.model
+                            output_names = [o.name for o in session.get_outputs()]
+                            np_feeds = {k: v if isinstance(v, self._np.ndarray) else self._np.asarray(v) for k, v in inputs.items()}
+                            raw_outputs = session.run(output_names, np_feeds)
+                            outputs = (raw_outputs[0],)
+                        else:
+                            outputs = self.model(**inputs)
                     except Exception:
                         raise ort_err
                 else:
@@ -176,6 +196,7 @@ class EmbeddingServer:
         self.oom_backoffs = 0
         self.oom_batch_ceiling: int | None = None
         self.successful_requests_since_oom = 0
+        self.successful_requests_since_warning = 0
         self.warnings: list[str] = []
         self.startup_reason: str | None = None
 
@@ -292,6 +313,13 @@ class EmbeddingServer:
             if self.successful_requests_since_oom >= 8:
                 self.oom_batch_ceiling = None
                 self.successful_requests_since_oom = 0
+
+        # Clear startup/fallback warnings after N consecutive successful encode requests
+        if not request_had_oom and len(self.warnings) > 0:
+            self.successful_requests_since_warning += 1
+            if self.successful_requests_since_warning >= 8:
+                self.warnings.clear()
+                self.successful_requests_since_warning = 0
         return output
 
     def health(self) -> dict:
@@ -524,7 +552,7 @@ class EmbeddingServer:
                         provider = "CPUExecutionProvider"
                         device_label = "cpu (ONNX Runtime fallback)"
 
-                from transformers import AutoConfig, AutoTokenizer
+                from transformers import AutoConfig
 
                 config = None
                 try:
@@ -788,7 +816,8 @@ def _coreml_ane_available() -> bool:
         pass
     # Fallback: coremltools can drive CoreML directly if its native lib works.
     try:
-        import coremltools  # noqa: F401
+        import coremltools
+
         # Verify the native extension is actually loaded (not just the pure-Python stub).
         import coremltools.libcoremlpython  # noqa: F401
         return True
@@ -797,15 +826,17 @@ def _coreml_ane_available() -> bool:
 
 
 def _vitisai_npu_available() -> bool:
-    if "AMD_VITISAI" in os.environ:
-        return True
-    if os.path.exists("/dev/accel/accel0") or os.path.exists("/dev/amdxdna"):
-        return True
     try:
         import onnxruntime as ort
-        return "VitisAIExecutionProvider" in ort.get_available_providers()
+        if "VitisAIExecutionProvider" in ort.get_available_providers():
+            return True
     except Exception:
-        return False
+        pass
+    # Device nodes alone are not sufficient — the VitisAI EP must be
+    # installed for ONNX Runtime to actually use the NPU.  Without it,
+    # claiming NPU availability leads to a cascade of fallbacks that
+    # ultimately crashes the embedding server.
+    return False
 
 
 def _npu_available(backend: str = "npu") -> bool:

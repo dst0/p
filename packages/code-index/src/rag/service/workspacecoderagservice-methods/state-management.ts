@@ -78,7 +78,10 @@ export async function do_reloadPersistedState(self: WorkspaceCodeRagService): Pr
     return;
   }
   self.state = persisted.state;
-  self.lastError = persisted.lastError;
+  // Do not restore lastError from manifest: it is a transient diagnostic that persists
+  // across daemon restarts. It is already cleared by do_applyRuntimeStatus on successful
+  // indexing, so not restoring from disk avoids showing stale errors between restart
+  // and the next indexing run.
 }
 
 export function do_manifestIncompatibility(self: WorkspaceCodeRagService, manifest: IndexManifest): string | undefined {

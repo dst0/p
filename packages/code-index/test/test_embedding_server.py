@@ -133,6 +133,35 @@ class EmbeddingServerTest(unittest.TestCase):
             model_kwargs={"torch_dtype": fake_torch.float32},
         )
 
+    def test_onnx_embedding_wrapper_past_key_values_direct_run(self):
+        import numpy as np
+        from embedding_server import ONNXEmbeddingWrapper
+
+        mock_session = Mock()
+        mock_input = Mock()
+        mock_input.name = "past_key_values.0.key"
+        mock_session.get_inputs.return_value = [mock_input]
+        mock_output = Mock()
+        mock_output.name = "last_hidden_state"
+        mock_session.get_outputs.return_value = [mock_output]
+        mock_session.run.return_value = [np.ones((1, 4, 16), dtype=np.float32)]
+
+        mock_ort_model = Mock()
+        mock_ort_model.model = mock_session
+
+        mock_tokenizer = Mock()
+        mock_tokenizer.return_value = {
+            "input_ids": np.ones((1, 4), dtype=np.int64),
+            "attention_mask": np.ones((1, 4), dtype=np.int64),
+            "past_key_values.0.key": np.zeros((1, 8, 0, 64), dtype=np.float32),
+        }
+
+        wrapper = ONNXEmbeddingWrapper(mock_ort_model, mock_tokenizer, "test-device")
+        res = wrapper.encode(["sample text"], normalize_embeddings=True)
+
+        self.assertEqual(len(res), 1)
+        mock_session.run.assert_called_once()
+
 
 if __name__ == "__main__":
     unittest.main()
