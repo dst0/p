@@ -1171,12 +1171,11 @@ Later sources override earlier sources:
 1. built-in defaults;
 2. user config;
 3. repository-local config;
-4. supported environment variables;
-5. explicit SDK options.
+4. explicit SDK options.
 
 Validation and hard safety constraints apply after merging. Remote backend hosts are rejected unless `remoteBackendsAllowed` is explicitly enabled; repository-root containment and out-of-root symlink rejection remain enforced by discovery.
 
-Supported environment settings include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, and `P_CODE_RAG_PYTHON`.
+Embedding runtime and device settings are stored in `~/.p/agent/code-rag.json`, alongside the other user-level indexing settings.
 
 ### Configuration migration
 

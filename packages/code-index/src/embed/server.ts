@@ -92,18 +92,14 @@ export class EmbeddingServerManager {
       signal?.addEventListener("abort", onAbort, { once: true });
       const arguments_ = [this.scriptPath, "--port", String(this.port), "--model", this.model];
       if (this.options.configPath) arguments_.push("--config", this.options.configPath);
-      const child = spawn(
-        this.options.pythonExecutable,
-        arguments_,
-        {
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: false,
-          env: {
-            ...process.env,
-            PYTORCH_ENABLE_MPS_FALLBACK: "1",
-          },
+      const child = spawn(this.options.pythonExecutable, arguments_, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+        env: {
+          ...process.env,
+          PYTORCH_ENABLE_MPS_FALLBACK: "1",
         },
-      );
+      });
       this.child = child;
 
       child.stdout?.on("data", (data) => {

@@ -274,7 +274,7 @@ describe("EmbeddingProviderHttp final retry error throwing", () => {
 });
 
 describe("rag config, manifest, and service missing branches", () => {
-  it("handles parseConfigFile invalid JSON syntax and environment variables", () => {
+  it("handles parseConfigFile invalid JSON syntax and file settings", () => {
     const dir = mkdtempSync(join(tmpdir(), "p-env-cfg-"));
     temporaryDirectories.push(dir);
     const badJsonFile = join(dir, "bad.json");
@@ -289,29 +289,15 @@ describe("rag config, manifest, and service missing branches", () => {
       }),
     ).toThrow("Invalid code RAG config");
 
-    // Environment variables test
-    process.env.P_CODE_RAG_QDRANT_URL = "http://127.0.0.1:6333";
-    process.env.P_CODE_RAG_QDRANT_BINARY = "qdrant";
-    process.env.P_CODE_RAG_QDRANT_DATA_DIR = join(dir, "qdata");
-    process.env.P_CODE_RAG_EMBEDDING_URL = "http://127.0.0.1:18742";
-    process.env.P_CODE_RAG_EMBEDDING_MODEL = "Qwen/Qwen3-Embedding-0.6B";
-    process.env.P_CODE_RAG_PYTHON = "python3";
-
-    try {
-      const settings = loadWorkspaceCodeRagSettings({
-        workspaceRoot: dir,
-        dataDirectory: join(dir, "data"),
-        manageLocalBackends: false,
-      });
-      expect(settings.qdrantUrl).toBe("http://127.0.0.1:6333");
-    } finally {
-      delete process.env.P_CODE_RAG_QDRANT_URL;
-      delete process.env.P_CODE_RAG_QDRANT_BINARY;
-      delete process.env.P_CODE_RAG_QDRANT_DATA_DIR;
-      delete process.env.P_CODE_RAG_EMBEDDING_URL;
-      delete process.env.P_CODE_RAG_EMBEDDING_MODEL;
-      delete process.env.P_CODE_RAG_PYTHON;
-    }
+    const validConfig = join(dir, "code-rag.json");
+    writeFileSync(validConfig, JSON.stringify({ qdrantDataDirectory: join(dir, "qdata") }));
+    const settings = loadWorkspaceCodeRagSettings({
+      workspaceRoot: dir,
+      dataDirectory: join(dir, "data"),
+      userConfigPath: validConfig,
+      manageLocalBackends: false,
+    });
+    expect(settings.qdrantDataDirectory).toBe(join(dir, "qdata"));
   });
 
   it("handles manifest load errors and isManifest validation", () => {

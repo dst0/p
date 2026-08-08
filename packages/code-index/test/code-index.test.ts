@@ -178,7 +178,7 @@ describe("semantic retrieval compatibility", () => {
 
   it("configures the embedding server beyond the old 512-token truncation", () => {
     const source = readFileSync(new URL("../embedding_server.py", import.meta.url), "utf-8");
-    expect(source).toContain('"P_CODE_RAG_MAX_SEQUENCE_LENGTH",');
+    expect(source).toContain("self.runtime_config.max_sequence_length");
     expect(source).toContain("self.model.max_seq_length = self.sequence_length");
     expect(source).not.toContain("self.model.max_seq_length = 512");
     expect(source).toContain("max_seq:");

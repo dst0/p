@@ -1,12 +1,4 @@
-export type EmbeddingDevice =
-  | "auto"
-  | "cpu"
-  | "cuda"
-  | "rocm"
-  | "mps"
-  | "npu"
-  | "ryzenai"
-  | "intel-openvino-npu";
+export type EmbeddingDevice = "auto" | "cpu" | "cuda" | "rocm" | "mps" | "npu" | "ryzenai" | "intel-openvino-npu";
 
 export interface EmbeddingRuntimeSettings {
   embeddingServerUrl: string;

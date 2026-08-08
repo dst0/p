@@ -108,7 +108,7 @@ class EmbeddingServerTest(unittest.TestCase):
         self.assertEqual(health["runtime"]["oom_backoffs"], 3)
 
     def test_loads_mps_model_with_the_planned_float32_dtype(self):
-        server = EmbeddingServer("test/embed-0.6B")
+        server = EmbeddingServer("Qwen/Qwen3-Embedding-0.6B")
         plan = RuntimePlan(
             usable=True,
             preferred_backend="mps",
@@ -128,10 +128,11 @@ class EmbeddingServerTest(unittest.TestCase):
             server._load_model(plan)
 
         transformer.assert_called_once_with(
-            "test/embed-0.6B",
+            "Qwen/Qwen3-Embedding-0.6B",
             device="mps",
             model_kwargs={"torch_dtype": fake_torch.float32},
         )
+        self.assertEqual(server.warnings, [])
 
 if __name__ == "__main__":
     unittest.main()

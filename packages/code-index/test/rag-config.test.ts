@@ -97,6 +97,31 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     expect(settings.torchBackend).toBe("cpu");
   });
 
+  it("rejects unsupported embedding runtime settings", () => {
+    const dir = createTempDir();
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { embeddingDevice: "invalid" as "cpu" },
+      }),
+    ).toThrow("embeddingDevice is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { torchBackend: "invalid" as "cpu" },
+      }),
+    ).toThrow("torchBackend is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { embeddingModelParameterCount: 0 },
+      }),
+    ).toThrow("embeddingModelParameterCount must be a positive integer");
+  });
+
   it("loads file preparation resource settings from config", () => {
     const dir = createTempDir();
     const configPath = path.join(dir, "code-rag.json");

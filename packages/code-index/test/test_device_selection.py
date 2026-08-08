@@ -1,6 +1,6 @@
 """Tests for _select_preferred_backend device mismatch handling.
 
-When P_CODE_RAG_DEVICE=cuda is set but ROCm is detected (or vice versa),
+When CUDA is configured but ROCm is detected (or vice versa),
 the server should fall back to CPU with a warning, not silently accept
 the wrong accelerator. Same for explicit mps when MPS is unavailable.
 """
@@ -84,15 +84,6 @@ def _install_fake_torch(builder: FakeTorchBuilder):
 class DeviceSelectionTest(unittest.TestCase):
     """Verify explicit device requests are not silently redirected."""
 
-    def setUp(self):
-        self.previous_device = os.environ.get("P_CODE_RAG_DEVICE")
-        os.environ["P_CODE_RAG_DEVICE"] = "auto"
-
-    def tearDown(self):
-        if self.previous_device is None:
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
-        else:
-            os.environ["P_CODE_RAG_DEVICE"] = self.previous_device
     # -- CUDA requested, ROCm detected ----------------------------------
 
     def test_cuda_requested_rocm_detected_falls_back_to_cpu(self):
@@ -244,10 +235,7 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        from unittest.mock import patch
-        with patch.dict("os.environ", {}, clear=False):
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
-            backend, _ = server._select_preferred_backend("auto")
+        backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cpu")
 

@@ -11,16 +11,6 @@ from test_device_selection import FakeTorchBuilder, _install_fake_torch
 
 
 class NpuDeviceSelectionTest(unittest.TestCase):
-    def setUp(self):
-        self.previous_device = os.environ.get("P_CODE_RAG_DEVICE")
-        os.environ["P_CODE_RAG_DEVICE"] = "auto"
-
-    def tearDown(self):
-        if self.previous_device is None:
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
-        else:
-            os.environ["P_CODE_RAG_DEVICE"] = self.previous_device
-
     def _server(self):
         return _install_fake_torch(FakeTorchBuilder())("test/model")
 

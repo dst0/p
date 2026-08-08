@@ -16,9 +16,9 @@ For a source checkout, run:
 
 On supported macOS and Linux systems, this builds and relinks p, then installs the per-user `com.dst.p.code-index` service. The installer supports arm64 and x64, downloads a checksummed native Qdrant binary, creates a Python virtual environment with pinned embedding dependencies, and finishes with a real end-to-end semantic-search smoke test against a temporary repository. Docker is not used.
 
-On Linux x64, the installer selects a PyTorch build from the available compute device: ROCm 7.2 when `/dev/kfd` exposes AMD compute, CUDA 12.6 when an NVIDIA compute device is present, and CPU-only otherwise. The selected flavor is part of the environment marker, so rerunning `./reinstall.sh` replaces an old CPU-only environment after ROCm or CUDA becomes available. Set `P_CODE_RAG_TORCH_BACKEND` to `cpu`, `rocm`, or `cuda` while reinstalling to override automatic selection.
+On Linux x64, the installer selects a PyTorch build from the available compute device: ROCm 7.2 when `/dev/kfd` exposes AMD compute, CUDA 12.6 when an NVIDIA compute device is present, and CPU-only otherwise. The selected flavor is part of the environment marker, so rerunning `./reinstall.sh` replaces an old CPU-only environment after ROCm or CUDA becomes available. Set `torchBackend` to `cpu`, `rocm`, or `cuda` in `~/.p/agent/code-rag.json` to override automatic selection.
 
-Device selection is hardware-aware. The interactive installer detects supported NPU, GPU, and CPU paths first and displays only choices that the current host can use. A saved accelerator selection is rejected and replaced when its hardware or supported host runtime is no longer present. NPU installation is automatic on supported Linux x64 hosts: the installer reads PCI vendor/device IDs, installs the matched system and Python components, verifies that the runtime enumerates the NPU, and then runs the same real semantic-search smoke test used by every reinstall. A generic `P_CODE_RAG_DEVICE=npu` selects the detected vendor. Use `ryzenai` or `intel-openvino-npu` when a machine exposes supported NPUs from both vendors or when an explicit backend is desired.
+Device selection is hardware-aware. The interactive installer detects supported NPU, GPU, and CPU paths first and displays only choices that the current host can use. A saved accelerator selection is rejected and replaced when its hardware or supported host runtime is no longer present. NPU installation is automatic on supported Linux x64 hosts: the installer reads PCI vendor/device IDs, installs the matched system and Python components, verifies that the runtime enumerates the NPU, and then runs the same real semantic-search smoke test used by every reinstall. A generic `"embeddingDevice": "npu"` selects the detected vendor. Use `ryzenai` or `intel-openvino-npu` when a machine exposes supported NPUs from both vendors or when an explicit backend is desired.
 
 - AMD Ryzen AI installs the pinned Ryzen AI 1.7.1 stack for supported Strix Point (STX) and Krackan Point (KRK) devices on Ubuntu 24.04. The installer builds the matched XRT/XDNA driver revision from AMD's public source, installs the public `onnxruntime-vitisai` and `voe` wheels into the managed Python 3.12 environment, configures XRT and the Vitis AI cache, and requires an actual `VitisAIExecutionProvider` session. Phoenix/Hawk Point devices are rejected because AMD's current Linux release does not support them.
 - Intel Core Ultra installs the pinned Intel NPU 1.32.1, Level Zero 1.27.0, OpenVINO 2026.1, and Optimum Intel 2.1 stack on Ubuntu 24.04. Meteor Lake, Arrow Lake, Lunar Lake, Panther Lake, and Wildcat Lake PCI devices are recognized. The installer configures `render` access and requires OpenVINO to enumerate and compile the embedding model for `NPU`.
@@ -156,8 +156,7 @@ Code-index settings are loaded in this order, with later sources overriding earl
 1. built-in defaults;
 2. `~/.p/agent/code-rag.json`;
 3. `<repository>/.p/code-rag.json`;
-4. supported environment variables;
-5. explicit SDK options.
+4. explicit SDK options.
 
 Important fields include:
 
@@ -169,7 +168,12 @@ Important fields include:
   "qdrantUrl": "http://127.0.0.1:6333",
   "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
+  "embeddingDevice": "auto",
   "embeddingDimensions": 1024,
+  "torchBackend": "auto",
+  "maxEmbeddingBatchSize": 64,
+  "maxCpuThreads": 12,
+  "maxSequenceLength": 2048,
   "searchTimeoutMs": 30000,
   "defaultLimit": 8,
   "maxLimit": 20,
@@ -181,36 +185,34 @@ Important fields include:
 }
 ```
 
-Supported environment overrides include `P_CODE_RAG_ENABLED`, `P_CODE_RAG_AUTO_REFRESH`, `P_CODE_RAG_QDRANT_URL`, `P_CODE_RAG_QDRANT_BINARY`, `P_CODE_RAG_QDRANT_DATA_DIR`, `P_CODE_RAG_EMBEDDING_URL`, `P_CODE_RAG_EMBEDDING_MODEL`, `P_CODE_RAG_PYTHON`, `P_CODE_RAG_PREPARATION_MAX_WORKERS`, `P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB`, and `P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB`.
-
 File-preparation controls are safety ceilings:
 
-| Variable | Behavior |
+| Field | Behavior |
 |---|---|
-| `P_CODE_RAG_PREPARATION_MAX_WORKERS` | Maximum hashing/chunking workers, default 32; the planner can select fewer from CPU or memory limits |
-| `P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB` | Conservative memory budget per worker, default 128 MiB; large `maxFileBytes` settings automatically raise the effective estimate |
-| `P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB` | RAM excluded from the worker budget, default 512 MiB |
+| `preparationMaxWorkers` | Maximum hashing/chunking workers, default 32; the planner can select fewer from CPU or memory limits |
+| `preparationWorkerMemoryBytes` | Conservative memory budget per worker, default 128 MiB; large `maxFileBytes` settings automatically raise the effective estimate |
+| `preparationMemoryReserveBytes` | RAM excluded from the worker budget, default 512 MiB |
 
 The latest selected preparation plan is exposed in `RagStatus.preparation`, including worker count, effective available memory, reserve, in-flight memory ceiling, and whether worker startup fell back to in-process preparation. `maxSparseVocabularyTokens` is an additional hard ceiling; the active rebuild limit is the smaller of that value and a bound derived from currently available memory.
 
 Embedding resource controls are safe caps rather than fixed utilization targets:
 
-| Variable | Behavior |
+| Field | Behavior |
 |---|---|
-| `P_CODE_RAG_DEVICE` | Select `auto`, `cpu`, `cuda`, `rocm`, `mps`, `npu`, `ryzenai`, or `intel-openvino-npu`; Linux NPU selections install their matched runtime and fail closed, while unavailable GPU selections may fall back to CPU |
-| `P_CODE_RAG_OPENVINO_CACHE_DIR` | Override the persistent Intel OpenVINO compiled-model cache directory |
-| `P_CODE_RAG_VITISAI_CACHE_DIR` | Override the persistent AMD Vitis AI compiled-model cache directory |
-| `P_CODE_RAG_VITISAI_CACHE_KEY` | Override the AMD Vitis AI compiled-model cache key |
-| `P_CODE_RAG_VITISAI_CONFIG_FILE` | Optional Vitis AI provider configuration file for a custom validated deployment |
-| `P_CODE_RAG_VITISAI_LOG_LEVEL` | Vitis AI provider log level, default `error` |
-| `P_CODE_RAG_MAX_CPU_THREADS` | Maximum PyTorch CPU threads; the planner can select fewer when RAM is constrained |
-| `P_CODE_RAG_MAX_EMBED_BATCH_SIZE` | Maximum embedding micro-batch, default 64; the planner and OOM backoff can select less |
-| `P_CODE_RAG_MAX_SEQUENCE_LENGTH` | Maximum model context, default 2048 tokens; longer contexts reduce the planned batch budget |
-| `P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB` | Minimum RAM left outside the model budget, default 1024 MiB |
-| `P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB` | Minimum VRAM left outside the model budget, default 512 MiB |
-| `P_CODE_RAG_MODEL_PARAMETER_COUNT` | Conservative parameter-count estimate for custom models whose name does not include a size such as `0.6B` |
+| `embeddingDevice` | Select `auto`, `cpu`, `cuda`, `rocm`, `mps`, `npu`, `ryzenai`, or `intel-openvino-npu`; Linux NPU selections install their matched runtime and fail closed, while unavailable GPU selections may fall back to CPU |
+| `openvinoCacheDirectory` | Persistent Intel OpenVINO compiled-model cache directory |
+| `vitisaiCacheDirectory` | Persistent AMD Vitis AI compiled-model cache directory |
+| `vitisaiCacheKey` | AMD Vitis AI compiled-model cache key |
+| `vitisaiConfigFile` | Optional Vitis AI provider configuration file for a custom validated deployment |
+| `vitisaiLogLevel` | Vitis AI provider log level, default `error` |
+| `maxCpuThreads` | Maximum PyTorch CPU threads; the planner can select fewer when RAM is constrained |
+| `maxEmbeddingBatchSize` | Maximum embedding micro-batch, default 64; the planner and OOM backoff can select less |
+| `maxSequenceLength` | Maximum model context, default 2048 tokens; longer contexts reduce the planned batch budget |
+| `minSystemMemoryReserveBytes` | Minimum RAM left outside the model budget, default 1 GiB |
+| `minAcceleratorMemoryReserveBytes` | Minimum VRAM left outside the model budget, default 512 MiB |
+| `embeddingModelParameterCount` | Conservative parameter-count estimate for custom models whose name does not include a size such as `0.6B` |
 
-Set these variables while running `./reinstall.sh`; the generated launchd or systemd service records them. `P_CODE_RAG_TORCH_BACKEND` affects installation only and selects the PyTorch wheel flavor.
+Edit these fields in `~/.p/agent/code-rag.json` and rerun `./reinstall.sh`. The generated launchd or systemd service receives only the agent-directory and vendor runtime paths; indexing behavior always comes from the config file.
 
 Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is explicitly enabled. The managed local Qdrant auto-start applies only to loopback endpoints.
 
@@ -230,7 +232,7 @@ The embedding endpoint exposes its decision directly:
 curl -s http://127.0.0.1:18742/health
 ```
 
-Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProvider`, `fallbackOccurred`, `resource_plan.backend`, the RAM/VRAM byte counts under `memory`, and the vendor availability fields under `runtime`. On an AMD GPU machine, a null `torch_hip_version` means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or reinstall with `P_CODE_RAG_TORCH_BACKEND=rocm`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback. An AMD or Intel NPU plan must never report CPU; inspect the service error log and rerun the automatic installer if it does not start.
+Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProvider`, `fallbackOccurred`, `resource_plan.backend`, the RAM/VRAM byte counts under `memory`, and the vendor availability fields under `runtime`. On an AMD GPU machine, a null `torch_hip_version` means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or set `"torchBackend": "rocm"` in `code-rag.json`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback. An AMD or Intel NPU plan must never report CPU; inspect the service error log and rerun the automatic installer if it does not start.
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 

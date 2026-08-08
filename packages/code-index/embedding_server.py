@@ -271,7 +271,7 @@ class EmbeddingServer:
             "executionProvider": backend_health.get("executionProvider") or getattr(self.model, "provider", None),
             "requestedBackend": backend_health.get("requestedBackend") or self.requested_backend or (plan.get("preferred_backend") if plan else None),
             "selectedBackend": selected_backend,
-            "gpuAllowed": backend_health.get("gpuAllowed", False),
+            "gpuAllowed": backend_health.get("gpuAllowed", selected_backend != "cpu"),
             "fallbackOccurred": fallback_occurred,
             "fallbackReason": fallback_reason,
             "resource_plan": plan,
@@ -495,9 +495,7 @@ class EmbeddingServer:
             "Qwen/Qwen3-Embedding-0.6B": "onnx-community/Qwen3-Embedding-0.6B-ONNX",
         }
         pre_exported_hf = hf_onnx_repos.get(self.model_name)
-        has_onnx_source = pre_exported_hf or os.path.exists(os.path.join(onnx_cache_dir, "model.onnx"))
-
-        if has_onnx_source or plan.backend in {"coreml", "openvino", "vitisai"}:
+        if plan.backend in {"coreml", "cuda", "vitisai"}:
             try:
                 import onnxruntime as ort
                 from optimum.onnxruntime import ORTModelForFeatureExtraction

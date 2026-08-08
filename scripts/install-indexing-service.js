@@ -228,9 +228,10 @@ async function main() {
 				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
-				requestedBackend: indexingConfig.torchBackend === "auto"
-					? devicePlan.ragDevice
-					: indexingConfig.torchBackend,
+				requestedBackend:
+					indexingConfig.torchBackend && indexingConfig.torchBackend !== "auto"
+						? indexingConfig.torchBackend
+						: devicePlan.ragDevice,
 			});
 			break;
 		} catch (error) {
@@ -273,9 +274,10 @@ async function main() {
 				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
-				requestedBackend: indexingConfig.torchBackend === "auto"
-					? devicePlan.ragDevice
-					: indexingConfig.torchBackend,
+				requestedBackend:
+					indexingConfig.torchBackend && indexingConfig.torchBackend !== "auto"
+						? indexingConfig.torchBackend
+						: devicePlan.ragDevice,
 			});
 		}
 	}

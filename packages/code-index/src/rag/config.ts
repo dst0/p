@@ -107,6 +107,17 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "vitisaiLogLevel",
   "collectionPrefix",
 ]);
+const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
+  "auto",
+  "cpu",
+  "cuda",
+  "rocm",
+  "mps",
+  "npu",
+  "ryzenai",
+  "intel-openvino-npu",
+]);
+const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
 
 export function computeEmbeddingCompatibilityGroup(
   model: string,
@@ -160,6 +171,18 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   }
   if (settings.embeddingDimensions < 1 || !Number.isInteger(settings.embeddingDimensions)) {
     throw new Error("Code RAG embeddingDimensions must be a positive integer");
+  }
+  if (!EMBEDDING_DEVICES.has(settings.embeddingDevice)) {
+    throw new Error(`Code RAG embeddingDevice is unsupported: ${settings.embeddingDevice}`);
+  }
+  if (!TORCH_BACKENDS.has(settings.torchBackend)) {
+    throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
+  }
+  if (
+    settings.embeddingModelParameterCount !== undefined &&
+    (!Number.isSafeInteger(settings.embeddingModelParameterCount) || settings.embeddingModelParameterCount <= 0)
+  ) {
+    throw new Error("Code RAG embeddingModelParameterCount must be a positive integer");
   }
   if (settings.fullSparseRebuildChangeRatio < 0 || settings.fullSparseRebuildChangeRatio > 1) {
     throw new Error("Code RAG fullSparseRebuildChangeRatio must be between 0 and 1");
