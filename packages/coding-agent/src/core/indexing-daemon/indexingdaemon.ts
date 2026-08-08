@@ -8,7 +8,7 @@ import {
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
-import { computeIndexingVersion } from "../indexing-service.ts";
+import { computeIndexingVersion } from "../indexing-version.ts";
 import { DEFAULT_REPOSITORY_TIMEOUT_MS } from "./constants.ts";
 import { do_drainWorker, do_requestRefresh, do_startDrain } from "./indexingdaemon-methods/health-check.ts";
 import {

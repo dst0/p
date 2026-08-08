@@ -10,8 +10,6 @@ import {
   type RepoIndexingDecision,
 } from "./indexed-repos.ts";
 
-export { computeIndexingVersion } from "./indexing-version.ts";
-
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
 export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
 const INDEXING_SERVICE_REINSTALL_GRACE_MS = 5 * 60_000;

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { computeIndexingVersion } from "../src/core/indexing-service.ts";
+import { computeIndexingVersion } from "../src/core/indexing-version.ts";
 
 const temporaryDirectories: string[] = [];
 
