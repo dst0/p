@@ -826,17 +826,15 @@ def _coreml_ane_available() -> bool:
 
 
 def _vitisai_npu_available() -> bool:
+    if "AMD_VITISAI" in os.environ:
+        return True
+    if os.path.exists("/dev/accel/accel0") or os.path.exists("/dev/amdxdna") or os.path.exists("/sys/class/accel"):
+        return True
     try:
         import onnxruntime as ort
-        if "VitisAIExecutionProvider" in ort.get_available_providers():
-            return True
+        return "VitisAIExecutionProvider" in ort.get_available_providers()
     except Exception:
-        pass
-    # Device nodes alone are not sufficient — the VitisAI EP must be
-    # installed for ONNX Runtime to actually use the NPU.  Without it,
-    # claiming NPU availability leads to a cascade of fallbacks that
-    # ultimately crashes the embedding server.
-    return False
+        return False
 
 
 def _npu_available(backend: str = "npu") -> bool:

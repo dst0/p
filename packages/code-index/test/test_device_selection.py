@@ -278,18 +278,21 @@ class DeviceSelectionTest(unittest.TestCase):
                 backend, _ = server._select_preferred_backend(dev)
                 self.assertEqual(backend, dev)
 
-    def test_vitisai_npu_available_requires_execution_provider(self):
+    def test_vitisai_npu_available_detects_hardware_nodes_and_execution_provider(self):
         from unittest.mock import MagicMock, patch
         import embedding_server
 
         mock_ort = MagicMock()
         mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort}):
+        with patch.dict("sys.modules", {"onnxruntime": mock_ort}), patch("os.path.exists", return_value=False), patch.dict("os.environ", {}, clear=True):
             self.assertFalse(embedding_server._vitisai_npu_available())
 
         mock_ort_with_vitis = MagicMock()
         mock_ort_with_vitis.get_available_providers.return_value = ["VitisAIExecutionProvider", "CPUExecutionProvider"]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort_with_vitis}):
+        with patch.dict("sys.modules", {"onnxruntime": mock_ort_with_vitis}), patch("os.path.exists", return_value=False):
+            self.assertTrue(embedding_server._vitisai_npu_available())
+
+        with patch("os.path.exists", side_effect=lambda p: p == "/dev/accel/accel0"):
             self.assertTrue(embedding_server._vitisai_npu_available())
 
 
