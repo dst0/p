@@ -4,6 +4,8 @@ import * as path from "node:path";
 import { fileURLToPath } from "node:url";
 import { VirtualTerminal } from "../../../tui/test/virtual-terminal.ts";
 import { AgentSessionRuntime } from "../../src/core/agent-session-runtime.ts";
+import { findIndexWorkspaceRoot } from "../../src/core/indexed-repos.ts";
+import { IndexingService } from "../../src/core/indexing-service.ts";
 import { InteractiveMode } from "../../src/modes/interactive/interactive-mode.ts";
 import { createHarness, type Harness, type HarnessOptions } from "../suite/harness.ts";
 
@@ -28,7 +30,17 @@ export interface UIRegressionHarness {
 }
 
 export function sanitizeUIOutput(text: string): string {
-  return text.replace(/faux:\d+:[a-z0-9]+/g, "faux:static-id").replace(/🔎[^\n]*/g, "🔎 static-indexing-status");
+  return text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/p v\d+\.\d+\.\d+/g, "p v0.4.169")
+    .replace(/([^\n\s]+)\/packages\/coding-agent/g, "~/dev/p/packages/coding-agent")
+    .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
+      (inner.includes("/") || inner === "detached") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
+    )
+    .replace(/faux:\d+:[a-z0-9]+/g, "faux:static-id")
+    .replace(/🔎[^\n]*/g, "🔎 static-indexing-status");
 }
 
 export async function createUIRegressionHarness(options: UISnapshotHarnessOptions = {}): Promise<UIRegressionHarness> {
@@ -36,12 +48,19 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
   const height = options.height ?? 24;
 
   const harness = await createHarness(options);
+  const indexingService = new IndexingService(harness.tempDir);
+  const root1 = findIndexWorkspaceRoot(harness.session.sessionManager.getCwd());
+  const root2 = findIndexWorkspaceRoot(process.cwd());
+  indexingService.disableIndexing(root1);
+  indexingService.disableIndexing(root2);
+  indexingService.disableIndexing("/Users/dst/dev/p/packages/coding-agent");
+
   const terminal = new VirtualTerminal(width, height);
 
   const runtimeHost = new AgentSessionRuntime(
     harness.session,
     {
-      cwd: harness.tempDir,
+      cwd: "/Users/dst/dev/p/packages/coding-agent",
       agentDir: harness.tempDir,
       authStorage: harness.authStorage,
       modelRegistry: harness.session.modelRegistry,
@@ -53,6 +72,7 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
   );
 
   const mode = new InteractiveMode(runtimeHost, {});
+  mode.promptForCodeIndexingIfNeeded = async () => {};
   // Intercept TUI creation to use VirtualTerminal instead of ProcessTerminal
   (mode as any).ui.terminal = terminal;
 
@@ -97,7 +117,7 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
       return;
     }
 
-    const expectedText = fs.readFileSync(snapshotPath, "utf-8");
+    const expectedText = sanitizeUIOutput(fs.readFileSync(snapshotPath, "utf-8"));
     assert.strictEqual(
       sanitizedActualText,
       expectedText,

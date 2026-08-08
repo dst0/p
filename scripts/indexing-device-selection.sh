@@ -212,8 +212,8 @@ check_and_prompt_missing_indexing_deps() {
       if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import onnxruntime" 2>/dev/null; then
         missing_deps+=("onnxruntime")
       fi
-      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import optimum" 2>/dev/null; then
-        missing_deps+=("optimum")
+      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import optimum.onnxruntime" 2>/dev/null; then
+        missing_deps+=("optimum[onnxruntime]")
       fi
     else
       if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import onnxruntime" 2>/dev/null; then
@@ -222,8 +222,8 @@ check_and_prompt_missing_indexing_deps() {
       if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import openvino" 2>/dev/null; then
         missing_deps+=("openvino")
       fi
-      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import optimum" 2>/dev/null; then
-        missing_deps+=("optimum")
+      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import optimum.onnxruntime" 2>/dev/null; then
+        missing_deps+=("optimum[onnxruntime]")
       fi
     fi
   fi

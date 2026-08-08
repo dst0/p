@@ -55,11 +55,11 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.4.170",
+  "version": "0.4.172",
   "overrides": {
     "esbuild": "0.28.1",
     "rimraf": "6.1.2",
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "gaxios": {
       "rimraf": "6.1.2"
     }

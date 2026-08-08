@@ -244,7 +244,10 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        from unittest.mock import patch
+        with patch.dict("os.environ", {}, clear=False):
+            os.environ.pop("P_CODE_RAG_DEVICE", None)
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cpu")
 
