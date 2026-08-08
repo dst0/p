@@ -27,6 +27,21 @@ Both Linux NPU paths fail closed inside the embedding runtime: they never silent
 
 On Apple Silicon, the installer uses the real PyTorch MPS embedding path. Existing `npu` and `apple-ane` selections are routed to MPS because the former bundled Swift ANE worker produced placeholder vectors rather than verified Qwen embeddings. Intel macOS continues to use its compatible CPU path.
 
+## Official accelerator references
+
+The accelerator implementations and installers are based on the primary vendor and runtime documentation below. Hardware detection alone is not treated as backend support: p exposes an accelerator only after the required runtime can enumerate it and the embedding pipeline passes its inference probe. Installer manifests pin exact versions instead of following an unversioned latest release.
+
+| Platform | Indexing runtime | Official references |
+|---|---|---|
+| AMD Phoenix and Hawk Point NPU (`npu1`, AIE2) | AMD XDNA/XRT with MLIR-AIE IRON and compiled NPU kernels | [MLIR-AIE device support](https://xilinx.github.io/mlir-aie/dev/Devices/), [Linux and IRON setup](https://xilinx.github.io/mlir-aie/dev/getting-started/), [IRON NPU tutorial](https://xilinx.github.io/mlir-aie/dev/programming_guide/mini_tutorial/), [IRON compilation stages](https://xilinx.github.io/mlir-aie/dev/programming_guide/compilation_stages/), [AMD XDNA Linux driver](https://github.com/amd/xdna-driver) |
+| AMD Strix, Strix Halo, and Krackan NPU (`npu2`, AIE2P) | AMD Ryzen AI/Vitis AI | [Ryzen AI release notes and compatibility table](https://ryzenai.docs.amd.com/en/latest/relnotes.html), [Ryzen AI Linux installation](https://ryzenai.docs.amd.com/en/latest/linux.html), [ONNX Runtime Vitis AI Execution Provider](https://onnxruntime.ai/docs/execution-providers/Vitis-AI-ExecutionProvider.html), [AMD XDNA Linux driver](https://github.com/amd/xdna-driver) |
+| Intel Core Ultra NPU | Intel Linux NPU driver with OpenVINO `NPU` device | [OpenVINO NPU device](https://docs.openvino.ai/2026/openvino-workflow/running-inference/inference-devices-and-modes/npu-device.html), [Intel Linux NPU driver](https://github.com/intel/linux-npu-driver), [Intel NPU driver releases](https://github.com/intel/linux-npu-driver/releases) |
+| Apple Silicon | PyTorch MPS over Metal GPU; this is not presented as ANE execution | [PyTorch MPS backend](https://docs.pytorch.org/docs/stable/notes/mps.html), [Apple: Accelerated PyTorch training on Mac](https://developer.apple.com/metal/pytorch/) |
+| AMD GPU fallback | PyTorch for ROCm | [ROCm installation for Linux](https://rocm.docs.amd.com/projects/install-on-linux/en/latest/), [PyTorch on ROCm](https://rocm.docs.amd.com/projects/ai-ecosystem/en/latest/frameworks/pytorch/install.html) |
+| NVIDIA GPU fallback | PyTorch for CUDA | [PyTorch local installation](https://pytorch.org/get-started/locally/), [PyTorch CUDA semantics](https://docs.pytorch.org/docs/stable/notes/cuda.html) |
+
+AMD's current Ryzen AI compatibility matrix and the lower-level MLIR-AIE device matrix describe different support layers. Ryzen AI documents the model types supported by its packaged inference stack, while MLIR-AIE documents programmable access to the underlying `npu1` and `npu2` hardware. p therefore keeps the Phoenix/Hawk Point IRON path separate from the Strix/Krackan Vitis AI path rather than interpreting general XDNA device support as proof that a particular embedding graph can run.
+
 The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
 
 The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash. A per-agent-directory daemon lock prevents manual, launchd, and systemd starts from running overlapping index writers. Reinstall also stops validated stale daemon and managed-backend processes left by an older service installation before running its smoke test.
