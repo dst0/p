@@ -249,8 +249,10 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const savedDevice = readSavedSetting("indexing-device");
-	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "mps" : "cpu";
+	const hasNpuDevice =
+		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
+	const defaultDevice =
+		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
 	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
 

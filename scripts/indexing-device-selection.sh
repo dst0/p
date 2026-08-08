@@ -123,16 +123,28 @@ prompt_indexing_device_and_batch_size_selection() {
     local embed_values=()
     if [[ "$(uname)" == "Darwin" ]]; then
       if [[ "$(uname -m)" == "arm64" ]]; then
+        embed_choices+=("npu (recommended – Neural Processing Unit / Apple Neural Engine)")
+        embed_values+=("npu")
         embed_choices+=("mps (Apple Silicon Metal – uses unified memory)")
         embed_values+=("mps")
         embed_choices+=("cpu (CPU only)")
         embed_values+=("cpu")
-        embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
-        embed_values+=("npu")
       fi
     else
-      embed_choices+=("cpu (recommended – leaves GPU free for inference)")
-      embed_values+=("cpu")
+      local has_npu=false
+      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
+        has_npu=true
+      fi
+
+      if [[ "$has_npu" == true ]]; then
+        embed_choices+=("npu (recommended – Neural Processing Unit / NPU accelerator)")
+        embed_values+=("npu")
+        embed_choices+=("cpu (CPU only – leaves GPU free for inference)")
+        embed_values+=("cpu")
+      else
+        embed_choices+=("cpu (recommended – leaves GPU free for inference)")
+        embed_values+=("cpu")
+      fi
       if [[ -e /dev/kfd ]]; then
         embed_choices+=("rocm (AMD GPU – uses VRAM for embedding)")
         embed_values+=("rocm")
@@ -140,10 +152,6 @@ prompt_indexing_device_and_batch_size_selection() {
       if [[ -e /dev/nvidiactl ]]; then
         embed_choices+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
         embed_values+=("cuda")
-      fi
-      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
-        embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
-        embed_values+=("npu")
       fi
     fi
 
