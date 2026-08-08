@@ -20,3 +20,6 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+## 2026-08-08 - String concatenations in Array.filter()
+**Learning:** Constructing strings inside an iterative function like `filter` using `${m.provider}/${m.id}` incurs a massive performance penalty when executing over many items.
+**Action:** When filtering or searching objects based on composite string keys, pre-split the search target or compare individual fields directly rather than concatenating the object fields to match the target string inside the loop.

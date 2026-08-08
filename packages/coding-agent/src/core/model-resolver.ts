@@ -84,9 +84,19 @@ export function findExactModelReferenceMatch(
 
   const normalizedReference = trimmedReference.toLowerCase();
 
-  const canonicalMatches = availableModels.filter(
-    (model) => `${model.provider}/${model.id}`.toLowerCase() === normalizedReference,
-  );
+  // ⚡ Bolt: Avoid string allocations in filter loop by comparing parts directly
+  const slashIndexInRef = normalizedReference.indexOf("/");
+  let canonicalMatches: typeof availableModels = [];
+  if (slashIndexInRef !== -1) {
+    const refProvider = normalizedReference.substring(0, slashIndexInRef);
+    const refId = normalizedReference.substring(slashIndexInRef + 1);
+    canonicalMatches = availableModels.filter(
+      (model) => model.provider.toLowerCase() === refProvider && model.id.toLowerCase() === refId,
+    );
+  } else {
+    canonicalMatches = [];
+  }
+
   if (canonicalMatches.length === 1) {
     return canonicalMatches[0];
   }
@@ -260,6 +270,12 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
   const availableModels = await modelRegistry.getAvailable();
   const scopedModels: ScopedModel[] = [];
 
+  // ⚡ Bolt: Pre-calculate fullId to avoid O(P*M) string allocations during glob filtering
+  const availableModelsWithFullIds = availableModels.map((m) => ({
+    model: m,
+    fullId: `${m.provider}/${m.id}`,
+  }));
+
   for (const pattern of patterns) {
     // Check if pattern contains glob characters
     if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
@@ -279,10 +295,9 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
       // Match against "provider/modelId" format OR just model ID
       // This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
       const matcher = new Minimatch(globPattern, { nocase: true });
-      const matchingModels = availableModels.filter((m) => {
-        const fullId = `${m.provider}/${m.id}`;
-        return matcher.match(fullId) || matcher.match(m.id);
-      });
+      const matchingModels = availableModelsWithFullIds
+        .filter((m) => matcher.match(m.fullId) || matcher.match(m.model.id))
+        .map((m) => m.model);
 
       if (matchingModels.length === 0) {
         console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
@@ -402,8 +417,15 @@ export function resolveCliModel(options: {
   // This handles models whose IDs naturally contain slashes (e.g. OpenRouter-style IDs).
   if (!provider) {
     const lower = cliModel.toLowerCase();
+    // ⚡ Bolt: Avoid string allocations in find loop by pre-splitting the target
+    const slashIdx = lower.indexOf("/");
+    const lowerProv = slashIdx !== -1 ? lower.substring(0, slashIdx) : "";
+    const lowerId = slashIdx !== -1 ? lower.substring(slashIdx + 1) : lower;
+
     const exact = availableModels.find(
-      (m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
+      (m) =>
+        m.id.toLowerCase() === lower ||
+        (slashIdx !== -1 && m.provider.toLowerCase() === lowerProv && m.id.toLowerCase() === lowerId),
     );
     if (exact) {
       return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
@@ -456,8 +478,15 @@ export function resolveCliModel(options: {
   // looks like a provider but the full string is actually a model id on openrouter.
   if (inferredProvider) {
     const lower = cliModel.toLowerCase();
+    // ⚡ Bolt: Avoid string allocations in find loop by pre-splitting the target
+    const slashIdx = lower.indexOf("/");
+    const lowerProv = slashIdx !== -1 ? lower.substring(0, slashIdx) : "";
+    const lowerId = slashIdx !== -1 ? lower.substring(slashIdx + 1) : lower;
+
     const exact = availableModels.find(
-      (m) => m.id.toLowerCase() === lower || `${m.provider}/${m.id}`.toLowerCase() === lower,
+      (m) =>
+        m.id.toLowerCase() === lower ||
+        (slashIdx !== -1 && m.provider.toLowerCase() === lowerProv && m.id.toLowerCase() === lowerId),
     );
     if (exact) {
       return { model: exact, warning: undefined, thinkingLevel: undefined, error: undefined };
