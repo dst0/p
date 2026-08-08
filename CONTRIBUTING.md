@@ -61,7 +61,7 @@ Before submitting a PR:
 
 ```bash
 npm run check
-./test.sh
+npm run test:unit
 ```
 
 Both must pass.

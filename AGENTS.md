@@ -15,6 +15,10 @@
 
 ## Code Quality
 
+- Code files must contain at most 300 physical lines. `npm run check:file-structure` enforces the limit for new files and prevents legacy baseline violations from growing; tighten or remove baseline entries whenever a legacy file is reduced.
+- Keep one class or runtime entity per file. Supporting types for that entity may stay with it, but additional classes/entities belong in descriptively named files.
+- Use descriptive split names based on responsibility. Never create generic `part1`, `part2`, or similar continuation files.
+- Treat file splits as behavior-preserving refactors: establish a clean baseline, inspect symbol references and import cycles, retain generic/override method contracts explicitly, and run focused regression tests before and after the split. Never introduce circular delegation or self-recursive forwarding.
 - Avoid zero-length insertions (`was: ""`) or line-based replacements without anchors. If positional/line-based edits are used, you must run compiler checks or inspect the edited lines immediately after each edit to catch offset drift and corruption before proceeding.
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - No `any` unless absolutely necessary.
@@ -33,7 +37,7 @@
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `./test.sh` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
+- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 
 ## Version Bump
 
@@ -42,7 +46,7 @@
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
-- Before pushing code changes, run the touched focused tests, `./test.sh` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
+- Before pushing code changes, run the touched focused tests, `npm run test:unit` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
 - After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
@@ -121,7 +125,7 @@ Run the TUI in a controlled terminal (from the repo root):
 
 ```bash
 tmux new-session -d -s p-test -x 80 -y 24
-tmux send-keys -t p-test "./p-test.sh" Enter
+tmux send-keys -t p-test "npm run dev --" Enter
 sleep 3 && tmux capture-pane -t p-test -p     # capture after startup
 tmux send-keys -t p-test "your prompt here" Enter
 tmux send-keys -t p-test Escape               # special keys (also C-o for ctrl+o, etc.)
