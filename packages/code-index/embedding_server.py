@@ -416,6 +416,13 @@ class EmbeddingServer:
                 accelerator_total_bytes=memory.system_total_bytes,
                 accelerator_free_bytes=memory.system_available_bytes,
             )
+        elif _npu_available("npu"):
+            backend = "npu"
+            memory = replace(
+                memory,
+                accelerator_total_bytes=memory.system_total_bytes,
+                accelerator_free_bytes=memory.system_available_bytes,
+            )
 
         self._cached_accelerator = (backend, memory, now)
         return backend, memory
@@ -495,9 +502,17 @@ class EmbeddingServer:
                 if plan.backend in {"cuda", "gpu"}:
                     provider = "CUDAExecutionProvider"
                     device_label = "cuda:0 (ONNX Runtime)"
-                elif plan.backend in {"openvino", "npu"} and sys.platform == "linux":
-                    provider = "OpenVINOExecutionProvider"
-                    device_label = "openvino (ONNX Runtime)"
+                elif plan.backend in {"openvino", "npu", "vitisai"} and sys.platform == "linux":
+                    available_providers = ort.get_available_providers()
+                    if "VitisAIExecutionProvider" in available_providers:
+                        provider = "VitisAIExecutionProvider"
+                        device_label = "vitisai (AMD XDNA NPU via ONNX Runtime)"
+                    elif "OpenVINOExecutionProvider" in available_providers:
+                        provider = "OpenVINOExecutionProvider"
+                        device_label = "openvino (ONNX Runtime)"
+                    else:
+                        provider = "CPUExecutionProvider"
+                        device_label = "cpu (ONNX Runtime fallback)"
 
                 tokenizer = AutoTokenizer.from_pretrained(pre_exported_hf or self.model_name)
                 if os.path.exists(os.path.join(onnx_cache_dir, "model.onnx")):

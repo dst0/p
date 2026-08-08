@@ -141,8 +141,10 @@ prompt_indexing_device_and_batch_size_selection() {
         embed_choices+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
         embed_values+=("cuda")
       fi
-      embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
-      embed_values+=("npu")
+      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
+        embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
+        embed_values+=("npu")
+      fi
     fi
 
     if [[ "${#embed_choices[@]}" -gt 1 ]]; then
@@ -214,6 +216,9 @@ check_and_prompt_missing_indexing_deps() {
         missing_deps+=("optimum")
       fi
     else
+      if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import onnxruntime" 2>/dev/null; then
+        missing_deps+=("onnxruntime")
+      fi
       if [[ -f "$venv_python" ]] && ! "$venv_python" -c "import openvino" 2>/dev/null; then
         missing_deps+=("openvino")
       fi
