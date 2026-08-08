@@ -1,8 +1,8 @@
- extend p.                                                                      
+ extend p.
 
 
 ────────────────────────────────────────────────────────────────────────────────
->                                                                               
+>
 
 → Auto-compact            true
   Auto-resize images      true
@@ -20,5 +20,5 @@
 
   Type to search · Enter/Space to change · Esc to cancel
 ────────────────────────────────────────────────────────────────────────────────
-~/dev/p/packages/coding-agent (main)
+~/dev/p/packages/coding-agent (jules-3031333226822582307-9c98176c)
 🔎 static-indexing-status

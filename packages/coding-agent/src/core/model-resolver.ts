@@ -270,12 +270,6 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
   const availableModels = await modelRegistry.getAvailable();
   const scopedModels: ScopedModel[] = [];
 
-  // ⚡ Bolt: Pre-calculate fullId to avoid O(P*M) string allocations during glob filtering
-  const availableModelsWithFullIds = availableModels.map((m) => ({
-    model: m,
-    fullId: `${m.provider}/${m.id}`,
-  }));
-
   for (const pattern of patterns) {
     // Check if pattern contains glob characters
     if (pattern.includes("*") || pattern.includes("?") || pattern.includes("[")) {
@@ -295,9 +289,10 @@ export async function resolveModelScope(patterns: string[], modelRegistry: Model
       // Match against "provider/modelId" format OR just model ID
       // This allows "*sonnet*" to match without requiring "anthropic/*sonnet*"
       const matcher = new Minimatch(globPattern, { nocase: true });
-      const matchingModels = availableModelsWithFullIds
-        .filter((m) => matcher.match(m.fullId) || matcher.match(m.model.id))
-        .map((m) => m.model);
+      const matchingModels = availableModels.filter((m) => {
+        const fullId = `${m.provider}/${m.id}`;
+        return matcher.match(fullId) || matcher.match(m.id);
+      });
 
       if (matchingModels.length === 0) {
         console.warn(chalk.yellow(`Warning: No models match pattern "${pattern}"`));
