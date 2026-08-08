@@ -1,4 +1,5 @@
-import { dirname } from "path";
+import { existsSync, readFileSync } from "fs";
+import { dirname, join } from "path";
 import { fileURLToPath } from "url";
 import type { PackageJson } from "./types.ts";
 
@@ -11,7 +12,22 @@ export const isBunBinary =
 
 export const isBunRuntime = !!process.versions.bun;
 
-export const pkg: PackageJson = {};
+let loadedPkg: PackageJson = {};
+try {
+  let dir = __dirname;
+  while (dir !== dirname(dir)) {
+    const candidate = join(dir, "package.json");
+    if (existsSync(candidate)) {
+      loadedPkg = JSON.parse(readFileSync(candidate, "utf-8")) as PackageJson;
+      break;
+    }
+    dir = dirname(dir);
+  }
+} catch {
+  // Ignore fallback
+}
+
+export const pkg: PackageJson = loadedPkg;
 
 export const piConfigName: string | undefined = pkg.piConfig?.name;
 
