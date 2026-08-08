@@ -28,8 +28,17 @@ from dataclasses import replace
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 
+from embedding_runtime_config import (
+    EmbeddingRuntimeConfig,
+    config_path_from_arguments,
+    load_embedding_runtime_config,
+)
+
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
-if os.environ.get("P_CODE_RAG_DEVICE", "cpu").lower() == "cpu":
+_startup_runtime_config = load_embedding_runtime_config(
+    config_path_from_arguments(sys.argv[1:])
+)
+if _startup_runtime_config.device == "cpu":
     os.environ["CUDA_VISIBLE_DEVICES"] = "99"
     os.environ["HIP_VISIBLE_DEVICES"] = "99"
     os.environ["ROCR_VISIBLE_DEVICES"] = "99"
@@ -47,12 +56,10 @@ except ImportError:
 
 from resource_manager import (
     GIB,
-    MIB,
     MemorySnapshot,
     RuntimePlan,
     build_runtime_plan,
     estimate_model_parameter_count,
-    read_positive_int_environment,
     system_memory_snapshot,
 )
 from embedding_backends.onnx_embedding_wrapper import (
@@ -89,8 +96,13 @@ def get_current_rss_mb() -> float:
 
 
 class EmbeddingServer:
-    def __init__(self, model_name: str = "Qwen/Qwen3-Embedding-0.6B"):
+    def __init__(
+        self,
+        model_name: str = "Qwen/Qwen3-Embedding-0.6B",
+        runtime_config: EmbeddingRuntimeConfig | None = None,
+    ):
         self.model_name = model_name
+        self.runtime_config = runtime_config or EmbeddingRuntimeConfig()
         self.model = None
         self.dim = 1024
         self.plan: RuntimePlan | None = None
@@ -108,18 +120,14 @@ class EmbeddingServer:
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
-        requested_device = os.environ.get("P_CODE_RAG_DEVICE", "auto").lower()
+        requested_device = self.runtime_config.device.lower()
         self.requested_backend = requested_device
         preferred_backend, memory = self._select_preferred_backend(requested_device)
         self.fail_closed_backend = preferred_backend in {"vitisai", "openvino"}
-        self.model_parameter_count = read_positive_int_environment(
-            "P_CODE_RAG_MODEL_PARAMETER_COUNT",
-            self.model_parameter_count,
+        self.model_parameter_count = (
+            self.runtime_config.model_parameter_count or self.model_parameter_count
         )
-        self.sequence_length = read_positive_int_environment(
-            "P_CODE_RAG_MAX_SEQUENCE_LENGTH",
-            2048,
-        )
+        self.sequence_length = self.runtime_config.max_sequence_length
         self.plan = self._build_plan(preferred_backend, memory, model_resident=False)
         self.startup_reason = self.plan.reason
         if not self.plan.usable:
@@ -218,7 +226,7 @@ class EmbeddingServer:
                     continue
                 raise RuntimeError(
                     "Embedding ran out of memory at batch size 1; "
-                    "free more RAM or reduce P_CODE_RAG_MAX_SEQUENCE_LENGTH"
+                    "free more RAM or reduce maxSequenceLength in code-rag.json"
                 ) from error
             output.extend(embeddings)
             offset += batch_size
@@ -310,13 +318,16 @@ class EmbeddingServer:
             "openvino-npu",
         }
         if requested_device not in valid_devices:
-            raise ValueError(f"P_CODE_RAG_DEVICE must be one of: {', '.join(sorted(valid_devices))}")
+            raise ValueError(f"embeddingDevice must be one of: {', '.join(sorted(valid_devices))}")
         if requested_device == "cpu":
             return "cpu", system_memory_snapshot()
         if requested_device == "intel-openvino-cpu":
             return "cpu", system_memory_snapshot()
         detected_backend, memory = self._detect_accelerator()
-        expected_backend = os.environ.get("P_CODE_RAG_EXPECTED_BACKEND")
+        expected_backend = {
+            "amd-rocm": "rocm",
+            "nvidia-cuda": "cuda",
+        }.get(requested_device, requested_device)
         if (
             requested_device == "auto"
             and expected_backend in {"cuda", "rocm"}
@@ -396,7 +407,7 @@ class EmbeddingServer:
         return "cpu", memory
 
     def _detect_accelerator(self) -> tuple[str | None, MemorySnapshot]:
-        if os.environ.get("P_CODE_RAG_DEVICE", "cpu").lower() == "cpu":
+        if self.runtime_config.device.lower() == "cpu":
             return None, system_memory_snapshot()
         now = time.monotonic()
         if hasattr(self, "_cached_accelerator") and self._cached_accelerator is not None:
@@ -436,27 +447,16 @@ class EmbeddingServer:
         return memory
 
     def _build_plan(self, backend: str, memory: MemorySnapshot, model_resident: bool) -> RuntimePlan:
-        max_batch_size = read_positive_int_environment("P_CODE_RAG_MAX_EMBED_BATCH_SIZE", 8)
-        max_cpu_threads = read_positive_int_environment(
-            "P_CODE_RAG_MAX_CPU_THREADS",
-            os.cpu_count() or 1,
-        )
-        min_system_reserve_bytes = (
-            read_positive_int_environment("P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB", 1024) * MIB
-        )
-        min_accelerator_reserve_bytes = (
-            read_positive_int_environment("P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB", 512) * MIB
-        )
         return build_runtime_plan(
             preferred_backend=backend,
             logical_cpu_count=os.cpu_count() or 1,
             memory=memory,
             model_parameter_count=self.model_parameter_count,
             sequence_length=self.sequence_length,
-            max_batch_size=max_batch_size,
-            max_cpu_threads=max_cpu_threads,
-            min_system_reserve_bytes=min_system_reserve_bytes,
-            min_accelerator_reserve_bytes=min_accelerator_reserve_bytes,
+            max_batch_size=self.runtime_config.max_embedding_batch_size,
+            max_cpu_threads=self.runtime_config.max_cpu_threads,
+            min_system_reserve_bytes=self.runtime_config.min_system_memory_reserve_bytes,
+            min_accelerator_reserve_bytes=self.runtime_config.min_accelerator_memory_reserve_bytes,
             model_resident=model_resident,
         )
 
@@ -474,7 +474,11 @@ class EmbeddingServer:
             from embedding_backends.base import ModelSpec
             from embedding_backends.openvino_backend import OpenVINOBackend
 
-            openvino_backend = OpenVINOBackend("intel-openvino-npu", strict=True)
+            openvino_backend = OpenVINOBackend(
+                "intel-openvino-npu",
+                strict=True,
+                cache_directory=self.runtime_config.openvino_cache_directory,
+            )
             openvino_backend.load(
                 ModelSpec(
                     model_name=self.model_name,
@@ -519,7 +523,13 @@ class EmbeddingServer:
                     if "VitisAIExecutionProvider" in available_providers:
                         provider = "VitisAIExecutionProvider"
                         device_label = "vitisai (AMD XDNA NPU via ONNX Runtime)"
-                        provider_options = _vitisai_provider_options(self.model_name)
+                        provider_options = _vitisai_provider_options(
+                            self.model_name,
+                            cache_dir=self.runtime_config.vitisai_cache_directory,
+                            cache_key=self.runtime_config.vitisai_cache_key,
+                            config_file=self.runtime_config.vitisai_config_file,
+                            log_level=self.runtime_config.vitisai_log_level,
+                        )
                         session_options.add_session_config_entry("session.disable_cpu_ep_fallback", "1")
                     else:
                         raise RuntimeError("VitisAIExecutionProvider is not available in this Python environment")
@@ -840,11 +850,13 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 def main():
     parser = argparse.ArgumentParser(description="Embedding server for code-index")
     parser.add_argument("--port", type=int, default=18742)
-    parser.add_argument("--model", default="Qwen/Qwen3-Embedding-0.6B")
+    parser.add_argument("--model")
+    parser.add_argument("--config")
     args = parser.parse_args()
+    runtime_config = load_embedding_runtime_config(args.config)
 
     global server
-    server = EmbeddingServer(args.model)
+    server = EmbeddingServer(args.model or runtime_config.embedding_model, runtime_config)
     server.load()
 
     addr = ("127.0.0.1", args.port)

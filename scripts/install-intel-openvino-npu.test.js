@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	INTEL_OPENVINO_NPU_MANIFEST,
-	buildIntelOpenVinoEnvironment,
+	buildIntelOpenVinoConfig,
 	parseKernelVersion,
 	parseOsRelease,
 	resolveIntelOpenVinoNpuPlatform,
@@ -94,14 +94,14 @@ test("marks kernels older than the Intel NPU minimum for automatic HWE upgrade",
 	assert.equal(plan.requiresKernelUpgrade, true);
 });
 
-test("builds a persistent OpenVINO compilation cache environment", () => {
-	assert.deepEqual(buildIntelOpenVinoEnvironment("/home/test/.p/agent"), {
-		P_CODE_RAG_OPENVINO_CACHE_DIR: "/home/test/.p/agent/indexing-service/openvino-cache",
+test("builds a persistent OpenVINO compilation cache config", () => {
+	assert.deepEqual(buildIntelOpenVinoConfig("/home/test/.p/agent"), {
+		openvinoCacheDirectory: "/home/test/.p/agent/indexing-service/openvino-cache",
 	});
 	assert.deepEqual(
-		buildIntelOpenVinoEnvironment("/home/test/.p/agent", {
-			P_CODE_RAG_OPENVINO_CACHE_DIR: "/srv/openvino-cache",
+		buildIntelOpenVinoConfig("/home/test/.p/agent", {
+			openvinoCacheDirectory: "/srv/openvino-cache",
 		}),
-		{ P_CODE_RAG_OPENVINO_CACHE_DIR: "/srv/openvino-cache" },
+		{ openvinoCacheDirectory: "/srv/openvino-cache" },
 	);
 });

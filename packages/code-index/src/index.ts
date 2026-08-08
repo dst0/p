@@ -19,6 +19,7 @@ export {
 export { CodeIndexer } from "./indexer.ts";
 export { QdrantClient } from "./qdrant.ts";
 export { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "./rag/config.ts";
+export type { EmbeddingDevice, EmbeddingRuntimeSettings } from "./rag/embedding-settings.ts";
 export { CodeRagError, WorkspaceCodeRagService } from "./rag/service.ts";
 export type {
   CodeRagService,

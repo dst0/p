@@ -125,10 +125,10 @@ export function detectIntelNpuPciDevices(sysfsRoot = "/sys/bus/pci/devices") {
 	return devices;
 }
 
-export function buildIntelOpenVinoEnvironment(agentDirectory, source = process.env) {
+export function buildIntelOpenVinoConfig(agentDirectory, source = {}) {
 	return {
-		P_CODE_RAG_OPENVINO_CACHE_DIR:
-			source.P_CODE_RAG_OPENVINO_CACHE_DIR
+		openvinoCacheDirectory:
+			source.openvinoCacheDirectory
 			?? path.join(agentDirectory, "indexing-service", "openvino-cache"),
 	};
 }

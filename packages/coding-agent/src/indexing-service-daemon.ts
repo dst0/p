@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { getAgentDir } from "./config.ts";
 import { IndexingDaemon } from "./core/indexing-daemon.ts";
+import { createIndexingDaemonOptions } from "./core/indexing-daemon-config.ts";
 import { INDEXING_SERVICE_REINSTALL_FILE } from "./core/indexing-service.ts";
 
 const REINSTALL_CONTROL_FILE = "reinstall-control.json";
@@ -50,13 +51,7 @@ export async function runIndexingService(): Promise<void> {
     `${JSON.stringify({ pid: process.pid, protocolVersion: 1, startedAt: new Date().toISOString() })}\n`,
     { mode: 0o600 },
   );
-  const daemon = new IndexingDaemon({
-    agentDir,
-    qdrantBinary: process.env.P_CODE_RAG_QDRANT_BINARY ?? "qdrant",
-    qdrantDataDirectory: process.env.P_CODE_RAG_QDRANT_DATA_DIR ?? path.join(agentDir, "code-rag", "qdrant"),
-    pythonExecutable: process.env.P_CODE_RAG_PYTHON ?? "python3",
-    embeddingModel: process.env.P_CODE_RAG_EMBEDDING_MODEL ?? "Qwen/Qwen3-Embedding-0.6B",
-  });
+  const daemon = new IndexingDaemon(createIndexingDaemonOptions(agentDir));
   try {
     await daemon.start();
 

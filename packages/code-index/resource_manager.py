@@ -241,19 +241,6 @@ def build_runtime_plan(
     )
 
 
-def read_positive_int_environment(name: str, default: int) -> int:
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError as error:
-        raise ValueError(f"{name} must be a positive integer") from error
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
-
-
 def _power_of_two_floor(value: int) -> int:
     return 1 << (max(1, int(value)).bit_length() - 1)
 

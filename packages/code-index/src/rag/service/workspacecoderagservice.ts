@@ -113,6 +113,7 @@ export class WorkspaceCodeRagService implements CodeRagService {
         this.settings.embeddingModel,
         {
           pythonExecutable: this.settings.pythonExecutable,
+          configPath: options.userConfigPath,
           startupTimeoutMs: this.settings.embeddingStartupTimeoutMs,
           requestTimeoutMs: this.settings.embeddingTimeoutMs,
           batchSize: this.settings.encodeBatchSize,

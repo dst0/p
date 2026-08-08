@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	collectResourceEnvironment,
 	getQdrantAsset,
 	getQdrantExtractionArgs,
 	getSystemdUserUnitDirectory,
@@ -28,24 +27,6 @@ test("renders launchd and systemd services for the persistent daemon", () => {
 	assert.match(renderLaunchdPlist(values), /indexing-service-daemon\.js/);
 	assert.match(renderSystemdUnit(values), /Restart=always/);
 	assert.match(renderSystemdUnit(values), /indexing-service-daemon\.js/);
-});
-
-test("persists embedding and file-preparation resource overrides", () => {
-	assert.deepEqual(
-		collectResourceEnvironment({
-			P_CODE_RAG_MAX_CPU_THREADS: "12",
-			P_CODE_RAG_PREPARATION_MAX_WORKERS: "8",
-			P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB: "96",
-			P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB: "768",
-			UNRELATED_VALUE: "ignored",
-		}),
-		{
-			P_CODE_RAG_MAX_CPU_THREADS: "12",
-			P_CODE_RAG_PREPARATION_MAX_WORKERS: "8",
-			P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB: "96",
-			P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB: "768",
-		},
-	);
 });
 
 test("recognizes only the installed indexing daemon command", () => {
@@ -191,7 +172,7 @@ test("rejects unsupported accelerator wheel targets", () => {
 				architecture: "x64",
 				requestedBackend: "invalid",
 			}),
-		/P_CODE_RAG_TORCH_BACKEND/,
+		/torchBackend/,
 	);
 });
 

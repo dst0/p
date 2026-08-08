@@ -5,19 +5,17 @@ import { createInterface } from "node:readline/promises";
 import { fileURLToPath } from "node:url";
 import {
 	AMD_RYZEN_AI_MANIFEST,
+	buildAmdRyzenAiConfig,
 	buildAmdRyzenAiEnvironment,
 	installAmdRyzenAiSystemRuntime,
 } from "./install-amd-ryzen-ai.js";
 import {
 	INTEL_OPENVINO_NPU_MANIFEST,
-	buildIntelOpenVinoEnvironment,
+	buildIntelOpenVinoConfig,
 	installIntelOpenVinoNpuSystemRuntime,
 } from "./install-intel-openvino-npu.js";
-import {
-	collectResourceEnvironment,
-	resolveFallbackDeviceChoices,
-	resolveIndexingDevicePlan,
-} from "./indexing-install-plans.js";
+import { writeCodeRagConfig } from "./indexing-config.js";
+import { resolveFallbackDeviceChoices, resolveIndexingDevicePlan } from "./indexing-install-plans.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -64,39 +62,31 @@ export async function promptForDeviceFallback(error, failedDevice, planOptions) 
 	} finally {
 		readline.close();
 	}
-	fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
-	fs.writeFileSync(path.join(AGENT_DIR, "indexing-device"), `${selected.device}\n`, { mode: 0o600 });
-	delete process.env.P_CODE_RAG_TORCH_BACKEND;
-	for (const key of [
-		"P_CODE_RAG_OPENVINO_CACHE_DIR",
-		"P_CODE_RAG_VITISAI_CACHE_DIR",
-		"P_CODE_RAG_VITISAI_CACHE_KEY",
-		"P_CODE_RAG_VITISAI_CONFIG_FILE",
-		"P_CODE_RAG_VITISAI_LOG_LEVEL",
-	]) {
-		delete process.env[key];
-	}
-	process.env.P_CODE_RAG_DEVICE = selected.device;
+	writeCodeRagConfig(AGENT_DIR, { embeddingDevice: selected.device, torchBackend: "auto" });
 	console.log(`Using embedding fallback: ${selected.device}`);
 	return resolveIndexingDevicePlan({ ...planOptions, requestedDevice: selected.device });
 }
 
-export function buildServiceValues(devicePlan, torchPlan, venvPython, qdrantBinary) {
+export function buildManagedIndexingConfig(currentConfig, devicePlan, torchPlan, venvPython, qdrantBinary) {
+	const ragDevice = devicePlan.ragDevice;
+	return {
+		...currentConfig,
+		...(devicePlan.installAmdRyzenAi ? buildAmdRyzenAiConfig(VENV_DIR, currentConfig) : {}),
+		...(devicePlan.installIntelOpenVino ? buildIntelOpenVinoConfig(AGENT_DIR, currentConfig) : {}),
+		embeddingDevice: ragDevice,
+		pythonExecutable: venvPython,
+		qdrantBinary,
+		qdrantDataDirectory: QDRANT_DATA_DIR,
+		torchBackend: torchPlan.backend === "default" ? "auto" : torchPlan.backend,
+	};
+}
+
+export function buildServiceValues(devicePlan, venvPython) {
 	const ragDevice = devicePlan.ragDevice;
 	const environment = {
-		...collectResourceEnvironment(),
 		...(devicePlan.installAmdRyzenAi ? buildAmdRyzenAiEnvironment(VENV_DIR) : {}),
-		...(devicePlan.installIntelOpenVino ? buildIntelOpenVinoEnvironment(AGENT_DIR) : {}),
 		P_CODING_AGENT_DIR: AGENT_DIR,
-		P_CODE_RAG_PYTHON: venvPython,
-		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
-		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
-		P_CODE_RAG_EXPECTED_BACKEND: devicePlan.installAmdRyzenAi
-			? "vitisai"
-			: devicePlan.installIntelOpenVino
-				? "openvino"
-				: torchPlan.backend,
-		P_CODE_RAG_DEVICE: ragDevice,
+		PATH: `${path.dirname(venvPython)}:${process.env.PATH ?? ""}`,
 		...(ragDevice === "cpu"
 			? { CUDA_VISIBLE_DEVICES: "99", HIP_VISIBLE_DEVICES: "99", ROCR_VISIBLE_DEVICES: "99" }
 			: {}),

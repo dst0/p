@@ -70,7 +70,6 @@ export function resolveFallbackDeviceChoices(options = {}) {
 export function selectTorchInstallPlan(options = {}) {
 	const platform = options.platform ?? process.platform;
 	const architecture = options.architecture ?? process.arch;
-	const configuredDevice = process.env.P_CODE_RAG_DEVICE;
 	const aliases = {
 		"amd-rocm": "rocm",
 		"apple-ane": "apple-ane",
@@ -82,15 +81,14 @@ export function selectTorchInstallPlan(options = {}) {
 		ryzenai: "ryzenai",
 		vitisai: "vitisai",
 	};
-	const requested = options.requestedBackend
-		?? process.env.P_CODE_RAG_TORCH_BACKEND
-		?? (configuredDevice ? (aliases[configuredDevice] ?? configuredDevice) : "auto");
+	const configuredBackend = options.requestedBackend ?? "auto";
+	const requested = aliases[configuredBackend] ?? configuredBackend;
 	const valid = [
 		"auto", "cpu", "rocm", "cuda", "mps", "npu", "apple-ane", "vitisai", "ryzenai", "openvino",
 		"openvino-npu", "intel-openvino-npu",
 	];
 	if (!valid.includes(requested)) {
-		throw new Error(`P_CODE_RAG_TORCH_BACKEND must be one of: ${valid.join(", ")}`);
+		throw new Error(`torchBackend must be one of: ${valid.join(", ")}`);
 	}
 	const hasAmd = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
 	const hasNvidia = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
@@ -121,28 +119,4 @@ export function selectTorchInstallPlan(options = {}) {
 		version: platform === "darwin" && architecture === "x64" ? "2.2.2" : "2.12.1",
 		indexUrl: indexUrls[backend],
 	};
-}
-
-export function collectResourceEnvironment(source = process.env) {
-	const environment = {};
-	for (const key of [
-		"P_CODE_RAG_DEVICE",
-		"P_CODE_RAG_MAX_CPU_THREADS",
-		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
-		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
-		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
-		"P_CODE_RAG_PREPARATION_MAX_WORKERS",
-		"P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB",
-		"P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_VITISAI_CACHE_DIR",
-		"P_CODE_RAG_VITISAI_CACHE_KEY",
-		"P_CODE_RAG_VITISAI_CONFIG_FILE",
-		"P_CODE_RAG_VITISAI_LOG_LEVEL",
-		"P_CODE_RAG_OPENVINO_CACHE_DIR",
-	]) {
-		if (source[key] !== undefined) environment[key] = source[key];
-	}
-	return environment;
 }

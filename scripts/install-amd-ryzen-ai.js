@@ -125,21 +125,22 @@ export function buildAmdRyzenAiEnvironment(venvDirectory, source = process.env) 
 	if (source.LD_LIBRARY_PATH) libraryPaths.push(source.LD_LIBRARY_PATH);
 	const environment = {
 		LD_LIBRARY_PATH: libraryPaths.join(":"),
-		P_CODE_RAG_VITISAI_CACHE_DIR:
-			source.P_CODE_RAG_VITISAI_CACHE_DIR ?? path.join(path.dirname(venvDirectory), "vitisai-cache"),
-		P_CODE_RAG_VITISAI_CACHE_KEY:
-			source.P_CODE_RAG_VITISAI_CACHE_KEY
-			?? `Qwen_Qwen3-Embedding-0.6B-ryzen-ai-${AMD_RYZEN_AI_MANIFEST.ryzenAiVersion}`,
 		RYZEN_AI_INSTALLATION_PATH: venvDirectory,
 		XILINX_XRT: XRT_ROOT,
 	};
-	if (source.P_CODE_RAG_VITISAI_CONFIG_FILE) {
-		environment.P_CODE_RAG_VITISAI_CONFIG_FILE = source.P_CODE_RAG_VITISAI_CONFIG_FILE;
-	}
-	if (source.P_CODE_RAG_VITISAI_LOG_LEVEL) {
-		environment.P_CODE_RAG_VITISAI_LOG_LEVEL = source.P_CODE_RAG_VITISAI_LOG_LEVEL;
-	}
 	return environment;
+}
+
+export function buildAmdRyzenAiConfig(venvDirectory, source = {}) {
+	return {
+		vitisaiCacheDirectory:
+			source.vitisaiCacheDirectory ?? path.join(path.dirname(venvDirectory), "vitisai-cache"),
+		vitisaiCacheKey:
+			source.vitisaiCacheKey
+			?? `Qwen_Qwen3-Embedding-0.6B-ryzen-ai-${AMD_RYZEN_AI_MANIFEST.ryzenAiVersion}`,
+		vitisaiConfigFile: source.vitisaiConfigFile,
+		vitisaiLogLevel: source.vitisaiLogLevel ?? "error",
+	};
 }
 
 export function inspectAmdRyzenAiPlatform(options = {}) {

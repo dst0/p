@@ -9,7 +9,12 @@ from embedding_backends.model_contract import compute_compatibility_group, compu
 class OpenVINOBackend:
     """OpenVINO backend for Intel CPU and NPU inference."""
 
-    def __init__(self, backend_id: str = "intel-openvino-cpu", strict: bool = False):
+    def __init__(
+        self,
+        backend_id: str = "intel-openvino-cpu",
+        strict: bool = False,
+        cache_directory: str | None = None,
+    ):
         self.backend_id = backend_id
         self.strict = strict
         self.execution_device = "Intel OpenVINO CPU"
@@ -18,6 +23,9 @@ class OpenVINOBackend:
         self.spec: ModelSpec = ModelSpec()
         self.fallback_occurred = False
         self.fallback_reason: str | None = None
+        self.cache_directory = cache_directory or os.path.expanduser(
+            "~/.p/agent/indexing-service/openvino-cache"
+        )
 
     def load(self, spec: ModelSpec) -> None:
         self.spec = spec
@@ -26,10 +34,7 @@ class OpenVINOBackend:
 
         try:
             from optimum.intel import OVSentenceTransformer
-            cache_dir = os.environ.get(
-                "P_CODE_RAG_OPENVINO_CACHE_DIR",
-                os.path.expanduser("~/.p/agent/indexing-service/openvino-cache"),
-            )
+            cache_dir = self.cache_directory
             os.makedirs(cache_dir, exist_ok=True)
             self.model = OVSentenceTransformer.from_pretrained(
                 spec.model_name,

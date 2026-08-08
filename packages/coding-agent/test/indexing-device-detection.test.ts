@@ -15,16 +15,44 @@ afterEach(() => {
 });
 
 describe("indexing device detection", () => {
-  it("preserves explicit Linux NPU selections for hardware-aware installation", () => {
-    const root = createFixture();
-    const agentDir = path.join(root, "agent");
-    fs.mkdirSync(agentDir, { recursive: true });
-
+  it("preserves configured Linux NPU selections", () => {
+    const agentDir = path.join(createFixture(), "agent");
     for (const device of ["intel-openvino-npu", "ryzenai"]) {
-      const selected = runDeviceSelection(agentDir, device);
+      writeConfig(agentDir, { embeddingDevice: device });
+      const selected = runDeviceSelection(agentDir);
       expect(selected.status, selected.stderr).toBe(0);
       expect(selected.stdout).toContain(`device=${device}`);
     }
+  });
+
+  it("loads device and batch size from code-rag.json", () => {
+    const agentDir = path.join(createFixture(), "agent");
+    writeConfig(agentDir, { embeddingDevice: "cpu", maxEmbeddingBatchSize: 32 });
+
+    const selected = runDeviceSelection(agentDir);
+    expect(selected.status, selected.stderr).toBe(0);
+    expect(selected.stdout).toContain("Loaded configured embedding device: cpu");
+    expect(selected.stdout).toContain("device=cpu");
+
+    const batch = runBatchSizeSelection(agentDir);
+    expect(batch.status, batch.stderr).toBe(0);
+    expect(batch.stdout).toContain("batch_size=32");
+  });
+
+  it("rejects invalid config and requires a terminal for reselection", () => {
+    const agentDir = path.join(createFixture(), "agent");
+    writeConfig(agentDir, { embeddingDevice: "invalid", maxEmbeddingBatchSize: "invalid" });
+
+    const selected = runDeviceSelection(agentDir);
+    expect(selected.status).toBe(1);
+    expect(selected.stderr).toContain("Invalid embeddingDevice in code-rag.json");
+    const batch = runBatchSizeSelection(agentDir);
+    expect(batch.status).toBe(1);
+    expect(batch.stderr).toContain("Invalid maxEmbeddingBatchSize in code-rag.json");
+
+    const forced = runDeviceSelection(agentDir, true, false);
+    expect(forced.status).toBe(1);
+    expect(forced.stderr).toContain("--select-indexing requires an interactive terminal");
   });
 
   it("detects only host-supported accelerator choices", () => {
@@ -61,19 +89,31 @@ describe("indexing device detection", () => {
   });
 });
 
-function runDeviceSelection(agentDir: string, device: string) {
+function runDeviceSelection(agentDir: string, force = false, interactive = false) {
   return spawnSync(
     "bash",
     [
       "-c",
-      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"; initialize_indexing_device_selection false false; printf "device=%s\\n" "$P_CODE_RAG_DEVICE"',
+      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; initialize_indexing_device_selection "$2" "$3"; if declare -p INDEXING_DEVICE >/dev/null 2>&1; then printf "device=%s\\n" "$INDEXING_DEVICE"; else echo "device=<unset>"; fi',
+      "bash",
+      selectionScript,
+      String(force),
+      String(interactive),
+    ],
+    { encoding: "utf8", env: { ...process.env, P_CODING_AGENT_DIR: agentDir } },
+  );
+}
+
+function runBatchSizeSelection(agentDir: string) {
+  return spawnSync(
+    "bash",
+    [
+      "-c",
+      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; initialize_indexing_batch_size_selection false false; if declare -p INDEXING_MAX_EMBED_BATCH_SIZE >/dev/null 2>&1; then printf "batch_size=%s\\n" "$INDEXING_MAX_EMBED_BATCH_SIZE"; else echo "batch_size=<unset>"; fi',
       "bash",
       selectionScript,
     ],
-    {
-      encoding: "utf8",
-      env: { ...process.env, P_CODING_AGENT_DIR: agentDir, P_CODE_RAG_DEVICE: device },
-    },
+    { encoding: "utf8", env: { ...process.env, P_CODING_AGENT_DIR: agentDir } },
   );
 }
 
@@ -113,4 +153,9 @@ function createFixture(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-device-detection-"));
   temporaryDirectories.push(root);
   return root;
+}
+
+function writeConfig(agentDir: string, config: Record<string, unknown>): void {
+  fs.mkdirSync(agentDir, { recursive: true });
+  fs.writeFileSync(path.join(agentDir, "code-rag.json"), JSON.stringify(config));
 }

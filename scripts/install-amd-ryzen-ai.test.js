@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
 	AMD_RYZEN_AI_MANIFEST,
+	buildAmdRyzenAiConfig,
 	buildAmdRyzenAiEnvironment,
 	parseKernelVersion,
 	parseOsRelease,
@@ -95,10 +96,14 @@ test("builds a service environment for the public AMD Linux wheels and XRT", () 
 		{
 			LD_LIBRARY_PATH:
 				"/home/test/.p/agent/indexing-service/venv/lib/python3.12/site-packages/voe/lib:/opt/xilinx/xrt/lib:/lib/x86_64-linux-gnu:/custom/lib",
-			P_CODE_RAG_VITISAI_CACHE_DIR: "/home/test/.p/agent/indexing-service/vitisai-cache",
-			P_CODE_RAG_VITISAI_CACHE_KEY: "Qwen_Qwen3-Embedding-0.6B-ryzen-ai-1.7.1",
 			RYZEN_AI_INSTALLATION_PATH: "/home/test/.p/agent/indexing-service/venv",
 			XILINX_XRT: "/opt/xilinx/xrt",
 		},
 	);
+	assert.deepEqual(buildAmdRyzenAiConfig("/home/test/.p/agent/indexing-service/venv"), {
+		vitisaiCacheDirectory: "/home/test/.p/agent/indexing-service/vitisai-cache",
+		vitisaiCacheKey: "Qwen_Qwen3-Embedding-0.6B-ryzen-ai-1.7.1",
+		vitisaiConfigFile: undefined,
+		vitisaiLogLevel: "error",
+	});
 });

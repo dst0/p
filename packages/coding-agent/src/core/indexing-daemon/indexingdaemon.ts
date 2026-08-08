@@ -112,6 +112,7 @@ export class IndexingDaemon {
     });
     this.embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {
       pythonExecutable: options.pythonExecutable,
+      configPath: options.embeddingConfigPath ?? path.join(options.agentDir, "code-rag.json"),
       startupTimeoutMs: 5 * 60_000,
       onLog: (level, message) => this.log(level, message),
     });

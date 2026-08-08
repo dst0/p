@@ -1,7 +1,6 @@
 """Tests for NPU health metadata and Vitis AI provider configuration."""
 
 import unittest
-from unittest.mock import patch
 
 from test_embedding_server import EmbeddingServerTest
 
@@ -18,22 +17,18 @@ class NpuEmbeddingServerTest(unittest.TestCase):
     def test_vitisai_options_do_not_require_a_legacy_config_file(self):
         from embedding_server import _vitisai_provider_options
 
-        with patch.dict(
-            "os.environ",
+        self.assertEqual(
+            _vitisai_provider_options(
+                "Qwen/Qwen3-Embedding-0.6B",
+                cache_dir="/tmp/p-vitis-cache",
+                cache_key="qwen-test",
+            ),
             {
-                "P_CODE_RAG_VITISAI_CACHE_DIR": "/tmp/p-vitis-cache",
-                "P_CODE_RAG_VITISAI_CACHE_KEY": "qwen-test",
+                "cache_dir": "/tmp/p-vitis-cache",
+                "cache_key": "qwen-test",
+                "log_level": "error",
             },
-            clear=True,
-        ):
-            self.assertEqual(
-                _vitisai_provider_options("Qwen/Qwen3-Embedding-0.6B"),
-                {
-                    "cache_dir": "/tmp/p-vitis-cache",
-                    "cache_key": "qwen-test",
-                    "log_level": "error",
-                },
-            )
+        )
 
 
 if __name__ == "__main__":

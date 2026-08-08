@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface EmbeddingServerManagerOptions {
   pythonExecutable: string;
   startupTimeoutMs: number;
+  configPath?: string;
   onLog?: (level: "debug" | "error", message: string) => void;
 }
 
@@ -89,24 +90,17 @@ export class EmbeddingServerManager {
         settle(() => reject(signal?.reason ?? new Error("Embedding server startup cancelled")));
       };
       signal?.addEventListener("abort", onAbort, { once: true });
-      const ragDevice = (process.env.P_CODE_RAG_DEVICE ?? "cpu").toLowerCase();
-      const hideGpu = ragDevice === "cpu";
+      const arguments_ = [this.scriptPath, "--port", String(this.port), "--model", this.model];
+      if (this.options.configPath) arguments_.push("--config", this.options.configPath);
       const child = spawn(
         this.options.pythonExecutable,
-        [this.scriptPath, "--port", String(this.port), "--model", this.model],
+        arguments_,
         {
           stdio: ["ignore", "pipe", "pipe"],
           detached: false,
           env: {
             ...process.env,
             PYTORCH_ENABLE_MPS_FALLBACK: "1",
-            ...(hideGpu
-              ? {
-                  CUDA_VISIBLE_DEVICES: "99",
-                  HIP_VISIBLE_DEVICES: "99",
-                  ROCR_VISIBLE_DEVICES: "99",
-                }
-              : {}),
           },
         },
       );

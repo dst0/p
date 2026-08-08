@@ -1,13 +1,10 @@
-import os
 import unittest
-from unittest.mock import patch
 
 from resource_manager import (
     GIB,
     MemorySnapshot,
     build_runtime_plan,
     estimate_model_parameter_count,
-    read_positive_int_environment,
 )
 
 
@@ -159,11 +156,6 @@ class ResourceManagerTest(unittest.TestCase):
     def test_estimates_parameter_count_from_model_name(self):
         self.assertEqual(estimate_model_parameter_count("Qwen/Qwen3-Embedding-0.6B"), 600_000_000)
         self.assertEqual(estimate_model_parameter_count("acme/embed-2B"), 2_000_000_000)
-
-    def test_rejects_invalid_positive_integer_environment_override(self):
-        with patch.dict(os.environ, {"P_CODE_RAG_MAX_EMBED_BATCH_SIZE": "0"}):
-            with self.assertRaisesRegex(ValueError, "must be a positive integer"):
-                read_positive_int_environment("P_CODE_RAG_MAX_EMBED_BATCH_SIZE", 64)
 
     def test_caps_workspace_to_fifty_percent_max(self):
         plan = build_runtime_plan(

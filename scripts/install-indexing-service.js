@@ -7,17 +7,16 @@ import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-	collectResourceEnvironment,
 	resolveFallbackDeviceChoices,
 	resolveIndexingDevicePlan,
 	selectTorchInstallPlan,
 } from "./indexing-install-plans.js";
 export {
-	collectResourceEnvironment,
 	resolveFallbackDeviceChoices,
 	resolveIndexingDevicePlan,
 	selectTorchInstallPlan,
 } from "./indexing-install-plans.js";
+import { migrateLegacyIndexingConfig, readCodeRagConfig, writeCodeRagConfig } from "./indexing-config.js";
 import {
 	AMD_RYZEN_AI_MANIFEST,
 	detectAmdNpuPciDevices,
@@ -31,6 +30,7 @@ import {
 	validateIntelOpenVinoPythonRuntime,
 } from "./install-intel-openvino-npu.js";
 import {
+	buildManagedIndexingConfig,
 	buildServiceValues,
 	installSelectedNpuSystemRuntime,
 	isTorchAcceleratorDevice,
@@ -192,24 +192,14 @@ WantedBy=default.target
 `;
 }
 
-function readSavedSetting(fileName) {
-	try {
-		const filePath = path.join(AGENT_DIR, fileName);
-		if (!fs.existsSync(filePath)) return undefined;
-		const value = fs.readFileSync(filePath, "utf-8").trim();
-		return value || undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
 	const hasLinuxAmdNpuHardware = process.platform === "linux" && detectAmdNpuPciDevices().length > 0;
 	const hasLinuxIntelNpuHardware = process.platform === "linux" && detectIntelNpuPciDevices().length > 0;
-	const savedDevice = readSavedSetting("indexing-device");
+	let indexingConfig = migrateLegacyIndexingConfig(AGENT_DIR);
+	const savedDevice = indexingConfig.embeddingDevice;
 	const planOptions = {
 		architecture: process.arch,
 		hasLinuxAmdNpuHardware,
@@ -220,30 +210,28 @@ async function main() {
 	try {
 		devicePlan = resolveIndexingDevicePlan({
 			...planOptions,
-			requestedDevice: process.env.P_CODE_RAG_DEVICE,
 			savedDevice,
 		});
 	} catch (error) {
-		const failedDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? "npu";
+		const failedDevice = savedDevice ?? "npu";
 		devicePlan = await promptForDeviceFallback(error, failedDevice, planOptions);
-	}
-
-	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
-	if (!process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE && savedBatchSize) {
-		process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = savedBatchSize;
+		indexingConfig = readCodeRagConfig(AGENT_DIR);
 	}
 
 	let python;
 	let torchPlan;
 	while (true) {
-		process.env.P_CODE_RAG_DEVICE = devicePlan.ragDevice;
 		try {
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: !DRY_RUN,
 				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
 			});
-			torchPlan = selectTorchInstallPlan();
+			torchPlan = selectTorchInstallPlan({
+				requestedBackend: indexingConfig.torchBackend === "auto"
+					? devicePlan.ragDevice
+					: indexingConfig.torchBackend,
+			});
 			break;
 		} catch (error) {
 			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
@@ -253,7 +241,7 @@ async function main() {
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
 
 	if (DRY_RUN) {
-		const values = buildServiceValues(devicePlan, torchPlan, venvPython, qdrantBinary);
+		const values = buildServiceValues(devicePlan, venvPython);
 		if (process.platform === "darwin") renderLaunchdPlist(values);
 		else renderSystemdUnit(values);
 		console.log(
@@ -278,21 +266,24 @@ async function main() {
 			break;
 		} catch (error) {
 			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
-			process.env.P_CODE_RAG_DEVICE = devicePlan.ragDevice;
+			indexingConfig = readCodeRagConfig(AGENT_DIR);
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: true,
 				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
 			});
-			torchPlan = selectTorchInstallPlan();
+			torchPlan = selectTorchInstallPlan({
+				requestedBackend: indexingConfig.torchBackend === "auto"
+					? devicePlan.ragDevice
+					: indexingConfig.torchBackend,
+			});
 		}
 	}
-	const values = buildServiceValues(devicePlan, torchPlan, venvPython, qdrantBinary);
-	mergeCodeRagConfig({
-		qdrantBinary,
-		qdrantDataDirectory: QDRANT_DATA_DIR,
-		pythonExecutable: venvPython,
-	});
+	const values = buildServiceValues(devicePlan, venvPython);
+	writeCodeRagConfig(
+		AGENT_DIR,
+		buildManagedIndexingConfig(indexingConfig, devicePlan, torchPlan, venvPython, qdrantBinary),
+	);
 
 	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values));
 	else await installLinux(renderSystemdUnit(values));
@@ -409,26 +400,6 @@ function validateTorchInstallation(venvPython, torchPlan, options = {}) {
 		`PyTorch ${probe.version} installed (${torchPlan.backend}); `
 		+ `accelerator currently ${probe.accelerator_available ? "available" : "unavailable"}`,
 	);
-}
-
-function mergeCodeRagConfig(defaults) {
-	const configPath = path.join(AGENT_DIR, "code-rag.json");
-	let config = {};
-	if (fs.existsSync(configPath)) {
-		config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-		if (typeof config !== "object" || config === null || Array.isArray(config)) {
-			throw new Error(`Code RAG config must be a JSON object: ${configPath}`);
-		}
-	}
-	let changed = false;
-	for (const [key, value] of Object.entries(defaults)) {
-		if (config[key] !== undefined) continue;
-		config[key] = value;
-		changed = true;
-	}
-	if (!changed && fs.existsSync(configPath)) return;
-	fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
-	writeFileAtomic(configPath, `${JSON.stringify(config, undefined, 2)}\n`);
 }
 
 async function installDarwin(plist) {

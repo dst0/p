@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../embed/provider.ts";
+import type { EmbeddingRuntimeSettings } from "./embedding-settings.ts";
 
 export type RagState =
   | "not_initialized"
@@ -283,7 +284,7 @@ export interface CodeRagService {
   dispose(): Promise<void>;
 }
 
-export interface WorkspaceCodeRagSettings {
+export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   enabled: boolean;
   autoRefresh: boolean;
   allowStaleSearch: boolean;
@@ -292,19 +293,11 @@ export interface WorkspaceCodeRagSettings {
   qdrantBinary: string;
   qdrantDataDirectory: string;
   qdrantStartupTimeoutMs: number;
-  embeddingServerUrl: string;
-  embeddingModel: string;
-  embeddingDimensions: number;
-  embeddingPooling: string;
-  embeddingNormalization: string;
-  pythonExecutable: string;
   defaultLimit: number;
   maxLimit: number;
   maxContextCharacters: number;
   maxResultCharacters: number;
   searchTimeoutMs: number;
-  embeddingTimeoutMs: number;
-  embeddingStartupTimeoutMs: number;
   maxFileBytes: number;
   defaultChunkLines: number;
   maxChunkLines: number;
