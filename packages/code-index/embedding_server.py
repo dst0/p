@@ -534,7 +534,7 @@ class EmbeddingServer:
                     pass
 
                 tokenizer = AutoTokenizer.from_pretrained(pre_exported_hf or self.model_name)
-                load_kwargs = {"use_cache": False}
+                load_kwargs = {}
                 if config is not None:
                     load_kwargs["config"] = config
 

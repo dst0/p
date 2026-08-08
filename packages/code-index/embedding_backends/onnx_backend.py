@@ -46,7 +46,7 @@ class ONNXBackend:
             except Exception:
                 pass
 
-            load_kwargs = {"use_cache": False}
+            load_kwargs = {}
             if config is not None:
                 load_kwargs["config"] = config
 
