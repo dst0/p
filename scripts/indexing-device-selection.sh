@@ -247,5 +247,48 @@ check_and_prompt_missing_indexing_deps() {
       "$venv_python" -m pip install "${missing_deps[@]}"
     fi
   fi
+
+  if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" ]]; then
+    install_amd_xdna_npu_driver_if_needed
+  fi
+}
+
+install_amd_xdna_npu_driver_if_needed() {
+  if [[ "$(uname)" != "Linux" ]]; then
+    return 0
+  fi
+
+  if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
+    if ! command -v xrt-smi &>/dev/null && [[ ! -f /opt/xilinx/xrt/setup.sh ]]; then
+      echo ""
+      echo "=== AMD XDNA NPU Hardware Detected ==="
+      echo "AMD XDNA NPU (/dev/accel/accel0) detected on this system."
+      echo "To enable native hardware acceleration via AMD Vitis AI / XRT, system driver packages can be installed."
+      if [[ -t 0 ]]; then
+        read -rp "Do you want to install AMD XDNA driver dependencies now? [Y/n]: " install_xdna
+        install_xdna="${install_xdna:-y}"
+        if [[ "$install_xdna" =~ ^[Yy]$ ]]; then
+          echo "Installing AMD XDNA driver build tools..."
+          local sudo_cmd=""
+          if [[ "$(id -u)" != "0" ]]; then sudo_cmd="sudo"; fi
+          if command -v apt-get &>/dev/null; then
+            $sudo_cmd apt-get update -qq && $sudo_cmd apt-get install -y -qq dkms cmake gcc g++ boost-dev protobuf-compiler debhelper devscripts || true
+          fi
+          if [[ -d /opt/xilinx/xrt ]]; then
+            echo "AMD XRT already installed at /opt/xilinx/xrt"
+          else
+            echo "Cloning and preparing amd/xdna-driver..."
+            local tmpdir
+            tmpdir="$(mktemp -d)"
+            git clone --recursive https://github.com/amd/xdna-driver.git "$tmpdir/xdna-driver" 2>/dev/null || true
+            if [[ -f "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" ]]; then
+              $sudo_cmd bash "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" || true
+            fi
+            rm -rf "$tmpdir"
+          fi
+        fi
+      fi
+    fi
+  fi
 }
 
