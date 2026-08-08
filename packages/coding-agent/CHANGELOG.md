@@ -2,6 +2,15 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
+- Added an automated source-structure guard for the 300-line limit and one-class-per-file rule.
+
+### Fixed
+
+- Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
+
 ## [0.4.158] - 2026-08-06
 
 ### Changed

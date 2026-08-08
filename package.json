@@ -12,8 +12,9 @@
   "scripts": {
     "clean": "npm run clean --workspaces",
     "build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../code-index && npm run build && cd ../coding-agent && npm run build && cd ../site && npm run build",
-    "check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
+    "check": "biome check --write --error-on-warnings . && npm run check:file-structure && npm run check:pinned-deps && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
     "check:browser-smoke": "node scripts/check-browser-smoke.js",
+    "check:file-structure": "node scripts/check-file-structure.js",
     "check:pinned-deps": "node scripts/check-pinned-deps.js",
     "check:shrinkwrap": "node scripts/generate-coding-agent-shrinkwrap.js --check",
     "check:ts-imports": "node scripts/check-ts-relative-imports.js",
@@ -55,7 +56,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.4.174",
+  "version": "0.4.175",
   "overrides": {
     "esbuild": "0.28.1",
     "rimraf": "6.1.2",

@@ -15,6 +15,10 @@
 
 ## Code Quality
 
+- Code files must contain at most 300 physical lines. `npm run check:file-structure` enforces the limit for new files and prevents legacy baseline violations from growing; tighten or remove baseline entries whenever a legacy file is reduced.
+- Keep one class or runtime entity per file. Supporting types for that entity may stay with it, but additional classes/entities belong in descriptively named files.
+- Use descriptive split names based on responsibility. Never create generic `part1`, `part2`, or similar continuation files.
+- Treat file splits as behavior-preserving refactors: establish a clean baseline, inspect symbol references and import cycles, retain generic/override method contracts explicitly, and run focused regression tests before and after the split. Never introduce circular delegation or self-recursive forwarding.
 - Avoid zero-length insertions (`was: ""`) or line-based replacements without anchors. If positional/line-based edits are used, you must run compiler checks or inspect the edited lines immediately after each edit to catch offset drift and corruption before proceeding.
 - Read files in full before wide-ranging changes, before editing files you have not fully inspected, and when asked to investigate or audit. Do not rely on search snippets for broad changes.
 - No `any` unless absolutely necessary.

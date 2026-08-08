@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Split Anthropic and OpenAI-compatible streaming implementations into focused modules while preserving their public exports and streaming behavior.
+
 ## [0.4.158] - 2026-08-06
 
 ### Fixed
