@@ -29,6 +29,9 @@ export interface UIRegressionHarness {
 
 export function sanitizeUIOutput(text: string): string {
   return text
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
     .replace(/p v\d+\.\d+\.\d+/g, "p v0.4.169")
     .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
       inner.includes("/") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
@@ -103,7 +106,7 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
       return;
     }
 
-    const expectedText = fs.readFileSync(snapshotPath, "utf-8");
+    const expectedText = sanitizeUIOutput(fs.readFileSync(snapshotPath, "utf-8"));
     assert.strictEqual(
       sanitizedActualText,
       expectedText,
