@@ -20,7 +20,43 @@ on:
 permissions: {}
 
 jobs:
+  validate:
+    runs-on: [self-hosted, Linux, X64, mini-pc, p]
+    env:
+      SOURCE_REF: ${{ github.event.inputs.source_ref || github.event.inputs.tag || github.ref_name }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          ref: ${{ env.SOURCE_REF }}
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
+        with:
+          node-version: '22'
+          cache: npm
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libcairo2-dev libpango1.0-dev libjpeg-dev libgif-dev librsvg2-dev fd-find ripgrep
+          sudo ln -sf "$(which fdfind)" /usr/local/bin/fd
+
+      - name: Install dependencies
+        run: npm ci --ignore-scripts
+
+      - name: Build
+        run: npm run build
+
+      - name: Check
+        run: npm run check
+
+      - name: Test all, including configured live tests
+        run: npm test
+
   build:
+    needs: validate
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -53,7 +89,7 @@ jobs:
         run: |
           VERSION="${RELEASE_TAG}"
           VERSION="${VERSION#v}"  # Remove 'v' prefix
-          node scripts/release-notes.mjs extract --version "${VERSION}" --tag "${RELEASE_TAG}" --out /tmp/release-notes.md
+          node scripts/release-notes.js extract --version "${VERSION}" --tag "${RELEASE_TAG}" --out /tmp/release-notes.md
 
       - name: Create GitHub Release and upload binaries
         env:
@@ -135,4 +171,4 @@ jobs:
           npm --version
 
       - name: Publish npm packages
-        run: node scripts/publish.mjs
+        run: node scripts/publish.js

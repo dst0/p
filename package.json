@@ -21,8 +21,12 @@
     "profile:tui": "node scripts/profile-coding-agent-node.js --mode tui",
     "profile:rpc": "node scripts/profile-coding-agent-node.js --mode rpc",
     "benchmark:agents": "node scripts/benchmark-agents.js",
+    "dev": "./p-test.sh",
     "test": "npm run test --workspaces --if-present",
+    "test:cli": "node --test scripts/p-test-wrapper.test.js",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:unit": "./test.sh",
+    "test:unit:coverage": "./test.sh test:coverage",
     "test:coverage:check": "node --test scripts/check-changed-coverage.test.js && node scripts/check-changed-coverage.js",
     "version:patch": "node scripts/version-bump.js patch",
     "version:minor": "node scripts/version-bump.js minor",
@@ -56,7 +60,7 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.4.182",
+  "version": "0.4.183",
   "overrides": {
     "esbuild": "0.28.1",
     "rimraf": "6.1.2",

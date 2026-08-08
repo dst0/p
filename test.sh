@@ -78,5 +78,5 @@ unset AWS_CONTAINER_CREDENTIALS_FULL_URI
 unset AWS_WEB_IDENTITY_TOKEN_FILE
 unset BEDROCK_EXTENSIVE_MODEL_TEST
 
-echo "Running $NPM_TEST_SCRIPT without API keys..."
-npm run "$NPM_TEST_SCRIPT"
+echo "Running workspace $NPM_TEST_SCRIPT without API keys..."
+npm run "$NPM_TEST_SCRIPT" --workspaces --if-present

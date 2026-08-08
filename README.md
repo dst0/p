@@ -86,10 +86,13 @@ Submit changes via PRs, except critical cases where the PR workflow does not wor
 
 ```bash
 npm install --ignore-scripts  # Install all dependencies without running lifecycle scripts
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./p-test.sh         # Run p from sources (can be run from any directory)
+npm run build                  # Build all packages
+npm run check                  # Lint, format, and type check
+npm test                       # Run all workspace tests
+npm run test:unit              # Run the non-e2e suite without API credentials
+npm run test:unit:coverage     # Run the non-e2e suite with coverage
+npm run test:cli               # Smoke-test the source CLI wrapper
+npm run dev --                 # Run p from sources
 ```
 
 For a short same-model comparison between this fork and the upstream agent, see
