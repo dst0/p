@@ -217,7 +217,7 @@
   },
   "packages/code-index/embedding_server.py": {
     "classes": 4,
-    "lines": 868
+    "lines": 897
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,
@@ -269,11 +269,11 @@
   },
   "packages/code-index/test/test_device_selection.py": {
     "classes": 4,
-    "lines": 283
+    "lines": 300
   },
   "packages/code-index/test/test_embedding_server.py": {
     "classes": 4,
-    "lines": 138
+    "lines": 167
   },
   "packages/code-index/test/vector-store.test.ts": {
     "classes": 0,
@@ -789,7 +789,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 709
+    "lines": 775
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,

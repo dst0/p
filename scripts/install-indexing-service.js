@@ -249,10 +249,15 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const savedDevice = readSavedSetting("indexing-device");
-	const defaultDevice = process.platform === "darwin" && process.arch === "arm64" ? "mps" : "cpu";
+	const hasNpuDevice =
+		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
+	const defaultDevice =
+		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
 	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
+	if (ragDevice === "npu") {
+		ensureAmdXdnaDriverInstalled();
+	}
 
 	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
 	if (!process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE && savedBatchSize) {
@@ -608,24 +613,85 @@ function isProcessRunning(pid) {
 }
 
 function findCompatiblePython() {
-	const names = process.platform === "darwin" && process.arch === "x64"
-		? ["python3.12", "python3.11", "python3.10", "python3"]
-		: ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
-	const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
-	for (const candidate of candidates) {
-		const version = capture(candidate, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
-			allowFailure: true,
-		}).trim();
-		const [major, minor] = version.split(".").map(Number);
-		if (major !== 3 || minor < 10) continue;
-		if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
-		return candidate;
+	const search = () => {
+		const names = process.platform === "darwin" && process.arch === "x64"
+			? ["python3.12", "python3.11", "python3.10", "python3"]
+			: ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
+		const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
+		for (const candidate of candidates) {
+			const version = capture(candidate, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
+				allowFailure: true,
+			}).trim();
+			const [major, minor] = version.split(".").map(Number);
+			if (major !== 3 || minor < 10) continue;
+			if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
+			return candidate;
+		}
+		return undefined;
+	};
+
+	let found = search();
+	if (!found) {
+		tryAutoInstallPython();
+		found = search();
 	}
+	if (found) return found;
+
 	throw new Error(
 		process.platform === "darwin" && process.arch === "x64"
-			? "Code indexing requires Python 3.10-3.12 on Intel macOS"
-			: "Code indexing requires Python 3.10 or newer",
+			? "Code indexing requires Python 3.10-3.12 on Intel macOS. Please install Python 3."
+			: "Code indexing requires Python 3.10 or newer. Please install Python 3.",
 	);
+}
+
+function tryAutoInstallPython() {
+	console.log("No compatible Python 3 (>= 3.10) found on PATH. Attempting automatic installation...");
+	if (process.platform === "darwin") {
+		const brew = findOnPath("brew") || (fs.existsSync("/opt/homebrew/bin/brew") ? "/opt/homebrew/bin/brew" : undefined);
+		if (brew) {
+			const pkg = process.arch === "x64" ? "python@3.12" : "python3";
+			run(brew, ["install", pkg], { allowFailure: true });
+		}
+	} else if (process.platform === "linux") {
+		const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+		if (findOnPath("apt-get")) {
+			const cmd = isRoot ? "apt-get" : "sudo";
+			const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
+			const argsInstall = isRoot
+				? ["install", "-y", "-qq", "python3", "python3-venv", "python3-dev"]
+				: ["apt-get", "install", "-y", "-qq", "python3", "python3-venv", "python3-dev"];
+			run(cmd, argsUpdate, { allowFailure: true });
+			run(cmd, argsInstall, { allowFailure: true });
+		} else if (findOnPath("dnf")) {
+			const cmd = isRoot ? "dnf" : "sudo";
+			const args = isRoot ? ["install", "-y", "python3", "python3-devel"] : ["dnf", "install", "-y", "python3", "python3-devel"];
+			run(cmd, args, { allowFailure: true });
+		} else if (findOnPath("pacman")) {
+			const cmd = isRoot ? "pacman" : "sudo";
+			const args = isRoot ? ["-Sy", "--noconfirm", "python"] : ["pacman", "-Sy", "--noconfirm", "python"];
+			run(cmd, args, { allowFailure: true });
+		}
+	}
+}
+
+function ensureAmdXdnaDriverInstalled() {
+	if (process.platform !== "linux") return;
+	const hasNpuDevice =
+		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
+	if (!hasNpuDevice) return;
+	if (fs.existsSync("/opt/xilinx/xrt") || findOnPath("xrt-smi")) return;
+
+	console.log("AMD XDNA NPU hardware detected. Ensuring AMD XDNA driver dependencies are installed...");
+	const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+	if (findOnPath("apt-get")) {
+		const cmd = isRoot ? "apt-get" : "sudo";
+		const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
+		const argsInstall = isRoot
+			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"]
+			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"];
+		run(cmd, argsUpdate, { allowFailure: true });
+		run(cmd, argsInstall, { allowFailure: true });
+	}
 }
 
 function findOnPath(name) {

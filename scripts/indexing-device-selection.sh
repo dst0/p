@@ -123,16 +123,28 @@ prompt_indexing_device_and_batch_size_selection() {
     local embed_values=()
     if [[ "$(uname)" == "Darwin" ]]; then
       if [[ "$(uname -m)" == "arm64" ]]; then
+        embed_choices+=("npu (recommended – Neural Processing Unit / Apple Neural Engine)")
+        embed_values+=("npu")
         embed_choices+=("mps (Apple Silicon Metal – uses unified memory)")
         embed_values+=("mps")
         embed_choices+=("cpu (CPU only)")
         embed_values+=("cpu")
-        embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
-        embed_values+=("npu")
       fi
     else
-      embed_choices+=("cpu (recommended – leaves GPU free for inference)")
-      embed_values+=("cpu")
+      local has_npu=false
+      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
+        has_npu=true
+      fi
+
+      if [[ "$has_npu" == true ]]; then
+        embed_choices+=("npu (recommended – Neural Processing Unit / NPU accelerator)")
+        embed_values+=("npu")
+        embed_choices+=("cpu (CPU only – leaves GPU free for inference)")
+        embed_values+=("cpu")
+      else
+        embed_choices+=("cpu (recommended – leaves GPU free for inference)")
+        embed_values+=("cpu")
+      fi
       if [[ -e /dev/kfd ]]; then
         embed_choices+=("rocm (AMD GPU – uses VRAM for embedding)")
         embed_values+=("rocm")
@@ -140,10 +152,6 @@ prompt_indexing_device_and_batch_size_selection() {
       if [[ -e /dev/nvidiactl ]]; then
         embed_choices+=("cuda (NVIDIA GPU – uses VRAM for embedding)")
         embed_values+=("cuda")
-      fi
-      if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
-        embed_choices+=("npu (Neural Processing Unit / NPU accelerator)")
-        embed_values+=("npu")
       fi
     fi
 
@@ -237,6 +245,49 @@ check_and_prompt_missing_indexing_deps() {
     if [[ "$install_missing" =~ ^[Yy]$ ]]; then
       echo "Installing missing dependencies: ${missing_deps[*]}..."
       "$venv_python" -m pip install "${missing_deps[@]}"
+    fi
+  fi
+
+  if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" && -t 0 ]]; then
+    install_amd_xdna_npu_driver_if_needed
+  fi
+}
+
+install_amd_xdna_npu_driver_if_needed() {
+  if [[ "$(uname)" != "Linux" ]]; then
+    return 0
+  fi
+
+  if [[ -e /dev/accel/accel0 || -e /dev/amdxdna || -d /sys/class/accel ]]; then
+    if ! command -v xrt-smi &>/dev/null && [[ ! -f /opt/xilinx/xrt/setup.sh ]]; then
+      echo ""
+      echo "=== AMD XDNA NPU Hardware Detected ==="
+      echo "AMD XDNA NPU (/dev/accel/accel0) detected on this system."
+      echo "To enable native hardware acceleration via AMD Vitis AI / XRT, system driver packages can be installed."
+      if [[ -t 0 ]]; then
+        read -rp "Do you want to install AMD XDNA driver dependencies now? [Y/n]: " install_xdna
+        install_xdna="${install_xdna:-y}"
+        if [[ "$install_xdna" =~ ^[Yy]$ ]]; then
+          echo "Installing AMD XDNA driver build tools..."
+          local sudo_cmd=""
+          if [[ "$(id -u)" != "0" ]]; then sudo_cmd="sudo"; fi
+          if command -v apt-get &>/dev/null; then
+            $sudo_cmd apt-get update -qq && $sudo_cmd apt-get install -y -qq dkms cmake gcc g++ boost-dev protobuf-compiler debhelper devscripts || true
+          fi
+          if [[ -d /opt/xilinx/xrt ]]; then
+            echo "AMD XRT already installed at /opt/xilinx/xrt"
+          else
+            echo "Cloning and preparing amd/xdna-driver..."
+            local tmpdir
+            tmpdir="$(mktemp -d)"
+            git clone --recursive https://github.com/amd/xdna-driver.git "$tmpdir/xdna-driver" 2>/dev/null || true
+            if [[ -f "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" ]]; then
+              $sudo_cmd bash "$tmpdir/xdna-driver/tools/amdxdna_deps.sh" || true
+            fi
+            rm -rf "$tmpdir"
+          fi
+        fi
+      fi
     fi
   fi
 }

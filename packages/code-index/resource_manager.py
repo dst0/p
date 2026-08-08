@@ -231,7 +231,7 @@ def build_runtime_plan(
         preferred_backend=preferred_backend,
         backend=selected_backend,
         device="cuda" if selected_backend in {"cuda", "rocm"} else selected_backend,
-        dtype="float32" if selected_backend in {"cpu", "mps", "coreml"} else "float16",
+        dtype="float32" if selected_backend in {"cpu", "mps", "coreml", "npu", "openvino", "vitisai", "apple-ane"} else "float16",
         batch_size=batch_size,
         cpu_threads=cpu_threads,
         model_bytes=selected_model_bytes,
