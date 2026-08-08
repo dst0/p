@@ -1,10 +1,17 @@
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthProviderInterface } from "../types.ts";
-import { loginOpenAICodexDeviceCode } from "./helpers-part3.ts";
-import { loginOpenAICodex, refreshOpenAICodexToken } from "./helpers-part4.ts";
+import { loginOpenAICodex, refreshOpenAICodexToken } from "./login-flow.ts";
+import { loginOpenAICodexDeviceCode } from "./oauth-server.ts";
 
-export const _randomBytes: typeof import("node:crypto").randomBytes | null = null;
-
-export const _http: typeof import("node:http") | null = null;
+export let _randomBytes: typeof import("node:crypto").randomBytes | null = null;
+export let _http: typeof import("node:http") | null = null;
+if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
+  import("node:crypto").then((m) => {
+    _randomBytes = m.randomBytes;
+  });
+  import("node:http").then((m) => {
+    _http = m;
+  });
+}
 
 export const CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann";
 

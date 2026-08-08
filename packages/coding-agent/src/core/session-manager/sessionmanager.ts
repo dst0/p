@@ -3,20 +3,6 @@ import { existsSync, mkdirSync } from "fs";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 import type { BashExecutionMessage, CustomMessage } from "../messages.ts";
 import {
-  do__appendEntry,
-  do__buildIndex,
-  do__persist,
-  do__rewriteFile,
-  do_getCwd,
-  do_getSessionDir,
-  do_getSessionFile,
-  do_getSessionId,
-  do_isPersisted,
-  do_newSession,
-  do_setSessionFile,
-  do_usesDefaultSessionDir,
-} from "./sessionmanager-methods/methods-part1.ts";
-import {
   do_appendCompaction,
   do_appendCustomEntry,
   do_appendCustomMessageEntry,
@@ -31,7 +17,22 @@ import {
   do_getLeafEntry,
   do_getLeafId,
   do_getSessionName,
-} from "./sessionmanager-methods/methods-part2.ts";
+} from "./sessionmanager-methods/entry-append.ts";
+import { do_forkFrom, do_list, do_listAll } from "./sessionmanager-methods/forking.ts";
+import {
+  do__appendEntry,
+  do__buildIndex,
+  do__persist,
+  do__rewriteFile,
+  do_getCwd,
+  do_getSessionDir,
+  do_getSessionFile,
+  do_getSessionId,
+  do_isPersisted,
+  do_newSession,
+  do_setSessionFile,
+  do_usesDefaultSessionDir,
+} from "./sessionmanager-methods/persistence.ts";
 import {
   do_branch,
   do_branchWithSummary,
@@ -41,15 +42,14 @@ import {
   do_getHeader,
   do_getTree,
   do_resetLeaf,
-} from "./sessionmanager-methods/methods-part3.ts";
+} from "./sessionmanager-methods/query.ts";
 import {
   do_continueRecent,
   do_create,
   do_createBranchedSession,
   do_inMemory,
   do_open,
-} from "./sessionmanager-methods/methods-part4.ts";
-import { do_forkFrom, do_list, do_listAll } from "./sessionmanager-methods/methods-part5.ts";
+} from "./sessionmanager-methods/session-creation.ts";
 import type {
   FileEntry,
   NewSessionOptions,
@@ -59,7 +59,7 @@ import type {
   SessionInfo,
   SessionListProgress,
   SessionTreeNode,
-} from "./types-part1.ts";
+} from "./types.ts";
 
 export class SessionManager {
   public sessionId: string = "";

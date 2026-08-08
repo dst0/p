@@ -1,7 +1,7 @@
 export { AuthStorage } from "./authstorage.ts";
 export { FileAuthStorageBackend } from "./fileauthstoragebackend.ts";
 export { InMemoryAuthStorageBackend } from "./inmemoryauthstoragebackend.ts";
-export {
+export type {
   ApiKeyCredential,
   AuthCredential,
   AuthStatus,

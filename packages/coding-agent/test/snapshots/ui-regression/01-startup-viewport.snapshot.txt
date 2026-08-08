@@ -1,5 +1,5 @@
 
- p v0.4.163                                                                     
+ p v0.4.169                                                                     
  escape interrupt · ctrl+c/ctrl+d clear/exit · / commands · ! bash · f2 plan ·  
  ctrl+o more                                                                    
  Press ctrl+o to show full startup help and loaded resources.                   

@@ -11,4 +11,4 @@ export type {
   OverlayOptions,
   OverlayUnfocusOptions,
   SizeValue,
-} from "./types-part1.ts";
+} from "./types.ts";

@@ -3,7 +3,7 @@ import { dirname, join } from "path";
 import lockfile from "proper-lockfile";
 import { CONFIG_DIR_NAME } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
-import type { SettingsScope, SettingsStorage } from "./types-part1.ts";
+import type { SettingsScope, SettingsStorage } from "./types.ts";
 
 export class FileSettingsStorage implements SettingsStorage {
   private globalSettingsPath: string;

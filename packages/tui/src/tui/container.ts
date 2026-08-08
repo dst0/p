@@ -1,4 +1,4 @@
-import type { Component } from "./types-part1.ts";
+import type { Component } from "./types.ts";
 
 export class Container implements Component {
   children: Component[] = [];

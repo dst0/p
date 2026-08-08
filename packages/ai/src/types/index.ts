@@ -1,5 +1,26 @@
 export type { AssistantMessageEventStream } from "../utils/event-stream.ts";
-export {
+export type {
+  AssistantImages,
+  AssistantMessage,
+  AssistantMessageEvent,
+  Context,
+  ImageContent,
+  ImagesContext,
+  ImagesInputContent,
+  ImagesOutputContent,
+  ImagesStopReason,
+  Message,
+  OpenAICompletionsCompat,
+  StopReason,
+  TextContent,
+  ThinkingContent,
+  Tool,
+  ToolCall,
+  ToolResultMessage,
+  Usage,
+  UserMessage,
+} from "./content-types.ts";
+export type {
   Api,
   CacheRetention,
   ImagesApi,
@@ -24,33 +45,12 @@ export {
   ThinkingLevel,
   ThinkingLevelMap,
   Transport,
-} from "./types-part1.ts";
-export {
-  AssistantImages,
-  AssistantMessage,
-  AssistantMessageEvent,
-  Context,
-  ImageContent,
-  ImagesContext,
-  ImagesInputContent,
-  ImagesOutputContent,
-  ImagesStopReason,
-  Message,
-  OpenAICompletionsCompat,
-  StopReason,
-  TextContent,
-  ThinkingContent,
-  Tool,
-  ToolCall,
-  ToolResultMessage,
-  Usage,
-  UserMessage,
-} from "./types-part2.ts";
-export {
+} from "./message-types.ts";
+export type {
   AnthropicMessagesCompat,
   ImagesModel,
   Model,
   OpenAIResponsesCompat,
   OpenRouterRouting,
   VercelGatewayRouting,
-} from "./types-part3.ts";
+} from "./provider-types.ts";

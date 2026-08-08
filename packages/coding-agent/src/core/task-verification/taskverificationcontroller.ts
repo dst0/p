@@ -8,40 +8,6 @@ import type {
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { VerificationSchema } from "./constants.ts";
-import { emptyState } from "./helpers-part1.ts";
-import {
-  do_beforeToolCall,
-  do_createToolDefinition,
-  do_install,
-} from "./taskverificationcontroller-methods/methods-part1.ts";
-import {
-  do_afterToolCall,
-  do_applyInput,
-  do_authorizeBaselineTest,
-  do_declareTask,
-  do_detectMutation,
-} from "./taskverificationcontroller-methods/methods-part2.ts";
-import { do_recordBaseline } from "./taskverificationcontroller-methods/methods-part3.ts";
-import { do_recordFinal } from "./taskverificationcontroller-methods/methods-part4.ts";
-import {
-  do_isAuthorizedBaselineTestMutation,
-  do_readyToFinish,
-  do_resolveFinalEvidence,
-} from "./taskverificationcontroller-methods/methods-part5.ts";
-import {
-  do_finalGate,
-  do_finalVerificationError,
-  do_formatStatus,
-  do_latestFailedVerificationEvidence,
-  do_persistState,
-  do_resolveEvidence,
-  do_restore,
-  do_taskText,
-} from "./taskverificationcontroller-methods/methods-part6.ts";
-import {
-  do_baselineReplayInstruction,
-  do_formatNextRequirement,
-} from "./taskverificationcontroller-methods/methods-part7.ts";
 import {
   do_blocked,
   do_finalMethodForEvidence,
@@ -55,7 +21,41 @@ import {
   do_tryAutoFinalizeFocusedTest,
   do_updated,
   do_withGuidance,
-} from "./taskverificationcontroller-methods/methods-part8.ts";
+} from "./taskverificationcontroller-methods/auto-finalization.ts";
+import { do_recordBaseline } from "./taskverificationcontroller-methods/baseline-recording.ts";
+import {
+  do_finalGate,
+  do_finalVerificationError,
+  do_formatStatus,
+  do_latestFailedVerificationEvidence,
+  do_persistState,
+  do_resolveEvidence,
+  do_restore,
+  do_taskText,
+} from "./taskverificationcontroller-methods/evidence-resolution.ts";
+import { do_recordFinal } from "./taskverificationcontroller-methods/final-recording.ts";
+import {
+  do_afterToolCall,
+  do_applyInput,
+  do_authorizeBaselineTest,
+  do_declareTask,
+  do_detectMutation,
+} from "./taskverificationcontroller-methods/mutation-tracking.ts";
+import {
+  do_isAuthorizedBaselineTestMutation,
+  do_readyToFinish,
+  do_resolveFinalEvidence,
+} from "./taskverificationcontroller-methods/readiness-check.ts";
+import {
+  do_baselineReplayInstruction,
+  do_formatNextRequirement,
+} from "./taskverificationcontroller-methods/requirement-formatting.ts";
+import {
+  do_beforeToolCall,
+  do_createToolDefinition,
+  do_install,
+} from "./taskverificationcontroller-methods/tool-integration.ts";
+import { emptyState } from "./tool-classification.ts";
 import type {
   FinalMethod,
   TaskVerificationEvidence,

@@ -1,23 +1,22 @@
 export { DEFAULT_COMPACTION_SETTINGS } from "../default-settings.ts";
+export { compact } from "./branch-summary.ts";
+export { stubToolResultsForCompactionSummary, truncateKeptMessages } from "./compaction-prompt.ts";
+export { prepareCompaction } from "./default-compaction.ts";
 export {
   calculateContextTokens,
   estimateTokens,
   getLastAssistantUsage,
   isUsageReliable,
   resolveCompactionSettings,
-} from "./helpers-part1.ts";
+} from "./message-selection.ts";
 export {
   createContextBudgetReport,
   estimateContextTokens,
   getCompactionTriggerThreshold,
   selectKeepRecentTokens,
   shouldCompact,
-} from "./helpers-part2.ts";
-export { stubToolResultsForCompactionSummary, truncateKeptMessages } from "./helpers-part3.ts";
-export { findCutPoint, findTurnStartIndex, generateSummary } from "./helpers-part4.ts";
-export { prepareCompaction } from "./helpers-part5.ts";
-export { compact } from "./helpers-part6.ts";
-export {
+} from "./token-counting.ts";
+export type {
   CompactionAudit,
   CompactionDetails,
   CompactionPreparation,
@@ -33,3 +32,4 @@ export {
   ToolResultStub,
   ToolResultStubbingResult,
 } from "./types.ts";
+export { findCutPoint, findTurnStartIndex, generateSummary } from "./window-calculation.ts";

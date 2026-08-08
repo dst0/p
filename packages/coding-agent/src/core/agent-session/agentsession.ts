@@ -61,12 +61,46 @@ import {
   do__getServiceAuthWithCurrentFallback,
   do__getServiceModelRequest,
   do__shouldRunFastResponder,
-} from "./agentsession-methods/methods-part1.ts";
+} from "./agentsession-methods/auth.ts";
+import { do__runAutoCompaction } from "./agentsession-methods/auto-compaction.ts";
+import { do_abortBranchSummary, do_checkCompaction } from "./agentsession-methods/branch-summary.ts";
+import { do_abortCompaction, do_compact } from "./agentsession-methods/compact.ts";
+import {
+  do__applyUpdateSessionState,
+  do__createUpdateSessionStateToolDefinition,
+  do_getCompactionDryRun,
+} from "./agentsession-methods/compaction-dry-run.ts";
+import {
+  do__prepareDefaultCompaction,
+  do__prepareDeterministicCompaction,
+} from "./agentsession-methods/compaction-preparation.ts";
+import {
+  do__disconnectFromAgent,
+  do__emitExtensionEvent,
+  do__reconnectToAgent,
+  do_dispose,
+  do_getActiveToolNames,
+  do_getAllTools,
+  do_getLastTokenBreakdown,
+  do_getToolDefinition,
+  do_subscribe,
+  do_willRetryMessage,
+} from "./agentsession-methods/event-emission.ts";
+import { do__bindExtensionCore } from "./agentsession-methods/extension-core.ts";
+import {
+  do__applyExtensionBindings,
+  do__getEffectiveCompactionSettings,
+  do__refreshCurrentModelFromRegistry,
+  do_bindExtensions,
+  do_buildExtensionResourcePaths,
+  do_extendResourcesFromExtensions,
+  do_getExtensionSourceLabel,
+  do_setAutoCompactionEnabled,
+} from "./agentsession-methods/extensions.ts";
 import {
   do__createFastResponderMessage,
   do__maybeCreateToolResultContextExtract,
-} from "./agentsession-methods/methods-part2.ts";
-import { do__installAgentToolHooks } from "./agentsession-methods/methods-part3.ts";
+} from "./agentsession-methods/fast-responder.ts";
 import {
   do__applyAssistantSessionStateUpdate,
   do__emit,
@@ -81,42 +115,36 @@ import {
   do__replaceMessageInPlace,
   do__shouldHideContextOverflowMessage,
   do__willRetryAfterAgentEnd,
-} from "./agentsession-methods/methods-part4.ts";
+} from "./agentsession-methods/finish-work-audit.ts";
 import {
-  do__disconnectFromAgent,
-  do__emitExtensionEvent,
-  do__reconnectToAgent,
-  do_dispose,
-  do_getActiveToolNames,
-  do_getAllTools,
-  do_getLastTokenBreakdown,
-  do_getToolDefinition,
-  do_subscribe,
-  do_willRetryMessage,
-} from "./agentsession-methods/methods-part5.ts";
+  do__createKeepContextToolDefinition,
+  do__createRunSubagentToolDefinition,
+} from "./agentsession-methods/keep-context-tools.ts";
+import { do__handlePostAgentRun, do__runAgentPrompt } from "./agentsession-methods/model-resolution.ts";
 import {
-  do__getEffectiveCompletionModeForActiveTools,
-  do__getInteractionModeSystemPrompt,
-  do__normalizePromptGuidelines,
-  do__normalizePromptSnippet,
-  do__rebuildSystemPrompt,
-  do_disablePlanMode,
-  do_enablePlanMode,
-  do_setActiveToolsByName,
-  do_setScopedModels,
-} from "./agentsession-methods/methods-part6.ts";
-import { do__handlePostAgentRun, do__runAgentPrompt } from "./agentsession-methods/methods-part7.ts";
-import { do_prompt } from "./agentsession-methods/methods-part8.ts";
+  do__createTokenBreakdownForPrompt,
+  do__preparePromptContext,
+  do_diffProjectMemory,
+  do_evaluateGuardrails,
+  do_explainProjectRules,
+  do_forgetProjectMemory,
+  do_initProjectMemory,
+  do_lintProjectRules,
+  do_pinProjectMemory,
+  do_recordSubagentDigest,
+  do_searchProjectMemory,
+  do_syncProjectMemory,
+  do_updateRepoMap,
+} from "./agentsession-methods/project-memory.ts";
 import {
-  do__expandSkillCommand,
-  do__queueFollowUp,
-  do__queueSteer,
-  do__throwIfExtensionCommand,
-  do__tryExecuteExtensionCommand,
-  do_followUp,
-  do_sendCustomMessage,
-  do_steer,
-} from "./agentsession-methods/methods-part9.ts";
+  do__createRuntimeContextPromptMessage,
+  do__createRuntimeContextPrompts,
+  do__createToolPromptAccountingText,
+  do__createWorkingStatePromptMessage,
+  do__installPromptContextTransform,
+  do__withPendingMessageEntries,
+  do__withWorkingStatePromptInsertions,
+} from "./agentsession-methods/prompt-context.ts";
 import {
   do__cycleAvailableModel,
   do__cycleScopedModel,
@@ -128,7 +156,69 @@ import {
   do_getSteeringMessages,
   do_sendUserMessage,
   do_setModel,
-} from "./agentsession-methods/methods-part10.ts";
+} from "./agentsession-methods/queue-control.ts";
+import { do__collectRecallCandidates } from "./agentsession-methods/recall.ts";
+import {
+  do__getEffectiveRetryMaxAttempts,
+  do__getRetryDelayMs,
+  do__getRetryReason,
+  do__prepareRetry,
+  do__rememberBashCommand,
+  do_abortRetry,
+  do_executeBash,
+  do_setAutoRetryEnabled,
+} from "./agentsession-methods/retry.ts";
+import {
+  do__buildRuntime,
+  do__isNonRetryableProviderLimitError,
+  do__isRetryableError,
+  do_reload,
+} from "./agentsession-methods/runtime-build.ts";
+import {
+  do_createReplacedSessionContext,
+  do_exportToJsonl,
+  do_getLastAssistantText,
+  do_hasExtensionHandlers,
+} from "./agentsession-methods/session-export.ts";
+import {
+  do__extractUserMessageText,
+  do__getEffectiveCompactedMessages,
+  do__getLatestCompactionTimestamp,
+  do_exportToHtml,
+  do_getContextUsage,
+  do_getSessionStats,
+  do_getUserMessagesForForking,
+} from "./agentsession-methods/session-forking.ts";
+import {
+  do__applyMarkSessionProgress,
+  do__createSessionRecallToolDefinition,
+  do__createToolSearchToolDefinition,
+} from "./agentsession-methods/session-tools.ts";
+import {
+  do__flushPendingBashMessages,
+  do_abortBash,
+  do_recordBashResult,
+  do_setSessionName,
+} from "./agentsession-methods/shell.ts";
+import {
+  do__createMarkSessionProgressToolDefinition,
+  do__createStatePatchFromUpdateSessionStateInput,
+} from "./agentsession-methods/state-patch.ts";
+import {
+  do__formatSubagentResult,
+  do__recallSessionEvidence,
+  do__runSubagent,
+} from "./agentsession-methods/subagent.ts";
+import {
+  do__expandSkillCommand,
+  do__queueFollowUp,
+  do__queueSteer,
+  do__throwIfExtensionCommand,
+  do__tryExecuteExtensionCommand,
+  do_followUp,
+  do_sendCustomMessage,
+  do_steer,
+} from "./agentsession-methods/thinking-level.ts";
 import {
   do__clampThinkingLevel,
   do__createLiveStructuredSessionState,
@@ -145,116 +235,26 @@ import {
   do_setThinkingLevel,
   do_supportsThinking,
   do_syncQueueModesFromSettings,
-} from "./agentsession-methods/methods-part11.ts";
+} from "./agentsession-methods/thinking-level-switch.ts";
 import {
-  do__createRuntimeContextPromptMessage,
-  do__createRuntimeContextPrompts,
-  do__createToolPromptAccountingText,
-  do__createWorkingStatePromptMessage,
-  do__installPromptContextTransform,
-  do__withPendingMessageEntries,
-  do__withWorkingStatePromptInsertions,
-} from "./agentsession-methods/methods-part12.ts";
-import {
-  do__createTokenBreakdownForPrompt,
-  do__preparePromptContext,
-  do_diffProjectMemory,
-  do_evaluateGuardrails,
-  do_explainProjectRules,
-  do_forgetProjectMemory,
-  do_initProjectMemory,
-  do_lintProjectRules,
-  do_pinProjectMemory,
-  do_recordSubagentDigest,
-  do_searchProjectMemory,
-  do_syncProjectMemory,
-  do_updateRepoMap,
-} from "./agentsession-methods/methods-part13.ts";
-import {
-  do__applyUpdateSessionState,
-  do__createUpdateSessionStateToolDefinition,
-  do_getCompactionDryRun,
-} from "./agentsession-methods/methods-part14.ts";
+  do__getEffectiveCompletionModeForActiveTools,
+  do__getInteractionModeSystemPrompt,
+  do__normalizePromptGuidelines,
+  do__normalizePromptSnippet,
+  do__rebuildSystemPrompt,
+  do_disablePlanMode,
+  do_enablePlanMode,
+  do_setActiveToolsByName,
+  do_setScopedModels,
+} from "./agentsession-methods/tool-activation.ts";
+import { do__installAgentToolHooks } from "./agentsession-methods/tool-hooks.ts";
+import { do__refreshToolRegistry } from "./agentsession-methods/tool-registry.ts";
+import { do_navigateTree } from "./agentsession-methods/tree-navigation.ts";
 import {
   do__autoExecuteUpdateSessionState,
   do__reconcileSuccessfulFinishWorkState,
-} from "./agentsession-methods/methods-part15.ts";
-import {
-  do__createMarkSessionProgressToolDefinition,
-  do__createStatePatchFromUpdateSessionStateInput,
-} from "./agentsession-methods/methods-part16.ts";
-import {
-  do__applyMarkSessionProgress,
-  do__createSessionRecallToolDefinition,
-  do__createToolSearchToolDefinition,
-} from "./agentsession-methods/methods-part17.ts";
-import {
-  do__createKeepContextToolDefinition,
-  do__createRunSubagentToolDefinition,
-} from "./agentsession-methods/methods-part18.ts";
-import {
-  do__formatSubagentResult,
-  do__recallSessionEvidence,
-  do__runSubagent,
-} from "./agentsession-methods/methods-part19.ts";
-import { do__collectRecallCandidates } from "./agentsession-methods/methods-part20.ts";
-import {
-  do__prepareDefaultCompaction,
-  do__prepareDeterministicCompaction,
-} from "./agentsession-methods/methods-part21.ts";
-import { do_abortCompaction, do_compact } from "./agentsession-methods/methods-part22.ts";
-import { do_abortBranchSummary, do_checkCompaction } from "./agentsession-methods/methods-part23.ts";
-import { do__runAutoCompaction } from "./agentsession-methods/methods-part24.ts";
-import {
-  do__applyExtensionBindings,
-  do__getEffectiveCompactionSettings,
-  do__refreshCurrentModelFromRegistry,
-  do_bindExtensions,
-  do_buildExtensionResourcePaths,
-  do_extendResourcesFromExtensions,
-  do_getExtensionSourceLabel,
-  do_setAutoCompactionEnabled,
-} from "./agentsession-methods/methods-part25.ts";
-import { do__bindExtensionCore } from "./agentsession-methods/methods-part26.ts";
-import { do__refreshToolRegistry } from "./agentsession-methods/methods-part27.ts";
-import {
-  do__buildRuntime,
-  do__isNonRetryableProviderLimitError,
-  do__isRetryableError,
-  do_reload,
-} from "./agentsession-methods/methods-part28.ts";
-import {
-  do__getEffectiveRetryMaxAttempts,
-  do__getRetryDelayMs,
-  do__getRetryReason,
-  do__prepareRetry,
-  do__rememberBashCommand,
-  do_abortRetry,
-  do_executeBash,
-  do_setAutoRetryEnabled,
-} from "./agentsession-methods/methods-part29.ts";
-import {
-  do__flushPendingBashMessages,
-  do_abortBash,
-  do_recordBashResult,
-  do_setSessionName,
-} from "./agentsession-methods/methods-part30.ts";
-import { do_navigateTree } from "./agentsession-methods/methods-part31.ts";
-import {
-  do__extractUserMessageText,
-  do__getEffectiveCompactedMessages,
-  do__getLatestCompactionTimestamp,
-  do_exportToHtml,
-  do_getContextUsage,
-  do_getSessionStats,
-  do_getUserMessagesForForking,
-} from "./agentsession-methods/methods-part32.ts";
-import {
-  do_createReplacedSessionContext,
-  do_exportToJsonl,
-  do_getLastAssistantText,
-  do_hasExtensionHandlers,
-} from "./agentsession-methods/methods-part33.ts";
+} from "./agentsession-methods/update-session-state.ts";
+import { do_prompt } from "./agentsession-methods/user-messaging.ts";
 import {
   type KEEP_CONTEXT_SCHEMA,
   type MARK_SESSION_PROGRESS_SCHEMA,
@@ -264,7 +264,7 @@ import {
   type UPDATE_SESSION_STATE_SCHEMA,
   UPDATE_SESSION_STATE_TOOL_NAME,
 } from "./constants.ts";
-import { isInternalCompletionProtocolRepairMessage } from "./helpers-part1.ts";
+import { isInternalCompletionProtocolRepairMessage } from "./message-utils.ts";
 import type {
   AgentSessionConfig,
   AgentSessionEvent,
@@ -280,7 +280,7 @@ import type {
   ToolDefinitionEntry,
   ToolSearchResult,
   UpdateSessionStateInput,
-} from "./types-part1.ts";
+} from "./session-types.ts";
 import type {
   MarkSessionProgressInput,
   MarkSessionProgressResult,
@@ -292,7 +292,7 @@ import type {
   UpdateSessionStateResult,
   WorkingStatePromptInsertion,
   WorkingStatePromptInsertionOptions,
-} from "./types-part2.ts";
+} from "./state-types.ts";
 
 export class AgentSession {
   readonly agent: Agent;

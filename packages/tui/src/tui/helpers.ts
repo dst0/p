@@ -1,5 +1,5 @@
 import { KITTY_SEQUENCE_PREFIX } from "./constants.ts";
-import type { Component, Focusable, KittyImageHeader, SizeValue } from "./types-part1.ts";
+import type { Component, Focusable, KittyImageHeader, SizeValue } from "./types.ts";
 
 export function parseKittyImageHeader(line: string): KittyImageHeader | undefined {
   const sequenceStart = line.indexOf(KITTY_SEQUENCE_PREFIX);

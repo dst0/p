@@ -2,7 +2,7 @@ import type { KeyId } from "@dst0/p-tui";
 import { type Theme, theme } from "../../../modes/interactive/theme/theme.ts";
 import type { KeybindingsConfig } from "../../keybindings.ts";
 import type { ExtensionUIContext } from "../types.ts";
-import type { BuiltInKeyBindings } from "./types-part1.ts";
+import type { BuiltInKeyBindings } from "./types.ts";
 
 export const RESERVED_KEYBINDINGS_FOR_EXTENSION_CONFLICTS = [
   "app.interrupt",

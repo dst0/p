@@ -21,11 +21,11 @@ import {
   trimRepetitiveSuffix,
 } from "../../utils/repetition.ts";
 import { buildBaseOptions } from "../simple-options.ts";
-import { parseOpenAICompletionsProgressChunk, resolveCacheRetention } from "./helpers-part2.ts";
-import { createClient } from "./helpers-part3.ts";
-import { buildParams } from "./helpers-part6.ts";
-import { mapStopReason, parseChunkUsage } from "./helpers-part7.ts";
-import { getCompat } from "./helpers-part8.ts";
+import { getCompat } from "./error-handling.ts";
+import { parseOpenAICompletionsProgressChunk, resolveCacheRetention } from "./message-conversion.ts";
+import { mapStopReason, parseChunkUsage } from "./streaming-accumulation.ts";
+import { buildParams } from "./streaming-delta.ts";
+import { createClient } from "./tool-call-handling.ts";
 import type { OpenAICompletionsOptions } from "./types.ts";
 
 export const COLD_PREFILL_MIN_TOKENS = 512;

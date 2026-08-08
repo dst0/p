@@ -2,6 +2,17 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import type { StdinBuffer } from "../stdin-buffer.ts";
 import {
+  do_clearFromCursor,
+  do_clearLine,
+  do_clearProgressInterval,
+  do_clearScreen,
+  do_hideCursor,
+  do_setMouseTracking,
+  do_setProgress,
+  do_setTitle,
+  do_showCursor,
+} from "./processterminal-methods/cursor-screen.ts";
+import {
   do_clearKeyboardProtocolNegotiationBuffer,
   do_clearKeyboardProtocolNegotiationBufferFlushTimer,
   do_flushKeyboardProtocolNegotiationBufferAsInput,
@@ -13,7 +24,7 @@ import {
   do_setKeyboardProtocolNegotiationBuffer,
   do_setupStdinBuffer,
   do_start,
-} from "./processterminal-methods/methods-part1.ts";
+} from "./processterminal-methods/keyboard-protocol.ts";
 import {
   do_disableModifyOtherKeys,
   do_drainInput,
@@ -22,18 +33,7 @@ import {
   do_moveBy,
   do_stop,
   do_write,
-} from "./processterminal-methods/methods-part2.ts";
-import {
-  do_clearFromCursor,
-  do_clearLine,
-  do_clearProgressInterval,
-  do_clearScreen,
-  do_hideCursor,
-  do_setMouseTracking,
-  do_setProgress,
-  do_setTitle,
-  do_showCursor,
-} from "./processterminal-methods/methods-part3.ts";
+} from "./processterminal-methods/terminal-io.ts";
 import type { KeyboardProtocolNegotiationSequence, Terminal } from "./types.ts";
 
 export class ProcessTerminal implements Terminal {

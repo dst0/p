@@ -1,4 +1,4 @@
-import type { SettingsScope, SettingsStorage } from "./types-part1.ts";
+import type { SettingsScope, SettingsStorage } from "./types.ts";
 
 export class InMemorySettingsStorage implements SettingsStorage {
   private global: string | undefined;

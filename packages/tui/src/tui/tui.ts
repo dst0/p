@@ -16,7 +16,24 @@ import {
   do_setFocus,
   do_setFocusInternal,
   do_setShowHardwareCursor,
-} from "./tui-methods/methods-part1.ts";
+} from "./tui-methods/configuration.ts";
+import { do_positionHardwareCursor, do_queryTerminalBackgroundColor } from "./tui-methods/cursor-background.ts";
+import {
+  do_consumeCellSizeResponse,
+  do_consumeOsc11BackgroundResponse,
+  do_handleInput,
+} from "./tui-methods/input-handling.ts";
+import { do_compositeLineAt, do_extractCursorPosition } from "./tui-methods/line-compositing.ts";
+import {
+  do_applyLineResets,
+  do_collectKittyImageIds,
+  do_compositeOverlays,
+  do_deleteChangedKittyImages,
+  do_deleteKittyImages,
+  do_expandChangedRangeForKittyImages,
+  do_getKittyImageReservedRows,
+} from "./tui-methods/overlay-compositing.ts";
+import { do_resolveAnchorCol, do_resolveAnchorRow, do_resolveOverlayLayout } from "./tui-methods/overlay-layout.ts";
 import {
   do_addInputListener,
   do_getTopmostVisibleOverlay,
@@ -26,7 +43,8 @@ import {
   do_removeInputListener,
   do_showOverlay,
   do_start,
-} from "./tui-methods/methods-part2.ts";
+} from "./tui-methods/overlay-management.ts";
+import { do_doRender } from "./tui-methods/render-pipeline.ts";
 import {
   do_queryCellSize,
   do_requestRender,
@@ -34,25 +52,7 @@ import {
   do_scheduleRender,
   do_setTerminalBackgroundColor,
   do_stop,
-} from "./tui-methods/methods-part3.ts";
-import {
-  do_consumeCellSizeResponse,
-  do_consumeOsc11BackgroundResponse,
-  do_handleInput,
-} from "./tui-methods/methods-part4.ts";
-import { do_resolveAnchorCol, do_resolveAnchorRow, do_resolveOverlayLayout } from "./tui-methods/methods-part5.ts";
-import {
-  do_applyLineResets,
-  do_collectKittyImageIds,
-  do_compositeOverlays,
-  do_deleteChangedKittyImages,
-  do_deleteKittyImages,
-  do_expandChangedRangeForKittyImages,
-  do_getKittyImageReservedRows,
-} from "./tui-methods/methods-part6.ts";
-import { do_compositeLineAt, do_extractCursorPosition } from "./tui-methods/methods-part7.ts";
-import { do_doRender } from "./tui-methods/methods-part8.ts";
-import { do_positionHardwareCursor, do_queryTerminalBackgroundColor } from "./tui-methods/methods-part9.ts";
+} from "./tui-methods/terminal-control.ts";
 import type {
   BlockedOverlayFocusRestoreState,
   Component,
@@ -64,7 +64,7 @@ import type {
   OverlayOptions,
   OverlayStackEntry,
   PendingOsc11BackgroundQuery,
-} from "./types-part1.ts";
+} from "./types.ts";
 
 export class TUI extends Container {
   public terminal: Terminal;

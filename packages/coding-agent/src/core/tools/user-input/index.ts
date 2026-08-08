@@ -1,12 +1,12 @@
-export { createAskUserToolDefinition } from "./helpers-part2.ts";
 export {
   createAskUserTool,
   createConfirmUserTool,
   createConfirmUserToolDefinition,
   createSubmitPlanTool,
   createSubmitPlanToolDefinition,
-} from "./helpers-part3.ts";
-export {
+} from "./confirmation-dialog.ts";
+export { createAskUserToolDefinition } from "./tool-definition.ts";
+export type {
   AskUserToolDetails,
   AskUserToolInput,
   ConfirmUserToolDetails,

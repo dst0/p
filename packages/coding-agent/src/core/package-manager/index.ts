@@ -1,6 +1,5 @@
 export { DefaultPackageManager } from "./defaultpackagemanager.ts";
-export { getExtensionTempFolder } from "./helpers-part1.ts";
-export {
+export type {
   ConfiguredPackage,
   MissingSourceAction,
   PackageManager,
@@ -10,4 +9,5 @@ export {
   ProgressEvent,
   ResolvedPaths,
   ResolvedResource,
-} from "./types-part1.ts";
+} from "./types.ts";
+export { getExtensionTempFolder } from "./version-resolution.ts";

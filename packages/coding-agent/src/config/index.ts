@@ -11,7 +11,17 @@ export {
   PACKAGE_NAME,
   VERSION,
 } from "./constants.ts";
-export { detectInstallMethod, getPackageDir } from "./helpers-part1.ts";
+export {
+  getAuthPath,
+  getBinDir,
+  getCustomThemesDir,
+  getDebugLogPath,
+  getModelsPath,
+  getPromptsDir,
+  getSessionsDir,
+  getSettingsPath,
+  getToolsDir,
+} from "./data-paths.ts";
 export {
   expandTildePath,
   getAgentDir,
@@ -29,16 +39,6 @@ export {
   getThemesDir,
   getUpdateInstruction,
   installLegacyAgentDirEnvAlias,
-} from "./helpers-part3.ts";
-export {
-  getAuthPath,
-  getBinDir,
-  getCustomThemesDir,
-  getDebugLogPath,
-  getModelsPath,
-  getPromptsDir,
-  getSessionsDir,
-  getSettingsPath,
-  getToolsDir,
-} from "./helpers-part4.ts";
+} from "./install-paths.ts";
+export { detectInstallMethod, getPackageDir } from "./self-update.ts";
 export type { InstallMethod, SelfUpdateCommand } from "./types.ts";

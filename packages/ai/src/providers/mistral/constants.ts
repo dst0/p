@@ -5,15 +5,15 @@ import type { Context, Model, SimpleStreamOptions, StreamFunction } from "../../
 import { AssistantMessageEventStream } from "../../utils/event-stream.ts";
 import { buildBaseOptions } from "../simple-options.ts";
 import { transformMessages } from "../transform-messages.ts";
+import { buildChatPayload } from "./content-mapping.ts";
 import {
   buildRequestOptions,
   createMistralToolCallIdNormalizer,
   createOutput,
   formatMistralError,
-} from "./helpers-part1.ts";
-import { buildChatPayload } from "./helpers-part3.ts";
-import { consumeChatStream } from "./helpers-part4.ts";
-import { mapReasoningEffort, usesPromptModeReasoning, usesReasoningEffort } from "./helpers-part5.ts";
+} from "./request-building.ts";
+import { consumeChatStream } from "./response-parsing.ts";
+import { mapReasoningEffort, usesPromptModeReasoning, usesReasoningEffort } from "./streaming.ts";
 import type { MistralOptions } from "./types.ts";
 
 export const MISTRAL_TOOL_CALL_ID_LENGTH = 9;

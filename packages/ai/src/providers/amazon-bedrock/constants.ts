@@ -10,21 +10,6 @@ import { AssistantMessageEventStream } from "../../utils/event-stream.ts";
 import { createHttpProxyAgentsForTarget } from "../../utils/node-http-proxy.ts";
 import { adjustMaxTokensForThinking, buildBaseOptions, clampReasoning } from "../simple-options.ts";
 import {
-  addCustomHeadersMiddleware,
-  formatBedrockError,
-  handleContentBlockDelta,
-  handleContentBlockStart,
-  handleContentBlockStop,
-  handleMetadata,
-} from "./helpers-part1.ts";
-import {
-  buildSystemPrompt,
-  isAnthropicClaudeModel,
-  resolveCacheRetention,
-  supportsAdaptiveThinking,
-} from "./helpers-part2.ts";
-import { convertMessages } from "./helpers-part4.ts";
-import {
   buildAdditionalModelRequestFields,
   convertToolConfig,
   getConfiguredBedrockRegion,
@@ -32,7 +17,22 @@ import {
   hasConfiguredBedrockProfile,
   mapStopReason,
   shouldUseExplicitBedrockEndpoint,
-} from "./helpers-part5.ts";
+} from "./auth.ts";
+import {
+  buildSystemPrompt,
+  isAnthropicClaudeModel,
+  resolveCacheRetention,
+  supportsAdaptiveThinking,
+} from "./message-conversion.ts";
+import {
+  addCustomHeadersMiddleware,
+  formatBedrockError,
+  handleContentBlockDelta,
+  handleContentBlockStart,
+  handleContentBlockStop,
+  handleMetadata,
+} from "./request-building.ts";
+import { convertMessages } from "./streaming.ts";
 import type { BedrockOptions, Block } from "./types.ts";
 
 export const EMPTY_TEXT_PLACEHOLDER = "<empty>";

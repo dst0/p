@@ -1,2 +1,2 @@
-export * from "./helpers-part1.ts";
-export * from "./helpers-part2.ts";
+export * from "./paste-marker.ts";
+export * from "./trigger-patterns.ts";

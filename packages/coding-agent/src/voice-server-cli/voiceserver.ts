@@ -2,9 +2,9 @@ import { createServer, type IncomingMessage, type ServerResponse } from "node:ht
 import process from "node:process";
 import { VERSION } from "../config.ts";
 import { RpcClient } from "../modes/rpc/rpc-client.ts";
+import { extractFinalError, extractFinalText, resolveCliPath, sendJson, sendText } from "./cli-setup.ts";
 import { VOICE_PAGE_HTML } from "./constants.ts";
-import { extractFinalError, extractFinalText, resolveCliPath, sendJson, sendText } from "./helpers-part1.ts";
-import { openBrowser, parsePromptBody, readJson, writeSse } from "./helpers-part2.ts";
+import { openBrowser, parsePromptBody, readJson, writeSse } from "./server-io.ts";
 import type { SseClient, VoiceServerOptions } from "./types.ts";
 
 export class VoiceServer {

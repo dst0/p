@@ -1,6 +1,21 @@
 import type { FSWatcher, Stats } from "fs";
 import { IndexingService, type IndexStatus } from "../indexing-service.ts";
 import {
+  do_clearGitWatchers,
+  do_dispose,
+  do_getIndexingRoot,
+  do_handleGitWatcherError,
+  do_notifyBranchChange,
+  do_refreshGitBranchAsync,
+  do_refreshIndexingStatus,
+  do_resolveGitBranchAsync,
+  do_resolveGitBranchSync,
+  do_scheduleGitWatcherRetry,
+  do_scheduleRefresh,
+  do_setAvailableProviderCount,
+  do_setCwd,
+} from "./footerdataprovider-methods/label-formatting.ts";
+import {
   do_clearExtensionStatuses,
   do_clearProgress,
   do_getAvailableProviderCount,
@@ -23,23 +38,8 @@ import {
   do_setPrefillProgress,
   do_setQueuedProgress,
   do_setSendingProgress,
-} from "./footerdataprovider-methods/methods-part1.ts";
-import {
-  do_clearGitWatchers,
-  do_dispose,
-  do_getIndexingRoot,
-  do_handleGitWatcherError,
-  do_notifyBranchChange,
-  do_refreshGitBranchAsync,
-  do_refreshIndexingStatus,
-  do_resolveGitBranchAsync,
-  do_resolveGitBranchSync,
-  do_scheduleGitWatcherRetry,
-  do_scheduleRefresh,
-  do_setAvailableProviderCount,
-  do_setCwd,
-} from "./footerdataprovider-methods/methods-part2.ts";
-import { do_setupGitWatcher } from "./footerdataprovider-methods/methods-part3.ts";
+} from "./footerdataprovider-methods/progress-tracking.ts";
+import { do_setupGitWatcher } from "./footerdataprovider-methods/status-display.ts";
 import { findGitPaths } from "./helpers.ts";
 import type {
   GenerationProgress,

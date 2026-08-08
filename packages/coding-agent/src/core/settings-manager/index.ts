@@ -2,7 +2,7 @@ export { DEFAULT_AGENT_RETRY_BASE_DELAY_MS } from "./constants.ts";
 export { FileSettingsStorage } from "./filesettingsstorage.ts";
 export { InMemorySettingsStorage } from "./inmemorysettingsstorage.ts";
 export { SettingsManager } from "./settingsmanager.ts";
-export {
+export type {
   BranchSummarySettings,
   CompactionSettings,
   DefaultProjectTrust,
@@ -21,4 +21,4 @@ export {
   ThinkingBudgetsSettings,
   TransportSetting,
   WarningSettings,
-} from "./types-part1.ts";
+} from "./types.ts";

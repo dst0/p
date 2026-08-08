@@ -1,14 +1,14 @@
 export { CURRENT_SESSION_VERSION } from "./constants.ts";
+export { buildSessionContext, getDefaultSessionDir } from "./session-context.ts";
 export {
   assertValidSessionId,
   getLatestCompactionEntry,
   migrateSessionEntries,
   parseSessionEntries,
-} from "./helpers-part1.ts";
-export { buildSessionContext, getDefaultSessionDir } from "./helpers-part2.ts";
-export { findMostRecentSession, loadEntriesFromFile } from "./helpers-part3.ts";
+} from "./session-id.ts";
+export { findMostRecentSession, loadEntriesFromFile } from "./session-io.ts";
 export { SessionManager } from "./sessionmanager.ts";
-export {
+export type {
   BranchSummaryEntry,
   CompactionEntry,
   CustomEntry,
@@ -28,4 +28,4 @@ export {
   SessionMessageEntry,
   SessionTreeNode,
   ThinkingLevelChangeEntry,
-} from "./types-part1.ts";
+} from "./types.ts";

@@ -1,5 +1,5 @@
 export { FooterDataProvider } from "./footerdataprovider.ts";
-export {
+export type {
   GenerationProgress,
   LoadingProgress,
   ModelSwitchProgress,

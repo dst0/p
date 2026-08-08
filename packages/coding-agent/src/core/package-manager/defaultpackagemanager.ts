@@ -4,6 +4,33 @@ import type { GitSource } from "../../utils/git.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import type { PackageSource, SettingsManager } from "../settings-manager.ts";
 import {
+  do_ensureGitIgnore,
+  do_ensureGitRef,
+  do_ensureNpmProject,
+  do_getGlobalNpmRoot,
+  do_getManagedNpmInstallPath,
+  do_getNpmInstallRoot,
+  do_getPnpmGlobalPackagePath,
+  do_pruneEmptyGitParents,
+  do_refreshTemporaryGitSource,
+  do_removeGit,
+  do_updateGit,
+} from "./defaultpackagemanager-methods/cache-operations.ts";
+import {
+  do_applyPackageFilter,
+  do_collectDefaultResources,
+  do_collectPackageResources,
+  do_getBaseDirForScope,
+  do_getGitInstallPath,
+  do_getGitInstallRoot,
+  do_getLegacyGlobalNpmInstallPath,
+  do_getNpmInstallPath,
+  do_getTemporaryDir,
+  do_resolveManagedPath,
+  do_resolvePath,
+  do_resolvePathFromBase,
+} from "./defaultpackagemanager-methods/global-packages.ts";
+import {
   do_addSourceToSettings,
   do_emitProgress,
   do_getInstalledPath,
@@ -12,7 +39,27 @@ import {
   do_resolveExtensionSources,
   do_setProgressCallback,
   do_withProgress,
-} from "./defaultpackagemanager-methods/methods-part1.ts";
+} from "./defaultpackagemanager-methods/install.ts";
+import {
+  do_installNpmBatch,
+  do_shouldUpdateNpmSource,
+  do_updateConfiguredSources,
+  do_updateNpmBatch,
+} from "./defaultpackagemanager-methods/list-installed.ts";
+import { do_addAutoDiscoveredResources } from "./defaultpackagemanager-methods/lockfile-analysis.ts";
+import { do_runCommandSync } from "./defaultpackagemanager-methods/project-init.ts";
+import {
+  do_addManifestEntries,
+  do_collectFilesFromManifestEntries,
+  do_collectManifestFiles,
+  do_readPiManifest,
+  do_resolveLocalEntries,
+} from "./defaultpackagemanager-methods/registry-metadata.ts";
+import {
+  do_checkForAvailableUpdates,
+  do_resolveLocalExtensionSource,
+  do_resolvePackageSources,
+} from "./defaultpackagemanager-methods/resolve-binary.ts";
 import {
   do_install,
   do_installAndPersist,
@@ -20,18 +67,7 @@ import {
   do_remove,
   do_removeAndPersist,
   do_update,
-} from "./defaultpackagemanager-methods/methods-part2.ts";
-import {
-  do_installNpmBatch,
-  do_shouldUpdateNpmSource,
-  do_updateConfiguredSources,
-  do_updateNpmBatch,
-} from "./defaultpackagemanager-methods/methods-part3.ts";
-import {
-  do_checkForAvailableUpdates,
-  do_resolveLocalExtensionSource,
-  do_resolvePackageSources,
-} from "./defaultpackagemanager-methods/methods-part4.ts";
+} from "./defaultpackagemanager-methods/resolve-version.ts";
 import {
   do_buildNoMatchingPackageMessage,
   do_findSuggestedConfiguredSource,
@@ -45,7 +81,18 @@ import {
   do_npmHasAvailableUpdate,
   do_packageSourcesMatch,
   do_parseSource,
-} from "./defaultpackagemanager-methods/methods-part5.ts";
+} from "./defaultpackagemanager-methods/scan-dependencies.ts";
+import {
+  do_addResource,
+  do_collectFilesFromPaths,
+  do_createAccumulator,
+  do_getTargetMap,
+  do_runCommand,
+  do_runCommandCapture,
+  do_spawnCaptureCommand,
+  do_spawnCommand,
+  do_toResolvedPaths,
+} from "./defaultpackagemanager-methods/script-execution.ts";
 import {
   do_getGitUpstreamRef,
   do_getLatestNpmVersion,
@@ -54,7 +101,7 @@ import {
   do_gitHasAvailableUpdate,
   do_runGitRemoteCommand,
   do_runWithConcurrency,
-} from "./defaultpackagemanager-methods/methods-part6.ts";
+} from "./defaultpackagemanager-methods/uninstall.ts";
 import {
   do_assertProjectTrustedForScope,
   do_dedupePackages,
@@ -69,54 +116,7 @@ import {
   do_runNpmCommand,
   do_runNpmCommandSync,
   do_uninstallNpm,
-} from "./defaultpackagemanager-methods/methods-part7.ts";
-import {
-  do_ensureGitIgnore,
-  do_ensureGitRef,
-  do_ensureNpmProject,
-  do_getGlobalNpmRoot,
-  do_getManagedNpmInstallPath,
-  do_getNpmInstallRoot,
-  do_getPnpmGlobalPackagePath,
-  do_pruneEmptyGitParents,
-  do_refreshTemporaryGitSource,
-  do_removeGit,
-  do_updateGit,
-} from "./defaultpackagemanager-methods/methods-part8.ts";
-import {
-  do_applyPackageFilter,
-  do_collectDefaultResources,
-  do_collectPackageResources,
-  do_getBaseDirForScope,
-  do_getGitInstallPath,
-  do_getGitInstallRoot,
-  do_getLegacyGlobalNpmInstallPath,
-  do_getNpmInstallPath,
-  do_getTemporaryDir,
-  do_resolveManagedPath,
-  do_resolvePath,
-  do_resolvePathFromBase,
-} from "./defaultpackagemanager-methods/methods-part9.ts";
-import {
-  do_addManifestEntries,
-  do_collectFilesFromManifestEntries,
-  do_collectManifestFiles,
-  do_readPiManifest,
-  do_resolveLocalEntries,
-} from "./defaultpackagemanager-methods/methods-part10.ts";
-import { do_addAutoDiscoveredResources } from "./defaultpackagemanager-methods/methods-part11.ts";
-import {
-  do_addResource,
-  do_collectFilesFromPaths,
-  do_createAccumulator,
-  do_getTargetMap,
-  do_runCommand,
-  do_runCommandCapture,
-  do_spawnCaptureCommand,
-  do_spawnCommand,
-  do_toResolvedPaths,
-} from "./defaultpackagemanager-methods/methods-part12.ts";
-import { do_runCommandSync } from "./defaultpackagemanager-methods/methods-part13.ts";
+} from "./defaultpackagemanager-methods/workspace-detection.ts";
 import type {
   ConfiguredPackage,
   ConfiguredUpdateSource,
@@ -138,7 +138,7 @@ import type {
   ResourceAccumulator,
   ResourceType,
   SourceScope,
-} from "./types-part1.ts";
+} from "./types.ts";
 
 export class DefaultPackageManager implements PackageManager {
   public cwd: string;

@@ -6,10 +6,10 @@ export {
   PROJECT_STATE_DIR,
   PROJECT_TRACES_DIR,
 } from "./constants.ts";
-export { initProjectMemory, updateProjectMemorySnapshot } from "./helpers-part1.ts";
-export { diffProjectMemorySnapshot, readProjectMemorySnapshot, searchProjectMemory } from "./helpers-part2.ts";
-export { createProjectMemoryContext, forgetProjectMemory, pinProjectMemory } from "./helpers-part3.ts";
-export {
+export { createProjectMemoryContext, forgetProjectMemory, pinProjectMemory } from "./context-api.ts";
+export { diffProjectMemorySnapshot, readProjectMemorySnapshot, searchProjectMemory } from "./diff-formatting.ts";
+export { initProjectMemory, updateProjectMemorySnapshot } from "./snapshot.ts";
+export type {
   ProjectMemoryContextResult,
   ProjectMemoryDiffInput,
   ProjectMemoryDiffResult,

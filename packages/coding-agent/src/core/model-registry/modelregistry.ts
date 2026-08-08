@@ -4,6 +4,17 @@ import { getAgentDir } from "../../config.ts";
 import { normalizePath } from "../../utils/paths.ts";
 import type { AuthStatus, AuthStorage } from "../auth-storage.ts";
 import {
+  do_getApiKeyAndHeaders,
+  do_getApiKeyForProvider,
+  do_getProviderAuthStatus,
+  do_getProviderDisplayName,
+  do_isUsingOAuth,
+  do_registerProvider,
+  do_unregisterProvider,
+  do_upsertRegisteredProvider,
+  do_validateProviderConfig,
+} from "./modelregistry-methods/model-lookup.ts";
+import {
   do_create,
   do_getError,
   do_inMemory,
@@ -12,7 +23,8 @@ import {
   do_loadModels,
   do_mergeCustomModels,
   do_refresh,
-} from "./modelregistry-methods/methods-part1.ts";
+} from "./modelregistry-methods/model-management.ts";
+import { do_applyProviderConfig } from "./modelregistry-methods/provider-config.ts";
 import {
   do_find,
   do_getAll,
@@ -23,19 +35,7 @@ import {
   do_storeModelHeaders,
   do_storeProviderRequestConfig,
   do_validateConfig,
-} from "./modelregistry-methods/methods-part2.ts";
-import {
-  do_getApiKeyAndHeaders,
-  do_getApiKeyForProvider,
-  do_getProviderAuthStatus,
-  do_getProviderDisplayName,
-  do_isUsingOAuth,
-  do_registerProvider,
-  do_unregisterProvider,
-  do_upsertRegisteredProvider,
-  do_validateProviderConfig,
-} from "./modelregistry-methods/methods-part3.ts";
-import { do_applyProviderConfig } from "./modelregistry-methods/methods-part4.ts";
+} from "./modelregistry-methods/provider-resolution.ts";
 import type {
   CustomModelsResult,
   ModelOverride,

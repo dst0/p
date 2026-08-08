@@ -38,6 +38,19 @@ import type {
 } from "../types.ts";
 import { noOpUIContext } from "./constants.ts";
 import {
+  do_createCommandContext,
+  do_createContext,
+  do_emit,
+  do_isSessionBeforeEvent,
+} from "./extensionrunner-methods/command-handling.ts";
+import { do_emitInput, do_emitResourcesDiscover } from "./extensionrunner-methods/diagnostics.ts";
+import {
+  do_emitMessageEnd,
+  do_emitToolCall,
+  do_emitToolResult,
+  do_emitUserBash,
+} from "./extensionrunner-methods/event-dispatch.ts";
+import {
   do_bindCommandContext,
   do_bindCore,
   do_getAllRegisteredTools,
@@ -49,7 +62,12 @@ import {
   do_hasUI,
   do_setFlagValue,
   do_setUIContext,
-} from "./extensionrunner-methods/methods-part1.ts";
+} from "./extensionrunner-methods/lifecycle.ts";
+import {
+  do_emitBeforeAgentStart,
+  do_emitBeforeProviderRequest,
+  do_emitContext,
+} from "./extensionrunner-methods/sandbox-execution.ts";
 import {
   do_assertActive,
   do_emitError,
@@ -64,25 +82,7 @@ import {
   do_onError,
   do_resolveRegisteredCommands,
   do_shutdown,
-} from "./extensionrunner-methods/methods-part2.ts";
-import {
-  do_createCommandContext,
-  do_createContext,
-  do_emit,
-  do_isSessionBeforeEvent,
-} from "./extensionrunner-methods/methods-part3.ts";
-import {
-  do_emitMessageEnd,
-  do_emitToolCall,
-  do_emitToolResult,
-  do_emitUserBash,
-} from "./extensionrunner-methods/methods-part4.ts";
-import {
-  do_emitBeforeAgentStart,
-  do_emitBeforeProviderRequest,
-  do_emitContext,
-} from "./extensionrunner-methods/methods-part5.ts";
-import { do_emitInput, do_emitResourcesDiscover } from "./extensionrunner-methods/methods-part6.ts";
+} from "./extensionrunner-methods/tool-registration.ts";
 import type {
   BeforeAgentStartCombinedResult,
   ExtensionErrorListener,
@@ -95,7 +95,7 @@ import type {
   SessionBeforeEvent,
   ShutdownHandler,
   SwitchSessionHandler,
-} from "./types-part1.ts";
+} from "./types.ts";
 
 export class ExtensionRunner {
   public extensions: Extension[];

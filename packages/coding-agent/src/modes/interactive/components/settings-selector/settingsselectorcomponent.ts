@@ -7,7 +7,7 @@ import { DynamicBorder } from "../dynamic-border.ts";
 import { keyDisplayText } from "../keybinding-hints.ts";
 import { DEFAULT_PROJECT_TRUST_BY_LABEL, DEFAULT_PROJECT_TRUST_LABELS, THINKING_DESCRIPTIONS } from "./constants.ts";
 import { SelectSubmenu } from "./selectsubmenu.ts";
-import { do_getSettingsList } from "./settingsselectorcomponent-methods/methods-part1.ts";
+import { do_getSettingsList } from "./settingsselectorcomponent-methods/getter.ts";
 import type { SettingsCallbacks, SettingsConfig } from "./types.ts";
 import { WarningSettingsSubmenu } from "./warningsettingssubmenu.ts";
 

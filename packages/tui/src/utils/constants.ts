@@ -1,5 +1,3 @@
-import { AnsiCodeTracker } from "./ansicodetracker.ts";
-
 export const graphemeSegmenter = new Intl.Segmenter(undefined, { granularity: "grapheme" });
 
 export const wordSegmenter = new Intl.Segmenter(undefined, { granularity: "word" });
@@ -23,5 +21,3 @@ export const THAI_LAO_AM_REGEX = /[\u0e33\u0eb3]/;
 export const THAI_LAO_AM_GLOBAL_REGEX = /[\u0e33\u0eb3]/g;
 
 export const PUNCTUATION_REGEX = /[(){}[\]<>.,;:'"!?+\-=*/\\|&%^$#@~`]/;
-
-export const pooledStyleTracker = new AnsiCodeTracker();

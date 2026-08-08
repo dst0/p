@@ -1,5 +1,5 @@
 import { parseHttpIdleTimeoutMs } from "../http-dispatcher.ts";
-import type { Settings } from "./types-part1.ts";
+import type { Settings } from "./types.ts";
 
 export function deepMergeSettings(base: Settings, overrides: Settings): Settings {
   const result: Settings = { ...base };

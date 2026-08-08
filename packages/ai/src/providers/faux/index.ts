@@ -1,6 +1,6 @@
-export { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "./helpers-part1.ts";
-export { registerFauxProvider } from "./helpers-part4.ts";
-export {
+export { fauxAssistantMessage, fauxText, fauxThinking, fauxToolCall } from "./scenario-parsing.ts";
+export { registerFauxProvider } from "./tool-response-generation.ts";
+export type {
   FauxContentBlock,
   FauxModelDefinition,
   FauxProviderRegistration,

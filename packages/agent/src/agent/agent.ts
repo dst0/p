@@ -24,6 +24,13 @@ import type {
   ToolExecutionMode,
 } from "../types.ts";
 import {
+  do_createLoopConfig,
+  do_finishRun,
+  do_handleRunFailure,
+  do_processEvents,
+  do_runWithLifecycle,
+} from "./agent-methods/configuration.ts";
+import {
   do_abort,
   do_clearAllQueues,
   do_clearFollowUpQueue,
@@ -40,14 +47,7 @@ import {
   do_steer,
   do_subscribe,
   do_waitForIdle,
-} from "./agent-methods/methods-part1.ts";
-import {
-  do_createLoopConfig,
-  do_finishRun,
-  do_handleRunFailure,
-  do_processEvents,
-  do_runWithLifecycle,
-} from "./agent-methods/methods-part2.ts";
+} from "./agent-methods/lifecycle.ts";
 import { createMutableAgentState, defaultConvertToLlm } from "./helpers.ts";
 import { PendingMessageQueue } from "./pendingmessagequeue.ts";
 import type { ActiveRun, AgentOptions, MutableAgentState } from "./types.ts";

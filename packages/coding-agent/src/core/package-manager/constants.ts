@@ -1,4 +1,4 @@
-import type { ResourceType } from "./types-part1.ts";
+import type { ResourceType } from "./types.ts";
 
 export const NETWORK_TIMEOUT_MS = 10000;
 

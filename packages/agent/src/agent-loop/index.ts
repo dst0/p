@@ -1,2 +1,2 @@
-export { agentLoop, agentLoopContinue, runAgentLoop, runAgentLoopContinue } from "./helpers-part9.ts";
+export { agentLoop, agentLoopContinue, runAgentLoop, runAgentLoopContinue } from "./loop-control.ts";
 export type { AgentEventSink } from "./types.ts";

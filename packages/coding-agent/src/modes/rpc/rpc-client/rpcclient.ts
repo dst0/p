@@ -5,6 +5,7 @@ import type { SessionStats } from "../../../core/agent-session.ts";
 import type { BashResult } from "../../../core/bash-executor.ts";
 import type { CompactionResult } from "../../../core/compaction/index.ts";
 import type { RpcResponse, RpcSessionState, RpcSlashCommand } from "../rpc-types.ts";
+import { do_getData, do_send } from "./rpcclient-methods/cleanup.ts";
 import {
   do_abort,
   do_cycleModel,
@@ -22,7 +23,7 @@ import {
   do_start,
   do_steer,
   do_stop,
-} from "./rpcclient-methods/methods-part1.ts";
+} from "./rpcclient-methods/connection.ts";
 import {
   do_abortBash,
   do_abortRetry,
@@ -47,8 +48,7 @@ import {
   do_setSessionName,
   do_switchSession,
   do_waitForIdle,
-} from "./rpcclient-methods/methods-part2.ts";
-import { do_getData, do_send } from "./rpcclient-methods/methods-part3.ts";
+} from "./rpcclient-methods/message-handling.ts";
 import type { ModelInfo, RpcClientOptions, RpcCommandBody, RpcEventListener } from "./types.ts";
 
 export class RpcClient {

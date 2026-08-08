@@ -1,7 +1,7 @@
 export { AgentSession } from "./agentsession.ts";
 export { TOOL_SEARCH_TOOL_NAME } from "./constants.ts";
-export { isInternalCompletionProtocolRepairMessage, parseSkillBlock } from "./helpers-part1.ts";
-export {
+export { isInternalCompletionProtocolRepairMessage, parseSkillBlock } from "./message-utils.ts";
+export type {
   AgentSessionConfig,
   AgentSessionEvent,
   AgentSessionEventListener,
@@ -13,4 +13,4 @@ export {
   PromptOptions,
   SessionStateSnapshot,
   SessionStats,
-} from "./types-part1.ts";
+} from "./session-types.ts";

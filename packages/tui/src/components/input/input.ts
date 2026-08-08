@@ -1,8 +1,8 @@
 import { KillRing } from "../../kill-ring.ts";
 import type { Component, Focusable } from "../../tui.ts";
 import { UndoStack } from "../../undo-stack.ts";
-import { do_getValue, do_setValue } from "./input-methods/methods-part1.ts";
-import { do_handleInput } from "./input-methods/methods-part2.ts";
+import { do_handleInput } from "./input-methods/input-handling.ts";
+import { do_render } from "./input-methods/render.ts";
 import {
   do_deleteToLineEnd,
   do_deleteToLineStart,
@@ -19,8 +19,8 @@ import {
   do_undo,
   do_yank,
   do_yankPop,
-} from "./input-methods/methods-part3.ts";
-import { do_render } from "./input-methods/methods-part4.ts";
+} from "./input-methods/text-editing.ts";
+import { do_getValue, do_setValue } from "./input-methods/value-access.ts";
 import type { InputState } from "./types.ts";
 
 export class Input implements Component, Focusable {

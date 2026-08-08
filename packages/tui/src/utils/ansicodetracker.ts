@@ -1,4 +1,4 @@
-import { formatOsc8Close, formatOsc8Hyperlink, parseOsc8Hyperlink } from "./helpers-part3.ts";
+import { formatOsc8Close, formatOsc8Hyperlink, parseOsc8Hyperlink } from "./terminal-output.ts";
 import type { ActiveHyperlink } from "./types.ts";
 
 export class AnsiCodeTracker {

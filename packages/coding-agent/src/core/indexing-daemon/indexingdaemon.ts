@@ -10,6 +10,7 @@ import {
 } from "@dst0/p-code-index";
 import { computeIndexingVersion } from "../indexing-service.ts";
 import { DEFAULT_REPOSITORY_TIMEOUT_MS } from "./constants.ts";
+import { do_drainWorker, do_requestRefresh, do_startDrain } from "./indexingdaemon-methods/health-check.ts";
 import {
   do_ensureBackends,
   do_prepareForRestart,
@@ -17,15 +18,7 @@ import {
   do_start,
   do_stop,
   do_syncRegistry,
-} from "./indexingdaemon-methods/methods-part1.ts";
-import {
-  do_handleRegistryWatchError,
-  do_handleRepositoryWatchError,
-  do_runRegistrySync,
-  do_watchRegistry,
-  do_watchRepository,
-} from "./indexingdaemon-methods/methods-part2.ts";
-import { do_drainWorker, do_requestRefresh, do_startDrain } from "./indexingdaemon-methods/methods-part3.ts";
+} from "./indexingdaemon-methods/lifecycle.ts";
 import {
   do_acknowledgePriorityRequest,
   do_applyRuntimeStatus,
@@ -34,14 +27,21 @@ import {
   do_runRepositoryOperation,
   do_stopDrain,
   do_updateRuntimeProgress,
-} from "./indexingdaemon-methods/methods-part4.ts";
+} from "./indexingdaemon-methods/runtime-operations.ts";
 import {
   do_cancelEmbeddingIdleTimer,
   do_closeRuntime,
   do_log,
   do_resetEmbeddingIdleTimer,
   do_writeStatus,
-} from "./indexingdaemon-methods/methods-part5.ts";
+} from "./indexingdaemon-methods/status-logging.ts";
+import {
+  do_handleRegistryWatchError,
+  do_handleRepositoryWatchError,
+  do_runRegistrySync,
+  do_watchRegistry,
+  do_watchRepository,
+} from "./indexingdaemon-methods/status-monitoring.ts";
 import type {
   DaemonLock,
   DrainWorker,

@@ -21,12 +21,12 @@ import {
   do_set,
   do_setFallbackResolver,
   do_setRuntimeApiKey,
-} from "./authstorage-methods/methods-part1.ts";
+} from "./authstorage-methods/credential-storage.ts";
 import {
   do_getApiKey,
   do_getOAuthProviders,
   do_refreshOAuthTokenWithLock,
-} from "./authstorage-methods/methods-part2.ts";
+} from "./authstorage-methods/provider-auth.ts";
 import type { AuthCredential, AuthStatus, AuthStorageBackend, AuthStorageData } from "./types.ts";
 
 export class AuthStorage {

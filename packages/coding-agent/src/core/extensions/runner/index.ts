@@ -1,6 +1,6 @@
 export { ExtensionRunner } from "./extensionrunner.ts";
 export { emitProjectTrustEvent, emitSessionShutdownEvent } from "./helpers.ts";
-export {
+export type {
   ExtensionErrorListener,
   ForkHandler,
   NavigateTreeHandler,
@@ -8,4 +8,4 @@ export {
   ReloadHandler,
   ShutdownHandler,
   SwitchSessionHandler,
-} from "./types-part1.ts";
+} from "./types.ts";

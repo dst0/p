@@ -18,11 +18,11 @@ import { headersToRecord } from "../../utils/headers.ts";
 import { parseStreamingJson } from "../../utils/json-parse.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "../github-copilot-headers.ts";
 import { adjustMaxTokensForThinking, buildBaseOptions } from "../simple-options.ts";
-import { resolveCacheRetention } from "./helpers-part1.ts";
-import { iterateAnthropicEvents, mapThinkingLevelToEffort } from "./helpers-part2.ts";
-import { createClient } from "./helpers-part3.ts";
-import { buildParams, shouldUseFineGrainedToolStreamingBeta } from "./helpers-part5.ts";
-import { mapStopReason } from "./helpers-part6.ts";
+import { createClient } from "./content-mapping.ts";
+import { iterateAnthropicEvents, mapThinkingLevelToEffort } from "./message-conversion.ts";
+import { resolveCacheRetention } from "./request-building.ts";
+import { buildParams, shouldUseFineGrainedToolStreamingBeta } from "./response-parsing.ts";
+import { mapStopReason } from "./streaming.ts";
 import type { AnthropicOptions } from "./types.ts";
 
 export const claudeCodeVersion = "2.1.75";

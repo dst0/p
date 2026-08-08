@@ -1,4 +1,4 @@
 export { streamOpenAICompletions, streamSimpleOpenAICompletions } from "./constants.ts";
-export { parseOpenAICompletionsProgressChunk } from "./helpers-part2.ts";
-export { convertMessages } from "./helpers-part4.ts";
+export { convertMessages } from "./content-mapping.ts";
+export { parseOpenAICompletionsProgressChunk } from "./message-conversion.ts";
 export type { OpenAICompletionsOptions } from "./types.ts";

@@ -10,6 +10,22 @@ import { SettingsManager } from "../settings-manager.ts";
 import type { Skill } from "../skills.ts";
 import type { SourceInfo } from "../source-info.ts";
 import {
+  do_dedupeThemes,
+  do_detectExtensionConflicts,
+  do_discoverAppendSystemPromptFile,
+  do_discoverSystemPromptFile,
+  do_isUnderPath,
+} from "./defaultresourceloader-methods/discovery.ts";
+import {
+  do_addExtensionConflictDiagnostics,
+  do_loadCurrentExtensionSet,
+  do_loadFinalExtensionSet,
+  do_mapSkillPath,
+  do_normalizeExtensionPaths,
+  do_resolveExtensionLoadPath,
+  do_updateSkillsFromPaths,
+} from "./defaultresourceloader-methods/extension-loading.ts";
+import {
   do_extendResources,
   do_getAgentsFiles,
   do_getAppendSystemPrompt,
@@ -19,24 +35,7 @@ import {
   do_getSystemPrompt,
   do_getThemes,
   do_loadProjectTrustExtensions,
-} from "./defaultresourceloader-methods/methods-part1.ts";
-import { do_reload } from "./defaultresourceloader-methods/methods-part2.ts";
-import {
-  do_addExtensionConflictDiagnostics,
-  do_loadCurrentExtensionSet,
-  do_loadFinalExtensionSet,
-  do_mapSkillPath,
-  do_normalizeExtensionPaths,
-  do_resolveExtensionLoadPath,
-  do_updateSkillsFromPaths,
-} from "./defaultresourceloader-methods/methods-part3.ts";
-import {
-  do_applyExtensionSourceInfo,
-  do_findSourceInfoForPath,
-  do_getDefaultSourceInfoForPath,
-  do_updatePromptsFromPaths,
-  do_updateThemesFromPaths,
-} from "./defaultresourceloader-methods/methods-part4.ts";
+} from "./defaultresourceloader-methods/getters.ts";
 import {
   do_dedupePrompts,
   do_loadExtensionFactories,
@@ -45,14 +44,15 @@ import {
   do_loadThemesFromDir,
   do_mergePaths,
   do_resolveResourcePath,
-} from "./defaultresourceloader-methods/methods-part5.ts";
+} from "./defaultresourceloader-methods/path-resolution.ts";
 import {
-  do_dedupeThemes,
-  do_detectExtensionConflicts,
-  do_discoverAppendSystemPromptFile,
-  do_discoverSystemPromptFile,
-  do_isUnderPath,
-} from "./defaultresourceloader-methods/methods-part6.ts";
+  do_applyExtensionSourceInfo,
+  do_findSourceInfoForPath,
+  do_getDefaultSourceInfoForPath,
+  do_updatePromptsFromPaths,
+  do_updateThemesFromPaths,
+} from "./defaultresourceloader-methods/prompt-theme-paths.ts";
+import { do_reload } from "./defaultresourceloader-methods/reload.ts";
 import type {
   DefaultResourceLoaderOptions,
   ResourceExtensionPaths,

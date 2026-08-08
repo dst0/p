@@ -6,6 +6,29 @@ import { UndoStack } from "../../undo-stack.ts";
 import type { SelectList } from "../select-list.ts";
 import { DEFAULT_AUTOCOMPLETE_TRIGGER_CHARACTERS } from "./constants.ts";
 import {
+  do_createAutocompleteList,
+  do_forceFileAutocomplete,
+  do_getAutocompleteDebounceMs,
+  do_getBestAutocompleteMatchIndex,
+  do_handleSlashCommandCompletion,
+  do_handleTabCompletion,
+  do_requestAutocomplete,
+  do_setAutocompleteTriggerCharacters,
+  do_startAutocompleteRequest,
+  do_tryTriggerAutocomplete,
+} from "./editor-methods/autocomplete-matching.ts";
+import {
+  do_applyAutocompleteSuggestions,
+  do_cancelAutocomplete,
+  do_cancelAutocompleteRequest,
+  do_clearAutocompleteUi,
+  do_isAutocompleteRequestCurrent,
+  do_isShowingAutocomplete,
+  do_runAutocompleteRequest,
+  do_updateAutocomplete,
+} from "./editor-methods/autocomplete-request.ts";
+import { do_handleBackspace, do_moveToVisualLine, do_setCursorCol } from "./editor-methods/backspace-cursor.ts";
+import {
   do_addToHistory,
   do_exitHistoryBrowsing,
   do_getAutocompleteMaxVisible,
@@ -20,9 +43,23 @@ import {
   do_setPaddingX,
   do_setTextInternal,
   do_validPasteIds,
-} from "./editor-methods/methods-part1.ts";
-import { do_render } from "./editor-methods/methods-part2.ts";
-import { do_handleInput } from "./editor-methods/methods-part3.ts";
+} from "./editor-methods/configuration.ts";
+import {
+  do_moveCursor,
+  do_moveWordBackwards,
+  do_pageScroll,
+  do_yank,
+  do_yankPop,
+} from "./editor-methods/cursor-movement.ts";
+import { do_handleInput } from "./editor-methods/input-handling.ts";
+import {
+  do_addNewLine,
+  do_handlePaste,
+  do_shouldSubmitOnBackslashEnter,
+  do_submitValue,
+} from "./editor-methods/paste-submit.ts";
+import { do_render } from "./editor-methods/render.ts";
+import { do_insertCharacter, do_insertTextAtCursorInternal } from "./editor-methods/text-insertion.ts";
 import {
   do_expandPasteMarkers,
   do_getCursor,
@@ -33,15 +70,7 @@ import {
   do_layoutText,
   do_normalizeText,
   do_setText,
-} from "./editor-methods/methods-part4.ts";
-import { do_insertCharacter, do_insertTextAtCursorInternal } from "./editor-methods/methods-part5.ts";
-import {
-  do_addNewLine,
-  do_handlePaste,
-  do_shouldSubmitOnBackslashEnter,
-  do_submitValue,
-} from "./editor-methods/methods-part6.ts";
-import { do_handleBackspace, do_moveToVisualLine, do_setCursorCol } from "./editor-methods/methods-part7.ts";
+} from "./editor-methods/text-layout.ts";
 import {
   do_computeVerticalMoveColumn,
   do_deleteToEndOfLine,
@@ -49,21 +78,14 @@ import {
   do_deleteWordBackwards,
   do_moveToLineEnd,
   do_moveToLineStart,
-} from "./editor-methods/methods-part8.ts";
+} from "./editor-methods/vertical-movement.ts";
 import {
   do_buildVisualLineMap,
   do_deleteWordForward,
   do_findCurrentVisualLine,
   do_findVisualLineAt,
   do_handleForwardDelete,
-} from "./editor-methods/methods-part9.ts";
-import {
-  do_moveCursor,
-  do_moveWordBackwards,
-  do_pageScroll,
-  do_yank,
-  do_yankPop,
-} from "./editor-methods/methods-part10.ts";
+} from "./editor-methods/word-operations.ts";
 import {
   do_deleteYankedText,
   do_insertYankedText,
@@ -74,30 +96,8 @@ import {
   do_moveWordForwards,
   do_pushUndoSnapshot,
   do_undo,
-} from "./editor-methods/methods-part11.ts";
-import {
-  do_createAutocompleteList,
-  do_forceFileAutocomplete,
-  do_getAutocompleteDebounceMs,
-  do_getBestAutocompleteMatchIndex,
-  do_handleSlashCommandCompletion,
-  do_handleTabCompletion,
-  do_requestAutocomplete,
-  do_setAutocompleteTriggerCharacters,
-  do_startAutocompleteRequest,
-  do_tryTriggerAutocomplete,
-} from "./editor-methods/methods-part12.ts";
-import {
-  do_applyAutocompleteSuggestions,
-  do_cancelAutocomplete,
-  do_cancelAutocompleteRequest,
-  do_clearAutocompleteUi,
-  do_isAutocompleteRequestCurrent,
-  do_isShowingAutocomplete,
-  do_runAutocompleteRequest,
-  do_updateAutocomplete,
-} from "./editor-methods/methods-part13.ts";
-import { buildDebouncePattern, buildTriggerPattern } from "./helpers-part2.ts";
+} from "./editor-methods/yank-undo.ts";
+import { buildDebouncePattern, buildTriggerPattern } from "./trigger-patterns.ts";
 import type { EditorOptions, EditorState, EditorTheme, LayoutLine } from "./types.ts";
 
 export class Editor implements Component, Focusable {

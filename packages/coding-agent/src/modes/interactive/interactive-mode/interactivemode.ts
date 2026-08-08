@@ -54,6 +54,12 @@ import { PlanPanel, type PlanPanelMode, PlanStatusTracker, type SgrMouseEvent } 
 import type { ToolExecutionComponent } from "../components/tool-execution.ts";
 import { getEditorTheme, initTheme, setRegisteredThemes, type Theme } from "../theme/theme.ts";
 import { DEFAULT_PLAN_PANEL_WIDTH } from "./constants.ts";
+import { do_subscribeToAgent } from "./interactivemode-methods/agent-subscription.ts";
+import {
+  do_completeProviderAuthentication,
+  do_showLoginProviderSelector,
+  do_showOAuthSelector,
+} from "./interactivemode-methods/auth-selector.ts";
 import {
   do_createBaseAutocompleteProvider,
   do_detectThemeIfUnset,
@@ -61,18 +67,34 @@ import {
   do_getBuiltInCommandConflictDiagnostics,
   do_prefixAutocompleteDescription,
   do_updateTerminalBackground,
-} from "./interactivemode-methods/methods-part1.ts";
+} from "./interactivemode-methods/autocomplete-setup.ts";
+import { do_addMessageToChat } from "./interactivemode-methods/chat-message.ts";
 import {
-  do_setupAutocompleteProvider,
-  do_showStartupNoticesIfNeeded,
-} from "./interactivemode-methods/methods-part2.ts";
-import { do_init } from "./interactivemode-methods/methods-part3.ts";
+  do_getUserInput,
+  do_handleCtrlC,
+  do_handleCtrlD,
+  do_rebuildChatFromMessages,
+  do_renderInitialMessages,
+  do_renderProjectTrustWarningIfNeeded,
+  do_renderSessionContext,
+} from "./interactivemode-methods/chat-rendering.ts";
+import { do_handleCloneCommand, do_showUserMessageSelector } from "./interactivemode-methods/clone-command.ts";
+import { do_handleCompactCommand, do_stop } from "./interactivemode-methods/compact-command.ts";
 import {
-  do_checkForPackageUpdates,
-  do_checkTmuxKeyboardSetup,
-  do_run,
-  do_updateTerminalTitle,
-} from "./interactivemode-methods/methods-part4.ts";
+  do_checkDaxnutsEasterEgg,
+  do_formatCompactionDryRun,
+  do_handleArminSaysHi,
+  do_handleBashCommand,
+  do_handleDaxnuts,
+  do_handleDebugCommand,
+  do_handleDementedDelves,
+} from "./interactivemode-methods/debug-command.ts";
+import {
+  do_findSourceInfoForPath,
+  do_formatDiagnostics,
+  do_formatPathWithSource,
+  do_formatScopeGroups,
+} from "./interactivemode-methods/diagnostic-formatting.ts";
 import {
   do_formatContextPath,
   do_formatDisplayPath,
@@ -85,42 +107,32 @@ import {
   do_getShortPath,
   do_getStartupExpansionState,
   do_reportInstallTelemetry,
-} from "./interactivemode-methods/methods-part5.ts";
+} from "./interactivemode-methods/display-formatting.ts";
+import { do_setupEditorSubmitHandler } from "./interactivemode-methods/editor-submit.ts";
+import { do_handleEvent } from "./interactivemode-methods/event-handler.ts";
 import {
-  do_buildScopeGroups,
-  do_getCompactDisplayPathSegments,
-  do_getCompactExtensionLabels,
-  do_getCompactNonPackageExtensionLabel,
-  do_getDisplaySourceInfo,
-  do_getScopeGroup,
-  do_isPackageSource,
-} from "./interactivemode-methods/methods-part6.ts";
+  do_getPathCommandArgument,
+  do_handleExportCommand,
+  do_handleReloadCommand,
+} from "./interactivemode-methods/export-command.ts";
+import { do_showExtensionCustom, do_showExtensionError } from "./interactivemode-methods/extension-custom.ts";
 import {
-  do_findSourceInfoForPath,
-  do_formatDiagnostics,
-  do_formatPathWithSource,
-  do_formatScopeGroups,
-} from "./interactivemode-methods/methods-part7.ts";
-import { do_showLoadedResources } from "./interactivemode-methods/methods-part8.ts";
+  do_hideExtensionEditor,
+  do_hideExtensionInput,
+  do_setCustomEditorComponent,
+  do_showExtensionEditor,
+  do_showExtensionInput,
+  do_showExtensionNotify,
+} from "./interactivemode-methods/extension-editor.ts";
 import {
-  do_applyRuntimeSettings,
-  do_bindCurrentSessionExtensions,
-  do_getRegisteredToolDefinition,
-  do_handleFatalRuntimeError,
-  do_rebindCurrentSession,
-  do_renderCurrentSessionState,
-} from "./interactivemode-methods/methods-part9.ts";
-import {
-  do_createWorkingLoader,
-  do_getWorkingLoaderMessage,
-  do_setExtensionStatus,
-  do_setExtensionWidget,
-  do_setHiddenThinkingLabel,
-  do_setupExtensionShortcuts,
-  do_setWorkingIndicator,
-  do_setWorkingVisible,
-  do_stopWorkingLoader,
-} from "./interactivemode-methods/methods-part10.ts";
+  do_createExtensionUIContext,
+  do_createProjectTrustContext,
+  do_hideExtensionSelector,
+  do_promptForCodeIndexingIfNeeded,
+  do_promptForMissingSessionCwd,
+  do_showExtensionConfirm,
+  do_showExtensionSelector,
+} from "./interactivemode-methods/extension-ui-context.ts";
 import {
   do_addExtensionTerminalInputListener,
   do_clearExtensionTerminalInputListeners,
@@ -130,58 +142,15 @@ import {
   do_resetExtensionUI,
   do_setExtensionFooter,
   do_setExtensionHeader,
-} from "./interactivemode-methods/methods-part11.ts";
+} from "./interactivemode-methods/extension-widgets.ts";
 import {
-  do_createExtensionUIContext,
-  do_createProjectTrustContext,
-  do_hideExtensionSelector,
-  do_promptForCodeIndexingIfNeeded,
-  do_promptForMissingSessionCwd,
-  do_showExtensionConfirm,
-  do_showExtensionSelector,
-} from "./interactivemode-methods/methods-part12.ts";
-import {
-  do_hideExtensionEditor,
-  do_hideExtensionInput,
-  do_setCustomEditorComponent,
-  do_showExtensionEditor,
-  do_showExtensionInput,
-  do_showExtensionNotify,
-} from "./interactivemode-methods/methods-part13.ts";
-import { do_showExtensionCustom, do_showExtensionError } from "./interactivemode-methods/methods-part14.ts";
-import { do_handleClipboardImagePaste, do_setupKeyHandlers } from "./interactivemode-methods/methods-part15.ts";
-import { do_setupEditorSubmitHandler } from "./interactivemode-methods/methods-part16.ts";
-import { do_subscribeToAgent } from "./interactivemode-methods/methods-part17.ts";
-import { do_handleEvent } from "./interactivemode-methods/methods-part18.ts";
-import {
-  do_getPlanPanelBounds,
-  do_getPlanPanelCompactWidth,
-  do_getPlanPanelMaxHeight,
-  do_getUserMessageText,
-  do_handlePlanPanelInput,
-  do_hidePlanPanel,
-  do_setPlanPanelMouseMode,
-  do_showPlanPanelOverlay,
-  do_togglePlanPanel,
-} from "./interactivemode-methods/methods-part19.ts";
-import {
-  do_handlePlanPanelMouse,
-  do_resizePlanPanel,
-  do_scrollPlanPanel,
-  do_setPlanPanelSize,
-  do_showStatus,
-  do_syncPlanTracker,
-} from "./interactivemode-methods/methods-part20.ts";
-import { do_addMessageToChat } from "./interactivemode-methods/methods-part21.ts";
-import {
-  do_getUserInput,
-  do_handleCtrlC,
-  do_handleCtrlD,
-  do_rebuildChatFromMessages,
-  do_renderInitialMessages,
-  do_renderProjectTrustWarningIfNeeded,
-  do_renderSessionContext,
-} from "./interactivemode-methods/methods-part22.ts";
+  do_flushCompactionQueue,
+  do_flushPendingBashComponents,
+  do_showSelector,
+} from "./interactivemode-methods/flush-operations.ts";
+import { do_handleClearCommand, do_handleHotkeysCommand } from "./interactivemode-methods/hotkeys-command.ts";
+import { do_init } from "./interactivemode-methods/init.ts";
+import { do_handleClipboardImagePaste, do_setupKeyHandlers } from "./interactivemode-methods/key-handlers.ts";
 import {
   do_checkShutdownRequested,
   do_emergencyTerminalExit,
@@ -190,7 +159,28 @@ import {
   do_shutdown,
   do_uncaughtCrash,
   do_unregisterSignalHandlers,
-} from "./interactivemode-methods/methods-part23.ts";
+} from "./interactivemode-methods/lifecycle.ts";
+import {
+  do_showApiKeyLoginDialog,
+  do_showBedrockSetupDialog,
+  do_showOAuthLoginSelect,
+} from "./interactivemode-methods/login-dialog.ts";
+import {
+  do_handleIndexCommand,
+  do_handleMemoryCommand,
+  do_handleRulesCommand,
+} from "./interactivemode-methods/memory-command.ts";
+import {
+  do_findExactModelMatch,
+  do_getModelCandidates,
+  do_handleModelCommand,
+  do_maybeSaveImplicitProjectTrustAfterReload,
+  do_maybeWarnAboutAnthropicSubscriptionAuth,
+  do_setShowHarnessMessages,
+  do_showTrustSelector,
+  do_updateAvailableProviderCount,
+} from "./interactivemode-methods/model-command.ts";
+import { do_showModelSelector, do_showModelsSelector } from "./interactivemode-methods/model-selector.ts";
 import {
   do_clearLlmOrchestratorQueueProgress,
   do_cycleModel,
@@ -204,7 +194,86 @@ import {
   do_toggleToolOutputExpansion,
   do_updateEditorBorderColor,
   do_updateQueuedFooterSpinnerTimer,
-} from "./interactivemode-methods/methods-part24.ts";
+} from "./interactivemode-methods/model-switching.ts";
+import { do_handlePlanCommand, do_showLoginDialog } from "./interactivemode-methods/plan-command.ts";
+import {
+  do_handlePlanPanelMouse,
+  do_resizePlanPanel,
+  do_scrollPlanPanel,
+  do_setPlanPanelSize,
+  do_showStatus,
+  do_syncPlanTracker,
+} from "./interactivemode-methods/plan-panel-interaction.ts";
+import {
+  do_getPlanPanelBounds,
+  do_getPlanPanelCompactWidth,
+  do_getPlanPanelMaxHeight,
+  do_getUserMessageText,
+  do_handlePlanPanelInput,
+  do_hidePlanPanel,
+  do_setPlanPanelMouseMode,
+  do_showPlanPanelOverlay,
+  do_togglePlanPanel,
+} from "./interactivemode-methods/plan-panel-layout.ts";
+import {
+  do_clearAllQueues,
+  do_getAllQueuedMessages,
+  do_isExtensionCommand,
+  do_queueCompactionMessage,
+  do_restoreQueuedMessagesToEditor,
+  do_showPackageUpdateNotification,
+  do_updatePendingMessagesDisplay,
+} from "./interactivemode-methods/queue-management.ts";
+import { do_showLoadedResources } from "./interactivemode-methods/resource-display.ts";
+import {
+  do_checkForPackageUpdates,
+  do_checkTmuxKeyboardSetup,
+  do_run,
+  do_updateTerminalTitle,
+} from "./interactivemode-methods/run-loop.ts";
+import {
+  do_buildScopeGroups,
+  do_getCompactDisplayPathSegments,
+  do_getCompactExtensionLabels,
+  do_getCompactNonPackageExtensionLabel,
+  do_getDisplaySourceInfo,
+  do_getScopeGroup,
+  do_isPackageSource,
+} from "./interactivemode-methods/scope-grouping.ts";
+import {
+  do_applyRuntimeSettings,
+  do_bindCurrentSessionExtensions,
+  do_getRegisteredToolDefinition,
+  do_handleFatalRuntimeError,
+  do_rebindCurrentSession,
+  do_renderCurrentSessionState,
+} from "./interactivemode-methods/session-binding.ts";
+import {
+  do_handleCopyCommand,
+  do_handleNameCommand,
+  do_handleSessionCommand,
+  do_handleStateCommand,
+} from "./interactivemode-methods/session-command.ts";
+import {
+  do_getLoginProviderOptions,
+  do_getLogoutProviderOptions,
+  do_handleResumeSession,
+  do_showLoginAuthTypeSelector,
+  do_showSessionSelector,
+} from "./interactivemode-methods/session-selector.ts";
+import { do_showSettingsSelector } from "./interactivemode-methods/settings-selector.ts";
+import { do_handleImportCommand, do_handleShareCommand } from "./interactivemode-methods/share-command.ts";
+import {
+  do_setupAutocompleteProvider,
+  do_showStartupNoticesIfNeeded,
+} from "./interactivemode-methods/startup-notices.ts";
+import {
+  do_buildIndexStatusText,
+  do_getAppKeyDisplay,
+  do_getEditorKeyDisplay,
+  do_handleChangelogCommand,
+} from "./interactivemode-methods/status-command.ts";
+import { do_showTreeSelector } from "./interactivemode-methods/tree-selector.ts";
 import {
   do_clearEditor,
   do_openExternalEditor,
@@ -214,87 +283,18 @@ import {
   do_showRetryProgressInFooter,
   do_showWarning,
   do_toggleThinkingBlockVisibility,
-} from "./interactivemode-methods/methods-part25.ts";
+} from "./interactivemode-methods/ui-utilities.ts";
 import {
-  do_clearAllQueues,
-  do_getAllQueuedMessages,
-  do_isExtensionCommand,
-  do_queueCompactionMessage,
-  do_restoreQueuedMessagesToEditor,
-  do_showPackageUpdateNotification,
-  do_updatePendingMessagesDisplay,
-} from "./interactivemode-methods/methods-part26.ts";
-import {
-  do_flushCompactionQueue,
-  do_flushPendingBashComponents,
-  do_showSelector,
-} from "./interactivemode-methods/methods-part27.ts";
-import { do_showSettingsSelector } from "./interactivemode-methods/methods-part28.ts";
-import {
-  do_findExactModelMatch,
-  do_getModelCandidates,
-  do_handleModelCommand,
-  do_maybeSaveImplicitProjectTrustAfterReload,
-  do_maybeWarnAboutAnthropicSubscriptionAuth,
-  do_setShowHarnessMessages,
-  do_showTrustSelector,
-  do_updateAvailableProviderCount,
-} from "./interactivemode-methods/methods-part29.ts";
-import { do_showModelSelector, do_showModelsSelector } from "./interactivemode-methods/methods-part30.ts";
-import { do_handleCloneCommand, do_showUserMessageSelector } from "./interactivemode-methods/methods-part31.ts";
-import { do_showTreeSelector } from "./interactivemode-methods/methods-part32.ts";
-import {
-  do_getLoginProviderOptions,
-  do_getLogoutProviderOptions,
-  do_handleResumeSession,
-  do_showLoginAuthTypeSelector,
-  do_showSessionSelector,
-} from "./interactivemode-methods/methods-part33.ts";
-import {
-  do_completeProviderAuthentication,
-  do_showLoginProviderSelector,
-  do_showOAuthSelector,
-} from "./interactivemode-methods/methods-part34.ts";
-import {
-  do_showApiKeyLoginDialog,
-  do_showBedrockSetupDialog,
-  do_showOAuthLoginSelect,
-} from "./interactivemode-methods/methods-part35.ts";
-import { do_handlePlanCommand, do_showLoginDialog } from "./interactivemode-methods/methods-part36.ts";
-import {
-  do_getPathCommandArgument,
-  do_handleExportCommand,
-  do_handleReloadCommand,
-} from "./interactivemode-methods/methods-part37.ts";
-import { do_handleImportCommand, do_handleShareCommand } from "./interactivemode-methods/methods-part38.ts";
-import {
-  do_handleCopyCommand,
-  do_handleNameCommand,
-  do_handleSessionCommand,
-  do_handleStateCommand,
-} from "./interactivemode-methods/methods-part39.ts";
-import {
-  do_handleIndexCommand,
-  do_handleMemoryCommand,
-  do_handleRulesCommand,
-} from "./interactivemode-methods/methods-part40.ts";
-import {
-  do_buildIndexStatusText,
-  do_getAppKeyDisplay,
-  do_getEditorKeyDisplay,
-  do_handleChangelogCommand,
-} from "./interactivemode-methods/methods-part41.ts";
-import { do_handleClearCommand, do_handleHotkeysCommand } from "./interactivemode-methods/methods-part42.ts";
-import {
-  do_checkDaxnutsEasterEgg,
-  do_formatCompactionDryRun,
-  do_handleArminSaysHi,
-  do_handleBashCommand,
-  do_handleDaxnuts,
-  do_handleDebugCommand,
-  do_handleDementedDelves,
-} from "./interactivemode-methods/methods-part43.ts";
-import { do_handleCompactCommand, do_stop } from "./interactivemode-methods/methods-part44.ts";
+  do_createWorkingLoader,
+  do_getWorkingLoaderMessage,
+  do_setExtensionStatus,
+  do_setExtensionWidget,
+  do_setHiddenThinkingLabel,
+  do_setupExtensionShortcuts,
+  do_setWorkingIndicator,
+  do_setWorkingVisible,
+  do_stopWorkingLoader,
+} from "./interactivemode-methods/working-indicator.ts";
 import type { CompactionQueuedMessage, InteractiveModeOptions, PlanPanelBounds, PlanPanelDragMode } from "./types.ts";
 
 export class InteractiveMode {

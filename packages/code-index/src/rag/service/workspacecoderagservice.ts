@@ -34,27 +34,6 @@ import { QdrantVectorStore } from "../vector-store.ts";
 import { hashText } from "./helpers.ts";
 import type { NormalizedSearchInput, PreparedChunk, PreparedFile, RefreshPlan } from "./types.ts";
 import {
-  do_dispose,
-  do_initialize,
-  do_rebuild,
-  do_refresh,
-  do_search,
-  do_status,
-} from "./workspacecoderagservice-methods/methods-part1.ts";
-import { do_runRefresh } from "./workspacecoderagservice-methods/methods-part2.ts";
-import { do_performRebuild } from "./workspacecoderagservice-methods/methods-part3.ts";
-import { do_performSparseGenerationRefresh } from "./workspacecoderagservice-methods/methods-part4.ts";
-import {
-  do_assertReusableCounts,
-  do_encodeAndUpsert,
-  do_encodeSpoolAndUpsert,
-  do_fallbackRebuildProgress,
-  do_isReusablePoint,
-  do_performIncrementalRefresh,
-  do_refreshSettingsSilently,
-  do_reportProgress,
-} from "./workspacecoderagservice-methods/methods-part5.ts";
-import {
   do_assertSpoolCapacity,
   do_createRefreshPlan,
   do_preparationLimits,
@@ -65,16 +44,27 @@ import {
   do_refreshPreparedFileIfChanged,
   do_scanWorkspace,
   do_sparseVocabularyTokenLimit,
-} from "./workspacecoderagservice-methods/methods-part6.ts";
+} from "./workspacecoderagservice-methods/file-preparation.ts";
 import {
-  do_formatHits,
-  do_loadVocabulary,
-  do_manifestIncompatibility,
-  do_normalizeSearchInput,
-  do_reloadPersistedState,
-  do_snapshotStatus,
-  do_updateFastFreshness,
-} from "./workspacecoderagservice-methods/methods-part7.ts";
+  do_assertReusableCounts,
+  do_encodeAndUpsert,
+  do_encodeSpoolAndUpsert,
+  do_fallbackRebuildProgress,
+  do_isReusablePoint,
+  do_performIncrementalRefresh,
+  do_refreshSettingsSilently,
+  do_reportProgress,
+} from "./workspacecoderagservice-methods/incremental-refresh.ts";
+import {
+  do_dispose,
+  do_initialize,
+  do_rebuild,
+  do_refresh,
+  do_search,
+  do_status,
+} from "./workspacecoderagservice-methods/lifecycle.ts";
+import { do_performRebuild } from "./workspacecoderagservice-methods/rebuild.ts";
+import { do_runRefresh } from "./workspacecoderagservice-methods/refresh.ts";
 import {
   do_collectionName,
   do_createGeneration,
@@ -84,7 +74,17 @@ import {
   do_startBackgroundRefresh,
   do_summaryForPlan,
   do_vocabularyPath,
-} from "./workspacecoderagservice-methods/methods-part8.ts";
+} from "./workspacecoderagservice-methods/search-response.ts";
+import { do_performSparseGenerationRefresh } from "./workspacecoderagservice-methods/sparse-refresh.ts";
+import {
+  do_formatHits,
+  do_loadVocabulary,
+  do_manifestIncompatibility,
+  do_normalizeSearchInput,
+  do_reloadPersistedState,
+  do_snapshotStatus,
+  do_updateFastFreshness,
+} from "./workspacecoderagservice-methods/state-management.ts";
 
 export class WorkspaceCodeRagService implements CodeRagService {
   public workspaceRoot: string;

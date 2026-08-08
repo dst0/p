@@ -1,19 +1,19 @@
 import type { Token, Tokens } from "marked";
 import type { Component } from "../../tui.ts";
-import { do_applyDefaultStyle, do_invalidate, do_render, do_setText } from "./markdown-methods/methods-part1.ts";
-import {
-  do_getDefaultInlineStyleContext,
-  do_getDefaultStylePrefix,
-  do_getStylePrefix,
-} from "./markdown-methods/methods-part2.ts";
-import { do_renderToken } from "./markdown-methods/methods-part3.ts";
 import {
   do_getOrderedListMarker,
   do_getUnorderedListMarker,
   do_renderInlineTokens,
-} from "./markdown-methods/methods-part4.ts";
-import { do_getLongestWordWidth, do_renderList, do_wrapCellText } from "./markdown-methods/methods-part5.ts";
-import { do_renderTable } from "./markdown-methods/methods-part6.ts";
+} from "./markdown-methods/inline-rendering.ts";
+import { do_getLongestWordWidth, do_renderList, do_wrapCellText } from "./markdown-methods/list-table-helpers.ts";
+import { do_renderTable } from "./markdown-methods/table-rendering.ts";
+import { do_applyDefaultStyle, do_invalidate, do_render, do_setText } from "./markdown-methods/text-rendering.ts";
+import {
+  do_getDefaultInlineStyleContext,
+  do_getDefaultStylePrefix,
+  do_getStylePrefix,
+} from "./markdown-methods/theming.ts";
+import { do_renderToken } from "./markdown-methods/token-rendering.ts";
 import type { DefaultTextStyle, InlineStyleContext, MarkdownOptions, MarkdownTheme } from "./types.ts";
 
 export class Markdown implements Component {

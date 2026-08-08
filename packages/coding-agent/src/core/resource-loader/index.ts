@@ -1,7 +1,7 @@
 export type { ResourceCollision, ResourceDiagnostic } from "../diagnostics.ts";
 export { DefaultResourceLoader } from "./defaultresourceloader.ts";
 export { loadProjectContextFiles } from "./helpers.ts";
-export {
+export type {
   DefaultResourceLoaderOptions,
   ResourceExtensionPaths,
   ResourceLoader,
