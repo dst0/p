@@ -14,10 +14,14 @@ npm run build
 Run from source:
 
 ```bash
-/path/to/p/p-test.sh
+npm run dev --
 ```
 
-The script can be run from any directory. P keeps the caller's current working directory.
+From another directory, pass the repository explicitly. P keeps the caller's current working directory:
+
+```bash
+npm --prefix /path/to/p run dev --
+```
 
 For a quicker alias during local development, add to `~/.zshrc`:
 
@@ -64,9 +68,10 @@ Never use `__dirname` directly for package assets.
 ## Testing
 
 ```bash
-./test.sh                         # Run non-LLM tests (no API keys needed)
-npm test                          # Run all tests
-npm test -- test/specific.test.ts # Run specific test
+npm test                          # Run all workspace tests with current credentials/endpoints
+npm run test:unit                 # Run non-e2e tests without API keys
+npm run test:unit:coverage        # Run the non-e2e suite with coverage
+npm run test:cli                  # Smoke-test source CLI execution
 node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts # Test indexing version hash
 ```
 

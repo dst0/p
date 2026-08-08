@@ -1,65 +1,24 @@
 import type { Theme } from "../../modes/interactive/theme/theme.ts";
+import { type DelegatedMethods, installDelegatedMethods } from "../../utils/install-delegated-methods.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import { createEventBus, type EventBus } from "../event-bus.ts";
 import { createExtensionRuntime } from "../extensions/loader.ts";
-import type { Extension, ExtensionFactory, ExtensionRuntime, LoadExtensionsResult } from "../extensions/types.ts";
-import { DefaultPackageManager, type PathMetadata, type ResolvedResource } from "../package-manager.ts";
+import type { ExtensionFactory, LoadExtensionsResult } from "../extensions/types.ts";
+import { DefaultPackageManager } from "../package-manager.ts";
 import type { PromptTemplate } from "../prompt-templates.ts";
 import { SettingsManager } from "../settings-manager.ts";
 import type { Skill } from "../skills.ts";
 import type { SourceInfo } from "../source-info.ts";
-import {
-  do_dedupeThemes,
-  do_detectExtensionConflicts,
-  do_discoverAppendSystemPromptFile,
-  do_discoverSystemPromptFile,
-  do_isUnderPath,
-} from "./defaultresourceloader-methods/discovery.ts";
-import {
-  do_addExtensionConflictDiagnostics,
-  do_loadCurrentExtensionSet,
-  do_loadFinalExtensionSet,
-  do_mapSkillPath,
-  do_normalizeExtensionPaths,
-  do_resolveExtensionLoadPath,
-  do_updateSkillsFromPaths,
-} from "./defaultresourceloader-methods/extension-loading.ts";
-import {
-  do_extendResources,
-  do_getAgentsFiles,
-  do_getAppendSystemPrompt,
-  do_getExtensions,
-  do_getPrompts,
-  do_getSkills,
-  do_getSystemPrompt,
-  do_getThemes,
-  do_loadProjectTrustExtensions,
-} from "./defaultresourceloader-methods/getters.ts";
-import {
-  do_dedupePrompts,
-  do_loadExtensionFactories,
-  do_loadThemeFromFile,
-  do_loadThemes,
-  do_loadThemesFromDir,
-  do_mergePaths,
-  do_resolveResourcePath,
-} from "./defaultresourceloader-methods/path-resolution.ts";
-import {
-  do_applyExtensionSourceInfo,
-  do_findSourceInfoForPath,
-  do_getDefaultSourceInfoForPath,
-  do_updatePromptsFromPaths,
-  do_updateThemesFromPaths,
-} from "./defaultresourceloader-methods/prompt-theme-paths.ts";
-import { do_reload } from "./defaultresourceloader-methods/reload.ts";
-import type {
-  DefaultResourceLoaderOptions,
-  ResourceExtensionPaths,
-  ResourceLoader,
-  ResourceLoaderReloadOptions,
-} from "./types.ts";
+import * as discoveryDelegates from "./defaultresourceloader-methods/discovery.ts";
+import * as extensionLoadingDelegates from "./defaultresourceloader-methods/extension-loading.ts";
+import * as gettersDelegates from "./defaultresourceloader-methods/getters.ts";
+import * as pathResolutionDelegates from "./defaultresourceloader-methods/path-resolution.ts";
+import * as promptThemePathsDelegates from "./defaultresourceloader-methods/prompt-theme-paths.ts";
+import * as reloadDelegates from "./defaultresourceloader-methods/reload.ts";
+import type { DefaultResourceLoaderOptions, ResourceLoader } from "./types.ts";
 
+// biome-ignore lint/suspicious/noUnsafeDeclarationMerging: The installer below synchronously defines every delegated method.
 export class DefaultResourceLoader implements ResourceLoader {
   public cwd: string;
 
@@ -198,158 +157,25 @@ export class DefaultResourceLoader implements ResourceLoader {
     this.lastPromptPaths = [];
     this.lastThemePaths = [];
   }
-
-  getExtensions(): LoadExtensionsResult {
-    return do_getExtensions(this);
-  }
-
-  getSkills(): { skills: Skill[]; diagnostics: ResourceDiagnostic[] } {
-    return do_getSkills(this);
-  }
-
-  getPrompts(): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
-    return do_getPrompts(this);
-  }
-
-  getThemes(): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
-    return do_getThemes(this);
-  }
-
-  getAgentsFiles(): { agentsFiles: Array<{ path: string; content: string }> } {
-    return do_getAgentsFiles(this);
-  }
-
-  getSystemPrompt(): string | undefined {
-    return do_getSystemPrompt(this);
-  }
-
-  getAppendSystemPrompt(): string[] {
-    return do_getAppendSystemPrompt(this);
-  }
-
-  extendResources(paths: ResourceExtensionPaths): void {
-    do_extendResources(this, paths);
-  }
-
-  async loadProjectTrustExtensions(): Promise<LoadExtensionsResult> {
-    return do_loadProjectTrustExtensions(this);
-  }
-
-  async reload(options?: ResourceLoaderReloadOptions): Promise<void> {
-    return do_reload(this, options);
-  }
-
-  async loadCurrentExtensionSet(options: { includeInlineFactories: boolean }): Promise<LoadExtensionsResult> {
-    return do_loadCurrentExtensionSet(this, options);
-  }
-
-  resolveExtensionLoadPath(path: string): string {
-    return do_resolveExtensionLoadPath(this, path);
-  }
-
-  async loadFinalExtensionSet(
-    extensionPaths: string[],
-    preTrustExtensions: LoadExtensionsResult | undefined,
-  ): Promise<LoadExtensionsResult> {
-    return do_loadFinalExtensionSet(this, extensionPaths, preTrustExtensions);
-  }
-
-  addExtensionConflictDiagnostics(extensionsResult: LoadExtensionsResult): void {
-    do_addExtensionConflictDiagnostics(this, extensionsResult);
-  }
-
-  mapSkillPath(resource: ResolvedResource, metadataByPath: Map<string, PathMetadata>): string {
-    return do_mapSkillPath(this, resource, metadataByPath);
-  }
-
-  normalizeExtensionPaths(
-    entries: Array<{ path: string; metadata: PathMetadata }>,
-  ): Array<{ path: string; metadata: PathMetadata }> {
-    return do_normalizeExtensionPaths(this, entries);
-  }
-
-  updateSkillsFromPaths(skillPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
-    do_updateSkillsFromPaths(this, skillPaths, metadataByPath);
-  }
-
-  updatePromptsFromPaths(promptPaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
-    do_updatePromptsFromPaths(this, promptPaths, metadataByPath);
-  }
-
-  updateThemesFromPaths(themePaths: string[], metadataByPath?: Map<string, PathMetadata>): void {
-    do_updateThemesFromPaths(this, themePaths, metadataByPath);
-  }
-
-  applyExtensionSourceInfo(extensions: Extension[], metadataByPath: Map<string, PathMetadata>): void {
-    do_applyExtensionSourceInfo(this, extensions, metadataByPath);
-  }
-
-  findSourceInfoForPath(
-    resourcePath: string,
-    extraSourceInfos?: Map<string, SourceInfo>,
-    metadataByPath?: Map<string, PathMetadata>,
-  ): SourceInfo | undefined {
-    return do_findSourceInfoForPath(this, resourcePath, extraSourceInfos, metadataByPath);
-  }
-
-  getDefaultSourceInfoForPath(filePath: string): SourceInfo {
-    return do_getDefaultSourceInfoForPath(this, filePath);
-  }
-
-  mergePaths(primary: string[], additional: string[]): string[] {
-    return do_mergePaths(this, primary, additional);
-  }
-
-  resolveResourcePath(p: string): string {
-    return do_resolveResourcePath(this, p);
-  }
-
-  loadThemes(
-    paths: string[],
-    includeDefaults: boolean = true,
-  ): {
-    themes: Theme[];
-    diagnostics: ResourceDiagnostic[];
-  } {
-    return do_loadThemes(this, paths, includeDefaults);
-  }
-
-  loadThemesFromDir(dir: string, themes: Theme[], diagnostics: ResourceDiagnostic[]): void {
-    do_loadThemesFromDir(this, dir, themes, diagnostics);
-  }
-
-  loadThemeFromFile(filePath: string, themes: Theme[], diagnostics: ResourceDiagnostic[]): void {
-    do_loadThemeFromFile(this, filePath, themes, diagnostics);
-  }
-
-  async loadExtensionFactories(runtime: ExtensionRuntime): Promise<{
-    extensions: Extension[];
-    errors: Array<{ path: string; error: string }>;
-  }> {
-    return do_loadExtensionFactories(this, runtime);
-  }
-
-  dedupePrompts(prompts: PromptTemplate[]): { prompts: PromptTemplate[]; diagnostics: ResourceDiagnostic[] } {
-    return do_dedupePrompts(this, prompts);
-  }
-
-  dedupeThemes(themes: Theme[]): { themes: Theme[]; diagnostics: ResourceDiagnostic[] } {
-    return do_dedupeThemes(this, themes);
-  }
-
-  discoverSystemPromptFile(): string | undefined {
-    return do_discoverSystemPromptFile(this);
-  }
-
-  discoverAppendSystemPromptFile(): string | undefined {
-    return do_discoverAppendSystemPromptFile(this);
-  }
-
-  isUnderPath(target: string, root: string): boolean {
-    return do_isUnderPath(this, target, root);
-  }
-
-  detectExtensionConflicts(extensions: Extension[]): Array<{ path: string; message: string }> {
-    return do_detectExtensionConflicts(this, extensions);
-  }
 }
+
+type DefaultResourceLoaderMethods = DelegatedMethods<
+  DefaultResourceLoader,
+  typeof discoveryDelegates &
+    typeof extensionLoadingDelegates &
+    typeof gettersDelegates &
+    typeof pathResolutionDelegates &
+    typeof promptThemePathsDelegates &
+    typeof reloadDelegates
+>;
+
+export interface DefaultResourceLoader extends DefaultResourceLoaderMethods {}
+
+installDelegatedMethods(DefaultResourceLoader.prototype, [
+  discoveryDelegates,
+  extensionLoadingDelegates,
+  gettersDelegates,
+  pathResolutionDelegates,
+  promptThemePathsDelegates,
+  reloadDelegates,
+]);

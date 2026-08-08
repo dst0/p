@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
+- Added an automated source-structure guard for the 300-line limit and one-class-per-file rule.
+
 ### Added
 
 - Automatically detect supported AMD and Intel Linux NPUs, install revision-pinned Ryzen AI/XDNA/Vitis AI or Intel NPU/Level Zero/OpenVINO runtimes, validate the actual accelerator backend, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
@@ -9,6 +14,7 @@
 ### Fixed
 
 - Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend truthfully in embedding health, use Qwen3 last-token pooling for ONNX embeddings, and invalidate indexes missing embedding compatibility metadata.
+- Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 
 ## [0.4.158] - 2026-08-06
 

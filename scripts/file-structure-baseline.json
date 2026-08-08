@@ -1,0 +1,818 @@
+{
+  "packages/agent/src/harness/agent-harness.ts": {
+    "classes": 1,
+    "lines": 1094
+  },
+  "packages/agent/src/harness/compaction/compaction.ts": {
+    "classes": 0,
+    "lines": 850
+  },
+  "packages/agent/src/harness/env/nodejs.ts": {
+    "classes": 1,
+    "lines": 528
+  },
+  "packages/agent/src/harness/skills.ts": {
+    "classes": 0,
+    "lines": 375
+  },
+  "packages/agent/src/harness/types.ts": {
+    "classes": 6,
+    "lines": 843
+  },
+  "packages/agent/src/harness/utils/truncate.ts": {
+    "classes": 0,
+    "lines": 344
+  },
+  "packages/agent/src/proxy.ts": {
+    "classes": 1,
+    "lines": 367
+  },
+  "packages/agent/src/types.ts": {
+    "classes": 0,
+    "lines": 508
+  },
+  "packages/agent/test/agent-loop.test.ts": {
+    "classes": 1,
+    "lines": 2518
+  },
+  "packages/agent/test/agent.test.ts": {
+    "classes": 1,
+    "lines": 904
+  },
+  "packages/agent/test/branch-summarization.test.ts": {
+    "classes": 0,
+    "lines": 317
+  },
+  "packages/agent/test/e2e.test.ts": {
+    "classes": 0,
+    "lines": 406
+  },
+  "packages/agent/test/harness/agent-harness.test.ts": {
+    "classes": 0,
+    "lines": 916
+  },
+  "packages/agent/test/harness/compaction.test.ts": {
+    "classes": 0,
+    "lines": 823
+  },
+  "packages/agent/test/harness/nodejs-env.test.ts": {
+    "classes": 0,
+    "lines": 518
+  },
+  "packages/agent/test/harness/shell-output.test.ts": {
+    "classes": 0,
+    "lines": 310
+  },
+  "packages/agent/test/proxy.test.ts": {
+    "classes": 0,
+    "lines": 451
+  },
+  "packages/agent/test/wait-loop-recovery.test.ts": {
+    "classes": 1,
+    "lines": 319
+  },
+  "packages/ai/scripts/generate-models.ts": {
+    "classes": 0,
+    "lines": 2239
+  },
+  "packages/ai/src/providers/google-shared.ts": {
+    "classes": 0,
+    "lines": 350
+  },
+  "packages/ai/src/providers/google-vertex.ts": {
+    "classes": 0,
+    "lines": 566
+  },
+  "packages/ai/src/providers/google.ts": {
+    "classes": 0,
+    "lines": 498
+  },
+  "packages/ai/src/providers/openai-codex-responses.ts": {
+    "classes": 4,
+    "lines": 1483
+  },
+  "packages/ai/src/providers/openai-responses-shared.ts": {
+    "classes": 0,
+    "lines": 558
+  },
+  "packages/ai/src/providers/openai-responses.ts": {
+    "classes": 0,
+    "lines": 314
+  },
+  "packages/ai/src/providers/register-builtins.ts": {
+    "classes": 0,
+    "lines": 412
+  },
+  "packages/ai/src/utils/event-stream.ts": {
+    "classes": 2,
+    "lines": 88
+  },
+  "packages/ai/src/utils/oauth/anthropic.ts": {
+    "classes": 0,
+    "lines": 405
+  },
+  "packages/ai/src/utils/oauth/github-copilot.ts": {
+    "classes": 0,
+    "lines": 361
+  },
+  "packages/ai/src/utils/validation.ts": {
+    "classes": 0,
+    "lines": 324
+  },
+  "packages/ai/test/abort.test.ts": {
+    "classes": 0,
+    "lines": 304
+  },
+  "packages/ai/test/amazon-bedrock-coverage.test.ts": {
+    "classes": 0,
+    "lines": 352
+  },
+  "packages/ai/test/bedrock-convert-messages.test.ts": {
+    "classes": 3,
+    "lines": 245
+  },
+  "packages/ai/test/bedrock-custom-headers.test.ts": {
+    "classes": 3,
+    "lines": 202
+  },
+  "packages/ai/test/bedrock-endpoint-resolution.test.ts": {
+    "classes": 3,
+    "lines": 157
+  },
+  "packages/ai/test/cache-retention.test.ts": {
+    "classes": 1,
+    "lines": 499
+  },
+  "packages/ai/test/codex-websocket-cached-probe.ts": {
+    "classes": 0,
+    "lines": 339
+  },
+  "packages/ai/test/context-overflow.test.ts": {
+    "classes": 0,
+    "lines": 735
+  },
+  "packages/ai/test/cross-provider-handoff.test.ts": {
+    "classes": 0,
+    "lines": 501
+  },
+  "packages/ai/test/empty.test.ts": {
+    "classes": 0,
+    "lines": 738
+  },
+  "packages/ai/test/faux-provider.test.ts": {
+    "classes": 0,
+    "lines": 597
+  },
+  "packages/ai/test/github-copilot-oauth.test.ts": {
+    "classes": 0,
+    "lines": 403
+  },
+  "packages/ai/test/image-tool-result.test.ts": {
+    "classes": 0,
+    "lines": 501
+  },
+  "packages/ai/test/mistral-coverage.test.ts": {
+    "classes": 0,
+    "lines": 355
+  },
+  "packages/ai/test/openai-codex-oauth.test.ts": {
+    "classes": 0,
+    "lines": 451
+  },
+  "packages/ai/test/openai-codex-stream.test.ts": {
+    "classes": 6,
+    "lines": 1979
+  },
+  "packages/ai/test/openai-completions-retry.test.ts": {
+    "classes": 1,
+    "lines": 540
+  },
+  "packages/ai/test/openai-completions-tool-choice.test.ts": {
+    "classes": 1,
+    "lines": 1458
+  },
+  "packages/ai/test/stream.test.ts": {
+    "classes": 0,
+    "lines": 1630
+  },
+  "packages/ai/test/tokens.test.ts": {
+    "classes": 0,
+    "lines": 334
+  },
+  "packages/ai/test/tool-call-without-result.test.ts": {
+    "classes": 0,
+    "lines": 328
+  },
+  "packages/ai/test/total-tokens.test.ts": {
+    "classes": 0,
+    "lines": 778
+  },
+  "packages/ai/test/unicode-surrogate.test.ts": {
+    "classes": 0,
+    "lines": 763
+  },
+  "packages/code-index/embedding_backends/base.py": {
+    "classes": 3,
+    "lines": 59
+  },
+  "packages/code-index/embedding_server.py": {
+    "classes": 4,
+    "lines": 897
+  },
+  "packages/code-index/resource_manager.py": {
+    "classes": 2,
+    "lines": 348
+  },
+  "packages/code-index/src/embed/errors.ts": {
+    "classes": 2,
+    "lines": 21
+  },
+  "packages/code-index/src/rag/file-preparation.ts": {
+    "classes": 3,
+    "lines": 407
+  },
+  "packages/code-index/src/rag/types.ts": {
+    "classes": 0,
+    "lines": 332
+  },
+  "packages/code-index/src/rag/vector-store.ts": {
+    "classes": 3,
+    "lines": 446
+  },
+  "packages/code-index/test/coverage-completion-final.test.ts": {
+    "classes": 1,
+    "lines": 319
+  },
+  "packages/code-index/test/coverage-completion.test.ts": {
+    "classes": 0,
+    "lines": 485
+  },
+  "packages/code-index/test/embed-servers-and-http-more.test.ts": {
+    "classes": 0,
+    "lines": 306
+  },
+  "packages/code-index/test/file-preparation.test.ts": {
+    "classes": 0,
+    "lines": 548
+  },
+  "packages/code-index/test/rag-deep-coverage.test.ts": {
+    "classes": 1,
+    "lines": 355
+  },
+  "packages/code-index/test/rag-service.test.ts": {
+    "classes": 2,
+    "lines": 1504
+  },
+  "packages/code-index/test/repository-directory.test.ts": {
+    "classes": 2,
+    "lines": 143
+  },
+  "packages/code-index/test/test_device_selection.py": {
+    "classes": 4,
+    "lines": 300
+  },
+  "packages/code-index/test/test_embedding_server.py": {
+    "classes": 4,
+    "lines": 167
+  },
+  "packages/code-index/test/vector-store.test.ts": {
+    "classes": 0,
+    "lines": 721
+  },
+  "packages/coding-agent/examples/extensions/border-status-editor.ts": {
+    "classes": 2,
+    "lines": 145
+  },
+  "packages/coding-agent/examples/extensions/custom-provider-anthropic/index.ts": {
+    "classes": 0,
+    "lines": 602
+  },
+  "packages/coding-agent/examples/extensions/custom-provider-gitlab-duo/index.ts": {
+    "classes": 0,
+    "lines": 398
+  },
+  "packages/coding-agent/examples/extensions/doom-overlay/doom/build/doom.js": {
+    "classes": 5,
+    "lines": 21
+  },
+  "packages/coding-agent/examples/extensions/gondolin/index.ts": {
+    "classes": 0,
+    "lines": 531
+  },
+  "packages/coding-agent/examples/extensions/minimal-mode.ts": {
+    "classes": 0,
+    "lines": 426
+  },
+  "packages/coding-agent/examples/extensions/plan-mode/index.ts": {
+    "classes": 0,
+    "lines": 333
+  },
+  "packages/coding-agent/examples/extensions/preset.ts": {
+    "classes": 0,
+    "lines": 430
+  },
+  "packages/coding-agent/examples/extensions/questionnaire.ts": {
+    "classes": 0,
+    "lines": 440
+  },
+  "packages/coding-agent/examples/extensions/sandbox/index.ts": {
+    "classes": 0,
+    "lines": 321
+  },
+  "packages/coding-agent/examples/extensions/snake.ts": {
+    "classes": 1,
+    "lines": 343
+  },
+  "packages/coding-agent/examples/extensions/space-invaders.ts": {
+    "classes": 1,
+    "lines": 560
+  },
+  "packages/coding-agent/examples/extensions/subagent/index.ts": {
+    "classes": 0,
+    "lines": 983
+  },
+  "packages/coding-agent/examples/extensions/tic-tac-toe.ts": {
+    "classes": 4,
+    "lines": 1004
+  },
+  "packages/coding-agent/examples/rpc-extension-ui.ts": {
+    "classes": 5,
+    "lines": 632
+  },
+  "packages/coding-agent/src/cli/args.ts": {
+    "classes": 0,
+    "lines": 454
+  },
+  "packages/coding-agent/src/core/agent-session-runtime.ts": {
+    "classes": 2,
+    "lines": 433
+  },
+  "packages/coding-agent/src/core/compaction/branch-summarization.ts": {
+    "classes": 0,
+    "lines": 364
+  },
+  "packages/coding-agent/src/core/compaction/minimal-compaction.ts": {
+    "classes": 0,
+    "lines": 458
+  },
+  "packages/coding-agent/src/core/export-html/index.ts": {
+    "classes": 0,
+    "lines": 316
+  },
+  "packages/coding-agent/src/core/export-html/template.js": {
+    "classes": 0,
+    "lines": 1864
+  },
+  "packages/coding-agent/src/core/extensions/loader.ts": {
+    "classes": 0,
+    "lines": 633
+  },
+  "packages/coding-agent/src/core/extensions/types.ts": {
+    "classes": 0,
+    "lines": 1635
+  },
+  "packages/coding-agent/src/core/indexing-service.ts": {
+    "classes": 1,
+    "lines": 402
+  },
+  "packages/coding-agent/src/core/keybindings.ts": {
+    "classes": 1,
+    "lines": 405
+  },
+  "packages/coding-agent/src/core/model-resolver.ts": {
+    "classes": 0,
+    "lines": 685
+  },
+  "packages/coding-agent/src/core/project-rules.ts": {
+    "classes": 0,
+    "lines": 344
+  },
+  "packages/coding-agent/src/core/repo-map.ts": {
+    "classes": 0,
+    "lines": 438
+  },
+  "packages/coding-agent/src/core/sdk.ts": {
+    "classes": 0,
+    "lines": 470
+  },
+  "packages/coding-agent/src/core/skills.ts": {
+    "classes": 0,
+    "lines": 487
+  },
+  "packages/coding-agent/src/core/tools/bash.ts": {
+    "classes": 1,
+    "lines": 491
+  },
+  "packages/coding-agent/src/core/tools/edit.ts": {
+    "classes": 0,
+    "lines": 456
+  },
+  "packages/coding-agent/src/core/tools/find.ts": {
+    "classes": 0,
+    "lines": 368
+  },
+  "packages/coding-agent/src/core/tools/index.ts": {
+    "classes": 0,
+    "lines": 372
+  },
+  "packages/coding-agent/src/core/tools/read.ts": {
+    "classes": 0,
+    "lines": 368
+  },
+  "packages/coding-agent/src/core/tools/rg.ts": {
+    "classes": 0,
+    "lines": 395
+  },
+  "packages/coding-agent/src/index.ts": {
+    "classes": 0,
+    "lines": 402
+  },
+  "packages/coding-agent/src/migrations.ts": {
+    "classes": 0,
+    "lines": 353
+  },
+  "packages/coding-agent/src/modes/interactive/components/armin.ts": {
+    "classes": 1,
+    "lines": 382
+  },
+  "packages/coding-agent/src/modes/interactive/components/config-selector.ts": {
+    "classes": 3,
+    "lines": 628
+  },
+  "packages/coding-agent/src/modes/interactive/components/footer.ts": {
+    "classes": 1,
+    "lines": 428
+  },
+  "packages/coding-agent/src/modes/interactive/components/model-selector.ts": {
+    "classes": 1,
+    "lines": 335
+  },
+  "packages/coding-agent/src/modes/interactive/components/plan-panel.ts": {
+    "classes": 2,
+    "lines": 357
+  },
+  "packages/coding-agent/src/modes/interactive/components/scoped-models-selector.ts": {
+    "classes": 1,
+    "lines": 369
+  },
+  "packages/coding-agent/src/modes/interactive/components/session-selector.ts": {
+    "classes": 3,
+    "lines": 1022
+  },
+  "packages/coding-agent/src/modes/interactive/components/tool-execution.ts": {
+    "classes": 1,
+    "lines": 410
+  },
+  "packages/coding-agent/src/modes/interactive/components/tree-selector.ts": {
+    "classes": 5,
+    "lines": 1319
+  },
+  "packages/coding-agent/src/modes/interactive/components/user-message-selector.ts": {
+    "classes": 2,
+    "lines": 155
+  },
+  "packages/coding-agent/src/modes/interactive/theme/theme.ts": {
+    "classes": 1,
+    "lines": 1261
+  },
+  "packages/coding-agent/test/agent-session-auto-compaction-queue.test.ts": {
+    "classes": 0,
+    "lines": 535
+  },
+  "packages/coding-agent/test/agent-session-concurrent.test.ts": {
+    "classes": 1,
+    "lines": 630
+  },
+  "packages/coding-agent/test/agent-session-real-mini-pc-compaction.test.ts": {
+    "classes": 0,
+    "lines": 370
+  },
+  "packages/coding-agent/test/agent-session-real-state-update.test.ts": {
+    "classes": 0,
+    "lines": 656
+  },
+  "packages/coding-agent/test/agent-session-retry.test.ts": {
+    "classes": 1,
+    "lines": 377
+  },
+  "packages/coding-agent/test/agent-session-stats.test.ts": {
+    "classes": 0,
+    "lines": 314
+  },
+  "packages/coding-agent/test/agent-session-tree-navigation.test.ts": {
+    "classes": 0,
+    "lines": 323
+  },
+  "packages/coding-agent/test/args.test.ts": {
+    "classes": 0,
+    "lines": 485
+  },
+  "packages/coding-agent/test/auth-storage.test.ts": {
+    "classes": 0,
+    "lines": 616
+  },
+  "packages/coding-agent/test/compaction-extensions.test.ts": {
+    "classes": 0,
+    "lines": 415
+  },
+  "packages/coding-agent/test/compaction-minimal-retention.test.ts": {
+    "classes": 0,
+    "lines": 320
+  },
+  "packages/coding-agent/test/compaction.test.ts": {
+    "classes": 0,
+    "lines": 1354
+  },
+  "packages/coding-agent/test/config.test.ts": {
+    "classes": 0,
+    "lines": 454
+  },
+  "packages/coding-agent/test/extensions-discovery.test.ts": {
+    "classes": 0,
+    "lines": 488
+  },
+  "packages/coding-agent/test/extensions-runner.test.ts": {
+    "classes": 0,
+    "lines": 890
+  },
+  "packages/coding-agent/test/footer-data-provider.test.ts": {
+    "classes": 0,
+    "lines": 474
+  },
+  "packages/coding-agent/test/footer-width.test.ts": {
+    "classes": 0,
+    "lines": 432
+  },
+  "packages/coding-agent/test/git-update.test.ts": {
+    "classes": 0,
+    "lines": 484
+  },
+  "packages/coding-agent/test/indexing-progress-display.test.ts": {
+    "classes": 0,
+    "lines": 317
+  },
+  "packages/coding-agent/test/indexing-reinstall-lifecycle.test.ts": {
+    "classes": 1,
+    "lines": 320
+  },
+  "packages/coding-agent/test/indexing-reinstall-script.test.ts": {
+    "classes": 0,
+    "lines": 344
+  },
+  "packages/coding-agent/test/indexing-service.test.ts": {
+    "classes": 5,
+    "lines": 873
+  },
+  "packages/coding-agent/test/indexing-version.test.ts": {
+    "classes": 0,
+    "lines": 317
+  },
+  "packages/coding-agent/test/interactive-mode-plan-panel.test.ts": {
+    "classes": 0,
+    "lines": 550
+  },
+  "packages/coding-agent/test/interactive-mode-status.test.ts": {
+    "classes": 1,
+    "lines": 1135
+  },
+  "packages/coding-agent/test/model-registry.test.ts": {
+    "classes": 0,
+    "lines": 1680
+  },
+  "packages/coding-agent/test/model-resolver.test.ts": {
+    "classes": 0,
+    "lines": 600
+  },
+  "packages/coding-agent/test/package-command-paths.test.ts": {
+    "classes": 0,
+    "lines": 594
+  },
+  "packages/coding-agent/test/package-manager.test.ts": {
+    "classes": 1,
+    "lines": 2431
+  },
+  "packages/coding-agent/test/prompt-templates.test.ts": {
+    "classes": 0,
+    "lines": 611
+  },
+  "packages/coding-agent/test/resource-loader.test.ts": {
+    "classes": 0,
+    "lines": 734
+  },
+  "packages/coding-agent/test/rpc.test.ts": {
+    "classes": 0,
+    "lines": 320
+  },
+  "packages/coding-agent/test/sdk-codex-cache-probe-tool-loop.ts": {
+    "classes": 0,
+    "lines": 497
+  },
+  "packages/coding-agent/test/session-manager/build-context.test.ts": {
+    "classes": 0,
+    "lines": 382
+  },
+  "packages/coding-agent/test/session-manager/file-operations.test.ts": {
+    "classes": 0,
+    "lines": 315
+  },
+  "packages/coding-agent/test/session-manager/tree-traversal.test.ts": {
+    "classes": 0,
+    "lines": 533
+  },
+  "packages/coding-agent/test/session-selector-path-delete.test.ts": {
+    "classes": 0,
+    "lines": 315
+  },
+  "packages/coding-agent/test/settings-manager.test.ts": {
+    "classes": 0,
+    "lines": 606
+  },
+  "packages/coding-agent/test/show-harness-messages.test.ts": {
+    "classes": 0,
+    "lines": 457
+  },
+  "packages/coding-agent/test/skills.test.ts": {
+    "classes": 0,
+    "lines": 430
+  },
+  "packages/coding-agent/test/suite/agent-session-compaction.test.ts": {
+    "classes": 0,
+    "lines": 1340
+  },
+  "packages/coding-agent/test/suite/agent-session-model-extension.test.ts": {
+    "classes": 0,
+    "lines": 351
+  },
+  "packages/coding-agent/test/suite/agent-session-prompt.test.ts": {
+    "classes": 0,
+    "lines": 1183
+  },
+  "packages/coding-agent/test/suite/agent-session-queue.test.ts": {
+    "classes": 0,
+    "lines": 454
+  },
+  "packages/coding-agent/test/suite/agent-session-retry-events.test.ts": {
+    "classes": 0,
+    "lines": 409
+  },
+  "packages/coding-agent/test/suite/agent-session-runtime.test.ts": {
+    "classes": 0,
+    "lines": 588
+  },
+  "packages/coding-agent/test/suite/agent-session-state-update-tool.test.ts": {
+    "classes": 0,
+    "lines": 363
+  },
+  "packages/coding-agent/test/suite/regressions/finish-work-auto-prepend.test.ts": {
+    "classes": 0,
+    "lines": 331
+  },
+  "packages/coding-agent/test/suite/regressions/working-state-cache-isolation.test.ts": {
+    "classes": 0,
+    "lines": 509
+  },
+  "packages/coding-agent/test/suite/structured-state.test.ts": {
+    "classes": 0,
+    "lines": 522
+  },
+  "packages/coding-agent/test/task-verification.test.ts": {
+    "classes": 0,
+    "lines": 1152
+  },
+  "packages/coding-agent/test/test-harness.test.ts": {
+    "classes": 0,
+    "lines": 321
+  },
+  "packages/coding-agent/test/test-harness.ts": {
+    "classes": 0,
+    "lines": 451
+  },
+  "packages/coding-agent/test/tool-execution-component.test.ts": {
+    "classes": 0,
+    "lines": 555
+  },
+  "packages/coding-agent/test/tools.test.ts": {
+    "classes": 0,
+    "lines": 1089
+  },
+  "packages/coding-agent/test/tree-selector.test.ts": {
+    "classes": 0,
+    "lines": 679
+  },
+  "packages/coding-agent/test/utilities.ts": {
+    "classes": 0,
+    "lines": 315
+  },
+  "packages/tui/src/autocomplete.ts": {
+    "classes": 1,
+    "lines": 787
+  },
+  "packages/tui/src/keys.ts": {
+    "classes": 0,
+    "lines": 1514
+  },
+  "packages/tui/src/stdin-buffer.ts": {
+    "classes": 1,
+    "lines": 434
+  },
+  "packages/tui/src/terminal-image.ts": {
+    "classes": 0,
+    "lines": 483
+  },
+  "packages/tui/test/autocomplete.test.ts": {
+    "classes": 0,
+    "lines": 540
+  },
+  "packages/tui/test/components.test.ts": {
+    "classes": 0,
+    "lines": 357
+  },
+  "packages/tui/test/input.test.ts": {
+    "classes": 0,
+    "lines": 663
+  },
+  "packages/tui/test/keys.test.ts": {
+    "classes": 0,
+    "lines": 620
+  },
+  "packages/tui/test/markdown.test.ts": {
+    "classes": 1,
+    "lines": 1347
+  },
+  "packages/tui/test/overlay-non-capturing.test.ts": {
+    "classes": 3,
+    "lines": 1202
+  },
+  "packages/tui/test/overlay-options.test.ts": {
+    "classes": 4,
+    "lines": 541
+  },
+  "packages/tui/test/overlay-short-content.test.ts": {
+    "classes": 2,
+    "lines": 61
+  },
+  "packages/tui/test/stdin-buffer.test.ts": {
+    "classes": 0,
+    "lines": 512
+  },
+  "packages/tui/test/terminal-colors.test.ts": {
+    "classes": 2,
+    "lines": 384
+  },
+  "packages/tui/test/terminal-image.test.ts": {
+    "classes": 0,
+    "lines": 553
+  },
+  "packages/tui/test/terminal.test.ts": {
+    "classes": 0,
+    "lines": 450
+  },
+  "packages/tui/test/tui-overlay-style-leak.test.ts": {
+    "classes": 2,
+    "lines": 80
+  },
+  "packages/tui/test/tui-render.test.ts": {
+    "classes": 2,
+    "lines": 874
+  },
+  "scripts/benchmark-agents.js": {
+    "classes": 0,
+    "lines": 2126
+  },
+  "scripts/edit-tool-stats.js": {
+    "classes": 0,
+    "lines": 834
+  },
+  "scripts/generate-coding-agent-shrinkwrap.js": {
+    "classes": 0,
+    "lines": 366
+  },
+  "scripts/install-indexing-service.js": {
+    "classes": 0,
+    "lines": 775
+  },
+  "scripts/p-cache-26-turn-smoke.js": {
+    "classes": 0,
+    "lines": 797
+  },
+  "scripts/profile-coding-agent-node.js": {
+    "classes": 0,
+    "lines": 646
+  },
+  "scripts/read-tool-stats.js": {
+    "classes": 0,
+    "lines": 505
+  },
+  "scripts/release-notes.js": {
+    "classes": 0,
+    "lines": 364
+  },
+  "scripts/session-context-stats.js": {
+    "classes": 0,
+    "lines": 405
+  },
+  "scripts/session-transcripts.ts": {
+    "classes": 0,
+    "lines": 406
+  }
+}
