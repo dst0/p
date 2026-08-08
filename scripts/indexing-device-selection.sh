@@ -248,7 +248,7 @@ check_and_prompt_missing_indexing_deps() {
     fi
   fi
 
-  if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" ]]; then
+  if [[ "${P_CODE_RAG_DEVICE:-}" == "npu" && -t 0 ]]; then
     install_amd_xdna_npu_driver_if_needed
   fi
 }

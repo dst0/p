@@ -255,6 +255,9 @@ async function main() {
 		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
 	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
 	process.env.P_CODE_RAG_DEVICE = ragDevice;
+	if (ragDevice === "npu") {
+		ensureAmdXdnaDriverInstalled();
+	}
 
 	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
 	if (!process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE && savedBatchSize) {
@@ -668,6 +671,26 @@ function tryAutoInstallPython() {
 			const args = isRoot ? ["-Sy", "--noconfirm", "python"] : ["pacman", "-Sy", "--noconfirm", "python"];
 			run(cmd, args, { allowFailure: true });
 		}
+	}
+}
+
+function ensureAmdXdnaDriverInstalled() {
+	if (process.platform !== "linux") return;
+	const hasNpuDevice =
+		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
+	if (!hasNpuDevice) return;
+	if (fs.existsSync("/opt/xilinx/xrt") || findOnPath("xrt-smi")) return;
+
+	console.log("AMD XDNA NPU hardware detected. Ensuring AMD XDNA driver dependencies are installed...");
+	const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
+	if (findOnPath("apt-get")) {
+		const cmd = isRoot ? "apt-get" : "sudo";
+		const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
+		const argsInstall = isRoot
+			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"]
+			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"];
+		run(cmd, argsUpdate, { allowFailure: true });
+		run(cmd, argsInstall, { allowFailure: true });
 	}
 }
 
