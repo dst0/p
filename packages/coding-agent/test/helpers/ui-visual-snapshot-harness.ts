@@ -71,6 +71,7 @@ export async function createUIRegressionHarness(options: UISnapshotHarnessOption
   );
 
   const mode = new InteractiveMode(runtimeHost, {});
+  mode.promptForCodeIndexingIfNeeded = async () => {};
   // Intercept TUI creation to use VirtualTerminal instead of ProcessTerminal
   (mode as any).ui.terminal = terminal;
 
