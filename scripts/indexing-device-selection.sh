@@ -272,7 +272,7 @@ install_amd_xdna_npu_driver_if_needed() {
           local sudo_cmd=""
           if [[ "$(id -u)" != "0" ]]; then sudo_cmd="sudo"; fi
           if command -v apt-get &>/dev/null; then
-            $sudo_cmd apt-get update -qq && $sudo_cmd apt-get install -y -qq dkms cmake gcc g++ boost-dev protobuf-compiler debhelper devscripts || true
+            $sudo_cmd apt-get update -qq && $sudo_cmd apt-get install -y -qq dkms cmake gcc g++ libboost-dev protobuf-compiler debhelper devscripts || true
           fi
           if [[ -d /opt/xilinx/xrt ]]; then
             echo "AMD XRT already installed at /opt/xilinx/xrt"

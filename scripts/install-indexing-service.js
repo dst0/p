@@ -687,8 +687,8 @@ function ensureAmdXdnaDriverInstalled() {
 		const cmd = isRoot ? "apt-get" : "sudo";
 		const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
 		const argsInstall = isRoot
-			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"]
-			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"];
+			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "libboost-dev", "protobuf-compiler", "debhelper", "devscripts"]
+			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "libboost-dev", "protobuf-compiler", "debhelper", "devscripts"];
 		run(cmd, argsUpdate, { allowFailure: true });
 		run(cmd, argsInstall, { allowFailure: true });
 	}
