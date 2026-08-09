@@ -37,4 +37,21 @@ describe("index health formatting", () => {
     expect(text).toContain("no (CPU backend)");
     expect(text).not.toContain("GPU-deny policy");
   });
+
+  it("reports fallback warnings when a performance sample has no timing details", () => {
+    const text = formatIndexHealth({
+      selectedBackend: "cuda",
+      gpuAllowed: false,
+      fallbackOccurred: true,
+      performance: { vectorsPerSecond: 2 },
+      runtime: { warnings: ["memory pressure"] },
+    });
+
+    expect(text).toContain("no (policy)");
+    expect(text).toContain("Fallback occurred:");
+    expect(text).toContain("(CPU fallback)");
+    expect(text).toContain("Measured performance: 2.0 vectors/s");
+    expect(text).toContain("Embedding warnings:");
+    expect(text).toContain("memory pressure");
+  });
 });
