@@ -12,6 +12,7 @@ import {
 	selectIndexingDaemonPids,
 	selectManagedBackendPids,
 } from "./install-indexing-service.js";
+import { buildManagedIndexingConfig } from "./indexing-install-fallback.js";
 
 const values = {
 	node: "/opt/p/node",
@@ -27,6 +28,24 @@ test("renders launchd and systemd services for the persistent daemon", () => {
 	assert.match(renderLaunchdPlist(values), /indexing-service-daemon\.js/);
 	assert.match(renderSystemdUnit(values), /Restart=always/);
 	assert.match(renderSystemdUnit(values), /indexing-service-daemon\.js/);
+});
+
+test("allows full NPU model validation to finish during service startup", () => {
+	const config = buildManagedIndexingConfig(
+		{},
+		{
+			installAmdPhoenixIron: true,
+			installAmdRyzenAi: false,
+			installIntelOpenVino: false,
+			ragDevice: "amd-phoenix-npu",
+		},
+		{ backend: "cpu" },
+		"/managed/venv/bin/python",
+		"/managed/qdrant",
+	);
+	assert.equal(config.embeddingStartupTimeoutMs, 600_000);
+	assert.equal(config.embeddingTimeoutMs, 600_000);
+	assert.equal(config.searchTimeoutMs, 600_000);
 });
 
 test("recognizes only the installed indexing daemon command", () => {

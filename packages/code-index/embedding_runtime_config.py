@@ -18,6 +18,17 @@ class EmbeddingRuntimeConfig:
     openvino_cache_directory: str = os.path.expanduser(
         "~/.p/agent/indexing-service/openvino-cache"
     )
+    amd_iron_artifact_directory: str = os.path.expanduser(
+        "~/.p/agent/indexing-service/amd-phoenix-iron/artifacts"
+    )
+    amd_iron_cache_directory: str = os.path.expanduser(
+        "~/.p/agent/indexing-service/amd-phoenix-iron/cache"
+    )
+    amd_iron_source_directory: str = os.path.expanduser(
+        "~/.p/agent/indexing-service/amd-phoenix-iron/mlir-aie"
+    )
+    amd_npu_generation: str | None = None
+    amd_npu_runtime_version: str | None = None
     vitisai_cache_directory: str = os.path.expanduser(
         "~/.p/agent/indexing-service/vitisai-cache"
     )
@@ -61,6 +72,25 @@ def load_embedding_runtime_config(config_path: str | None) -> EmbeddingRuntimeCo
             "openvinoCacheDirectory",
             os.path.expanduser("~/.p/agent/indexing-service/openvino-cache"),
         ),
+        amd_iron_artifact_directory=_string(
+            raw,
+            "amdIronArtifactDirectory",
+            os.path.expanduser(
+                "~/.p/agent/indexing-service/amd-phoenix-iron/artifacts"
+            ),
+        ),
+        amd_iron_cache_directory=_string(
+            raw,
+            "amdIronCacheDirectory",
+            os.path.expanduser("~/.p/agent/indexing-service/amd-phoenix-iron/cache"),
+        ),
+        amd_iron_source_directory=_string(
+            raw,
+            "amdIronSourceDirectory",
+            os.path.expanduser("~/.p/agent/indexing-service/amd-phoenix-iron/mlir-aie"),
+        ),
+        amd_npu_generation=_optional_string(raw, "amdNpuGeneration"),
+        amd_npu_runtime_version=_optional_string(raw, "amdNpuRuntimeVersion"),
         vitisai_cache_directory=_string(
             raw,
             "vitisaiCacheDirectory",

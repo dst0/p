@@ -6,7 +6,7 @@ indexing_config_script="$indexing_selection_script_dir/indexing-config.js"
 
 is_valid_indexing_device() {
   case "$1" in
-    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|intel-openvino-npu|openvino|openvino-npu|cuda|rocm|mps|npu|vitisai|ryzenai) return 0 ;;
+    auto|cpu|nvidia-cuda|amd-rocm|apple-ane|apple-mps|intel-openvino-cpu|intel-openvino-npu|openvino|openvino-npu|cuda|rocm|mps|npu|vitisai|ryzenai|amd-phoenix-npu|amd-ryzenai-npu) return 0 ;;
     *) return 1 ;;
   esac
 }
@@ -95,8 +95,13 @@ prompt_indexing_device_and_batch_size_selection() {
   detect_supported_indexing_devices
   [[ -n "$INDEXING_NPU_UNSUPPORTED_REASON" ]] && echo "NPU unavailable: $INDEXING_NPU_UNSUPPORTED_REASON"
   if [[ "$INDEXING_HAS_AMD_NPU" == true ]]; then
-    choices+=("ryzenai (recommended - automatic AMD NPU installation)")
-    values+=("ryzenai")
+    if [[ "$INDEXING_AMD_NPU_FAMILY" == "phoenix" ]]; then
+      choices+=("amd-phoenix-npu (recommended - automatic MLIR-AIE/IRON installation)")
+      values+=("amd-phoenix-npu")
+    else
+      choices+=("amd-ryzenai-npu (recommended - automatic Ryzen AI 1.8 installation)")
+      values+=("amd-ryzenai-npu")
+    fi
   fi
   if [[ "$INDEXING_HAS_INTEL_NPU" == true ]]; then
     choices+=("intel-openvino-npu (recommended - automatic Intel NPU installation)")

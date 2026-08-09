@@ -105,6 +105,12 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "vitisaiCacheKey",
   "vitisaiConfigFile",
   "vitisaiLogLevel",
+  "amdIronArtifactDirectory",
+  "amdIronCacheDirectory",
+  "amdIronSourceDirectory",
+  "amdNpuGeneration",
+  "amdNpuRuntimeVersion",
+  "ryzenAiArchivePath",
   "collectionPrefix",
 ]);
 const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
@@ -114,7 +120,17 @@ const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
   "rocm",
   "mps",
   "npu",
+  "apple-ane",
+  "apple-mps",
+  "amd-rocm",
+  "nvidia-cuda",
   "ryzenai",
+  "vitisai",
+  "amd-phoenix-npu",
+  "amd-ryzenai-npu",
+  "openvino",
+  "openvino-npu",
+  "intel-openvino-cpu",
   "intel-openvino-npu",
 ]);
 const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);

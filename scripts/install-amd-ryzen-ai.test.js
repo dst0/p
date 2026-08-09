@@ -12,18 +12,32 @@ import {
 test("pins the matched Ryzen AI, XRT, driver, Python, and ONNX Runtime stack", () => {
 	assert.deepEqual(
 		{
+			driverPackages: AMD_RYZEN_AI_MANIFEST.driverPackages,
+			installedDriverPackages: AMD_RYZEN_AI_MANIFEST.installedDriverPackages,
+			driverSha256: AMD_RYZEN_AI_MANIFEST.driverArchive.sha256,
 			ryzenAiVersion: AMD_RYZEN_AI_MANIFEST.ryzenAiVersion,
-			xdnaDriverTag: AMD_RYZEN_AI_MANIFEST.xdnaDriver.tag,
-			xdnaDriverCommit: AMD_RYZEN_AI_MANIFEST.xdnaDriver.commit,
 			pythonVersion: AMD_RYZEN_AI_MANIFEST.pythonVersion,
-			onnxRuntimeVitisAiVersion: AMD_RYZEN_AI_MANIFEST.onnxRuntimeVitisAiVersion,
+			optimumVersion: AMD_RYZEN_AI_MANIFEST.optimumVersion,
+			optimumOnnxVersion: AMD_RYZEN_AI_MANIFEST.optimumOnnxVersion,
 		},
 		{
-			ryzenAiVersion: "1.7.1",
-			xdnaDriverTag: "2.21.75",
-			xdnaDriverCommit: "beb9e450fe123ecdf395453971576179cedcf1dd",
+			driverPackages: [
+				"xrt_202620.2.25.37_24.04-amd64-base.deb",
+				"xrt_202620.2.25.37_24.04-amd64-base-dev.deb",
+				"xrt_202620.2.25.37_24.04-amd64-npu.deb",
+				"xrt_plugin.2.25.260102.56.release_24.04-amd64-amdxdna.deb",
+			],
+			driverSha256: "ea37ce2ff46ae20e64a081c38fc45b3bae183e488f293543c811f4c05186d2df",
+			installedDriverPackages: {
+				"xrt-base": "2.25.37",
+				"xrt-base-dev": "2.25.37",
+				"xrt-npu": "2.25.37",
+				"xrt_plugin-amdxdna": "2.25",
+			},
+			ryzenAiVersion: "1.8.0",
 			pythonVersion: "3.12",
-			onnxRuntimeVitisAiVersion: "1.23.3",
+			optimumVersion: "2.1.0",
+			optimumOnnxVersion: "0.1.0",
 		},
 	);
 });
@@ -62,7 +76,7 @@ test("rejects PHX/HPT and unsupported Linux distributions truthfully", () => {
 				kernelRelease: "6.11.0",
 				pciDevices: [{ vendor: "0x1022", device: "0x1502", revision: "0x00" }],
 			}),
-		/current Ryzen AI Linux release supports STX and KRK/,
+		/No supported AMD STX\/KRK/,
 	);
 	assert.throws(
 		() =>
@@ -88,22 +102,24 @@ test("marks Ubuntu 24.04 kernels older than 6.10 for automatic HWE upgrade", () 
 	assert.equal(plan.requiresKernelUpgrade, true);
 });
 
-test("builds a service environment for the public AMD Linux wheels and XRT", () => {
+test("builds the managed service environment for the official Ryzen AI package", () => {
 	assert.deepEqual(
 		buildAmdRyzenAiEnvironment("/home/test/.p/agent/indexing-service/venv", {
 			LD_LIBRARY_PATH: "/custom/lib",
 		}),
 		{
 			LD_LIBRARY_PATH:
-				"/home/test/.p/agent/indexing-service/venv/lib/python3.12/site-packages/voe/lib:/opt/xilinx/xrt/lib:/lib/x86_64-linux-gnu:/custom/lib",
+				"/home/test/.p/agent/indexing-service/venv/onnxruntime/lib:/opt/xilinx/xrt/lib:/lib/x86_64-linux-gnu:/custom/lib",
 			RYZEN_AI_INSTALLATION_PATH: "/home/test/.p/agent/indexing-service/venv",
 			XILINX_XRT: "/opt/xilinx/xrt",
 		},
 	);
 	assert.deepEqual(buildAmdRyzenAiConfig("/home/test/.p/agent/indexing-service/venv"), {
+		amdNpuGeneration: "npu2",
+		amdNpuRuntimeVersion: "1.8.0",
+		ryzenAiArchivePath: undefined,
 		vitisaiCacheDirectory: "/home/test/.p/agent/indexing-service/vitisai-cache",
-		vitisaiCacheKey: "Qwen_Qwen3-Embedding-0.6B-ryzen-ai-1.7.1",
+		vitisaiCacheKey: "Qwen_Qwen3-Embedding-0.6B-ryzen-ai-1.8.0",
 		vitisaiConfigFile: undefined,
-		vitisaiLogLevel: "error",
 	});
 });

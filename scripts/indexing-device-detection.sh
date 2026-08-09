@@ -6,6 +6,7 @@ detect_supported_indexing_devices() {
   INDEXING_HAS_AMD_GPU=false
   INDEXING_HAS_NVIDIA_GPU=false
   INDEXING_HAS_AMD_NPU=false
+  INDEXING_AMD_NPU_FAMILY=""
   INDEXING_HAS_INTEL_NPU=false
   INDEXING_NPU_UNSUPPORTED_REASON=""
 
@@ -40,8 +41,12 @@ detect_supported_indexing_devices() {
     IFS= read -r pci_revision < "$pci_device/revision" 2>/dev/null || true
     if [[ "$pci_vendor" == "0x1022" && ( "$pci_id" == "0x17f0" || "$pci_id" == "0x1502" ) ]]; then
       amd_npu_detected=true
-      if [[ "$pci_id" == "0x17f0" && "$pci_revision" =~ ^0x(00|10|11|20)$ ]]; then
+      if [[ "$pci_id" == "0x1502" ]]; then
         amd_npu_supported_hardware=true
+        INDEXING_AMD_NPU_FAMILY="phoenix"
+      elif [[ "$pci_revision" =~ ^0x(00|10|11|20)$ ]]; then
+        amd_npu_supported_hardware=true
+        INDEXING_AMD_NPU_FAMILY="ryzenai"
       fi
     fi
     if [[ "$pci_vendor" == "0x8086" && "$pci_id" =~ ^0x(7d1d|ad1d|643e|b03e|fd3e)$ ]]; then
@@ -54,8 +59,13 @@ detect_supported_indexing_devices() {
     local pci_listing
     pci_listing="$(lspci -Dn 2>/dev/null || true)"
     [[ "$pci_listing" =~ 1022:(17f0|1502) ]] && amd_npu_detected=true
+    if [[ "$pci_listing" =~ 1022:1502 ]]; then
+      amd_npu_supported_hardware=true
+      INDEXING_AMD_NPU_FAMILY="phoenix"
+    fi
     if [[ "$pci_listing" =~ 1022:17f0.*\(rev[[:space:]]+(00|10|11|20)\) ]]; then
       amd_npu_supported_hardware=true
+      INDEXING_AMD_NPU_FAMILY="ryzenai"
     fi
     if [[ "$pci_listing" =~ 8086:(7d1d|ad1d|643e|b03e|fd3e) ]]; then
       intel_npu_detected=true
@@ -82,7 +92,7 @@ detect_supported_indexing_devices() {
     INDEXING_NPU_UNSUPPORTED_REASON="Detected NPU hardware, but automatic NPU indexing requires Ubuntu 24.04 x64; found $os_id $os_version $architecture."
   fi
   if [[ "$supported_linux" == true && "$amd_npu_detected" == true && "$amd_npu_supported_hardware" != true ]]; then
-    INDEXING_NPU_UNSUPPORTED_REASON="Detected an AMD XDNA NPU that Ryzen AI Linux 1.7.1 does not support (only STX/KRK revisions are supported)."
+    INDEXING_NPU_UNSUPPORTED_REASON="Detected an AMD XDNA NPU revision without a validated automatic indexing backend."
   fi
 }
 
@@ -96,6 +106,8 @@ is_detected_indexing_device_supported() {
       [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_HAS_INTEL_NPU" != true ]] || \
         [[ "$INDEXING_HAS_INTEL_NPU" == true && "$INDEXING_HAS_AMD_NPU" != true ]]
       ;;
+    amd-phoenix-npu) [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_AMD_NPU_FAMILY" == "phoenix" ]] ;;
+    amd-ryzenai-npu) [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_AMD_NPU_FAMILY" == "ryzenai" ]] ;;
     vitisai|ryzenai) [[ "$INDEXING_HAS_AMD_NPU" == true ]] ;;
     openvino|openvino-npu|intel-openvino-npu) [[ "$INDEXING_HAS_INTEL_NPU" == true ]] ;;
     *) return 1 ;;
@@ -114,7 +126,7 @@ describe_unsupported_indexing_device() {
         echo "${INDEXING_NPU_UNSUPPORTED_REASON:-No supported AMD or Intel NPU was detected.}"
       fi
       ;;
-    vitisai|ryzenai|openvino|openvino-npu|intel-openvino-npu)
+    amd-phoenix-npu|amd-ryzenai-npu|vitisai|ryzenai|openvino|openvino-npu|intel-openvino-npu)
       echo "${INDEXING_NPU_UNSUPPORTED_REASON:-No supported AMD or Intel NPU was detected.}"
       ;;
     *) echo "The selected indexing backend is not supported on this host." ;;

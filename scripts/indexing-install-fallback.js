@@ -9,6 +9,12 @@ import {
 	installAmdRyzenAiSystemRuntime,
 } from "./install-amd-ryzen-ai.js";
 import {
+  AMD_PHOENIX_IRON_MANIFEST,
+  buildAmdPhoenixIronConfig,
+  buildAmdPhoenixIronEnvironment,
+  installAmdPhoenixIronSystemRuntime,
+} from "./install-amd-phoenix-iron.js";
+import {
 	INTEL_OPENVINO_NPU_MANIFEST,
 	buildIntelOpenVinoConfig,
 	installIntelOpenVinoNpuSystemRuntime,
@@ -26,6 +32,12 @@ const DAEMON = path.join(ROOT, "packages", "coding-agent", "dist", "indexing-ser
 const DRY_RUN = process.argv.includes("--dry-run");
 
 export function installSelectedNpuSystemRuntime(devicePlan) {
+	if (devicePlan.installAmdPhoenixIron) {
+		console.log(
+			`AMD Phoenix/Hawk Point NPU selected; installing MLIR-AIE ${AMD_PHOENIX_IRON_MANIFEST.mlirAieVersion}`,
+		);
+		installAmdPhoenixIronSystemRuntime({ agentDirectory: AGENT_DIR, dryRun: DRY_RUN });
+	}
 	if (devicePlan.installAmdRyzenAi) {
 		console.log(`AMD XDNA NPU selected; installing Ryzen AI ${AMD_RYZEN_AI_MANIFEST.ryzenAiVersion}`);
 		installAmdRyzenAiSystemRuntime({ agentDirectory: AGENT_DIR, dryRun: DRY_RUN });
@@ -70,6 +82,16 @@ export function buildManagedIndexingConfig(currentConfig, devicePlan, torchPlan,
 	const ragDevice = devicePlan.ragDevice;
 	return {
 		...currentConfig,
+		...(
+			devicePlan.installAmdPhoenixIron || devicePlan.installAmdRyzenAi || devicePlan.installIntelOpenVino
+				? {
+					embeddingStartupTimeoutMs: Math.max(currentConfig.embeddingStartupTimeoutMs ?? 0, 600_000),
+					embeddingTimeoutMs: Math.max(currentConfig.embeddingTimeoutMs ?? 0, 600_000),
+					searchTimeoutMs: Math.max(currentConfig.searchTimeoutMs ?? 0, 600_000),
+				}
+				: {}
+		),
+		...(devicePlan.installAmdPhoenixIron ? buildAmdPhoenixIronConfig(AGENT_DIR, currentConfig) : {}),
 		...(devicePlan.installAmdRyzenAi ? buildAmdRyzenAiConfig(VENV_DIR, currentConfig) : {}),
 		...(devicePlan.installIntelOpenVino ? buildIntelOpenVinoConfig(AGENT_DIR, currentConfig) : {}),
 		embeddingDevice: ragDevice,
@@ -83,6 +105,7 @@ export function buildManagedIndexingConfig(currentConfig, devicePlan, torchPlan,
 export function buildServiceValues(devicePlan, venvPython) {
 	const ragDevice = devicePlan.ragDevice;
 	const environment = {
+		...(devicePlan.installAmdPhoenixIron ? buildAmdPhoenixIronEnvironment(VENV_DIR) : {}),
 		...(devicePlan.installAmdRyzenAi ? buildAmdRyzenAiEnvironment(VENV_DIR) : {}),
 		P_CODING_AGENT_DIR: AGENT_DIR,
 		PATH: `${path.dirname(venvPython)}:${process.env.PATH ?? ""}`,
@@ -107,7 +130,7 @@ export function isTorchAcceleratorDevice(device) {
 function isAcceleratedDevice(device) {
 	return [
 		"amd-rocm", "apple-ane", "apple-mps", "cuda", "intel-openvino-npu", "mps", "npu", "nvidia-cuda",
-		"openvino", "openvino-npu", "rocm", "ryzenai", "vitisai",
+		"openvino", "openvino-npu", "rocm", "ryzenai", "vitisai", "amd-phoenix-npu", "amd-ryzenai-npu",
 	].includes(device);
 }
 

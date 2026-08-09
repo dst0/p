@@ -18,17 +18,12 @@ export {
 } from "./indexing-install-plans.js";
 import { migrateLegacyIndexingConfig, readCodeRagConfig, writeCodeRagConfig } from "./indexing-config.js";
 import {
-	AMD_RYZEN_AI_MANIFEST,
 	detectAmdNpuPciDevices,
-	installAmdRyzenAiPythonRuntime,
-	validateAmdRyzenAiPythonRuntime,
 } from "./install-amd-ryzen-ai.js";
 import {
-	INTEL_OPENVINO_NPU_MANIFEST,
 	detectIntelNpuPciDevices,
-	installIntelOpenVinoPythonRuntime,
-	validateIntelOpenVinoPythonRuntime,
 } from "./install-intel-openvino-npu.js";
+import { installPythonEnvironment } from "./indexing-python-environment.js";
 import {
 	buildManagedIndexingConfig,
 	buildServiceValues,
@@ -196,11 +191,16 @@ async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const hasLinuxAmdNpuHardware = process.platform === "linux" && detectAmdNpuPciDevices().length > 0;
+	const amdNpuDevices = process.platform === "linux" ? detectAmdNpuPciDevices() : [];
+	const hasLinuxAmdNpuHardware = amdNpuDevices.length > 0;
+	const amdNpuFamily = amdNpuDevices.some((device) => String(device.device).toLowerCase() === "0x1502")
+		? "phoenix"
+		: "ryzenai";
 	const hasLinuxIntelNpuHardware = process.platform === "linux" && detectIntelNpuPciDevices().length > 0;
 	let indexingConfig = migrateLegacyIndexingConfig(AGENT_DIR);
 	const savedDevice = indexingConfig.embeddingDevice;
 	const planOptions = {
+		amdNpuFamily,
 		architecture: process.arch,
 		hasLinuxAmdNpuHardware,
 		hasLinuxIntelNpuHardware,
@@ -225,7 +225,7 @@ async function main() {
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: !DRY_RUN,
-				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
 				requestedBackend:
@@ -259,10 +259,18 @@ async function main() {
 	await installQdrant(qdrantBinary);
 	while (true) {
 		try {
-			installPythonEnvironment(python, venvPython, torchPlan, {
+			installPythonEnvironment({
+				agentDirectory: AGENT_DIR,
+				installAmdPhoenixIron: devicePlan.installAmdPhoenixIron,
 				installAmdRyzenAi: devicePlan.installAmdRyzenAi,
 				installIntelOpenVino: devicePlan.installIntelOpenVino,
+				python,
 				requireTorchAccelerator: isTorchAcceleratorDevice(devicePlan.ragDevice),
+				requirementsPath: REQUIREMENTS,
+				ryzenAiArchivePath: indexingConfig.ryzenAiArchivePath,
+				torchPlan,
+				venvDirectory: VENV_DIR,
+				venvPython,
 			});
 			break;
 		} catch (error) {
@@ -271,7 +279,7 @@ async function main() {
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: true,
-				requiredMinor: devicePlan.installAmdRyzenAi ? 12 : undefined,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
 				requestedBackend:
@@ -287,8 +295,8 @@ async function main() {
 		buildManagedIndexingConfig(indexingConfig, devicePlan, torchPlan, venvPython, qdrantBinary),
 	);
 
-	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values));
-	else await installLinux(renderSystemdUnit(values));
+	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values), values.environment);
+	else await installLinux(renderSystemdUnit(values), values.environment);
 	console.log(`Code indexing service installed (${SERVICE_LABEL})`);
 }
 
@@ -318,93 +326,7 @@ async function installQdrant(qdrantBinary) {
 	}
 }
 
-function installPythonEnvironment(python, venvPython, torchPlan, options = {}) {
-	const installAmdRyzenAi = options.installAmdRyzenAi ?? false;
-	const installIntelOpenVino = options.installIntelOpenVino ?? false;
-	const requireTorchAccelerator = options.requireTorchAccelerator ?? false;
-	const requirements = fs.readFileSync(REQUIREMENTS, "utf-8");
-	const markerPath = path.join(VENV_DIR, ".p-requirements");
-	const marker = createHash("sha256")
-		.update(
-			`${python}\0${capture(python, ["--version"])}\0${requirements}\0${JSON.stringify(torchPlan)}`
-			+ `\0${installAmdRyzenAi ? JSON.stringify(AMD_RYZEN_AI_MANIFEST) : "generic"}`
-			+ `\0${installIntelOpenVino ? JSON.stringify(INTEL_OPENVINO_NPU_MANIFEST) : "generic"}`,
-		)
-		.digest("hex");
-	if (fs.existsSync(venvPython) && readFileIfPresent(markerPath) === marker) {
-		if (installAmdRyzenAi) validateAmdRyzenAiPythonRuntime(venvPython);
-		if (installIntelOpenVino) validateIntelOpenVinoPythonRuntime(venvPython);
-		validateTorchInstallation(venvPython, torchPlan, { requireAccelerator: requireTorchAccelerator });
-		return;
-	}
-	console.log(`Installing pinned code-index Python dependencies for ${torchPlan.backend}`);
-	run(python, ["-m", "venv", VENV_DIR]);
-	if (torchPlan.indexUrl) {
-		run(venvPython, [
-			"-m",
-			"pip",
-			"install",
-			"--disable-pip-version-check",
-			"--only-binary=:all:",
-			"--force-reinstall",
-			`torch==${torchPlan.version}`,
-			"--index-url",
-			torchPlan.indexUrl,
-		]);
-	}
-	run(venvPython, [
-		"-m",
-		"pip",
-		"install",
-		"--disable-pip-version-check",
-		"--only-binary=:all:",
-		"--requirement",
-		REQUIREMENTS,
-	]);
-	if (installAmdRyzenAi) installAmdRyzenAiPythonRuntime(venvPython);
-	if (installIntelOpenVino) installIntelOpenVinoPythonRuntime(venvPython);
-	validateTorchInstallation(venvPython, torchPlan, { requireAccelerator: requireTorchAccelerator });
-	fs.writeFileSync(markerPath, marker, { mode: 0o600 });
-}
-
-function validateTorchInstallation(venvPython, torchPlan, options = {}) {
-	const probe = JSON.parse(
-		capture(venvPython, [
-			"-c",
-			[
-				"import json, torch",
-				"mps = getattr(torch.backends, 'mps', None)",
-				"print(json.dumps({",
-				"'version': torch.__version__,",
-				"'cuda': getattr(torch.version, 'cuda', None),",
-				"'hip': getattr(torch.version, 'hip', None),",
-				"'accelerator_available': bool(torch.cuda.is_available() or (mps and mps.is_available()))",
-				"}))",
-			].join("\n"),
-		]),
-	);
-	if (!String(probe.version).startsWith(torchPlan.version)) {
-		throw new Error(`Expected PyTorch ${torchPlan.version}, installed ${probe.version}`);
-	}
-	if (torchPlan.backend === "rocm" && !probe.hip) {
-		throw new Error("The installed PyTorch build does not include ROCm/HIP support");
-	}
-	if (torchPlan.backend === "cuda" && !probe.cuda) {
-		throw new Error("The installed PyTorch build does not include CUDA support");
-	}
-	if (torchPlan.backend === "cpu" && (probe.hip || probe.cuda)) {
-		throw new Error("The installed PyTorch build is not CPU-only");
-	}
-	if (options.requireAccelerator && !probe.accelerator_available) {
-		throw new Error(`The installed PyTorch ${torchPlan.backend} accelerator is not available on this host`);
-	}
-	console.log(
-		`PyTorch ${probe.version} installed (${torchPlan.backend}); `
-		+ `accelerator currently ${probe.accelerator_available ? "available" : "unavailable"}`,
-	);
-}
-
-async function installDarwin(plist) {
+async function installDarwin(plist, environment) {
 	const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 	if (uid === undefined) throw new Error("Unable to determine the current user id for launchd");
 	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
@@ -432,7 +354,7 @@ async function installDarwin(plist) {
 	await stopStaleDaemons(knownDaemonPid);
 	await stopStaleBackends();
 	writeFileAtomic(plistPath, plist);
-	runRealSemanticSearchSmoke();
+	runRealSemanticSearchSmoke(environment);
 	run("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
 	run("launchctl", ["kickstart", "-k", `gui/${uid}/${SERVICE_LABEL}`]);
 }
@@ -446,7 +368,7 @@ async function waitForLaunchdRemoval(uid, label) {
 	}
 }
 
-async function installLinux(unit) {
+async function installLinux(unit, environment) {
 	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
 	if (versionUnchanged) fs.rmSync(VERSION_UNCHANGED_FLAG_PATH, { force: true });
 	const knownDaemonPid = readStatusDaemonPid();
@@ -470,7 +392,7 @@ async function installLinux(unit) {
 	await stopStaleBackends();
 	writeFileAtomic(unitPath, unit);
 	run("systemctl", ["--user", "daemon-reload"]);
-	runRealSemanticSearchSmoke();
+	runRealSemanticSearchSmoke(environment);
 	run("systemctl", ["--user", "enable", "--now", `${SERVICE_LABEL}.service`]);
 	run("systemctl", ["--user", "is-active", "--quiet", `${SERVICE_LABEL}.service`]);
 }
@@ -526,9 +448,9 @@ async function stopValidatedProcess(pid, description, isExpectedProcess) {
 	if (isProcessRunning(pid)) throw new Error(`Timed out stopping ${description} ${pid}`);
 }
 
-function runRealSemanticSearchSmoke() {
+function runRealSemanticSearchSmoke(environment) {
 	console.log("Running real semantic-search verification");
-	run(process.execPath, [SMOKE_SCRIPT]);
+	run(process.execPath, [SMOKE_SCRIPT], { env: { ...process.env, ...environment } });
 }
 
 function readStatusDaemonPid() {
@@ -665,7 +587,7 @@ function findOnPath(name) {
 }
 
 function run(command, args, options = {}) {
-	const result = spawnSync(command, args, { stdio: options.allowFailure ? "ignore" : "inherit" });
+	const result = spawnSync(command, args, { env: options.env, stdio: options.allowFailure ? "ignore" : "inherit" });
 	if (result.error && !options.allowFailure) throw result.error;
 	if (result.status !== 0 && !options.allowFailure) {
 		throw new Error(`${command} exited with status ${result.status ?? "unknown"}`);
@@ -686,14 +608,6 @@ function writeFileAtomic(filePath, content) {
 	const temporaryPath = `${filePath}.${process.pid}.tmp`;
 	fs.writeFileSync(temporaryPath, content, { mode: 0o600 });
 	fs.renameSync(temporaryPath, filePath);
-}
-
-function readFileIfPresent(filePath) {
-	try {
-		return fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
 }
 
 function hasArgumentSequence(command, args) {

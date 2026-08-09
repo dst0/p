@@ -17,7 +17,7 @@ afterEach(() => {
 describe("indexing device detection", () => {
   it("preserves configured Linux NPU selections", () => {
     const agentDir = path.join(createFixture(), "agent");
-    for (const device of ["intel-openvino-npu", "ryzenai"]) {
+    for (const device of ["amd-phoenix-npu", "amd-ryzenai-npu", "intel-openvino-npu", "ryzenai"]) {
       writeConfig(agentDir, { embeddingDevice: device });
       const selected = runDeviceSelection(agentDir);
       expect(selected.status, selected.stderr).toBe(0);
@@ -74,7 +74,7 @@ describe("indexing device detection", () => {
     expect(detected.stdout).toContain("Both AMD and Intel NPUs were detected");
   });
 
-  it("detects Phoenix but rejects its unsupported transformer path", () => {
+  it("detects Phoenix and exposes its automatic IRON path", () => {
     const root = createFixture();
     createPciDevice(root, "0000:66:00.1", "0x1022", "0x1502", "0x00");
     fs.mkdirSync(path.join(root, "dev"), { recursive: true });
@@ -83,9 +83,9 @@ describe("indexing device detection", () => {
     const detected = runDeviceDetection(root);
 
     expect(detected.status, detected.stderr).toBe(0);
-    expect(detected.stdout).toContain("amd_npu=false");
-    expect(detected.stdout).toContain("generic_npu=false");
-    expect(detected.stdout).toContain("Ryzen AI Linux 1.7.1 does not support");
+    expect(detected.stdout).toContain("amd_npu=true");
+    expect(detected.stdout).toContain("amd_npu_family=phoenix");
+    expect(detected.stdout).toContain("generic_npu=true");
   });
 });
 
@@ -122,7 +122,7 @@ function runDeviceDetection(root: string) {
     "bash",
     [
       "-c",
-      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "amd_npu=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_AMD_NPU" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
+      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "amd_npu=%s\\namd_npu_family=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_AMD_NPU" "$INDEXING_AMD_NPU_FAMILY" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
       "bash",
       selectionScript,
     ],

@@ -65,6 +65,25 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertEqual(plan.batch_size, 2)
         self.assertIn("below the safety reserve", plan.reason or "")
 
+    def test_does_not_fall_back_from_requested_npu_to_cpu(self):
+        plan = build_runtime_plan(
+            preferred_backend="amd-phoenix-npu",
+            logical_cpu_count=16,
+            memory=MemorySnapshot(
+                system_total_bytes=16 * GIB,
+                system_available_bytes=3 * GIB,
+                accelerator_total_bytes=0,
+                accelerator_free_bytes=0,
+            ),
+            model_parameter_count=600_000_000,
+        )
+
+        self.assertFalse(plan.usable)
+        self.assertEqual(plan.backend, "none")
+        self.assertEqual(plan.device, "none")
+        self.assertNotEqual(plan.backend, "cpu")
+        self.assertIn("amd-phoenix-npu memory headroom", plan.reason or "")
+
     def test_uses_rocm_apu_unified_memory_when_system_memory_has_headroom(self):
         plan = build_runtime_plan(
             preferred_backend="rocm",

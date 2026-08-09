@@ -9,11 +9,11 @@
 
 ### Added
 
-- Automatically detect supported AMD and Intel Linux NPUs, install revision-pinned Ryzen AI/XDNA/Vitis AI or Intel NPU/Level Zero/OpenVINO runtimes, validate the actual accelerator backend, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
+- Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
 
 ### Fixed
 
-- Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend truthfully in embedding health, use Qwen3 last-token pooling for ONNX embeddings, and invalidate indexes missing embedding compatibility metadata.
+- Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
 - Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 
 ## [0.4.158] - 2026-08-06

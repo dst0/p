@@ -3,7 +3,7 @@
 import os
 import sys
 import unittest
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -14,36 +14,32 @@ class NpuDeviceSelectionTest(unittest.TestCase):
     def _server(self):
         return _install_fake_torch(FakeTorchBuilder())("test/model")
 
-    def test_linux_npu_requested_when_unavailable_raises(self):
-        server = self._server()
-        with patch("sys.platform", "linux"), patch(
-            "embedding_server._vitisai_npu_available", return_value=False
-        ), patch("embedding_server._openvino_npu_available", return_value=False):
-            with self.assertRaisesRegex(RuntimeError, "no validated AMD Vitis AI or Intel OpenVINO"):
-                server._select_preferred_backend("npu")
-
-    def test_linux_npu_requested_when_available_returns_vendor_backend(self):
-        for vitisai_available, openvino_available, expected in (
-            (True, False, "vitisai"),
-            (False, True, "openvino"),
+    def test_linux_npu_selection_uses_generation_aware_resolver(self):
+        for requested, resolved in (
+            ("npu", "amd-phoenix-npu"),
+            ("amd-phoenix-npu", "amd-phoenix-npu"),
+            ("amd-ryzenai-npu", "amd-ryzenai-npu"),
+            ("intel-openvino-npu", "openvino"),
         ):
-            with self.subTest(expected=expected):
+            with self.subTest(requested=requested):
                 server = self._server()
                 with patch("sys.platform", "linux"), patch(
-                    "embedding_server._vitisai_npu_available", return_value=vitisai_available
-                ), patch(
-                    "embedding_server._openvino_npu_available", return_value=openvino_available
-                ):
-                    backend, _ = server._select_preferred_backend("npu")
-                    self.assertEqual(backend, expected)
+                    "embedding_server._resolve_linux_npu_backend",
+                    return_value=resolved,
+                ) as resolver:
+                    backend, _ = server._select_preferred_backend(requested)
+                self.assertEqual(backend, resolved)
+                resolver.assert_called_once_with(requested)
 
-    def test_linux_npu_with_both_vendors_requires_explicit_backend(self):
+    def test_linux_npu_failure_is_not_silently_redirected_to_cpu(self):
         server = self._server()
         with patch("sys.platform", "linux"), patch(
-            "embedding_server._vitisai_npu_available", return_value=True
-        ), patch("embedding_server._openvino_npu_available", return_value=True):
-            with self.assertRaisesRegex(RuntimeError, "select ryzenai or intel-openvino-npu explicitly"):
+            "embedding_server._resolve_linux_npu_backend",
+            side_effect=RuntimeError("runtime validation failed"),
+        ):
+            with self.assertRaisesRegex(RuntimeError, "runtime validation failed"):
                 server._select_preferred_backend("npu")
+        self.assertFalse(server.fallback_occurred)
 
     def test_macos_npu_uses_real_mps_embeddings(self):
         builder = FakeTorchBuilder()
@@ -53,56 +49,6 @@ class NpuDeviceSelectionTest(unittest.TestCase):
             backend, _ = server._select_preferred_backend("apple-ane")
         self.assertEqual(backend, "mps")
         self.assertTrue(any("using mps" in warning for warning in server.warnings))
-
-    def test_vitisai_requires_execution_provider(self):
-        server = self._server()
-        with patch("sys.platform", "linux"), patch(
-            "embedding_server._vitisai_npu_available", return_value=False
-        ):
-            for device in ("vitisai", "ryzenai"):
-                with self.assertRaisesRegex(RuntimeError, "VitisAIExecutionProvider is not available"):
-                    server._select_preferred_backend(device)
-
-    def test_vitisai_aliases_select_vitisai(self):
-        server = self._server()
-        with patch("sys.platform", "linux"), patch(
-            "embedding_server._vitisai_npu_available", return_value=True
-        ):
-            for device in ("vitisai", "ryzenai"):
-                backend, _ = server._select_preferred_backend(device)
-                self.assertEqual(backend, "vitisai")
-
-    def test_intel_openvino_requires_npu_device(self):
-        server = self._server()
-        with patch("sys.platform", "linux"), patch(
-            "embedding_server._openvino_npu_available", return_value=False
-        ):
-            with self.assertRaisesRegex(RuntimeError, "OpenVINO does not expose an NPU"):
-                server._select_preferred_backend("intel-openvino-npu")
-
-    def test_intel_openvino_aliases_select_openvino(self):
-        server = self._server()
-        with patch("sys.platform", "linux"), patch(
-            "embedding_server._openvino_npu_available", return_value=True
-        ):
-            for device in ("openvino", "openvino-npu", "intel-openvino-npu"):
-                backend, _ = server._select_preferred_backend(device)
-                self.assertEqual(backend, "openvino")
-
-    def test_vitisai_availability_depends_on_execution_provider(self):
-        import embedding_server
-
-        mock_ort = MagicMock()
-        mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort}):
-            self.assertFalse(embedding_server._vitisai_npu_available())
-
-        mock_ort.get_available_providers.return_value = [
-            "VitisAIExecutionProvider",
-            "CPUExecutionProvider",
-        ]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort}):
-            self.assertTrue(embedding_server._vitisai_npu_available())
 
 
 if __name__ == "__main__":

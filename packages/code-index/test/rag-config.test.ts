@@ -84,7 +84,16 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     const configPath = path.join(dir, "code-rag.json");
     fs.writeFileSync(
       configPath,
-      JSON.stringify({ embeddingDevice: "ryzenai", maxEmbeddingBatchSize: 12, torchBackend: "cpu" }),
+      JSON.stringify({
+        amdIronArtifactDirectory: "/managed/artifacts",
+        amdIronCacheDirectory: "/managed/cache",
+        amdIronSourceDirectory: "/managed/mlir-aie",
+        amdNpuGeneration: "npu1",
+        amdNpuRuntimeVersion: "1.4.0",
+        embeddingDevice: "amd-phoenix-npu",
+        maxEmbeddingBatchSize: 12,
+        torchBackend: "cpu",
+      }),
     );
 
     const settings = loadWorkspaceCodeRagSettings({
@@ -92,7 +101,9 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       workspaceRoot: dir,
       userConfigPath: configPath,
     });
-    expect(settings.embeddingDevice).toBe("ryzenai");
+    expect(settings.embeddingDevice).toBe("amd-phoenix-npu");
+    expect(settings.amdIronArtifactDirectory).toBe("/managed/artifacts");
+    expect(settings.amdNpuGeneration).toBe("npu1");
     expect(settings.maxEmbeddingBatchSize).toBe(12);
     expect(settings.torchBackend).toBe("cpu");
   });

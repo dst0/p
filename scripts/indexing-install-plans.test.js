@@ -15,6 +15,7 @@ test("preserves Apple Silicon acceleration without a Linux NPU installer", () =>
 				requestedDevice,
 			}),
 			{
+				installAmdPhoenixIron: false,
 				installAmdRyzenAi: false,
 				installIntelOpenVino: false,
 				ragDevice: "mps",
@@ -33,9 +34,10 @@ test("resolves Linux AMD NPU aliases to the Ryzen AI installer", () => {
 				requestedDevice,
 			}),
 			{
+				installAmdPhoenixIron: false,
 				installAmdRyzenAi: true,
 				installIntelOpenVino: false,
-				ragDevice: "ryzenai",
+				ragDevice: "amd-ryzenai-npu",
 			},
 		);
 	}
@@ -47,6 +49,7 @@ test("resolves Linux AMD NPU aliases to the Ryzen AI installer", () => {
 			requestedDevice: "cpu",
 		}),
 		{
+			installAmdPhoenixIron: false,
 			installAmdRyzenAi: false,
 			installIntelOpenVino: false,
 			ragDevice: "cpu",
@@ -71,6 +74,7 @@ test("resolves Linux Intel NPU aliases to the OpenVINO installer", () => {
 				requestedDevice,
 			}),
 			{
+				installAmdPhoenixIron: false,
 				installAmdRyzenAi: false,
 				installIntelOpenVino: true,
 				ragDevice: "intel-openvino-npu",
@@ -111,11 +115,32 @@ test("does not invent an AMD NPU on ordinary Linux hosts", () => {
 			hasLinuxAmdNpuHardware: false,
 		}),
 		{
+			installAmdPhoenixIron: false,
 			installAmdRyzenAi: false,
 			installIntelOpenVino: false,
 			ragDevice: "cpu",
 		},
 	);
+});
+
+test("resolves Phoenix and Hawk Point hardware to the MLIR-AIE installer", () => {
+	for (const requestedDevice of [undefined, "auto", "npu", "ryzenai", "amd-phoenix-npu"]) {
+		assert.deepEqual(
+			resolveIndexingDevicePlan({
+				amdNpuFamily: "phoenix",
+				architecture: "x64",
+				hasLinuxAmdNpuHardware: true,
+				platform: "linux",
+				requestedDevice,
+			}),
+			{
+				installAmdPhoenixIron: true,
+				installAmdRyzenAi: false,
+				installIntelOpenVino: false,
+				ragDevice: "amd-phoenix-npu",
+			},
+		);
+	}
 });
 
 test("offers only detected Linux GPU and CPU fallbacks", () => {

@@ -214,7 +214,9 @@ export function installIntelOpenVinoNpuSystemRuntime(options = {}) {
 
 export function installIntelOpenVinoPythonRuntime(venvPython, options = {}) {
 	if (options.dryRun ?? false) return;
-	for (const packageName of ["openvino", "openvino-tokenizers", "optimum-intel"]) {
+	for (const packageName of [
+		"onnxruntime", "openvino", "openvino-tokenizers", "optimum", "optimum-intel", "optimum-onnx",
+	]) {
 		runCommand(venvPython, ["-m", "pip", "uninstall", "-y", packageName], { allowFailure: true });
 	}
 	runCommand(venvPython, [

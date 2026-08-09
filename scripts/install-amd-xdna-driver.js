@@ -4,8 +4,37 @@ import path from "node:path";
 import { captureCommand, runCommand, runElevated } from "./npu-install-utils.js";
 
 export function installUbuntuHweKernel() {
-	runElevated("apt-get", ["update", "-qq"]);
-	runElevated("apt-get", ["install", "-y", "--install-recommends", "linux-generic-hwe-24.04"]);
+  runElevated("apt-get", ["update", "-qq"]);
+  runElevated("apt-get", ["install", "-y", "--install-recommends", "linux-generic-hwe-24.04"]);
+}
+
+export function installAmdXdnaPpaRuntime(packageVersions = {}) {
+  runElevated("apt-get", ["update", "-qq"]);
+  runElevated("apt-get", ["install", "-y", "software-properties-common"]);
+  runElevated("add-apt-repository", ["-y", "ppa:amd-team/xrt"]);
+  runElevated("apt-get", ["update", "-qq"]);
+	runElevated("apt-get", [
+		"install",
+		"-y",
+		...[
+			"git",
+			"libxrt2",
+			"libxrt-npu2",
+			"libxrt-dev",
+			"libxrt-utils",
+			"libxrt-utils-npu",
+			"amdxdna-dkms",
+		].map((packageName) =>
+			packageVersions[packageName] ? `${packageName}=${packageVersions[packageName]}` : packageName),
+	]);
+}
+
+export function ensureAmdNpuAccess(userName = process.env.SUDO_USER ?? process.env.USER) {
+  if (!userName) throw new Error("Unable to determine the user that needs AMD NPU access");
+  const groups = captureCommand("id", ["-nG", userName], { allowFailure: true }).trim().split(/\s+/);
+  if (groups.includes("render")) return false;
+  runElevated("usermod", ["-aG", "render", userName]);
+  return true;
 }
 
 export function installAmdXdnaDriver(runtimeRoot, manifest) {
