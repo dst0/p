@@ -83,7 +83,8 @@ export function buildManagedIndexingConfig(currentConfig, devicePlan, torchPlan,
 	return {
 		...currentConfig,
 		...(
-			devicePlan.installAmdPhoenixIron || devicePlan.installAmdRyzenAi || devicePlan.installIntelOpenVino
+			devicePlan.installAppleCoreAi || devicePlan.installAmdPhoenixIron
+				|| devicePlan.installAmdRyzenAi || devicePlan.installIntelOpenVino
 				? {
 					embeddingStartupTimeoutMs: Math.max(currentConfig.embeddingStartupTimeoutMs ?? 0, 600_000),
 					embeddingTimeoutMs: Math.max(currentConfig.embeddingTimeoutMs ?? 0, 600_000),
@@ -137,7 +138,8 @@ function isAcceleratedDevice(device) {
 function canonicalAcceleratorDevice(device) {
 	if (["amd-rocm", "rocm"].includes(device)) return "rocm";
 	if (["cuda", "nvidia-cuda"].includes(device)) return "cuda";
-	if (["apple-ane", "apple-mps", "mps"].includes(device)) return "mps";
+	if (device === "apple-ane") return "apple-ane";
+	if (["apple-mps", "mps"].includes(device)) return "mps";
 	return device;
 }
 

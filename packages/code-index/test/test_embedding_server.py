@@ -124,6 +124,18 @@ class EmbeddingServerTest(unittest.TestCase):
         self.assertEqual(performance["vectors"], 8)
         self.assertGreater(performance["vectorsPerSecond"], 0)
 
+    def test_keeps_accelerator_cache_after_successful_micro_batches(self):
+        server = self.make_server()
+        server.model = BackingOffModel()
+        server.plan = RuntimePlan(
+            **{**server.plan.__dict__, "batch_size": 2}
+        )
+        server._clear_accelerator_cache = Mock()
+
+        server.encode(["one", "two", "three", "four"])
+
+        server._clear_accelerator_cache.assert_not_called()
+
     def test_loads_mps_model_with_the_planned_float32_dtype(self):
         server = EmbeddingServer("Qwen/Qwen3-Embedding-0.6B")
         plan = RuntimePlan(

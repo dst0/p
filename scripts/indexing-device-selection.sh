@@ -105,6 +105,14 @@ prompt_indexing_device_and_batch_size_selection() {
     choices+=("intel-openvino-npu (recommended - automatic Intel NPU installation)")
     values+=("intel-openvino-npu")
   fi
+  if [[ "$INDEXING_HAS_APPLE_ANE" == true ]]; then
+    if [[ "$INDEXING_HAS_COREAI" == true ]]; then
+      choices+=("NPU (Apple Neural Engine via Core AI) (recommended)")
+    else
+      choices+=("NPU (Apple Neural Engine via CoreML EP, hybrid ANE + CPU)")
+    fi
+    values+=("apple-ane")
+  fi
   if [[ "$INDEXING_HAS_MPS" == true ]]; then
     choices+=("GPU (MPS) (recommended - Apple Silicon Metal acceleration)")
     values+=("mps")

@@ -38,6 +38,32 @@ describe("index health formatting", () => {
     expect(text).not.toContain("GPU-deny policy");
   });
 
+  it("distinguishes native Core AI ANE placement from legacy CoreML hybrid execution", () => {
+    const native = formatIndexHealth({
+      requestedBackend: "apple-ane",
+      selectedBackend: "apple-coreai-ane",
+      executionDevice: "NPU (Apple Neural Engine via Core AI)",
+      gpuAllowed: false,
+      npuRuntime: "Core AI",
+      npuPlacement: "full ANE",
+      npuFullyPlaced: true,
+      gpuActivity: false,
+    });
+    const legacy = formatIndexHealth({
+      selectedBackend: "apple-coreml",
+      gpuAllowed: false,
+      npuRuntime: "ONNX Runtime CoreML EP",
+      npuPlacement: "hybrid ANE + CPU",
+      npuFullyPlaced: false,
+      gpuActivity: false,
+    });
+
+    expect(native).toContain("Selected backend: NPU (Apple Neural Engine via Core AI)");
+    expect(native).toContain("NPU placement: full ANE, verified, no GPU activity");
+    expect(legacy).toContain("Selected backend: NPU (CoreML EP, hybrid ANE + CPU)");
+    expect(legacy).toContain("NPU placement: hybrid ANE + CPU, no GPU activity");
+  });
+
   it("reports fallback warnings when a performance sample has no timing details", () => {
     const text = formatIndexHealth({
       selectedBackend: "cuda",

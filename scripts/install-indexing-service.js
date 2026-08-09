@@ -31,6 +31,8 @@ import {
 	isTorchAcceleratorDevice,
 	promptForDeviceFallback,
 } from "./indexing-install-fallback.js";
+import { findCompatiblePython } from "./indexing-python-discovery.js";
+import { installAppleCoreAiRuntime, isMacOsCoreAiAvailable } from "./install-apple-coreai.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -197,6 +199,7 @@ async function main() {
 		? "phoenix"
 		: "ryzenai";
 	const hasLinuxIntelNpuHardware = process.platform === "linux" && detectIntelNpuPciDevices().length > 0;
+	const hasMacOsCoreAi = isMacOsCoreAiAvailable();
 	let indexingConfig = migrateLegacyIndexingConfig(AGENT_DIR);
 	const savedDevice = indexingConfig.embeddingDevice;
 	const planOptions = {
@@ -204,6 +207,7 @@ async function main() {
 		architecture: process.arch,
 		hasLinuxAmdNpuHardware,
 		hasLinuxIntelNpuHardware,
+		hasMacOsCoreAi,
 		platform: process.platform,
 	};
 	let devicePlan;
@@ -225,7 +229,8 @@ async function main() {
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: !DRY_RUN,
-				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron ? 12 : undefined,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron
+					|| devicePlan.installAppleCoreAi ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
 				requestedBackend:
@@ -272,6 +277,13 @@ async function main() {
 				venvDirectory: VENV_DIR,
 				venvPython,
 			});
+			if (devicePlan.installAppleCoreAi) {
+				installAppleCoreAiRuntime({
+					agentDirectory: AGENT_DIR,
+					codeIndexDirectory: CODE_INDEX_DIR,
+					python: findCompatiblePython({ allowInstall: true, requiredMinor: 12 }),
+				});
+			}
 			break;
 		} catch (error) {
 			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
@@ -279,7 +291,8 @@ async function main() {
 			installSelectedNpuSystemRuntime(devicePlan);
 			python = findCompatiblePython({
 				allowInstall: true,
-				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron ? 12 : undefined,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron
+					|| devicePlan.installAppleCoreAi ? 12 : undefined,
 			});
 			torchPlan = selectTorchInstallPlan({
 				requestedBackend:
@@ -501,89 +514,6 @@ function isProcessRunning(pid) {
 	} catch (error) {
 		return error instanceof Error && "code" in error && error.code === "EPERM";
 	}
-}
-
-function findCompatiblePython(options = {}) {
-	const allowInstall = options.allowInstall ?? true;
-	const requiredMinor = options.requiredMinor;
-	const search = () => {
-		const names = requiredMinor !== undefined
-			? [`python3.${requiredMinor}`, "python3"]
-			: process.platform === "darwin" && process.arch === "x64"
-			? ["python3.12", "python3.11", "python3.10", "python3"]
-			: ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
-		const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
-		for (const candidate of candidates) {
-			const version = capture(candidate, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
-				allowFailure: true,
-			}).trim();
-			const [major, minor] = version.split(".").map(Number);
-			if (major !== 3 || minor < 10) continue;
-			if (requiredMinor !== undefined && minor !== requiredMinor) continue;
-			if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
-			return candidate;
-		}
-		return undefined;
-	};
-
-	let found = search();
-	if (!found && allowInstall) {
-		tryAutoInstallPython();
-		found = search();
-	}
-	if (found) return found;
-
-	throw new Error(
-		requiredMinor !== undefined
-			? `Code indexing requires Python 3.${requiredMinor} for the selected backend.`
-			: process.platform === "darwin" && process.arch === "x64"
-			? "Code indexing requires Python 3.10-3.12 on Intel macOS. Please install Python 3."
-			: "Code indexing requires Python 3.10 or newer. Please install Python 3.",
-	);
-}
-
-function tryAutoInstallPython() {
-	console.log("No compatible Python 3 (>= 3.10) found on PATH. Attempting automatic installation...");
-	if (process.platform === "darwin") {
-		const brew = findOnPath("brew") || (fs.existsSync("/opt/homebrew/bin/brew") ? "/opt/homebrew/bin/brew" : undefined);
-		if (brew) {
-			const pkg = process.arch === "x64" ? "python@3.12" : "python3";
-			run(brew, ["install", pkg], { allowFailure: true });
-		}
-	} else if (process.platform === "linux") {
-		const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-		if (findOnPath("apt-get")) {
-			const cmd = isRoot ? "apt-get" : "sudo";
-			const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
-			const argsInstall = isRoot
-				? ["install", "-y", "-qq", "python3", "python3-venv", "python3-dev"]
-				: ["apt-get", "install", "-y", "-qq", "python3", "python3-venv", "python3-dev"];
-			run(cmd, argsUpdate, { allowFailure: true });
-			run(cmd, argsInstall, { allowFailure: true });
-		} else if (findOnPath("dnf")) {
-			const cmd = isRoot ? "dnf" : "sudo";
-			const args = isRoot ? ["install", "-y", "python3", "python3-devel"] : ["dnf", "install", "-y", "python3", "python3-devel"];
-			run(cmd, args, { allowFailure: true });
-		} else if (findOnPath("pacman")) {
-			const cmd = isRoot ? "pacman" : "sudo";
-			const args = isRoot ? ["-Sy", "--noconfirm", "python"] : ["pacman", "-Sy", "--noconfirm", "python"];
-			run(cmd, args, { allowFailure: true });
-		}
-	}
-}
-
-function findOnPath(name) {
-	for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
-		if (!directory) continue;
-		const candidate = path.join(directory, name);
-		try {
-			fs.accessSync(candidate, fs.constants.X_OK);
-			return candidate;
-		} catch {
-			// Continue searching PATH.
-		}
-	}
-	return undefined;
 }
 
 function run(command, args, options = {}) {

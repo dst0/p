@@ -8,6 +8,10 @@ export interface IndexHealth {
   gpuAllowed?: boolean;
   fallbackOccurred?: boolean;
   fallbackReason?: string;
+  npuRuntime?: string;
+  npuPlacement?: string;
+  npuFullyPlaced?: boolean;
+  gpuActivity?: boolean;
   performance?: {
     backend?: string;
     vectors?: number;
@@ -23,6 +27,13 @@ export function formatIndexHealth(health: IndexHealth): string {
     const normalized = value.toLowerCase();
     if (normalized === "mps" || normalized === "apple-mps") return "GPU (MPS)";
     if (normalized === "apple-ane") return "NPU (Apple Neural Engine)";
+    if (normalized === "apple-coreai-ane") {
+      return "NPU (Apple Neural Engine via Core AI)";
+    }
+    if (normalized === "apple-coreai-ane+coreml") {
+      return "NPU (Core AI ANE + CoreML EP hybrid)";
+    }
+    if (normalized === "apple-coreml") return "NPU (CoreML EP, hybrid ANE + CPU)";
     if (normalized === "npu") return "NPU";
     return value;
   };
@@ -38,12 +49,22 @@ export function formatIndexHealth(health: IndexHealth): string {
   if (health.gpuAllowed !== undefined) {
     const selected = health.selectedBackend?.toLowerCase();
     const disabledReason =
-      selected === "cpu" ? "CPU backend" : selected === "npu" || selected === "apple-ane" ? "NPU selected" : "policy";
+      selected === "cpu"
+        ? "CPU backend"
+        : selected?.includes("npu") || selected?.startsWith("apple-core")
+          ? "NPU selected"
+          : "policy";
     const allowed = health.gpuAllowed ? theme.fg("success", "yes") : theme.fg("warning", `no (${disabledReason})`);
     text += `GPU allowed: ${allowed}\n`;
   }
   if (health.fallbackOccurred) {
     text += `Fallback occurred: ${theme.fg("warning", "yes")} (${health.fallbackReason ?? "CPU fallback"})\n`;
+  }
+  if (health.npuRuntime) text += `NPU runtime: ${theme.bold(health.npuRuntime)}\n`;
+  if (health.npuPlacement) {
+    const verification = health.npuFullyPlaced ? ", verified" : "";
+    const gpu = health.gpuActivity === false ? ", no GPU activity" : "";
+    text += `NPU placement: ${theme.bold(`${health.npuPlacement}${verification}${gpu}`)}\n`;
   }
   if (health.resource_plan?.batch_size !== undefined) {
     text += `Current used batch size: ${theme.bold(String(health.resource_plan.batch_size))}\n`;

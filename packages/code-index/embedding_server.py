@@ -64,6 +64,8 @@ from resource_manager import (
     estimate_model_parameter_count,
     system_memory_snapshot,
 )
+from embedding_backends.apple_ane_backend import AppleANEBackend
+from embedding_backends.base import ModelSpec
 from embedding_backends.onnx_embedding_wrapper import (
     EMBEDDING_NORMALIZATION,
     EMBEDDING_POOLING,
@@ -237,9 +239,6 @@ class EmbeddingServer:
                 ) from error
             output.extend(embeddings)
             offset += batch_size
-            import gc
-            gc.collect()
-            self._clear_accelerator_cache()
 
         if not request_had_oom and self.oom_batch_ceiling is not None:
             self.successful_requests_since_oom += 1
@@ -353,12 +352,11 @@ class EmbeddingServer:
             self._record_warning(warning)
             print(f"WARNING: {warning}", file=sys.stderr, flush=True)
         if requested_device == "auto":
+            if sys.platform == "darwin" and AppleANEBackend.core_ai_runtime_installed():
+                return "apple-ane", memory
             return detected_backend or "cpu", memory
         if requested_device in {"apple-ane", "npu"} and sys.platform == "darwin":
-            raise RuntimeError(
-                "Apple Neural Engine indexing is unavailable because no verified "
-                "Qwen CoreML embedding artifact is installed; select mps for GPU (MPS)"
-            )
+            return "apple-ane", memory
         linux_npu_devices = {
             "npu", "vitisai", "ryzenai", "amd-phoenix-npu", "amd-ryzenai-npu",
             "openvino", "openvino-npu", "intel-openvino-npu",
@@ -442,7 +440,6 @@ class EmbeddingServer:
     def _load_model(self, plan: RuntimePlan):
         if plan.backend in {"amd-phoenix-npu", "amd-ryzenai-npu"}:
             from embedding_backends.amd_npu_backend import AmdNpuBackend
-            from embedding_backends.base import ModelSpec
 
             backend = AmdNpuBackend(plan.backend, self.runtime_config, strict=True)
             backend.load(
@@ -456,16 +453,15 @@ class EmbeddingServer:
             )
             return backend
         if plan.backend == "apple-ane":
-            from embedding_backends.apple_ane_backend import AppleANEBackend
-            from embedding_backends.base import ModelSpec
-            ane_backend = AppleANEBackend("apple-ane", strict=False)
-            ane_backend.load(ModelSpec(model_name=self.model_name, dimensions=self.dim))
+            ane_backend = AppleANEBackend("apple-ane", strict=True)
+            ane_backend.load(ModelSpec(
+                model_name=self.model_name, dimensions=self.dim, sequence_length=self.sequence_length,
+            ))
             return ane_backend
 
         if plan.backend == "cpu":
             return SentenceTransformer(self.model_name, device="cpu")
         if plan.backend == "openvino":
-            from embedding_backends.base import ModelSpec
             from embedding_backends.openvino_backend import OpenVINOBackend
 
             openvino_backend = OpenVINOBackend(
@@ -748,9 +744,6 @@ class Handler(BaseHTTPRequestHandler):
                 "dim": server.dim,
                 "embeddings": embeddings,
             })
-
-            import gc
-            gc.collect()
         except (BrokenPipeError, ConnectionResetError):
             # Client disconnected — don't crash the server
             self.close_connection = True

@@ -37,6 +37,8 @@ function collectIndexingFiles(projectRoot: string): string[] {
     "indexing-device-selection.sh",
     "indexing-install-fallback.js",
     "indexing-install-plans.js",
+    "indexing-python-discovery.js",
+    "install-apple-coreai.js",
     "install-amd-ryzen-ai.js",
     "install-amd-xdna-driver.js",
     "install-indexing-service.js",
@@ -61,7 +63,7 @@ function collectIndexingFiles(projectRoot: string): string[] {
   const swiftWorker = path.join(codeIndexDir, "apple-ane-worker", "Sources");
   if (isDirectory(swiftWorker)) collectRecursiveFiles(swiftWorker, files, [".swift"]);
 
-  for (const name of ["requirements.txt", "pyproject.toml"]) {
+  for (const name of ["requirements.txt", "requirements-coreai.txt", "pyproject.toml"]) {
     const filePath = path.join(codeIndexDir, name);
     if (isFile(filePath)) files.push(filePath);
   }

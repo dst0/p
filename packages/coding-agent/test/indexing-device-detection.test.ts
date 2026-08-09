@@ -88,15 +88,21 @@ describe("indexing device detection", () => {
     expect(detected.stdout).toContain("generic_npu=true");
   });
 
-  it("distinguishes Apple GPU (MPS) from unavailable Neural Engine indexing", () => {
+  it("detects Core AI and the Apple Neural Engine independently from GPU (MPS)", () => {
     const root = createFixture();
 
-    const detected = runDeviceDetection(root, "Darwin", "arm64");
+    const detected = runDeviceDetection(root, "Darwin", "arm64", "27.0");
 
     expect(detected.status, detected.stderr).toBe(0);
     expect(detected.stdout).toContain("mps=true");
-    expect(detected.stdout).toContain("generic_npu=false");
-    expect(detected.stdout).toContain("No verified Qwen CoreML embedding artifact");
+    expect(detected.stdout).toContain("apple_ane=true");
+    expect(detected.stdout).toContain("coreai=true");
+    expect(detected.stdout).toContain("generic_npu=true");
+
+    const legacy = runDeviceDetection(root, "Darwin", "arm64", "26.0");
+    expect(legacy.stdout).toContain("apple_ane=true");
+    expect(legacy.stdout).toContain("coreai=false");
+    expect(legacy.stdout).toContain("generic_npu=true");
   });
 });
 
@@ -128,12 +134,12 @@ function runBatchSizeSelection(agentDir: string) {
   );
 }
 
-function runDeviceDetection(root: string, kernelName = "Linux", architecture = "x86_64") {
+function runDeviceDetection(root: string, kernelName = "Linux", architecture = "x86_64", macOsVersion = "") {
   return spawnSync(
     "bash",
     [
       "-c",
-      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "mps=%s\\namd_npu=%s\\namd_npu_family=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_MPS" "$INDEXING_HAS_AMD_NPU" "$INDEXING_AMD_NPU_FAMILY" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
+      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "mps=%s\\napple_ane=%s\\ncoreai=%s\\namd_npu=%s\\namd_npu_family=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_MPS" "$INDEXING_HAS_APPLE_ANE" "$INDEXING_HAS_COREAI" "$INDEXING_HAS_AMD_NPU" "$INDEXING_AMD_NPU_FAMILY" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
       "bash",
       selectionScript,
     ],
@@ -147,6 +153,7 @@ function runDeviceDetection(root: string, kernelName = "Linux", architecture = "
         P_INDEXING_TEST_PCI_ROOT: path.join(root, "pci"),
         P_INDEXING_TEST_UNAME_M: architecture,
         P_INDEXING_TEST_UNAME_S: kernelName,
+        P_INDEXING_TEST_MACOS_VERSION: macOsVersion,
       },
     },
   );

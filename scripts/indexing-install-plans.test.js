@@ -6,33 +6,44 @@ import {
 	resolveIndexingDevicePlan,
 } from "./indexing-install-plans.js";
 
-test("preserves Apple Silicon acceleration without a Linux NPU installer", () => {
-	for (const requestedDevice of [undefined, "auto", "mps"]) {
+test("prioritizes Core AI on current macOS and preserves the legacy CoreML path", () => {
+	for (const requestedDevice of [undefined, "auto", "npu", "apple-ane"]) {
 		assert.deepEqual(
 			resolveIndexingDevicePlan({
 				platform: "darwin",
 				architecture: "arm64",
+				hasMacOsCoreAi: true,
 				requestedDevice,
 			}),
 			{
+				installAppleCoreAi: true,
 				installAmdPhoenixIron: false,
 				installAmdRyzenAi: false,
 				installIntelOpenVino: false,
-				ragDevice: "mps",
+				ragDevice: "apple-ane",
 			},
 		);
 	}
-	for (const requestedDevice of ["npu", "apple-ane"]) {
-		assert.throws(
-			() =>
-				resolveIndexingDevicePlan({
-					platform: "darwin",
-					architecture: "arm64",
-					requestedDevice,
-				}),
-			/no verified Qwen CoreML embedding artifact.*GPU \(MPS\)/,
-		);
-	}
+	assert.deepEqual(
+		resolveIndexingDevicePlan({
+			platform: "darwin",
+			architecture: "arm64",
+			hasMacOsCoreAi: false,
+			requestedDevice: "apple-ane",
+		}),
+		{
+			installAppleCoreAi: false,
+			installAmdPhoenixIron: false,
+			installAmdRyzenAi: false,
+			installIntelOpenVino: false,
+			ragDevice: "apple-ane",
+		},
+	);
+	assert.equal(resolveIndexingDevicePlan({
+		platform: "darwin",
+		architecture: "arm64",
+		hasMacOsCoreAi: false,
+	}).ragDevice, "mps");
 });
 
 test("resolves Linux AMD NPU aliases to the Ryzen AI installer", () => {
@@ -179,8 +190,13 @@ test("offers only detected Linux GPU and CPU fallbacks", () => {
 	);
 });
 
-test("keeps Apple MPS and CPU as supported Mac choices", () => {
-	assert.deepEqual(resolveFallbackDeviceChoices({ architecture: "arm64", platform: "darwin" }), [
+test("keeps Apple NPU, GPU (MPS), and CPU as supported Mac choices", () => {
+	assert.deepEqual(resolveFallbackDeviceChoices({
+		architecture: "arm64",
+		hasMacOsCoreAi: true,
+		platform: "darwin",
+	}), [
+		{ device: "apple-ane", label: "NPU (Apple Neural Engine - Core AI, full ANE)" },
 		{ device: "mps", label: "GPU (MPS) - Apple Silicon Metal" },
 		{ device: "cpu", label: "CPU" },
 	]);

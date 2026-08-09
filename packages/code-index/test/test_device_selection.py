@@ -161,7 +161,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "rocm")
 
@@ -176,7 +177,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cuda")
 
@@ -219,8 +221,10 @@ class DeviceSelectionTest(unittest.TestCase):
         server = EmbeddingServer("test/model")
 
         with patch.object(sys, "platform", "darwin"):
-            with self.assertRaisesRegex(RuntimeError, "no verified Qwen CoreML"):
-                server._select_preferred_backend("npu")
+            backend, _ = server._select_preferred_backend("npu")
+
+        self.assertEqual(backend, "apple-ane")
+        self.assertEqual(server.warnings, [])
 
     # -- CPU requested always returns CPU -------------------------------
 
@@ -246,7 +250,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cpu")
 

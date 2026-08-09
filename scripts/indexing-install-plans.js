@@ -6,19 +6,19 @@ export function resolveIndexingDevicePlan(options = {}) {
 	const hasAmd = options.hasLinuxAmdNpuHardware ?? false;
 	const hasIntel = options.hasLinuxIntelNpuHardware ?? false;
 	const amdFamily = options.amdNpuFamily ?? "ryzenai";
+	const hasCoreAi = options.hasMacOsCoreAi ?? false;
 	const configuredDevice = options.requestedDevice ?? options.savedDevice;
 	if (platform === "darwin" && architecture === "arm64") {
-		const device = configuredDevice ?? "mps";
-		if (["npu", "apple-ane"].includes(device)) {
-			throw new Error(
-				"Apple Neural Engine indexing is unavailable because no verified Qwen CoreML embedding artifact is installed; select GPU (MPS)",
-			);
-		}
+		const device = configuredDevice ?? (hasCoreAi ? "apple-ane" : "mps");
+		const ragDevice = ["npu", "apple-ane"].includes(device)
+			? "apple-ane"
+			: device === "auto" ? (hasCoreAi ? "apple-ane" : "mps") : device;
 		return {
+			installAppleCoreAi: ragDevice === "apple-ane" && hasCoreAi,
 			installAmdPhoenixIron: false,
 			installAmdRyzenAi: false,
 			installIntelOpenVino: false,
-			ragDevice: device === "auto" ? "mps" : device,
+			ragDevice,
 		};
 	}
 	if (platform === "linux" && architecture === "x64") {
@@ -93,6 +93,10 @@ export function resolveFallbackDeviceChoices(options = {}) {
 	const hasNvidia = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
 	const excludedDevice = options.excludedDevice;
 	const choices = [];
+	if (platform === "darwin" && architecture === "arm64" && excludedDevice !== "apple-ane") {
+		const runtime = options.hasMacOsCoreAi ? "Core AI, full ANE" : "CoreML EP, hybrid ANE + CPU";
+		choices.push({ device: "apple-ane", label: `NPU (Apple Neural Engine - ${runtime})` });
+	}
 	if (platform === "darwin" && architecture === "arm64" && excludedDevice !== "mps") {
 		choices.push({ device: "mps", label: "GPU (MPS) - Apple Silicon Metal" });
 	}

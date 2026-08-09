@@ -14,6 +14,7 @@ from embedding_backends import (
     resolve_backend,
     resolve_legacy_backend_id,
 )
+from embedding_backends.apple_ane_backend import AppleANEBackend
 
 
 CANONICAL_TEST_CORPUS = [
@@ -41,7 +42,8 @@ class TestBackendContractAndParity(unittest.TestCase):
     def test_legacy_backend_id_migration(self):
         if sys.platform == "darwin":
             self.assertEqual(resolve_legacy_backend_id("npu"), "apple-ane")
-            self.assertEqual(resolve_legacy_backend_id("auto"), "apple-mps")
+            expected_auto = "apple-ane" if AppleANEBackend.core_ai_runtime_installed() else "apple-mps"
+            self.assertEqual(resolve_legacy_backend_id("auto"), expected_auto)
         else:
             self.assertEqual(resolve_legacy_backend_id("npu"), "npu")
         self.assertEqual(resolve_legacy_backend_id("cuda"), "nvidia-cuda")
@@ -57,8 +59,8 @@ class TestBackendContractAndParity(unittest.TestCase):
         backend = resolve_backend("cpu", strict=False)
         self.assertIsNotNone(backend)
         self.assertEqual(backend.backend_id, "cpu")
-        with self.assertRaisesRegex(RuntimeError, "no verified Qwen CoreML"):
-            resolve_backend("apple-ane", strict=False)
+        apple_backend = resolve_backend("apple-ane", strict=False)
+        self.assertEqual(apple_backend.backend_id, "apple-ane")
 
     def test_health_formatting(self):
         health = BackendHealth(

@@ -1,80 +1,111 @@
-"""Apple Neural Engine (ANE) backend client for Swift ANE helper process."""
+"""Apple NPU backend using Core AI or the legacy ONNX Runtime CoreML EP."""
 
 import json
 import os
+import platform
+import select
 import subprocess
 import sys
+import threading
+from collections import deque
 from typing import Any
+
+from embedding_backends.apple_coreml_backend import AppleCoreMLBackend
 from embedding_backends.base import BackendHealth, ModelSpec
 from embedding_backends.model_contract import compute_compatibility_group, compute_tokenizer_hash
 
 
 class AppleANEBackend:
-    """Apple Neural Engine (ANE) backend client for Swift ANE helper process."""
+    """Select native Core AI on macOS 27+ and CoreML EP on older macOS."""
 
-    def __init__(self, backend_id: str = "apple-ane", strict: bool = False):
+    def __init__(self, backend_id: str = "apple-ane", strict: bool = True):
         self.backend_id = backend_id
         self.strict = strict
-        self.execution_device = "Apple Neural Engine"
+        self.execution_device = "NPU (Apple Neural Engine)"
         self.gpu_allowed = False
-        self.spec: ModelSpec = ModelSpec()
-        self.fallback_occurred = False
-        self.fallback_reason: str | None = None
+        self.spec = ModelSpec()
         self.worker_proc: subprocess.Popen[str] | None = None
-
-    def _worker_binary_path(self) -> str:
-        base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        return os.path.join(base_dir, "apple-ane-worker", ".build", "release", "apple-ane-worker")
+        self.worker_health: dict[str, Any] = {}
+        self.stderr_lines: deque[str] = deque(maxlen=20)
+        self.delegate: AppleCoreMLBackend | None = None
+        self.long_sequence_delegate: AppleCoreMLBackend | None = None
+        self.used_long_sequence_path = False
+        self.max_seq_length = 2048
 
     def load(self, spec: ModelSpec) -> None:
         self.spec = spec
-        if sys.platform != "darwin":
-            msg = "apple-ane is only supported on macOS arm64"
-            if self.strict:
-                raise RuntimeError(msg)
-            self._setup_cpu_fallback(spec, msg)
+        if sys.platform != "darwin" or platform.machine() != "arm64":
+            raise RuntimeError("apple-ane requires an Apple Silicon Mac")
+        if self._core_ai_available():
+            self._load_core_ai_worker()
             return
+        self.delegate = AppleCoreMLBackend(self.backend_id, strict=True)
+        self.delegate.load(spec)
+        self.execution_device = self.delegate.execution_device
+        self.max_seq_length = spec.sequence_length
 
-        binary_path = self._worker_binary_path()
-        if not os.path.exists(binary_path):
-            msg = f"Swift ANE worker binary not found at {binary_path}"
-            if self.strict:
-                raise RuntimeError(msg)
-            self._setup_cpu_fallback(spec, msg)
-            return
+    def _load_core_ai_worker(self) -> None:
+        agent = os.environ.get("P_CODING_AGENT_DIR", os.path.expanduser("~/.p/agent"))
+        service_root = os.path.join(agent, "indexing-service")
+        python = os.environ.get(
+            "P_APPLE_COREAI_PYTHON",
+            os.path.join(service_root, "coreai-venv", "bin", "python"),
+        )
+        artifact_root = os.environ.get(
+            "P_APPLE_COREAI_ARTIFACT_ROOT",
+            os.path.join(service_root, "apple-coreai"),
+        )
+        worker = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "apple_coreai_worker.py",
+        )
+        if not os.path.isfile(python) or not os.path.isfile(os.path.join(artifact_root, "current.json")):
+            raise RuntimeError("Core AI NPU runtime or Qwen ANE artifact is not installed")
+        environment = {**os.environ, "USE_OS_COREAI": "1"}
+        self.worker_proc = subprocess.Popen(
+            [python, worker, "--artifact-root", artifact_root],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            bufsize=1,
+            env=environment,
+        )
+        if self.worker_proc.stderr:
+            threading.Thread(
+                target=self._drain_stderr,
+                args=(self.worker_proc.stderr,),
+                daemon=True,
+            ).start()
+        self.worker_health = self._request({"id": "init", "action": "health"}, timeout=600)
+        if self.worker_health.get("status") != "ready":
+            raise RuntimeError(f"Core AI worker failed health check: {self.worker_health}")
+        if not self.worker_health.get("npuFullyPlaced") or self.worker_health.get("gpuActivity"):
+            raise RuntimeError("Core AI worker did not prove full ANE placement with no GPU activity")
+        self.execution_device = str(self.worker_health["executionDevice"])
 
-        try:
-            self.worker_proc = subprocess.Popen(
-                [binary_path],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-            )
-            # Send health query
-            health_req = json.dumps({"id": "init", "action": "health"}) + "\n"
-            if self.worker_proc.stdin:
-                self.worker_proc.stdin.write(health_req)
-                self.worker_proc.stdin.flush()
-                res_line = self.worker_proc.stdout.readline() if self.worker_proc.stdout else ""
-                res_data = json.loads(res_line) if res_line else {}
-                if res_data.get("status") == "ready":
-                    self.execution_device = "Apple Neural Engine"
-                    return
-        except Exception as error:
-            msg = f"Failed to launch Swift ANE worker: {error}"
-            if self.strict:
-                raise RuntimeError(msg) from error
-            self._setup_cpu_fallback(spec, msg)
+    def _drain_stderr(self, stream) -> None:
+        for line in stream:
+            self.stderr_lines.append(line.rstrip())
 
-    def _setup_cpu_fallback(self, spec: ModelSpec, reason: str):
-        self.fallback_occurred = True
-        self.fallback_reason = reason
-        from embedding_backends.torch_backend import PyTorchBackend
-        self._fallback_backend = PyTorchBackend("cpu")
-        self._fallback_backend.load(spec)
-        self.execution_device = "PyTorch CPU (Fallback)"
+    def _request(self, request: dict[str, Any], timeout: float = 120) -> dict[str, Any]:
+        process = self.worker_proc
+        if not process or not process.stdin or not process.stdout:
+            raise RuntimeError("Core AI worker is not active")
+        process.stdin.write(json.dumps(request) + "\n")
+        process.stdin.flush()
+        ready, _, _ = select.select([process.stdout], [], [], timeout)
+        if not ready:
+            details = "; ".join(self.stderr_lines)
+            raise RuntimeError(f"Core AI worker timed out{': ' + details if details else ''}")
+        line = process.stdout.readline()
+        if not line:
+            details = "; ".join(self.stderr_lines)
+            raise RuntimeError(f"Core AI worker exited unexpectedly{': ' + details if details else ''}")
+        response = json.loads(line)
+        if response.get("status") == "error":
+            raise RuntimeError(f"Core AI worker error: {response.get('error')}")
+        return response
 
     def encode(
         self,
@@ -82,68 +113,107 @@ class AppleANEBackend:
         normalize: bool = True,
         batch_size: int = 8,
     ) -> list[list[float]]:
-        if hasattr(self, "_fallback_backend"):
-            return self._fallback_backend.encode(texts, normalize, batch_size)
+        if self.delegate:
+            return self.delegate.encode(texts, normalize, batch_size)
+        embeddings: list[list[float]] = []
+        worker_batch = int(self.worker_health.get("batchSize", 8))
+        effective_batch = max(1, min(batch_size, worker_batch))
+        for offset in range(0, len(texts), effective_batch):
+            response = self._request(
+                {
+                    "id": str(offset),
+                    "action": "encode",
+                    "texts": texts[offset : offset + effective_batch],
+                    "normalize": normalize,
+                }
+            )
+            if response.get("status") == "unsupported_length":
+                legacy = self._load_long_sequence_delegate()
+                self.used_long_sequence_path = True
+                return legacy.encode(texts, normalize, batch_size)
+            embeddings.extend(response.get("embeddings", []))
+        return embeddings
 
-        if not self.worker_proc or not self.worker_proc.stdin or not self.worker_proc.stdout:
-            raise RuntimeError("AppleANEBackend worker process is not active")
-
-        all_embeddings: list[list[float]] = []
-        for i in range(0, len(texts), batch_size):
-            batch = texts[i : i + batch_size]
-            req_data = {
-                "id": str(i),
-                "action": "encode",
-                "texts": batch,
-                "bucket": 1024,
-                "normalize": normalize,
-            }
-            self.worker_proc.stdin.write(json.dumps(req_data) + "\n")
-            self.worker_proc.stdin.flush()
-
-            res_line = self.worker_proc.stdout.readline()
-            if not res_line:
-                raise RuntimeError("Swift ANE worker process unexpectedly closed standard output")
-            res_data = json.loads(res_line)
-            if res_data.get("status") != "ok":
-                raise RuntimeError(f"Swift ANE worker returned error: {res_data.get('error')}")
-
-            batch_vecs = res_data.get("embeddings", [])
-            all_embeddings.extend(batch_vecs)
-
-        return all_embeddings
+    def _load_long_sequence_delegate(self) -> AppleCoreMLBackend:
+        if self.long_sequence_delegate is None:
+            self.long_sequence_delegate = AppleCoreMLBackend(self.backend_id, strict=True)
+            self.long_sequence_delegate.load(self.spec)
+        return self.long_sequence_delegate
 
     def health(self) -> BackendHealth:
-        tok_hash = compute_tokenizer_hash(self.spec.model_name)
-        compat_group = compute_compatibility_group(
+        if self.delegate:
+            return self.delegate.health()
+        compatibility = compute_compatibility_group(
             self.spec.model_name,
             self.spec.dimensions,
             self.spec.pooling,
             self.spec.normalization,
         )
         return BackendHealth(
-            status="ready" if (self.worker_proc or hasattr(self, "_fallback_backend")) else "loading",
+            status="ready" if self.worker_proc else "loading",
             requested_backend=self.backend_id,
-            selected_backend=self.backend_id if not self.fallback_occurred else "cpu",
-            execution_device=self.execution_device,
-            gpu_allowed=self.gpu_allowed,
-            fallback_occurred=self.fallback_occurred,
-            fallback_reason=self.fallback_reason,
+            selected_backend=(
+                "apple-coreai-ane+coreml" if self.used_long_sequence_path else "apple-coreai-ane"
+            ),
+            execution_device=(
+                "NPU (Core AI full ANE + CoreML EP hybrid for long sequences)"
+                if self.used_long_sequence_path else self.execution_device
+            ),
+            gpu_allowed=False,
+            fallback_occurred=False,
             model_name=self.spec.model_name,
             dimensions=self.spec.dimensions,
-            tokenizer_hash=tok_hash,
+            tokenizer_hash=compute_tokenizer_hash(self.spec.model_name),
             pooling=self.spec.pooling,
             normalization=self.spec.normalization,
-            compatibility_group=compat_group,
+            compatibility_group=compatibility,
+            batch_size=int(self.worker_health.get("batchSize", 8)),
+            extra={
+                "npuRuntime": self.worker_health.get("runtime", "Core AI"),
+                "npuPlacement": (
+                    "adaptive full ANE + CoreML EP hybrid"
+                    if self.used_long_sequence_path else "full ANE fast path"
+                ),
+                "npuFullyPlaced": not self.used_long_sequence_path,
+                "gpuActivity": False,
+                "coreAiMaxSequenceLength": self.worker_health.get("sequenceLength", 64),
+                "longSequenceNpuRuntime": "ONNX Runtime CoreML EP",
+            },
         )
 
     def close(self) -> None:
+        if self.delegate:
+            self.delegate.close()
+            self.delegate = None
+        if self.long_sequence_delegate:
+            self.long_sequence_delegate.close()
+            self.long_sequence_delegate = None
         if self.worker_proc:
+            self.worker_proc.terminate()
             try:
-                self.worker_proc.terminate()
                 self.worker_proc.wait(timeout=2)
-            except Exception:
-                pass
+            except subprocess.TimeoutExpired:
+                self.worker_proc.kill()
             self.worker_proc = None
-        if hasattr(self, "_fallback_backend"):
-            self._fallback_backend.close()
+
+    @staticmethod
+    def _core_ai_available() -> bool:
+        version = platform.mac_ver()[0]
+        try:
+            return int(version.split(".", 1)[0]) >= 27
+        except (TypeError, ValueError):
+            return False
+
+    @staticmethod
+    def core_ai_runtime_installed() -> bool:
+        agent = os.environ.get("P_CODING_AGENT_DIR", os.path.expanduser("~/.p/agent"))
+        service_root = os.path.join(agent, "indexing-service")
+        python = os.environ.get(
+            "P_APPLE_COREAI_PYTHON",
+            os.path.join(service_root, "coreai-venv", "bin", "python"),
+        )
+        artifact_root = os.environ.get(
+            "P_APPLE_COREAI_ARTIFACT_ROOT",
+            os.path.join(service_root, "apple-coreai"),
+        )
+        return os.path.isfile(python) and os.path.isfile(os.path.join(artifact_root, "current.json"))

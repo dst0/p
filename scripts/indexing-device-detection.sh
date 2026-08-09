@@ -3,6 +3,8 @@
 detect_supported_indexing_devices() {
   INDEXING_HAS_CPU=true
   INDEXING_HAS_MPS=false
+  INDEXING_HAS_APPLE_ANE=false
+  INDEXING_HAS_COREAI=false
   INDEXING_HAS_AMD_GPU=false
   INDEXING_HAS_NVIDIA_GPU=false
   INDEXING_HAS_AMD_NPU=false
@@ -15,7 +17,10 @@ detect_supported_indexing_devices() {
   if [[ "$kernel_name" == "Darwin" ]]; then
     if [[ "$architecture" == "arm64" ]]; then
       INDEXING_HAS_MPS=true
-      INDEXING_NPU_UNSUPPORTED_REASON="No verified Qwen CoreML embedding artifact is installed; use GPU (MPS)."
+      INDEXING_HAS_APPLE_ANE=true
+      local macos_version="${P_INDEXING_TEST_MACOS_VERSION:-$(sw_vers -productVersion 2>/dev/null || true)}"
+      local macos_major="${macos_version%%.*}"
+      [[ "$macos_major" =~ ^[0-9]+$ && "$macos_major" -ge 27 ]] && INDEXING_HAS_COREAI=true
     fi
     return 0
   fi
@@ -103,10 +108,11 @@ is_detected_indexing_device_supported() {
   case "$1" in
     auto|cpu|intel-openvino-cpu) return 0 ;;
     mps|apple-mps) [[ "$INDEXING_HAS_MPS" == true ]] ;;
-    apple-ane) return 1 ;;
+    apple-ane) [[ "$INDEXING_HAS_APPLE_ANE" == true ]] ;;
     cuda|nvidia-cuda) [[ "$INDEXING_HAS_NVIDIA_GPU" == true ]] ;;
     rocm|amd-rocm) [[ "$INDEXING_HAS_AMD_GPU" == true ]] ;;
     npu)
+      [[ "$INDEXING_HAS_APPLE_ANE" == true ]] && return 0
       [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_HAS_INTEL_NPU" != true ]] || \
         [[ "$INDEXING_HAS_INTEL_NPU" == true && "$INDEXING_HAS_AMD_NPU" != true ]]
       ;;
@@ -121,11 +127,13 @@ is_detected_indexing_device_supported() {
 describe_unsupported_indexing_device() {
   case "$1" in
     mps|apple-mps) echo "GPU (MPS) requires an Apple Silicon Mac." ;;
-    apple-ane) echo "${INDEXING_NPU_UNSUPPORTED_REASON:-No verified Apple Neural Engine embedding backend is available.}" ;;
+    apple-ane) echo "Apple Neural Engine indexing requires an Apple Silicon Mac." ;;
     cuda|nvidia-cuda) echo "No usable NVIDIA GPU runtime was detected (/dev/nvidiactl is absent)." ;;
     rocm|amd-rocm) echo "No usable AMD GPU runtime was detected (/dev/kfd is absent)." ;;
     npu)
-      if [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_HAS_INTEL_NPU" == true ]]; then
+      if [[ "$INDEXING_HAS_APPLE_ANE" == true ]]; then
+        echo "Apple Neural Engine is available."
+      elif [[ "$INDEXING_HAS_AMD_NPU" == true && "$INDEXING_HAS_INTEL_NPU" == true ]]; then
         echo "Both AMD and Intel NPUs were detected; select ryzenai or intel-openvino-npu explicitly."
       else
         echo "${INDEXING_NPU_UNSUPPORTED_REASON:-No supported AMD or Intel NPU was detected.}"

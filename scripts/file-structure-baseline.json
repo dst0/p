@@ -217,7 +217,7 @@
   },
   "packages/code-index/embedding_server.py": {
     "classes": 3,
-    "lines": 830
+    "lines": 823
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,
@@ -781,7 +781,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 645
+    "lines": 575
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,
