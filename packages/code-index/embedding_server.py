@@ -80,9 +80,6 @@ from embedding_npu_runtime import (
     vitisai_npu_available as _vitisai_npu_available,
 )
 
-MPS_MEMORY_FRACTION = 0.95
-
-
 def get_current_rss_mb() -> float:
     """Return the current process RSS memory in megabytes."""
     try:
@@ -148,7 +145,6 @@ class EmbeddingServer:
                 f"refusing CPU fallback: {self.plan.reason or 'backend did not remain selected'}"
             )
         self._apply_cpu_threads(self.plan.cpu_threads)
-        self._configure_mps_limit(self.plan)
         try:
             self.model = self._load_model(self.plan)
         except Exception as error:
@@ -642,6 +638,7 @@ class EmbeddingServer:
 
     def _move_to_cpu_after_oom(self, error: Exception) -> bool:
         if self.fail_closed_backend:
+            self._clear_accelerator_cache()
             self._record_warning(
                 f"refusing CPU fallback after accelerator OOM: {_error_summary(error)}"
             )
@@ -693,14 +690,6 @@ class EmbeddingServer:
                 torch.set_num_threads(cpu_threads)
         except Exception as error:
             self._record_warning(f"unable to set PyTorch CPU threads: {_error_summary(error)}")
-
-    def _configure_mps_limit(self, plan: RuntimePlan):
-        if plan.backend != "mps" or not hasattr(torch.mps, "set_per_process_memory_fraction"):
-            return
-        try:
-            torch.mps.set_per_process_memory_fraction(MPS_MEMORY_FRACTION)
-        except Exception as error:
-            self._record_warning(f"unable to set MPS memory fraction: {_error_summary(error)}")
 
     def _clear_accelerator_cache(self):
         try:
