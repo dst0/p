@@ -3,6 +3,7 @@
 
 import argparse
 import asyncio
+import gc
 import json
 import os
 import plistlib
@@ -13,7 +14,6 @@ from typing import Any
 os.environ.setdefault("USE_OS_COREAI", "1")
 
 import numpy as np
-import torch
 from coreai.runtime import (
     AIModel,
     ComputeUnitKind,
@@ -29,6 +29,8 @@ from apple_coreai_windowing import iter_token_windows, pool_window_vectors
 MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
 HEAD_DIMENSION = 128
 ROPE_THETA = 1_000_000.0
+WORKER_WINDOW_BUDGET = 1024
+GC_WINDOW_INTERVAL = 64
 
 
 class AppleCoreAIWorker:
@@ -45,6 +47,7 @@ class AppleCoreAIWorker:
         self.model_package: Path | None = None
         self.residency_verified = False
         self.windowed_input_count = 0
+        self.inference_window_count = 0
         self.rope_cos, self.rope_sin = self._make_rope()
         self.causal_mask = self._make_causal_mask()
 
@@ -150,12 +153,17 @@ class AppleCoreAIWorker:
             "causal_mask": self.causal_mask,
         }
         inputs = {
-            name: NDArray(data=torch.from_numpy(np.ascontiguousarray(value)))
-            for name, value in arrays.items()
+            name: NDArray(data=np.ascontiguousarray(value)) for name, value in arrays.items()
         }
         output = await self.function(inputs)
-        hidden = output["hidden_states"].numpy().astype(np.float32)
-        return hidden[0, len(token_ids) - 1, 0, :]
+        output_array = output["hidden_states"].numpy()
+        hidden = np.array(output_array, dtype=np.float32, copy=True)
+        values = hidden[0, len(token_ids) - 1, 0, :].copy()
+        del output_array, output, inputs, hidden
+        self.inference_window_count += 1
+        if self.inference_window_count % GC_WINDOW_INTERVAL == 0:
+            gc.collect()
+        return values
 
     async def serve(self) -> None:
         await self.initialize()
@@ -171,6 +179,7 @@ class AppleCoreAIWorker:
                 elif request.get("action") == "encode":
                     texts = list(request.get("texts", []))
                     previous_windowed_count = self.windowed_input_count
+                    previous_inference_count = self.inference_window_count
                     embeddings = await self._infer(
                         texts, bool(request.get("normalize", True))
                     )
@@ -180,6 +189,10 @@ class AppleCoreAIWorker:
                         "embeddings": embeddings,
                         "windowedInputCount": self.windowed_input_count
                         - previous_windowed_count,
+                        "inferenceWindowCount": self.inference_window_count
+                        - previous_inference_count,
+                        "recycleRecommended": self.inference_window_count
+                        >= WORKER_WINDOW_BUDGET,
                     }
                 else:
                     raise ValueError(f"Unknown worker action: {request.get('action')}")
@@ -206,6 +219,8 @@ class AppleCoreAIWorker:
             "sequenceLength": self.sequence_length,
             "longSequenceStrategy": "weighted mean of full-ANE windows",
             "windowedInputCount": self.windowed_input_count,
+            "inferenceWindowCount": self.inference_window_count,
+            "workerWindowBudget": WORKER_WINDOW_BUDGET,
         }
 
     def _make_rope(self) -> tuple[np.ndarray, np.ndarray]:

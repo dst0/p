@@ -30,6 +30,8 @@ class AppleANEBackend:
         self.delegate: AppleCoreMLBackend | None = None
         self.used_windowed_sequence_path = False
         self.windowed_input_count = 0
+        self.inference_window_count = 0
+        self.worker_restart_count = 0
         self.max_seq_length = 2048
 
     def load(self, spec: ModelSpec) -> None:
@@ -45,6 +47,7 @@ class AppleANEBackend:
         self.max_seq_length = spec.sequence_length
 
     def _load_core_ai_worker(self) -> None:
+        self.stderr_lines.clear()
         agent = os.environ.get("P_CODING_AGENT_DIR", os.path.expanduser("~/.p/agent"))
         service_root = os.path.join(agent, "indexing-service")
         python = os.environ.get(
@@ -90,7 +93,12 @@ class AppleANEBackend:
 
     def _request(self, request: dict[str, Any], timeout: float = 120) -> dict[str, Any]:
         process = self.worker_proc
-        if not process or not process.stdin or not process.stdout:
+        if (
+            not process
+            or process.poll() is not None
+            or not process.stdin
+            or not process.stdout
+        ):
             raise RuntimeError("Core AI worker is not active")
         process.stdin.write(json.dumps(request) + "\n")
         process.stdin.flush()
@@ -119,14 +127,19 @@ class AppleANEBackend:
         worker_batch = int(self.worker_health.get("batchSize", 8))
         effective_batch = max(1, min(batch_size, worker_batch))
         for offset in range(0, len(texts), effective_batch):
-            response = self._request(
-                {
-                    "id": str(offset),
-                    "action": "encode",
-                    "texts": texts[offset : offset + effective_batch],
-                    "normalize": normalize,
-                }
-            )
+            request = {
+                "id": str(offset),
+                "action": "encode",
+                "texts": texts[offset : offset + effective_batch],
+                "normalize": normalize,
+            }
+            try:
+                response = self._request(request)
+            except (OSError, RuntimeError):
+                if self._worker_alive():
+                    raise
+                self._restart_core_ai_worker()
+                response = self._request(request)
             if response.get("status") == "unsupported_length":
                 raise RuntimeError(
                     "Installed Core AI worker lacks bounded long-sequence support; "
@@ -135,8 +148,30 @@ class AppleANEBackend:
             if response.get("windowedInputCount", 0) > 0:
                 self.used_windowed_sequence_path = True
                 self.windowed_input_count += int(response["windowedInputCount"])
+            self.inference_window_count += int(response.get("inferenceWindowCount", 0))
             embeddings.extend(response.get("embeddings", []))
+            if response.get("recycleRecommended"):
+                self._restart_core_ai_worker()
         return embeddings
+
+    def _worker_alive(self) -> bool:
+        return self.worker_proc is not None and self.worker_proc.poll() is None
+
+    def _restart_core_ai_worker(self) -> None:
+        self._stop_core_ai_worker()
+        self.worker_restart_count += 1
+        self._load_core_ai_worker()
+
+    def _stop_core_ai_worker(self) -> None:
+        process = self.worker_proc
+        self.worker_proc = None
+        if not process or process.poll() is not None:
+            return
+        process.terminate()
+        try:
+            process.wait(timeout=2)
+        except subprocess.TimeoutExpired:
+            process.kill()
 
     def health(self) -> BackendHealth:
         if self.delegate:
@@ -147,8 +182,9 @@ class AppleANEBackend:
             self.spec.pooling,
             self.spec.normalization,
         )
+        worker_alive = self._worker_alive()
         return BackendHealth(
-            status="ready" if self.worker_proc else "loading",
+            status="ready" if worker_alive else "error",
             requested_backend=self.backend_id,
             selected_backend=(
                 "apple-coreai-ane-windowed"
@@ -171,7 +207,7 @@ class AppleANEBackend:
                     "full ANE windowed path"
                     if self.used_windowed_sequence_path else "full ANE fast path"
                 ),
-                "npuFullyPlaced": True,
+                "npuFullyPlaced": worker_alive,
                 "gpuActivity": False,
                 "coreAiWindowSize": self.worker_health.get("sequenceLength", 64),
                 "longSequenceStrategy": self.worker_health.get(
@@ -179,6 +215,10 @@ class AppleANEBackend:
                 ),
                 "longSequenceNpuRuntime": "Core AI windowed ANE",
                 "windowedInputCount": self.windowed_input_count,
+                "inferenceWindowCount": self.inference_window_count,
+                "workerWindowBudget": self.worker_health.get("workerWindowBudget", 1024),
+                "workerRestartCount": self.worker_restart_count,
+                "workerProcessAlive": worker_alive,
             },
         )
 
@@ -186,13 +226,7 @@ class AppleANEBackend:
         if self.delegate:
             self.delegate.close()
             self.delegate = None
-        if self.worker_proc:
-            self.worker_proc.terminate()
-            try:
-                self.worker_proc.wait(timeout=2)
-            except subprocess.TimeoutExpired:
-                self.worker_proc.kill()
-            self.worker_proc = None
+        self._stop_core_ai_worker()
 
     @staticmethod
     def _core_ai_available() -> bool:

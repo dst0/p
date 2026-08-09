@@ -15,6 +15,7 @@
 
 ### Fixed
 
+- Bound native Core AI NDArray/IOSurface lifetime during long Apple Neural Engine indexing, recycle the worker before its native buffer pool is exhausted, recover once from an unexpected worker exit, and stop reporting a dead worker as ready.
 - Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
 - Label Apple Metal acceleration as `GPU (MPS)`, report Core AI versus legacy CoreML NPU placement explicitly, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs by retaining PyTorch's default allocator watermarks.
 - Prioritize interactive semantic-search embeddings between background indexing batches, while serializing Core AI work through one bounded model graph so large repository rebuilds cannot starve live queries or duplicate model memory.

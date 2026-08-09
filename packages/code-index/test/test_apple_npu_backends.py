@@ -71,6 +71,53 @@ class AppleNpuBackendsTest(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "reinstall p"):
                 backend.encode(["long input"])
 
+    def test_recycles_core_ai_worker_before_native_pool_exhaustion(self):
+        backend = AppleANEBackend()
+        backend.worker_health = {"batchSize": 8}
+        backend.worker_proc = Mock()
+        with patch.object(
+            backend,
+            "_request",
+            return_value={
+                "status": "ok",
+                "embeddings": [[1.0, 0.0]],
+                "inferenceWindowCount": 32,
+                "recycleRecommended": True,
+            },
+        ), patch.object(backend, "_restart_core_ai_worker") as restart:
+            result = backend.encode(["long input"])
+        self.assertEqual(result, [[1.0, 0.0]])
+        self.assertEqual(backend.inference_window_count, 32)
+        restart.assert_called_once_with()
+
+    def test_restarts_dead_core_ai_worker_and_retries_request_once(self):
+        backend = AppleANEBackend()
+        backend.worker_health = {"batchSize": 8}
+        backend.worker_proc = Mock()
+        backend.worker_proc.poll.return_value = 1
+        with patch.object(
+            backend,
+            "_request",
+            side_effect=[
+                RuntimeError("Core AI worker exited unexpectedly"),
+                {"status": "ok", "embeddings": [[1.0, 0.0]]},
+            ],
+        ), patch.object(backend, "_restart_core_ai_worker") as restart:
+            result = backend.encode(["query"])
+        self.assertEqual(result, [[1.0, 0.0]])
+        restart.assert_called_once_with()
+
+    def test_health_reports_dead_core_ai_worker_as_error(self):
+        backend = AppleANEBackend()
+        backend.worker_proc = Mock()
+        backend.worker_proc.poll.return_value = 1
+
+        health = backend.health()
+
+        self.assertEqual(health.status, "error")
+        self.assertFalse(health.extra["workerProcessAlive"])
+        self.assertFalse(health.extra["npuFullyPlaced"])
+
     def test_legacy_coreml_limits_dynamic_qwen_graph_to_batch_one(self):
         backend = AppleCoreMLBackend()
         with patch.object(
