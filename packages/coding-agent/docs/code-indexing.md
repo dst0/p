@@ -74,25 +74,32 @@ Indexing decisions are independent of project trust. Enabling indexing authorize
 | `/index` | Show the repository decision, backend/device, measured real-model vectors per second, background-service state, index state, file/chunk counts, and last error |
 | `/index enable` | Enable indexing for the active repository |
 | `/index disable` | Stop watching and refreshing the active repository |
-| `/index up` | Move the active repository to the top of the daemon queue and show its progress in the footer |
+| `/index up` | Cancel the active lower-priority refresh, release the embedding device, and index the active repository next |
 
 Disabling a repository preserves its existing index data. It can be enabled again without discarding the last compatible generation.
 
-`/index up` requires indexing to be enabled. If both daemon workers are busy with less-prioritized maintenance, the daemon cancels one refresh, keeps that repository queued for resumption, and starts the requested repository. The one-shot request is stored in `indexed-repos.json` until the daemon activates or recognizes an already active repository, so it survives a service restart without becoming a permanent priority.
+`/index up` requires indexing to be enabled. The daemon has one repository-indexing worker because one embedding device can execute one model request at a time. When lower-priority work is active, the daemon cancels its embedding request, waits until the device is idle (or stops its managed embedding process), keeps the interrupted repository queued for resumption, and only then starts the requested repository. The one-shot request is stored in `indexed-repos.json` until the daemon activates or recognizes an already active repository, so it survives a service restart without becoming a permanent priority.
 
 ## Footer status
 
 The footer shows indexing state for the active repository by default:
 
-| Marker | Meaning |
-|---|---|
-| `🔎 ?` | No indexing decision has been saved yet |
-| `🔎 OFF` | Indexing is disabled for this repository |
-| `🔎 queued`, `🔎 init`, or `🔎 updating` | The enabled repository is waiting or active, but no numeric progress is available yet |
-| `🔎 42%` | Indexing is enabled and a refresh is 42% complete |
-| `🔎: ✅` | The repository has a ready index |
-| `🔎 ON` | Indexing is enabled and waiting for a detailed repository state |
-| `🔎 ON!` | Indexing is enabled, but the background service or latest refresh has an error |
+| Service state or phase | Footer | Meaning |
+|---|---|---|
+| no decision | `🔎 ?` | No indexing decision has been saved yet |
+| `disabled` | `🔎 OFF` | Indexing is disabled for this repository |
+| service unavailable | `🔎 ON!` | Indexing is enabled, but the daemon is not running |
+| `queued` | `🔎 queued` | The repository is waiting for the single indexing worker |
+| `initializing` | `🔎 init` | The daemon is starting the backend or loading persisted index state |
+| `scanning` | `🔎 scanning N/M` | Repository files are being discovered; no embedding percentage is shown |
+| `preparing` | `🔎 preparing N/M` | Files are being read, chunked, and added to the sparse vocabulary; no embedding percentage is shown |
+| `indexing` | `🔎 42.0% (N/M chunks)` | Chunks are being copied or embedded; the percentage is calculated from real chunk progress |
+| `finalizing` | `🔎 finalizing` | The completed generation is being committed atomically |
+| `ready` | `🔎: ✅` | The repository has a ready index |
+| `stale` | `🔎 ON` or a queued/active phase | The last generation is readable but source files require refresh |
+| `partial`, `unavailable`, or `error` | `🔎 ON!` | The latest refresh or local backend failed; `/index` shows the error |
+
+ETA is shown only during `indexing`, after at least five seconds of measured percentage movement. Scanning, preparing, and finalizing never borrow a synthetic percentage from the full operation, so backend startup cannot appear as an immediate jump to 15%.
 
 Open `/settings` and change **Indexing info** to hide or show both the marker and percentage. This setting only controls footer visibility; use `/index enable` or `/index disable` to change whether the repository is indexed.
 
@@ -107,7 +114,7 @@ For every enabled repository, the service:
 5. retries transient failures;
 6. periodically reconciles the repository to recover from missed filesystem events;
 7. prioritizes an enabled repository when PAgent opens its `semantic_search` tool while preserving FIFO order for ordinary file-change refreshes;
-8. honors `/index up` as an explicit higher-priority request and safely preempts lower-priority background work when all workers are occupied.
+8. honors `/index up` as an explicit higher-priority request and safely preempts the single lower-priority repository worker.
 
 ```mermaid
 sequenceDiagram
@@ -125,11 +132,11 @@ sequenceDiagram
     Daemon->>Daemon: Update indexing-service-status.json
 ```
 
-Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Hashing and chunk preparation run in a bounded worker-thread pool. The pool leaves one logical CPU available, observes cgroup memory limits on Linux, preserves an explicit memory reserve, and caps both worker count and estimated in-flight memory. Worker and memory reservations are process-wide, so concurrent repository refreshes share the same budget instead of each assuming it owns all available resources. If the remaining budget cannot safely fit one worker, indexing stops with a resource error instead of consuming the reserve.
+Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Hashing and chunk preparation run in a bounded worker-thread pool inside the active repository refresh. The pool leaves one logical CPU available, observes cgroup memory limits on Linux, preserves an explicit memory reserve, and caps both worker count and estimated in-flight memory. If the remaining budget cannot safely fit one preparation worker, indexing stops with a resource error instead of consuming the reserve.
 
 Full rebuilds stream prepared chunks through a private mode-`0600` disk spool while building the frozen BM25 vocabulary. This keeps source-text memory bounded by the preparation window and embedding batch rather than the total repository size. The service checks free disk space before creating the spool, preserves a disk reserve, and removes the spool after success, cancellation, or failure.
 
-If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Per-file reads are hard-capped at `maxFileBytes`, including when a file grows after discovery. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend requests before the daemon schedules a retry. An active repository cannot be assigned to a second worker; changes that arrive during its refresh are queued behind older work instead of consuming both workers or starving other repositories. Explicit `/index up` preemption also preserves the interrupted repository as queued work rather than treating cancellation as an indexing failure.
+If a changed file changes again between scanning and embedding, the refresh reads its latest stable contents; later changes remain queued for the next pass. Per-file reads are hard-capped at `maxFileBytes`, including when a file grows after discovery. Repository locks prevent concurrent refreshes from corrupting an index, and a live lock is never stolen solely because it is old. Each repository operation has a 30-minute deadline; expiration cancels the active backend request before the daemon schedules a retry. Every daemon refresh builds an isolated vector generation and atomically switches the manifest only after finalization, so cancellation cannot expose a partially updated index. Changes that arrive during an active refresh remain queued behind older work. Explicit `/index up` preemption preserves the interrupted repository as queued work rather than treating cancellation as an indexing failure.
 
 The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. Creating the real `semantic_search` tool for an already enabled repository only refreshes that repository's request timestamp in `indexed-repos.json`; the daemon observes the registry change and performs the prioritized work. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 

@@ -126,7 +126,7 @@ export function do_fallbackRebuildProgress(
 ): RefreshIndexOptions["onProgress"] {
   if (!onProgress) return undefined;
   return (progress) => {
-    onProgress({ ...progress, percent: 85 + progress.percent * 0.15 });
+    onProgress(progress);
   };
 }
 
@@ -196,10 +196,13 @@ export async function do_encodeAndUpsert(
     const encodeBatchSize = Math.max(1, self.settings.encodeBatchSize);
     const upsertBatchSize = Math.max(1, self.settings.upsertBatchSize);
     const batch = chunks.slice(offset, offset + encodeBatchSize);
-    const denseVectors = await self.embeddingProvider.encode(
-      batch.map((chunk) => chunk.retrievalText),
-      signal,
-    );
+    const denseVectors =
+      self.settings.searchMode === "bm25-only"
+        ? batch.map(() => new Float32Array(0))
+        : await self.embeddingProvider.encode(
+            batch.map((chunk) => chunk.retrievalText),
+            signal,
+          );
     if (denseVectors.length !== batch.length) throw new Error("Embedding provider returned an incomplete batch");
     const points: VectorPoint[] = batch.map((chunk, index) => ({
       id: chunk.id,

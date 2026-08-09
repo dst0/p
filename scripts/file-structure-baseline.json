@@ -216,8 +216,8 @@
     "lines": 59
   },
   "packages/code-index/embedding_server.py": {
-    "classes": 3,
-    "lines": 822
+    "classes": 2,
+    "lines": 806
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,
@@ -261,7 +261,7 @@
   },
   "packages/code-index/test/rag-service.test.ts": {
     "classes": 2,
-    "lines": 1426
+    "lines": 1423
   },
   "packages/code-index/test/repository-directory.test.ts": {
     "classes": 2,
@@ -437,7 +437,7 @@
   },
   "packages/coding-agent/src/modes/interactive/components/footer.ts": {
     "classes": 1,
-    "lines": 428
+    "lines": 425
   },
   "packages/coding-agent/src/modes/interactive/components/model-selector.ts": {
     "classes": 1,
@@ -553,7 +553,7 @@
   },
   "packages/coding-agent/test/indexing-service.test.ts": {
     "classes": 5,
-    "lines": 873
+    "lines": 872
   },
   "packages/coding-agent/test/indexing-version.test.ts": {
     "classes": 0,

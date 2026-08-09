@@ -31,7 +31,15 @@ class AmdNpuBackend:
         texts: list[str],
         normalize: bool = True,
         batch_size: int = 8,
+        cancellation_check=None,
     ) -> list[list[float]]:
+        if self.backend_id == "amd-phoenix-npu":
+            return self.delegate.encode(
+                texts,
+                normalize=normalize,
+                batch_size=batch_size,
+                cancellation_check=cancellation_check,
+            )
         return self.delegate.encode(texts, normalize=normalize, batch_size=batch_size)
 
     def health(self) -> BackendHealth:

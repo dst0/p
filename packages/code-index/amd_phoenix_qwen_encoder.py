@@ -32,9 +32,12 @@ class AmdPhoenixQwenEncoder:
         )
         self._validate_model_shape()
 
-    def encode(self, texts, normalize=True, batch_size=8):
+    def encode(self, texts, normalize=True, batch_size=8, cancellation_check=None):
         del batch_size
-        outputs = [self._encode_one(text) for text in texts]
+        outputs = []
+        for text in texts:
+            self._raise_if_cancelled(cancellation_check)
+            outputs.append(self._encode_one(text, cancellation_check))
         embeddings = np.vstack(outputs) if outputs else np.empty((0, self.spec.dimensions))
         if normalize and len(embeddings):
             norms = np.linalg.norm(embeddings, axis=1, keepdims=True)
@@ -53,7 +56,8 @@ class AmdPhoenixQwenEncoder:
         self.embedding_table = None
         self.weights = None
 
-    def _encode_one(self, text):
+    def _encode_one(self, text, cancellation_check=None):
+        self._raise_if_cancelled(cancellation_check)
         encoded = self.tokenizer(
             text,
             add_special_tokens=True,
@@ -76,12 +80,19 @@ class AmdPhoenixQwenEncoder:
         rope_q = self._rope_lookup(sequence_length, self.config.num_attention_heads)
         rope_k = self._rope_lookup(sequence_length, self.config.num_key_value_heads)
         for layer in range(self.config.num_hidden_layers):
-            hidden = self._attention_layer(hidden, mask, rope_q, rope_k, layer)
+            self._raise_if_cancelled(cancellation_check)
+            hidden = self._attention_layer(
+                hidden, mask, rope_q, rope_k, layer, cancellation_check
+            )
+            self._raise_if_cancelled(cancellation_check)
             hidden = self._mlp_layer(hidden, layer)
+        self._raise_if_cancelled(cancellation_check)
         hidden = self.ops.normalize(hidden, self._weight("norm.weight"))
         return hidden[token_count - 1].astype(np.float32)
 
-    def _attention_layer(self, hidden, mask, rope_q, rope_k, layer):
+    def _attention_layer(
+        self, hidden, mask, rope_q, rope_k, layer, cancellation_check=None
+    ):
         prefix = f"layers.{layer}"
         residual = hidden
         normalized = self.ops.normalize(
@@ -115,6 +126,7 @@ class AmdPhoenixQwenEncoder:
         contexts = []
         scale = np.full(mask.shape, 1.0 / math.sqrt(self.config.head_dim), dtype=bfloat16)
         for head in range(self.config.num_attention_heads):
+            self._raise_if_cancelled(cancellation_check)
             scores = self.ops.matmul(query[head], key[head].T)
             scores = self.ops.mul(scores, scale, "attention-scale")
             scores = self.ops.add(scores, mask)
@@ -191,6 +203,11 @@ class AmdPhoenixQwenEncoder:
         )
         if actual != expected:
             raise RuntimeError(f"unsupported Phoenix Qwen model shape: {actual}")
+
+    @staticmethod
+    def _raise_if_cancelled(cancellation_check):
+        if cancellation_check is not None and cancellation_check():
+            raise InterruptedError("embedding request cancelled")
 
 
 def create_encoder(spec, manifest, runtime_config):

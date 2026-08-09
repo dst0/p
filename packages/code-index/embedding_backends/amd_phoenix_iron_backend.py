@@ -55,10 +55,16 @@ class AmdPhoenixIronBackend:
         texts: list[str],
         normalize: bool = True,
         batch_size: int = 8,
+        cancellation_check=None,
     ) -> list[list[float]]:
         if self.encoder is None:
             raise RuntimeError("Phoenix Qwen encoder artifact is not loaded")
-        return self.encoder.encode(texts, normalize=normalize, batch_size=batch_size)
+        return self.encoder.encode(
+            texts,
+            normalize=normalize,
+            batch_size=batch_size,
+            cancellation_check=cancellation_check,
+        )
 
     def health(self) -> BackendHealth:
         precision = self.manifest.get("precision", "unknown")

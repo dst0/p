@@ -90,8 +90,8 @@ export class IndexingService {
       ragState: repoStatus?.state,
       ragFiles: repoStatus?.indexedFiles,
       ragChunks: repoStatus?.indexedChunks,
-      totalFiles: repoStatus?.progress?.totalFiles ?? repoStatus?.indexedFiles,
-      totalChunks: repoStatus?.progress?.totalChunks ?? repoStatus?.indexedChunks,
+      totalFiles: repoStatus?.progress?.totalFiles,
+      totalChunks: repoStatus?.progress?.totalChunks,
       progress: repoStatus?.progress,
       lastError: repoStatus?.lastError,
     };
@@ -190,11 +190,22 @@ function isIndexingProgress(value: unknown): value is IndexingProgress {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const candidate = value as Partial<IndexingProgress>;
   return (
-    (candidate.phase === "scanning" || candidate.phase === "indexing" || candidate.phase === "finalizing") &&
+    (candidate.phase === "scanning" ||
+      candidate.phase === "preparing" ||
+      candidate.phase === "indexing" ||
+      candidate.phase === "finalizing") &&
     typeof candidate.percent === "number" &&
     Number.isFinite(candidate.percent) &&
     candidate.percent >= 0 &&
     candidate.percent <= 100 &&
+    (candidate.processedFiles === undefined ||
+      (typeof candidate.processedFiles === "number" && Number.isFinite(candidate.processedFiles))) &&
+    (candidate.totalFiles === undefined ||
+      (typeof candidate.totalFiles === "number" && Number.isFinite(candidate.totalFiles))) &&
+    (candidate.processedChunks === undefined ||
+      (typeof candidate.processedChunks === "number" && Number.isFinite(candidate.processedChunks))) &&
+    (candidate.totalChunks === undefined ||
+      (typeof candidate.totalChunks === "number" && Number.isFinite(candidate.totalChunks))) &&
     (candidate.startedAt === undefined || typeof candidate.startedAt === "string") &&
     (candidate.etaSeconds === undefined ||
       (typeof candidate.etaSeconds === "number" && Number.isFinite(candidate.etaSeconds))) &&

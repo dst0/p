@@ -90,6 +90,7 @@ export async function do_runRegistrySync(self: IndexingDaemon): Promise<void> {
             : parseRequestPriority(entry.updatedAt),
           false,
         );
+        if (entry.priorityRequest) self.preemptFor(runtime);
       }
     } catch (error) {
       runtime.state = "error";

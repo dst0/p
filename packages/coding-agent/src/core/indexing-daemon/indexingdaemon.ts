@@ -62,6 +62,8 @@ export class IndexingDaemon {
 
   public readonly disposeBackends: () => Promise<void>;
 
+  public readonly releaseEmbeddingDevice: () => Promise<void>;
+
   public readonly watchFactory: WatchFactory;
 
   public readonly embeddingManager: EmbeddingServerManager;
@@ -136,6 +138,11 @@ export class IndexingDaemon {
       options.disposeBackends ??
       (async () => {
         await Promise.all([this.embeddingManager.stop(), qdrantManager.stop()]);
+      });
+    this.releaseEmbeddingDevice =
+      options.releaseEmbeddingDevice ??
+      (async () => {
+        if (!(await this.embeddingManager.waitUntilIdle())) await this.embeddingManager.stop();
       });
     this.watchFactory =
       options.watchFactory ??

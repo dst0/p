@@ -112,6 +112,11 @@ export function do_updateRuntimeProgress(
 ): void {
   const now = Date.now();
   const percent = Math.max(0, Math.min(100, Math.round(progress.percent * 10) / 10));
+  const phaseChanged = runtime.progress?.phase !== progress.phase;
+  if (phaseChanged) runtime.progressSamples = [];
+  if (phaseChanged && progress.phase === "indexing") {
+    runtime.indexingStartedAt = new Date(now).toISOString();
+  }
   runtime.progressSamples ??= [];
   runtime.progressSamples.push({ timestamp: now, percent });
   // Keep last 60 seconds of samples
@@ -119,7 +124,7 @@ export function do_updateRuntimeProgress(
   runtime.progressSamples = runtime.progressSamples.filter((s) => s.timestamp >= cutoff);
 
   let etaSeconds: number | undefined;
-  if (percent > 0 && percent < 100) {
+  if (progress.phase === "indexing" && percent > 0 && percent < 100) {
     const samples = runtime.progressSamples;
     const oldest = samples[0];
     const newest = samples[samples.length - 1];
@@ -131,22 +136,16 @@ export function do_updateRuntimeProgress(
         etaSeconds = Math.max(0, Math.round((100 - percent) / percentPerSec));
       }
     }
-    // Fallback to overall startedAt if sliding window isn't warm yet
-    if (etaSeconds === undefined && runtime.indexingStartedAt) {
-      const elapsedSec = (now - Date.parse(runtime.indexingStartedAt)) / 1000;
-      if (elapsedSec > 3) {
-        const overallPercentPerSec = percent / elapsedSec;
-        if (overallPercentPerSec > 0) {
-          etaSeconds = Math.max(0, Math.round((100 - percent) / overallPercentPerSec));
-        }
-      }
-    }
   }
 
   const normalized: IndexingProgress = {
     phase: progress.phase,
     percent,
-    startedAt: runtime.indexingStartedAt,
+    ...(progress.phase === "indexing" && runtime.indexingStartedAt ? { startedAt: runtime.indexingStartedAt } : {}),
+    ...(progress.processedFiles !== undefined ? { processedFiles: progress.processedFiles } : {}),
+    ...(progress.totalFiles !== undefined ? { totalFiles: progress.totalFiles } : {}),
+    ...(progress.processedChunks !== undefined ? { processedChunks: progress.processedChunks } : {}),
+    ...(progress.totalChunks !== undefined ? { totalChunks: progress.totalChunks } : {}),
     ...(progress.reusedChunks !== undefined ? { reusedChunks: progress.reusedChunks } : {}),
     ...(progress.recalculatedChunks !== undefined ? { recalculatedChunks: progress.recalculatedChunks } : {}),
     ...(progress.recalculatedTotal !== undefined ? { recalculatedTotal: progress.recalculatedTotal } : {}),
@@ -156,6 +155,10 @@ export function do_updateRuntimeProgress(
     runtime.progress?.phase === normalized.phase &&
     runtime.progress.percent === normalized.percent &&
     runtime.progress.etaSeconds === normalized.etaSeconds &&
+    runtime.progress.processedFiles === normalized.processedFiles &&
+    runtime.progress.totalFiles === normalized.totalFiles &&
+    runtime.progress.processedChunks === normalized.processedChunks &&
+    runtime.progress.totalChunks === normalized.totalChunks &&
     runtime.progress.reusedChunks === normalized.reusedChunks &&
     runtime.progress.recalculatedChunks === normalized.recalculatedChunks &&
     runtime.progress.recalculatedTotal === normalized.recalculatedTotal

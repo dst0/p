@@ -77,6 +77,34 @@ class EmbeddingPriorityLockTest(unittest.TestCase):
 
         self.assertEqual(order, ["interactive", "background"])
 
+    def test_cancelled_request_stops_waiting_for_the_device(self):
+        lock = EmbeddingPriorityLock()
+        cancelled = threading.Event()
+        waiting = threading.Event()
+        errors: list[Exception] = []
+
+        def run_waiter() -> None:
+            waiting.set()
+            try:
+                lock.run(
+                    ["background"],
+                    lambda items: items,
+                    interactive=False,
+                    cancellation_check=cancelled.is_set,
+                )
+            except Exception as error:
+                errors.append(error)
+
+        with lock.hold(interactive=False):
+            waiter = threading.Thread(target=run_waiter)
+            waiter.start()
+            self.assertTrue(waiting.wait(timeout=1))
+            cancelled.set()
+            waiter.join(timeout=1)
+
+        self.assertEqual(len(errors), 1)
+        self.assertIsInstance(errors[0], InterruptedError)
+
 
 if __name__ == "__main__":
     unittest.main()

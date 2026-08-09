@@ -194,6 +194,26 @@ export class EmbeddingServerManager {
     }
   }
 
+  async waitUntilIdle(timeoutMs: number = 1_000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    do {
+      try {
+        const response = await fetch(`http://127.0.0.1:${this.port}/health`, {
+          signal: AbortSignal.timeout(Math.min(500, Math.max(1, timeoutMs))),
+        });
+        if (response.ok) {
+          const health = (await response.json()) as { embeddingRequests?: { active?: unknown } };
+          if (health.embeddingRequests?.active === 0) return true;
+        }
+      } catch {
+        return false;
+      }
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    return false;
+  }
+
   /**
    * Check if the server is healthy and ready.
    */

@@ -43,7 +43,7 @@ export async function do_performRebuild(
         fs.writeFileSync(spool, `${JSON.stringify(chunk)}\n`, "utf-8");
         chunkCount += 1;
       }
-      self.reportProgress(onProgress, "indexing", 5 + (10 * (index + 1)) / Math.max(scanned.length, 1), {
+      self.reportProgress(onProgress, "preparing", (100 * (index + 1)) / Math.max(scanned.length, 1), {
         processedFiles: index + 1,
         totalFiles: scanned.length,
       });
@@ -52,11 +52,18 @@ export async function do_performRebuild(
     vocabulary.finalize();
     await self.vectorStore.createCollection(collection, self.settings.embeddingDimensions);
     createdCollection = true;
+    self.reportProgress(
+      onProgress,
+      "indexing",
+      0,
+      { processedFiles: scanned.length, totalFiles: scanned.length },
+      { processedChunks: 0, totalChunks: chunkCount },
+    );
     await self.encodeSpoolAndUpsert(collection, spoolPath, chunkCount, vocabulary, signal, (completed, total) => {
       self.reportProgress(
         onProgress,
         "indexing",
-        15 + (84.8 * completed) / Math.max(total, 1),
+        (100 * completed) / Math.max(total, 1),
         { processedFiles: scanned.length, totalFiles: scanned.length },
         { processedChunks: completed, totalChunks: total },
       );
@@ -64,7 +71,7 @@ export async function do_performRebuild(
     self.reportProgress(
       onProgress,
       "finalizing",
-      99.9,
+      0,
       { processedFiles: scanned.length, totalFiles: scanned.length },
       { processedChunks: chunkCount, totalChunks: chunkCount },
     );

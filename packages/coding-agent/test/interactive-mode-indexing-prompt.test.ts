@@ -44,7 +44,7 @@ afterEach(() => {
 describe("InteractiveMode code-indexing prompt", () => {
   beforeAll(() => initTheme("dark"));
 
-  it("moves an enabled repository to the top with /index up", async () => {
+  it("prioritizes an enabled repository with /index up", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-command-"));
     temporaryDirectories.push(root);
     const agentDir = path.join(root, "agent");
@@ -58,7 +58,7 @@ describe("InteractiveMode code-indexing prompt", () => {
     );
     indexingService.enableIndexing(repository);
     expect(await interactiveModePrototype.buildIndexStatusText.call(context, repository, "up")).toContain(
-      "top of the indexing queue",
+      "Prioritized this repository",
     );
   });
 
@@ -121,24 +121,48 @@ describe("InteractiveMode code-indexing prompt", () => {
     expect(indexingService.getDecision(repository)).toBe("enabled");
   });
 
-  it("formats files indexed and chunks indexed with out of X", async () => {
+  it("shows the real embedding phase and discovered totals", async () => {
     const indexingService = {
       getStatus: () => ({
         decision: "enabled" as const,
         indexed: true,
         serviceRunning: true,
-        ragState: "ready" as const,
-        ragFiles: 1041,
-        ragChunks: 58072,
-        totalFiles: 1041,
-        totalChunks: 58072,
+        ragState: "updating" as const,
+        ragFiles: 0,
+        ragChunks: 0,
+        progress: {
+          phase: "indexing" as const,
+          percent: 1.7,
+          processedFiles: 18,
+          totalFiles: 18,
+          processedChunks: 10,
+          totalChunks: 590,
+        },
       }),
     } as unknown as IndexingService;
     const context = { indexingService };
 
     const text = await interactiveModePrototype.buildIndexStatusText.call(context, "/repository", "");
-    expect(text).toContain("Files indexed: 1041 out of 1041");
-    expect(text).toContain("Chunks indexed: 58072 out of 58072");
+    expect(text).toContain("Service state: embedding");
+    expect(text).toContain("Files prepared: 18 out of 18");
+    expect(text).toContain("Chunks indexed: 10 out of 590");
+  });
+
+  it("shows persisted file and chunk totals for a ready index", async () => {
+    const indexingService = {
+      getStatus: () => ({
+        decision: "enabled" as const,
+        indexed: true,
+        serviceRunning: false,
+        ragState: "ready" as const,
+        ragFiles: 18,
+        ragChunks: 590,
+      }),
+    } as unknown as IndexingService;
+
+    const text = await interactiveModePrototype.buildIndexStatusText.call({ indexingService }, "/repository", "");
+    expect(text).toContain("Files indexed: 18");
+    expect(text).toContain("Chunks indexed: 590");
   });
 
   it("labels the configured Mac accelerator as GPU (MPS)", async () => {

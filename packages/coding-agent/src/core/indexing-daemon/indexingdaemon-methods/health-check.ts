@@ -77,12 +77,9 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
     runtime.queuePriority = 0;
     runtime.activePriority = activePriority;
     w.runtime = runtime;
-    if (runtime.registryPriorityRequestId) {
-      self.acknowledgePriorityRequest(runtime, runtime.registryPriorityRequestId);
-    }
     runtime.state = runtime.indexedFiles > 0 ? "updating" : "initializing";
     runtime.updatedAt = new Date().toISOString();
-    runtime.indexingStartedAt = runtime.updatedAt;
+    runtime.indexingStartedAt = undefined;
     runtime.progressSamples = [];
     delete runtime.progress;
     delete runtime.lastError;
@@ -93,8 +90,12 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
         await self.ensureBackends(signal);
         const initialized = await runtime.service.initialize({ checkFreshness: true });
         self.applyRuntimeStatus(runtime, initialized);
+        if (runtime.registryPriorityRequestId) {
+          self.acknowledgePriorityRequest(runtime, runtime.registryPriorityRequestId);
+        }
         const summary = await runtime.service.refresh(
           {
+            transactional: true,
             onProgress: (progress) => {
               reportActivity();
               self.updateRuntimeProgress(runtime, progress);
@@ -109,12 +110,15 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
         runtime.consecutiveResourceFailureCount = 0;
       });
     } catch (error) {
-      if (self.disposed || self.quiescing || w.stop) return;
       if (w.preemptedRuntime === runtime) {
-        runtime.state = "queued";
-        delete runtime.progress;
-        delete runtime.lastError;
+        await self.releaseEmbeddingDevice();
+        if (!self.disposed && !self.quiescing && self.runtimes.get(runtime.root) === runtime) {
+          runtime.state = "queued";
+          delete runtime.progress;
+          delete runtime.lastError;
+        }
       } else {
+        if (self.disposed || self.quiescing || w.stop) return;
         const isResourceError = isResourceFailure(error);
         runtime.state = "error";
         delete runtime.progress;

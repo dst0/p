@@ -34,6 +34,7 @@ export interface IndexingDaemonOptions {
   repositoryTimeoutMs?: number;
   serviceFactory?: (workspaceRoot: string) => CodeRagService;
   ensureBackends?: (signal?: AbortSignal) => Promise<void>;
+  releaseEmbeddingDevice?: () => Promise<void>;
   disposeBackends?: () => Promise<void>;
   watchFactory?: WatchFactory;
 }

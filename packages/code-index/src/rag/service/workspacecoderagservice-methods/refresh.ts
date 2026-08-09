@@ -16,7 +16,10 @@ export async function do_runRefresh(
     self.state = self.manifest ? "updating" : "initializing";
     self.reportProgress(options.onProgress, "scanning", 0);
     const scanned = await self.scanWorkspace(signal, options.onProgress);
-    self.reportProgress(options.onProgress, "indexing", 5);
+    self.reportProgress(options.onProgress, "preparing", 0, {
+      processedFiles: 0,
+      totalFiles: scanned.length,
+    });
     const plan = self.createRefreshPlan(scanned);
     const changedFileCount = plan.added.length + plan.changed.length + plan.deleted.length;
     const incompatibility = self.manifest
@@ -58,10 +61,9 @@ export async function do_runRefresh(
     if (options.forceSparseRebuild || !self.manifest || incompatibility !== undefined) {
       return await self.performRebuild(scanned, plan, startedAt, signal, options.onProgress);
     }
-    if (sparseDriftExceeded || changeRatio > self.settings.fullSparseRebuildChangeRatio) {
+    if (options.transactional || sparseDriftExceeded || changeRatio > self.settings.fullSparseRebuildChangeRatio) {
       return await self.performSparseGenerationRefresh(scanned, plan, startedAt, signal, options.onProgress);
     }
-
     return await self.performIncrementalRefresh(plan, startedAt, signal, options.onProgress);
   } catch (error) {
     const mapped = mapOperationError(error, signal);
