@@ -1,7 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-	collectResourceEnvironment,
 	getQdrantAsset,
 	getQdrantExtractionArgs,
 	getSystemdUserUnitDirectory,
@@ -13,6 +12,7 @@ import {
 	selectIndexingDaemonPids,
 	selectManagedBackendPids,
 } from "./install-indexing-service.js";
+import { buildManagedIndexingConfig } from "./indexing-install-fallback.js";
 
 const values = {
 	node: "/opt/p/node",
@@ -30,22 +30,22 @@ test("renders launchd and systemd services for the persistent daemon", () => {
 	assert.match(renderSystemdUnit(values), /indexing-service-daemon\.js/);
 });
 
-test("persists embedding and file-preparation resource overrides", () => {
-	assert.deepEqual(
-		collectResourceEnvironment({
-			P_CODE_RAG_MAX_CPU_THREADS: "12",
-			P_CODE_RAG_PREPARATION_MAX_WORKERS: "8",
-			P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB: "96",
-			P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB: "768",
-			UNRELATED_VALUE: "ignored",
-		}),
+test("allows full NPU model validation to finish during service startup", () => {
+	const config = buildManagedIndexingConfig(
+		{},
 		{
-			P_CODE_RAG_MAX_CPU_THREADS: "12",
-			P_CODE_RAG_PREPARATION_MAX_WORKERS: "8",
-			P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB: "96",
-			P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB: "768",
+			installAmdPhoenixIron: true,
+			installAmdRyzenAi: false,
+			installIntelOpenVino: false,
+			ragDevice: "amd-phoenix-npu",
 		},
+		{ backend: "cpu" },
+		"/managed/venv/bin/python",
+		"/managed/qdrant",
 	);
+	assert.equal(config.embeddingStartupTimeoutMs, 600_000);
+	assert.equal(config.embeddingTimeoutMs, 600_000);
+	assert.equal(config.searchTimeoutMs, 600_000);
 });
 
 test("recognizes only the installed indexing daemon command", () => {
@@ -145,9 +145,17 @@ test("selects bounded CPU and CUDA builds for non-AMD Linux hosts", () => {
 		selectTorchInstallPlan({
 			platform: "linux",
 			architecture: "x64",
-			requestedBackend: "npu",
+			requestedBackend: "ryzenai",
 		}).backend,
-		"default",
+		"cpu",
+	);
+	assert.equal(
+		selectTorchInstallPlan({
+			platform: "linux",
+			architecture: "x64",
+			requestedBackend: "intel-openvino-npu",
+		}).backend,
+		"cpu",
 	);
 });
 
@@ -183,7 +191,7 @@ test("rejects unsupported accelerator wheel targets", () => {
 				architecture: "x64",
 				requestedBackend: "invalid",
 			}),
-		/P_CODE_RAG_TORCH_BACKEND/,
+		/torchBackend/,
 	);
 });
 

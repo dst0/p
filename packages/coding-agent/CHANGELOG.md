@@ -7,8 +7,17 @@
 - Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
 - Added an automated source-structure guard for the 300-line limit and one-class-per-file rule.
 
+### Added
+
+- Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
+- Restore Apple Neural Engine indexing with a verified full-ANE Core AI fast path and bounded ANE windowing for long inputs on macOS 27+, while retaining the ONNX Runtime CoreML EP hybrid path for older macOS releases.
+- Measure real-model embedding throughput at startup and during indexing, and report the current backend's observed vectors per second in `/index`.
+
 ### Fixed
 
+- Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
+- Label Apple Metal acceleration as `GPU (MPS)`, report Core AI versus legacy CoreML NPU placement explicitly, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs by retaining PyTorch's default allocator watermarks.
+- Prioritize interactive semantic-search embeddings between background indexing batches, while serializing Core AI work through one bounded model graph so large repository rebuilds cannot starve live queries or duplicate model memory.
 - Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 
 ## [0.4.158] - 2026-08-06

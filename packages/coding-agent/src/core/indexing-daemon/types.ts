@@ -27,6 +27,7 @@ export interface IndexingDaemonOptions {
   qdrantDataDirectory: string;
   pythonExecutable: string;
   embeddingModel: string;
+  embeddingConfigPath?: string;
   debounceMs?: number;
   retryMs?: number;
   reconcileMs?: number;

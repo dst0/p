@@ -14,7 +14,6 @@ import {
 const temporaryDirectories: string[] = [];
 const childProcesses: ChildProcess[] = [];
 const repositoryRoot = path.resolve(import.meta.dirname, "../../..");
-const indexingDeviceSelectionScript = path.join(repositoryRoot, "scripts", "indexing-device-selection.sh");
 const canInspectProcesses =
   spawnSync("ps", ["-p", String(process.pid), "-o", "command="], {
     stdio: "ignore",
@@ -46,61 +45,6 @@ describe("indexing reinstall scripts", () => {
       expect(unknown.status).toBe(1);
       expect(unknown.stderr).toContain("Unknown option: --unknown");
     }
-  });
-
-  it("loads a valid saved device while preserving an explicit environment override", () => {
-    const fixture = createFixture();
-    fs.mkdirSync(fixture.agentDir, { recursive: true });
-    fs.writeFileSync(path.join(fixture.agentDir, "indexing-device"), "cpu\n");
-
-    const saved = runDeviceSelection(false, false, fixture.agentDir);
-    expect(saved.status, saved.stderr).toBe(0);
-    expect(saved.stdout).toContain("Loaded saved embedding device: cpu");
-    expect(saved.stdout).toContain("device=cpu");
-
-    const overridden = runDeviceSelection(false, false, fixture.agentDir, "mps");
-    expect(overridden.status, overridden.stderr).toBe(0);
-    expect(overridden.stdout).not.toContain("Loaded saved embedding device");
-    expect(overridden.stdout).toContain("device=mps");
-  });
-
-  it("forces reselection over an environment value and requires an interactive terminal", () => {
-    const fixture = createFixture();
-    const forced = runDeviceSelection(true, true, fixture.agentDir, "mps");
-    expect(forced.status, forced.stderr).toBe(0);
-    expect(forced.stdout).toContain("device=<unset>");
-
-    const nonInteractive = runDeviceSelection(true, false, fixture.agentDir, "mps");
-    expect(nonInteractive.status).toBe(1);
-    expect(nonInteractive.stderr).toContain("--select-indexing requires an interactive terminal");
-
-    for (const script of ["install.sh", "reinstall.sh"]) {
-      const result = spawnSync("bash", [path.join(repositoryRoot, script), "--select-indexing"], {
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          P_CODING_AGENT_DIR: fixture.agentDir,
-          P_CODE_RAG_DEVICE: "mps",
-        },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
-      expect(result.status).toBe(1);
-      expect(result.stderr).toContain("--select-indexing requires an interactive terminal");
-    }
-  });
-
-  it("rejects invalid saved and environment device values", () => {
-    const fixture = createFixture();
-    fs.mkdirSync(fixture.agentDir, { recursive: true });
-    fs.writeFileSync(path.join(fixture.agentDir, "indexing-device"), "invalid\n");
-
-    const saved = runDeviceSelection(false, false, fixture.agentDir);
-    expect(saved.status).toBe(1);
-    expect(saved.stderr).toContain("Invalid saved embedding device");
-
-    const environment = runDeviceSelection(false, false, fixture.agentDir, "invalid");
-    expect(environment.status).toBe(1);
-    expect(environment.stderr).toContain("Invalid P_CODE_RAG_DEVICE");
   });
 
   it.skipIf(!canInspectProcesses)("force-stops a daemon that ignores the bounded quiesce handshake", async () => {
@@ -219,75 +163,7 @@ describe("indexing reinstall scripts", () => {
       expect(command).toContain("--loglevel=error");
     }
   });
-
-  it("initializes max embed batch size from environment or saved file and validates values", () => {
-    const fixture = createFixture();
-    fs.mkdirSync(fixture.agentDir, { recursive: true });
-
-    const envRes = runBatchSizeSelection(false, false, fixture.agentDir, "16");
-    expect(envRes.status).toBe(0);
-    expect(envRes.stdout).toContain("batch_size=16");
-
-    const batchFile = path.join(fixture.agentDir, "indexing-max-batch-size");
-    fs.writeFileSync(batchFile, "32\n", "utf8");
-    const savedRes = runBatchSizeSelection(false, false, fixture.agentDir);
-    expect(savedRes.status).toBe(0);
-    expect(savedRes.stdout).toContain("batch_size=32");
-
-    fs.writeFileSync(batchFile, "invalid\n", "utf8");
-    const invalidRes = runBatchSizeSelection(false, false, fixture.agentDir);
-    expect(invalidRes.status).toBe(1);
-    expect(invalidRes.stderr).toContain("Invalid saved embedding batch size");
-  });
 });
-
-function runBatchSizeSelection(
-  forceSelection: boolean,
-  interactive: boolean,
-  agentDir: string,
-  batchSize?: string,
-): ReturnType<typeof spawnSync> & { stdout: string; stderr: string } {
-  const env: NodeJS.ProcessEnv = { ...process.env, P_CODING_AGENT_DIR: agentDir };
-  if (batchSize === undefined) delete env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE;
-  else env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = batchSize;
-  const result = spawnSync(
-    "bash",
-    [
-      "-c",
-      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; INDEXING_BATCH_SIZE_FILE="$AGENT_DIR/indexing-max-batch-size"; initialize_indexing_batch_size_selection "$2" "$3"; if declare -p P_CODE_RAG_MAX_EMBED_BATCH_SIZE >/dev/null 2>&1; then printf "batch_size=%s\\n" "$P_CODE_RAG_MAX_EMBED_BATCH_SIZE"; else echo "batch_size=<unset>"; fi',
-      "bash",
-      indexingDeviceSelectionScript,
-      String(forceSelection),
-      String(interactive),
-    ],
-    { encoding: "utf8", env },
-  );
-  return result as ReturnType<typeof spawnSync> & { stdout: string; stderr: string };
-}
-
-function runDeviceSelection(
-  forceSelection: boolean,
-  interactive: boolean,
-  agentDir: string,
-  device?: string,
-): ReturnType<typeof spawnSync> & { stdout: string; stderr: string } {
-  const env: NodeJS.ProcessEnv = { ...process.env, P_CODING_AGENT_DIR: agentDir };
-  if (device === undefined) delete env.P_CODE_RAG_DEVICE;
-  else env.P_CODE_RAG_DEVICE = device;
-  const result = spawnSync(
-    "bash",
-    [
-      "-c",
-      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"; initialize_indexing_device_selection "$2" "$3"; if declare -p P_CODE_RAG_DEVICE >/dev/null 2>&1; then printf "device=%s\\n" "$P_CODE_RAG_DEVICE"; else echo "device=<unset>"; fi',
-      "bash",
-      indexingDeviceSelectionScript,
-      String(forceSelection),
-      String(interactive),
-    ],
-    { encoding: "utf8", env },
-  );
-  return result as ReturnType<typeof spawnSync> & { stdout: string; stderr: string };
-}
 
 function createFixture(): { root: string; agentDir: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-reinstall-script-"));

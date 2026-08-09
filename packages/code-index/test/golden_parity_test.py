@@ -14,6 +14,7 @@ from embedding_backends import (
     resolve_backend,
     resolve_legacy_backend_id,
 )
+from embedding_backends.apple_ane_backend import AppleANEBackend
 
 
 CANONICAL_TEST_CORPUS = [
@@ -41,10 +42,10 @@ class TestBackendContractAndParity(unittest.TestCase):
     def test_legacy_backend_id_migration(self):
         if sys.platform == "darwin":
             self.assertEqual(resolve_legacy_backend_id("npu"), "apple-ane")
-            self.assertEqual(resolve_legacy_backend_id("auto"), "apple-ane")
+            expected_auto = "apple-ane" if AppleANEBackend.core_ai_runtime_installed() else "apple-mps"
+            self.assertEqual(resolve_legacy_backend_id("auto"), expected_auto)
         else:
-            with self.assertRaises(ValueError):
-                resolve_legacy_backend_id("npu")
+            self.assertEqual(resolve_legacy_backend_id("npu"), "npu")
         self.assertEqual(resolve_legacy_backend_id("cuda"), "nvidia-cuda")
         self.assertEqual(resolve_legacy_backend_id("rocm"), "amd-rocm")
         self.assertEqual(resolve_legacy_backend_id("mps"), "apple-mps")
@@ -58,6 +59,8 @@ class TestBackendContractAndParity(unittest.TestCase):
         backend = resolve_backend("cpu", strict=False)
         self.assertIsNotNone(backend)
         self.assertEqual(backend.backend_id, "cpu")
+        apple_backend = resolve_backend("apple-ane", strict=False)
+        self.assertEqual(apple_backend.backend_id, "apple-ane")
 
     def test_health_formatting(self):
         health = BackendHealth(

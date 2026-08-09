@@ -13,7 +13,7 @@ def resolve_legacy_backend_id(raw: str) -> str:
     Migrate legacy backend identifiers to explicit hardware-aware identifiers.
 
     - "npu" on macOS arm64 -> "apple-ane"
-    - "npu" on other OS -> raises ValueError with migration instructions
+    - "npu" on Linux -> remains hardware-auto-detected by the embedding server
     - "cuda" -> "nvidia-cuda"
     - "rocm" -> "amd-rocm"
     - "mps"  -> "apple-mps"
@@ -22,10 +22,7 @@ def resolve_legacy_backend_id(raw: str) -> str:
     if clean == "npu":
         if sys.platform == "darwin":
             return "apple-ane"
-        raise ValueError(
-            "Generic backend 'npu' is deprecated on Linux. "
-            "Please specify 'intel-openvino-cpu' or 'cpu'."
-        )
+        return "npu"
     if clean == "cuda":
         return "nvidia-cuda"
     if clean == "rocm":
@@ -34,7 +31,7 @@ def resolve_legacy_backend_id(raw: str) -> str:
         return "apple-mps"
     if clean in {"auto", ""}:
         if sys.platform == "darwin":
-            return "apple-ane"
+            return "apple-ane" if AppleANEBackend.core_ai_runtime_installed() else "apple-mps"
         try:
             import torch
             if torch.cuda.is_available():
@@ -55,7 +52,7 @@ def resolve_backend(backend_id: str, strict: bool = False) -> EmbeddingBackend:
         return AppleANEBackend(resolved_id, strict=strict)
     if resolved_id in {"nvidia-cuda", "amd-rocm", "apple-mps"}:
         return PyTorchBackend(resolved_id, strict=strict)
-    if resolved_id == "intel-openvino-cpu":
+    if resolved_id in {"intel-openvino-cpu", "intel-openvino-npu"}:
         return OpenVINOBackend(resolved_id, strict=strict)
     if resolved_id == "onnx-cpu":
         return ONNXBackend(resolved_id, strict=strict)

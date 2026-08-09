@@ -6,6 +6,7 @@ import { DynamicBorder } from "../../components/dynamic-border.ts";
 import { keyDisplayText } from "../../components/keybinding-hints.ts";
 import { theme } from "../../theme/theme.ts";
 import type { InteractiveMode } from "../interactivemode.ts";
+import { formatIndexHealth, type IndexHealth } from "./index-health-format.ts";
 
 export async function do_buildIndexStatusText(
   self: InteractiveMode,
@@ -58,7 +59,13 @@ export async function do_buildIndexStatusText(
   text += `Indexing: ${decision}\n`;
   text += `Background service: ${status.serviceRunning ? theme.fg("success", "running") : theme.fg("error", "not running")}\n`;
   if (status.configuredDevice) {
-    text += `Selected device: ${theme.bold(status.configuredDevice)}\n`;
+    const configuredDevice =
+      status.configuredDevice === "mps" || status.configuredDevice === "apple-mps"
+        ? "GPU (MPS)"
+        : status.configuredDevice === "apple-ane"
+          ? "NPU (Apple Neural Engine)"
+          : status.configuredDevice;
+    text += `Selected device: ${theme.bold(configuredDevice)}\n`;
   }
   if (status.configuredMaxBatchSize !== undefined) {
     text += `Configured max batch size: ${theme.bold(String(status.configuredMaxBatchSize))}\n`;
@@ -68,39 +75,7 @@ export async function do_buildIndexStatusText(
     try {
       const res = await fetch("http://127.0.0.1:18742/health", { signal: AbortSignal.timeout(1000) });
       if (res.ok) {
-        const health = (await res.json()) as {
-          device?: string;
-          requestedBackend?: string;
-          selectedBackend?: string;
-          executionDevice?: string;
-          gpuAllowed?: boolean;
-          fallbackOccurred?: boolean;
-          fallbackReason?: string;
-          resource_plan?: { batch_size?: number };
-          runtime?: { warnings?: string[] };
-        };
-        if (health.requestedBackend) {
-          text += `Requested backend: ${theme.bold(health.requestedBackend)}\n`;
-        }
-        if (health.selectedBackend) {
-          text += `Selected backend: ${theme.bold(health.selectedBackend)}\n`;
-        }
-        const deviceLabel = health.executionDevice ?? health.device;
-        if (deviceLabel) {
-          text += `Execution device: ${theme.bold(deviceLabel)}\n`;
-        }
-        if (health.gpuAllowed !== undefined) {
-          text += `GPU allowed: ${health.gpuAllowed ? theme.fg("success", "yes") : theme.fg("warning", "no (GPU-deny policy)")}\n`;
-        }
-        if (health.fallbackOccurred) {
-          text += `Fallback occurred: ${theme.fg("warning", "yes")} (${health.fallbackReason ?? "CPU fallback"})\n`;
-        }
-        if (health.resource_plan?.batch_size !== undefined) {
-          text += `Current used batch size: ${theme.bold(String(health.resource_plan.batch_size))}\n`;
-        }
-        if (health.runtime?.warnings?.length) {
-          text += `Embedding warnings: ${theme.fg("warning", health.runtime.warnings.join("; "))}\n`;
-        }
+        text += formatIndexHealth((await res.json()) as IndexHealth);
       }
     } catch {
       // Embedding server status details optional if server is starting or idle

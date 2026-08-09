@@ -216,12 +216,12 @@
     "lines": 59
   },
   "packages/code-index/embedding_server.py": {
-    "classes": 4,
-    "lines": 897
+    "classes": 3,
+    "lines": 822
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,
-    "lines": 348
+    "lines": 331
   },
   "packages/code-index/src/embed/errors.ts": {
     "classes": 2,
@@ -233,7 +233,7 @@
   },
   "packages/code-index/src/rag/types.ts": {
     "classes": 0,
-    "lines": 332
+    "lines": 327
   },
   "packages/code-index/src/rag/vector-store.ts": {
     "classes": 3,
@@ -245,7 +245,7 @@
   },
   "packages/code-index/test/coverage-completion.test.ts": {
     "classes": 0,
-    "lines": 485
+    "lines": 471
   },
   "packages/code-index/test/embed-servers-and-http-more.test.ts": {
     "classes": 0,
@@ -261,7 +261,7 @@
   },
   "packages/code-index/test/rag-service.test.ts": {
     "classes": 2,
-    "lines": 1504
+    "lines": 1426
   },
   "packages/code-index/test/repository-directory.test.ts": {
     "classes": 2,
@@ -370,10 +370,6 @@
   "packages/coding-agent/src/core/extensions/types.ts": {
     "classes": 0,
     "lines": 1635
-  },
-  "packages/coding-agent/src/core/indexing-service.ts": {
-    "classes": 1,
-    "lines": 402
   },
   "packages/coding-agent/src/core/keybindings.ts": {
     "classes": 1,
@@ -554,10 +550,6 @@
   "packages/coding-agent/test/indexing-reinstall-lifecycle.test.ts": {
     "classes": 1,
     "lines": 320
-  },
-  "packages/coding-agent/test/indexing-reinstall-script.test.ts": {
-    "classes": 0,
-    "lines": 344
   },
   "packages/coding-agent/test/indexing-service.test.ts": {
     "classes": 5,
@@ -789,7 +781,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 775
+    "lines": 575
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,

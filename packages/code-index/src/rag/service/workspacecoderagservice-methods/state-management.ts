@@ -2,6 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { BM25Vocabulary } from "../../../bm25.ts";
 import { discoverFilesWithOptions } from "../../../discover.ts";
+import { computeEmbeddingCompatibilityGroup } from "../../config.ts";
 import { CHUNKER_NAME, CHUNKER_VERSION, INDEX_MANIFEST_SCHEMA_VERSION, loadManifest } from "../../manifest.ts";
 import type {
   IndexManifest,
@@ -101,6 +102,19 @@ export function do_manifestIncompatibility(self: WorkspaceCodeRagService, manife
     manifest.embedding.dimensions !== self.settings.embeddingDimensions
   ) {
     return "Embedding model or dimensions changed";
+  }
+  const expectedCompatibilityGroup = computeEmbeddingCompatibilityGroup(
+    self.settings.embeddingModel,
+    self.settings.embeddingDimensions,
+    self.settings.embeddingPooling,
+    self.settings.embeddingNormalization,
+  );
+  if (
+    manifest.embedding.compatibilityGroup !== expectedCompatibilityGroup ||
+    manifest.embedding.pooling !== self.settings.embeddingPooling ||
+    manifest.embedding.normalization !== self.settings.embeddingNormalization
+  ) {
+    return "Embedding compatibility metadata changed";
   }
   if (!manifest.sparse.vocabularyFile) return "Sparse vocabulary metadata is missing";
   const vocabularyPath = path.join(self.repositoryDirectory, manifest.sparse.vocabularyFile);

@@ -1,6 +1,6 @@
 """Tests for _select_preferred_backend device mismatch handling.
 
-When P_CODE_RAG_DEVICE=cuda is set but ROCm is detected (or vice versa),
+When CUDA is configured but ROCm is detected (or vice versa),
 the server should fall back to CPU with a warning, not silently accept
 the wrong accelerator. Same for explicit mps when MPS is unavailable.
 """
@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import types
 import unittest
+from unittest.mock import patch
 
 # -- fake torch with configurable accelerator detection ------------------
 
@@ -84,15 +85,6 @@ def _install_fake_torch(builder: FakeTorchBuilder):
 class DeviceSelectionTest(unittest.TestCase):
     """Verify explicit device requests are not silently redirected."""
 
-    def setUp(self):
-        self.previous_device = os.environ.get("P_CODE_RAG_DEVICE")
-        os.environ["P_CODE_RAG_DEVICE"] = "auto"
-
-    def tearDown(self):
-        if self.previous_device is None:
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
-        else:
-            os.environ["P_CODE_RAG_DEVICE"] = self.previous_device
     # -- CUDA requested, ROCm detected ----------------------------------
 
     def test_cuda_requested_rocm_detected_falls_back_to_cpu(self):
@@ -169,7 +161,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "rocm")
 
@@ -184,7 +177,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cuda")
 
@@ -220,6 +214,18 @@ class DeviceSelectionTest(unittest.TestCase):
 
         self.assertEqual(backend, "mps")
 
+    def test_macos_npu_request_does_not_masquerade_as_mps(self):
+        builder = FakeTorchBuilder()
+        builder.mps_available = True
+        EmbeddingServer = _install_fake_torch(builder)
+        server = EmbeddingServer("test/model")
+
+        with patch.object(sys, "platform", "darwin"):
+            backend, _ = server._select_preferred_backend("npu")
+
+        self.assertEqual(backend, "apple-ane")
+        self.assertEqual(server.warnings, [])
+
     # -- CPU requested always returns CPU -------------------------------
 
     def test_cpu_requested_always_returns_cpu(self):
@@ -244,57 +250,10 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        from unittest.mock import patch
-        with patch.dict("os.environ", {}, clear=False):
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
+        with patch.object(sys, "platform", "linux"):
             backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cpu")
-
-    # -- NPU requested when unavailable falls back to CPU --------------
-
-    def test_npu_requested_when_unavailable_falls_back_to_cpu(self):
-        builder = FakeTorchBuilder()
-        EmbeddingServer = _install_fake_torch(builder)
-
-        server = EmbeddingServer("test/model")
-
-        from unittest.mock import patch
-        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=False):
-            for dev in ("npu", "openvino", "coreml", "vitisai"):
-                backend, _ = server._select_preferred_backend(dev)
-                self.assertEqual(backend, "cpu")
-                self.assertIn(f"requested {dev} backend is unavailable; using CPU", server.warnings)
-
-    def test_npu_requested_when_available_returns_npu_device(self):
-        builder = FakeTorchBuilder()
-        EmbeddingServer = _install_fake_torch(builder)
-
-        server = EmbeddingServer("test/model")
-
-        from unittest.mock import patch
-        with patch("sys.platform", "linux"), patch("embedding_server._npu_available", return_value=True):
-            for dev in ("npu", "openvino", "coreml", "vitisai"):
-                backend, _ = server._select_preferred_backend(dev)
-                self.assertEqual(backend, dev)
-
-    def test_vitisai_npu_available_detects_hardware_nodes_and_execution_provider(self):
-        from unittest.mock import MagicMock, patch
-        import embedding_server
-
-        mock_ort = MagicMock()
-        mock_ort.get_available_providers.return_value = ["CPUExecutionProvider"]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort}), patch("os.path.exists", return_value=False), patch.dict("os.environ", {}, clear=True):
-            self.assertFalse(embedding_server._vitisai_npu_available())
-
-        mock_ort_with_vitis = MagicMock()
-        mock_ort_with_vitis.get_available_providers.return_value = ["VitisAIExecutionProvider", "CPUExecutionProvider"]
-        with patch.dict("sys.modules", {"onnxruntime": mock_ort_with_vitis}), patch("os.path.exists", return_value=False):
-            self.assertTrue(embedding_server._vitisai_npu_available())
-
-        with patch("os.path.exists", side_effect=lambda p: p == "/dev/accel/accel0"):
-            self.assertTrue(embedding_server._vitisai_npu_available())
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -46,12 +46,10 @@ for ARG in "$@"; do
             echo "Options:"
             echo "  --help, -h             Show this help message."
             echo "  --select-indexing      Re-prompt for the embedding device"
-            echo "                         selection, overwriting the saved"
-            echo "                         choice in ~/.p/agent/indexing-device."
+            echo "                         selection in ~/.p/agent/code-rag.json."
             echo ""
-            echo "The embedding device (P_CODE_RAG_DEVICE) is saved after the"
-            echo "first selection and reused automatically on subsequent runs."
-            echo "Use --select-indexing to change it without editing the file."
+            echo "The embedding device is saved in the standard code-index config"
+            echo "and reused automatically on subsequent runs."
             exit 0
             ;;
         --select-indexing)
@@ -65,8 +63,6 @@ for ARG in "$@"; do
 done
 
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
-INDEXING_DEVICE_FILE="$AGENT_DIR/indexing-device"
-INDEXING_BATCH_SIZE_FILE="$AGENT_DIR/indexing-max-batch-size"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
 initialize_indexing_batch_size_selection "$SELECT_INDEXING"

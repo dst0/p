@@ -140,4 +140,20 @@ describe("InteractiveMode code-indexing prompt", () => {
     expect(text).toContain("Files indexed: 1041 out of 1041");
     expect(text).toContain("Chunks indexed: 58072 out of 58072");
   });
+
+  it("labels the configured Mac accelerator as GPU (MPS)", async () => {
+    const indexingService = {
+      getStatus: () => ({
+        decision: "enabled" as const,
+        indexed: true,
+        serviceRunning: false,
+        configuredDevice: "mps",
+        configuredMaxBatchSize: 4,
+      }),
+    } as unknown as IndexingService;
+
+    const text = await interactiveModePrototype.buildIndexStatusText.call({ indexingService }, "/repository", "");
+    expect(text).toContain("Selected device: GPU (MPS)");
+    expect(text).toContain("Configured max batch size: 4");
+  });
 });

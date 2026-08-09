@@ -6,6 +6,33 @@ import os from "node:os";
 import path from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import {
+	resolveFallbackDeviceChoices,
+	resolveIndexingDevicePlan,
+	selectTorchInstallPlan,
+} from "./indexing-install-plans.js";
+export {
+	resolveFallbackDeviceChoices,
+	resolveIndexingDevicePlan,
+	selectTorchInstallPlan,
+} from "./indexing-install-plans.js";
+import { migrateLegacyIndexingConfig, readCodeRagConfig, writeCodeRagConfig } from "./indexing-config.js";
+import {
+	detectAmdNpuPciDevices,
+} from "./install-amd-ryzen-ai.js";
+import {
+	detectIntelNpuPciDevices,
+} from "./install-intel-openvino-npu.js";
+import { installPythonEnvironment } from "./indexing-python-environment.js";
+import {
+	buildManagedIndexingConfig,
+	buildServiceValues,
+	installSelectedNpuSystemRuntime,
+	isTorchAcceleratorDevice,
+	promptForDeviceFallback,
+} from "./indexing-install-fallback.js";
+import { findCompatiblePython } from "./indexing-python-discovery.js";
+import { installAppleCoreAiRuntime, isMacOsCoreAiAvailable } from "./install-apple-coreai.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -27,7 +54,6 @@ const VERSION_UNCHANGED_FLAG_PATH = path.join(AGENT_DIR, "indexing-version-uncha
 const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const QDRANT_VERSION = "1.18.3";
-const TORCH_VERSION = "2.12.1";
 const DRY_RUN = process.argv.includes("--dry-run");
 
 const QDRANT_ASSETS = {
@@ -51,58 +77,6 @@ const QDRANT_ASSETS = {
 
 export function getQdrantAsset(platform = process.platform, architecture = process.arch) {
 	return QDRANT_ASSETS[`${platform}-${architecture}`];
-}
-
-export function selectTorchInstallPlan(options = {}) {
-	const platform = options.platform ?? process.platform;
-	const architecture = options.architecture ?? process.arch;
-	const requestedBackend =
-		options.requestedBackend ??
-		process.env.P_CODE_RAG_TORCH_BACKEND ??
-		(process.env.P_CODE_RAG_DEVICE === "cpu"
-			? "cpu"
-			: process.env.P_CODE_RAG_DEVICE === "mps"
-				? "mps"
-				: process.env.P_CODE_RAG_DEVICE === "npu"
-					? "npu"
-					: "auto");
-	const hasAmdComputeDevice = options.hasAmdComputeDevice ?? fs.existsSync("/dev/kfd");
-	const hasNvidiaComputeDevice = options.hasNvidiaComputeDevice ?? fs.existsSync("/dev/nvidiactl");
-	if (!["auto", "cpu", "rocm", "cuda", "mps", "npu"].includes(requestedBackend)) {
-		throw new Error("P_CODE_RAG_TORCH_BACKEND must be one of: auto, cpu, rocm, cuda, mps, npu");
-	}
-
-	let backend = requestedBackend;
-	if (backend === "auto") {
-		if (platform === "linux" && architecture === "x64" && hasAmdComputeDevice) backend = "rocm";
-		else if (platform === "linux" && architecture === "x64" && hasNvidiaComputeDevice) backend = "cuda";
-		else if (platform === "darwin" && architecture === "arm64") backend = "mps";
-		else if (platform === "linux") backend = "cpu";
-		else backend = "default";
-	}
-	if (backend === "mps" || backend === "npu") {
-		backend = "default";
-	}
-	if (backend === "rocm" && (platform !== "linux" || architecture !== "x64")) {
-		throw new Error("ROCm PyTorch is supported only on Linux x64");
-	}
-	if (backend === "cuda" && (platform !== "linux" || architecture !== "x64")) {
-		throw new Error("Managed CUDA PyTorch is supported only on Linux x64");
-	}
-	if (platform === "darwin" && backend === "cpu") {
-		backend = "default";
-	}
-
-	const indexUrls = {
-		cpu: "https://download.pytorch.org/whl/cpu",
-		rocm: "https://download.pytorch.org/whl/rocm7.2",
-		cuda: "https://download.pytorch.org/whl/cu126",
-	};
-	return {
-		backend,
-		version: platform === "darwin" && architecture === "x64" ? "2.2.2" : TORCH_VERSION,
-		indexUrl: indexUrls[backend],
-	};
 }
 
 export function getQdrantExtractionArgs(archive, destination) {
@@ -215,85 +189,65 @@ WantedBy=default.target
 `;
 }
 
-export function collectResourceEnvironment(source = process.env) {
-	const environment = {};
-	for (const key of [
-		"P_CODE_RAG_DEVICE",
-		"P_CODE_RAG_MAX_CPU_THREADS",
-		"P_CODE_RAG_MAX_EMBED_BATCH_SIZE",
-		"P_CODE_RAG_MAX_SEQUENCE_LENGTH",
-		"P_CODE_RAG_MIN_ACCELERATOR_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MIN_SYSTEM_MEMORY_RESERVE_MB",
-		"P_CODE_RAG_MODEL_PARAMETER_COUNT",
-		"P_CODE_RAG_PREPARATION_MAX_WORKERS",
-		"P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB",
-		"P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB",
-	]) {
-		if (source[key] !== undefined) environment[key] = source[key];
-	}
-	return environment;
-}
-
-function readSavedSetting(fileName) {
-	try {
-		const filePath = path.join(AGENT_DIR, fileName);
-		if (!fs.existsSync(filePath)) return undefined;
-		const value = fs.readFileSync(filePath, "utf-8").trim();
-		return value || undefined;
-	} catch {
-		return undefined;
-	}
-}
-
 async function main() {
 	if (!getQdrantAsset()) {
 		throw new Error(`Code indexing service is not supported on ${process.platform}/${process.arch}`);
 	}
-	const hasNpuDevice =
-		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
-	const defaultDevice =
-		hasNpuDevice || (process.platform === "darwin" && process.arch === "arm64") ? "npu" : "cpu";
-	const ragDevice = process.env.P_CODE_RAG_DEVICE ?? savedDevice ?? defaultDevice;
-	process.env.P_CODE_RAG_DEVICE = ragDevice;
-	if (ragDevice === "npu") {
-		ensureAmdXdnaDriverInstalled();
+	const amdNpuDevices = process.platform === "linux" ? detectAmdNpuPciDevices() : [];
+	const hasLinuxAmdNpuHardware = amdNpuDevices.length > 0;
+	const amdNpuFamily = amdNpuDevices.some((device) => String(device.device).toLowerCase() === "0x1502")
+		? "phoenix"
+		: "ryzenai";
+	const hasLinuxIntelNpuHardware = process.platform === "linux" && detectIntelNpuPciDevices().length > 0;
+	const hasMacOsCoreAi = isMacOsCoreAiAvailable();
+	let indexingConfig = migrateLegacyIndexingConfig(AGENT_DIR);
+	const savedDevice = indexingConfig.embeddingDevice;
+	const planOptions = {
+		amdNpuFamily,
+		architecture: process.arch,
+		hasLinuxAmdNpuHardware,
+		hasLinuxIntelNpuHardware,
+		hasMacOsCoreAi,
+		platform: process.platform,
+	};
+	let devicePlan;
+	try {
+		devicePlan = resolveIndexingDevicePlan({
+			...planOptions,
+			savedDevice,
+		});
+	} catch (error) {
+		const failedDevice = savedDevice ?? "npu";
+		devicePlan = await promptForDeviceFallback(error, failedDevice, planOptions);
+		indexingConfig = readCodeRagConfig(AGENT_DIR);
 	}
 
-	const savedBatchSize = readSavedSetting("indexing-max-batch-size");
-	if (!process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE && savedBatchSize) {
-		process.env.P_CODE_RAG_MAX_EMBED_BATCH_SIZE = savedBatchSize;
+	let python;
+	let torchPlan;
+	while (true) {
+		try {
+			installSelectedNpuSystemRuntime(devicePlan);
+			python = findCompatiblePython({
+				allowInstall: !DRY_RUN,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron
+					|| devicePlan.installAppleCoreAi ? 12 : undefined,
+			});
+			torchPlan = selectTorchInstallPlan({
+				requestedBackend:
+					indexingConfig.torchBackend && indexingConfig.torchBackend !== "auto"
+						? indexingConfig.torchBackend
+						: devicePlan.ragDevice,
+			});
+			break;
+		} catch (error) {
+			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
+		}
 	}
-
-	const python = findCompatiblePython();
-	const torchPlan = selectTorchInstallPlan();
 	const venvPython = path.join(VENV_DIR, "bin", "python");
 	const qdrantBinary = path.join(BIN_DIR, "qdrant");
-	const environment = {
-		P_CODING_AGENT_DIR: AGENT_DIR,
-		P_CODE_RAG_PYTHON: venvPython,
-		P_CODE_RAG_QDRANT_BINARY: qdrantBinary,
-		P_CODE_RAG_QDRANT_DATA_DIR: QDRANT_DATA_DIR,
-		P_CODE_RAG_EXPECTED_BACKEND: torchPlan.backend,
-		P_CODE_RAG_DEVICE: ragDevice,
-		...(ragDevice === "cpu"
-			? {
-					CUDA_VISIBLE_DEVICES: "99",
-					HIP_VISIBLE_DEVICES: "99",
-					ROCR_VISIBLE_DEVICES: "99",
-				}
-			: {}),
-		...collectResourceEnvironment(),
-	};
-	const values = {
-		node: process.execPath,
-		daemon: DAEMON,
-		root: ROOT,
-		environment,
-		stdout: path.join(LOG_DIR, "service.log"),
-		stderr: path.join(LOG_DIR, "service-error.log"),
-	};
 
 	if (DRY_RUN) {
+		const values = buildServiceValues(devicePlan, venvPython);
 		if (process.platform === "darwin") renderLaunchdPlist(values);
 		else renderSystemdUnit(values);
 		console.log(
@@ -308,15 +262,54 @@ async function main() {
 	fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
 	fs.mkdirSync(QDRANT_DATA_DIR, { recursive: true, mode: 0o700 });
 	await installQdrant(qdrantBinary);
-	installPythonEnvironment(python, venvPython, torchPlan);
-	mergeCodeRagConfig({
-		qdrantBinary,
-		qdrantDataDirectory: QDRANT_DATA_DIR,
-		pythonExecutable: venvPython,
-	});
+	while (true) {
+		try {
+			installPythonEnvironment({
+				agentDirectory: AGENT_DIR,
+				installAmdPhoenixIron: devicePlan.installAmdPhoenixIron,
+				installAmdRyzenAi: devicePlan.installAmdRyzenAi,
+				installIntelOpenVino: devicePlan.installIntelOpenVino,
+				python,
+				requireTorchAccelerator: isTorchAcceleratorDevice(devicePlan.ragDevice),
+				requirementsPath: REQUIREMENTS,
+				ryzenAiArchivePath: indexingConfig.ryzenAiArchivePath,
+				torchPlan,
+				venvDirectory: VENV_DIR,
+				venvPython,
+			});
+			if (devicePlan.installAppleCoreAi) {
+				installAppleCoreAiRuntime({
+					agentDirectory: AGENT_DIR,
+					codeIndexDirectory: CODE_INDEX_DIR,
+					python: findCompatiblePython({ allowInstall: true, requiredMinor: 12 }),
+				});
+			}
+			break;
+		} catch (error) {
+			devicePlan = await promptForDeviceFallback(error, devicePlan.ragDevice, planOptions);
+			indexingConfig = readCodeRagConfig(AGENT_DIR);
+			installSelectedNpuSystemRuntime(devicePlan);
+			python = findCompatiblePython({
+				allowInstall: true,
+				requiredMinor: devicePlan.installAmdRyzenAi || devicePlan.installAmdPhoenixIron
+					|| devicePlan.installAppleCoreAi ? 12 : undefined,
+			});
+			torchPlan = selectTorchInstallPlan({
+				requestedBackend:
+					indexingConfig.torchBackend && indexingConfig.torchBackend !== "auto"
+						? indexingConfig.torchBackend
+						: devicePlan.ragDevice,
+			});
+		}
+	}
+	const values = buildServiceValues(devicePlan, venvPython);
+	writeCodeRagConfig(
+		AGENT_DIR,
+		buildManagedIndexingConfig(indexingConfig, devicePlan, torchPlan, venvPython, qdrantBinary),
+	);
 
-	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values));
-	else await installLinux(renderSystemdUnit(values));
+	if (process.platform === "darwin") await installDarwin(renderLaunchdPlist(values), values.environment);
+	else await installLinux(renderSystemdUnit(values), values.environment);
 	console.log(`Code indexing service installed (${SERVICE_LABEL})`);
 }
 
@@ -346,96 +339,7 @@ async function installQdrant(qdrantBinary) {
 	}
 }
 
-function installPythonEnvironment(python, venvPython, torchPlan) {
-	const requirements = fs.readFileSync(REQUIREMENTS, "utf-8");
-	const markerPath = path.join(VENV_DIR, ".p-requirements");
-	const marker = createHash("sha256")
-		.update(`${python}\0${capture(python, ["--version"])}\0${requirements}\0${JSON.stringify(torchPlan)}`)
-		.digest("hex");
-	if (fs.existsSync(venvPython) && readFileIfPresent(markerPath) === marker) return;
-	console.log(`Installing pinned code-index Python dependencies for ${torchPlan.backend}`);
-	run(python, ["-m", "venv", VENV_DIR]);
-	if (torchPlan.indexUrl) {
-		run(venvPython, [
-			"-m",
-			"pip",
-			"install",
-			"--disable-pip-version-check",
-			"--only-binary=:all:",
-			"--force-reinstall",
-			`torch==${torchPlan.version}`,
-			"--index-url",
-			torchPlan.indexUrl,
-		]);
-	}
-	run(venvPython, [
-		"-m",
-		"pip",
-		"install",
-		"--disable-pip-version-check",
-		"--only-binary=:all:",
-		"--requirement",
-		REQUIREMENTS,
-	]);
-	validateTorchInstallation(venvPython, torchPlan);
-	fs.writeFileSync(markerPath, marker, { mode: 0o600 });
-}
-
-function validateTorchInstallation(venvPython, torchPlan) {
-	const probe = JSON.parse(
-		capture(venvPython, [
-			"-c",
-			[
-				"import json, torch",
-				"mps = getattr(torch.backends, 'mps', None)",
-				"print(json.dumps({",
-				"'version': torch.__version__,",
-				"'cuda': getattr(torch.version, 'cuda', None),",
-				"'hip': getattr(torch.version, 'hip', None),",
-				"'accelerator_available': bool(torch.cuda.is_available() or (mps and mps.is_available()))",
-				"}))",
-			].join("\n"),
-		]),
-	);
-	if (!String(probe.version).startsWith(torchPlan.version)) {
-		throw new Error(`Expected PyTorch ${torchPlan.version}, installed ${probe.version}`);
-	}
-	if (torchPlan.backend === "rocm" && !probe.hip) {
-		throw new Error("The installed PyTorch build does not include ROCm/HIP support");
-	}
-	if (torchPlan.backend === "cuda" && !probe.cuda) {
-		throw new Error("The installed PyTorch build does not include CUDA support");
-	}
-	if (torchPlan.backend === "cpu" && (probe.hip || probe.cuda)) {
-		throw new Error("The installed PyTorch build is not CPU-only");
-	}
-	console.log(
-		`PyTorch ${probe.version} installed (${torchPlan.backend}); `
-		+ `accelerator currently ${probe.accelerator_available ? "available" : "unavailable"}`,
-	);
-}
-
-function mergeCodeRagConfig(defaults) {
-	const configPath = path.join(AGENT_DIR, "code-rag.json");
-	let config = {};
-	if (fs.existsSync(configPath)) {
-		config = JSON.parse(fs.readFileSync(configPath, "utf-8"));
-		if (typeof config !== "object" || config === null || Array.isArray(config)) {
-			throw new Error(`Code RAG config must be a JSON object: ${configPath}`);
-		}
-	}
-	let changed = false;
-	for (const [key, value] of Object.entries(defaults)) {
-		if (config[key] !== undefined) continue;
-		config[key] = value;
-		changed = true;
-	}
-	if (!changed && fs.existsSync(configPath)) return;
-	fs.mkdirSync(AGENT_DIR, { recursive: true, mode: 0o700 });
-	writeFileAtomic(configPath, `${JSON.stringify(config, undefined, 2)}\n`);
-}
-
-async function installDarwin(plist) {
+async function installDarwin(plist, environment) {
 	const uid = typeof process.getuid === "function" ? process.getuid() : undefined;
 	if (uid === undefined) throw new Error("Unable to determine the current user id for launchd");
 	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
@@ -463,7 +367,7 @@ async function installDarwin(plist) {
 	await stopStaleDaemons(knownDaemonPid);
 	await stopStaleBackends();
 	writeFileAtomic(plistPath, plist);
-	runRealSemanticSearchSmoke();
+	runRealSemanticSearchSmoke(environment);
 	run("launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
 	run("launchctl", ["kickstart", "-k", `gui/${uid}/${SERVICE_LABEL}`]);
 }
@@ -477,7 +381,7 @@ async function waitForLaunchdRemoval(uid, label) {
 	}
 }
 
-async function installLinux(unit) {
+async function installLinux(unit, environment) {
 	const versionUnchanged = fs.existsSync(VERSION_UNCHANGED_FLAG_PATH);
 	if (versionUnchanged) fs.rmSync(VERSION_UNCHANGED_FLAG_PATH, { force: true });
 	const knownDaemonPid = readStatusDaemonPid();
@@ -501,7 +405,7 @@ async function installLinux(unit) {
 	await stopStaleBackends();
 	writeFileAtomic(unitPath, unit);
 	run("systemctl", ["--user", "daemon-reload"]);
-	runRealSemanticSearchSmoke();
+	runRealSemanticSearchSmoke(environment);
 	run("systemctl", ["--user", "enable", "--now", `${SERVICE_LABEL}.service`]);
 	run("systemctl", ["--user", "is-active", "--quiet", `${SERVICE_LABEL}.service`]);
 }
@@ -557,9 +461,9 @@ async function stopValidatedProcess(pid, description, isExpectedProcess) {
 	if (isProcessRunning(pid)) throw new Error(`Timed out stopping ${description} ${pid}`);
 }
 
-function runRealSemanticSearchSmoke() {
+function runRealSemanticSearchSmoke(environment) {
 	console.log("Running real semantic-search verification");
-	run(process.execPath, [SMOKE_SCRIPT]);
+	run(process.execPath, [SMOKE_SCRIPT], { env: { ...process.env, ...environment } });
 }
 
 function readStatusDaemonPid() {
@@ -612,104 +516,8 @@ function isProcessRunning(pid) {
 	}
 }
 
-function findCompatiblePython() {
-	const search = () => {
-		const names = process.platform === "darwin" && process.arch === "x64"
-			? ["python3.12", "python3.11", "python3.10", "python3"]
-			: ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
-		const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
-		for (const candidate of candidates) {
-			const version = capture(candidate, ["-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')"], {
-				allowFailure: true,
-			}).trim();
-			const [major, minor] = version.split(".").map(Number);
-			if (major !== 3 || minor < 10) continue;
-			if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
-			return candidate;
-		}
-		return undefined;
-	};
-
-	let found = search();
-	if (!found) {
-		tryAutoInstallPython();
-		found = search();
-	}
-	if (found) return found;
-
-	throw new Error(
-		process.platform === "darwin" && process.arch === "x64"
-			? "Code indexing requires Python 3.10-3.12 on Intel macOS. Please install Python 3."
-			: "Code indexing requires Python 3.10 or newer. Please install Python 3.",
-	);
-}
-
-function tryAutoInstallPython() {
-	console.log("No compatible Python 3 (>= 3.10) found on PATH. Attempting automatic installation...");
-	if (process.platform === "darwin") {
-		const brew = findOnPath("brew") || (fs.existsSync("/opt/homebrew/bin/brew") ? "/opt/homebrew/bin/brew" : undefined);
-		if (brew) {
-			const pkg = process.arch === "x64" ? "python@3.12" : "python3";
-			run(brew, ["install", pkg], { allowFailure: true });
-		}
-	} else if (process.platform === "linux") {
-		const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-		if (findOnPath("apt-get")) {
-			const cmd = isRoot ? "apt-get" : "sudo";
-			const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
-			const argsInstall = isRoot
-				? ["install", "-y", "-qq", "python3", "python3-venv", "python3-dev"]
-				: ["apt-get", "install", "-y", "-qq", "python3", "python3-venv", "python3-dev"];
-			run(cmd, argsUpdate, { allowFailure: true });
-			run(cmd, argsInstall, { allowFailure: true });
-		} else if (findOnPath("dnf")) {
-			const cmd = isRoot ? "dnf" : "sudo";
-			const args = isRoot ? ["install", "-y", "python3", "python3-devel"] : ["dnf", "install", "-y", "python3", "python3-devel"];
-			run(cmd, args, { allowFailure: true });
-		} else if (findOnPath("pacman")) {
-			const cmd = isRoot ? "pacman" : "sudo";
-			const args = isRoot ? ["-Sy", "--noconfirm", "python"] : ["pacman", "-Sy", "--noconfirm", "python"];
-			run(cmd, args, { allowFailure: true });
-		}
-	}
-}
-
-function ensureAmdXdnaDriverInstalled() {
-	if (process.platform !== "linux") return;
-	const hasNpuDevice =
-		fs.existsSync("/dev/accel/accel0") || fs.existsSync("/dev/amdxdna") || fs.existsSync("/sys/class/accel");
-	if (!hasNpuDevice) return;
-	if (fs.existsSync("/opt/xilinx/xrt") || findOnPath("xrt-smi")) return;
-
-	console.log("AMD XDNA NPU hardware detected. Ensuring AMD XDNA driver dependencies are installed...");
-	const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
-	if (findOnPath("apt-get")) {
-		const cmd = isRoot ? "apt-get" : "sudo";
-		const argsUpdate = isRoot ? ["update", "-qq"] : ["apt-get", "update", "-qq"];
-		const argsInstall = isRoot
-			? ["install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"]
-			: ["apt-get", "install", "-y", "-qq", "dkms", "cmake", "gcc", "g++", "boost-dev", "protobuf-compiler", "debhelper", "devscripts"];
-		run(cmd, argsUpdate, { allowFailure: true });
-		run(cmd, argsInstall, { allowFailure: true });
-	}
-}
-
-function findOnPath(name) {
-	for (const directory of (process.env.PATH ?? "").split(path.delimiter)) {
-		if (!directory) continue;
-		const candidate = path.join(directory, name);
-		try {
-			fs.accessSync(candidate, fs.constants.X_OK);
-			return candidate;
-		} catch {
-			// Continue searching PATH.
-		}
-	}
-	return undefined;
-}
-
 function run(command, args, options = {}) {
-	const result = spawnSync(command, args, { stdio: options.allowFailure ? "ignore" : "inherit" });
+	const result = spawnSync(command, args, { env: options.env, stdio: options.allowFailure ? "ignore" : "inherit" });
 	if (result.error && !options.allowFailure) throw result.error;
 	if (result.status !== 0 && !options.allowFailure) {
 		throw new Error(`${command} exited with status ${result.status ?? "unknown"}`);
@@ -730,14 +538,6 @@ function writeFileAtomic(filePath, content) {
 	const temporaryPath = `${filePath}.${process.pid}.tmp`;
 	fs.writeFileSync(temporaryPath, content, { mode: 0o600 });
 	fs.renameSync(temporaryPath, filePath);
-}
-
-function readFileIfPresent(filePath) {
-	try {
-		return fs.readFileSync(filePath, "utf-8");
-	} catch {
-		return undefined;
-	}
 }
 
 function hasArgumentSequence(command, args) {

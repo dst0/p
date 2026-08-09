@@ -70,7 +70,11 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
     }
   }
 
-  async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+  async encode(
+    texts: string[],
+    signal?: AbortSignal,
+    priority: "background" | "interactive" = "background",
+  ): Promise<Float32Array[]> {
     if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
     const batchSize = Math.max(1, this.options.batchSize ?? 8);
     const allVectors: Float32Array[] = [];
@@ -78,7 +82,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
     for (let i = 0; i < texts.length; i += batchSize) {
       if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
       const batch = texts.slice(i, i + batchSize);
-      const vectors = await this.request(batch, signal);
+      const vectors = await this.request(batch, signal, priority);
       allVectors.push(...vectors);
     }
 
@@ -88,7 +92,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
   async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
     if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
     const queryText = this.queryInstruction ? `Instruct: ${this.queryInstruction}\nQuery: ${text}` : text;
-    const vectors = await this.encode([queryText], signal);
+    const vectors = await this.encode([queryText], signal, "interactive");
     if (!vectors[0]) throw new Error("Embedding server returned no query vector");
     return vectors[0];
   }
@@ -104,7 +108,11 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
     await this.serverManager?.stop();
   }
 
-  private async request(input: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+  private async request(
+    input: string[],
+    signal: AbortSignal | undefined,
+    priority: "background" | "interactive",
+  ): Promise<Float32Array[]> {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
       try {
@@ -116,7 +124,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
         const response = await fetch(`${this.baseUrl}/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input, normalize: true }),
+          body: JSON.stringify({ input, normalize: true, priority }),
           signal: requestSignal,
         });
         if (!response.ok) {

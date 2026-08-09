@@ -1,5 +1,6 @@
 """OpenVINO backend for Intel CPU and NPU inference."""
 
+import os
 from typing import Any
 from embedding_backends.base import BackendHealth, ModelSpec
 from embedding_backends.model_contract import compute_compatibility_group, compute_tokenizer_hash
@@ -8,7 +9,12 @@ from embedding_backends.model_contract import compute_compatibility_group, compu
 class OpenVINOBackend:
     """OpenVINO backend for Intel CPU and NPU inference."""
 
-    def __init__(self, backend_id: str = "intel-openvino-cpu", strict: bool = False):
+    def __init__(
+        self,
+        backend_id: str = "intel-openvino-cpu",
+        strict: bool = False,
+        cache_directory: str | None = None,
+    ):
         self.backend_id = backend_id
         self.strict = strict
         self.execution_device = "Intel OpenVINO CPU"
@@ -17,6 +23,9 @@ class OpenVINOBackend:
         self.spec: ModelSpec = ModelSpec()
         self.fallback_occurred = False
         self.fallback_reason: str | None = None
+        self.cache_directory = cache_directory or os.path.expanduser(
+            "~/.p/agent/indexing-service/openvino-cache"
+        )
 
     def load(self, spec: ModelSpec) -> None:
         self.spec = spec
@@ -25,7 +34,19 @@ class OpenVINOBackend:
 
         try:
             from optimum.intel import OVSentenceTransformer
-            self.model = OVSentenceTransformer.from_pretrained(spec.model_name, device=device)
+            cache_dir = self.cache_directory
+            os.makedirs(cache_dir, exist_ok=True)
+            self.model = OVSentenceTransformer.from_pretrained(
+                spec.model_name,
+                device=device,
+                export=True,
+                ov_config={"CACHE_DIR": cache_dir},
+            )
+            actual_device = str(getattr(self.model, "device", "")).upper()
+            if device == "NPU" and "NPU" not in actual_device:
+                raise RuntimeError(
+                    f"OpenVINO compiled the embedding model for {actual_device or 'an unknown device'}, not NPU"
+                )
         except Exception as error:
             msg = f"OpenVINO load failed for device {device}: {error}"
             if self.strict:
@@ -77,6 +98,7 @@ class OpenVINOBackend:
             pooling=self.spec.pooling,
             normalization=self.spec.normalization,
             compatibility_group=compat_group,
+            extra={"executionProvider": "OpenVINO Runtime", "openvinoDevice": self.execution_device},
         )
 
     def close(self) -> None:

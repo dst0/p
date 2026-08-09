@@ -1,0 +1,8 @@
+coreai-core==1.0.0b2
+coreai-opt==0.2.1
+coreai-torch==0.4.1
+huggingface-hub==0.34.4
+numpy==2.3.5
+safetensors==0.6.2
+torch==2.9.0
+transformers==4.57.6
