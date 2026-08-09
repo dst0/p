@@ -13,6 +13,7 @@ from typing import Any
 from embedding_backends.apple_coreml_backend import AppleCoreMLBackend
 from embedding_backends.base import BackendHealth, ModelSpec
 from embedding_backends.model_contract import compute_compatibility_group, compute_tokenizer_hash
+from embedding_priority_lock import EmbeddingPriorityLock
 
 
 class AppleANEBackend:
@@ -31,6 +32,8 @@ class AppleANEBackend:
         self.long_sequence_delegate: AppleCoreMLBackend | None = None
         self.used_long_sequence_path = False
         self.max_seq_length = 2048
+        self.worker_lock = EmbeddingPriorityLock()
+        self.legacy_lock = threading.Lock()
 
     def load(self, spec: ModelSpec) -> None:
         self.spec = spec
@@ -88,33 +91,38 @@ class AppleANEBackend:
         for line in stream:
             self.stderr_lines.append(line.rstrip())
 
-    def _request(self, request: dict[str, Any], timeout: float = 120) -> dict[str, Any]:
-        process = self.worker_proc
-        if not process or not process.stdin or not process.stdout:
-            raise RuntimeError("Core AI worker is not active")
-        process.stdin.write(json.dumps(request) + "\n")
-        process.stdin.flush()
-        ready, _, _ = select.select([process.stdout], [], [], timeout)
-        if not ready:
-            details = "; ".join(self.stderr_lines)
-            raise RuntimeError(f"Core AI worker timed out{': ' + details if details else ''}")
-        line = process.stdout.readline()
-        if not line:
-            details = "; ".join(self.stderr_lines)
-            raise RuntimeError(f"Core AI worker exited unexpectedly{': ' + details if details else ''}")
-        response = json.loads(line)
-        if response.get("status") == "error":
-            raise RuntimeError(f"Core AI worker error: {response.get('error')}")
-        return response
+    def _request(
+        self, request: dict[str, Any], timeout: float = 120, *, interactive: bool = False
+    ) -> dict[str, Any]:
+        with self.worker_lock.hold(interactive=interactive):
+            process = self.worker_proc
+            if not process or not process.stdin or not process.stdout:
+                raise RuntimeError("Core AI worker is not active")
+            process.stdin.write(json.dumps(request) + "\n")
+            process.stdin.flush()
+            ready, _, _ = select.select([process.stdout], [], [], timeout)
+            if not ready:
+                details = "; ".join(self.stderr_lines)
+                raise RuntimeError(f"Core AI worker timed out{': ' + details if details else ''}")
+            line = process.stdout.readline()
+            if not line:
+                details = "; ".join(self.stderr_lines)
+                raise RuntimeError(f"Core AI worker exited unexpectedly{': ' + details if details else ''}")
+            response = json.loads(line)
+            if response.get("status") == "error":
+                raise RuntimeError(f"Core AI worker error: {response.get('error')}")
+            return response
 
     def encode(
         self,
         texts: list[str],
         normalize: bool = True,
         batch_size: int = 8,
+        interactive: bool = False,
     ) -> list[list[float]]:
         if self.delegate:
-            return self.delegate.encode(texts, normalize, batch_size)
+            with self.legacy_lock:
+                return self.delegate.encode(texts, normalize, batch_size)
         embeddings: list[list[float]] = []
         worker_batch = int(self.worker_health.get("batchSize", 8))
         effective_batch = max(1, min(batch_size, worker_batch))
@@ -125,14 +133,21 @@ class AppleANEBackend:
                     "action": "encode",
                     "texts": texts[offset : offset + effective_batch],
                     "normalize": normalize,
-                }
+                },
+                interactive=interactive,
             )
             if response.get("status") == "unsupported_length":
-                legacy = self._load_long_sequence_delegate()
-                self.used_long_sequence_path = True
-                return legacy.encode(texts, normalize, batch_size)
+                with self.legacy_lock:
+                    legacy = self._load_long_sequence_delegate()
+                    self.used_long_sequence_path = True
+                    return legacy.encode(texts, normalize, batch_size)
             embeddings.extend(response.get("embeddings", []))
         return embeddings
+
+    def encode_interactive(
+        self, texts: list[str], normalize: bool = True, batch_size: int = 8
+    ) -> list[list[float]]:
+        return self.encode(texts, normalize, batch_size, interactive=True)
 
     def _load_long_sequence_delegate(self) -> AppleCoreMLBackend:
         if self.long_sequence_delegate is None:

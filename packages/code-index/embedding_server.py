@@ -21,7 +21,6 @@ import argparse
 import json
 import os
 import sys
-import threading
 import time
 import traceback
 from dataclasses import replace
@@ -35,6 +34,7 @@ from embedding_runtime_config import (
 )
 from embedding_benchmark import BENCHMARK_CORPUS
 from embedding_performance import EmbeddingPerformanceTracker
+from embedding_priority_lock import EmbeddingPriorityLock
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 _startup_runtime_config = load_embedding_runtime_config(
@@ -704,7 +704,7 @@ class EmbeddingServer:
 
 
 server: EmbeddingServer | None = None
-encode_lock: threading.Lock = threading.Lock()
+encode_lock = EmbeddingPriorityLock()
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -721,7 +721,6 @@ class Handler(BaseHTTPRequestHandler):
         if self.path != "/embed":
             self._json(404, {"error": "not found"})
             return
-
         if server is None or server.model is None:
             self._json(503, {"error": "model not loaded"})
             return
@@ -731,14 +730,15 @@ class Handler(BaseHTTPRequestHandler):
             body = json.loads(self.rfile.read(length))
             texts: list[str] = body.get("input", [])
             normalize = body.get("normalize", True)
-
             if not texts:
                 self._json(400, {"error": "empty input"})
                 return
-
-            with encode_lock, torch.inference_mode():
-                embeddings = server.encode(texts, normalize)
-
+            interactive = body.get("priority") == "interactive"
+            with torch.inference_mode():
+                if interactive and hasattr(server.model, "encode_interactive"):
+                    embeddings = server.model.encode_interactive(texts, normalize)
+                else:
+                    embeddings = encode_lock.run(texts, lambda batch: server.encode(batch, normalize), interactive=interactive)
             self._json(200, {
                 "model": server.model_name,
                 "dim": server.dim,

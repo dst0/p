@@ -2,6 +2,7 @@
 
 import os
 import sys
+import threading
 import unittest
 from unittest.mock import Mock, patch
 
@@ -52,6 +53,44 @@ class AppleNpuBackendsTest(unittest.TestCase):
         self.assertEqual(result, [[1.0, 0.0]])
         self.assertTrue(backend.used_long_sequence_path)
         legacy.encode.assert_called_once_with(["long input"], True, 8)
+
+    def test_short_interactive_core_ai_query_bypasses_busy_legacy_path(self):
+        backend = AppleANEBackend()
+        backend.worker_health = {"batchSize": 8}
+        backend.worker_proc = Mock()
+        legacy_started = threading.Event()
+        release_legacy = threading.Event()
+        interactive_finished = threading.Event()
+        legacy = Mock()
+
+        def request(payload, **_kwargs):
+            if payload["texts"] == ["long input"]:
+                return {"status": "unsupported_length", "maxSequenceLength": 64}
+            return {"status": "ok", "embeddings": [[0.0, 1.0]]}
+
+        def encode_legacy(*_args):
+            legacy_started.set()
+            release_legacy.wait(timeout=1)
+            return [[1.0, 0.0]]
+
+        legacy.encode.side_effect = encode_legacy
+        with patch.object(backend, "_request", side_effect=request), patch.object(
+            backend, "_load_long_sequence_delegate", return_value=legacy
+        ):
+            background = threading.Thread(target=lambda: backend.encode(["long input"]))
+            background.start()
+            self.assertTrue(legacy_started.wait(timeout=1))
+            interactive = threading.Thread(
+                target=lambda: (
+                    backend.encode_interactive(["short query"]),
+                    interactive_finished.set(),
+                )
+            )
+            interactive.start()
+            self.assertTrue(interactive_finished.wait(timeout=1))
+            release_legacy.set()
+            interactive.join(timeout=1)
+            background.join(timeout=1)
 
     def test_legacy_coreml_limits_dynamic_qwen_graph_to_batch_one(self):
         backend = AppleCoreMLBackend()
