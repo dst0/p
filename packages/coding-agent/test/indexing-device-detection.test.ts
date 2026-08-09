@@ -87,6 +87,17 @@ describe("indexing device detection", () => {
     expect(detected.stdout).toContain("amd_npu_family=phoenix");
     expect(detected.stdout).toContain("generic_npu=true");
   });
+
+  it("distinguishes Apple GPU (MPS) from unavailable Neural Engine indexing", () => {
+    const root = createFixture();
+
+    const detected = runDeviceDetection(root, "Darwin", "arm64");
+
+    expect(detected.status, detected.stderr).toBe(0);
+    expect(detected.stdout).toContain("mps=true");
+    expect(detected.stdout).toContain("generic_npu=false");
+    expect(detected.stdout).toContain("No verified Qwen CoreML embedding artifact");
+  });
 });
 
 function runDeviceSelection(agentDir: string, force = false, interactive = false) {
@@ -117,12 +128,12 @@ function runBatchSizeSelection(agentDir: string) {
   );
 }
 
-function runDeviceDetection(root: string) {
+function runDeviceDetection(root: string, kernelName = "Linux", architecture = "x86_64") {
   return spawnSync(
     "bash",
     [
       "-c",
-      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "amd_npu=%s\\namd_npu_family=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_AMD_NPU" "$INDEXING_AMD_NPU_FAMILY" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
+      'set -e; source "$1"; detect_supported_indexing_devices; if is_detected_indexing_device_supported npu; then generic_npu=true; else generic_npu=false; fi; printf "mps=%s\\namd_npu=%s\\namd_npu_family=%s\\nintel_npu=%s\\namd_gpu=%s\\nnvidia_gpu=%s\\ngeneric_npu=%s\\nreason=%s\\n" "$INDEXING_HAS_MPS" "$INDEXING_HAS_AMD_NPU" "$INDEXING_AMD_NPU_FAMILY" "$INDEXING_HAS_INTEL_NPU" "$INDEXING_HAS_AMD_GPU" "$INDEXING_HAS_NVIDIA_GPU" "$generic_npu" "$(describe_unsupported_indexing_device npu)"',
       "bash",
       selectionScript,
     ],
@@ -134,8 +145,8 @@ function runDeviceDetection(root: string) {
         P_INDEXING_TEST_DISABLE_LSPCI: "true",
         P_INDEXING_TEST_OS_RELEASE: path.join(root, "os-release"),
         P_INDEXING_TEST_PCI_ROOT: path.join(root, "pci"),
-        P_INDEXING_TEST_UNAME_M: "x86_64",
-        P_INDEXING_TEST_UNAME_S: "Linux",
+        P_INDEXING_TEST_UNAME_M: architecture,
+        P_INDEXING_TEST_UNAME_S: kernelName,
       },
     },
   );

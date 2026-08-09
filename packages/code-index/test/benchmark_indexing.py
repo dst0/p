@@ -10,17 +10,7 @@ from embedding_backends import (
     ModelSpec,
     resolve_backend,
 )
-
-BENCHMARK_CORPUS = [
-    "def calculate_vector_similarity(query_vector, document_vector): return sum(a*b for a,b in zip(query_vector, document_vector))",
-    "export interface CodeIndexManifest { repository: string; compatibilityGroup: string; vectorsCount: number; }",
-    "pub struct VectorStore { points: Vec<Point>, dimension: usize } impl VectorStore { pub fn search(&self) {} }",
-    "import Foundation\npublic final class ANEEmbeddingModel { public func encode() -> [[Float]] {} }",
-    "# Background daemon service worker loop handling ongoing filesystem events and debounce indexing queue",
-    "SELECT * FROM embeddings WHERE cosine_distance(vector, :query) < 0.15 ORDER BY distance ASC LIMIT 10;",
-    "class EmbeddingServerManager extends SubprocessLifecycleManager { async ensureReady() {} }",
-    "const batchSize = Math.max(1, this.options.batchSize ?? 8);",
-]
+from embedding_benchmark import BENCHMARK_CORPUS
 
 
 def cosine_similarity(v1: list[float], v2: list[float]) -> float:

@@ -11,7 +11,7 @@ def resolve_legacy_backend_id(raw: str) -> str:
     """
     Migrate legacy backend identifiers to explicit hardware-aware identifiers.
 
-    - "npu" on macOS arm64 -> "apple-mps"
+    - "npu" on macOS arm64 -> "apple-ane" (currently unavailable)
     - "npu" on Linux -> remains hardware-auto-detected by the embedding server
     - "cuda" -> "nvidia-cuda"
     - "rocm" -> "amd-rocm"
@@ -20,7 +20,7 @@ def resolve_legacy_backend_id(raw: str) -> str:
     clean = str(raw).strip().lower()
     if clean == "npu":
         if sys.platform == "darwin":
-            return "apple-mps"
+            return "apple-ane"
         return "npu"
     if clean == "cuda":
         return "nvidia-cuda"
@@ -48,7 +48,10 @@ def resolve_backend(backend_id: str, strict: bool = False) -> EmbeddingBackend:
     resolved_id = resolve_legacy_backend_id(backend_id)
 
     if resolved_id == "apple-ane":
-        return PyTorchBackend("apple-mps", strict=strict)
+        raise RuntimeError(
+            "Apple Neural Engine indexing is unavailable because no verified "
+            "Qwen CoreML embedding artifact is installed; select apple-mps"
+        )
     if resolved_id in {"nvidia-cuda", "amd-rocm", "apple-mps"}:
         return PyTorchBackend(resolved_id, strict=strict)
     if resolved_id in {"intel-openvino-cpu", "intel-openvino-npu"}:

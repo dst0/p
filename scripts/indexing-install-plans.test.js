@@ -7,7 +7,7 @@ import {
 } from "./indexing-install-plans.js";
 
 test("preserves Apple Silicon acceleration without a Linux NPU installer", () => {
-	for (const requestedDevice of [undefined, "npu"]) {
+	for (const requestedDevice of [undefined, "auto", "mps"]) {
 		assert.deepEqual(
 			resolveIndexingDevicePlan({
 				platform: "darwin",
@@ -20,6 +20,17 @@ test("preserves Apple Silicon acceleration without a Linux NPU installer", () =>
 				installIntelOpenVino: false,
 				ragDevice: "mps",
 			},
+		);
+	}
+	for (const requestedDevice of ["npu", "apple-ane"]) {
+		assert.throws(
+			() =>
+				resolveIndexingDevicePlan({
+					platform: "darwin",
+					architecture: "arm64",
+					requestedDevice,
+				}),
+			/no verified Qwen CoreML embedding artifact.*GPU \(MPS\)/,
 		);
 	}
 });
@@ -170,7 +181,7 @@ test("offers only detected Linux GPU and CPU fallbacks", () => {
 
 test("keeps Apple MPS and CPU as supported Mac choices", () => {
 	assert.deepEqual(resolveFallbackDeviceChoices({ architecture: "arm64", platform: "darwin" }), [
-		{ device: "mps", label: "Apple MPS GPU" },
+		{ device: "mps", label: "GPU (MPS) - Apple Silicon Metal" },
 		{ device: "cpu", label: "CPU" },
 	]);
 });

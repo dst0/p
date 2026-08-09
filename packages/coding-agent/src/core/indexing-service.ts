@@ -9,6 +9,7 @@ import {
   prioritizeIndexingForRepo,
   type RepoIndexingDecision,
 } from "./indexed-repos.ts";
+import { readIndexingSelectionConfiguration } from "./indexing-config-reader.ts";
 
 export const INDEXING_SERVICE_STATUS_FILE = "indexing-service-status.json";
 export const INDEXING_SERVICE_REINSTALL_FILE = "indexing-service-reinstall.json";
@@ -30,25 +31,11 @@ export interface IndexStatus {
 }
 
 export function getConfiguredIndexingDevice(agentDir: string = getAgentDir()): string | undefined {
-  try {
-    const filePath = path.join(agentDir, "indexing-device");
-    if (!fs.existsSync(filePath)) return undefined;
-    const val = fs.readFileSync(filePath, "utf-8").trim();
-    return val || undefined;
-  } catch {
-    return undefined;
-  }
+  return readIndexingSelectionConfiguration(agentDir).device;
 }
 
 export function getConfiguredIndexingBatchSize(agentDir: string = getAgentDir()): number | undefined {
-  try {
-    const filePath = path.join(agentDir, "indexing-max-batch-size");
-    if (!fs.existsSync(filePath)) return undefined;
-    const val = parseInt(fs.readFileSync(filePath, "utf-8").trim(), 10);
-    return Number.isFinite(val) && val > 0 ? val : undefined;
-  } catch {
-    return undefined;
-  }
+  return readIndexingSelectionConfiguration(agentDir).maxBatchSize;
 }
 
 export interface RepositoryServiceStatus {

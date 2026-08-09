@@ -41,14 +41,14 @@ class NpuDeviceSelectionTest(unittest.TestCase):
                 server._select_preferred_backend("npu")
         self.assertFalse(server.fallback_occurred)
 
-    def test_macos_npu_uses_real_mps_embeddings(self):
+    def test_macos_npu_does_not_masquerade_as_mps(self):
         builder = FakeTorchBuilder()
         builder.mps_available = True
         server = _install_fake_torch(builder)("test/model")
         with patch("sys.platform", "darwin"):
-            backend, _ = server._select_preferred_backend("apple-ane")
-        self.assertEqual(backend, "mps")
-        self.assertTrue(any("using mps" in warning for warning in server.warnings))
+            with self.assertRaisesRegex(RuntimeError, "no verified Qwen CoreML"):
+                server._select_preferred_backend("apple-ane")
+        self.assertEqual(server.warnings, [])
 
 
 if __name__ == "__main__":

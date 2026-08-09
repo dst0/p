@@ -40,7 +40,7 @@ class TestBackendContractAndParity(unittest.TestCase):
 
     def test_legacy_backend_id_migration(self):
         if sys.platform == "darwin":
-            self.assertEqual(resolve_legacy_backend_id("npu"), "apple-mps")
+            self.assertEqual(resolve_legacy_backend_id("npu"), "apple-ane")
             self.assertEqual(resolve_legacy_backend_id("auto"), "apple-mps")
         else:
             self.assertEqual(resolve_legacy_backend_id("npu"), "npu")
@@ -57,6 +57,8 @@ class TestBackendContractAndParity(unittest.TestCase):
         backend = resolve_backend("cpu", strict=False)
         self.assertIsNotNone(backend)
         self.assertEqual(backend.backend_id, "cpu")
+        with self.assertRaisesRegex(RuntimeError, "no verified Qwen CoreML"):
+            resolve_backend("apple-ane", strict=False)
 
     def test_health_formatting(self):
         health = BackendHealth(

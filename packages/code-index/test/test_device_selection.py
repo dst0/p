@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import types
 import unittest
+from unittest.mock import patch
 
 # -- fake torch with configurable accelerator detection ------------------
 
@@ -210,6 +211,16 @@ class DeviceSelectionTest(unittest.TestCase):
         backend, _ = server._select_preferred_backend("mps")
 
         self.assertEqual(backend, "mps")
+
+    def test_macos_npu_request_does_not_masquerade_as_mps(self):
+        builder = FakeTorchBuilder()
+        builder.mps_available = True
+        EmbeddingServer = _install_fake_torch(builder)
+        server = EmbeddingServer("test/model")
+
+        with patch.object(sys, "platform", "darwin"):
+            with self.assertRaisesRegex(RuntimeError, "no verified Qwen CoreML"):
+                server._select_preferred_backend("npu")
 
     # -- CPU requested always returns CPU -------------------------------
 

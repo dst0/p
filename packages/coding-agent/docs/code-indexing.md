@@ -26,7 +26,7 @@ Device selection is hardware-aware. The interactive installer detects supported 
 
 All Linux NPU paths fail closed inside the embedding runtime: they never silently execute the requested NPU workload on CPU. If NPU driver installation, provider validation, model compilation, or the inference probe fails during an interactive install, the installer explains the reason and asks the user to choose from the detected GPU backends and CPU. The fallback is persisted and independently validated; a GPU whose PyTorch accelerator probe fails is removed from the next fallback prompt. Non-interactive installs still fail instead of choosing for the user. If the installed kernel is below the supported minimum, the installer installs Ubuntu's HWE kernel and offers the same fallback while reporting that a reboot and reinstall rerun are required before NPU validation can continue. Downloads are version-pinned and checksum-verified; the AMD source checkout is additionally revision-verified.
 
-On Apple Silicon, the installer uses the real PyTorch MPS embedding path. Existing `npu` and `apple-ane` selections are routed to MPS because the former bundled Swift ANE worker produced placeholder vectors rather than verified Qwen embeddings. Intel macOS continues to use its compatible CPU path.
+On Apple Silicon, the installer labels the real PyTorch Metal path as **GPU (MPS)**. Apple Neural Engine indexing remains visible as unavailable until a verified Qwen CoreML embedding artifact exists; existing `npu` and `apple-ane` selections are rejected with that explanation instead of being silently remapped to GPU. The former bundled Swift worker produced placeholder vectors and is not treated as ANE execution. Intel macOS continues to use its compatible CPU path.
 
 ## Official accelerator references
 
@@ -71,7 +71,7 @@ Indexing decisions are independent of project trust. Enabling indexing authorize
 
 | Command | Behavior |
 |---|---|
-| `/index` | Show the repository decision, background-service state, index state, file/chunk counts, and last error |
+| `/index` | Show the repository decision, backend/device, measured real-model vectors per second, background-service state, index state, file/chunk counts, and last error |
 | `/index enable` | Enable indexing for the active repository |
 | `/index disable` | Stop watching and refreshing the active repository |
 | `/index up` | Move the active repository to the top of the daemon queue and show its progress in the footer |
@@ -133,7 +133,9 @@ If a changed file changes again between scanning and embedding, the refresh read
 
 The daemon owns local backend processes and repository refreshes; repository and tool service instances do not independently spawn competing Qdrant or embedding servers. Creating the real `semantic_search` tool for an already enabled repository only refreshes that repository's request timestamp in `indexed-repos.json`; the daemon observes the registry change and performs the prioritized work. A `semantic_search` service reloads the atomically written manifest before every search, so a long-running p process observes a newer generation written by the daemon. A `require_fresh` search returns a stale or not-ready error until the daemon commits a fresh generation; it does not index in the PAgent process. A manifest whose Qdrant collection has disappeared is incompatible and forces a full daemon rebuild; it cannot pass through the no-change incremental path as ready.
 
-The embedding server measures currently available system and accelerator memory before loading the model. It keeps a safety reserve, uses FP16 on accelerators, selects CPU thread count and embedding micro-batch size from the remaining budget, and refuses to load when neither backend can safely fit. A detected GPU with too little free VRAM does not force an unsafe allocation: the server uses CPU and scales CPU parallelism from available RAM. During indexing it recalculates memory headroom before requests, halves the micro-batch after an out-of-memory error, and moves an accelerator-resident model to CPU if batch size 1 can no longer run safely. Repeated successful requests release the temporary OOM batch ceiling.
+The embedding server measures currently available system and accelerator memory before loading the model. It keeps a safety reserve, selects CPU thread count and embedding micro-batch size from the remaining budget, and refuses to load when neither backend can safely fit. Automatic device selection may use CPU when an accelerator cannot fit, but an explicitly selected accelerator fails closed instead of silently changing performance characteristics. During indexing it recalculates memory headroom before requests and halves the micro-batch after an out-of-memory error. On MPS it uses a stable 95% fraction of Metal's recommended maximum working set rather than shrinking the hard allocator ceiling to the host's momentary free-memory fraction. Repeated successful requests release the temporary OOM batch ceiling.
+
+At model startup the server runs the fixed benchmark corpus through the real selected model, then accumulates the same timing across real multi-vector indexing requests. `/index` reports the observed vectors per second, sample size, elapsed embedding time, and backend. Single-vector semantic-search queries do not replace the indexing measurement.
 
 NPU health is based on the active runtime, not merely a device node. Phoenix health reports `selectedBackend: amd-phoenix-npu`, generation `npu1`, the MLIR-AIE runtime and artifact hashes, covered encoder operations, and the real dispatch count. STX/KRK health reports `selectedBackend: amd-ryzenai-npu` and `executionProvider: VitisAIExecutionProvider`; Intel health reports `selectedBackend: intel-openvino-npu`, `executionProvider: OpenVINO Runtime`, and an Intel OpenVINO NPU execution device. The runtime section independently reports whether each vendor runtime is currently available. `fallbackOccurred` remains false for a healthy NPU and no NPU request is allowed to start as CPU.
 
@@ -216,7 +218,7 @@ Embedding resource controls are safe caps rather than fixed utilization targets:
 
 | Field | Behavior |
 |---|---|
-| `embeddingDevice` | Select `auto`, `cpu`, `cuda`, `rocm`, `mps`, `npu`, `amd-phoenix-npu`, `amd-ryzenai-npu`, or `intel-openvino-npu`; Linux NPU selections install their matched runtime and fail closed, while unavailable GPU selections may fall back to CPU |
+| `embeddingDevice` | Select `auto`, `cpu`, `cuda`, `rocm`, `mps`, `npu`, `amd-phoenix-npu`, `amd-ryzenai-npu`, or `intel-openvino-npu`; explicit accelerator selections fail closed, `mps` is the Apple GPU, and Apple `npu` remains unavailable until a verified CoreML embedding artifact exists |
 | `amdIronArtifactDirectory` | Managed Phoenix Qwen artifact manifests and model-validation identity |
 | `amdIronCacheDirectory` | Managed content-addressed MLIR-AIE JIT cache |
 | `amdIronSourceDirectory` | Revision-verified MLIR-AIE source used for the whole-array BF16 matrix design |
@@ -252,7 +254,7 @@ The embedding endpoint exposes its decision directly:
 curl -s http://127.0.0.1:18742/health
 ```
 
-Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProvider`, `fallbackOccurred`, `resource_plan.backend`, the RAM/VRAM byte counts under `memory`, and the vendor availability fields under `runtime`. On an AMD GPU machine, a null `torch_hip_version` means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or set `"torchBackend": "rocm"` in `code-rag.json`. A ROCm plan that reports CPU together with a low `accelerator_free_bytes` value is an intentional memory-safety fallback. An AMD or Intel NPU plan must never report CPU; inspect the service error log and rerun the automatic installer if it does not start.
+Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProvider`, `fallbackOccurred`, `performance.vectorsPerSecond`, `resource_plan.backend`, the RAM/VRAM byte counts under `memory`, and the vendor availability fields under `runtime`. On an AMD GPU machine, a null `torch_hip_version` means a CPU/non-ROCm PyTorch build is installed; rerun `./reinstall.sh` after confirming `/dev/kfd` exists, or set `"torchBackend": "rocm"` in `code-rag.json`. An explicitly selected accelerator must never report CPU; inspect the service error log and rerun the installer if it does not start.
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 

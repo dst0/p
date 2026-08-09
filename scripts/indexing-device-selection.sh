@@ -45,10 +45,6 @@ initialize_indexing_device_selection() {
   local saved_device
   saved_device="$(read_indexing_config_value embeddingDevice)" || return 1
   [[ -z "$saved_device" ]] && return 0
-  if [[ "$saved_device" == "npu" && "$(uname -s)" == "Darwin" ]]; then
-    saved_device="mps"
-    write_indexing_config_value embeddingDevice "$saved_device" || return 1
-  fi
   if ! is_valid_indexing_device "$saved_device"; then
     echo "Invalid embeddingDevice in code-rag.json: $saved_device" >&2
     echo "Run with --select-indexing to replace it." >&2
@@ -93,7 +89,9 @@ prompt_indexing_device_and_batch_size_selection() {
   local choices=()
   local values=()
   detect_supported_indexing_devices
-  [[ -n "$INDEXING_NPU_UNSUPPORTED_REASON" ]] && echo "NPU unavailable: $INDEXING_NPU_UNSUPPORTED_REASON"
+  local npu_label="NPU"
+  [[ "$(uname -s)" == "Darwin" ]] && npu_label="NPU (Apple Neural Engine)"
+  [[ -n "$INDEXING_NPU_UNSUPPORTED_REASON" ]] && echo "$npu_label unavailable: $INDEXING_NPU_UNSUPPORTED_REASON"
   if [[ "$INDEXING_HAS_AMD_NPU" == true ]]; then
     if [[ "$INDEXING_AMD_NPU_FAMILY" == "phoenix" ]]; then
       choices+=("amd-phoenix-npu (recommended - automatic MLIR-AIE/IRON installation)")
@@ -108,7 +106,7 @@ prompt_indexing_device_and_batch_size_selection() {
     values+=("intel-openvino-npu")
   fi
   if [[ "$INDEXING_HAS_MPS" == true ]]; then
-    choices+=("mps (recommended - Apple Silicon Metal acceleration)")
+    choices+=("GPU (MPS) (recommended - Apple Silicon Metal acceleration)")
     values+=("mps")
   fi
   [[ "$INDEXING_HAS_AMD_GPU" == true ]] && choices+=("rocm (detected AMD GPU runtime)") && values+=("rocm")

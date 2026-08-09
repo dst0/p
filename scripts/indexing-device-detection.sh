@@ -13,7 +13,10 @@ detect_supported_indexing_devices() {
   local kernel_name="${P_INDEXING_TEST_UNAME_S:-$(uname -s)}"
   local architecture="${P_INDEXING_TEST_UNAME_M:-$(uname -m)}"
   if [[ "$kernel_name" == "Darwin" ]]; then
-    [[ "$architecture" == "arm64" ]] && INDEXING_HAS_MPS=true
+    if [[ "$architecture" == "arm64" ]]; then
+      INDEXING_HAS_MPS=true
+      INDEXING_NPU_UNSUPPORTED_REASON="No verified Qwen CoreML embedding artifact is installed; use GPU (MPS)."
+    fi
     return 0
   fi
   if [[ "$kernel_name" != "Linux" ]]; then
@@ -99,7 +102,8 @@ detect_supported_indexing_devices() {
 is_detected_indexing_device_supported() {
   case "$1" in
     auto|cpu|intel-openvino-cpu) return 0 ;;
-    mps|apple-mps|apple-ane) [[ "$INDEXING_HAS_MPS" == true ]] ;;
+    mps|apple-mps) [[ "$INDEXING_HAS_MPS" == true ]] ;;
+    apple-ane) return 1 ;;
     cuda|nvidia-cuda) [[ "$INDEXING_HAS_NVIDIA_GPU" == true ]] ;;
     rocm|amd-rocm) [[ "$INDEXING_HAS_AMD_GPU" == true ]] ;;
     npu)
@@ -116,7 +120,8 @@ is_detected_indexing_device_supported() {
 
 describe_unsupported_indexing_device() {
   case "$1" in
-    mps|apple-mps|apple-ane) echo "Apple MPS requires an Apple Silicon Mac." ;;
+    mps|apple-mps) echo "GPU (MPS) requires an Apple Silicon Mac." ;;
+    apple-ane) echo "${INDEXING_NPU_UNSUPPORTED_REASON:-No verified Apple Neural Engine embedding backend is available.}" ;;
     cuda|nvidia-cuda) echo "No usable NVIDIA GPU runtime was detected (/dev/nvidiactl is absent)." ;;
     rocm|amd-rocm) echo "No usable AMD GPU runtime was detected (/dev/kfd is absent)." ;;
     npu)

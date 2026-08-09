@@ -8,12 +8,17 @@ export function resolveIndexingDevicePlan(options = {}) {
 	const amdFamily = options.amdNpuFamily ?? "ryzenai";
 	const configuredDevice = options.requestedDevice ?? options.savedDevice;
 	if (platform === "darwin" && architecture === "arm64") {
-		const device = configuredDevice ?? "npu";
+		const device = configuredDevice ?? "mps";
+		if (["npu", "apple-ane"].includes(device)) {
+			throw new Error(
+				"Apple Neural Engine indexing is unavailable because no verified Qwen CoreML embedding artifact is installed; select GPU (MPS)",
+			);
+		}
 		return {
 			installAmdPhoenixIron: false,
 			installAmdRyzenAi: false,
 			installIntelOpenVino: false,
-			ragDevice: ["auto", "npu", "apple-ane"].includes(device) ? "mps" : device,
+			ragDevice: device === "auto" ? "mps" : device,
 		};
 	}
 	if (platform === "linux" && architecture === "x64") {
@@ -89,7 +94,7 @@ export function resolveFallbackDeviceChoices(options = {}) {
 	const excludedDevice = options.excludedDevice;
 	const choices = [];
 	if (platform === "darwin" && architecture === "arm64" && excludedDevice !== "mps") {
-		choices.push({ device: "mps", label: "Apple MPS GPU" });
+		choices.push({ device: "mps", label: "GPU (MPS) - Apple Silicon Metal" });
 	}
 	if (platform === "linux" && architecture === "x64") {
 		if (hasAmd && excludedDevice !== "rocm") choices.push({ device: "rocm", label: "AMD GPU (ROCm)" });

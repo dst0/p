@@ -10,10 +10,12 @@
 ### Added
 
 - Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
+- Measure real-model embedding throughput at startup and during indexing, and report the current backend's observed vectors per second in `/index`.
 
 ### Fixed
 
 - Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
+- Label Apple Metal acceleration as `GPU (MPS)`, expose unavailable Apple Neural Engine indexing explicitly instead of silently remapping it to MPS, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs caused by an undersized dynamic allocator limit.
 - Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 
 ## [0.4.158] - 2026-08-06

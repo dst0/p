@@ -33,6 +33,8 @@ from embedding_runtime_config import (
     config_path_from_arguments,
     load_embedding_runtime_config,
 )
+from embedding_benchmark import BENCHMARK_CORPUS
+from embedding_performance import EmbeddingPerformanceTracker
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
 _startup_runtime_config = load_embedding_runtime_config(
@@ -78,6 +80,8 @@ from embedding_npu_runtime import (
     vitisai_npu_available as _vitisai_npu_available,
 )
 
+MPS_MEMORY_FRACTION = 0.95
+
 
 def get_current_rss_mb() -> float:
     """Return the current process RSS memory in megabytes."""
@@ -118,17 +122,14 @@ class EmbeddingServer:
         self.fail_closed_backend = False
         self.fallback_occurred = False
         self.fallback_reason: str | None = None
+        self.performance = EmbeddingPerformanceTracker()
 
     def load(self):
         print(f"Loading model: {self.model_name}", flush=True)
         requested_device = self.runtime_config.device.lower()
         self.requested_backend = requested_device
+        self.fail_closed_backend = requested_device not in {"auto", "cpu", "intel-openvino-cpu"}
         preferred_backend, memory = self._select_preferred_backend(requested_device)
-        self.fail_closed_backend = preferred_backend in {
-            "amd-phoenix-npu",
-            "amd-ryzenai-npu",
-            "openvino",
-        }
         self.model_parameter_count = (
             self.runtime_config.model_parameter_count or self.model_parameter_count
         )
@@ -141,13 +142,13 @@ class EmbeddingServer:
                 f"System available: {_format_bytes(memory.system_available_bytes)}; "
                 f"accelerator free: {_format_optional_bytes(memory.accelerator_free_bytes)}"
             )
-        if self.fail_closed_backend and self.plan.backend != preferred_backend:
+        if self.fail_closed_backend and (self.fallback_occurred or self.plan.backend != preferred_backend):
             raise RuntimeError(
                 f"Requested {requested_device} backend selected {self.plan.backend}; "
                 f"refusing CPU fallback: {self.plan.reason or 'backend did not remain selected'}"
             )
         self._apply_cpu_threads(self.plan.cpu_threads)
-        self._configure_mps_limit(self.plan, memory)
+        self._configure_mps_limit(self.plan)
         try:
             self.model = self._load_model(self.plan)
         except Exception as error:
@@ -169,8 +170,7 @@ class EmbeddingServer:
             self._apply_cpu_threads(cpu_plan.cpu_threads)
             self.model = self._load_model(cpu_plan)
 
-        # Keep enough context for metadata-enriched code chunks while retaining a
-        # conservative default for CPU and unified-memory machines.
+        # Keep enriched chunks useful without wasting unified memory.
         tokenizer = getattr(self.model, "tokenizer", None)
         tokenizer_limit = getattr(tokenizer, "model_max_length", self.sequence_length)
         if isinstance(tokenizer_limit, int) and 0 < tokenizer_limit < 10_000_000:
@@ -182,7 +182,11 @@ class EmbeddingServer:
         if exact_parameter_count > 0:
             self.model_parameter_count = exact_parameter_count
         self._refresh_active_plan()
-        sample = self.encode(["probe"])
+        self.encode(BENCHMARK_CORPUS)
+        self.performance.reset(self.plan.backend)
+        sample = self.encode(BENCHMARK_CORPUS)
+        self.benchmark_performance = self.performance.snapshot()
+        self.performance.reset(self.plan.backend)
         self.dim = len(sample[0])
         print(
             "Model loaded. "
@@ -195,6 +199,8 @@ class EmbeddingServer:
         if self.model is None or self.plan is None:
             raise RuntimeError("model not loaded")
         self._refresh_active_plan()
+        performance_backend = self.plan.backend
+        performance_started_at = time.perf_counter()
         output: list[list[float]] = []
         offset = 0
         request_had_oom = False
@@ -245,6 +251,8 @@ class EmbeddingServer:
                 self.oom_batch_ceiling = None
                 self.successful_requests_since_oom = 0
 
+        if self.plan.backend == performance_backend:
+            self.performance.record(performance_backend, len(output), time.perf_counter() - performance_started_at)
         return output
 
     def health(self) -> dict:
@@ -279,6 +287,7 @@ class EmbeddingServer:
             "gpuAllowed": backend_health.get("gpuAllowed", selected_backend != "cpu"),
             "fallbackOccurred": fallback_occurred,
             "fallbackReason": fallback_reason,
+            "performance": getattr(self, "benchmark_performance", None) or self.performance.snapshot(),
             "resource_plan": plan,
             "memory": {
                 "system_total_bytes": memory.system_total_bytes,
@@ -350,16 +359,10 @@ class EmbeddingServer:
         if requested_device == "auto":
             return detected_backend or "cpu", memory
         if requested_device in {"apple-ane", "npu"} and sys.platform == "darwin":
-            if _mps_available():
-                warning = "verified Apple ANE model is unavailable; using mps for real Qwen embeddings"
-                self._record_warning(warning)
-                print(f"WARNING: {warning}", file=sys.stderr, flush=True)
-                return "mps", memory
-            warning = "verified Apple ANE model is unavailable and mps is unavailable; using CPU"
-            self._record_cpu_fallback(warning)
-            self._record_warning(warning)
-            print(f"WARNING: {warning}", file=sys.stderr, flush=True)
-            return "cpu", memory
+            raise RuntimeError(
+                "Apple Neural Engine indexing is unavailable because no verified "
+                "Qwen CoreML embedding artifact is installed; select mps for GPU (MPS)"
+            )
         linux_npu_devices = {
             "npu", "vitisai", "ryzenai", "amd-phoenix-npu", "amd-ryzenai-npu",
             "openvino", "openvino-npu", "intel-openvino-npu",
@@ -656,6 +659,8 @@ class EmbeddingServer:
         self.model.to(device="cpu", dtype=torch.float32)
         self._clear_accelerator_cache()
         self.plan = cpu_plan
+        self.performance.reset("cpu")
+        self.benchmark_performance = None
         self.oom_batch_ceiling = None
         self.successful_requests_since_oom = 0
         self._apply_cpu_threads(cpu_plan.cpu_threads)
@@ -689,16 +694,11 @@ class EmbeddingServer:
         except Exception as error:
             self._record_warning(f"unable to set PyTorch CPU threads: {_error_summary(error)}")
 
-    def _configure_mps_limit(self, plan: RuntimePlan, memory: MemorySnapshot):
+    def _configure_mps_limit(self, plan: RuntimePlan):
         if plan.backend != "mps" or not hasattr(torch.mps, "set_per_process_memory_fraction"):
             return
-        usable_fraction = (
-            (memory.system_available_bytes - plan.system_reserve_bytes) / memory.system_total_bytes
-            if memory.system_total_bytes > 0
-            else 0.5
-        )
         try:
-            torch.mps.set_per_process_memory_fraction(max(0.1, min(0.5, usable_fraction)))
+            torch.mps.set_per_process_memory_fraction(MPS_MEMORY_FRACTION)
         except Exception as error:
             self._record_warning(f"unable to set MPS memory fraction: {_error_summary(error)}")
 
