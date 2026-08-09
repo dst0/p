@@ -27,6 +27,8 @@ class AppleCoreMLBackend(ONNXBackend):
         cache = os.path.expanduser(
             f"~/.p/agent/indexing-service/onnx-cache/{spec.model_name.replace('/', '_')}"
         )
+        coreml_cache = os.path.join(cache, "coreml-neuralnetwork")
+        os.makedirs(coreml_cache, exist_ok=True)
         model_path = os.path.join(cache, "model.onnx")
         if not os.path.exists(model_path):
             bootstrap = ONNXBackend("onnx-cpu", strict=True)
@@ -35,7 +37,7 @@ class AppleCoreMLBackend(ONNXBackend):
         self.tokenizer = AutoTokenizer.from_pretrained(spec.model_name)
         options = ort.SessionOptions()
         options.enable_cpu_mem_arena = False
-        options.enable_mem_pattern = True
+        options.enable_mem_pattern = False
         options.intra_op_num_threads = 4
         self.session = ort.InferenceSession(
             model_path,
@@ -47,7 +49,8 @@ class AppleCoreMLBackend(ONNXBackend):
                         "MLComputeUnits": "CPUAndNeuralEngine",
                         "ModelFormat": "NeuralNetwork",
                         "RequireStaticInputShapes": "0",
-                        "EnableOnSubgraphs": "1",
+                        "EnableOnSubgraphs": "0",
+                        "ModelCacheDirectory": coreml_cache,
                     },
                 ),
                 "CPUExecutionProvider",

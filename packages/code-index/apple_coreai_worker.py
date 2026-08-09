@@ -23,6 +23,8 @@ from coreai.runtime import (
 )
 from transformers import AutoTokenizer
 
+from apple_coreai_windowing import iter_token_windows, pool_window_vectors
+
 
 MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
 HEAD_DIMENSION = 128
@@ -42,6 +44,7 @@ class AppleCoreAIWorker:
         self.model: Any = None
         self.model_package: Path | None = None
         self.residency_verified = False
+        self.windowed_input_count = 0
         self.rope_cos, self.rope_sin = self._make_rope()
         self.causal_mask = self._make_causal_mask()
 
@@ -111,14 +114,32 @@ class AppleCoreAIWorker:
             raise RuntimeError("Core AI worker is not initialized")
         tokens = self.tokenizer(
             [text],
-            max_length=self.sequence_length,
-            padding="max_length",
-            truncation=True,
+            padding=False,
+            truncation=False,
             return_tensors="np",
         )
-        length = int(tokens["attention_mask"].sum())
+        token_ids = tokens["input_ids"][0]
+        if len(token_ids) > self.sequence_length:
+            self.windowed_input_count += 1
+        windows = list(iter_token_windows(token_ids, self.sequence_length))
+        values = pool_window_vectors(
+            [await self._infer_window(window) for window in windows],
+            [len(window) for window in windows],
+            normalize,
+        )
+        return values.tolist()
+
+    async def _infer_window(self, token_ids: np.ndarray) -> np.ndarray:
+        if self.embedding_table is None or self.function is None:
+            raise RuntimeError("Core AI worker is not initialized")
+        padded = np.full(
+            (self.compiled_batch_size, self.sequence_length),
+            self.tokenizer.pad_token_id,
+            dtype=token_ids.dtype,
+        )
+        padded[0, : len(token_ids)] = token_ids
         token_embeddings = np.ascontiguousarray(
-            self.embedding_table[tokens["input_ids"]].astype(np.float16)
+            self.embedding_table[padded].astype(np.float16)
         )
         arrays = {
             "token_embeddings": token_embeddings.reshape(
@@ -134,10 +155,7 @@ class AppleCoreAIWorker:
         }
         output = await self.function(inputs)
         hidden = output["hidden_states"].numpy().astype(np.float32)
-        values = hidden[0, length - 1, 0, :]
-        if normalize:
-            values /= max(float(np.linalg.norm(values)), 1e-9)
-        return values.tolist()
+        return hidden[0, len(token_ids) - 1, 0, :]
 
     async def serve(self) -> None:
         await self.initialize()
@@ -152,20 +170,17 @@ class AppleCoreAIWorker:
                     response = self._health_response(request.get("id"))
                 elif request.get("action") == "encode":
                     texts = list(request.get("texts", []))
-                    if any(length > self.sequence_length for length in self._token_lengths(texts)):
-                        response = {
-                            "id": request.get("id"),
-                            "status": "unsupported_length",
-                            "maxSequenceLength": self.sequence_length,
-                        }
-                    else:
-                        response = {
-                            "id": request.get("id"),
-                            "status": "ok",
-                            "embeddings": await self._infer(
-                                texts, bool(request.get("normalize", True))
-                            ),
-                        }
+                    previous_windowed_count = self.windowed_input_count
+                    embeddings = await self._infer(
+                        texts, bool(request.get("normalize", True))
+                    )
+                    response = {
+                        "id": request.get("id"),
+                        "status": "ok",
+                        "embeddings": embeddings,
+                        "windowedInputCount": self.windowed_input_count
+                        - previous_windowed_count,
+                    }
                 else:
                     raise ValueError(f"Unknown worker action: {request.get('action')}")
             except Exception as error:
@@ -189,11 +204,9 @@ class AppleCoreAIWorker:
             "batchSize": self.request_batch_size,
             "compiledBatchSize": self.compiled_batch_size,
             "sequenceLength": self.sequence_length,
+            "longSequenceStrategy": "weighted mean of full-ANE windows",
+            "windowedInputCount": self.windowed_input_count,
         }
-
-    def _token_lengths(self, texts: list[str]) -> list[int]:
-        tokens = self.tokenizer(texts, padding=False, truncation=False)
-        return [len(token_ids) for token_ids in tokens["input_ids"]]
 
     def _make_rope(self) -> tuple[np.ndarray, np.ndarray]:
         theta = 1.0 / (

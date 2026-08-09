@@ -64,6 +64,21 @@ describe("index health formatting", () => {
     expect(legacy).toContain("NPU placement: hybrid ANE + CPU, no GPU activity");
   });
 
+  it("reports long Core AI inputs as windowed ANE execution", () => {
+    const text = formatIndexHealth({
+      selectedBackend: "apple-coreai-ane-windowed",
+      executionDevice: "NPU (Apple Neural Engine via Core AI)",
+      gpuAllowed: false,
+      npuRuntime: "Core AI",
+      npuPlacement: "full ANE windowed path",
+      npuFullyPlaced: true,
+      gpuActivity: false,
+    });
+
+    expect(text).toContain("Selected backend: NPU (Core AI ANE, windowed long inputs)");
+    expect(text).toContain("NPU placement: full ANE windowed path, verified, no GPU activity");
+  });
+
   it("reports fallback warnings when a performance sample has no timing details", () => {
     const text = formatIndexHealth({
       selectedBackend: "cuda",

@@ -735,10 +735,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             interactive = body.get("priority") == "interactive"
             with torch.inference_mode():
-                if interactive and hasattr(server.model, "encode_interactive"):
-                    embeddings = server.model.encode_interactive(texts, normalize)
-                else:
-                    embeddings = encode_lock.run(texts, lambda batch: server.encode(batch, normalize), interactive=interactive)
+                embeddings = encode_lock.run(
+                    texts, lambda batch: server.encode(batch, normalize), interactive=interactive
+                )
             self._json(200, {
                 "model": server.model_name,
                 "dim": server.dim,

@@ -30,6 +30,9 @@ export function formatIndexHealth(health: IndexHealth): string {
     if (normalized === "apple-coreai-ane") {
       return "NPU (Apple Neural Engine via Core AI)";
     }
+    if (normalized === "apple-coreai-ane-windowed") {
+      return "NPU (Core AI ANE, windowed long inputs)";
+    }
     if (normalized === "apple-coreai-ane+coreml") {
       return "NPU (Core AI ANE + CoreML EP hybrid)";
     }
