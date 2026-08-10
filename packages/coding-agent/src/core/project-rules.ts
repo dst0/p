@@ -1,6 +1,15 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { dirname, join, relative, resolve } from "node:path";
+import { precomputeRule, rulesConflict } from "./project-rule-conflict.ts";
+import {
+  classifySeverity,
+  isGuardrailCandidate,
+  normalizeRule,
+  severityScore,
+  sourceRank,
+  tokenize,
+} from "./project-rule-text-analysis.ts";
 
 const MAX_RULE_FILE_BYTES = 500_000;
 const LARGE_RULE_FILE_CHARS = 6000;
@@ -120,9 +129,10 @@ export function lintProjectRules(cwd: string): RuleLintResult {
   }
 
   const snippets = index.snippets;
+  const precomputedRules = snippets.map((snippet) => precomputeRule(snippet.text));
   for (let indexA = 0; indexA < snippets.length; indexA++) {
     for (let indexB = indexA + 1; indexB < snippets.length; indexB++) {
-      if (rulesConflict(snippets[indexA].text, snippets[indexB].text)) {
+      if (rulesConflict(precomputedRules[indexA], precomputedRules[indexB])) {
         issues.push({
           severity: "warning",
           code: "conflicting_rule",
@@ -258,75 +268,6 @@ function scoreSnippet(snippet: RuleSnippet, terms: string[]): number {
     if (text.includes(term)) score += 3;
   }
   return score;
-}
-
-function classifySeverity(text: string): RuleSeverity {
-  if (/\b(must|never|do not|don't|cannot|required|block|forbidden)\b/i.test(text)) return "critical";
-  if (/\b(should|ask|before|verify|test|run)\b/i.test(text)) return "warning";
-  return "info";
-}
-
-function severityScore(severity: RuleSeverity): number {
-  switch (severity) {
-    case "critical":
-      return 3;
-    case "warning":
-      return 2;
-    case "info":
-      return 1;
-  }
-}
-
-function sourceRank(source: RuleSource): number {
-  switch (source) {
-    case "pdev":
-      return 0;
-    case "nearest_agents":
-      return 1;
-    case "repo_agents":
-      return 2;
-    case "global":
-      return 3;
-    case "compatibility":
-      return 4;
-  }
-}
-
-function normalizeRule(text: string): string {
-  return text
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, " ")
-    .trim();
-}
-
-function isGuardrailCandidate(text: string): boolean {
-  const isDirective = /\b(never|do not|must|required|run|block|before)\b/i.test(text);
-  const hasExecutableSurface =
-    /\b(npm|pnpm|bun|node|cargo|go|git|commit|push|stage|checkout|reset|clean|stash|apply_patch|lockfile|generated|build|test|lint|typecheck|format|approval|approve|guardrail)\b/i.test(
-      text,
-    );
-  return isDirective && hasExecutableSurface;
-}
-
-function rulesConflict(a: string, b: string): boolean {
-  const normalizedA = normalizeRule(a);
-  const normalizedB = normalizeRule(b);
-  const aNever = /\b(never|do not|don't|cannot)\b/i.test(a);
-  const bNever = /\b(never|do not|don't|cannot)\b/i.test(b);
-  const aAlways = /\b(always|must|required)\b/i.test(a);
-  const bAlways = /\b(always|must|required)\b/i.test(b);
-  if (aNever === bNever || aAlways === bAlways) return false;
-  const termsA = new Set(tokenize(normalizedA).filter((term) => term.length > 3));
-  const overlap = tokenize(normalizedB).filter((term) => termsA.has(term)).length;
-  return overlap >= 3;
-}
-
-function tokenize(value: string): string[] {
-  return value
-    .toLowerCase()
-    .split(/[^a-z0-9_.:/-]+/i)
-    .map((term) => term.trim())
-    .filter((term) => term.length > 0);
 }
 
 function capText(text: string, maxTokens: number): string {

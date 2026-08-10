@@ -379,10 +379,6 @@
     "classes": 0,
     "lines": 685
   },
-  "packages/coding-agent/src/core/project-rules.ts": {
-    "classes": 0,
-    "lines": 344
-  },
   "packages/coding-agent/src/core/repo-map.ts": {
     "classes": 0,
     "lines": 438
