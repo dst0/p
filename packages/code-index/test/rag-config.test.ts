@@ -107,6 +107,7 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     expect(settings.amdIronArtifactDirectory).toBe("/managed/artifacts");
     expect(settings.amdNpuGeneration).toBe("npu1");
     expect(settings.maxEmbeddingBatchSize).toBe(12);
+    expect(settings.maxSequenceLength).toBe(512);
     expect(settings.torchBackend).toBe("cpu");
   });
 

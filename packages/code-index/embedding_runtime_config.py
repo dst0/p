@@ -4,6 +4,8 @@ import json
 import os
 from dataclasses import dataclass
 
+from embedding_mps_policy import MPS_DEFAULT_SEQUENCE_LENGTH
+
 
 @dataclass(frozen=True)
 class EmbeddingRuntimeConfig:
@@ -11,7 +13,7 @@ class EmbeddingRuntimeConfig:
     device: str = "auto"
     max_embedding_batch_size: int = 64
     max_cpu_threads: int = os.cpu_count() or 1
-    max_sequence_length: int = 2048
+    max_sequence_length: int = MPS_DEFAULT_SEQUENCE_LENGTH
     min_system_memory_reserve_bytes: int = 1024 * 1024 * 1024
     min_accelerator_memory_reserve_bytes: int = 512 * 1024 * 1024
     model_parameter_count: int | None = None
@@ -59,7 +61,7 @@ def load_embedding_runtime_config(config_path: str | None) -> EmbeddingRuntimeCo
         device=_string(raw, "embeddingDevice", "auto"),
         max_embedding_batch_size=_positive_int(raw, "maxEmbeddingBatchSize", 64),
         max_cpu_threads=_positive_int(raw, "maxCpuThreads", os.cpu_count() or 1),
-        max_sequence_length=_positive_int(raw, "maxSequenceLength", 2048),
+        max_sequence_length=_positive_int(raw, "maxSequenceLength", MPS_DEFAULT_SEQUENCE_LENGTH),
         min_system_memory_reserve_bytes=_positive_int(
             raw, "minSystemMemoryReserveBytes", 1024 * 1024 * 1024
         ),

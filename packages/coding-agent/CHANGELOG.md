@@ -32,6 +32,7 @@
 - Replace synthetic indexing percentages and zero totals with named scanning, preparing, embedding, and finalizing stages, real file/chunk counters, and ETA derived only from measured embedding progress.
 - Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
 - Label Apple Metal acceleration as `GPU (MPS)`, report Core AI versus legacy CoreML NPU placement explicitly, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs by retaining PyTorch's default allocator watermarks.
+- Prevent MPSGraph native-memory growth during indexing by using a stable 512-token padded input shape and BF16 Qwen3 weights while preserving explicit MPS fail-closed behavior.
 - Prioritize interactive semantic-search embeddings between background indexing batches, while serializing Core AI work through one bounded model graph so large repository rebuilds cannot starve live queries or duplicate model memory.
 - Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 

@@ -27,15 +27,11 @@ from dataclasses import replace
 from http.server import HTTPServer
 from socketserver import ThreadingMixIn
 
-from embedding_runtime_config import (
-    EmbeddingRuntimeConfig,
-    config_path_from_arguments,
-    load_embedding_runtime_config,
-)
+from embedding_runtime_config import EmbeddingRuntimeConfig, config_path_from_arguments, load_embedding_runtime_config
 from embedding_benchmark import BENCHMARK_CORPUS
 from embedding_performance import EmbeddingPerformanceTracker
-from embedding_http_handler import EmbeddingHttpHandler
-from embedding_http_handler import configure as configure_http_handler
+from embedding_http_handler import EmbeddingHttpHandler, configure as configure_http_handler
+from embedding_mps_policy import sentence_transformer_encode_options
 from embedding_priority_lock import EmbeddingPriorityLock
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -235,6 +231,7 @@ class EmbeddingServer:
                         normalize_embeddings=normalize,
                         batch_size=batch_size,
                         show_progress_bar=False,
+                        **sentence_transformer_encode_options(self.plan.backend, self.sequence_length),
                     )
                     embeddings = raw_vecs.tolist() if hasattr(raw_vecs, "tolist") else list(raw_vecs)
                 self._raise_if_cancelled(cancellation_check)
@@ -624,11 +621,11 @@ class EmbeddingServer:
                 self._record_warning(warning)
                 print(f"WARNING: {warning}", file=sys.stderr, flush=True)
                 target_device = "cpu"
-        dtype = torch.float32 if plan.dtype == "float32" else torch.float16
+        dtype = {"float32": torch.float32, "bfloat16": torch.bfloat16}.get(plan.dtype, torch.float16)
         return SentenceTransformer(
             self.model_name,
             device=target_device,
-            model_kwargs={"torch_dtype": dtype},
+            model_kwargs={"dtype": dtype},
         )
 
     def _refresh_active_plan(self):

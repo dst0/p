@@ -217,7 +217,7 @@
   },
   "packages/code-index/embedding_server.py": {
     "classes": 2,
-    "lines": 806
+    "lines": 803
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,

@@ -26,7 +26,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   torchBackend: "auto",
   maxEmbeddingBatchSize: 64,
   maxCpuThreads: os.cpus().length,
-  maxSequenceLength: 2048,
+  maxSequenceLength: 512,
   minSystemMemoryReserveBytes: 1024 * 1024 * 1024,
   minAcceleratorMemoryReserveBytes: 512 * 1024 * 1024,
   openvinoCacheDirectory: path.join(os.homedir(), ".p", "agent", "indexing-service", "openvino-cache"),

@@ -28,7 +28,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertEqual(plan.dtype, "float16")
         self.assertEqual(plan.batch_size, 64)
 
-    def test_uses_float32_for_mps_to_keep_qwen_layers_dtype_compatible(self):
+    def test_uses_bfloat16_for_mps_to_reduce_unified_memory(self):
         plan = build_runtime_plan(
             preferred_backend="mps",
             logical_cpu_count=12,
@@ -43,8 +43,8 @@ class ResourceManagerTest(unittest.TestCase):
 
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "mps")
-        self.assertEqual(plan.dtype, "float32")
-        self.assertEqual(plan.model_bytes, 2_400_000_000)
+        self.assertEqual(plan.dtype, "bfloat16")
+        self.assertEqual(plan.model_bytes, 1_200_000_000)
 
     def test_falls_back_to_parallel_cpu_when_vram_and_system_memory_are_low(self):
         plan = build_runtime_plan(

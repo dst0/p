@@ -24,6 +24,7 @@ fake_torch.backends = types.SimpleNamespace(mps=FakeAccelerator())
 fake_torch.cuda = FakeAccelerator()
 fake_torch.mps = FakeAccelerator()
 fake_torch.version = types.SimpleNamespace(cuda=None, hip=None)
+fake_torch.bfloat16 = "bfloat16"
 fake_torch.float16 = "float16"
 fake_torch.float32 = "float32"
 fake_torch.get_num_threads = lambda: 1
@@ -33,7 +34,6 @@ sys.modules["torch"] = fake_torch
 fake_sentence_transformers = types.ModuleType("sentence_transformers")
 fake_sentence_transformers.SentenceTransformer = object
 sys.modules["sentence_transformers"] = fake_sentence_transformers
-
 from embedding_server import EmbeddingServer
 from resource_manager import GIB, MemorySnapshot, RuntimePlan
 
@@ -136,17 +136,17 @@ class EmbeddingServerTest(unittest.TestCase):
 
         server._clear_accelerator_cache.assert_not_called()
 
-    def test_loads_mps_model_with_the_planned_float32_dtype(self):
+    def test_loads_mps_model_with_the_planned_bfloat16_dtype(self):
         server = EmbeddingServer("Qwen/Qwen3-Embedding-0.6B")
         plan = RuntimePlan(
             usable=True,
             preferred_backend="mps",
             backend="mps",
             device="mps",
-            dtype="float32",
+            dtype="bfloat16",
             batch_size=8,
             cpu_threads=4,
-            model_bytes=2_400_000_000,
+            model_bytes=1_200_000_000,
             system_reserve_bytes=GIB,
             accelerator_reserve_bytes=GIB,
             reason=None,
@@ -159,7 +159,7 @@ class EmbeddingServerTest(unittest.TestCase):
         transformer.assert_called_once_with(
             "Qwen/Qwen3-Embedding-0.6B",
             device="mps",
-            model_kwargs={"torch_dtype": fake_torch.float32},
+            model_kwargs={"dtype": fake_torch.bfloat16},
         )
         self.assertEqual(server.warnings, [])
 
