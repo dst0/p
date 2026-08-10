@@ -20,7 +20,3 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
-
-## 2026-07-25 - Pre-calculate string normalization in heavy O(N^2) conflict detection loops
-**Learning:** Checking for string rule conflicts within an O(N^2) nested loop performs massive redundant work if string normalizations, regex checks, and token Set allocations are executed dynamically per comparison. In the context of `lintProjectRules`, this naive approach increases the loop processing time dramatically. Precomputing normalizations, boolean regex flags, and sets of terms beforehand reduces the comparison step to a fast O(1) loop iteration, yielding massive speedups (e.g., ~700ms down to ~15ms on large datasets).
-**Action:** When comparing combinations of items inside an N*M or N^2 loop, always separate the feature extraction / string normalization logic into a linear O(N) map process occurring before the inner loop.
