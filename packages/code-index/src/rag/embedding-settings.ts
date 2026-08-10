@@ -18,6 +18,17 @@ export type EmbeddingDevice =
   | "intel-openvino-cpu"
   | "intel-openvino-npu";
 
+export const DEFAULT_MAX_SEQUENCE_LENGTH = 2048;
+export const APPLE_ACCELERATOR_MAX_SEQUENCE_LENGTH = 512;
+
+export function defaultMaxSequenceLength(device: EmbeddingDevice, platform: string): number {
+  const appleAccelerator = device === "mps" || device === "apple-mps" || device === "apple-ane";
+  const automaticAppleAccelerator = platform === "darwin" && (device === "auto" || device === "npu");
+  return appleAccelerator || automaticAppleAccelerator
+    ? APPLE_ACCELERATOR_MAX_SEQUENCE_LENGTH
+    : DEFAULT_MAX_SEQUENCE_LENGTH;
+}
+
 export interface EmbeddingRuntimeSettings {
   embeddingServerUrl: string;
   embeddingModel: string;
