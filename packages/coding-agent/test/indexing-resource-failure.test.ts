@@ -179,6 +179,85 @@ describe("indexing resource failure lifecycle", () => {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("schedules retries for non-resource errors without blocking automatic updates", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-network-err-"));
+    const agentDir = path.join(root, "agent");
+    const repository = path.join(root, "repository");
+    fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+    enableIndexingForRepo(repository, agentDir);
+
+    let refreshAttempts = 0;
+    const mockService: CodeRagService = {
+      initialize: async () => ({
+        state: "ready",
+        workspaceRoot: repository,
+        repoId: "r1",
+        indexedFiles: 1,
+        indexedChunks: 1,
+        sparse: { exact: true, driftFileCount: 0 },
+      }),
+      status: async () => ({
+        state: "ready",
+        workspaceRoot: repository,
+        repoId: "r1",
+        indexedFiles: 1,
+        indexedChunks: 1,
+        sparse: { exact: true, driftFileCount: 0 },
+      }),
+      search: async (i) => ({
+        query: i.query,
+        workspaceRoot: repository,
+        status: {
+          state: "ready",
+          workspaceRoot: repository,
+          repoId: "r1",
+          indexedFiles: 1,
+          indexedChunks: 1,
+          sparse: { exact: true, driftFileCount: 0 },
+        },
+        results: [],
+        diagnostics: { durationMs: 0, truncated: false },
+      }),
+      refresh: async () => {
+        refreshAttempts += 1;
+        throw new Error("Temporary network timeout");
+      },
+      rebuild: async () => {
+        throw new Error("Temporary network timeout");
+      },
+      dispose: async () => {},
+    };
+
+    const daemon = new IndexingDaemon({
+      agentDir,
+      qdrantBinary: "unused",
+      qdrantDataDirectory: path.join(agentDir, "qdrant"),
+      pythonExecutable: "unused",
+      embeddingModel: "unused",
+      debounceMs: 10,
+      retryMs: 50,
+      reconcileMs: 60_000,
+      serviceFactory: () => mockService,
+      ensureBackends: async () => {},
+      releaseEmbeddingDevice: async () => {},
+      disposeBackends: async () => {},
+    });
+
+    try {
+      await daemon.start();
+      await waitFor(() => refreshAttempts >= 1);
+      const runtime = daemon.runtimes.get(fs.realpathSync(repository));
+      await waitFor(() => runtime?.state === "error");
+
+      expect(runtime?.resourceBlocked).toBe(false);
+      expect(runtime?.consecutiveResourceFailureCount).toBe(0);
+      expect(runtime?.retryTimer).toBeDefined();
+    } finally {
+      await daemon.stop();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
 
 async function waitFor(predicate: () => boolean, timeoutMs: number = 2_000): Promise<void> {

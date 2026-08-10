@@ -149,6 +149,13 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
         workspaceRoot: dir,
+        settings: { mpsPrecision: "invalid" as "bfloat16" },
+      }),
+    ).toThrow("mpsPrecision is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
         settings: { searchMode: "invalid" as "hybrid" },
       }),
     ).toThrow("searchMode is unsupported");
@@ -265,16 +272,10 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
   it("validates remote URLs when remoteBackendsAllowed is false", () => {
     const dir = createTempDir();
 
-    // Invalid URL string
     expect(() =>
-      loadWorkspaceCodeRagSettings({
-        dataDirectory: dir,
-        workspaceRoot: dir,
-        settings: { qdrantUrl: "invalid-url" },
-      }),
+      loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir, settings: { qdrantUrl: "invalid-url" } }),
     ).toThrow("must be a valid absolute URL");
 
-    // Remote non-local URL when remoteBackendsAllowed = false
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -283,7 +284,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       }),
     ).toThrow("must be local unless remoteBackendsAllowed");
 
-    // Non-http protocol
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,

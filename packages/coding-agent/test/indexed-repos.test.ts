@@ -174,4 +174,50 @@ describe("indexed repository decisions", () => {
 
     expect(findIndexWorkspaceRoot(nested)).toBe(fs.realpathSync(nested));
   });
+
+  it("rejects non-object or array JSON data structures in registry file", () => {
+    const { agentDir } = createFixture();
+    const registryPath = getIndexedReposPath(agentDir);
+    fs.mkdirSync(agentDir, { recursive: true });
+
+    fs.writeFileSync(registryPath, JSON.stringify([1, 2, 3]));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+
+    fs.writeFileSync(registryPath, JSON.stringify("not an object"));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+  });
+
+  it("handles unindexed or disabled repos gracefully across all request helpers", () => {
+    const { agentDir, repo } = createFixture();
+    expect(requestIndexingBackendForRepo(repo, agentDir)).toBeUndefined();
+    expect(prioritizeIndexingForRepo(repo, agentDir)).toBeUndefined();
+    expect(recordIndexingResourceFailureForRepo(repo, "OOM", agentDir)).toBeUndefined();
+
+    disableIndexingForRepo(repo, agentDir);
+    expect(requestIndexingBackendForRepo(repo, agentDir)).toBeUndefined();
+    expect(prioritizeIndexingForRepo(repo, agentDir)).toBeUndefined();
+    expect(recordIndexingResourceFailureForRepo(repo, "OOM", agentDir)).toBeUndefined();
+    expect(acknowledgeIndexingPriorityForRepo(repo, "any-id", agentDir)).toBe(false);
+    expect(acknowledgeIndexingBackendWakeForRepo(repo, "any-id", agentDir)).toBe(false);
+  });
+
+  it("rejects malformed priorityRequest or backendWakeRequest in registry json", () => {
+    const { agentDir, repo } = createFixture();
+    enableIndexingForRepo(repo, agentDir);
+    const registryPath = getIndexedReposPath(agentDir);
+
+    const stored1 = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+      repos: Array<{ priorityRequest?: unknown }>;
+    };
+    stored1.repos[0]!.priorityRequest = { id: 123 }; // id not string
+    fs.writeFileSync(registryPath, `${JSON.stringify(stored1, undefined, 2)}\n`);
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+
+    const stored2 = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+      repos: Array<{ backendWakeRequest?: unknown }>;
+    };
+    stored2.repos[0]!.backendWakeRequest = { id: "req-1", requestedAt: 123 }; // requestedAt not string
+    fs.writeFileSync(registryPath, `${JSON.stringify(stored2, undefined, 2)}\n`);
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+  });
 });

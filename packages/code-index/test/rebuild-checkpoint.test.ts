@@ -172,4 +172,64 @@ describe("resumable full rebuild", () => {
     expect(vectorStore.deletedCollections).toContain(partialCollection);
     expect(resumedEmbedding.encodedTexts).toHaveLength(4);
   });
+
+  it("handles corrupted checkpoint and plan JSON files gracefully", async () => {
+    const { root, data } = createFixture();
+    const vectorStore = new FakeVectorStore();
+    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    await interruptAfterTwoChunks(initialService);
+
+    const repoDir = join(data, initialService.repoId);
+    const checkpointPath = join(repoDir, "rebuild-checkpoint.json");
+    const planPath = join(repoDir, "rebuild-plan.json");
+
+    // Corrupt checkpoint JSON
+    writeFileSync(checkpointPath, "{ invalid json");
+    const resumedService1 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    const summary1 = await resumedService1.rebuild();
+    expect(summary1.fullRebuild).toBe(true);
+
+    // Corrupt plan JSON
+    await interruptAfterTwoChunks(createService(root, data, new RecordingEmbeddingProvider(), vectorStore));
+    writeFileSync(planPath, "{ invalid json");
+    const resumedService2 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    const summary2 = await resumedService2.rebuild();
+    expect(summary2.fullRebuild).toBe(true);
+
+    // Mismatched generation in plan
+    await interruptAfterTwoChunks(createService(root, data, new RecordingEmbeddingProvider(), vectorStore));
+    writeFileSync(planPath, JSON.stringify({ schemaVersion: 3, generation: "wrong-generation", files: {} }));
+    const resumedService3 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    const summary3 = await resumedService3.rebuild();
+    expect(summary3.fullRebuild).toBe(true);
+  });
+
+  it("invalidates checkpoint when collection is deleted or points/dimensions mismatch", async () => {
+    const { root, data } = createFixture();
+    const vectorStore = new FakeVectorStore();
+    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    await interruptAfterTwoChunks(initialService);
+
+    const partialCollection = vectorStore.createdCollections[0]!;
+    await vectorStore.deleteCollection(partialCollection);
+
+    const resumedService1 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    const summary1 = await resumedService1.rebuild();
+    expect(summary1.fullRebuild).toBe(true);
+  });
+
+  it("invalidates checkpoint when vocabulary doc count mismatches checkpoint chunkCount", async () => {
+    const { root, data } = createFixture();
+    const vectorStore = new FakeVectorStore();
+    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    await interruptAfterTwoChunks(initialService);
+
+    const repoDir = join(data, initialService.repoId);
+    const vocabPath = join(repoDir, "rebuild-vocab.json");
+    writeFileSync(vocabPath, JSON.stringify({ totalDocs: 999, df: {} }));
+
+    const resumedService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    const summary = await resumedService.rebuild();
+    expect(summary.fullRebuild).toBe(true);
+  });
 });

@@ -44,6 +44,7 @@
 - When a feature, fix, or improvement is finished, run the version bump before pushing changes. Run `node scripts/version-bump.js patch` to bump all workspace packages and root `package.json`. Do this before running `./reinstall.sh` so the installed CLI reports the correct version.
 - Include the version bump in the same commit as the changes.
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
+- Never use `/* v8 ignore */` or coverage comments to bypass coverage gates for reachable code. Write explicit unit tests to exercise all reachable branches and error paths properly; if code is truly unreachable, remove it instead of suppressing coverage.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 - Before pushing code changes, run the touched focused tests, `npm run test:unit` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
