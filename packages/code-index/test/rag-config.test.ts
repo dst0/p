@@ -108,8 +108,25 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     expect(settings.amdNpuGeneration).toBe("npu1");
     expect(settings.maxEmbeddingBatchSize).toBe(12);
     expect(settings.mpsPrecision).toBe("bfloat16");
-    expect(settings.maxSequenceLength).toBe(512);
+    expect(settings.maxSequenceLength).toBe(2048);
     expect(settings.torchBackend).toBe("cpu");
+  });
+
+  it("bounds the sequence default only for Apple accelerators", () => {
+    const dir = createTempDir();
+    const mps = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      settings: { embeddingDevice: "mps", maxSequenceLength: 1024 },
+    });
+    const cuda = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      settings: { embeddingDevice: "cuda" },
+    });
+
+    expect(mps.maxSequenceLength).toBe(512);
+    expect(cuda.maxSequenceLength).toBe(2048);
   });
 
   it("rejects unsupported embedding runtime settings", () => {
