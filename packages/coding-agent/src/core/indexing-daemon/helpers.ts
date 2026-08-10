@@ -4,11 +4,13 @@ import path from "node:path";
 import type { RagStatus } from "@dst0/p-code-index";
 import {
   DAEMON_LOCK_INITIALIZATION_GRACE_MS,
-  IGNORED_WATCH_PATH_SEGMENTS,
   MANUAL_PRIORITY_OFFSET,
   RESOURCE_BACKOFF_INTERVALS_SECONDS,
 } from "./constants.ts";
 import type { DaemonLock, RepositoryRuntime } from "./types.ts";
+
+const IGNORED_WATCH_PATH_PATTERN =
+  /(?:^|[\\/])(?:\.git|\.hg|\.p|\.svn|\.venv|build|coverage|dist|node_modules|storage|target)(?:[\\/]|$)/;
 
 export function getResourceBackoffMs(consecutiveFailureCount: number): number {
   const index = Math.min(Math.max(consecutiveFailureCount - 1, 0), RESOURCE_BACKOFF_INTERVALS_SECONDS.length - 1);
@@ -56,10 +58,7 @@ export function canonicalizePath(value: string): string {
 }
 
 export function isIgnoredWatchPath(filename: string): boolean {
-  return filename
-    .replaceAll("\\", "/")
-    .split("/")
-    .some((segment) => IGNORED_WATCH_PATH_SEGMENTS.has(segment));
+  return IGNORED_WATCH_PATH_PATTERN.test(filename);
 }
 
 export function safeErrorMessage(error: unknown): string {
