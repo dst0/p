@@ -5,7 +5,6 @@ import {
   mergeStructuredSessionState,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
   type StatePatch,
-  writeSessionStateFile,
 } from "../../compaction/index.ts";
 import type { ToolDefinition } from "../../extensions/index.ts";
 import type { AgentSession } from "../agentsession.ts";
@@ -50,7 +49,6 @@ export function do__applyMarkSessionProgress(
   };
   const state = mergeStructuredSessionState(previous, patch);
   self.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
-  writeSessionStateFile(self._cwd, state);
   return {
     status: "updated",
     task,

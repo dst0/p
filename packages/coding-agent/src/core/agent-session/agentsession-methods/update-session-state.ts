@@ -3,10 +3,8 @@ import {
   createLiveStructuredSessionState,
   type EvidencePointer,
   getLatestStructuredSessionState,
-  readSessionStateFile,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
   type TouchedFile,
-  writeSessionStateFile,
 } from "../../compaction/index.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { isInternalCompletionProtocolRepairMessage, reconcilePlanItemsForSuccessFinish } from "../message-utils.ts";
@@ -58,9 +56,7 @@ export function do__autoExecuteUpdateSessionState(self: AgentSession): void {
 
 export function do__reconcileSuccessfulFinishWorkState(self: AgentSession): void {
   const branchEntries = self.sessionManager.getBranch();
-  const state =
-    getLatestStructuredSessionState(branchEntries) ??
-    readSessionStateFile(self._cwd, self.sessionManager.getSessionId());
+  const state = getLatestStructuredSessionState(branchEntries);
   if (!state) {
     return;
   }
@@ -69,5 +65,4 @@ export function do__reconcileSuccessfulFinishWorkState(self: AgentSession): void
     return;
   }
   self.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, reconciled);
-  writeSessionStateFile(self._cwd, reconciled);
 }

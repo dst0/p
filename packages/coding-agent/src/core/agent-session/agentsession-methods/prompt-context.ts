@@ -37,7 +37,16 @@ export function do__createRuntimeContextPrompts(
   const memoryPrompt = self._createProjectMemoryPrompt(query);
   const rulesPrompt = createRulesContext(self._cwd, query);
   const repoMapPrompt = createRepoMapContext(self._cwd, query)?.content;
-  const subagentDigestPrompt = createSubagentDigestContext(self._cwd, query);
+  const branchEntryIds = new Set(branchEntries.map((e) => e.id));
+  const subagentStorageTarget = {
+    sessionDir: self.sessionManager.getSessionDir(),
+    sessionId: self.sessionManager.getSessionId(),
+    isPersisted: self.sessionManager.isPersisted(),
+  };
+  const subagentDigestPrompt = createSubagentDigestContext(subagentStorageTarget, query, {
+    sessionId: self.sessionManager.getSessionId(),
+    validEntryIds: branchEntryIds,
+  });
   const subagentProfilesPrompt = createSubagentProfilesPrompt();
   // NOTE: volatile per-turn context is NOT included in the system prompt.
   // It is persisted as hidden custom messages next to the user message that

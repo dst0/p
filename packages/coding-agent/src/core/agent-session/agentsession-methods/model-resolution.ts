@@ -9,7 +9,6 @@ export async function do__runAgentPrompt(self: AgentSession, messages: AgentMess
     }
   } finally {
     self._flushPendingBashMessages();
-    self._syncProjectMemory();
   }
 }
 

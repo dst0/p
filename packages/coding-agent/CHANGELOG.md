@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- Isolate structured session state and subagent artifacts to each session and branch, keep project memory explicitly promoted, canonicalize project-scoped storage, and move the repo map to `.pdev/cache`.
 - Preserve every submitted slash command in prompt history so Up arrow can recall built-in, argument-bearing, hidden, and extension commands alongside normal and multiline prompts.
 - Keep the Python embedding server alive while repository indexing is active or queued, and start its idle timeout only after the queue drains.
 - Include split indexing-daemon runtime modules in the indexing version so reinstalls cannot leave an older daemon running after daemon-only fixes.

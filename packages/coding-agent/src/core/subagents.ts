@@ -1,15 +1,13 @@
+import { randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import type { AgentMessage } from "@dst0/p-agent-core";
-
-const SUBAGENT_DIGESTS_FILE = ".pdev/sessions/subagent-digests.jsonl";
-const SUBAGENT_TRANSCRIPTS_DIR = ".pdev/sessions/subagents";
 
 export type SubagentName = "explore" | "scout" | "review" | "compact";
 export type SubagentMode = "subagent" | "system";
 export type SubagentPermission = "allow" | "deny" | "ask";
 
-/** Mapping from permission key to base tool names allowed by that permission */
 const PERMISSION_TO_TOOL: Record<string, string[]> = {
   read: ["read"],
   grep: ["rg", "grep"],
@@ -21,7 +19,6 @@ const PERMISSION_TO_TOOL: Record<string, string[]> = {
   test: [],
 };
 
-/** Maximum number of turns for a subagent run */
 export const SUBAGENT_MAX_TURNS = 8;
 
 export interface SubagentProfile {
@@ -49,32 +46,59 @@ export interface SubagentDigest {
   evidencePointers: string[];
   transcriptPath?: string;
   createdAt: string;
+  sessionId: string;
+  parentEntryId: string | null;
+}
+
+export interface SubagentStorageTarget {
+  sessionDir: string;
+  sessionId: string;
+  isPersisted: boolean;
+}
+
+export interface DigestFilter {
+  sessionId: string;
+  validEntryIds: ReadonlySet<string> | readonly string[];
+}
+
+function validateTarget(target: SubagentStorageTarget): void {
+  if (!target || typeof target !== "object" || typeof target.sessionId !== "string" || !target.sessionId.trim()) {
+    throw new Error("Invalid target or sessionId");
+  }
+}
+
+export function getSubagentStorageDir(target: SubagentStorageTarget): string {
+  validateTarget(target);
+  if (target.isPersisted && target.sessionDir) {
+    return join(target.sessionDir, "artifacts", target.sessionId, "subagents");
+  }
+  return join(tmpdir(), "p-subagents", target.sessionId);
 }
 
 export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
   {
     name: "explore",
     mode: "subagent",
-    description: "Read-only codebase exploration. Parent context receives only a digest.",
+    description: "Read-only exploration.",
     permissions: { read: "allow", grep: "allow", list: "allow", edit: "deny", bash: "deny" },
   },
   {
     name: "scout",
     mode: "subagent",
-    description: "Read-only external or dependency research. Parent context receives only a digest.",
+    description: "Read-only external research.",
     permissions: { web: "allow", read: "allow", edit: "deny", bash: "deny" },
   },
   {
     name: "review",
     mode: "subagent",
-    description: "Read-only diff and test-risk review. Parent context receives only findings.",
+    description: "Read-only diff/test review.",
     permissions: { diff: "allow", test: "ask", read: "allow", edit: "deny" },
   },
   {
     name: "compact",
     mode: "system",
     hidden: true,
-    description: "Hidden compaction worker. Produces structured state and audit output only.",
+    description: "Compaction worker.",
     permissions: { read: "allow", edit: "deny", bash: "deny" },
   },
 ];
@@ -82,7 +106,7 @@ export const BUILTIN_SUBAGENT_PROFILES: readonly SubagentProfile[] = [
 export function createSubagentProfilesPrompt(): string {
   return [
     "<subagent_profiles>",
-    "Use subagents for noisy exploration. Do not paste raw subagent transcripts into parent context; store and cite digests.",
+    "Use subagents for noisy exploration. Cite digests, do not paste transcripts.",
     ...BUILTIN_SUBAGENT_PROFILES.filter((profile) => !profile.hidden).map(
       (profile) => `- ${profile.name}: ${profile.description} permissions=${JSON.stringify(profile.permissions)}`,
     ),
@@ -90,21 +114,45 @@ export function createSubagentProfilesPrompt(): string {
   ].join("\n");
 }
 
-export function persistSubagentDigest(cwd: string, digest: Omit<SubagentDigest, "id" | "createdAt">): SubagentDigest {
+export function persistSubagentDigest(
+  target: SubagentStorageTarget,
+  digest: Omit<SubagentDigest, "id" | "createdAt"> & { id?: string },
+): SubagentDigest {
+  validateTarget(target);
+  if (digest.sessionId !== target.sessionId) {
+    throw new Error("Digest sessionId must match target sessionId");
+  }
+  if (digest.parentEntryId !== null && (typeof digest.parentEntryId !== "string" || !digest.parentEntryId.trim())) {
+    throw new Error("Digest parentEntryId must be null or string");
+  }
   const full: SubagentDigest = {
-    ...digest,
-    id: `subagent:${digest.profile}:${Date.now().toString(36)}`,
+    profile: digest.profile,
+    query: digest.query,
+    summary: digest.summary,
+    evidencePointers: digest.evidencePointers,
+    transcriptPath: digest.transcriptPath,
+    id: digest.id ?? `subagent:${digest.profile}:${randomUUID()}`,
     createdAt: new Date().toISOString(),
+    sessionId: digest.sessionId,
+    parentEntryId: digest.parentEntryId,
   };
-  const path = join(cwd, SUBAGENT_DIGESTS_FILE);
+  const storageDir = getSubagentStorageDir(target);
+  const path = join(storageDir, "subagent-digests.jsonl");
   mkdirSync(dirname(path), { recursive: true });
   appendFileSync(path, `${JSON.stringify(full)}\n`);
   return full;
 }
 
-export function readSubagentDigests(cwd: string): SubagentDigest[] {
-  const path = join(cwd, SUBAGENT_DIGESTS_FILE);
+export function readSubagentDigests(target: SubagentStorageTarget, filter: DigestFilter): SubagentDigest[] {
+  validateTarget(target);
+  if (!filter || filter.sessionId !== target.sessionId || !filter.validEntryIds) {
+    throw new Error("Invalid filter configuration");
+  }
+  const validSet = filter.validEntryIds instanceof Set ? filter.validEntryIds : new Set(filter.validEntryIds);
+  const storageDir = getSubagentStorageDir(target);
+  const path = join(storageDir, "subagent-digests.jsonl");
   if (!existsSync(path)) return [];
+
   return readFileSync(path, "utf8")
     .split("\n")
     .map((line) => line.trim())
@@ -112,27 +160,34 @@ export function readSubagentDigests(cwd: string): SubagentDigest[] {
     .flatMap((line) => {
       try {
         const parsed = JSON.parse(line) as unknown;
-        return isSubagentDigest(parsed) ? [parsed] : [];
+        if (!isSubagentDigest(parsed) || parsed.sessionId !== filter.sessionId) return [];
+        if (parsed.parentEntryId !== null && !validSet.has(parsed.parentEntryId)) return [];
+        return [parsed];
       } catch {
         return [];
       }
     });
 }
 
-export function persistSubagentTranscript(cwd: string, id: string, messages: AgentMessage[]): string {
+export function persistSubagentTranscript(target: SubagentStorageTarget, id: string, messages: AgentMessage[]): string {
+  validateTarget(target);
   const safeId = id.replace(/[^A-Za-z0-9_.:-]+/g, "_");
-  const relativePath = join(SUBAGENT_TRANSCRIPTS_DIR, `${safeId}.jsonl`);
-  const path = join(cwd, relativePath);
+  const storageDir = getSubagentStorageDir(target);
+  const path = join(storageDir, `${safeId}.jsonl`);
   mkdirSync(dirname(path), { recursive: true });
   const body = messages.map((message) => JSON.stringify({ type: "message", message })).join("\n");
   appendFileSync(path, body.length > 0 ? `${body}\n` : "");
-  return relativePath;
+  return path;
 }
 
-export function createSubagentDigestContext(cwd: string, query: string): string | undefined {
+export function createSubagentDigestContext(
+  target: SubagentStorageTarget,
+  query: string,
+  filter: DigestFilter,
+): string | undefined {
   const terms = tokenize(query);
   if (terms.length === 0) return undefined;
-  const digests = readSubagentDigests(cwd)
+  const digests = readSubagentDigests(target, filter)
     .map((digest) => ({ digest, score: scoreDigest(digest, terms) }))
     .filter((item) => item.score > 0)
     .sort((a, b) => b.score - a.score)
@@ -165,14 +220,13 @@ function tokenize(value: string): string[] {
     .filter((term) => term.length > 0);
 }
 
-/** Get the set of allowed tool names for a subagent profile */
 export function getSubagentAllowedTools(profile: SubagentName): Set<string> {
   const subagentProfile = BUILTIN_SUBAGENT_PROFILES.find((p) => p.name === profile);
   if (!subagentProfile) return new Set();
 
   const allowed = new Set<string>();
   for (const [perm, tools] of Object.entries(subagentProfile.permissions)) {
-    if (perm === "web" || perm === "diff" || perm === "test") continue; // no base tool mapping
+    if (perm === "web" || perm === "diff" || perm === "test") continue;
     if (tools === undefined) continue;
     if (
       perm in subagentProfile.permissions &&
@@ -187,11 +241,8 @@ export function getSubagentAllowedTools(profile: SubagentName): Set<string> {
   return allowed;
 }
 
-/** Subagent input parameters */
 export interface RunSubagentInput {
-  /** Profile name: explore, scout, review */
   profile: SubagentName;
-  /** Task description for the subagent */
   task: string;
 }
 
@@ -206,12 +257,18 @@ export interface RunSubagentResult {
 
 function isSubagentDigest(value: unknown): value is SubagentDigest {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const record = value as Record<string, unknown>;
+  const r = value as Record<string, unknown>;
+  const isStr = (s: unknown) => typeof s === "string" && s.trim().length > 0;
   return (
-    typeof record.id === "string" &&
-    typeof record.profile === "string" &&
-    typeof record.query === "string" &&
-    typeof record.summary === "string" &&
-    Array.isArray(record.evidencePointers)
+    isStr(r.id) &&
+    isStr(r.profile) &&
+    typeof r.query === "string" &&
+    typeof r.summary === "string" &&
+    Array.isArray(r.evidencePointers) &&
+    r.evidencePointers.every(isStr) &&
+    (r.transcriptPath === undefined || isStr(r.transcriptPath)) &&
+    isStr(r.sessionId) &&
+    (r.parentEntryId === null || isStr(r.parentEntryId)) &&
+    isStr(r.createdAt)
   );
 }

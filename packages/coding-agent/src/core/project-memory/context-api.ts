@@ -1,14 +1,10 @@
-import { appendFileSync, existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import { join, relative } from "node:path";
-import { PROJECT_MEMORY_DIR, PROJECT_MEMORY_STATE_FILE } from "./constants.ts";
-import {
-  listMemoryFiles,
-  readProjectMemorySnapshot,
-  scoreText,
-  searchProjectMemory,
-  tokenize,
-} from "./diff-formatting.ts";
-import { capText, initProjectMemory } from "./snapshot.ts";
+import { findWorkspaceRoot } from "../workspace-root.ts";
+import { PROJECT_MEMORY_DIR } from "./constants.ts";
+import { capText, initProjectMemory } from "./init.ts";
+import { atomicWriteFileSync } from "./migration.ts";
+import { listMemoryFiles, searchProjectMemory } from "./search.ts";
 import type { ProjectMemoryContextResult, ProjectMemoryForgetResult, ProjectMemoryPinResult } from "./types.ts";
 
 export function createProjectMemoryContext(
@@ -17,22 +13,12 @@ export function createProjectMemoryContext(
   maxTokens = 800,
 ): ProjectMemoryContextResult | undefined {
   const search = searchProjectMemory(cwd, query);
-  const snapshot = readProjectMemorySnapshot(cwd);
-  const terms = tokenize(query);
-  const lines: string[] = [];
-  const checkpointRelevant =
-    snapshot?.checkpoint && (search.hits.length > 0 || terms.length === 0 || scoreText(snapshot.checkpoint, terms) > 0);
-  if (checkpointRelevant) {
-    lines.push("Current project/session checkpoint:");
-    lines.push(capText(snapshot.checkpoint, Math.min(maxTokens, 500)));
+  if (search.hits.length === 0) return undefined;
+
+  const lines: string[] = ["Relevant project memory snippets:"];
+  for (const hit of search.hits.slice(0, 5)) {
+    lines.push(`- ${hit.path}:${hit.line}: ${hit.excerpt}`);
   }
-  if (search.hits.length > 0) {
-    lines.push("Relevant project memory snippets:");
-    for (const hit of search.hits.slice(0, 5)) {
-      lines.push(`- ${hit.path}:${hit.line}: ${hit.excerpt}`);
-    }
-  }
-  if (lines.length === 0) return undefined;
 
   return {
     query,
@@ -50,24 +36,26 @@ export function createProjectMemoryContext(
 }
 
 export function pinProjectMemory(cwd: string, text: string): ProjectMemoryPinResult {
-  initProjectMemory(cwd);
+  const projectRoot = findWorkspaceRoot(cwd);
+  initProjectMemory(projectRoot);
   const trimmed = text.trim();
   if (!trimmed) {
     throw new Error("Usage: /memory pin <text>");
   }
-  const id = `pin-${Date.now().toString(36)}`;
-  const path = join(cwd, PROJECT_MEMORY_DIR, "gotchas.md");
+  const id = `pin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+  const path = join(projectRoot, PROJECT_MEMORY_DIR, "gotchas.md");
   const line = `\n<!-- memory-id:${id} -->\n- [${id}] ${new Date().toISOString()}: ${trimmed}\n`;
   appendFileSync(path, line);
   return { id, path };
 }
 
 export function forgetProjectMemory(cwd: string, id: string): ProjectMemoryForgetResult {
+  const projectRoot = findWorkspaceRoot(cwd);
   const trimmed = id.trim();
   if (!trimmed) {
     throw new Error("Usage: /memory forget <memory-id>");
   }
-  const files = listMemoryFiles(join(cwd, PROJECT_MEMORY_DIR));
+  const files = listMemoryFiles(join(projectRoot, PROJECT_MEMORY_DIR));
   let removed = 0;
   const changedFiles: string[] = [];
   for (const file of files) {
@@ -79,16 +67,9 @@ export function forgetProjectMemory(cwd: string, id: string): ProjectMemoryForge
       return !matches;
     });
     if (kept.length !== lines.length) {
-      writeFileSync(file, kept.join("\n"));
-      changedFiles.push(relative(cwd, file));
+      atomicWriteFileSync(file, kept.join("\n"));
+      changedFiles.push(relative(projectRoot, file));
     }
-  }
-
-  const snapshotPath = join(cwd, PROJECT_MEMORY_STATE_FILE);
-  if (existsSync(snapshotPath) && trimmed === "session.current") {
-    unlinkSync(snapshotPath);
-    removed++;
-    changedFiles.push(PROJECT_MEMORY_STATE_FILE);
   }
 
   return { id: trimmed, removed, files: changedFiles };

@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool } from "@dst0/p-agent-core";
@@ -88,8 +88,7 @@ describe("AgentSession prompt characterization", () => {
 
     await harness.session.prompt("Fix compaction loops");
     const snapshotPath = join(harness.tempDir, ".pdev/state/session.current.json");
-    expect(existsSync(snapshotPath)).toBe(true);
-    expect(readFileSync(snapshotPath, "utf8")).toContain("Fix compaction loops");
+    expect(existsSync(snapshotPath)).toBe(false);
 
     await harness.session.prompt("continue compaction work");
 
