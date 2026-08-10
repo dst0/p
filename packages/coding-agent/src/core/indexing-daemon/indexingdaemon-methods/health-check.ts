@@ -1,4 +1,3 @@
-import { recordIndexingResourceFailureForRepo } from "../../indexed-repos.ts";
 import { DRAIN_MAX_CONCURRENCY, MANUAL_PRIORITY_OFFSET } from "../constants.ts";
 import { isResourceFailure, safeErrorMessage } from "../helpers.ts";
 import type { IndexingDaemon } from "../indexingdaemon.ts";
@@ -147,7 +146,7 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
               `Resource failure #${runtime.consecutiveResourceFailureCount} for ${runtime.root}; automatic retries blocked. Run /index up to retry explicitly.`,
             );
             try {
-              recordIndexingResourceFailureForRepo(runtime.root, runtime.lastError, self.options.agentDir);
+              self.persistResourceFailure(runtime.root, runtime.lastError);
             } catch (persistenceError) {
               self.log("error", `Failed to persist the indexing resource block: ${safeErrorMessage(persistenceError)}`);
             }

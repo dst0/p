@@ -8,6 +8,7 @@ import {
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
+import { recordIndexingResourceFailureForRepo } from "../indexed-repos.ts";
 import { computeIndexingRuntimeConfigFingerprint } from "../indexing-runtime-config.ts";
 import { IndexingTrayManager, type IndexingTrayService } from "../indexing-tray-manager.ts";
 import { computeIndexingVersion } from "../indexing-version.ts";
@@ -67,6 +68,8 @@ export class IndexingDaemon {
   public readonly _ensureBackendsRaw: (signal?: AbortSignal) => Promise<void>;
 
   public readonly disposeBackends: () => Promise<void>;
+
+  public readonly persistResourceFailure: (workspaceRoot: string, message: string) => void;
 
   public readonly releaseEmbeddingDevice: () => Promise<void>;
 
@@ -149,6 +152,11 @@ export class IndexingDaemon {
       options.disposeBackends ??
       (async () => {
         await Promise.all([this.embeddingManager.stop(), qdrantManager.stop()]);
+      });
+    this.persistResourceFailure =
+      options.persistResourceFailure ??
+      ((workspaceRoot, message) => {
+        recordIndexingResourceFailureForRepo(workspaceRoot, message, this.options.agentDir);
       });
     this.releaseEmbeddingDevice =
       options.releaseEmbeddingDevice ??

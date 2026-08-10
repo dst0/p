@@ -8,7 +8,7 @@ import type {
   SemanticSearchInput,
   SemanticSearchResponse,
 } from "@dst0/p-code-index";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { enableIndexingForRepo, loadIndexedRepos } from "../src/core/indexed-repos.ts";
 import { IndexingDaemon } from "../src/core/indexing-daemon.ts";
 import { IndexingService } from "../src/core/indexing-service.ts";
@@ -136,6 +136,46 @@ describe("indexing resource failure lifecycle", () => {
       expect(restartedRuntime?.resourceBlocked).toBe(false);
     } finally {
       if (daemonRunning) await daemon.stop();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("keeps the resource block when persistence and device release fail", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-oom-cleanup-"));
+    const agentDir = path.join(root, "agent");
+    const repository = path.join(root, "repository");
+    fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
+    enableIndexingForRepo(repository, agentDir);
+    const service = new OutOfMemoryRagService(repository);
+    const errors: string[] = [];
+    const errorSpy = vi.spyOn(console, "error").mockImplementation((message) => errors.push(String(message)));
+    const daemon = new IndexingDaemon({
+      agentDir,
+      qdrantBinary: "unused",
+      qdrantDataDirectory: path.join(agentDir, "qdrant"),
+      pythonExecutable: "unused",
+      embeddingModel: "unused",
+      serviceFactory: () => service,
+      ensureBackends: async () => {},
+      persistResourceFailure: () => {
+        throw new Error("registry is read-only");
+      },
+      releaseEmbeddingDevice: async () => {
+        throw new Error("backend would not stop");
+      },
+      disposeBackends: async () => {},
+    });
+
+    try {
+      await daemon.start();
+      await waitFor(() => daemon.runtimes.get(fs.realpathSync(repository))?.state === "error");
+
+      expect(daemon.runtimes.get(fs.realpathSync(repository))?.resourceBlocked).toBe(true);
+      expect(errors.some((message) => message.includes("Failed to persist the indexing resource block"))).toBe(true);
+      expect(errors.some((message) => message.includes("Failed to release the embedding device"))).toBe(true);
+    } finally {
+      await daemon.stop();
+      errorSpy.mockRestore();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

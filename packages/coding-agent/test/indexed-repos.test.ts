@@ -3,6 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
+  acknowledgeIndexingBackendWakeForRepo,
   acknowledgeIndexingPriorityForRepo,
   disableIndexingForRepo,
   enableIndexingForRepo,
@@ -12,6 +13,8 @@ import {
   INDEXED_REPOS_SCHEMA_VERSION,
   loadIndexedRepos,
   prioritizeIndexingForRepo,
+  recordIndexingResourceFailureForRepo,
+  requestIndexingBackendForRepo,
   requestIndexingForRepo,
 } from "../src/core/indexed-repos.ts";
 
@@ -89,6 +92,47 @@ describe("indexed repository decisions", () => {
     expect(acknowledgeIndexingPriorityForRepo(repo, prioritized?.priorityRequest?.id ?? "", agentDir)).toBe(true);
     expect(loadIndexedRepos(agentDir)[0]?.priorityRequest).toBeUndefined();
     expect(acknowledgeIndexingPriorityForRepo(repo, prioritized?.priorityRequest?.id ?? "", agentDir)).toBe(false);
+  });
+
+  it("persists and acknowledges a backend wake without changing the refresh timestamp", () => {
+    const { agentDir, repo } = createFixture();
+    expect(requestIndexingBackendForRepo(repo, agentDir)).toBeUndefined();
+    const enabled = enableIndexingForRepo(repo, agentDir);
+
+    const requested = requestIndexingBackendForRepo(repo, agentDir);
+
+    expect(requested?.updatedAt).toBe(enabled.updatedAt);
+    expect(requested?.backendWakeRequest?.id).toBeTruthy();
+    expect(acknowledgeIndexingBackendWakeForRepo(repo, "wrong-request", agentDir)).toBe(false);
+    expect(acknowledgeIndexingBackendWakeForRepo(repo, requested?.backendWakeRequest?.id ?? "", agentDir)).toBe(true);
+    expect(loadIndexedRepos(agentDir)[0]?.backendWakeRequest).toBeUndefined();
+  });
+
+  it("persists resource failures until a new explicit priority request", () => {
+    const { agentDir, repo } = createFixture();
+    expect(recordIndexingResourceFailureForRepo(repo, "out of memory", agentDir)).toBeUndefined();
+    enableIndexingForRepo(repo, agentDir);
+    expect(prioritizeIndexingForRepo(repo, agentDir)?.priorityRequest).toBeDefined();
+
+    const failed = recordIndexingResourceFailureForRepo(repo, "out of memory", agentDir);
+
+    expect(failed?.resourceFailure?.message).toBe("out of memory");
+    expect(failed?.priorityRequest).toBeUndefined();
+    expect(prioritizeIndexingForRepo(repo, agentDir)?.resourceFailure).toBeUndefined();
+  });
+
+  it("migrates a valid v2 registry to the current schema", () => {
+    const { agentDir, repo } = createFixture();
+    enableIndexingForRepo(repo, agentDir);
+    const registryPath = getIndexedReposPath(agentDir);
+    const stored = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as { schemaVersion: number };
+    stored.schemaVersion = 2;
+    fs.writeFileSync(registryPath, `${JSON.stringify(stored, undefined, 2)}\n`);
+
+    expect(loadIndexedRepos(agentDir)).toHaveLength(1);
+
+    const migrated = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as { schemaVersion: number };
+    expect(migrated.schemaVersion).toBe(INDEXED_REPOS_SCHEMA_VERSION);
   });
 
   it("uses a non-repository folder as its own indexing root", () => {

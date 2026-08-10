@@ -4,6 +4,7 @@ import path from "node:path";
 import type { CodeRagService, RagStatus } from "@dst0/p-code-index";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
+  disableIndexingForRepo,
   enableIndexingForRepo,
   getIndexedReposPath,
   loadIndexedRepos,
@@ -114,9 +115,12 @@ describe("indexing embedding backend readiness", () => {
       },
       disposeBackends: async () => {},
     });
+    expect(requestIndexingBackendForRepo(fixture.repository, fixture.agentDir)).toBeDefined();
 
     try {
       await daemon.start();
+      await waitFor(() => backendStarts === 1);
+      expect(loadIndexedRepos(fixture.agentDir)[0]?.backendWakeRequest).toBeUndefined();
       backendStarts = 0;
       expect(requestIndexingBackendForRepo(fixture.repository, fixture.agentDir)).toBeDefined();
       await daemon.syncRegistry();
@@ -141,6 +145,19 @@ describe("indexing embedding backend readiness", () => {
         timeoutMs: 0,
       }),
     ).rejects.toThrow("Timed out waiting for the indexing daemon to resume its embedding backend");
+  });
+
+  it("does not wake the daemon for a disabled repository", async () => {
+    const fixture = createFixture();
+    disableIndexingForRepo(fixture.repository, fixture.agentDir);
+    const fetchImplementation = vi.fn<typeof fetch>().mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    await expect(
+      waitForIndexingEmbeddingBackend(fixture.repository, undefined, {
+        agentDir: fixture.agentDir,
+        fetchImplementation,
+      }),
+    ).rejects.toThrow("Code indexing is not enabled for this repository");
   });
 
   it("rejects a ready backend running on a different device", async () => {
