@@ -146,15 +146,25 @@ export async function do_encodeSpoolAndUpsert(
   vocabulary: BM25Vocabulary,
   signal: AbortSignal,
   onProgress: (completed: number, total: number) => void,
+  startOffset = 0,
 ): Promise<void> {
+  if (!Number.isSafeInteger(startOffset) || startOffset < 0 || startOffset > totalChunks) {
+    throw new Error("Rebuild checkpoint chunk offset is invalid");
+  }
   const input = fs.createReadStream(spoolPath, { encoding: "utf-8" });
   const lines = createInterface({ input, crlfDelay: Number.POSITIVE_INFINITY });
   const pending: PreparedChunk[] = [];
-  let completed = 0;
+  let completed = startOffset;
+  let seen = 0;
   try {
     for await (const line of lines) {
       if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
       if (!line) continue;
+      if (seen < startOffset) {
+        seen += 1;
+        continue;
+      }
+      seen += 1;
       pending.push(JSON.parse(line) as PreparedChunk);
       self.refreshSettingsSilently();
       const batchSize = Math.max(1, self.settings.encodeBatchSize);
@@ -167,6 +177,9 @@ export async function do_encodeSpoolAndUpsert(
     if (pending.length > 0) {
       await self.encodeAndUpsert(collection, pending, vocabulary, signal);
       completed += pending.length;
+    }
+    if (seen !== totalChunks || completed !== totalChunks) {
+      throw new Error(`Rebuild spool chunk count changed: expected ${totalChunks}, found ${seen}`);
     }
     onProgress(completed, totalChunks);
   } finally {

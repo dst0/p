@@ -21,6 +21,8 @@
 ### Fixed
 
 - Recover plan items from compaction summaries when previous session state has an empty plan, and auto-initialize a baseline plan item from the user goal during unmanaged tool execution.
+- Resume interrupted transactional full-index rebuilds from durable per-batch checkpoints, while invalidating checkpoints when repository contents or embedding compatibility change.
+- Compute indexing-service reuse only after applying interactive device selection, so `reinstall.sh --select-indexing` restarts a daemon still running the previous backend.
 - Separate embedding-backend wake requests from repository refresh requests, and fail closed after indexing resource errors by releasing the embedding device and requiring an explicit `/index up` before retrying.
 - Preserve a single intentional blank line when project-memory migration removes generated managed blocks.
 - Preserve the legacy indexing device during non-interactive reinstalls, restart the indexing daemon when its runtime configuration changes, require daemon-owned embedding health before installation succeeds, and wake an idle embedding backend before the first semantic query.

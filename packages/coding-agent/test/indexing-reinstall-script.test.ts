@@ -163,6 +163,17 @@ describe("indexing reinstall scripts", () => {
       expect(command).toContain("--loglevel=error");
     }
   });
+
+  it("fingerprints indexing configuration after interactive selection", () => {
+    const reinstall = fs.readFileSync(path.join(repositoryRoot, "reinstall.sh"), "utf8");
+    const selectionOffset = reinstall.indexOf("prompt_indexing_device_and_batch_size_selection");
+    const fingerprintOffset = reinstall.indexOf("NEW_INDEXING_RUNTIME_FINGERPRINT=");
+    const reuseDecisionOffset = reinstall.indexOf("INDEXING_REUSE_DECISION=");
+
+    expect(selectionOffset).toBeGreaterThan(0);
+    expect(selectionOffset).toBeLessThan(fingerprintOffset);
+    expect(fingerprintOffset).toBeLessThan(reuseDecisionOffset);
+  });
 });
 
 function createFixture(): { root: string; agentDir: string } {

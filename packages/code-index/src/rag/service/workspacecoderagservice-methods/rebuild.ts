@@ -1,12 +1,19 @@
 import fs from "node:fs";
 import path from "node:path";
-import { BM25Vocabulary } from "../../../bm25.ts";
 import { getGitInfo } from "../../../discover.ts";
 import { computeEmbeddingCompatibilityGroup } from "../../config.ts";
-import { FilePreparationTaskError, type ScannedFile } from "../../file-preparation-core.ts";
+import type { ScannedFile } from "../../file-preparation-core.ts";
 import { CHUNKER_NAME, CHUNKER_VERSION, INDEX_MANIFEST_SCHEMA_VERSION, writeManifestAtomic } from "../../manifest.ts";
-import type { IndexManifest, IndexUpdateSummary, ManifestFileEntry, RefreshIndexOptions } from "../../types.ts";
-import { unlinkBestEffort } from "../helpers.ts";
+import type { IndexManifest, IndexUpdateSummary, RefreshIndexOptions } from "../../types.ts";
+import { rebuildCompatibilityFingerprint } from "../rebuild-checkpoint.ts";
+import {
+  type ActiveRebuild,
+  commitRebuildProgress,
+  completeRebuild,
+  discardActiveRebuild,
+  loadActiveRebuild,
+  prepareActiveRebuild,
+} from "../rebuild-resume.ts";
 import type { RefreshPlan } from "../types.ts";
 import type { WorkspaceCodeRagService } from "../workspacecoderagservice.ts";
 
@@ -18,150 +25,142 @@ export async function do_performRebuild(
   signal: AbortSignal,
   onProgress: RefreshIndexOptions["onProgress"],
 ): Promise<IndexUpdateSummary> {
-  const generation = self.createGeneration();
-  const collection = self.collectionName(generation);
-  const vocabulary = new BM25Vocabulary();
-  const manifestFiles: Record<string, ManifestFileEntry> = {};
-  self.assertSpoolCapacity(scanned);
-  const spoolPath = path.join(self.repositoryDirectory, `.preparation-${generation}-${process.pid}.jsonl`);
-  const spool = fs.openSync(spoolPath, "wx", 0o600);
-  let chunkCount = 0;
-  let createdCollection = false;
-  let newVocabularyPath: string | undefined;
+  const active =
+    (await loadActiveRebuild(self, scanned)) ?? (await prepareActiveRebuild(self, scanned, signal, onProgress));
+  const { checkpoint, vocabulary } = active;
+  if (active.resumed) {
+    self.reportProgress(onProgress, "preparing", 100, {
+      processedFiles: scanned.length,
+      totalFiles: scanned.length,
+    });
+  }
+  self.reportProgress(
+    onProgress,
+    "indexing",
+    (100 * checkpoint.completedChunks) / Math.max(checkpoint.chunkCount, 1),
+    { processedFiles: scanned.length, totalFiles: scanned.length },
+    { processedChunks: checkpoint.completedChunks, totalChunks: checkpoint.chunkCount },
+  );
+
   try {
-    const vocabularyTokenLimit = self.sparseVocabularyTokenLimit();
-    await self.processPreparedFiles(scanned, generation, signal, (prepared, index) => {
-      manifestFiles[prepared.file.path] = prepared.entry;
-      for (const chunk of prepared.chunks) {
-        vocabulary.register(chunk.retrievalText);
-        if (vocabulary.tokenToIdx.size > vocabularyTokenLimit) {
-          throw new FilePreparationTaskError(
-            "resource",
-            `Sparse vocabulary exceeded its safe limit of ${vocabularyTokenLimit} tokens`,
-          );
-        }
-        fs.writeFileSync(spool, `${JSON.stringify(chunk)}\n`, "utf-8");
-        chunkCount += 1;
-      }
-      self.reportProgress(onProgress, "preparing", (100 * (index + 1)) / Math.max(scanned.length, 1), {
-        processedFiles: index + 1,
-        totalFiles: scanned.length,
-      });
-    });
-    fs.fsyncSync(spool);
-    vocabulary.finalize();
-    await self.vectorStore.createCollection(collection, self.settings.embeddingDimensions);
-    createdCollection = true;
-    self.reportProgress(
-      onProgress,
-      "indexing",
-      0,
-      { processedFiles: scanned.length, totalFiles: scanned.length },
-      { processedChunks: 0, totalChunks: chunkCount },
+    await self.encodeSpoolAndUpsert(
+      checkpoint.collection,
+      active.artifacts.spool,
+      checkpoint.chunkCount,
+      vocabulary,
+      signal,
+      (completed, total) => {
+        assertCheckpointCompatibility(self, active);
+        commitRebuildProgress(active, completed);
+        self.reportProgress(
+          onProgress,
+          "indexing",
+          (100 * completed) / Math.max(total, 1),
+          { processedFiles: scanned.length, totalFiles: scanned.length },
+          { processedChunks: completed, totalChunks: total },
+        );
+      },
+      checkpoint.completedChunks,
     );
-    await self.encodeSpoolAndUpsert(collection, spoolPath, chunkCount, vocabulary, signal, (completed, total) => {
-      self.reportProgress(
-        onProgress,
-        "indexing",
-        (100 * completed) / Math.max(total, 1),
-        { processedFiles: scanned.length, totalFiles: scanned.length },
-        { processedChunks: completed, totalChunks: total },
-      );
-    });
     self.reportProgress(
       onProgress,
       "finalizing",
       0,
       { processedFiles: scanned.length, totalFiles: scanned.length },
-      { processedChunks: chunkCount, totalChunks: chunkCount },
+      { processedChunks: checkpoint.chunkCount, totalChunks: checkpoint.chunkCount },
     );
-    const now = self.now().toISOString();
-    newVocabularyPath = self.vocabularyPath(generation);
-    vocabulary.save(newVocabularyPath);
     const previousManifest = self.manifest;
-    const manifest: IndexManifest = {
-      schemaVersion: INDEX_MANIFEST_SCHEMA_VERSION,
-      repoId: self.repoId,
-      root: self.workspaceRoot,
-      collection,
-      generation,
-      state: "ready",
-      createdAt: now,
-      updatedAt: now,
-      sourceRevision: getGitInfo(self.workspaceRoot).commit || undefined,
-      chunker: {
-        name: CHUNKER_NAME,
-        version: CHUNKER_VERSION,
-        defaultChunkLines: self.settings.defaultChunkLines,
-        maxChunkLines: self.settings.maxChunkLines,
-      },
-      embedding: {
-        provider: "local-python-http",
-        model: self.settings.embeddingModel,
-        dimensions: self.settings.embeddingDimensions,
-        compatibilityGroup: computeEmbeddingCompatibilityGroup(
-          self.settings.embeddingModel,
-          self.settings.embeddingDimensions,
-          self.settings.embeddingPooling,
-          self.settings.embeddingNormalization,
-          self.settings.searchMode,
-        ),
-        pooling: self.settings.embeddingPooling,
-        normalization: self.settings.embeddingNormalization,
-      },
-      sparse: {
-        strategy: "frozen-bm25",
-        generation,
-        vocabularyFile: path.basename(newVocabularyPath),
-        corpusDocCount: vocabulary.totalDocs,
-        frozenStatsAt: now,
-        driftFileCount: 0,
-      },
-      files: manifestFiles,
-      chunkCount,
-    };
+    const manifest = buildManifest(self, active);
     writeManifestAtomic(self.manifestPath, manifest);
     self.manifest = manifest;
     self.state = "ready";
     self.staleReason = undefined;
     self.lastError = undefined;
     self.cachedVocabulary = vocabulary;
-    self.cachedVocabularyGeneration = generation;
-    createdCollection = false;
+    self.cachedVocabularyGeneration = checkpoint.generation;
+    completeRebuild(active);
 
-    if (previousManifest && previousManifest.collection !== collection) {
+    if (previousManifest && previousManifest.collection !== checkpoint.collection) {
       try {
         await self.vectorStore.deleteCollection(previousManifest.collection);
       } catch {
         // The new manifest is already committed; old-generation cleanup is best effort.
       }
-      const oldVocabularyPath = path.join(self.repositoryDirectory, previousManifest.sparse.vocabularyFile);
-      try {
-        fs.unlinkSync(oldVocabularyPath);
-      } catch (error) {
-        if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-          // Old local vocabulary cleanup is best effort.
-        }
-      }
+      unlinkOldVocabularyBestEffort(self, previousManifest.sparse.vocabularyFile);
     }
     self.reportProgress(onProgress, "finalizing", 100);
-    return self.summaryForPlan(plan, startedAt, chunkCount, true);
+    return self.summaryForPlan(plan, startedAt, checkpoint.chunkCount, true);
   } catch (error) {
-    if (createdCollection) {
-      try {
-        await self.vectorStore.deleteCollection(collection);
-      } catch {
-        // Preserve the original failure.
-      }
-      if (newVocabularyPath) unlinkBestEffort(newVocabularyPath);
-    }
+    const compatibilityUnchanged =
+      active.checkpoint.compatibilityFingerprint ===
+      rebuildCompatibilityFingerprint(self.repoId, self.workspaceRoot, self.settings);
+    const hasReusableWork = active.checkpoint.completedChunks > 0 || signal.aborted;
+    const canResume =
+      compatibilityUnchanged && hasReusableWork && active.checkpoint.completedChunks < active.checkpoint.chunkCount;
+    if (!canResume) await discardActiveRebuild(self, active);
     throw error;
-  } finally {
-    fs.closeSync(spool);
-    try {
-      fs.unlinkSync(spoolPath);
-    } catch {
-      // The bounded preparation spool is best-effort cleanup after completion or failure.
+  }
+}
+
+function buildManifest(self: WorkspaceCodeRagService, active: ActiveRebuild): IndexManifest {
+  const { checkpoint, plan, vocabulary } = active;
+  const now = self.now().toISOString();
+  return {
+    schemaVersion: INDEX_MANIFEST_SCHEMA_VERSION,
+    repoId: self.repoId,
+    root: self.workspaceRoot,
+    collection: checkpoint.collection,
+    generation: checkpoint.generation,
+    state: "ready",
+    createdAt: checkpoint.createdAt,
+    updatedAt: now,
+    sourceRevision: getGitInfo(self.workspaceRoot).commit || undefined,
+    chunker: {
+      name: CHUNKER_NAME,
+      version: CHUNKER_VERSION,
+      defaultChunkLines: self.settings.defaultChunkLines,
+      maxChunkLines: self.settings.maxChunkLines,
+    },
+    embedding: {
+      provider: "local-python-http",
+      model: self.settings.embeddingModel,
+      dimensions: self.settings.embeddingDimensions,
+      compatibilityGroup: computeEmbeddingCompatibilityGroup(
+        self.settings.embeddingModel,
+        self.settings.embeddingDimensions,
+        self.settings.embeddingPooling,
+        self.settings.embeddingNormalization,
+        self.settings.searchMode,
+      ),
+      pooling: self.settings.embeddingPooling,
+      normalization: self.settings.embeddingNormalization,
+    },
+    sparse: {
+      strategy: "frozen-bm25",
+      generation: checkpoint.generation,
+      vocabularyFile: path.basename(active.artifacts.vocabulary),
+      corpusDocCount: vocabulary.totalDocs,
+      frozenStatsAt: now,
+      driftFileCount: 0,
+    },
+    files: plan.files,
+    chunkCount: checkpoint.chunkCount,
+  };
+}
+
+function assertCheckpointCompatibility(self: WorkspaceCodeRagService, active: ActiveRebuild): void {
+  const current = rebuildCompatibilityFingerprint(self.repoId, self.workspaceRoot, self.settings);
+  if (current !== active.checkpoint.compatibilityFingerprint) {
+    throw new Error("Rebuild compatibility settings changed while indexing");
+  }
+}
+
+function unlinkOldVocabularyBestEffort(self: WorkspaceCodeRagService, vocabularyFile: string): void {
+  try {
+    fs.unlinkSync(path.join(self.repositoryDirectory, vocabularyFile));
+  } catch (error) {
+    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
+      // Old local vocabulary cleanup is best effort.
     }
   }
 }
