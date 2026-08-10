@@ -11,6 +11,7 @@ export function do_requestRefresh(
   startDrain: boolean = true,
 ): void {
   if (self.disposed || self.quiescing || self.runtimes.get(runtime.root) !== runtime) return;
+  self.cancelEmbeddingIdleTimer();
   if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
   const queue = () => {
     runtime.debounceTimer = undefined;

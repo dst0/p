@@ -50,6 +50,7 @@ export function do_log(_self: IndexingDaemon, level: "debug" | "error", message:
 
 export function do_resetEmbeddingIdleTimer(self: IndexingDaemon): void {
   self.cancelEmbeddingIdleTimer();
+  if ([...self.runtimes.values()].some((runtime) => runtime.active || runtime.dirty || runtime.debounceTimer)) return;
   self.embeddingIdleTimer = setTimeout(async () => {
     self.log("debug", "Embedding server idle timeout reached; stopping Python embedding server");
     try {
