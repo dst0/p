@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Precompile ignored indexing-watch path segments so filesystem events avoid per-event path normalization and array allocation.
 - Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
 - Added an automated source-structure guard for the 300-line limit and one-class-per-file rule.
 

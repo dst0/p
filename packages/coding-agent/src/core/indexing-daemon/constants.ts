@@ -19,17 +19,3 @@ export const RESOURCE_BACKOFF_INTERVALS_SECONDS = [
   8 * 60 * 60,
   24 * 60 * 60,
 ];
-
-export const IGNORED_WATCH_PATH_SEGMENTS = new Set([
-  ".git",
-  ".hg",
-  ".p",
-  ".svn",
-  ".venv",
-  "build",
-  "coverage",
-  "dist",
-  "node_modules",
-  "storage",
-  "target",
-]);
