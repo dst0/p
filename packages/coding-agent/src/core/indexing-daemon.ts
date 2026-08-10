@@ -145,7 +145,7 @@ const IGNORED_WATCH_PATH_SEGMENTS = new Set([
 
 // ⚡ Bolt: Precompile regex to avoid slow string allocation and arrays in hot path
 const IGNORED_WATCH_PATTERN = new RegExp(
-  `(?:^|[\\\\/])(?:${[...IGNORED_WATCH_PATH_SEGMENTS].map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|")})(?:[\\\\/]|$)`,
+  `(?:^|[\\\\/])(?:${[...IGNORED_WATCH_PATH_SEGMENTS].map((s) => s.replace(/[.*+?^${}()|[\]\\]/g, "\\\\$&")).join("|")})(?:[\\\\/]|$)`,
 );
 
 export class IndexingDaemon {
