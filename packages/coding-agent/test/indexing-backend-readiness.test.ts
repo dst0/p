@@ -48,6 +48,7 @@ describe("indexing embedding backend readiness", () => {
     const fetchImplementation = vi
       .fn<typeof fetch>()
       .mockRejectedValueOnce(new Error("connect ECONNREFUSED 127.0.0.1:18742"))
+      .mockRejectedValueOnce(new Error("embedding backend is still starting"))
       .mockResolvedValue(readyResponse());
 
     await waitForIndexingEmbeddingBackend(fixture.repository, undefined, {
@@ -57,8 +58,43 @@ describe("indexing embedding backend readiness", () => {
       timeoutMs: 100,
     });
 
-    expect(fetchImplementation).toHaveBeenCalledTimes(2);
+    expect(fetchImplementation).toHaveBeenCalledTimes(3);
     expect(loadIndexedRepos(fixture.agentDir)[0]?.updatedAt).not.toBe("2000-01-01T00:00:00.000Z");
+  });
+
+  it("fails when the daemon does not resume before the configured deadline", async () => {
+    const fixture = createFixture();
+    const fetchImplementation = vi.fn<typeof fetch>().mockRejectedValue(new Error("connect ECONNREFUSED"));
+
+    await expect(
+      waitForIndexingEmbeddingBackend(fixture.repository, undefined, {
+        agentDir: fixture.agentDir,
+        fetchImplementation,
+        timeoutMs: 0,
+      }),
+    ).rejects.toThrow("Timed out waiting for the indexing daemon to resume its embedding backend");
+  });
+
+  it("rejects a ready backend running on a different device", async () => {
+    const fixture = createFixture();
+    const fetchImplementation = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          status: "ready",
+          requestedBackend: "mps",
+          selectedBackend: "cpu",
+          fallbackOccurred: false,
+        }),
+        { status: 200 },
+      ),
+    );
+
+    await expect(
+      waitForIndexingEmbeddingBackend(fixture.repository, undefined, {
+        agentDir: fixture.agentDir,
+        fetchImplementation,
+      }),
+    ).rejects.toThrow("Configured embedding backend mps did not resume on the requested device");
   });
 
   it("does not wake the daemon when the configured backend is already ready", async () => {

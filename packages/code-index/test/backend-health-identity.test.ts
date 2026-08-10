@@ -11,6 +11,7 @@ describe("embedding backend health identity", () => {
     ["apple-ane", "apple-ane", "apple-coreai-ane-windowed"],
     ["apple-ane", "apple-ane", "apple-coreml"],
     ["intel-openvino-npu", "intel-openvino-npu", "openvino-npu"],
+    ["npu", "npu", "amd-phoenix-npu"],
   ])("accepts configured %s as requested %s and selected %s", (configured, requested, selected) => {
     expect(
       matchesConfiguredEmbeddingBackend(configured, {

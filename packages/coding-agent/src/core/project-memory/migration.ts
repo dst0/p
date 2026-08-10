@@ -31,7 +31,12 @@ export function stripManagedBlocks(content: string): string {
         blockStart--;
       }
 
-      result = result.slice(0, blockStart) + result.slice(blockEnd);
+      const prefix = result.slice(0, blockStart);
+      let suffix = result.slice(blockEnd);
+      if (prefix.endsWith("\n\n") && suffix.startsWith("\n")) {
+        suffix = suffix.slice(1);
+      }
+      result = prefix + suffix;
     }
   }
   return result;

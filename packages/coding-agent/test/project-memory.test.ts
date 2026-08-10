@@ -196,6 +196,7 @@ describe("project memory", () => {
 
     // Verify generated blocks are stripped while human content is preserved
     const migratedActiveContext = readFileSync(activeContextFile, "utf8");
+    expect(migratedActiveContext).toBe(`${originalHumanHeader}${originalHumanFooter}`);
     expect(migratedActiveContext).toContain("Important human context line 1.");
     expect(migratedActiveContext).toContain("Important human context line 2.");
     expect(migratedActiveContext).toContain("Human footer note.");
