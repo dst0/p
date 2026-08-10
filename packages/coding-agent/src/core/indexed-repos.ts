@@ -101,32 +101,34 @@ export function isRepoIndexed(cwd: string, agentDir: string = getAgentDir()): bo
 export function enableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
   return setRepoIndexingDecision(cwd, "enabled", agentDir);
 }
-export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
+  return setRepoIndexingDecision(cwd, "disabled", agentDir);
+}
+function locateRepo(
+  cwd: string,
+  agentDir: string,
+): { canonical: string; repoId: string; repos: IndexedRepoEntry[]; index: number } {
   const canonical = findIndexWorkspaceRoot(cwd);
   const repoId = computeRepoId(canonical);
   const repos = loadIndexedRepos(agentDir);
   const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  return { canonical, repoId, repos, index };
+}
+
+export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
   if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = {
-    ...repos[index],
-    path: canonical,
-    repoId,
-    updatedAt: new Date().toISOString(),
-  };
+  const entry: IndexedRepoEntry = { ...repos[index]!, path: canonical, repoId, updatedAt: new Date().toISOString() };
   repos[index] = entry;
   saveIndexedRepos(repos, agentDir);
   return entry;
 }
+
 export function requestIndexingBackendForRepo(cwd: string, agentDir: string): IndexedRepoEntry | undefined {
-  /* v8 ignore start -- Vitest multi-worker merging drops covered prologue hits. @preserve */
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  /* v8 ignore stop -- @preserve */
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
   if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
   const entry: IndexedRepoEntry = {
-    ...repos[index],
+    ...repos[index]!,
     path: canonical,
     repoId,
     backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
@@ -135,35 +137,28 @@ export function requestIndexingBackendForRepo(cwd: string, agentDir: string): In
   saveIndexedRepos(repos, agentDir);
   return entry;
 }
+
 export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  /* v8 ignore start -- Vitest multi-worker merging drops covered prologue hits. @preserve */
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  /* v8 ignore stop -- @preserve */
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
   if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const requestedAt = new Date().toISOString();
   const entry: IndexedRepoEntry = {
-    ...repos[index],
+    ...repos[index]!,
     path: canonical,
     repoId,
-    priorityRequest: { id: randomUUID(), requestedAt },
+    priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
   };
   delete entry.resourceFailure;
   repos[index] = entry;
   saveIndexedRepos(repos, agentDir);
   return entry;
 }
+
 export function acknowledgeIndexingPriorityForRepo(
   cwd: string,
   requestId: string,
   agentDir: string = getAgentDir(),
 ): boolean {
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const { repos, index } = locateRepo(cwd, agentDir);
   const existing = repos[index];
   if (!existing || existing.priorityRequest?.id !== requestId) return false;
   const entry: IndexedRepoEntry = { ...existing };
@@ -172,14 +167,10 @@ export function acknowledgeIndexingPriorityForRepo(
   saveIndexedRepos(repos, agentDir);
   return true;
 }
+
 export function acknowledgeIndexingBackendWakeForRepo(cwd: string, requestId: string, agentDir: string): boolean {
-  /* v8 ignore start -- Vitest multi-worker merging drops covered prologue hits. @preserve */
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const { repos, index } = locateRepo(cwd, agentDir);
   const existing = repos[index];
-  /* v8 ignore stop -- @preserve */
   if (!existing || existing.backendWakeRequest?.id !== requestId) return false;
   const entry: IndexedRepoEntry = { ...existing };
   delete entry.backendWakeRequest;
@@ -187,35 +178,23 @@ export function acknowledgeIndexingBackendWakeForRepo(cwd: string, requestId: st
   saveIndexedRepos(repos, agentDir);
   return true;
 }
+
 export function recordIndexingResourceFailureForRepo(
   cwd: string,
   message: string,
   agentDir: string,
 ): IndexedRepoEntry | undefined {
-  /* v8 ignore start -- Vitest multi-worker merging drops covered prologue hits. @preserve */
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const { repos, index } = locateRepo(cwd, agentDir);
   const existing = repos[index];
-  /* v8 ignore stop -- @preserve */
   if (!existing || existing.decision !== "enabled") return undefined;
-  /* v8 ignore next -- Vitest merges this directly covered worker hit as zero. @preserve */
   const entry: IndexedRepoEntry = {
     ...existing,
     resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
   };
-  /* v8 ignore next -- Vitest merges this directly covered worker hit as zero. @preserve */
   delete entry.priorityRequest;
-  /* v8 ignore next -- Vitest merges this directly covered worker hit as zero. @preserve */
   repos[index] = entry;
-  /* v8 ignore next -- Vitest merges this directly covered worker hit as zero. @preserve */
   saveIndexedRepos(repos, agentDir);
-  /* v8 ignore next -- Vitest merges this directly covered worker hit as zero. @preserve */
   return entry;
-}
-export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
-  return setRepoIndexingDecision(cwd, "disabled", agentDir);
 }
 
 function computeRepoId(repoPath: string): string {
@@ -258,7 +237,7 @@ function isIndexedReposData(value: unknown): value is IndexedReposData {
         isIndexedRepoEntry(entry) &&
         isRegistryRequest(entry.priorityRequest) &&
         isRegistryRequest(entry.backendWakeRequest) &&
-        isRegistryRequest(entry.resourceFailure),
+        isResourceFailure(entry.resourceFailure),
     )
   );
 }
@@ -273,18 +252,29 @@ function isRegistryRequest(value: unknown): boolean {
   );
 }
 
+function isResourceFailure(value: unknown): boolean {
+  if (value === undefined) return true;
+  return isRegistryRequest(value) && typeof Reflect.get(value as object, "message") === "string";
+}
+
 function isV2IndexedReposData(value: unknown): value is IndexedReposData {
   /* v8 ignore start -- Vitest multi-worker merging drops directly covered migration hits. @preserve */
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as Partial<IndexedReposData>;
-  return candidate.schemaVersion === 2 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
+  return (
+    (value as Partial<IndexedReposData>).schemaVersion === 2 &&
+    Array.isArray((value as Partial<IndexedReposData>).repos) &&
+    (value as Partial<IndexedReposData>).repos!.every(isIndexedRepoEntry)
+  );
   /* v8 ignore stop -- @preserve */
 }
 
 function isV1IndexedReposData(value: unknown): value is IndexedReposData {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  const candidate = value as Partial<IndexedReposData>;
-  return candidate.schemaVersion === 1 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
+  return (
+    (value as Partial<IndexedReposData>).schemaVersion === 1 &&
+    Array.isArray((value as Partial<IndexedReposData>).repos) &&
+    (value as Partial<IndexedReposData>).repos!.every(isIndexedRepoEntry)
+  );
 }
 
 function isIndexedRepoEntry(entry: unknown): entry is IndexedRepoEntry {

@@ -135,6 +135,30 @@ describe("indexed repository decisions", () => {
     expect(migrated.schemaVersion).toBe(INDEXED_REPOS_SCHEMA_VERSION);
   });
 
+  it("rejects malformed v3 data with missing resourceFailure string message", () => {
+    const { agentDir, repo } = createFixture();
+    enableIndexingForRepo(repo, agentDir);
+    const registryPath = getIndexedReposPath(agentDir);
+    const stored = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+      schemaVersion: number;
+      repos: Array<{ resourceFailure?: { id: string; requestedAt: string; message?: string } }>;
+    };
+    stored.repos[0]!.resourceFailure = { id: "req-1", requestedAt: "2026-01-01T00:00:00.000Z" };
+    fs.writeFileSync(registryPath, `${JSON.stringify(stored, undefined, 2)}\n`);
+
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+  });
+
+  it("loads valid v3 data with a complete resourceFailure record", () => {
+    const { agentDir, repo } = createFixture();
+    enableIndexingForRepo(repo, agentDir);
+    recordIndexingResourceFailureForRepo(repo, "OOM error", agentDir);
+
+    const loaded = loadIndexedRepos(agentDir);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]?.resourceFailure?.message).toBe("OOM error");
+  });
+
   it("uses a non-repository folder as its own indexing root", () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-folder-"));
     temporaryDirectories.push(root);

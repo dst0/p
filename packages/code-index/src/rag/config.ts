@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { defaultMaxSequenceLength, DEFAULT_MAX_SEQUENCE_LENGTH } from "./embedding-settings.ts";
+import { DEFAULT_MAX_SEQUENCE_LENGTH, defaultMaxSequenceLength } from "./embedding-settings.ts";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
 export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
@@ -275,9 +275,7 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
       let url: URL;
       try {
         url = new URL(value);
-        if (!url.protocol.startsWith("http")) {
-          throw new Error("Invalid protocol");
-        }
+        if (!url.protocol.startsWith("http")) throw new Error("Invalid protocol");
       } catch {
         throw new Error(`Code RAG ${name} must be a valid absolute URL (starting with http:// or https://)`);
       }
