@@ -37,6 +37,7 @@ export function do_writeStatus(self: IndexingDaemon, running: boolean = !self.di
     startedAt: self.startedAt,
     updatedAt: new Date().toISOString(),
     indexingVersion: self.indexingVersion,
+    runtimeConfigFingerprint: self.runtimeConfigFingerprint,
     repos,
   };
   writeIndexingServiceStatus(self.options.agentDir, data);

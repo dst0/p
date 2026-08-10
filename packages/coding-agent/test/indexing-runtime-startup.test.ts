@@ -22,6 +22,7 @@ vi.mock("../src/core/indexing-daemon.ts", () => ({
 }));
 
 import { createIndexingDaemonOptions } from "../src/core/indexing-daemon-config.ts";
+import { computeIndexingRuntimeConfigFingerprint } from "../src/core/indexing-runtime-config.ts";
 import { runIndexingService } from "../src/indexing-service-daemon.ts";
 
 let temporaryDirectory: string | undefined;
@@ -72,6 +73,19 @@ describe("indexing runtime startup", () => {
     fs.writeFileSync(configPath, `${JSON.stringify({ ...config, searchMode: "bm25-only" })}\n`);
 
     expect(createIndexingDaemonOptions(agentDir).useDenseEmbeddings).toBe(false);
+  });
+
+  it("fingerprints runtime configuration independently of JSON key order", () => {
+    const agentDir = createAgentDir();
+    const configPath = path.join(agentDir, "code-rag.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    const initial = computeIndexingRuntimeConfigFingerprint(agentDir);
+    fs.writeFileSync(configPath, `${JSON.stringify(Object.fromEntries(Object.entries(config).reverse()))}\n`);
+
+    expect(computeIndexingRuntimeConfigFingerprint(agentDir)).toBe(initial);
+
+    fs.writeFileSync(configPath, `${JSON.stringify({ ...config, searchMode: "bm25-only" })}\n`);
+    expect(computeIndexingRuntimeConfigFingerprint(agentDir)).not.toBe(initial);
   });
 
   it("passes config-derived options to the daemon", async () => {

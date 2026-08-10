@@ -56,6 +56,8 @@ export interface IndexingServiceStatusData {
   repos: RepositoryServiceStatus[];
   /** Content hash of indexing-related code; used to skip unnecessary restarts. */
   indexingVersion?: string;
+  /** Hash of the runtime configuration captured when the daemon started. */
+  runtimeConfigFingerprint?: string;
 }
 
 interface IndexingServiceReinstallData {
@@ -164,6 +166,7 @@ function isServiceStatus(value: unknown): value is IndexingServiceStatusData {
     typeof candidate.running === "boolean" &&
     typeof candidate.startedAt === "string" &&
     typeof candidate.updatedAt === "string" &&
+    (candidate.runtimeConfigFingerprint === undefined || typeof candidate.runtimeConfigFingerprint === "string") &&
     Array.isArray(candidate.repos) &&
     candidate.repos.every(
       (entry) =>
