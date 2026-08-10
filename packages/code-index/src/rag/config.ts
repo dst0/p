@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { defaultMaxSequenceLength, DEFAULT_MAX_SEQUENCE_LENGTH } from "./embedding-settings.ts";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
 export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
@@ -26,7 +27,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   torchBackend: "auto",
   maxEmbeddingBatchSize: 64,
   maxCpuThreads: os.cpus().length,
-  maxSequenceLength: 512,
+  maxSequenceLength: DEFAULT_MAX_SEQUENCE_LENGTH,
   mpsPrecision: "bfloat16",
   minSystemMemoryReserveBytes: 1024 * 1024 * 1024,
   minAcceleratorMemoryReserveBytes: 512 * 1024 * 1024,
@@ -287,10 +288,13 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
 export function loadWorkspaceCodeRagSettings(options: WorkspaceCodeRagServiceOptions): WorkspaceCodeRagSettings {
   const userConfigPath = options.userConfigPath ?? path.join(options.dataDirectory, "..", "code-rag.json");
   const repositoryConfigPath = options.repositoryConfigPath ?? path.join(options.workspaceRoot, ".p", "code-rag.json");
+  const configured = { ...parseConfigFile(userConfigPath), ...parseConfigFile(repositoryConfigPath), ...(options.settings ?? {}) };
   return validateSettings({
     ...DEFAULT_WORKSPACE_CODE_RAG_SETTINGS,
-    ...parseConfigFile(userConfigPath),
-    ...parseConfigFile(repositoryConfigPath),
-    ...(options.settings ?? {}),
+    maxSequenceLength: defaultMaxSequenceLength(
+      configured.embeddingDevice ?? DEFAULT_WORKSPACE_CODE_RAG_SETTINGS.embeddingDevice,
+      os.platform(),
+    ),
+    ...configured,
   });
 }
