@@ -5,6 +5,10 @@ export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
     text = text.trim();
     if (!text) return;
 
+    if (text.startsWith("/")) {
+      self.editor.addToHistory?.(text);
+    }
+
     // Handle commands
     if (text === "/settings") {
       self.showSettingsSelector();
