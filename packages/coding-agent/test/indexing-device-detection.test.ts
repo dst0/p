@@ -39,6 +39,21 @@ describe("indexing device detection", () => {
     expect(batch.stdout).toContain("batch_size=32");
   });
 
+  it("loads fast BM25 mode without an embedding device or batch size", () => {
+    const agentDir = path.join(createFixture(), "agent");
+    writeConfig(agentDir, { searchMode: "bm25-only", embeddingDevice: "cpu", maxEmbeddingBatchSize: 32 });
+
+    const selected = runDeviceSelection(agentDir);
+    expect(selected.status, selected.stderr).toBe(0);
+    expect(selected.stdout).toContain("Loaded configured indexing mode: fast (BM25)");
+    expect(selected.stdout).toContain("mode=bm25-only");
+    expect(selected.stdout).toContain("device=<unset>");
+
+    const batch = runBatchSizeSelection(agentDir, "bm25-only");
+    expect(batch.status, batch.stderr).toBe(0);
+    expect(batch.stdout).toContain("batch_size=<unset>");
+  });
+
   it("rejects invalid config and requires a terminal for reselection", () => {
     const agentDir = path.join(createFixture(), "agent");
     writeConfig(agentDir, { embeddingDevice: "invalid", maxEmbeddingBatchSize: "invalid" });
@@ -111,7 +126,7 @@ function runDeviceSelection(agentDir: string, force = false, interactive = false
     "bash",
     [
       "-c",
-      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; initialize_indexing_device_selection "$2" "$3"; if declare -p INDEXING_DEVICE >/dev/null 2>&1; then printf "device=%s\\n" "$INDEXING_DEVICE"; else echo "device=<unset>"; fi',
+      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; initialize_indexing_device_selection "$2" "$3"; if declare -p INDEXING_SEARCH_MODE >/dev/null 2>&1; then printf "mode=%s\\n" "$INDEXING_SEARCH_MODE"; else echo "mode=<unset>"; fi; if declare -p INDEXING_DEVICE >/dev/null 2>&1; then printf "device=%s\\n" "$INDEXING_DEVICE"; else echo "device=<unset>"; fi',
       "bash",
       selectionScript,
       String(force),
@@ -121,14 +136,15 @@ function runDeviceSelection(agentDir: string, force = false, interactive = false
   );
 }
 
-function runBatchSizeSelection(agentDir: string) {
+function runBatchSizeSelection(agentDir: string, searchMode = "hybrid") {
   return spawnSync(
     "bash",
     [
       "-c",
-      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; initialize_indexing_batch_size_selection false false; if declare -p INDEXING_MAX_EMBED_BATCH_SIZE >/dev/null 2>&1; then printf "batch_size=%s\\n" "$INDEXING_MAX_EMBED_BATCH_SIZE"; else echo "batch_size=<unset>"; fi',
+      'set -e; source "$1"; AGENT_DIR="$P_CODING_AGENT_DIR"; INDEXING_SEARCH_MODE="$2"; initialize_indexing_batch_size_selection false false; if declare -p INDEXING_MAX_EMBED_BATCH_SIZE >/dev/null 2>&1; then printf "batch_size=%s\\n" "$INDEXING_MAX_EMBED_BATCH_SIZE"; else echo "batch_size=<unset>"; fi',
       "bash",
       selectionScript,
+      searchMode,
     ],
     { encoding: "utf8", env: { ...process.env, P_CODING_AGENT_DIR: agentDir } },
   );

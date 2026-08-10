@@ -91,6 +91,7 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         amdNpuGeneration: "npu1",
         amdNpuRuntimeVersion: "1.4.0",
         embeddingDevice: "amd-phoenix-npu",
+        searchMode: "bm25-only",
         maxEmbeddingBatchSize: 12,
         torchBackend: "cpu",
       }),
@@ -102,6 +103,7 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       userConfigPath: configPath,
     });
     expect(settings.embeddingDevice).toBe("amd-phoenix-npu");
+    expect(settings.searchMode).toBe("bm25-only");
     expect(settings.amdIronArtifactDirectory).toBe("/managed/artifacts");
     expect(settings.amdNpuGeneration).toBe("npu1");
     expect(settings.maxEmbeddingBatchSize).toBe(12);
@@ -124,6 +126,13 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { torchBackend: "invalid" as "cpu" },
       }),
     ).toThrow("torchBackend is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { searchMode: "invalid" as "hybrid" },
+      }),
+    ).toThrow("searchMode is unsupported");
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,

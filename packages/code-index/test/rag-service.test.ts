@@ -195,7 +195,7 @@ describe("WorkspaceCodeRagService", () => {
     const originalStatus = await service.status();
     const originalPoints = store.collections.get(originalStatus.collection!)!;
     const originalUnchanged = [...originalPoints.values()].find((point) => point.payload.path === "file-1.ts")!;
-    const originalDense = [...originalUnchanged.vectors.dense];
+    const originalDense = [...originalUnchanged.vectors.dense!];
     const originalSparse = structuredClone(originalUnchanged.vectors.sparse);
     const originalIndexedAt = originalUnchanged.payload.indexedAt;
     embedding.encodedTexts = [];

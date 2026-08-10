@@ -104,6 +104,7 @@ export async function do_performRebuild(
           self.settings.embeddingDimensions,
           self.settings.embeddingPooling,
           self.settings.embeddingNormalization,
+          self.settings.searchMode,
         ),
         pooling: self.settings.embeddingPooling,
         normalization: self.settings.embeddingNormalization,

@@ -226,7 +226,7 @@ export interface SparseVector {
 export interface VectorPoint {
   id: string;
   vectors: {
-    dense: number[];
+    dense?: number[];
     sparse: SparseVector;
   };
   payload: StoredChunkPayload;
@@ -285,7 +285,7 @@ export interface CodeRagService {
 
 export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   enabled: boolean;
-  searchMode?: "hybrid" | "bm25-only" | "dense-only";
+  searchMode: "hybrid" | "bm25-only" | "dense-only";
   autoRefresh: boolean;
   allowStaleSearch: boolean;
   remoteBackendsAllowed: boolean;

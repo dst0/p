@@ -61,7 +61,17 @@ describe("indexing runtime startup", () => {
       pythonExecutable: "/opt/p-indexing/bin/python",
       embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
       embeddingConfigPath: path.join(agentDir, "code-rag.json"),
+      useDenseEmbeddings: true,
     });
+  });
+
+  it("disables dense embedding startup for fast BM25 mode", () => {
+    const agentDir = createAgentDir();
+    const configPath = path.join(agentDir, "code-rag.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    fs.writeFileSync(configPath, `${JSON.stringify({ ...config, searchMode: "bm25-only" })}\n`);
+
+    expect(createIndexingDaemonOptions(agentDir).useDenseEmbeddings).toBe(false);
   });
 
   it("passes config-derived options to the daemon", async () => {

@@ -144,7 +144,6 @@ class FetchQdrantRestClient implements QdrantRestClient {
   async search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]> {
     return this.request("POST", `${this.collectionPath(collection)}/points/search`, request);
   }
-
   async scroll(collection: string, request: QdrantScrollRequest, signal?: AbortSignal): Promise<QdrantScrollResult> {
     return this.request("POST", `${this.collectionPath(collection)}/points/scroll`, request, signal);
   }
@@ -167,14 +166,12 @@ class FetchQdrantRestClient implements QdrantRestClient {
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(`Qdrant ${method} ${requestPath} failed: ${message}`, { cause: error });
     }
-
     const responseText = await response.text();
     if (!response.ok) {
       throw new Error(
         `Qdrant ${method} ${requestPath} returned HTTP ${response.status}: ${responseText.slice(0, 500)}`,
       );
     }
-
     let decoded: unknown;
     try {
       decoded = JSON.parse(responseText);
@@ -349,13 +346,16 @@ export class QdrantVectorStore implements RagVectorStore {
   ): Promise<VectorSearchResult[]> {
     const filter = createSearchFilter(filters);
     const requestLimit = Math.max(limit, 1);
-    const densePromise = this.client.search(collection, {
-      vector: { name: "dense", vector: Array.from(dense) },
-      filter,
-      limit: requestLimit,
-      with_payload: true,
-      params: { hnsw_ef: HNSW_EF, quantization: { rescore: true } },
-    });
+    const densePromise =
+      dense.length > 0
+        ? this.client.search(collection, {
+            vector: { name: "dense", vector: Array.from(dense) },
+            filter,
+            limit: requestLimit,
+            with_payload: true,
+            params: { hnsw_ef: HNSW_EF, quantization: { rescore: true } },
+          })
+        : Promise.resolve([]);
     const sparsePromise =
       sparse.indices.length > 0
         ? this.client.search(collection, {

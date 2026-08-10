@@ -11,6 +11,7 @@
 
 ### Added
 
+- Add a `fast (BM25)` install/reinstall indexing mode that skips dense embedding startup, indexing, and queries while retaining local sparse code search.
 - Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
 - Restore Apple Neural Engine indexing with a verified full-ANE Core AI fast path and bounded ANE windowing for long inputs on macOS 27+, while retaining the ONNX Runtime CoreML EP hybrid path for older macOS releases.
 - Measure real-model embedding throughput at startup and during indexing, and report the current backend's observed vectors per second in `/index`.

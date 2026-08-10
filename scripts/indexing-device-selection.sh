@@ -11,6 +11,10 @@ is_valid_indexing_device() {
   esac
 }
 
+is_valid_indexing_search_mode() {
+  [[ "$1" == "hybrid" || "$1" == "bm25-only" ]]
+}
+
 is_valid_indexing_batch_size() {
   [[ "$1" =~ ^[0-9]+$ ]] && [[ "$1" -ge 1 ]]
 }
@@ -39,6 +43,21 @@ initialize_indexing_device_selection() {
       return 1
     fi
     unset INDEXING_DEVICE
+    unset INDEXING_SEARCH_MODE
+    return 0
+  fi
+
+  local saved_search_mode
+  saved_search_mode="$(read_indexing_config_value searchMode)" || return 1
+  saved_search_mode="${saved_search_mode:-hybrid}"
+  if ! is_valid_indexing_search_mode "$saved_search_mode"; then
+    echo "Invalid searchMode in code-rag.json: $saved_search_mode" >&2
+    echo "Run with --select-indexing to replace it." >&2
+    return 1
+  fi
+  if [[ "$saved_search_mode" == "bm25-only" ]]; then
+    INDEXING_SEARCH_MODE="bm25-only"
+    echo "Loaded configured indexing mode: fast (BM25)"
     return 0
   fi
 
@@ -59,6 +78,7 @@ initialize_indexing_device_selection() {
     fi
   fi
   INDEXING_DEVICE="$saved_device"
+  INDEXING_SEARCH_MODE="hybrid"
   echo "Loaded configured embedding device: $INDEXING_DEVICE"
 }
 
@@ -72,6 +92,7 @@ initialize_indexing_batch_size_selection() {
     [[ "$interactive" == true ]] && unset INDEXING_MAX_EMBED_BATCH_SIZE
     return 0
   fi
+  [[ "${INDEXING_SEARCH_MODE:-hybrid}" == "bm25-only" ]] && return 0
   local saved_batch_size
   saved_batch_size="$(read_indexing_config_value maxEmbeddingBatchSize)" || return 1
   [[ -z "$saved_batch_size" ]] && return 0
@@ -85,7 +106,7 @@ initialize_indexing_batch_size_selection() {
 }
 
 prompt_indexing_device_and_batch_size_selection() {
-  [[ -n "${INDEXING_DEVICE:-}" || ! -t 0 ]] && return 0
+  [[ -n "${INDEXING_DEVICE:-}" || -n "${INDEXING_SEARCH_MODE:-}" || ! -t 0 ]] && return 0
   local choices=()
   local values=()
   detect_supported_indexing_devices
@@ -121,21 +142,35 @@ prompt_indexing_device_and_batch_size_selection() {
   [[ "$INDEXING_HAS_NVIDIA_GPU" == true ]] && choices+=("cuda (detected NVIDIA GPU runtime)") && values+=("cuda")
   choices+=("cpu (detected CPU)")
   values+=("cpu")
+  choices+=("fast (BM25)")
+  values+=("bm25-only")
 
   echo ""
-  echo "=== Embedding device for code indexing ==="
+  echo "=== Code indexing mode ==="
   for index in "${!choices[@]}"; do echo "  $((index + 1))) ${choices[$index]}"; done
   while true; do
     read -rp "Choose [1-${#choices[@]}] (default: 1): " choice
     choice="${choice:-1}"
     if [[ "$choice" =~ ^[0-9]+$ ]] && [[ "$choice" -ge 1 ]] && [[ "$choice" -le "${#choices[@]}" ]]; then
-      INDEXING_DEVICE="${values[$((choice - 1))]}"
+      local selected="${values[$((choice - 1))]}"
+      if [[ "$selected" == "bm25-only" ]]; then
+        INDEXING_SEARCH_MODE="bm25-only"
+        INDEXING_DEVICE="cpu"
+      else
+        INDEXING_SEARCH_MODE="hybrid"
+        INDEXING_DEVICE="$selected"
+      fi
       break
     fi
     echo "Invalid choice, enter a number between 1 and ${#choices[@]}."
   done
+  write_indexing_config_value searchMode "$INDEXING_SEARCH_MODE" || return 1
   write_indexing_config_value embeddingDevice "$INDEXING_DEVICE" || return 1
-  echo "Using embedding device: $INDEXING_DEVICE"
+  if [[ "$INDEXING_SEARCH_MODE" == "bm25-only" ]]; then
+    echo "Using indexing mode: fast (BM25)"
+    return 0
+  fi
+  echo "Using indexing mode: hybrid ($INDEXING_DEVICE)"
 
   local batch_values=(64 32 16 8 4 1)
   echo ""
