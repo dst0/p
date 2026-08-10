@@ -169,7 +169,14 @@ describe("loadManifest and writeManifestAtomic", () => {
       files: {},
       chunkCount: 0,
       chunker: { name: CHUNKER_NAME, version: CHUNKER_VERSION, defaultChunkLines: 80, maxChunkLines: 300 },
-      embedding: { provider: "http", model: "Qwen/Qwen3-Embedding-0.6B", dimensions: 1024 },
+      embedding: {
+        provider: "http",
+        model: "Qwen/Qwen3-Embedding-0.6B",
+        dimensions: 1024,
+        compatibilityGroup: "qwen_qwen3_embedding_0.6b-1024-last-non-padding-token-l2",
+        pooling: "last-non-padding-token",
+        normalization: "l2",
+      },
       sparse: {
         strategy: "frozen-bm25",
         generation: "gen-1",

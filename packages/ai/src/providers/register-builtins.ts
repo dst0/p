@@ -356,6 +356,12 @@ export function registerBuiltInApiProviders(): void {
   });
 
   registerApiProvider({
+    api: "openai-chat",
+    stream: streamOpenAICompletions as any,
+    streamSimple: streamSimpleOpenAICompletions as any,
+  });
+
+  registerApiProvider({
     api: "mistral-conversations",
     stream: streamMistral,
     streamSimple: streamSimpleMistral,

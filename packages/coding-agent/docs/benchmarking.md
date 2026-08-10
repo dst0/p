@@ -2,7 +2,7 @@
 
 The repository includes a comparative benchmark for this fork (`p`), the
 current `@earendil-works/pi-coding-agent` package, and optionally Kilo Code
-CLI. It runs the same underlying model against two longer TypeScript workloads
+CLI. It runs the same underlying model against three TypeScript workloads
 and records each agent's JSON event stream. The workloads are deliberately
 large enough for planning, tool use, implementation, testing, and iteration to
 matter:
@@ -12,6 +12,10 @@ matter:
 - `monolith-split` — split a large existing TypeScript module into focused
   parser, query, and report modules while preserving its public API and
   passing the existing contract tests.
+- `event-sourced-inventory` — build a transactional event-sourced inventory
+  engine with optimistic concurrency, idempotent commands, atomic batches,
+  hash-chained JSONL replay, tamper detection, and hidden acceptance checks.
+  This fixture allows 30 minutes per agent.
 
 ## Run it
 
@@ -52,7 +56,7 @@ before interpreting results. Kilo runs with `--pure --auto` and isolated
 temporary XDG config, data, cache, and state directories. Its source config is
 copied into that temporary directory and removed when the benchmark exits.
 
-The default run uses PI then P, two fixtures, one repetition, fixture-specific
+The default run uses PI then P, three fixtures, one repetition, fixture-specific
 timeouts, and a 15-minute overall deadline. `--agents` controls the fixed
 sequential order. Include a larger deadline for Kilo or repeated runs:
 
@@ -93,7 +97,15 @@ Kilo metrics deduplicate them by event type, part ID, and state. The quality
 checks run the fixture's test suite and typecheck; the calculator also has a
 CLI acceptance check, while the refactor checks that the monolith became a
 small facade, the required focused modules and new tests exist, and the
-contract files stayed unchanged.
+contract files stayed unchanged. The inventory fixture additionally runs
+hidden checks for exact idempotency, multi-SKU rollback, deep-copy reads,
+contiguous event positions, replay continuation, and hash-chain tamper
+detection. Reports distinguish a clean completion before timeout from a
+passing final workspace.
+
+Recordings are gzip-compressed directly to disk. Metric extraction retains
+only terminal message, tool, retry, and step events in memory, so long
+cumulative streaming-delta sessions do not exhaust the Node.js string limit.
 
 The raw recordings can be decompressed or streamed directly, for example:
 

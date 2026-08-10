@@ -20,7 +20,6 @@ export type FinishWorkStatus = "success" | "partial" | "failed";
 export interface FinishWorkPayload {
   status: FinishWorkStatus;
   summary: string;
-  result?: string;
   files_changed?: string[];
   tests_run?: string[];
   remaining_work?: string[];
@@ -30,7 +29,6 @@ export interface FinishWorkPayload {
 export const FINISH_WORK_SCHEMA = Type.Object({
   status: Type.Union([Type.Literal("success"), Type.Literal("partial"), Type.Literal("failed")]),
   summary: Type.String(),
-  result: Type.Optional(Type.String()),
   files_changed: Type.Optional(Type.Array(Type.String())),
   tests_run: Type.Optional(Type.Array(Type.String())),
   remaining_work: Type.Optional(Type.Array(Type.String())),
@@ -60,7 +58,6 @@ export function normalizeFinishWorkPayload(input: FinishWorkInput): FinishWorkPa
   return {
     status: input.status,
     summary: input.summary,
-    result: input.result,
     files_changed: normalizeOptionalList(input.files_changed),
     tests_run: normalizeOptionalList(input.tests_run),
     remaining_work: normalizeOptionalList(input.remaining_work),
@@ -83,7 +80,7 @@ export function createFinishWorkTool(): AgentTool<typeof FINISH_WORK_SCHEMA, Fin
       }
       const payload = normalizeFinishWorkPayload(params);
       return {
-        content: [{ type: "text", text: payload.result ?? payload.summary }],
+        content: [{ type: "text", text: payload.summary }],
         details: payload,
         terminate: true,
       };

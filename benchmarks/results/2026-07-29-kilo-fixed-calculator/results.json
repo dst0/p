@@ -1,0 +1,117 @@
+{
+  "generatedAt": "2026-07-29T09:31:14.172Z",
+  "agents": [
+    "kilo"
+  ],
+  "models": {
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.110",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 420,
+  "tasks": [
+    {
+      "id": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "timeoutSeconds": 300
+    }
+  ],
+  "summaries": {
+    "kilo": {
+      "runs": 1,
+      "passed": 1,
+      "averageWallMs": 248586.92070800002,
+      "averageInputTokens": 19102,
+      "averageOutputTokens": 5380,
+      "averageTotalTokens": 243255,
+      "averageToolCalls": 18,
+      "averageToolErrors": 0
+    },
+    "winner": "kilo"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 248586.92070800002,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-typescript-calculator.log",
+      "workspace": "workspaces/kilo/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 44,
+        "rawEventCount": 88,
+        "eventTypes": {
+          "step_start": 11,
+          "tool_use": 18,
+          "step_finish": 11,
+          "text": 4
+        },
+        "usage": {
+          "input": 19102,
+          "output": 5380,
+          "cacheRead": 218773,
+          "cacheWrite": 0,
+          "totalTokens": 243255
+        },
+        "turns": 11,
+        "assistantMessages": 11,
+        "toolCalls": 18,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 5,
+          "glob": 1,
+          "write": 3,
+          "bash": 4,
+          "edit": 5
+        },
+        "stopReasons": {
+          "tool-calls": 10,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "All 28 tests pass (5 contract + 23 unit). Typecheck clean, CLI outputs `11`. Implementation complete:\n\n- **`src/calculator.ts`** — Recursive descent parser with tokenizer. Handles decimal literals, whitespace, `+`/`-`/`*`/`/`, unary minus, parentheses, proper precedence and left associativity. Throws on malformed input and division by zero.\n- **`src/cli.ts`** — Reads expression from CLI args, prints result to stdout, errors to stderr with nonzero exit.\n- **`test/calculator.test.ts`** — 23 unit tests covering arithmetic, precedence, associativity, parentheses, unary, decimals, whitespace, and all error cases."
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

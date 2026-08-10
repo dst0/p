@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { EmbeddingError } from "./errors.ts";
 import type { EmbeddingProvider } from "./provider.ts";
 import { EmbeddingServerManager, type EmbeddingServerManagerOptions } from "./server.ts";
@@ -5,6 +6,7 @@ import { EmbeddingServerManager, type EmbeddingServerManagerOptions } from "./se
 export interface EmbeddingProviderHttpOptions extends EmbeddingServerManagerOptions {
   requestTimeoutMs: number;
   maxRetries: number;
+  batchSize?: number;
 }
 
 /**
@@ -18,10 +20,11 @@ const QUERY_INSTRUCTION =
 
 const DEFAULT_HTTP_OPTIONS: EmbeddingProviderHttpOptions = {
   requestTimeoutMs: 30_000,
-  maxRetries: 2,
+  maxRetries: 4,
   startupTimeoutMs: 120_000,
   pythonExecutable: "python3",
 };
+const CANCELLATION_TIMEOUT_MS = 35_000;
 
 /**
  * HTTP embedding provider — calls a local embedding server over HTTP.
@@ -69,15 +72,19 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
     }
   }
 
-  async encode(texts: string[], signal?: AbortSignal): Promise<Float32Array[]> {
+  async encode(
+    texts: string[],
+    signal?: AbortSignal,
+    priority: "background" | "interactive" = "background",
+  ): Promise<Float32Array[]> {
     if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
-    const batchSize = 64;
+    const batchSize = Math.max(1, this.options.batchSize ?? 8);
     const allVectors: Float32Array[] = [];
 
     for (let i = 0; i < texts.length; i += batchSize) {
       if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
       const batch = texts.slice(i, i + batchSize);
-      const vectors = await this.request(batch, signal);
+      const vectors = await this.request(batch, signal, priority);
       allVectors.push(...vectors);
     }
 
@@ -87,7 +94,7 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
   async encodeQuery(text: string, signal?: AbortSignal): Promise<Float32Array> {
     if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
     const queryText = this.queryInstruction ? `Instruct: ${this.queryInstruction}\nQuery: ${text}` : text;
-    const vectors = await this.encode([queryText], signal);
+    const vectors = await this.encode([queryText], signal, "interactive");
     if (!vectors[0]) throw new Error("Embedding server returned no query vector");
     return vectors[0];
   }
@@ -103,19 +110,25 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
     await this.serverManager?.stop();
   }
 
-  private async request(input: string[], signal?: AbortSignal): Promise<Float32Array[]> {
-    await this.ensureReady(signal);
+  private async request(
+    input: string[],
+    signal: AbortSignal | undefined,
+    priority: "background" | "interactive",
+  ): Promise<Float32Array[]> {
     let lastError: Error | undefined;
     for (let attempt = 0; attempt <= this.options.maxRetries; attempt++) {
+      const requestId = randomUUID();
+      let requestSignal: AbortSignal | undefined;
       try {
-        const requestSignal = AbortSignal.any([
+        await this.ensureReady(signal);
+        requestSignal = AbortSignal.any([
           AbortSignal.timeout(this.options.requestTimeoutMs),
           ...(signal ? [signal] : []),
         ]);
         const response = await fetch(`${this.baseUrl}/embed`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ input, normalize: true }),
+          body: JSON.stringify({ requestId, input, normalize: true, priority }),
           signal: requestSignal,
         });
         if (!response.ok) {
@@ -127,6 +140,16 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
           return this.parseResponse(await response.json(), input.length);
         }
       } catch (error) {
+        if (requestSignal?.aborted) {
+          try {
+            await this.cancelRequest(requestId);
+          } catch (cancellationError) {
+            throw new EmbeddingError(
+              "server_error",
+              `Embedding cancellation failed: ${safeErrorMessage(cancellationError)}`,
+            );
+          }
+        }
         if (signal?.aborted) throw signal.reason ?? new Error("Embedding request cancelled");
         if (error instanceof EmbeddingError && error.type === "server_error") {
           if (attempt === this.options.maxRetries) throw error;
@@ -150,6 +173,21 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
       await new Promise((resolve) => setTimeout(resolve, 100 * 2 ** attempt + Math.floor(Math.random() * 50)));
     }
     throw lastError ?? new EmbeddingError("server_down", "Embedding request failed");
+  }
+
+  private async cancelRequest(requestId: string): Promise<void> {
+    const response = await fetch(`${this.baseUrl}/cancel`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId }),
+      signal: AbortSignal.timeout(CANCELLATION_TIMEOUT_MS),
+    });
+    const body = await response.text();
+    if (!response.ok) {
+      throw new Error(`server returned ${response.status}: ${body.slice(0, 500)}`);
+    }
+    const value = JSON.parse(body) as { idle?: unknown };
+    if (value.idle !== true) throw new Error("embedding server did not confirm an idle device");
   }
 
   private parseResponse(value: unknown, expectedRows: number): Float32Array[] {
@@ -177,6 +215,10 @@ export class EmbeddingProviderHttp implements EmbeddingProvider {
 
 function queryInstructionForModel(model: string): string | undefined {
   return model.toLowerCase().includes("qwen3-embedding") ? QUERY_INSTRUCTION : undefined;
+}
+
+function safeErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message.replace(/[\r\n]+/g, " ").slice(0, 500) : String(error);
 }
 
 /**

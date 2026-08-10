@@ -1,6 +1,6 @@
 """Tests for _select_preferred_backend device mismatch handling.
 
-When P_CODE_RAG_DEVICE=cuda is set but ROCm is detected (or vice versa),
+When CUDA is configured but ROCm is detected (or vice versa),
 the server should fall back to CPU with a warning, not silently accept
 the wrong accelerator. Same for explicit mps when MPS is unavailable.
 """
@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import types
 import unittest
+from unittest.mock import patch
 
 # -- fake torch with configurable accelerator detection ------------------
 
@@ -84,15 +85,6 @@ def _install_fake_torch(builder: FakeTorchBuilder):
 class DeviceSelectionTest(unittest.TestCase):
     """Verify explicit device requests are not silently redirected."""
 
-    def setUp(self):
-        self.previous_device = os.environ.get("P_CODE_RAG_DEVICE")
-        os.environ["P_CODE_RAG_DEVICE"] = "auto"
-
-    def tearDown(self):
-        if self.previous_device is None:
-            os.environ.pop("P_CODE_RAG_DEVICE", None)
-        else:
-            os.environ["P_CODE_RAG_DEVICE"] = self.previous_device
     # -- CUDA requested, ROCm detected ----------------------------------
 
     def test_cuda_requested_rocm_detected_falls_back_to_cpu(self):
@@ -169,7 +161,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "rocm")
 
@@ -184,7 +177,8 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cuda")
 
@@ -220,6 +214,18 @@ class DeviceSelectionTest(unittest.TestCase):
 
         self.assertEqual(backend, "mps")
 
+    def test_macos_npu_request_does_not_masquerade_as_mps(self):
+        builder = FakeTorchBuilder()
+        builder.mps_available = True
+        EmbeddingServer = _install_fake_torch(builder)
+        server = EmbeddingServer("test/model")
+
+        with patch.object(sys, "platform", "darwin"):
+            backend, _ = server._select_preferred_backend("npu")
+
+        self.assertEqual(backend, "apple-ane")
+        self.assertEqual(server.warnings, [])
+
     # -- CPU requested always returns CPU -------------------------------
 
     def test_cpu_requested_always_returns_cpu(self):
@@ -244,10 +250,10 @@ class DeviceSelectionTest(unittest.TestCase):
 
         server = EmbeddingServer("test/model")
 
-        backend, _ = server._select_preferred_backend("auto")
+        with patch.object(sys, "platform", "linux"):
+            backend, _ = server._select_preferred_backend("auto")
 
         self.assertEqual(backend, "cpu")
-
 
 if __name__ == "__main__":
     unittest.main()

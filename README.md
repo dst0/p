@@ -1,6 +1,6 @@
 <p align="center">
-  <a href="https://p.pages.dev">
-    <img alt="p logo" src="https://p.pages.dev/logo-auto.svg" width="128">
+  <a href="https://p-agent.pages.dev">
+    <img alt="p logo" src="https://p-agent.pages.dev/logo-auto.svg" width="128">
   </a>
 </p>
 <p align="center">
@@ -22,8 +22,8 @@ This is the home of the `p` agent harness project, an opinionated fork of the [p
 
 To learn more:
 
-- [Visit p.pages.dev](https://p.pages.dev), the project website
-- [Read the documentation](https://p.pages.dev/docs/latest), or ask the agent to explain itself
+- [Visit p-agent.pages.dev](https://p-agent.pages.dev), the project website
+- [Read the documentation](https://p-agent.pages.dev/docs/latest), or ask the agent to explain itself
 
 ## Share your OSS coding agent sessions
 
@@ -86,10 +86,13 @@ Submit changes via PRs, except critical cases where the PR workflow does not wor
 
 ```bash
 npm install --ignore-scripts  # Install all dependencies without running lifecycle scripts
-npm run build        # Build all packages
-npm run check        # Lint, format, and type check
-./test.sh            # Run tests (skips LLM-dependent tests without API keys)
-./p-test.sh         # Run p from sources (can be run from any directory)
+npm run build                  # Build all packages
+npm run check                  # Lint, format, and type check
+npm test                       # Run all workspace tests
+npm run test:unit              # Run the non-e2e suite without API credentials
+npm run test:unit:coverage     # Run the non-e2e suite with coverage
+npm run test:cli               # Smoke-test the source CLI wrapper
+npm run dev --                 # Run p from sources
 ```
 
 For a short same-model comparison between this fork and the upstream agent, see

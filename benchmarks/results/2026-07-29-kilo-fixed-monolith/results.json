@@ -1,0 +1,119 @@
+{
+  "generatedAt": "2026-07-29T09:41:51.406Z",
+  "agents": [
+    "kilo"
+  ],
+  "models": {
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.110",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 720,
+  "tasks": [
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 600
+    }
+  ],
+  "summaries": {
+    "kilo": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 1,
+      "timedOut": 1,
+      "failed": 0,
+      "averageWallMs": 600067.343959,
+      "averageInputTokens": 26926,
+      "averageOutputTokens": 13325,
+      "averageTotalTokens": 501065,
+      "averageToolCalls": 34,
+      "averageToolErrors": 0
+    },
+    "winner": "kilo"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 600067.343959,
+      "exitCode": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-monolith-split.log",
+      "workspace": "workspaces/kilo/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 79,
+        "rawEventCount": 158,
+        "eventTypes": {
+          "step_start": 19,
+          "tool_use": 34,
+          "step_finish": 18,
+          "text": 8
+        },
+        "usage": {
+          "input": 26926,
+          "output": 13325,
+          "cacheRead": 460814,
+          "cacheWrite": 0,
+          "totalTokens": 501065
+        },
+        "turns": 18,
+        "assistantMessages": 18,
+        "toolCalls": 34,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 9,
+          "todowrite": 2,
+          "write": 10,
+          "bash": 10,
+          "edit": 3
+        },
+        "stopReasons": {
+          "tool-calls": 18
+        },
+        "errors": [],
+        "finalText": "Two issues: a type error in the test and a wrong test expectation. `slice(-0)` equals `slice(0)` in JS, returning all elements.\n\n"
+      },
+      "quality": {
+        "passed": true,
+        "checks": [
+          {
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

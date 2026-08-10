@@ -4,6 +4,33 @@
 
 ### Changed
 
+- Precompile ignored indexing-watch path segments so filesystem events avoid per-event path normalization and array allocation.
+- Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
+- Added an automated source-structure guard for the 300-line limit and one-class-per-file rule.
+
+### Added
+
+- Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
+- Restore Apple Neural Engine indexing with a verified full-ANE Core AI fast path and bounded ANE windowing for long inputs on macOS 27+, while retaining the ONNX Runtime CoreML EP hybrid path for older macOS releases.
+- Measure real-model embedding throughput at startup and during indexing, and report the current backend's observed vectors per second in `/index`.
+
+### Fixed
+
+- Bound native Core AI NDArray/IOSurface lifetime during long Apple Neural Engine indexing, recycle the worker before its native buffer pool is exhausted, recover once from an unexpected worker exit, and stop reporting a dead worker as ready.
+- Run one repository-indexing worker per embedding device, make `/index up` cancel the active embedding request and wait for device release before promotion, and preserve the interrupted repository as queued transactional work.
+- Replace synthetic indexing percentages and zero totals with named scanning, preparing, embedding, and finalizing stages, real file/chunk counters, and ETA derived only from measured embedding progress.
+- Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
+- Label Apple Metal acceleration as `GPU (MPS)`, report Core AI versus legacy CoreML NPU placement explicitly, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs by retaining PyTorch's default allocator watermarks.
+- Prioritize interactive semantic-search embeddings between background indexing batches, while serializing Core AI work through one bounded model graph so large repository rebuilds cannot starve live queries or duplicate model memory.
+- Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
+
+## [0.4.158] - 2026-08-06
+
+### Changed
+
+- Require a revision-bound `ready_to_finish` acceptance audit before successful code completion or publishing, map every claimed criterion to fresh evidence, reject unresolved test/typecheck failures, and invalidate readiness after any subsequent mutation.
+- Require a requirement-to-evidence audit and adversarial boundary tests for absolute or negative acceptance guarantees before final verification, automatically finalize successful exact baseline replays, and infer eligible current-revision evidence for `record_final`.
+- Auto-record initial and follow-up session state before the requested tool executes, auto-classify verification intent before the first mutation, and require literal smallest-byte and full transactional-registry rollback checks.
 - Configured Biome in `biome.json` to enforce 2-space indentation over tabs across code files and reformatted workspace files.
 - Make the F2 plan panel cycle through compact, full-width, and hidden views, with bounded scrolling, keyboard and mouse resizing, and connected task-tree rendering.
 - Persist the selected code-indexing device across installs and add `--select-indexing` to replace the saved choice.
@@ -11,6 +38,10 @@
 
 ### Fixed
 
+- Gate Kilo benchmark fixtures behind bounded model-resolution and request startup probes that preserve stderr, runtime logs, and state evidence while enforcing backend-model parity with PI and P.
+- Correct the event-sourced inventory benchmark's truncation check so it removes the final byte, score 25 fixed hidden invariants independently with severity weights, and retain hidden-test diagnostics in quality results.
+- Classify `npm run typecheck` and package-manager test variants correctly in task verification, rely on tool exit status instead of output-text heuristics, and return bookkeeping rejections as `needs_action` results instead of tool errors.
+- Stream benchmark JSONL recordings directly to gzip files so long cumulative-delta sessions cannot exhaust the Node.js string limit, and report clean completion separately from final-workspace quality.
 - Keep terminal mouse tracking off while the plan panel is visible unless `Ctrl+F2` mouse mode is active, preserving native session scrolling and text selection.
 - Fixed tool and message left accent bars rendering as disconnected segments in terminals with visible line spacing.
 - Fixed chaotic plan item ordering in `/state` command by using `getOrderedPlanTree()` with tree indentation instead of raw insertion order.
@@ -32,6 +63,8 @@
 
 ### Added
 
+- Added hardware-aware code indexing backend layer (`apple-ane`, `nvidia-cuda`, `amd-rocm`, `apple-mps`, `intel-openvino-cpu`, `cpu`) with native Swift Apple Neural Engine worker, 1024-dim golden parity test suite, and detailed `/index` telemetry.
+- Add a 30-minute event-sourced inventory benchmark with hidden transactional, idempotency, replay, and tamper-detection checks.
 - Added fixed-order PI, P, and Kilo Code benchmark support with isolated configuration, pinned CLI versions, and duplicate-event-safe Kilo metrics.
 - Added classic light and Japanese aesthetic built-in themes (GitHub Light, Solarized Light, Catppuccin Latte, One Light, Sakura, Kanagawa, Matcha, Cyberpunk Tokyo).
 - Added classic built-in themes (Catppuccin, Darcula, Dracula, Gruvbox, Monokai, Nord, One Dark, Solarized Dark, Tokyo Night, VS Code Dark+) and dynamic built-in theme discovery.

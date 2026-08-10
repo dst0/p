@@ -2052,7 +2052,6 @@ describe("Explicit Completion Protocol", () => {
             createFinishWorkCall({
               status: "success",
               summary: "finished",
-              result: "final result",
               files_changed: ["src/file.ts"],
               tests_run: ["npm run check"],
             }),
@@ -2068,7 +2067,7 @@ describe("Explicit Completion Protocol", () => {
     expect(messages[messages.length - 1].role).toBe("toolResult");
     expect(messages[messages.length - 1]).toMatchObject({
       toolName: FINISH_WORK_TOOL_NAME,
-      details: { status: "success", summary: "finished", result: "final result" },
+      details: { status: "success", summary: "finished" },
     });
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "finish_work_called"),
@@ -2152,6 +2151,105 @@ describe("Explicit Completion Protocol", () => {
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
     ).toHaveLength(1);
+  });
+
+  it("does not execute a tool call stopped after repetitive streamed arguments", async () => {
+    const executed: string[] = [];
+    const toolSchema = Type.Object({ value: Type.String() });
+    const tool: AgentTool<typeof toolSchema, { value: string }> = {
+      name: "echo",
+      label: "Echo",
+      description: "Echo tool",
+      parameters: toolSchema,
+      async execute(_toolCallId, params) {
+        executed.push(params.value);
+        return {
+          content: [{ type: "text", text: params.value }],
+          details: { value: params.value },
+        };
+      },
+    };
+    const truncated = {
+      ...createAssistantMessage(
+        [{ type: "toolCall", id: "echo-loop", name: "echo", arguments: { value: "partial" } }],
+        "length",
+      ),
+      errorMessage: "Stopped a malformed tool call after its streamed arguments entered a repetitive loop.",
+    };
+
+    const { events, contexts } = await runScriptedAgentLoop(
+      [
+        truncated,
+        (context) => {
+          expect(getMessageText(context.messages[context.messages.length - 1] as AgentMessage)).toContain(
+            "Re-emit the intended tool call",
+          );
+          return createAssistantMessage([createFinishWorkCall({ status: "success", summary: "recovered" })], "toolUse");
+        },
+      ],
+      {
+        context: { tools: [tool] },
+        config: { completionMode: "explicit_finish" },
+      },
+    );
+
+    expect(contexts).toHaveLength(2);
+    expect(executed).toEqual([]);
+    expect(
+      events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
+    ).toHaveLength(1);
+  });
+
+  it("recovers from repetitive streamed text with a channel-specific repair prompt", async () => {
+    const repetitiveText = {
+      ...createAssistantMessage([{ type: "text", text: "Useful prefix. Repeated sentence." }], "length"),
+      errorMessage: "Stopped a response after its streamed text entered a repetitive loop.",
+    };
+    const { events, contexts } = await runScriptedAgentLoop(
+      [
+        repetitiveText,
+        (context) => {
+          const repairMessage = context.messages[context.messages.length - 1];
+          expect(getMessageText(repairMessage as AgentMessage)).toContain("repetitive text loop");
+          expect(getMessageText(repairMessage as AgentMessage)).toContain("last useful step");
+          return createAssistantMessage([createFinishWorkCall({ status: "success", summary: "recovered" })], "toolUse");
+        },
+      ],
+      { config: { completionMode: "explicit_finish" } },
+    );
+
+    expect(contexts).toHaveLength(2);
+    expect(
+      events.filter(
+        (event) =>
+          event.type === "completion_protocol" &&
+          event.event === "malformed_tool_call_retry" &&
+          event.reason === "repetitive_model_output",
+      ),
+    ).toHaveLength(1);
+  });
+
+  it("stops after the configured number of repetitive output recoveries", async () => {
+    const repetitiveReasoning = {
+      ...createAssistantMessage([{ type: "thinking", thinking: "The same thought." }], "length"),
+      errorMessage: "Stopped a response after its streamed reasoning entered a repetitive loop.",
+    };
+    const { messages, contexts } = await runScriptedAgentLoop(
+      [repetitiveReasoning, repetitiveReasoning, repetitiveReasoning],
+      {
+        config: {
+          completionMode: "explicit_finish",
+          completionLimits: { maxMalformedToolRetries: 2, maxNoProgressTurns: 10 },
+        },
+      },
+    );
+
+    expect(contexts).toHaveLength(3);
+    expect(messages[messages.length - 1]).toMatchObject({
+      role: "assistant",
+      stopReason: "error",
+      errorMessage: expect.stringContaining("repetitive output loop 3 times"),
+    });
   });
 
   it("stops repeated toolUse responses that contain no tool call", async () => {

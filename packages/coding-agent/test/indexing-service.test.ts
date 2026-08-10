@@ -85,7 +85,7 @@ class FakeRagService implements CodeRagService {
     this.onRefreshStart?.(this.workspaceRoot);
     try {
       options.onProgress?.({ phase: "scanning", percent: 0 });
-      options.onProgress?.({ phase: "indexing", percent: 37 });
+      options.onProgress?.({ phase: "indexing", percent: 37, processedChunks: 37, totalChunks: 100 });
       if (this.abortable) await this.waitForRefreshGate(signal);
       else await this.refreshGate;
       this.refreshCount += 1;
@@ -350,7 +350,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     await daemon.stop();
   });
 
-  it("does not let a changed active repository consume both workers and starve the queue", async () => {
+  it("runs one repository at a time and does not let an active refresh starve the queue", async () => {
     const fixture = createFixture();
     const repositories = [fixture.repo, path.join(fixture.root, "repo-two"), path.join(fixture.root, "repo-three")];
     for (const repository of repositories) {
@@ -380,16 +380,14 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     });
 
     await daemon.start();
-    await waitFor(() => starts.length === 2);
+    await waitFor(() => starts.length === 1);
     const firstActive = starts[0];
-    const secondActive = starts[1];
     fs.writeFileSync(path.join(firstActive, "index.ts"), "export const changedWhileActive = true;\n");
     await new Promise((resolve) => setTimeout(resolve, 30));
-    services.get(secondActive)?.releaseRefresh();
-    await waitFor(() => starts.length >= 3);
+    services.get(firstActive)?.releaseRefresh();
+    await waitFor(() => starts.length >= 2);
 
-    expect(starts[2]).not.toBe(firstActive);
-    expect(starts[2]).not.toBe(secondActive);
+    expect(starts[1]).not.toBe(firstActive);
     for (const service of services.values()) service.releaseRefresh();
     await daemon.stop();
   });
@@ -411,6 +409,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
 
     const currentRepository = fs.realpathSync(repositories[2]);
     const starts: string[] = [];
+    let deviceReleases = 0;
     const services = new Map<string, FakeRagService>();
     const daemon = new IndexingDaemon({
       agentDir: fixture.agentDir,
@@ -427,27 +426,27 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
         return service;
       },
       ensureBackends: async () => {},
+      releaseEmbeddingDevice: async () => {
+        deviceReleases += 1;
+      },
       disposeBackends: async () => {},
     });
-
     await daemon.start();
-    await waitFor(() => starts.length === 2);
+    await waitFor(() => starts.length === 1);
     expect(starts).not.toContain(currentRepository);
-
     const client = new IndexingService(fixture.agentDir);
     expect(client.prioritizeIndexing(currentRepository)).toBe(true);
     await waitFor(() => starts.includes(currentRepository));
-
     expect([...services.values()].filter((service) => service.abortCount > 0)).toHaveLength(1);
+    expect(deviceReleases).toBe(1);
     expect(client.getStatus(currentRepository)).toMatchObject({
       ragState: "updating",
-      progress: { phase: "indexing", percent: 37 },
+      progress: { phase: "indexing", percent: 37, processedChunks: 37, totalChunks: 100 },
     });
     const acknowledged = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
       repos: Array<{ path: string; priorityRequest?: unknown }>;
     };
     expect(acknowledged.repos.find((entry) => entry.path === currentRepository)?.priorityRequest).toBeUndefined();
-
     for (const service of services.values()) service.releaseRefresh();
     await daemon.stop();
   });
@@ -493,7 +492,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     try {
       createSemanticSearchToolDefinition(currentRepository);
       await daemon.start();
-      await waitFor(() => starts.length === 2);
+      await waitFor(() => starts.length === 1);
       expect(starts[0]).toBe(currentRepository);
     } finally {
       for (const service of services) service.releaseRefresh();
@@ -553,7 +552,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     process.env[ENV_AGENT_DIR] = fixture.agentDir;
     try {
       await daemon.start();
-      await waitFor(() => starts.length === 2);
+      await waitFor(() => starts.length === 1);
       const statusPath = path.join(fixture.agentDir, "indexing-service-status.json");
       const initialStatus = JSON.parse(fs.readFileSync(statusPath, "utf-8")) as {
         repos: Array<{ path: string; updatedAt: string }>;

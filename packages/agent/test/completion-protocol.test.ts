@@ -28,7 +28,6 @@ describe("completion-protocol unit tests", () => {
     expect(payload).toEqual({
       status: "success",
       summary: "Task finished",
-      result: undefined,
       files_changed: undefined,
       tests_run: ["test1.ts"],
       remaining_work: undefined,
@@ -44,16 +43,14 @@ describe("completion-protocol unit tests", () => {
     const result = await tool.execute("call-1", {
       status: "success",
       summary: "Built all components",
-      result: "All components built cleanly",
       files_changed: ["src/index.ts"],
     });
 
     expect(result.terminate).toBe(true);
-    expect(result.content).toEqual([{ type: "text", text: "All components built cleanly" }]);
+    expect(result.content).toEqual([{ type: "text", text: "Built all components" }]);
     expect(result.details).toEqual({
       status: "success",
       summary: "Built all components",
-      result: "All components built cleanly",
       files_changed: ["src/index.ts"],
       tests_run: undefined,
       remaining_work: undefined,

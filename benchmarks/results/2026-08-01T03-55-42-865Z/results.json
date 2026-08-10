@@ -1,0 +1,1222 @@
+{
+  "generatedAt": "2026-08-01T05:43:11.774Z",
+  "agents": [
+    "pi",
+    "p",
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache",
+    "kilo": "mini-pc/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.117",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 600,
+  "maxRuntimeSeconds": 7200,
+  "tasks": [
+    {
+      "id": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "timeoutSeconds": 900
+    },
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    },
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 2400
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 3,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 6,
+      "qualityMaxScore": 112,
+      "timedOut": 3,
+      "failed": 0,
+      "averageWallMs": 1500046.66625,
+      "averageInputTokens": 1802.3333333333333,
+      "averageOutputTokens": 422.3333333333333,
+      "averageTotalTokens": 5443.333333333333,
+      "averageToolCalls": 4.666666666666667,
+      "averageToolErrors": 0.6666666666666666
+    },
+    "p": {
+      "runs": 3,
+      "passed": 1,
+      "qualityPassed": 1,
+      "qualityScore": 104,
+      "qualityMaxScore": 112,
+      "timedOut": 0,
+      "failed": 2,
+      "averageWallMs": 640756.5942636669,
+      "averageInputTokens": 24361,
+      "averageOutputTokens": 9272,
+      "averageTotalTokens": 353412,
+      "averageToolCalls": 18,
+      "averageToolErrors": 2.3333333333333335
+    },
+    "kilo": {
+      "runs": 3,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 6,
+      "qualityMaxScore": 112,
+      "timedOut": 0,
+      "failed": 3,
+      "averageWallMs": 4033.9449446666986,
+      "averageInputTokens": 0,
+      "averageOutputTokens": 0,
+      "averageTotalTokens": 0,
+      "averageToolCalls": 0,
+      "averageToolErrors": 0
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "timed_out",
+      "elapsedMs": 900056.052458,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/pi-run-1-typescript-calculator.log",
+      "workspace": "workspaces/pi/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 17,
+        "eventTypes": {
+          "message_end": 7,
+          "tool_execution_start": 4,
+          "tool_execution_end": 4,
+          "turn_end": 2
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b-cache",
+        "usage": {
+          "input": 2117,
+          "output": 316,
+          "cacheRead": 1937,
+          "cacheWrite": 0,
+          "totalTokens": 4370
+        },
+        "turns": 2,
+        "assistantMessages": 2,
+        "toolCalls": 4,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 3,
+          "bash": 1
+        },
+        "stopReasons": {
+          "toolUse": 2
+        },
+        "errors": [],
+        "finalText": "",
+        "rawEventCount": 278
+      },
+      "quality": {
+        "passed": false,
+        "score": 1,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 1200036.457417,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/pi-run-1-monolith-split.log",
+      "workspace": "workspaces/pi/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 28,
+        "eventTypes": {
+          "message_end": 11,
+          "tool_execution_start": 7,
+          "tool_execution_end": 7,
+          "turn_end": 3
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b-cache",
+        "usage": {
+          "input": 3118,
+          "output": 719,
+          "cacheRead": 6137,
+          "cacheWrite": 0,
+          "totalTokens": 9974
+        },
+        "turns": 3,
+        "assistantMessages": 3,
+        "toolCalls": 7,
+        "toolErrors": 2,
+        "toolNames": {
+          "read": 5,
+          "bash": 2
+        },
+        "stopReasons": {
+          "toolUse": 3
+        },
+        "errors": [],
+        "finalText": "Now let me find the test files and any other source files.\n\n",
+        "rawEventCount": 599
+      },
+      "quality": {
+        "passed": false,
+        "score": 3,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "timed_out",
+      "elapsedMs": 2400047.4888750003,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/pi-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/pi/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 12,
+        "eventTypes": {
+          "message_end": 5,
+          "tool_execution_start": 3,
+          "tool_execution_end": 3,
+          "turn_end": 1
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b-cache",
+        "usage": {
+          "input": 172,
+          "output": 232,
+          "cacheRead": 1582,
+          "cacheWrite": 0,
+          "totalTokens": 1986
+        },
+        "turns": 1,
+        "assistantMessages": 1,
+        "toolCalls": 3,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 3
+        },
+        "stopReasons": {
+          "toolUse": 1
+        },
+        "errors": [],
+        "finalText": "",
+        "rawEventCount": 203
+      },
+      "quality": {
+        "passed": false,
+        "score": 2,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/test/inventory.contract.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/inventory.contract.test.ts\nnot ok 1 - test/inventory.contract.test.ts\n  ---\n  duration_ms: 196.879417\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/test/inventory.contract.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/test/inventory.hidden.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/inventory.hidden.test.ts\nnot ok 2 - test/inventory.hidden.test.ts\n  ---\n  duration_ms: 196.6595\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/pi/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 0\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 208.505125\n"
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 343494.51195800025,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/p-run-1-typescript-calculator.log",
+      "workspace": "workspaces/p/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 203,
+        "eventTypes": {
+          "message_end": 89,
+          "request_start": 26,
+          "tool_execution_start": 31,
+          "tool_execution_end": 31,
+          "turn_end": 26
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b-cache",
+        "usage": {
+          "input": 21877,
+          "output": 7948,
+          "cacheRead": 498022,
+          "cacheWrite": 0,
+          "totalTokens": 527847
+        },
+        "turns": 26,
+        "assistantMessages": 26,
+        "toolCalls": 31,
+        "toolErrors": 5,
+        "toolNames": {
+          "update_session_state": 3,
+          "read": 6,
+          "bash": 8,
+          "write": 3,
+          "edit": 8,
+          "finish_work": 2,
+          "record_task_verification": 1
+        },
+        "stopReasons": {
+          "toolUse": 26
+        },
+        "errors": [],
+        "finalText": "Implemented a TypeScript calculator library and CLI with a recursive-descent parser supporting full operator precedence, unary minus, parentheses, decimals, and whitespace handling. Created 3 files:\n\n- **src/calculator.ts**: Recursive-descent parser with proper precedence (expression → term → unary → primary), left associativity, unary minus, division-by-zero detection, and malformed-expression errors.\n- **src/cli.ts**: CLI entry point that prints the result or exits nonzero with a descriptive stderr message.\n- **test/calculator.test.ts**: 27 unit tests covering basic arithmetic, precedence, associativity, parentheses, decimals, unary minus variants, whitespace, error cases, and a CLI smoke test.\n\nVerification: 32/32 tests pass (5 contract + 27 unit), `npm run typecheck` clean, `npm run calc -- \"2 + 3 * (4 - 1)\"` outputs `11`.",
+        "rawEventCount": 7842
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "failed",
+      "elapsedMs": 25270.80045800004,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 15,
+        "eventTypes": {
+          "message_end": 6,
+          "request_start": 4,
+          "turn_end": 4,
+          "auto_retry_end": 1
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 4,
+        "assistantMessages": 4,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {
+          "error": 4
+        },
+        "errors": [
+          "Connection error.",
+          "Connection error.",
+          "Connection error.",
+          "Connection error.",
+          "Connection error."
+        ],
+        "finalText": "",
+        "rawEventCount": 41
+      },
+      "quality": {
+        "passed": false,
+        "score": 3,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 1553504.4703750005,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 191,
+        "eventTypes": {
+          "message_end": 81,
+          "request_start": 31,
+          "turn_end": 31,
+          "auto_retry_end": 2,
+          "tool_execution_start": 23,
+          "tool_execution_end": 23
+        },
+        "model": {
+          "provider": "mini-pc",
+          "id": "sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 51206,
+          "output": 19868,
+          "cacheRead": 461315,
+          "cacheWrite": 0,
+          "totalTokens": 532389
+        },
+        "turns": 31,
+        "assistantMessages": 31,
+        "toolCalls": 23,
+        "toolErrors": 2,
+        "toolNames": {
+          "read": 4,
+          "update_session_state": 2,
+          "bash": 7,
+          "write": 5,
+          "edit": 1,
+          "record_task_verification": 2,
+          "finish_work": 2
+        },
+        "stopReasons": {
+          "error": 11,
+          "toolUse": 20
+        },
+        "errors": [
+          "503 Loading model",
+          "503 Loading model",
+          "503 Loading model",
+          "503 Loading model",
+          "503 Loading model",
+          "503 Loading model",
+          "terminated",
+          "Connection error.",
+          "Connection error.",
+          "503 Loading model",
+          "503 Loading model"
+        ],
+        "finalText": "Implemented the complete production-quality event-sourced inventory engine with all required semantics.\n\n**Files created:**\n- `src/types.ts` — Command, State, Event, Result, Error types\n- `src/store.ts` — EventLog with SHA-256 hash-chained JSONL export/import, idempotency tracking, manifest validation, per-SKU state reconstruction\n- `src/engine.ts` — InventoryEngine with command validation, apply functions, optimistic concurrency, atomic batch execution with rollback, deep immutability via `structuredClone`\n- `src/index.ts` — Public API facade exporting all types and classes\n- `test/inventory.test.ts` — 44 additional tests covering validation, idempotency, inventory invariants, concurrency, batch atomicity, hash chain integrity, tamper detection, export/import round-trips, continuation after restore, deep immutability, and edge cases\n\n**All 47 tests pass** (3 contract + 44 additional). **Typecheck is clean.** README.md, package.json, tsconfig.json, and the contract test are preserved unchanged. Only Node built-ins used.",
+        "rawEventCount": 32701
+      },
+      "quality": {
+        "passed": false,
+        "score": 95,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false,
+            "details": "vent log unchanged\n  ---\n  duration_ms: 0.296833\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-id-rollback] failed batch does not consume command IDs\nok 10 - [inventory:batch-id-rollback] failed batch does not consume command IDs\n  ---\n  duration_ms: 0.305542\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\nok 11 - [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\n  ---\n  duration_ms: 0.210041\n  type: 'test'\n  ...\n# Subtest: [inventory:no-oversell] reservation cannot exceed available inventory\nok 12 - [inventory:no-oversell] reservation cannot exceed available inventory\n  ---\n  duration_ms: 0.233958\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-release] release cannot exceed the order reservation\nok 13 - [inventory:no-over-release] release cannot exceed the order reservation\n  ---\n  duration_ms: 0.279625\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-ship] shipment cannot exceed the order reservation\nok 14 - [inventory:no-over-ship] shipment cannot exceed the order reservation\n  ---\n  duration_ms: 0.179958\n  type: 'test'\n  ...\n# Subtest: [inventory:release-ship-state] valid release and ship update all inventory totals\nok 15 - [inventory:release-ship-state] valid release and ship update all inventory totals\n  ---\n  duration_ms: 0.236292\n  type: 'test'\n  ...\n# Subtest: [inventory:state-isolation] returned state is a deep copy\nok 16 - [inventory:state-isolation] returned state is a deep copy\n  ---\n  duration_ms: 0.201958\n  type: 'test'\n  ...\n# Subtest: [inventory:history-isolation] returned history is a deep copy\nok 17 - [inventory:history-isolation] returned history is a deep copy\n  ---\n  duration_ms: 0.202916\n  type: 'test'\n  ...\n# Subtest: [inventory:positions-versions] histories preserve per-SKU versions and global positions\nok 18 - [inventory:positions-versions] histories preserve per-SKU versions and global positions\n  ---\n  duration_ms: 0.3735\n  type: 'test'\n  ...\n# Subtest: [inventory:deterministic-newline-log] export is deterministic and newline terminated\nok 19 - [inventory:deterministic-newline-log] export is deterministic and newline terminated\n  ---\n  duration_ms: 0.239666\n  type: 'test'\n  ...\n# Subtest: [inventory:manifest-integrity] manifest records the event count and head hash\nok 20 - [inventory:manifest-integrity] manifest records the event count and head hash\n  ---\n  duration_ms: 0.2715\n  type: 'test'\n  ...\n# Subtest: [inventory:hash-links] every event hash links to its predecessor\nok 21 - [inventory:hash-links] every event hash links to its predecessor\n  ---\n  duration_ms: 0.179417\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\nok 22 - [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\n  ---\n  duration_ms: 0.335666\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-continuation] restored engine continues positions and hash links\nok 23 - [inventory:restore-continuation] restored engine continues positions and hash links\n  ---\n  duration_ms: 0.308834\n  type: 'test'\n  ...\n# Subtest: [inventory:content-tamper] changed event content is rejected\nok 24 - [inventory:content-tamper] changed event content is rejected\n  ---\n  duration_ms: 0.23325\n  type: 'test'\n  ...\n# Subtest: [inventory:truncation] removing the final byte is rejected\nnot ok 25 - [inventory:truncation] removing the final byte is rejected\n  ---\n  duration_ms: 2.6055\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:9066'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:259:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [inventory:extra-data] data after the manifest is rejected\nok 26 - [inventory:extra-data] data after the manifest is rejected\n  ---\n  duration_ms: 0.264291\n  type: 'test'\n  ...\n# Subtest: [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\nok 27 - [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\n  ---\n  duration_ms: 0.221917\n  type: 'test'\n  ...\n# Subtest: [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\nok 28 - [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\n  ---\n  duration_ms: 0.233667\n  type: 'test'\n  ...\n# Subtest: rejects empty SKU\nok 29 - rejects empty SKU\n  ---\n  duration_ms: 1.183666\n  type: 'test'\n  ...\n# Subtest: rejects zero or negative quantities\nok 30 - rejects zero or negative quantities\n  ---\n  duration_ms: 0.465375\n  type: 'test'\n  ...\n# Subtest: rejects non-integer quantities\nok 31 - rejects non-integer quantities\n  ---\n  duration_ms: 0.169459\n  type: 'test'\n  ...\n# Subtest: rejects empty order ID\nok 32 - rejects empty order ID\n  ---\n  duration_ms: 0.230625\n  type: 'test'\n  ...\n# Subtest: rejects empty command ID\nok 33 - rejects empty command ID\n  ---\n  duration_ms: 0.24025\n  type: 'test'\n  ...\n# Subtest: rejects commands on non-existent SKU\nok 34 - rejects commands on non-existent SKU\n  ---\n  duration_ms: 0.292083\n  type: 'test'\n  ...\n# Subtest: retrying the same command returns the original result without appending a new event\nok 35 - retrying the same command returns the original result without appending a new event\n  ---\n  duration_ms: 0.335167\n  type: 'test'\n  ...\n# Subtest: reusing a command ID with a different command throws\nok 36 - reusing a command ID with a different command throws\n  ---\n  duration_ms: 0.167375\n  type: 'test'\n  ...\n# Subtest: idempotency works across all command types\nok 37 - idempotency works across all command types\n  ---\n  duration_ms: 0.292584\n  type: 'test'\n  ...\n# Subtest: cannot reserve more than available\nok 38 - cannot reserve more than available\n  ---\n  duration_ms: 0.272834\n  type: 'test'\n  ...\n# Subtest: cannot release more than reserved for an order\nok 39 - cannot release more than reserved for an order\n  ---\n  duration_ms: 0.187875\n  type: 'test'\n  ...\n# Subtest: cannot ship more than reserved for an order\nok 40 - cannot ship more than reserved for an order\n  ---\n  duration_ms: 0.222917\n  type: 'test'\n  ...\n# Subtest: release correctly updates available and reserved\nok 41 - release correctly updates available and reserved\n  ---\n  duration_ms: 0.153625\n  type: 'test'\n  ...\n# Subtest: ship reduces onHand, reserved, and reservation\nok 42 - ship reduces onHand, reserved, and reservation\n  ---\n  duration_ms: 0.132459\n  type: 'test'\n  ...\n# Subtest: full ship of a reservation removes the order from reservations\nok 43 - full ship of a reservation removes the order from reservations\n  ---\n  duration_ms: 0.1205\n  type: 'test'\n  ...\n# Subtest: multiple reservations for same SKU\nok 44 - multiple reservations for same SKU\n  ---\n  duration_ms: 0.124667\n  type: 'test'\n  ...\n# Subtest: concurrent create of same SKU fails\nok 45 - concurrent create of same SKU fails\n  ---\n  duration_ms: 0.098209\n  type: 'test'\n  ...\n# Subtest: stale version throws ConcurrencyError\nok 46 - stale version throws ConcurrencyError\n  ---\n  duration_ms: 0.090125\n  type: 'test'\n  ...\n# Subtest: batch creates and receives across multiple SKUs atomically\nok 47 - batch creates and receives across multiple SKUs atomically\n  ---\n  duration_ms: 0.338083\n  type: 'test'\n  ...\n# Subtest: batch rolls back on failure\nok 48 - batch rolls back on failure\n  ---\n  duration_ms: 0.108666\n  type: 'test'\n  ...\n# Subtest: batch within-SKU version chaining\nok 49 - batch within-SKU version chaining\n  ---\n  duration_ms: 0.130917\n  type: 'test'\n  ...\n# Subtest: batch interleaves multiple SKUs correctly\nok 50 - batch interleaves multiple SKUs correctly\n  ---\n  duration_ms: 0.1765\n  type: 'test'\n  ...\n# Subtest: exportLog produces deterministic JSONL with manifest\nok 51 - exportLog produces deterministic JSONL with manifest\n  ---\n  duration_ms: 0.152667\n  type: 'test'\n  ...\n# Subtest: fromLog restores state and history identically\nok 52 - fromLog restores state and history identically\n  ---\n  duration_ms: 0.887708\n  type: 'test'\n  ...\n# Subtest: export after restore is byte-for-byte identical\nok 53 - export after restore is byte-for-byte identical\n  ---\n  duration_ms: 0.14675\n  type: 'test'\n  ...\n# Subtest: fromLog rejects truncated log\nok 54 - fromLog rejects truncated log\n  ---\n  duration_ms: 0.122083\n  type: 'test'\n  ...\n# Subtest: fromLog rejects tampered hash\nok 55 - fromLog rejects tampered hash\n  ---\n  duration_ms: 0.114833\n  type: 'test'\n  ...\n# Subtest: fromLog rejects modified previousHash\nok 56 - fromLog rejects modified previousHash\n  ---\n  duration_ms: 0.134958\n  type: 'test'\n  ...\n# Subtest: fromLog rejects invalid JSON in log\nok 57 - fromLog rejects invalid JSON in log\n  ---\n  duration_ms: 0.067833\n  type: 'test'\n  ...\n# Subtest: can continue processing after restore\nok 58 - can continue processing after restore\n  ---\n  duration_ms: 0.140542\n  type: 'test'\n  ...\n# Subtest: positions and hashes continue correctly after restore\nok 59 - positions and hashes continue correctly after restore\n  ---\n  duration_ms: 0.196625\n  type: 'test'\n  ...\n# Subtest: returned state is a deep copy — mutating it does not affect engine\nok 60 - returned state is a deep copy — mutating it does not affect engine\n  ---\n  duration_ms: 0.095917\n  type: 'test'\n  ...\n# Subtest: returned history is a deep copy\nok 61 - returned history is a deep copy\n  ---\n  duration_ms: 0.077167\n  type: 'test'\n  ...\n# Subtest: returned result event is a deep copy\nok 62 - returned result event is a deep copy\n  ---\n  duration_ms: 0.06375\n  type: 'test'\n  ...\n# Subtest: hash chain links events across different SKUs\nok 63 - hash chain links events across different SKUs\n  ---\n  duration_ms: 0.108583\n  type: 'test'\n  ...\n# Subtest: manifest headHash matches last event hash\nok 64 - manifest headHash matches last event hash\n  ---\n  duration_ms: 0.093292\n  type: 'test'\n  ...\n# Subtest: state throws for unknown SKU\nok 65 - state throws for unknown SKU\n  ---\n  duration_ms: 0.069542\n  type: 'test'\n  ...\n# Subtest: history for unknown SKU returns empty array\nok 66 - history for unknown SKU returns empty array\n  ---\n  duration_ms: 0.049625\n  type: 'test'\n  ...\n# Subtest: empty engine export/import round-trip\nok 67 - empty engine export/import round-trip\n  ---\n  duration_ms: 0.079708\n  type: 'test'\n  ...\n# Subtest: receive on SKU with no inventory still works if created\nok 68 - receive on SKU with no inventory still works if created\n  ---\n  duration_ms: 0.083292\n  type: 'test'\n  ...\n# Subtest: version increments by exactly one per event\nok 69 - version increments by exactly one per event\n  ---\n  duration_ms: 0.119291\n  type: 'test'\n  ...\n# Subtest: full lifecycle: create → receive → reserve → ship → release remainder\nok 70 - full lifecycle: create → receive → reserve → ship → release remainder\n  ---\n  duration_ms: 0.152416\n  type: 'test'\n  ...\n# Subtest: manifest eventCount matches actual events in log\nok 71 - manifest eventCount matches actual events in log\n  ---\n  duration_ms: 0.22975\n  type: 'test'\n  ...\n# Subtest: fromLog with multiple SKUs restores all correctly\nok 72 - fromLog with multiple SKUs restores all correctly\n  ---\n  duration_ms: 0.155458\n  type: 'test'\n  ...\n1..72\n# tests 72\n# suites 0\n# pass 71\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 250.24125\n"
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "failed",
+      "elapsedMs": 4423.142792000435,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-typescript-calculator.log",
+      "workspace": "workspaces/kilo/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 2,
+        "rawEventCount": 14,
+        "eventTypes": {
+          "error": 2
+        },
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 0,
+        "assistantMessages": 0,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {},
+        "errors": [
+          "Kilo error",
+          "Kilo error"
+        ],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "score": 1,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "failed",
+      "elapsedMs": 3794.724458999932,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-monolith-split.log",
+      "workspace": "workspaces/kilo/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 2,
+        "rawEventCount": 14,
+        "eventTypes": {
+          "error": 2
+        },
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 0,
+        "assistantMessages": 0,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {},
+        "errors": [
+          "Kilo error",
+          "Kilo error"
+        ],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "score": 3,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 3883.9675829997286,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/kilo-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/kilo/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 2,
+        "rawEventCount": 14,
+        "eventTypes": {
+          "error": 2
+        },
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 0,
+        "assistantMessages": 0,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {},
+        "errors": [
+          "Kilo error",
+          "Kilo error"
+        ],
+        "finalText": ""
+      },
+      "quality": {
+        "passed": false,
+        "score": 2,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.contract.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/inventory.contract.test.ts\nnot ok 1 - test/inventory.contract.test.ts\n  ---\n  duration_ms: 159.229458\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.contract.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.hidden.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/inventory.hidden.test.ts\nnot ok 2 - test/inventory.hidden.test.ts\n  ---\n  duration_ms: 158.888083\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-01T03-55-42-865Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 0\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 170.806625\n"
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}

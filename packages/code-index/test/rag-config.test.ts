@@ -1,7 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { loadWorkspaceCodeRagSettings } from "../src/rag/config.ts";
 
 const temporaryDirectories: string[] = [];
@@ -19,16 +19,6 @@ afterEach(() => {
 });
 
 describe("loadWorkspaceCodeRagSettings edge cases", () => {
-  let envSave: NodeJS.ProcessEnv;
-
-  beforeEach(() => {
-    envSave = { ...process.env };
-  });
-
-  afterEach(() => {
-    process.env = envSave;
-  });
-
   it("throws on invalid JSON in config file", () => {
     const dir = createTempDir();
     const configPath = path.join(dir, "invalid.json");
@@ -89,41 +79,79 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     ).toThrow("Unknown code RAG config field");
   });
 
-  it("validates boolean environment variables", () => {
+  it("loads embedding runtime settings from the config file", () => {
     const dir = createTempDir();
-
-    // Valid boolean env vars
-    process.env.P_CODE_RAG_ENABLED = "1";
-    process.env.P_CODE_RAG_AUTO_REFRESH = "true";
-    process.env.P_CODE_RAG_REMOTE_BACKENDS_ALLOWED = "0";
-
-    const settings = loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir });
-    expect(settings.enabled).toBe(true);
-    expect(settings.autoRefresh).toBe(true);
-    expect(settings.remoteBackendsAllowed).toBe(false);
-
-    // Invalid boolean env var
-    process.env.P_CODE_RAG_ENABLED = "maybe";
-    expect(() => loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir })).toThrow(
-      "must be true, false, 1, or 0",
+    const configPath = path.join(dir, "code-rag.json");
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        amdIronArtifactDirectory: "/managed/artifacts",
+        amdIronCacheDirectory: "/managed/cache",
+        amdIronSourceDirectory: "/managed/mlir-aie",
+        amdNpuGeneration: "npu1",
+        amdNpuRuntimeVersion: "1.4.0",
+        embeddingDevice: "amd-phoenix-npu",
+        maxEmbeddingBatchSize: 12,
+        torchBackend: "cpu",
+      }),
     );
+
+    const settings = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      userConfigPath: configPath,
+    });
+    expect(settings.embeddingDevice).toBe("amd-phoenix-npu");
+    expect(settings.amdIronArtifactDirectory).toBe("/managed/artifacts");
+    expect(settings.amdNpuGeneration).toBe("npu1");
+    expect(settings.maxEmbeddingBatchSize).toBe(12);
+    expect(settings.torchBackend).toBe("cpu");
   });
 
-  it("loads and validates file preparation resource overrides", () => {
+  it("rejects unsupported embedding runtime settings", () => {
     const dir = createTempDir();
-    process.env.P_CODE_RAG_PREPARATION_MAX_WORKERS = "12";
-    process.env.P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB = "96";
-    process.env.P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB = "768";
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { embeddingDevice: "invalid" as "cpu" },
+      }),
+    ).toThrow("embeddingDevice is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { torchBackend: "invalid" as "cpu" },
+      }),
+    ).toThrow("torchBackend is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { embeddingModelParameterCount: 0 },
+      }),
+    ).toThrow("embeddingModelParameterCount must be a positive integer");
+  });
 
-    const settings = loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir });
+  it("loads file preparation resource settings from config", () => {
+    const dir = createTempDir();
+    const configPath = path.join(dir, "code-rag.json");
+    fs.writeFileSync(
+      configPath,
+      JSON.stringify({
+        preparationMaxWorkers: 12,
+        preparationWorkerMemoryBytes: 96 * 1024 * 1024,
+        preparationMemoryReserveBytes: 768 * 1024 * 1024,
+      }),
+    );
+    const settings = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      userConfigPath: configPath,
+    });
     expect(settings.preparationMaxWorkers).toBe(12);
     expect(settings.preparationWorkerMemoryBytes).toBe(96 * 1024 * 1024);
     expect(settings.preparationMemoryReserveBytes).toBe(768 * 1024 * 1024);
-
-    process.env.P_CODE_RAG_PREPARATION_MAX_WORKERS = "2.5";
-    expect(() => loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir })).toThrow(
-      "P_CODE_RAG_PREPARATION_MAX_WORKERS must be a positive integer",
-    );
   });
 
   it("validates result limits, dimensions, and rebuild ratios", () => {

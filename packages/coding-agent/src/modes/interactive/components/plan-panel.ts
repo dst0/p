@@ -332,10 +332,17 @@ export class PlanPanel implements Component {
     const scrollHint = hiddenAbove > 0 || hiddenBelow > 0 ? ` ↑${hiddenAbove} ↓${hiddenBelow}` : "";
     const toggleAction = this.mode === "compact" ? "Expand" : "Hide";
     const keyHint =
-      `[${this.keyHints.toggle}] ${toggleAction}` +
-      ` · [${this.keyHints.mouseToggle}] Mouse ${this.mouseModeActive ? "on" : "off"}` +
-      ` · [${this.keyHints.scrollUp}/${this.keyHints.scrollDown}] Scroll` +
-      ` · [${this.keyHints.resizeNarrower}/${this.keyHints.resizeWider}/${this.keyHints.resizeShorter}/${this.keyHints.resizeTaller}] Resize`;
+      width >= 90
+        ? `[${this.keyHints.toggle}] ${toggleAction}` +
+          ` · [${this.keyHints.mouseToggle}] Mouse ${this.mouseModeActive ? "on" : "off"}` +
+          ` · [${this.keyHints.scrollUp}/${this.keyHints.scrollDown}] Scroll` +
+          ` · [${this.keyHints.resizeNarrower}/${this.keyHints.resizeWider}/${this.keyHints.resizeShorter}/${this.keyHints.resizeTaller}] Resize`
+        : width >= 60
+          ? `[${this.keyHints.toggle}] ${toggleAction}` +
+            ` · [${this.keyHints.mouseToggle}] Mouse ${this.mouseModeActive ? "on" : "off"}` +
+            ` · [${this.keyHints.scrollUp}/${this.keyHints.scrollDown}] Scroll`
+          : `[${this.keyHints.toggle}] ${toggleAction}` +
+            ` · [${this.keyHints.mouseToggle}] Mouse ${this.mouseModeActive ? "on" : "off"}`;
     const footerLines = [
       border(`├${"─".repeat(innerW)}┤`),
       wrapRow(` ${theme.fg("dim", `${scrollHint.trim()}${scrollHint ? " · " : ""}${keyHint}`)}`),

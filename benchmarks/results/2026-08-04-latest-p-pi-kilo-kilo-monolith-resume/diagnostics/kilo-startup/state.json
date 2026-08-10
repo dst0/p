@@ -1,0 +1,52 @@
+{
+  "status": "passed",
+  "expectedResolvedModel": "mini-pc/sokann-qwen-27b-cache",
+  "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b-cache",
+  "timeoutSeconds": 300,
+  "diagnostics": "diagnostics/kilo-startup",
+  "modelResolution": {
+    "status": "passed",
+    "elapsedMs": 5952.910708,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 320,
+    "recording": "model-resolution.log.gz",
+    "stderr": "model-resolution.stderr.log"
+  },
+  "resolvedModel": "mini-pc/sokann-qwen-27b-cache",
+  "request": {
+    "status": "passed",
+    "elapsedMs": 50945.739833,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 3,
+    "recording": "request.jsonl.gz",
+    "stderr": "request.stderr.log",
+    "responseMatched": true,
+    "errors": []
+  },
+  "runtimeFiles": {
+    "data": [
+      "kilo/.metadata_never_index",
+      "kilo/kilo.db",
+      "kilo/kilo.db-shm",
+      "kilo/kilo.db-wal",
+      "kilo/log/2026-08-04T105340.log",
+      "kilo/log/2026-08-04T105347.log",
+      "kilo/log/opencode.log",
+      "kilo/storage/migration",
+      "kilo/storage/session_diff/ses_033977ba0ffeTHM1pg5IgzyFqF.json",
+      "kilo/telemetry-id"
+    ],
+    "state": [
+      "kilo-sandbox-policy/fcd6610d37666b119b000192a3a412f3c8f2eafc677482026050cd7e4d0d8b95/e0863af2fae037976343f855250dc779aadc58edebfa4d492efd87e47a5981d1.json",
+      "kilo/.metadata_never_index",
+      "kilo/locks/377aa70868174d9568885a25629252c8b4417a07.lock/heartbeat",
+      "kilo/locks/377aa70868174d9568885a25629252c8b4417a07.lock/meta.json",
+      "kilo/locks/be45c2645e354c533cbda2d79a6fb993084362d3.lock/heartbeat",
+      "kilo/locks/be45c2645e354c533cbda2d79a6fb993084362d3.lock/meta.json"
+    ]
+  }
+}

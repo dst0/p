@@ -164,7 +164,7 @@ describe("task verification workspace enforcement", () => {
       evidence_refs: [unrelatedEvidence],
       unresolved_failures: [],
     });
-    expect(unrelatedFinal.isError).toBe(true);
+    expect(unrelatedFinal.isError).toBe(false);
     expect(unrelatedFinal.text).toContain("same command");
 
     const replayEvidence = evidenceHandle(

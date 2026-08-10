@@ -1,18 +1,18 @@
 {
 	"name": "@dst0/p",
-	"version": "0.4.110",
+	"version": "0.4.193",
 	"lockfileVersion": 3,
 	"requires": true,
 	"packages": {
 		"": {
 			"name": "@dst0/p",
-			"version": "0.4.110",
+			"version": "0.4.193",
 			"license": "MIT",
 			"dependencies": {
-				"@dst0/p-agent-core": "^0.4.110",
-				"@dst0/p-ai": "^0.4.110",
-				"@dst0/p-code-index": "^0.4.110",
-				"@dst0/p-tui": "^0.4.110",
+				"@dst0/p-agent-core": "^0.4.193",
+				"@dst0/p-ai": "^0.4.193",
+				"@dst0/p-code-index": "^0.4.193",
+				"@dst0/p-tui": "^0.4.193",
 				"@silvia-odwyer/photon-node": "0.3.4",
 				"chalk": "5.6.2",
 				"cross-spawn": "7.0.6",
@@ -26,7 +26,7 @@
 				"proper-lockfile": "4.1.2",
 				"semver": "7.8.0",
 				"typebox": "1.1.38",
-				"undici": "8.5.0",
+				"undici": "8.10.0",
 				"yaml": "2.9.0"
 			},
 			"optionalDependencies": {
@@ -476,11 +476,11 @@
 			}
 		},
 		"node_modules/@dst0/p-agent-core": {
-			"version": "0.4.110",
-			"resolved": "https://registry.npmjs.org/@dst0/p-agent-core/-/p-agent-core-0.4.110.tgz",
+			"version": "0.4.193",
+			"resolved": "https://registry.npmjs.org/@dst0/p-agent-core/-/p-agent-core-0.4.193.tgz",
 			"license": "MIT",
 			"dependencies": {
-				"@dst0/p-ai": "^0.4.110",
+				"@dst0/p-ai": "^0.4.193",
 				"ignore": "7.0.5",
 				"typebox": "1.1.38",
 				"yaml": "2.9.0"
@@ -490,8 +490,8 @@
 			}
 		},
 		"node_modules/@dst0/p-ai": {
-			"version": "0.4.110",
-			"resolved": "https://registry.npmjs.org/@dst0/p-ai/-/p-ai-0.4.110.tgz",
+			"version": "0.4.193",
+			"resolved": "https://registry.npmjs.org/@dst0/p-ai/-/p-ai-0.4.193.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"@anthropic-ai/sdk": "0.91.1",
@@ -513,8 +513,8 @@
 			}
 		},
 		"node_modules/@dst0/p-code-index": {
-			"version": "0.4.110",
-			"resolved": "https://registry.npmjs.org/@dst0/p-code-index/-/p-code-index-0.4.110.tgz",
+			"version": "0.4.193",
+			"resolved": "https://registry.npmjs.org/@dst0/p-code-index/-/p-code-index-0.4.193.tgz",
 			"dependencies": {
 				"@qdrant/js-client-rest": "1.18.0",
 				"fast-glob": "3.3.3",
@@ -528,8 +528,8 @@
 			}
 		},
 		"node_modules/@dst0/p-tui": {
-			"version": "0.4.110",
-			"resolved": "https://registry.npmjs.org/@dst0/p-tui/-/p-tui-0.4.110.tgz",
+			"version": "0.4.193",
+			"resolved": "https://registry.npmjs.org/@dst0/p-tui/-/p-tui-0.4.193.tgz",
 			"license": "MIT",
 			"dependencies": {
 				"get-east-asian-width": "1.6.0",
@@ -890,9 +890,9 @@
 			}
 		},
 		"node_modules/@qdrant/js-client-rest/node_modules/undici": {
-			"version": "6.27.0",
-			"resolved": "https://registry.npmjs.org/undici/-/undici-6.27.0.tgz",
-			"integrity": "sha512-YmfV3YnEDzXRC5lZ2jWtWWHKGUm1zIt8AhesR1tens+HTNv+YZlN/dp6G727LOvMJ8xjP9Be7Y2Sdr96LDm+pg==",
+			"version": "6.28.0",
+			"resolved": "https://registry.npmjs.org/undici/-/undici-6.28.0.tgz",
+			"integrity": "sha512-LIY910g9TI13YS95lrMFrs8Rm/u/irgHeTWoKCoteeJ04CUJ92eEfj0rVn+7VKMPBpUPiUoBKfhNyLI23EE/KA==",
 			"license": "MIT",
 			"engines": {
 				"node": ">=18.17"
@@ -1097,9 +1097,9 @@
 			"license": "MIT"
 		},
 		"node_modules/brace-expansion": {
-			"version": "5.0.8",
-			"resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.8.tgz",
-			"integrity": "sha512-JZyDyq3D4AUifKTPOB7DELf6XsB3WdPuNxCtob1vFXPsSXhdAiHBWJ/tJ8HAc9aH84BK+5JFZLNkJKx3G9kzQg==",
+			"version": "5.0.9",
+			"resolved": "https://registry.npmjs.org/brace-expansion/-/brace-expansion-5.0.9.tgz",
+			"integrity": "sha512-ScQ4IuvIEF1TMlP7Zt+vjJ//9zlPb2SDcxWxM3bk8s6t6GGdJ7KO1dCcTidOPJKePW30LE/2cT7wCyPho9/Wxg==",
 			"license": "MIT",
 			"dependencies": {
 				"balanced-match": "^4.0.2"
@@ -1978,9 +1978,9 @@
 			"license": "MIT"
 		},
 		"node_modules/undici": {
-			"version": "8.5.0",
-			"resolved": "https://registry.npmjs.org/undici/-/undici-8.5.0.tgz",
-			"integrity": "sha512-xamtWoB1EshgjpmlXd7GGm2VfdDtw1+rD8uhry8pSNW3If6S8E0m2T2+orSKeZXEn/aPJMviCpDBA65WJt8zhg==",
+			"version": "8.10.0",
+			"resolved": "https://registry.npmjs.org/undici/-/undici-8.10.0.tgz",
+			"integrity": "sha512-HvltHd7avK13QIw/oLe4qoOLyoVSoafqJ2jYOrtMRBkbYT31eiBQ8O0ehRKZiEZCMEyLFQNIADpgCWC5fALvYQ==",
 			"license": "MIT",
 			"engines": {
 				"node": ">=22.19.0"

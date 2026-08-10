@@ -7,7 +7,7 @@ import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 export interface FinishWorkPayload {
   status: "success" | "partial" | "failed";
   summary: string;
-  result?: string;
+  verification_token?: string;
   files_changed?: string[];
   tests_run?: string[];
   remaining_work?: string[];
@@ -19,7 +19,12 @@ const finishWorkSchema = Type.Object({
     description: "Final status of the task",
   }),
   summary: Type.String({ description: "Concise summary of the completed work" }),
-  result: Type.Optional(Type.String({ description: "Detailed result or output" })),
+  verification_token: Type.Optional(
+    Type.String({
+      description:
+        "Readiness certificate returned by record_task_verification(action: 'ready_to_finish') for successful code completion",
+    }),
+  ),
   files_changed: Type.Optional(Type.Array(Type.String({ description: "Files changed during this task" }))),
   tests_run: Type.Optional(Type.Array(Type.String({ description: "Tests run during this task" }))),
   remaining_work: Type.Optional(Type.Array(Type.String({ description: "Remaining incomplete work items" }))),
@@ -74,12 +79,6 @@ function formatFinishWorkResult(payload: FinishWorkPayload, theme: Theme): strin
     lines.push(theme.fg("text", payload.summary));
   }
 
-  // Result (if different from summary)
-  if (payload.result && payload.result !== payload.summary) {
-    lines.push("");
-    lines.push(payload.result);
-  }
-
   // Files changed
   if (payload.files_changed?.length) {
     lines.push("");
@@ -127,6 +126,7 @@ export function createFinishWorkToolDefinition(
     promptSnippet: "Explicitly terminate the task with final status and user-visible result",
     promptGuidelines: [
       "Call finish_work exactly once when the task is complete, partially complete, or blocked.",
+      "For successful code changes, first call record_task_verification with action 'ready_to_finish', re-audit all user requirements and test coverage, then pass its verification_token unchanged.",
       "status 'success' is incompatible with non-empty remaining_work.",
       "summary is required and must not be empty.",
     ],
