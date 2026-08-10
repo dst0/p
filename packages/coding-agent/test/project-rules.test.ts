@@ -69,4 +69,32 @@ describe("project rules resolver", () => {
 
     expect(result.issues.map((issue) => issue.code)).not.toContain("guardrail_candidate");
   });
+
+  it("preserves repeated-term conflict detection after precomputation", () => {
+    const cwd = createTempProject();
+    writeFileSync(
+      join(cwd, "AGENTS.md"),
+      [
+        "# Rules",
+        "- Must always preserve alpha beta gamma delta.",
+        "- Never discard alpha alpha alpha elsewhere.",
+      ].join("\n"),
+    );
+
+    const result = lintProjectRules(cwd);
+
+    expect(result.issues.map((issue) => issue.code)).toContain("conflicting_rule");
+  });
+
+  it("does not report a conflict below the three-term overlap threshold", () => {
+    const cwd = createTempProject();
+    writeFileSync(
+      join(cwd, "AGENTS.md"),
+      ["# Rules", "- Must always preserve alpha beta gamma delta.", "- Never discard alpha beta elsewhere."].join("\n"),
+    );
+
+    const result = lintProjectRules(cwd);
+
+    expect(result.issues.map((issue) => issue.code)).not.toContain("conflicting_rule");
+  });
 });
