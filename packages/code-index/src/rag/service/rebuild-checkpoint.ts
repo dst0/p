@@ -39,7 +39,6 @@ interface SourceFingerprintEntry {
   path: string;
   hash: string;
   size: number;
-  mtimeMs: number;
   language: string;
   isTest: boolean;
   isGenerated: boolean;
@@ -68,7 +67,6 @@ export function sourceFingerprintForManifest(files: Record<string, ManifestFileE
       path: filePath,
       hash: entry.hash,
       size: entry.size,
-      mtimeMs: entry.mtimeMs,
       language: entry.language,
       isTest: entry.isTest,
       isGenerated: entry.isGenerated,
@@ -150,9 +148,7 @@ export function removeRebuildArtifacts(artifacts: RebuildArtifacts, keepVocabula
 function sourceFingerprint(files: SourceFingerprintEntry[]): string {
   const hash = createHash("sha256");
   for (const file of [...files].sort((left, right) => left.path.localeCompare(right.path))) {
-    hash.update(
-      JSON.stringify([file.path, file.hash, file.size, file.mtimeMs, file.language, file.isTest, file.isGenerated]),
-    );
+    hash.update(JSON.stringify([file.path, file.hash, file.size, file.language, file.isTest, file.isGenerated]));
     hash.update("\n");
   }
   return hash.digest("hex");
