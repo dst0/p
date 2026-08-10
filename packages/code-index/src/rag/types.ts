@@ -1,4 +1,5 @@
 import type { EmbeddingProvider } from "../embed/provider.ts";
+import type { EmbeddingRuntimeSettings } from "./embedding-settings.ts";
 
 export type RagState =
   | "not_initialized"
@@ -103,8 +104,7 @@ export interface SemanticSearchResponse {
 export interface InitializeRagOptions {
   checkFreshness?: boolean;
 }
-
-export type IndexingProgressPhase = "scanning" | "indexing" | "finalizing";
+export type IndexingProgressPhase = "scanning" | "preparing" | "indexing" | "finalizing";
 
 export interface IndexingProgress {
   phase: IndexingProgressPhase;
@@ -124,9 +124,9 @@ export interface IndexingProgress {
   /** Estimated remaining seconds to completion based on recent processing speed. */
   etaSeconds?: number;
 }
-
 export interface RefreshIndexOptions {
   forceSparseRebuild?: boolean;
+  transactional?: boolean; // Build an isolated generation so cancellation cannot expose a partial update.
   onProgress?: (progress: IndexingProgress) => void;
 }
 
@@ -179,6 +179,11 @@ export interface IndexManifest {
     model: string;
     version?: string;
     dimensions: number;
+    compatibilityGroup?: string;
+    modelRevision?: string;
+    tokenizerHash?: string;
+    pooling?: string;
+    normalization?: string;
   };
   sparse: {
     strategy: "frozen-bm25";
@@ -278,8 +283,9 @@ export interface CodeRagService {
   dispose(): Promise<void>;
 }
 
-export interface WorkspaceCodeRagSettings {
+export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   enabled: boolean;
+  searchMode?: "hybrid" | "bm25-only" | "dense-only";
   autoRefresh: boolean;
   allowStaleSearch: boolean;
   remoteBackendsAllowed: boolean;
@@ -287,17 +293,11 @@ export interface WorkspaceCodeRagSettings {
   qdrantBinary: string;
   qdrantDataDirectory: string;
   qdrantStartupTimeoutMs: number;
-  embeddingServerUrl: string;
-  embeddingModel: string;
-  embeddingDimensions: number;
-  pythonExecutable: string;
   defaultLimit: number;
   maxLimit: number;
   maxContextCharacters: number;
   maxResultCharacters: number;
   searchTimeoutMs: number;
-  embeddingTimeoutMs: number;
-  embeddingStartupTimeoutMs: number;
   maxFileBytes: number;
   defaultChunkLines: number;
   maxChunkLines: number;

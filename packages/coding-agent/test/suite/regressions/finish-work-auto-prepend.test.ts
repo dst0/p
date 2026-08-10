@@ -42,8 +42,8 @@ describe("finish_work auto-prepend session state update", () => {
 
       const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
       expect(state).toBeDefined();
-      // Auto-prepend uses existing state values; on first turn there is no prior state so goal is empty
-      expect(state?.canonicalRequest.current).toBe("");
+      // Auto-prepend derives the first-turn goal from the live user request.
+      expect(state?.canonicalRequest.current).toBe("Do something simple");
     } finally {
       harness.cleanup();
     }

@@ -6,6 +6,7 @@ const mockState = vi.hoisted(() => ({
   requestOptions: [] as unknown[],
   requestParams: [] as unknown[],
   streamChunks: undefined as unknown[] | undefined,
+  yieldedChunks: 0,
 }));
 
 vi.mock("openai", () => {
@@ -28,6 +29,7 @@ vi.mock("openai", () => {
           const stream = {
             async *[Symbol.asyncIterator]() {
               for (const chunk of chunks) {
+                mockState.yieldedChunks++;
                 yield chunk;
               }
             },
@@ -84,6 +86,7 @@ describe("openai-completions provider retries", () => {
     mockState.requestOptions = [];
     mockState.requestParams = [];
     mockState.streamChunks = undefined;
+    mockState.yieldedChunks = 0;
   });
 
   it("always requests upstream progress events", async () => {
@@ -99,6 +102,241 @@ describe("openai-completions provider retries", () => {
   it("honors explicit provider retry settings", async () => {
     await consume({ maxRetries: 2 });
     expect(mockState.requestOptions).toEqual([expect.objectContaining({ maxRetries: 2 })]);
+  });
+
+  it("stops a streamed tool call when any argument phrase enters a repetitive loop", async () => {
+    mockState.streamChunks = [
+      {
+        id: "chatcmpl-loop",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-loop",
+                  type: "function",
+                  function: { name: "edit", arguments: '{"edits":[{"oldText":"interface BaseEvent {"' },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ...Array.from({ length: 600 }, () => ({
+        id: "chatcmpl-loop",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: " retry the same edit" } }],
+            },
+          },
+        ],
+      })),
+      {
+        id: "chatcmpl-loop",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: '"}]}' } }],
+            },
+            finish_reason: "tool_calls",
+          },
+        ],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("repetitive loop"),
+      },
+    });
+    expect(mockState.yieldedChunks).toBeLessThan(100);
+  });
+
+  it("stops the malformed closing-tag loop from the inventory benchmark", async () => {
+    mockState.streamChunks = [
+      {
+        id: "chatcmpl-protocol-loop",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [
+                {
+                  index: 0,
+                  id: "call-protocol-loop",
+                  type: "function",
+                  function: {
+                    name: "edit",
+                    arguments: '{"edits":[{"oldText":"interface BaseEvent {","newText":"export interface BaseEvent {"',
+                  },
+                },
+              ],
+            },
+          },
+        ],
+      },
+      ...Array.from({ length: 600 }, () => ({
+        id: "chatcmpl-protocol-loop",
+        choices: [
+          {
+            index: 0,
+            delta: {
+              tool_calls: [{ index: 0, function: { arguments: "</function>" } }],
+            },
+          },
+        ],
+      })),
+      {
+        id: "chatcmpl-protocol-loop",
+        choices: [{ index: 0, delta: {}, finish_reason: "tool_calls" }],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("repetitive loop"),
+      },
+    });
+    expect(mockState.yieldedChunks).toBeLessThan(120);
+  });
+
+  it("stops and trims repetitive streamed response text", async () => {
+    const repeatedSentence = "I should inspect the same file again. ";
+    mockState.streamChunks = [
+      {
+        id: "chatcmpl-text-loop",
+        choices: [{ index: 0, delta: { content: "Useful response prefix. " } }],
+      },
+      ...Array.from({ length: 400 }, () => ({
+        id: "chatcmpl-text-loop",
+        choices: [{ index: 0, delta: { content: repeatedSentence } }],
+      })),
+      {
+        id: "chatcmpl-text-loop",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("streamed text entered a repetitive loop"),
+      },
+    });
+    if (done?.type !== "done") {
+      throw new Error("Expected done event");
+    }
+    const text = done.message.content.find((block) => block.type === "text");
+    expect(text?.type === "text" ? text.text.length : Number.POSITIVE_INFINITY).toBeLessThan(200);
+    expect(mockState.yieldedChunks).toBeLessThan(100);
+  });
+
+  it("stops and trims repetitive streamed reasoning", async () => {
+    const repeatedThought = "I need to reconsider the identical step. ";
+    mockState.streamChunks = [
+      {
+        id: "chatcmpl-thinking-loop",
+        choices: [{ index: 0, delta: { reasoning_content: "Useful reasoning prefix. " } }],
+      },
+      ...Array.from({ length: 400 }, () => ({
+        id: "chatcmpl-thinking-loop",
+        choices: [{ index: 0, delta: { reasoning_content: repeatedThought } }],
+      })),
+      {
+        id: "chatcmpl-thinking-loop",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("streamed reasoning entered a repetitive loop"),
+      },
+    });
+    if (done?.type !== "done") {
+      throw new Error("Expected done event");
+    }
+    const thinking = done.message.content.find((block) => block.type === "thinking");
+    expect(thinking?.type === "thinking" ? thinking.thinking.length : Number.POSITIVE_INFINITY).toBeLessThan(200);
+    expect(mockState.yieldedChunks).toBeLessThan(100);
+  });
+
+  it("stops a streamed reasoning action loop with varied analysis", async () => {
+    mockState.streamChunks = [
+      ...Array.from({ length: 8 }, (_, index) => {
+        const variedAnalysis = Array.from(
+          { length: 40 },
+          (__, detail) => `Invariant ${index}-${detail} uses value ${((index + 1) * (detail + 17)).toString(36)}.`,
+        ).join(" ");
+        return {
+          id: "chatcmpl-thinking-action-loop",
+          choices: [
+            {
+              index: 0,
+              delta: {
+                reasoning_content: [
+                  `Let me implement module ${index} now.`,
+                  variedAnalysis,
+                  `Actually, I need to think more carefully about invariant ${index}.`,
+                  variedAnalysis,
+                  `Now I will write the code for module ${index}.`,
+                ].join("\n\n"),
+              },
+            },
+          ],
+        };
+      }),
+      {
+        id: "chatcmpl-thinking-action-loop",
+        choices: [{ index: 0, delta: {}, finish_reason: "stop" }],
+      },
+    ];
+
+    const events = await consume();
+    const done = events.find((event) => event.type === "done");
+
+    expect(done).toMatchObject({
+      type: "done",
+      reason: "length",
+      message: {
+        stopReason: "length",
+        errorMessage: expect.stringContaining("streamed reasoning entered a repetitive loop"),
+      },
+    });
+    if (done?.type !== "done") {
+      throw new Error("Expected done event");
+    }
+    const thinking = done.message.content.find((block) => block.type === "thinking");
+    expect(thinking?.type === "thinking" ? thinking.thinking.length : Number.POSITIVE_INFINITY).toBeLessThan(6_000);
+    expect(mockState.yieldedChunks).toBeLessThan(9);
   });
 
   it("maps orchestrator progress chunks to assistant progress events", async () => {

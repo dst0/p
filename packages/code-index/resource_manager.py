@@ -8,7 +8,6 @@ import re
 import subprocess
 from dataclasses import asdict, dataclass
 from pathlib import Path
-
 MIB = 1024**2
 GIB = 1024**3
 
@@ -50,6 +49,31 @@ class RuntimePlan:
         return asdict(self)
 
 
+SUPPORTED_BACKENDS = {
+    "cpu",
+    "cuda",
+    "rocm",
+    "mps",
+    "npu",
+    "openvino",
+    "coreml",
+    "vitisai",
+    "apple-ane",
+    "nvidia-cuda",
+    "amd-rocm",
+    "apple-mps",
+    "intel-openvino-cpu",
+    "amd-phoenix-npu",
+    "amd-ryzenai-npu",
+}
+SHARED_MEMORY_ACCELERATORS = {
+    "npu", "openvino", "coreml", "vitisai", "apple-ane", "amd-phoenix-npu", "amd-ryzenai-npu"
+}
+FAIL_CLOSED_ACCELERATORS = {
+    "npu", "openvino", "vitisai", "apple-ane", "amd-phoenix-npu", "amd-ryzenai-npu"
+}
+
+
 def estimate_model_parameter_count(model_name: str) -> int:
     size_match = re.search(r"(?<![a-z0-9])(\d+(?:\.\d+)?)b(?![a-z0-9])", model_name.lower())
     if size_match:
@@ -83,7 +107,7 @@ def build_runtime_plan(
     min_accelerator_reserve_bytes: int = MIN_ACCELERATOR_RESERVE_BYTES,
     model_resident: bool = False,
 ) -> RuntimePlan:
-    if preferred_backend not in {"cpu", "cuda", "rocm", "mps"}:
+    if preferred_backend not in SUPPORTED_BACKENDS:
         raise ValueError(f"Unsupported backend: {preferred_backend}")
     if logical_cpu_count <= 0:
         raise ValueError("logical_cpu_count must be positive")
@@ -106,60 +130,13 @@ def build_runtime_plan(
     )
 
     cpu_model_bytes = model_parameter_count * 4
-    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend == "mps" else 2)
+    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend in {"mps", "coreml"} else 2)
     cpu_load_bytes = 0 if model_resident else int(cpu_model_bytes * 1.20)
     accelerator_load_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.20)
     cpu_workspace = memory.system_available_bytes - system_reserve - cpu_load_bytes
     cpu_fits = cpu_workspace >= MIN_RUNTIME_WORKSPACE_BYTES
 
-    selected_backend = preferred_backend
-    reason = None
-    if preferred_backend != "cpu":
-        accelerator_free = memory.accelerator_free_bytes
-        # On ROCm APUs (unified memory architecture), PyTorch may report a small static VRAM window
-        # while ROCm can dynamically allocate from system RAM. If system available memory has enough
-        # headroom, treat ROCm free memory as available system memory minus system reserve.
-        if (
-            preferred_backend == "rocm"
-            and accelerator_free is not None
-            and accelerator_total >= 2 * GIB
-            and accelerator_free - accelerator_reserve - accelerator_load_bytes < MIN_RUNTIME_WORKSPACE_BYTES
-        ):
-            system_apu_headroom = memory.system_available_bytes - system_reserve - accelerator_load_bytes
-            if system_apu_headroom >= MIN_RUNTIME_WORKSPACE_BYTES:
-                accelerator_free = max(accelerator_free, memory.system_available_bytes - system_reserve)
-                accelerator_reserve = min(accelerator_reserve, MIN_ACCELERATOR_RESERVE_BYTES)
-
-        accelerator_fits = (
-            accelerator_free is not None
-            and accelerator_total > 0
-            and accelerator_free - accelerator_reserve - accelerator_load_bytes >= MIN_RUNTIME_WORKSPACE_BYTES
-        )
-        system_staging_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.10)
-        system_staging_fits = (
-            memory.system_available_bytes - system_reserve - system_staging_bytes >= MIN_RUNTIME_WORKSPACE_BYTES
-        )
-        if not accelerator_fits or not system_staging_fits:
-            if not cpu_fits:
-                return RuntimePlan(
-                    usable=False,
-                    preferred_backend=preferred_backend,
-                    backend="none",
-                    device="none",
-                    dtype="none",
-                    batch_size=0,
-                    cpu_threads=1,
-                    model_bytes=cpu_model_bytes,
-                    system_reserve_bytes=system_reserve,
-                    accelerator_reserve_bytes=accelerator_reserve,
-                    reason="insufficient accelerator and system memory",
-                )
-            selected_backend = "cpu"
-            reason = (
-                f"{preferred_backend} memory headroom is below the safety reserve; "
-                "using CPU until accelerator memory is available"
-            )
-    elif not cpu_fits:
+    def unusable_plan(model_bytes: int, reserve_bytes: int, reason: str) -> RuntimePlan:
         return RuntimePlan(
             usable=False,
             preferred_backend=preferred_backend,
@@ -168,11 +145,48 @@ def build_runtime_plan(
             dtype="none",
             batch_size=0,
             cpu_threads=1,
-            model_bytes=cpu_model_bytes,
+            model_bytes=model_bytes,
             system_reserve_bytes=system_reserve,
-            accelerator_reserve_bytes=0,
-            reason="insufficient system memory for the embedding model and safety reserve",
+            accelerator_reserve_bytes=reserve_bytes,
+            reason=reason,
         )
+
+    selected_backend = preferred_backend
+    reason = None
+    if preferred_backend != "cpu":
+        accelerator_free = memory.accelerator_free_bytes
+        if preferred_backend in SHARED_MEMORY_ACCELERATORS or (
+            preferred_backend == "rocm"
+            and accelerator_free is not None
+            and accelerator_total >= 2 * GIB
+            and accelerator_free - accelerator_reserve - accelerator_load_bytes < MIN_RUNTIME_WORKSPACE_BYTES
+        ):
+            system_apu_headroom = memory.system_available_bytes - system_reserve - accelerator_load_bytes
+            if system_apu_headroom >= MIN_RUNTIME_WORKSPACE_BYTES:
+                accelerator_free = max(accelerator_free or 0, memory.system_available_bytes - system_reserve)
+                accelerator_reserve = min(accelerator_reserve, MIN_ACCELERATOR_RESERVE_BYTES)
+
+        accelerator_fits = (
+            accelerator_free is not None
+            and (accelerator_total > 0 or preferred_backend in SHARED_MEMORY_ACCELERATORS)
+            and accelerator_free - accelerator_reserve - accelerator_load_bytes >= MIN_RUNTIME_WORKSPACE_BYTES
+        )
+        system_staging_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.10)
+        system_staging_fits = (
+            memory.system_available_bytes - system_reserve - system_staging_bytes >= MIN_RUNTIME_WORKSPACE_BYTES
+        )
+        if not accelerator_fits or not system_staging_fits:
+            if preferred_backend in FAIL_CLOSED_ACCELERATORS:
+                return unusable_plan(accelerator_model_bytes, accelerator_reserve, f"{preferred_backend} memory headroom is below the safety reserve")
+            if not cpu_fits:
+                return unusable_plan(cpu_model_bytes, accelerator_reserve, "insufficient accelerator and system memory")
+            selected_backend = "cpu"
+            reason = (
+                f"{preferred_backend} memory headroom is below the safety reserve; "
+                "using CPU until accelerator memory is available"
+            )
+    elif not cpu_fits:
+        return unusable_plan(cpu_model_bytes, 0, "insufficient system memory for the embedding model and safety reserve")
 
     default_cpu_thread_limit = (
         min(2, max(1, logical_cpu_count // 4)) if max_cpu_threads is None else max_cpu_threads
@@ -189,7 +203,6 @@ def build_runtime_plan(
         remaining_workspace = max(0, workspace - cpu_threads * CPU_THREAD_WORKSPACE_BYTES)
         batch_item_bytes = max(1, int(CPU_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, remaining_workspace // batch_item_bytes)
-        # Strict CPU batch limit (max 2 items) to keep individual embedding requests under 100ms
         cpu_core_batch_cap = min(2, max(1, int((cpu_threads * 2) / (sequence_scale * model_scale))))
         effective_max_batch = min(max_batch_size, cpu_core_batch_cap)
     else:
@@ -214,7 +227,7 @@ def build_runtime_plan(
         preferred_backend=preferred_backend,
         backend=selected_backend,
         device="cuda" if selected_backend in {"cuda", "rocm"} else selected_backend,
-        dtype="float32" if selected_backend in {"cpu", "mps"} else "float16",
+        dtype="float32" if selected_backend in {"cpu", "mps", "coreml", "npu", "openvino", "vitisai", "amd-phoenix-npu", "amd-ryzenai-npu"} else "float16",
         batch_size=batch_size,
         cpu_threads=cpu_threads,
         model_bytes=selected_model_bytes,
@@ -222,19 +235,6 @@ def build_runtime_plan(
         accelerator_reserve_bytes=accelerator_reserve,
         reason=reason,
     )
-
-
-def read_positive_int_environment(name: str, default: int) -> int:
-    raw_value = os.environ.get(name)
-    if raw_value is None:
-        return default
-    try:
-        value = int(raw_value)
-    except ValueError as error:
-        raise ValueError(f"{name} must be a positive integer") from error
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-    return value
 
 
 def _power_of_two_floor(value: int) -> int:

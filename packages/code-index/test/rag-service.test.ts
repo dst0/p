@@ -13,18 +13,10 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EmbeddingError, VectorStoreError } from "../src/embed/errors.ts";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
-import {
-  type IndexingProgress,
-  type IndexUpdateSummary,
-  type RagVectorStore,
-  type SparseVector,
-  type StoredVectorPoint,
-  type VectorPoint,
-  type VectorSearchFilters,
-  type VectorSearchResult,
-  WorkspaceCodeRagService,
-} from "../src/index.ts";
+import { type IndexingProgress, type IndexUpdateSummary, WorkspaceCodeRagService } from "../src/index.ts";
 import { StoredPointError } from "../src/rag/vector-store.ts";
+import { FakeVectorStore } from "./fake-vector-store.ts";
+import { isPhaseProgressMonotonic } from "./indexing-progress-assertions.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -59,114 +51,6 @@ class FakeEmbeddingProvider implements EmbeddingProvider {
   }
 }
 
-class FakeVectorStore implements RagVectorStore {
-  collections = new Map<string, Map<string, VectorPoint>>();
-  dimensions = new Map<string, number>();
-  failNextUpsert = false;
-  failNextDeleteCollection = false;
-  failDeleteCollection: string | undefined;
-  createdCollections: string[] = [];
-  deletedCollections: string[] = [];
-  omitDensePointId: string | undefined;
-  failIteration: Error | undefined;
-
-  async collectionExists(collection: string): Promise<boolean> {
-    return this.collections.has(collection);
-  }
-
-  async createCollection(collection: string, denseDimensions: number): Promise<void> {
-    if (!this.collections.has(collection)) {
-      this.collections.set(collection, new Map());
-      this.dimensions.set(collection, denseDimensions);
-      this.createdCollections.push(collection);
-    }
-  }
-
-  async deleteCollection(collection: string): Promise<void> {
-    if (this.failNextDeleteCollection || this.failDeleteCollection === collection) {
-      this.failNextDeleteCollection = false;
-      throw new Error("synthetic collection delete failure");
-    }
-    this.collections.delete(collection);
-    this.dimensions.delete(collection);
-    this.deletedCollections.push(collection);
-  }
-
-  async collectionStatus(collection: string): Promise<{ points: number; dimensions: number | undefined }> {
-    const points = this.collections.get(collection);
-    if (!points) throw new Error(`Collection not found: ${collection}`);
-    return { points: points.size, dimensions: this.dimensions.get(collection) };
-  }
-
-  async upsert(collection: string, points: VectorPoint[]): Promise<void> {
-    if (this.failNextUpsert) {
-      this.failNextUpsert = false;
-      throw new Error("synthetic upsert failure");
-    }
-    const target = this.collections.get(collection);
-    if (!target) throw new Error(`Collection not found: ${collection}`);
-    for (const point of points) target.set(point.id, point);
-  }
-
-  async deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void> {
-    const target = this.collections.get(collection);
-    if (!target) throw new Error(`Collection not found: ${collection}`);
-    for (const [id, point] of target) {
-      if (
-        point.payload.repoId === repoId &&
-        point.payload.fileId === fileId &&
-        (!keepFileHash || point.payload.fileHash !== keepFileHash)
-      ) {
-        target.delete(id);
-      }
-    }
-  }
-
-  async *iteratePoints(
-    collection: string,
-    repoId: string,
-    withDense: boolean,
-    signal?: AbortSignal,
-  ): AsyncIterable<StoredVectorPoint> {
-    if (this.failIteration) throw this.failIteration;
-    const target = this.collections.get(collection);
-    if (!target) throw new Error(`Collection not found: ${collection}`);
-    for (const point of target.values()) {
-      if (signal?.aborted) throw signal.reason;
-      if (point.payload.repoId !== repoId) continue;
-      yield {
-        id: point.id,
-        payload: point.payload,
-        ...(withDense && point.id !== this.omitDensePointId ? { dense: point.vectors.dense } : {}),
-      };
-    }
-  }
-
-  async search(
-    collection: string,
-    _dense: Float32Array,
-    _sparse: SparseVector,
-    filters: VectorSearchFilters,
-    limit: number,
-  ): Promise<VectorSearchResult[]> {
-    const target = this.collections.get(collection);
-    if (!target) throw new Error(`Collection not found: ${collection}`);
-    return [...target.values()]
-      .filter((point) => point.payload.repoId === filters.repoId)
-      .filter((point) => !filters.languages || filters.languages.includes(point.payload.language))
-      .filter((point) => filters.includeTests || !point.payload.isTest)
-      .filter((point) => filters.includeGenerated || !point.payload.isGenerated)
-      .slice(0, limit)
-      .map((point, index) => ({ id: point.id, score: 1 - index / 100, payload: point.payload }));
-  }
-
-  allContents(): string[] {
-    return [...this.collections.values()].flatMap((collection) =>
-      [...collection.values()].map((point) => point.payload.content),
-    );
-  }
-}
-
 function vectorFor(text: string): Float32Array {
   return new Float32Array([text.length % 7, text.length % 11, text.length % 13]);
 }
@@ -188,6 +72,8 @@ function createService(
   vectorStore: FakeVectorStore,
   options: {
     embeddingModel?: string;
+    embeddingPooling?: string;
+    embeddingNormalization?: string;
     allowSearchRefresh?: boolean;
     sparseRebuildDriftRatio?: number;
     fullSparseRebuildChangeRatio?: number;
@@ -208,6 +94,8 @@ function createService(
       autoRefresh: false,
       embeddingDimensions: 3,
       embeddingModel: options.embeddingModel ?? "test-embedding-v1",
+      embeddingPooling: options.embeddingPooling ?? "last-non-padding-token",
+      embeddingNormalization: options.embeddingNormalization ?? "l2",
       fullSparseRebuildChangeRatio: options.fullSparseRebuildChangeRatio ?? 1,
       sparseRebuildDriftRatio: options.sparseRebuildDriftRatio ?? 1,
       ...(options.upsertBatchSize === undefined ? {} : { upsertBatchSize: options.upsertBatchSize }),
@@ -337,7 +225,7 @@ describe("WorkspaceCodeRagService", () => {
     expect(migratedUnchanged.payload.indexGeneration).toBe(refreshed.status.generation);
     expect(migratedUnchanged.payload.indexedAt).toBe(originalIndexedAt);
     expect(progress.some((value) => value.processedChunks === 9 && value.totalChunks === 10)).toBe(true);
-    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+    expect(isPhaseProgressMonotonic(progress)).toBe(true);
   });
 
   it("excludes deleted files from a sparse migration without embedding unchanged files", async () => {
@@ -414,7 +302,7 @@ describe("WorkspaceCodeRagService", () => {
     const failedMigration = store.createdCollections.at(-2)!;
     expect(store.deletedCollections).toContain(failedMigration);
     expect(store.collections.has(failedMigration)).toBe(false);
-    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+    expect(isPhaseProgressMonotonic(progress)).toBe(true);
   });
 
   it("preserves the old generation when sparse migration fails for a backend error", async () => {
@@ -642,7 +530,7 @@ describe("WorkspaceCodeRagService", () => {
     await service.refresh({ onProgress: (value) => progress.push(value) });
 
     expect(progress).toContainEqual(
-      expect.objectContaining({ phase: "indexing", percent: 15, processedFiles: 1, totalFiles: 257 }),
+      expect.objectContaining({ phase: "preparing", processedFiles: 1, totalFiles: 257 }),
     );
   });
 
@@ -750,9 +638,7 @@ describe("WorkspaceCodeRagService", () => {
     await service.rebuild({ onProgress: (progress) => rebuildProgress.push(progress) });
     expect(rebuildProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
     expect(rebuildProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
-    expect(
-      rebuildProgress.every((progress, index) => index === 0 || progress.percent >= rebuildProgress[index - 1].percent),
-    ).toBe(true);
+    expect(isPhaseProgressMonotonic(rebuildProgress)).toBe(true);
 
     writeFileSync(join(root, "main.ts"), "export const replacement = 'changed';\n");
     const refreshProgress: IndexingProgress[] = [];
@@ -760,9 +646,7 @@ describe("WorkspaceCodeRagService", () => {
     expect(refreshProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
     expect(refreshProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
     expect(refreshProgress.some((progress) => progress.phase === "indexing" && progress.percent > 0.1)).toBe(true);
-    expect(
-      refreshProgress.every((progress, index) => index === 0 || progress.percent >= refreshProgress[index - 1].percent),
-    ).toBe(true);
+    expect(isPhaseProgressMonotonic(refreshProgress)).toBe(true);
   });
 
   it("dynamically reloads batch size configuration during an active rebuild", async () => {
@@ -878,6 +762,41 @@ describe("WorkspaceCodeRagService", () => {
     const rebuilt = await secondService.refresh();
     expect(rebuilt.fullRebuild).toBe(true);
     expect(rebuilt.status.collection).not.toBe(firstCollection);
+  });
+
+  it("marks missing embedding compatibility metadata incompatible and rebuilds", async () => {
+    const { root, data } = createFixture();
+    const embedding = new FakeEmbeddingProvider();
+    const store = new FakeVectorStore();
+    const original = createService(root, data, embedding, store);
+    await original.rebuild();
+    const originalStatus = await original.status();
+    await original.dispose();
+
+    const manifestPath = join(data, originalStatus.repoId, "manifest.json");
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+      embedding: {
+        compatibilityGroup?: string;
+        pooling?: string;
+        normalization?: string;
+      };
+    };
+    delete manifest.embedding.compatibilityGroup;
+    delete manifest.embedding.pooling;
+    delete manifest.embedding.normalization;
+    writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+
+    const migrated = createService(root, data, embedding, store);
+    const stale = await migrated.initialize();
+    expect(stale).toMatchObject({
+      state: "stale",
+      lastError: { code: "RAG_INCOMPATIBLE_INDEX", message: "Embedding compatibility metadata changed" },
+    });
+
+    const rebuilt = await migrated.refresh();
+    expect(rebuilt.fullRebuild).toBe(true);
+    expect(rebuilt.status.collection).not.toBe(originalStatus.collection);
+    await migrated.dispose();
   });
 
   it("invalidates and rebuilds an index created with the previous chunker version", async () => {

@@ -11,17 +11,22 @@
   ],
   "scripts": {
     "clean": "npm run clean --workspaces",
-    "build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../code-index && npm run build && cd ../coding-agent && npm run build",
-    "check": "biome check --write --error-on-warnings . && npm run check:pinned-deps && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
+    "build": "cd packages/tui && npm run build && cd ../ai && npm run build && cd ../agent && npm run build && cd ../code-index && npm run build && cd ../coding-agent && npm run build && cd ../site && npm run build",
+    "check": "biome check --write --error-on-warnings . && npm run check:file-structure && npm run check:pinned-deps && npm run check:ts-imports && npm run check:shrinkwrap && tsgo --noEmit && npm run check:browser-smoke",
     "check:browser-smoke": "node scripts/check-browser-smoke.js",
+    "check:file-structure": "node scripts/check-file-structure.js",
     "check:pinned-deps": "node scripts/check-pinned-deps.js",
     "check:shrinkwrap": "node scripts/generate-coding-agent-shrinkwrap.js --check",
     "check:ts-imports": "node scripts/check-ts-relative-imports.js",
     "profile:tui": "node scripts/profile-coding-agent-node.js --mode tui",
     "profile:rpc": "node scripts/profile-coding-agent-node.js --mode rpc",
     "benchmark:agents": "node scripts/benchmark-agents.js",
+    "dev": "./p-test.sh",
     "test": "npm run test --workspaces --if-present",
+    "test:cli": "node --test scripts/p-test-wrapper.test.js",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
+    "test:unit": "./test.sh",
+    "test:unit:coverage": "./test.sh test:coverage",
     "test:coverage:check": "node --test scripts/check-changed-coverage.test.js && node scripts/check-changed-coverage.js",
     "version:patch": "node scripts/version-bump.js patch",
     "version:minor": "node scripts/version-bump.js minor",
@@ -55,11 +60,11 @@
   "engines": {
     "node": ">=22.19.0"
   },
-  "version": "0.4.110",
+  "version": "0.4.192",
   "overrides": {
     "esbuild": "0.28.1",
     "rimraf": "6.1.2",
-    "brace-expansion": "5.0.8",
+    "brace-expansion": "5.0.9",
     "gaxios": {
       "rimraf": "6.1.2"
     }

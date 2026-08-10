@@ -86,7 +86,7 @@ function formatGrepCall(
   return text;
 }
 
-function formatGrepResult(
+export function formatGrepResult(
   result: {
     content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>;
     details?: GrepToolDetails;
@@ -94,8 +94,9 @@ function formatGrepResult(
   options: ToolRenderResultOptions,
   theme: Theme,
   showImages: boolean,
+  showHarnessMessages?: boolean,
 ): string {
-  const output = getTextOutput(result, showImages).trim();
+  const output = getTextOutput(result, showImages, options.showHarnessMessages ?? showHarnessMessages).trim();
   let text = "";
   if (output) {
     const lines = output.split("\n");
@@ -368,7 +369,7 @@ export function createGrepToolDefinition(
     },
     renderResult(result, options, theme, context) {
       const text = (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-      text.setText(formatGrepResult(result as any, options, theme, context.showImages));
+      text.setText(formatGrepResult(result as any, options, theme, context.showImages, context.showHarnessMessages));
       return text;
     },
   };

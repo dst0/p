@@ -36,9 +36,18 @@ export function normalizeDisplayText(text: string): string {
   return text.replace(/\r/g, "");
 }
 
+export function stripHarnessMessages(text: string): string {
+  if (!text) return "";
+  return text
+    .split("\n")
+    .filter((line) => !line.trim().startsWith("Verification evidence handle:"))
+    .join("\n");
+}
+
 export function getTextOutput(
   result: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }> } | undefined,
   showImages: boolean,
+  showHarnessMessages = false,
 ): string {
   if (!result) return "";
 
@@ -46,6 +55,10 @@ export function getTextOutput(
   const imageBlocks = result.content.filter((c) => c.type === "image");
 
   let output = textBlocks.map((c) => sanitizeBinaryOutput(stripAnsi(c.text || "")).replace(/\r/g, "")).join("\n");
+
+  if (!showHarnessMessages) {
+    output = stripHarnessMessages(output);
+  }
 
   const caps = getCapabilities();
   if (imageBlocks.length > 0 && (!caps.images || !showImages)) {

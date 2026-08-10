@@ -5,7 +5,6 @@ import {
   createTaskVerificationController,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
-  TASK_VERIFICATION_TOOL_NAME,
   type TaskVerificationController,
 } from "../src/core/task-verification.ts";
 
@@ -98,13 +97,15 @@ function evidenceHandle(text: string | undefined): string {
   return match[1];
 }
 
+function verificationToken(text: string): string {
+  const match = text.match(/verification_token: ([0-9a-f-]+)/u);
+  if (!match) throw new Error(`Missing verification token in: ${text}`);
+  return match[1];
+}
+
 describe("task verification controller", () => {
   it("blocks mutation until the task and required baseline are verified", async () => {
     const { agent, controller } = createInstalledController();
-
-    const undeclared = await beforeTool(agent, "edit", { path: "a.ts", edits: [] });
-    expect(undeclared?.block).toBe(true);
-    expect(undeclared?.reason).toContain(TASK_VERIFICATION_TOOL_NAME);
 
     const declared = await callVerificationTool(controller, {
       action: "declare_task",
@@ -130,6 +131,17 @@ describe("task verification controller", () => {
     });
     expect(baseline.isError).toBe(false);
     expect((await beforeTool(agent, "edit", { path: "a.ts", edits: [] }))?.block).not.toBe(true);
+  });
+
+  it("auto-declares a feature before its first mutation without a bookkeeping failure", async () => {
+    const { agent, controller } = createInstalledController();
+
+    const result = await beforeTool(agent, "write", { path: "src/new-feature.ts", content: "export {};\n" });
+
+    expect(result?.block).not.toBe(true);
+    expect(controller.currentState.taskKind).toBe("feature");
+    expect(controller.currentState.taskSummary).toBe("Implement the requested workspace change.");
+    expect(controller.currentState.baseline.status).toBe("not_required");
   });
 
   it("allows only explicitly authorized regression-test edits before baseline", async () => {
@@ -196,7 +208,7 @@ describe("task verification controller", () => {
       evidence_refs: [firstRead, secondRead],
       unresolved_assumptions: [],
     });
-    expect(staticBaseline.isError).toBe(true);
+    expect(staticBaseline.isError).toBe(false);
     expect(staticBaseline.text).toContain("Static trace is insufficient");
   });
 
@@ -226,11 +238,46 @@ describe("task verification controller", () => {
       unresolved_failures: [],
     });
     expect(final.isError).toBe(false);
-    expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).not.toBe(true);
+    const beforeReadiness = await beforeTool(agent, "finish_work", { status: "success" });
+    expect(beforeReadiness?.block).toBe(true);
+    expect(beforeReadiness?.reason).toContain("ready_to_finish");
+
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Mutations remain blocked until semantic verification succeeds",
+          evidence_refs: [reproduction],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    const token = verificationToken(ready.text);
+    const wrongToken = await beforeTool(agent, "finish_work", {
+      status: "success",
+      verification_token: "wrong-token",
+    });
+    expect(wrongToken?.block).toBe(true);
+    expect(wrongToken?.reason).toContain("exact verification_token");
+    expect(
+      (
+        await beforeTool(agent, "finish_work", {
+          status: "success",
+          verification_token: token,
+        })
+      )?.block,
+    ).not.toBe(true);
     expect((await beforeTool(agent, "bash", { command: "git commit -m test" }))?.block).not.toBe(true);
 
     await afterTool(agent, "edit", { path: "gate.ts", edits: [{ oldText: "b", newText: "c" }] });
-    expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).toBe(true);
+    expect(
+      (
+        await beforeTool(agent, "finish_work", {
+          status: "success",
+          verification_token: token,
+        })
+      )?.block,
+    ).toBe(true);
 
     const staleFinal = await callVerificationTool(controller, {
       action: "record_final",
@@ -241,7 +288,7 @@ describe("task verification controller", () => {
       evidence_refs: [reproduction],
       unresolved_failures: [],
     });
-    expect(staleFinal.isError).toBe(true);
+    expect(staleFinal.isError).toBe(false);
     expect(staleFinal.text).toContain("stale");
   });
 
@@ -275,8 +322,294 @@ describe("task verification controller", () => {
       evidence_refs: [genericCheck],
       unresolved_failures: [],
     });
-    expect(final.isError).toBe(true);
+    expect(final.isError).toBe(false);
     expect(final.text).toContain("non-generic bash evidence");
+  });
+
+  it("classifies npm run typecheck as a generic check rather than runtime reproduction", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix inventory replay validation",
+    });
+    const typecheck = evidenceHandle(
+      await afterTool(agent, "bash", { command: "npm run typecheck" }, { text: "typecheck passed" }),
+    );
+
+    const baseline = await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "runtime_reproduction",
+      hypothesis: "Replay accepts a truncated serialization",
+      conclusion: "Type checking alone does not exercise replay behavior",
+      evidence_refs: [typecheck],
+      unresolved_assumptions: [],
+    });
+
+    expect(baseline.isError).toBe(false);
+    expect(baseline.text).toContain("non-generic bash evidence");
+    expect(controller.currentState.baseline.status).toBe("pending");
+  });
+
+  it("infers final metadata and current evidence for npm run test variants", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add inventory serialization",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/inventory.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const testEvidence = evidenceHandle(
+      await afterTool(
+        agent,
+        "bash",
+        { command: "npm run test -- test/inventory.test.ts" },
+        { text: "focused test passed" },
+      ),
+    );
+
+    const final = await callVerificationTool(controller, { action: "record_final" });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final).toMatchObject({
+      status: "passed",
+      method: "focused_test",
+      evidenceRefs: [testEvidence],
+      verifiedMutationRevision: 1,
+    });
+  });
+
+  it("prompts a high-risk acceptance audit after a broad suite and auto-finalizes a focused test", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add transactional inventory persistence with a manifest",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/inventory.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+
+    const broadOutput = await afterTool(agent, "bash", { command: "npm test" }, { text: "67 tests passed" });
+    expect(broadOutput).toContain("HIGH-RISK ACCEPTANCE AUDIT REQUIRED");
+    expect(broadOutput).toContain("remove exactly one final byte");
+    expect(broadOutput).toContain("without invented wrappers");
+    expect(controller.currentState.final.status).toBe("pending");
+
+    const focusedOutput = await afterTool(
+      agent,
+      "bash",
+      { command: "npm test -- test/inventory-boundaries.test.ts" },
+      { text: "focused boundary tests passed" },
+    );
+    expect(focusedOutput).toContain("Focused semantic verification passed");
+    expect(controller.currentState.final).toMatchObject({
+      status: "passed",
+      method: "focused_test",
+      verifiedMutationRevision: 1,
+    });
+    const focusedEvidence = evidenceHandle(focusedOutput);
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Transactional manifest boundary behavior is covered adversarially",
+          evidence_refs: [focusedEvidence],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    const token = verificationToken(ready.text);
+    expect(
+      (
+        await beforeTool(agent, "finish_work", {
+          status: "success",
+          verification_token: token,
+        })
+      )?.block,
+    ).not.toBe(true);
+  });
+
+  it("blocks readiness until requested tests and typecheck have successful current evidence", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Implement the parser exactly and run npm test plus npm run typecheck until both pass",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/parser.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const testEvidence = evidenceHandle(
+      await afterTool(
+        agent,
+        "bash",
+        { command: "npm test -- test/parser.test.ts" },
+        { text: "focused parser tests passed" },
+      ),
+    );
+    await afterTool(
+      agent,
+      "bash",
+      { command: "npm run typecheck" },
+      { isError: true, text: "Type error in src/parser.ts" },
+    );
+
+    const blocked = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Parser behavior matches the exact contract",
+          evidence_refs: [testEvidence],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    expect(blocked.text).toContain("latest execution still failed");
+    expect(blocked.text).toContain("npm run typecheck");
+
+    const typecheckEvidence = evidenceHandle(
+      await afterTool(agent, "bash", { command: "npm run typecheck" }, { text: "typecheck passed" }),
+    );
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Parser behavior and requested validation pass",
+          evidence_refs: [testEvidence, typecheckEvidence],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    expect(ready.text).toContain("Finish readiness passed");
+    expect(verificationToken(ready.text)).toBeTruthy();
+  });
+
+  it("honors an explicit request to skip tests and typecheck", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Update generated configuration; do not run tests or typecheck",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/generated-config.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const reproduction = evidenceHandle(
+      await afterTool(
+        agent,
+        "bash",
+        { command: "node scripts/validate-generated-config.js" },
+        { text: "configuration valid" },
+      ),
+    );
+    await callVerificationTool(controller, {
+      action: "record_final",
+      final_method: "manual_reproduction",
+      final_status: "passed",
+      evidence_refs: [reproduction],
+      unresolved_failures: [],
+    });
+
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Generated configuration remains valid",
+          evidence_refs: [reproduction],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    expect(ready.text).toContain("Finish readiness passed");
+  });
+
+  it("requires multiple acceptance mappings for complex adversarial guarantees", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Implement exact atomic rollback that rejects truncated and tampered durable data",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/store.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const evidence = evidenceHandle(
+      await afterTool(
+        agent,
+        "bash",
+        { command: "npm test -- test/store-adversarial.test.ts" },
+        { text: "adversarial store tests passed" },
+      ),
+    );
+
+    const incomplete = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [{ criterion: "Atomic rollback", evidence_refs: [evidence] }],
+      unresolved_failures: [],
+    });
+    expect(incomplete.text).toContain("at least 4 distinct acceptance_checks");
+
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        { criterion: "Exact serialization contract", evidence_refs: [evidence] },
+        { criterion: "Atomic rollback", evidence_refs: [evidence] },
+        { criterion: "Truncation rejection", evidence_refs: [evidence] },
+        { criterion: "Tamper rejection", evidence_refs: [evidence] },
+      ],
+      unresolved_failures: [],
+    });
+    expect(ready.text).toContain("Finish readiness passed");
+  });
+
+  it("does not treat checksum inspection as a manual behavioral reproduction", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add transactional inventory persistence",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/inventory.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    await afterTool(agent, "bash", { command: "md5 README.md src/inventory.ts" }, { text: "checksums" });
+
+    const final = await callVerificationTool(controller, { action: "record_final" });
+    expect(final.text).toContain("No eligible semantic evidence");
+    expect(controller.currentState.final.status).toBe("pending");
+  });
+
+  it("uses the tool exit status instead of failure-like output text", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Report test output without misclassifying evidence",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/reporter.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    await afterTool(
+      agent,
+      "bash",
+      { command: "npm run test -- test/reporter.test.ts" },
+      { text: "Regression fixture contains the literal text: 1 failed" },
+    );
+
+    const final = await callVerificationTool(controller, { action: "record_final" });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final.status).toBe("passed");
   });
 
   it("restores verification state and evidence from durable session entries", async () => {
@@ -433,9 +766,36 @@ describe("task verification controller", () => {
       await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "passed" }),
     );
     const afterReplay = await callVerificationTool(restored, { action: "status" });
-    expect(afterReplay.text).toContain(`Use evidence_refs: ["${replayHandle}"]`);
-    expect(afterReplay.text).toContain('"final_method":"focused_test"');
-    expect(afterReplay.text).toContain('"action":"record_final"');
+    expect(replayHandle).toBeTruthy();
+    expect(restored.currentState.final.status).toBe("passed");
+    expect(restored.currentState.final.evidenceRefs).toEqual([replayHandle]);
+    expect(afterReplay.text).toContain('action "ready_to_finish"');
+    const ready = await callVerificationTool(restored, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "The exact regression now passes",
+          evidence_refs: [replayHandle],
+        },
+        {
+          criterion: "Recovery behavior remains verified after reconstruction",
+          evidence_refs: [replayHandle],
+        },
+      ],
+      unresolved_failures: [],
+    });
+    const token = verificationToken(ready.text);
+    const readinessRestored = createTaskVerificationController(sessionManager);
+    const readinessAgent = new Agent();
+    readinessRestored.install(readinessAgent);
+    expect(
+      (
+        await beforeTool(readinessAgent, "finish_work", {
+          status: "success",
+          verification_token: token,
+        })
+      )?.block,
+    ).not.toBe(true);
   });
 
   it("offers a valid two-handle static-review payload for non-behavioral work", async () => {
@@ -466,6 +826,7 @@ describe("task verification controller", () => {
       unresolved_failures: [],
     });
     expect(final.isError).toBe(false);
+    expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).not.toBe(true);
   });
 
   it("uses persisted task context to preserve high-risk baseline guidance after restoration", async () => {
@@ -581,7 +942,7 @@ describe("task verification controller", () => {
       evidence_refs: [pipedTest],
       unresolved_assumptions: [],
     });
-    expect(baseline.isError).toBe(true);
+    expect(baseline.isError).toBe(false);
     expect(baseline.text).toContain("Pipelined test commands (containing '|') mask exit codes");
   });
 
@@ -623,5 +984,169 @@ describe("task verification controller", () => {
     // Direct mutation tools (edit, write) ARE blocked before baseline.
     expect((await beforeTool(agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
     expect((await beforeTool(agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
+  });
+
+  it("resolves implicit failed evidence when final_status is failed", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix a bug and verify it with a failing regression test",
+    });
+    await afterTool(agent, "edit", {
+      path: "src/main.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const command = "npm run test -- test/bug.test.ts";
+    await afterTool(agent, "bash", { command }, { isError: true, text: "failed" });
+
+    const final = await callVerificationTool(controller, {
+      action: "record_final",
+      final_status: "failed",
+    });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final.status).toBe("failed");
+  });
+
+  it("resolves a failed exact baseline replay when final_status is failed", async () => {
+    const { agent, controller } = createInstalledController();
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Fix an exact replay regression",
+    });
+    await callVerificationTool(controller, {
+      action: "authorize_baseline_test",
+      test_paths: ["test/exact-failure.test.ts"],
+    });
+    await afterTool(agent, "edit", {
+      path: "test/exact-failure.test.ts",
+      edits: [{ oldText: "old", newText: "failing regression" }],
+    });
+    const command = "npm run test -- test/exact-failure.test.ts";
+    const baselineEvidence = evidenceHandle(
+      await afterTool(agent, "bash", { command }, { isError: true, text: "baseline failure" }),
+    );
+    await callVerificationTool(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "The exact focused regression exposes the defect",
+      conclusion: "The baseline fails with the expected defect",
+      evidence_refs: [baselineEvidence],
+      unresolved_assumptions: [],
+    });
+    await afterTool(agent, "edit", {
+      path: "src/main.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    await afterTool(agent, "bash", { command }, { isError: true, text: "current failure" });
+
+    const final = await callVerificationTool(controller, {
+      action: "record_final",
+      final_status: "failed",
+    });
+
+    expect(final.isError).toBe(false);
+    expect(controller.currentState.final.status).toBe("failed");
+  });
+
+  it("accumulates user prompts and includes semantic audit checklist in ready_to_finish output", async () => {
+    const sessionManager = SessionManager.inMemory();
+    const controller = createTaskVerificationController(sessionManager);
+    let capturedSubscriber: Parameters<Agent["subscribe"]>[0] | undefined;
+    const agent = new Agent();
+    const originalSubscribe = agent.subscribe.bind(agent);
+    agent.subscribe = (listener: Parameters<Agent["subscribe"]>[0]) => {
+      capturedSubscriber = listener;
+      return originalSubscribe(listener);
+    };
+    controller.install(agent);
+
+    // Simulate user messages during session
+    if (capturedSubscriber) {
+      const signal = new AbortController().signal;
+      capturedSubscriber(
+        {
+          type: "message_start",
+          message: { role: "user", content: "Build a calculator with 100% test coverage." },
+        } as never,
+        signal,
+      );
+      capturedSubscriber(
+        {
+          type: "message_start",
+          message: { role: "user", content: "Also support exponentiation and handle division by zero." },
+        } as never,
+        signal,
+      );
+    }
+
+    expect(controller.currentState.taskPrompts).toEqual([
+      "Build a calculator with 100% test coverage.",
+      "Also support exponentiation and handle division by zero.",
+    ]);
+
+    await callVerificationTool(controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Build calculator with exponentiation and zero division handling",
+    });
+
+    await afterTool(agent, "edit", {
+      path: "src/calc.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+    const testEvidence = evidenceHandle(
+      await afterTool(agent, "bash", { command: "vitest --run test/calc.test.ts" }, { text: "passed" }),
+    );
+
+    const ready = await callVerificationTool(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [
+        {
+          criterion: "Calculator with exponentiation and zero division handled",
+          evidence_refs: [testEvidence],
+        },
+      ],
+      unresolved_failures: [],
+    });
+
+    expect(ready.isError).toBe(false);
+    expect(ready.text).toContain("SEMANTIC AUDIT REQUIREMENT (RE-READ ORIGINAL USER INSTRUCTIONS):");
+    expect(ready.text).toContain("[Requirement 1]: Build a calculator with 100% test coverage.");
+    expect(ready.text).toContain("[Requirement 2]: Also support exponentiation and handle division by zero.");
+    expect(ready.text).toContain("VERIFICATION CHECKLIST:");
+    expect(ready.text).toContain("1. Have you fulfilled EVERY single user requirement and constraint above?");
+    expect(ready.text).toContain(
+      "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests",
+    );
+  });
+
+  it("blocks ready_to_finish if a mutated source file exceeds 250 lines unless user requested an override", async () => {
+    const os = await import("node:os");
+    const fs = await import("node:fs/promises");
+    const tmpDir = await fs.mkdtemp(`${os.tmpdir()}/test-oversized-`);
+    const sourceFile = `${tmpDir}/src/large_module.ts`;
+
+    await fs.mkdir(`${tmpDir}/src`, { recursive: true });
+    const lines = Array.from({ length: 260 }, (_, i) => `export const val${i} = ${i};`).join("\n");
+    await fs.writeFile(sourceFile, lines, "utf-8");
+
+    const { findOversizedSourceFiles } = await import("../src/core/task-verification.ts");
+    const oversized = findOversizedSourceFiles(tmpDir, "Build feature", ["src/large_module.ts"], 250);
+    expect(oversized.length).toBe(1);
+    expect(oversized[0]?.path).toBe("src/large_module.ts");
+    expect(oversized[0]?.lineCount).toBe(260);
+
+    const overridden = findOversizedSourceFiles(
+      tmpDir,
+      "Build single file without limits",
+      ["src/large_module.ts"],
+      250,
+    );
+    expect(overridden.length).toBe(0);
+
+    await fs.rm(tmpDir, { recursive: true, force: true });
   });
 });

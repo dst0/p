@@ -8,7 +8,7 @@ import { getLanguageFromPath, highlightCode, type Theme } from "../../modes/inte
 import type { ToolDefinition, ToolRenderResultOptions } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
 import { resolveToCwd } from "./path-utils.ts";
-import { normalizeDisplayText, renderToolPath, replaceTabs, str } from "./render-utils.ts";
+import { normalizeDisplayText, renderToolPath, replaceTabs, str, stripHarnessMessages } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const writeSchema = Type.Object({
@@ -160,17 +160,21 @@ function formatWriteCall(
   return text;
 }
 
-function formatWriteResult(
+export function formatWriteResult(
   result: { content: Array<{ type: string; text?: string; data?: string; mimeType?: string }>; isError?: boolean },
   theme: Theme,
+  showHarnessMessages?: boolean,
 ): string | undefined {
   if (!result.isError) {
     return undefined;
   }
-  const output = result.content
+  let output = result.content
     .filter((c) => c.type === "text")
     .map((c) => c.text || "")
     .join("\n");
+  if (!showHarnessMessages) {
+    output = stripHarnessMessages(output);
+  }
   if (!output) {
     return undefined;
   }
@@ -248,7 +252,7 @@ export function createWriteToolDefinition(
       return component;
     },
     renderResult(result, _options, theme, context) {
-      const output = formatWriteResult({ ...result, isError: context.isError }, theme);
+      const output = formatWriteResult({ ...result, isError: context.isError }, theme, context.showHarnessMessages);
       if (!output) {
         const component = (context.lastComponent as Container | undefined) ?? new Container();
         component.clear();

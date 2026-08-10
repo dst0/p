@@ -51,10 +51,14 @@ export class QdrantClient {
       payload: p.payload as unknown as Record<string, unknown>,
     }));
 
-    await this.client.upsert(this.config.collection, {
-      wait: true,
-      points: pointsData,
-    });
+    const batchSize = Math.max(1, this.config.batchSize || 8);
+    for (let i = 0; i < pointsData.length; i += batchSize) {
+      const chunk = pointsData.slice(i, i + batchSize);
+      await this.client.upsert(this.config.collection, {
+        wait: true,
+        points: chunk,
+      });
+    }
   }
 
   async getStatus(): Promise<IndexStatus> {

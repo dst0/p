@@ -30,12 +30,14 @@ describe("finish_work tool", () => {
   it("has parameter schema with required fields", () => {
     expect(tool.parameters.properties.status).toBeDefined();
     expect(tool.parameters.properties.summary).toBeDefined();
+    expect(tool.parameters.properties.verification_token).toBeDefined();
   });
 
   it("executes successfully with valid success payload", async () => {
     const input: FinishWorkInput = {
       status: "success",
       summary: "All done",
+      verification_token: "verification-token",
       files_changed: ["src/main.ts"],
       tests_run: ["test/main.test.ts"],
     };
@@ -44,6 +46,7 @@ describe("finish_work tool", () => {
     expect(getTextContent(result.content)).toContain("success");
     expect((result.details as FinishWorkInput).status).toBe("success");
     expect((result.details as FinishWorkInput).summary).toBe("All done");
+    expect((result.details as FinishWorkInput).verification_token).toBe("verification-token");
     expect((result.details as FinishWorkInput).files_changed).toEqual(["src/main.ts"]);
   });
 

@@ -3,6 +3,7 @@ dist/
 *.log
 .DS_Store
 *.tsbuildinfo
+.build/
 # packages/*/node_modules/
 packages/*/dist/
 packages/*/dist-chrome/
@@ -49,6 +50,11 @@ p-session-*.html
 # Python
 __pycache__/
 *.pyc
+
+# Benchmark artifacts (keep results.json, exclude large recordings/workspaces)
+benchmarks/results/*/recordings/
+benchmarks/results/*/workspaces/
+benchmarks/results/2026-08-05*
 
 # Agent metadata
 .agents/

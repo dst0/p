@@ -1,0 +1,186 @@
+{
+  "generatedAt": "2026-08-04T11:03:58.704Z",
+  "agents": [
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/model",
+    "p": "mini-pc/model",
+    "kilo": "llm-orchestrator/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.118",
+    "kilo": "7.4.17"
+  },
+  "startupProbes": {
+    "kilo": {
+      "status": "passed",
+      "expectedResolvedModel": "mini-pc/sokann-qwen-27b-cache",
+      "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b-cache",
+      "timeoutSeconds": 300,
+      "diagnostics": "diagnostics/kilo-startup",
+      "modelResolution": {
+        "status": "passed",
+        "elapsedMs": 5952.910708,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "rawEventCount": 320,
+        "recording": "model-resolution.log.gz",
+        "stderr": "model-resolution.stderr.log"
+      },
+      "resolvedModel": "mini-pc/sokann-qwen-27b-cache",
+      "request": {
+        "status": "passed",
+        "elapsedMs": 50945.739833,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "rawEventCount": 3,
+        "recording": "request.jsonl.gz",
+        "stderr": "request.stderr.log",
+        "responseMatched": true,
+        "errors": []
+      },
+      "runtimeFiles": {
+        "data": [
+          "kilo/.metadata_never_index",
+          "kilo/kilo.db",
+          "kilo/kilo.db-shm",
+          "kilo/kilo.db-wal",
+          "kilo/log/2026-08-04T105340.log",
+          "kilo/log/2026-08-04T105347.log",
+          "kilo/log/opencode.log",
+          "kilo/storage/migration",
+          "kilo/storage/session_diff/ses_033977ba0ffeTHM1pg5IgzyFqF.json",
+          "kilo/telemetry-id"
+        ],
+        "state": [
+          "kilo-sandbox-policy/fcd6610d37666b119b000192a3a412f3c8f2eafc677482026050cd7e4d0d8b95/e0863af2fae037976343f855250dc779aadc58edebfa4d492efd87e47a5981d1.json",
+          "kilo/.metadata_never_index",
+          "kilo/locks/377aa70868174d9568885a25629252c8b4417a07.lock/heartbeat",
+          "kilo/locks/377aa70868174d9568885a25629252c8b4417a07.lock/meta.json",
+          "kilo/locks/be45c2645e354c533cbda2d79a6fb993084362d3.lock/heartbeat",
+          "kilo/locks/be45c2645e354c533cbda2d79a6fb993084362d3.lock/meta.json"
+        ]
+      }
+    }
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 2400,
+  "tasks": [
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    }
+  ],
+  "summaries": {
+    "kilo": {
+      "runs": 1,
+      "passed": 1,
+      "qualityPassed": 1,
+      "qualityScore": 6,
+      "qualityMaxScore": 6,
+      "timedOut": 0,
+      "failed": 0,
+      "averageWallMs": 560742.104666,
+      "averageInputTokens": 25406,
+      "averageOutputTokens": 11771,
+      "averageTotalTokens": 538339,
+      "averageToolCalls": 32,
+      "averageToolErrors": 0
+    },
+    "winner": "kilo"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 560742.104666,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b-cache",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-monolith-split.log",
+      "workspace": "workspaces/kilo/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 55,
+        "rawEventCount": 74,
+        "eventTypes": {
+          "tool_use": 32,
+          "step_finish": 19,
+          "text": 4
+        },
+        "usage": {
+          "input": 25406,
+          "output": 11771,
+          "cacheRead": 501162,
+          "cacheWrite": 0,
+          "totalTokens": 538339
+        },
+        "turns": 19,
+        "assistantMessages": 19,
+        "toolCalls": 32,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 9,
+          "glob": 1,
+          "todowrite": 4,
+          "write": 8,
+          "edit": 4,
+          "bash": 6
+        },
+        "stopReasons": {
+          "tool-calls": 18,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "All 49 tests pass, typecheck is clean. Here's the split:\n\n| Module | Responsibility | Exports |\n|---|---|---|\n| `src/types.ts` | Shared type definitions | `TaskStatus`, `SortKey`, `Task`, `TaskSummary`, `ReportOptions` |\n| `src/parser.ts` | Parsing input → Task objects | `parseTaskLine`, `parseTaskFile`, `cloneTask`, `normalizeTask`, `STATUS_ORDER` |\n| `src/query.ts` | Filtering, sorting, grouping | `filterTasks`, `sortTasks`, `groupTasksByStatus`, `selectLargest` |\n| `src/report.ts` | Summaries, formatting, reports | `summarizeTasks`, `formatSummary`, `serializeTasks`, `renderDashboard`, `runReport` |\n| `src/monolith.ts` | Compatibility facade (18 lines) | Re-exports everything above |\n\nNew tests: `test/parser.test.ts` (12 tests), `test/query.test.ts` (16 tests), `test/report.test.ts` (21 tests). Contract tests unchanged and passing."
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

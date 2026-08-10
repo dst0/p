@@ -35,6 +35,7 @@ type RenderSessionContextThis = {
   settingsManager: {
     getShowImages(): boolean;
     getImageWidthCells(): number;
+    getShowHarnessMessages?(): boolean;
   };
   sessionManager: { getCwd(): string };
   session: { retryAttempt: number };
@@ -63,6 +64,7 @@ function createFakeInteractiveModeThis(): RenderSessionContextThis {
     settingsManager: {
       getShowImages: () => false,
       getImageWidthCells: () => 60,
+      getShowHarnessMessages: () => false,
     },
     sessionManager: { getCwd: () => process.cwd() },
     session: { retryAttempt: 0 },

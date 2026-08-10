@@ -85,40 +85,37 @@ function formatEta(seconds: number): string {
 export function formatIndexingStatus(status: IndexStatus): string {
   if (status.decision === "disabled") return "🔎 OFF";
   if (status.decision === "unknown") return "🔎 ?";
-  // Check service health before queued state to avoid showing stale "queued" when daemon is dead
-  if (!status.serviceRunning) {
-    return "🔎 ON!";
-  }
-  if (status.ragState === "queued" || status.ragState === "initializing" || status.ragState === "updating") {
-    const percent = status.progress?.percent;
-    if (percent !== undefined) {
-      const percentStr = `${Math.min(100, Math.max(0, percent)).toFixed(1)}%`;
-      const reused = status.progress?.reusedChunks;
-      const recalculatedTotal = status.progress?.recalculatedTotal;
-      let breakdownStr = "";
-      if (reused !== undefined && reused > 0 && recalculatedTotal !== undefined && recalculatedTotal > 0) {
-        breakdownStr = ` (${formatTokens(reused)} reused, ${formatTokens(recalculatedTotal)} new)`;
-      } else if (reused !== undefined && reused > 0) {
-        breakdownStr = ` (${formatTokens(reused)} reused)`;
-      } else if (recalculatedTotal !== undefined && recalculatedTotal > 0) {
-        breakdownStr = ` (${formatTokens(recalculatedTotal)} new)`;
-      }
+  if (!status.serviceRunning) return "🔎 ON!";
+  if (status.ragState === "queued") return "🔎 queued";
+  if (status.ragState === "initializing" || status.ragState === "updating") {
+    const progress = status.progress;
+    if (!progress) return status.ragState === "initializing" ? "🔎 init" : "🔎 updating";
+    const files =
+      progress.processedFiles !== undefined && progress.totalFiles !== undefined
+        ? ` ${formatTokens(progress.processedFiles)}/${formatTokens(progress.totalFiles)}`
+        : "";
+    if (progress.phase === "scanning") return `🔎 scanning${files}`;
+    if (progress.phase === "preparing") return `🔎 preparing${files}`;
+    if (progress.phase === "finalizing") return "🔎 finalizing";
 
-      // Compute ETA from progress.etaSeconds (recent speed) or startedAt timestamp
-      let etaStr = "";
-      const etaSeconds =
-        status.progress?.etaSeconds ??
-        (status.progress?.startedAt && percent > 0
-          ? ((Date.now() - Date.parse(status.progress.startedAt)) / 1000 / percent) * (100 - percent)
-          : undefined);
-      if (etaSeconds !== undefined && etaSeconds > 0) {
-        etaStr = ` (ETA: ${formatEta(etaSeconds)})`;
-      }
-      return `🔎 ${percentStr}${breakdownStr}${etaStr}`;
-    }
-    if (status.ragState === "queued") return "🔎 queued";
-    if (status.ragState === "initializing") return "🔎 init";
-    return "🔎 updating";
+    const percent = `${Math.min(100, Math.max(0, progress.percent)).toFixed(1)}%`;
+    const chunks =
+      progress.processedChunks !== undefined && progress.totalChunks !== undefined
+        ? ` (${formatTokens(progress.processedChunks)}/${formatTokens(progress.totalChunks)} chunks)`
+        : "";
+    const reused = progress.reusedChunks;
+    const recalculatedTotal = progress.recalculatedTotal;
+    const breakdown =
+      reused !== undefined && reused > 0 && recalculatedTotal !== undefined && recalculatedTotal > 0
+        ? ` (${formatTokens(reused)} reused, ${formatTokens(recalculatedTotal)} new)`
+        : reused !== undefined && reused > 0
+          ? ` (${formatTokens(reused)} reused)`
+          : recalculatedTotal !== undefined && recalculatedTotal > 0
+            ? ` (${formatTokens(recalculatedTotal)} new)`
+            : "";
+    const eta =
+      progress.etaSeconds !== undefined && progress.etaSeconds > 0 ? ` (ETA: ${formatEta(progress.etaSeconds)})` : "";
+    return `🔎 ${percent}${chunks}${breakdown}${eta}`;
   }
   if (
     status.lastError !== undefined ||

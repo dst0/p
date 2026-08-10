@@ -21,7 +21,7 @@ describe("buildSystemPrompt", () => {
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain(
-      "- Always write tests for new functionality and bug fixes unless the user explicitly asks not to",
+      "- Always write comprehensive tests for new functionality and bug fixes across happy paths",
     );
     expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
     expect(prompt).toContain(
@@ -30,6 +30,20 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(
       "- Run tests to verify that code changes are correct and do not break existing functionality",
     );
+    expect(prompt).toContain(
+      "- Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
+    );
+    expect(prompt).toContain(
+      "- For transactional and serialization guarantees, test the smallest boundary mutation literally: remove exactly one final byte, not a whole line or record. After every failed atomic operation, retry each attempted identity with both the same and changed payload to prove that state, logs, positions, hashes, and idempotency registries all rolled back. A coarser proxy test does not satisfy an exact boundary requirement",
+    );
+    expect(prompt).toContain(
+      "- Preserve public API shapes exactly and do not invent response wrappers. For idempotency, compare a lossless canonical identity containing every semantically relevant command field and option; never use a partial projection such as only operation type and resource ID",
+    );
+    expect(prompt).toContain("- After writing any guard, validation, or idempotency check, trace every branch");
+    expect(prompt).toContain(
+      "- Every filter, parser, or line splitter must include a test for the exact truncation boundary",
+    );
+    expect(prompt).toContain("- Before declaring any code complete, run the type checker and visible test suite");
   });
 
   it("includes promptGuidelines in the prompt", () => {

@@ -3,6 +3,9 @@ import os from "node:os";
 import path from "node:path";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
+export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
+export const DEFAULT_EMBEDDING_NORMALIZATION = "l2";
+
 export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   enabled: true,
   autoRefresh: true,
@@ -15,7 +18,20 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   embeddingServerUrl: "http://127.0.0.1:18742",
   embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
   embeddingDimensions: 1024,
+  embeddingPooling: DEFAULT_EMBEDDING_POOLING,
+  embeddingNormalization: DEFAULT_EMBEDDING_NORMALIZATION,
+  embeddingDevice: "auto",
   pythonExecutable: "python3",
+  torchBackend: "auto",
+  maxEmbeddingBatchSize: 64,
+  maxCpuThreads: os.cpus().length,
+  maxSequenceLength: 2048,
+  minSystemMemoryReserveBytes: 1024 * 1024 * 1024,
+  minAcceleratorMemoryReserveBytes: 512 * 1024 * 1024,
+  openvinoCacheDirectory: path.join(os.homedir(), ".p", "agent", "indexing-service", "openvino-cache"),
+  vitisaiCacheDirectory: path.join(os.homedir(), ".p", "agent", "indexing-service", "vitisai-cache"),
+  vitisaiCacheKey: "Qwen_Qwen3-Embedding-0.6B",
+  vitisaiLogLevel: "error",
   defaultLimit: 15,
   maxLimit: 20,
   maxContextCharacters: 16_000,
@@ -54,6 +70,12 @@ const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "searchTimeoutMs",
   "embeddingTimeoutMs",
   "embeddingStartupTimeoutMs",
+  "maxEmbeddingBatchSize",
+  "maxCpuThreads",
+  "maxSequenceLength",
+  "minSystemMemoryReserveBytes",
+  "minAcceleratorMemoryReserveBytes",
+  "embeddingModelParameterCount",
   "maxFileBytes",
   "defaultChunkLines",
   "maxChunkLines",
@@ -73,9 +95,55 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "qdrantDataDirectory",
   "embeddingServerUrl",
   "embeddingModel",
+  "embeddingPooling",
+  "embeddingNormalization",
+  "embeddingDevice",
   "pythonExecutable",
+  "torchBackend",
+  "openvinoCacheDirectory",
+  "vitisaiCacheDirectory",
+  "vitisaiCacheKey",
+  "vitisaiConfigFile",
+  "vitisaiLogLevel",
+  "amdIronArtifactDirectory",
+  "amdIronCacheDirectory",
+  "amdIronSourceDirectory",
+  "amdNpuGeneration",
+  "amdNpuRuntimeVersion",
+  "ryzenAiArchivePath",
   "collectionPrefix",
 ]);
+const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
+  "auto",
+  "cpu",
+  "cuda",
+  "rocm",
+  "mps",
+  "npu",
+  "apple-ane",
+  "apple-mps",
+  "amd-rocm",
+  "nvidia-cuda",
+  "ryzenai",
+  "vitisai",
+  "amd-phoenix-npu",
+  "amd-ryzenai-npu",
+  "openvino",
+  "openvino-npu",
+  "intel-openvino-cpu",
+  "intel-openvino-npu",
+]);
+const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
+
+export function computeEmbeddingCompatibilityGroup(
+  model: string,
+  dimensions: number,
+  pooling: string,
+  normalization: string,
+): string {
+  const slug = model.toLowerCase().replaceAll("/", "_").replaceAll("-", "_");
+  return `${slug}-${dimensions}-${pooling}-${normalization}`;
+}
 
 function parseConfigFile(configPath: string | undefined): Partial<WorkspaceCodeRagSettings> {
   if (!configPath || !fs.existsSync(configPath)) return {};
@@ -113,57 +181,24 @@ function parseConfigFile(configPath: string | undefined): Partial<WorkspaceCodeR
   return parsed;
 }
 
-function parseBooleanEnvironment(name: string): boolean | undefined {
-  const value = process.env[name];
-  if (value === undefined) return undefined;
-  if (value === "1" || value.toLowerCase() === "true") return true;
-  if (value === "0" || value.toLowerCase() === "false") return false;
-  throw new Error(`${name} must be true, false, 1, or 0`);
-}
-
-function parsePositiveIntegerEnvironment(name: string): number | undefined {
-  const value = process.env[name];
-  if (value === undefined) return undefined;
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isSafeInteger(parsed) || parsed < 1 || String(parsed) !== value.trim()) {
-    throw new Error(`${name} must be a positive integer`);
-  }
-  return parsed;
-}
-
-function environmentSettings(): Partial<WorkspaceCodeRagSettings> {
-  const settings: Partial<WorkspaceCodeRagSettings> = {};
-  const enabled = parseBooleanEnvironment("P_CODE_RAG_ENABLED");
-  if (enabled !== undefined) settings.enabled = enabled;
-  const autoRefresh = parseBooleanEnvironment("P_CODE_RAG_AUTO_REFRESH");
-  if (autoRefresh !== undefined) settings.autoRefresh = autoRefresh;
-  if (process.env.P_CODE_RAG_QDRANT_URL) settings.qdrantUrl = process.env.P_CODE_RAG_QDRANT_URL;
-  if (process.env.P_CODE_RAG_QDRANT_BINARY) settings.qdrantBinary = process.env.P_CODE_RAG_QDRANT_BINARY;
-  if (process.env.P_CODE_RAG_QDRANT_DATA_DIR) settings.qdrantDataDirectory = process.env.P_CODE_RAG_QDRANT_DATA_DIR;
-  if (process.env.P_CODE_RAG_EMBEDDING_URL) settings.embeddingServerUrl = process.env.P_CODE_RAG_EMBEDDING_URL;
-  if (process.env.P_CODE_RAG_EMBEDDING_MODEL) settings.embeddingModel = process.env.P_CODE_RAG_EMBEDDING_MODEL;
-  if (process.env.P_CODE_RAG_PYTHON) settings.pythonExecutable = process.env.P_CODE_RAG_PYTHON;
-  const preparationMaxWorkers = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_MAX_WORKERS");
-  if (preparationMaxWorkers !== undefined) settings.preparationMaxWorkers = preparationMaxWorkers;
-  const preparationWorkerMemoryMb = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_WORKER_MEMORY_MB");
-  if (preparationWorkerMemoryMb !== undefined) {
-    settings.preparationWorkerMemoryBytes = preparationWorkerMemoryMb * 1024 * 1024;
-  }
-  const preparationMemoryReserveMb = parsePositiveIntegerEnvironment("P_CODE_RAG_PREPARATION_MEMORY_RESERVE_MB");
-  if (preparationMemoryReserveMb !== undefined) {
-    settings.preparationMemoryReserveBytes = preparationMemoryReserveMb * 1024 * 1024;
-  }
-  const remoteBackendsAllowed = parseBooleanEnvironment("P_CODE_RAG_REMOTE_BACKENDS_ALLOWED");
-  if (remoteBackendsAllowed !== undefined) settings.remoteBackendsAllowed = remoteBackendsAllowed;
-  return settings;
-}
-
 function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagSettings {
   if (settings.defaultLimit < 1 || settings.maxLimit < settings.defaultLimit || settings.maxLimit > 100) {
     throw new Error("Code RAG result limits are invalid");
   }
   if (settings.embeddingDimensions < 1 || !Number.isInteger(settings.embeddingDimensions)) {
     throw new Error("Code RAG embeddingDimensions must be a positive integer");
+  }
+  if (!EMBEDDING_DEVICES.has(settings.embeddingDevice)) {
+    throw new Error(`Code RAG embeddingDevice is unsupported: ${settings.embeddingDevice}`);
+  }
+  if (!TORCH_BACKENDS.has(settings.torchBackend)) {
+    throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
+  }
+  if (
+    settings.embeddingModelParameterCount !== undefined &&
+    (!Number.isSafeInteger(settings.embeddingModelParameterCount) || settings.embeddingModelParameterCount <= 0)
+  ) {
+    throw new Error("Code RAG embeddingModelParameterCount must be a positive integer");
   }
   if (settings.fullSparseRebuildChangeRatio < 0 || settings.fullSparseRebuildChangeRatio > 1) {
     throw new Error("Code RAG fullSparseRebuildChangeRatio must be between 0 and 1");
@@ -196,6 +231,11 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
     settings.searchTimeoutMs,
     settings.embeddingTimeoutMs,
     settings.embeddingStartupTimeoutMs,
+    settings.maxEmbeddingBatchSize,
+    settings.maxCpuThreads,
+    settings.maxSequenceLength,
+    settings.minSystemMemoryReserveBytes,
+    settings.minAcceleratorMemoryReserveBytes,
     settings.maxFileBytes,
     settings.defaultChunkLines,
     settings.maxChunkLines,
@@ -238,7 +278,6 @@ export function loadWorkspaceCodeRagSettings(options: WorkspaceCodeRagServiceOpt
     ...DEFAULT_WORKSPACE_CODE_RAG_SETTINGS,
     ...parseConfigFile(userConfigPath),
     ...parseConfigFile(repositoryConfigPath),
-    ...environmentSettings(),
     ...(options.settings ?? {}),
   });
 }

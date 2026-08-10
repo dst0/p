@@ -1,0 +1,75 @@
+import type { ThinkingLevel } from "@dst0/p-agent-core";
+import type { Transport } from "@dst0/p-ai";
+import type { DefaultProjectTrust, WarningSettings } from "../../../../core/settings-manager.ts";
+
+export interface SettingsConfig {
+  autoCompact: boolean;
+  showImages: boolean;
+  imageWidthCells: number;
+  autoResizeImages: boolean;
+  blockImages: boolean;
+  enableSkillCommands: boolean;
+  steeringMode: "all" | "one-at-a-time";
+  followUpMode: "all" | "one-at-a-time";
+  transport: Transport;
+  httpIdleTimeoutMs: number;
+  thinkingLevel: ThinkingLevel;
+  availableThinkingLevels: ThinkingLevel[];
+  currentTheme: string;
+  availableThemes: string[];
+  hideThinkingBlock: boolean;
+  collapseChangelog: boolean;
+  enableInstallTelemetry: boolean;
+  doubleEscapeAction: "fork" | "tree" | "none";
+  treeFilterMode: "default" | "no-tools" | "user-only" | "labeled-only" | "all";
+  showHardwareCursor: boolean;
+  editorPaddingX: number;
+  autocompleteMaxVisible: number;
+  quietStartup: boolean;
+  defaultProjectTrust: DefaultProjectTrust;
+  enableToolResultContextExtraction: boolean;
+  clearOnShrink: boolean;
+  showTerminalProgress: boolean;
+  showTokenProgress: boolean;
+  showTokenStats: boolean;
+  showIndexingInfo: boolean;
+  showVersion: boolean;
+  showHarnessMessages: boolean;
+  warnings: WarningSettings;
+}
+
+export interface SettingsCallbacks {
+  onAutoCompactChange: (enabled: boolean) => void;
+  onShowImagesChange: (enabled: boolean) => void;
+  onImageWidthCellsChange: (width: number) => void;
+  onAutoResizeImagesChange: (enabled: boolean) => void;
+  onBlockImagesChange: (blocked: boolean) => void;
+  onEnableSkillCommandsChange: (enabled: boolean) => void;
+  onSteeringModeChange: (mode: "all" | "one-at-a-time") => void;
+  onFollowUpModeChange: (mode: "all" | "one-at-a-time") => void;
+  onTransportChange: (transport: Transport) => void;
+  onHttpIdleTimeoutMsChange: (timeoutMs: number) => void;
+  onThinkingLevelChange: (level: ThinkingLevel) => void;
+  onThemeChange: (theme: string) => void;
+  onThemePreview?: (theme: string) => void;
+  onHideThinkingBlockChange: (hidden: boolean) => void;
+  onCollapseChangelogChange: (collapsed: boolean) => void;
+  onEnableInstallTelemetryChange: (enabled: boolean) => void;
+  onDoubleEscapeActionChange: (action: "fork" | "tree" | "none") => void;
+  onTreeFilterModeChange: (mode: "default" | "no-tools" | "user-only" | "labeled-only" | "all") => void;
+  onShowHardwareCursorChange: (enabled: boolean) => void;
+  onEditorPaddingXChange: (padding: number) => void;
+  onAutocompleteMaxVisibleChange: (maxVisible: number) => void;
+  onQuietStartupChange: (enabled: boolean) => void;
+  onDefaultProjectTrustChange: (defaultProjectTrust: DefaultProjectTrust) => void;
+  onEnableToolResultContextExtractionChange: (enabled: boolean) => void;
+  onClearOnShrinkChange: (enabled: boolean) => void;
+  onShowTerminalProgressChange: (enabled: boolean) => void;
+  onShowTokenProgressChange: (enabled: boolean) => void;
+  onShowTokenStatsChange: (enabled: boolean) => void;
+  onShowIndexingInfoChange: (enabled: boolean) => void;
+  onShowVersionChange: (enabled: boolean) => void;
+  onShowHarnessMessagesChange: (enabled: boolean) => void;
+  onWarningsChange: (warnings: WarningSettings) => void;
+  onCancel: () => void;
+}

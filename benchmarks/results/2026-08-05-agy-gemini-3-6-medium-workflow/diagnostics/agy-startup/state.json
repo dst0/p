@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "requestedModel": "gemini-3.6-flash-medium",
+  "recording": "request.jsonl.gz",
+  "stderr": "request.stderr.log",
+  "elapsedMs": 11235.872833,
+  "exitCode": 0,
+  "signal": null,
+  "timedOut": false,
+  "rawEventCount": 7,
+  "responseMatched": true,
+  "modelMatched": true,
+  "resolvedModel": "gemini-3.6-flash-medium",
+  "errors": []
+}

@@ -418,6 +418,8 @@ export interface ToolRenderResultOptions {
   expanded: boolean;
   /** Whether this is a partial/streaming result */
   isPartial: boolean;
+  /** Whether internal harness messages should be displayed */
+  showHarnessMessages?: boolean;
 }
 
 /** Context passed to tool renderers. */
@@ -444,6 +446,8 @@ export interface ToolRenderContext<TState = any, TArgs = any> {
   expanded: boolean;
   /** Whether inline images are currently shown in the TUI. */
   showImages: boolean;
+  /** Whether internal harness messages should be displayed in the TUI. */
+  showHarnessMessages?: boolean;
   /** Whether the current result is an error. */
   isError: boolean;
 }

@@ -9,6 +9,7 @@ const packages = [
 	{ directory: "packages/ai", name: "@dst0/p-ai" },
 	{ directory: "packages/tui", name: "@dst0/p-tui" },
 	{ directory: "packages/agent", name: "@dst0/p-agent-core" },
+	{ directory: "packages/code-index", name: "@dst0/p-code-index" },
 	{ directory: "packages/coding-agent", name: "@dst0/p" },
 ];
 
@@ -148,7 +149,10 @@ function buildBunBinaryRelease(targetDirectory, archiveDirectory) {
 	]);
 	rmSync(targetDirectory, { force: true, recursive: true });
 	cpSync(join(binaryBuildDirectory, platform), targetDirectory, { recursive: true });
-	const archiveName = platform.startsWith("windows-") ? `p-${platform}.zip` : `p-${platform}.tar.gz`;
+	const ext = platform.startsWith("windows-") ? ".zip" : ".tar.gz";
+	const archiveName = existsSync(join(binaryBuildDirectory, `p-${platform}${ext}`))
+		? `p-${platform}${ext}`
+		: `pi-${platform}${ext}`;
 	cpSync(join(binaryBuildDirectory, archiveName), join(archiveDirectory, archiveName));
 	return platform;
 }
@@ -250,7 +254,9 @@ for (const tarball of tarballs.values()) {
 if (!options.skipInstall) {
 	console.log("\nLocal Bun binary release:");
 	console.log(`  ${binaryDirectory}`);
-	console.log(`  ${join(outDir, `p-${binaryPlatform}.${String(binaryPlatform).startsWith("windows-") ? "zip" : "tar.gz"}`)}`);
+	const ext = String(binaryPlatform).startsWith("windows-") ? "zip" : "tar.gz";
+	const name = existsSync(join(outDir, `p-${binaryPlatform}.${ext}`)) ? `p-${binaryPlatform}.${ext}` : `pi-${binaryPlatform}.${ext}`;
+	console.log(`  ${join(outDir, name)}`);
 	console.log("\nRun the local Bun binary release from outside the repository:");
 	console.log(`  ${join(binaryDirectory, String(binaryPlatform).startsWith("windows-") ? "p.exe" : "p")} --help`);
 

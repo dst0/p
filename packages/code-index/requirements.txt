@@ -1,4 +1,10 @@
 sentence-transformers==5.6.0
+numpy==2.5.1
+transformers==4.57.6
 socksio==1.0.0
 torch==2.2.2; sys_platform == "darwin" and platform_machine == "x86_64"
 torch==2.12.1; sys_platform != "darwin" or platform_machine != "x86_64"
+coremltools==9.0; sys_platform == "darwin"
+onnxruntime==1.28.0; sys_platform == "darwin"
+optimum==2.1.0; sys_platform == "darwin"
+optimum-onnx==0.1.0; sys_platform == "darwin"

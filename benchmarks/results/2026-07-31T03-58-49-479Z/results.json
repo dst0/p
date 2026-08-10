@@ -1,0 +1,220 @@
+{
+  "generatedAt": "2026-07-31T04:13:52.211Z",
+  "agents": [
+    "pi",
+    "p",
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b",
+    "p": "mini-pc/sokann-qwen-27b",
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.117",
+    "kilo": "7.4.16"
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 900,
+  "tasks": [
+    {
+      "id": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "timeoutSeconds": 900
+    },
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    },
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 2400
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 2,
+      "qualityMaxScore": 6,
+      "timedOut": 1,
+      "failed": 0,
+      "averageWallMs": 900059.337458,
+      "averageInputTokens": 5644,
+      "averageOutputTokens": 5688,
+      "averageTotalTokens": 69736,
+      "averageToolCalls": 15,
+      "averageToolErrors": 2
+    },
+    "p": {
+      "runs": 0,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 0,
+      "qualityMaxScore": 0,
+      "timedOut": 0,
+      "failed": 0,
+      "averageWallMs": 0,
+      "averageInputTokens": 0,
+      "averageOutputTokens": 0,
+      "averageTotalTokens": 0,
+      "averageToolCalls": 0,
+      "averageToolErrors": 0
+    },
+    "kilo": {
+      "runs": 0,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 0,
+      "qualityMaxScore": 0,
+      "timedOut": 0,
+      "failed": 0,
+      "averageWallMs": 0,
+      "averageInputTokens": 0,
+      "averageOutputTokens": 0,
+      "averageTotalTokens": 0,
+      "averageToolCalls": 0,
+      "averageToolErrors": 0
+    },
+    "winner": "pi"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "timed_out",
+      "elapsedMs": 900059.337458,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b",
+      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/pi-run-1-typescript-calculator.log",
+      "workspace": "workspaces/pi/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 72,
+        "eventTypes": {
+          "message_end": 29,
+          "tool_execution_start": 15,
+          "tool_execution_end": 15,
+          "turn_end": 13
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b-cache",
+        "usage": {
+          "input": 5644,
+          "output": 5688,
+          "cacheRead": 58404,
+          "cacheWrite": 0,
+          "totalTokens": 69736
+        },
+        "turns": 13,
+        "assistantMessages": 13,
+        "toolCalls": 15,
+        "toolErrors": 2,
+        "toolNames": {
+          "read": 7,
+          "bash": 6,
+          "write": 2
+        },
+        "stopReasons": {
+          "toolUse": 13
+        },
+        "errors": [],
+        "finalText": "Good. Now let me create the CLI and tests:\n\n",
+        "rawEventCount": 5162
+      },
+      "quality": {
+        "passed": false,
+        "score": 2,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "monolith-split",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "event-sourced-inventory",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "typescript-calculator",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "typescript-calculator",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "status": "skipped"
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "event-sourced-inventory",
+      "status": "skipped"
+    }
+  ]
+}

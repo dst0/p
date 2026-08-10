@@ -5,11 +5,17 @@ from unittest.mock import Mock, patch
 
 
 class FakeAccelerator:
+    def __init__(self):
+        self.memory_fraction = None
+
     def is_available(self):
         return False
 
     def empty_cache(self):
         pass
+
+    def set_per_process_memory_fraction(self, fraction):
+        self.memory_fraction = fraction
 
 
 fake_torch = types.ModuleType("torch")
@@ -106,9 +112,32 @@ class EmbeddingServerTest(unittest.TestCase):
         self.assertEqual(health["resource_plan"]["cpu_threads"], 4)
         self.assertEqual(health["memory"]["system_available_bytes"], 20 * GIB)
         self.assertEqual(health["runtime"]["oom_backoffs"], 3)
+        self.assertEqual(health["performance"]["backend"], None)
+
+    def test_reports_observed_multi_vector_performance(self):
+        server = self.make_server()
+
+        server.encode([f"chunk {index}" for index in range(8)])
+
+        performance = server.health()["performance"]
+        self.assertEqual(performance["backend"], "cpu")
+        self.assertEqual(performance["vectors"], 8)
+        self.assertGreater(performance["vectorsPerSecond"], 0)
+
+    def test_keeps_accelerator_cache_after_successful_micro_batches(self):
+        server = self.make_server()
+        server.model = BackingOffModel()
+        server.plan = RuntimePlan(
+            **{**server.plan.__dict__, "batch_size": 2}
+        )
+        server._clear_accelerator_cache = Mock()
+
+        server.encode(["one", "two", "three", "four"])
+
+        server._clear_accelerator_cache.assert_not_called()
 
     def test_loads_mps_model_with_the_planned_float32_dtype(self):
-        server = EmbeddingServer("test/embed-0.6B")
+        server = EmbeddingServer("Qwen/Qwen3-Embedding-0.6B")
         plan = RuntimePlan(
             usable=True,
             preferred_backend="mps",
@@ -128,11 +157,11 @@ class EmbeddingServerTest(unittest.TestCase):
             server._load_model(plan)
 
         transformer.assert_called_once_with(
-            "test/embed-0.6B",
+            "Qwen/Qwen3-Embedding-0.6B",
             device="mps",
             model_kwargs={"torch_dtype": fake_torch.float32},
         )
-
+        self.assertEqual(server.warnings, [])
 
 if __name__ == "__main__":
     unittest.main()

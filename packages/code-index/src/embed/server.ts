@@ -7,6 +7,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 export interface EmbeddingServerManagerOptions {
   pythonExecutable: string;
   startupTimeoutMs: number;
+  configPath?: string;
   onLog?: (level: "debug" | "error", message: string) => void;
 }
 
@@ -89,27 +90,16 @@ export class EmbeddingServerManager {
         settle(() => reject(signal?.reason ?? new Error("Embedding server startup cancelled")));
       };
       signal?.addEventListener("abort", onAbort, { once: true });
-      const ragDevice = (process.env.P_CODE_RAG_DEVICE ?? "cpu").toLowerCase();
-      const hideGpu = ragDevice === "cpu";
-      const child = spawn(
-        this.options.pythonExecutable,
-        [this.scriptPath, "--port", String(this.port), "--model", this.model],
-        {
-          stdio: ["ignore", "pipe", "pipe"],
-          detached: false,
-          env: {
-            ...process.env,
-            PYTORCH_ENABLE_MPS_FALLBACK: "1",
-            ...(hideGpu
-              ? {
-                  CUDA_VISIBLE_DEVICES: "99",
-                  HIP_VISIBLE_DEVICES: "99",
-                  ROCR_VISIBLE_DEVICES: "99",
-                }
-              : {}),
-          },
+      const arguments_ = [this.scriptPath, "--port", String(this.port), "--model", this.model];
+      if (this.options.configPath) arguments_.push("--config", this.options.configPath);
+      const child = spawn(this.options.pythonExecutable, arguments_, {
+        stdio: ["ignore", "pipe", "pipe"],
+        detached: false,
+        env: {
+          ...process.env,
+          PYTORCH_ENABLE_MPS_FALLBACK: "1",
         },
-      );
+      });
       this.child = child;
 
       child.stdout?.on("data", (data) => {
@@ -202,6 +192,26 @@ export class EmbeddingServerManager {
     } finally {
       if (this.stopPromise === operation) this.stopPromise = undefined;
     }
+  }
+
+  async waitUntilIdle(timeoutMs: number = 1_000): Promise<boolean> {
+    const deadline = Date.now() + timeoutMs;
+    do {
+      try {
+        const response = await fetch(`http://127.0.0.1:${this.port}/health`, {
+          signal: AbortSignal.timeout(Math.min(500, Math.max(1, timeoutMs))),
+        });
+        if (response.ok) {
+          const health = (await response.json()) as { embeddingRequests?: { active?: unknown } };
+          if (health.embeddingRequests?.active === 0) return true;
+        }
+      } catch {
+        return false;
+      }
+      if (Date.now() >= deadline) return false;
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    } while (Date.now() < deadline);
+    return false;
   }
 
   /**
