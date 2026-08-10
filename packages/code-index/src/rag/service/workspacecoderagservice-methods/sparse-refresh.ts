@@ -41,7 +41,7 @@ export async function do_performSparseGenerationRefresh(
   const preparedFiles: PreparedFile[] = [];
   await self.processPreparedFiles(changedFiles, generation, signal, (prepared, index) => {
     preparedFiles.push(prepared);
-    self.reportProgress(onProgress, "indexing", (5 * (index + 1)) / Math.max(changedFiles.length, 1), {
+    self.reportProgress(onProgress, "preparing", (50 * (index + 1)) / Math.max(changedFiles.length, 1), {
       processedFiles: index + 1,
       totalFiles: scanned.length,
     });
@@ -74,10 +74,15 @@ export async function do_performSparseGenerationRefresh(
       vocabularyChunkCount += 1;
       vocabularyCounts.set(point.payload.path, (vocabularyCounts.get(point.payload.path) ?? 0) + 1);
       if (vocabularyChunkCount % SCROLL_PROGRESS_INTERVAL === 0) {
-        self.reportProgress(onProgress, "indexing", 5 + (10 * vocabularyChunkCount) / Math.max(reusableChunkTotal, 1), {
-          processedFiles: changedFiles.length,
-          totalFiles: scanned.length,
-        });
+        self.reportProgress(
+          onProgress,
+          "preparing",
+          50 + (50 * vocabularyChunkCount) / Math.max(reusableChunkTotal, 1),
+          {
+            processedFiles: changedFiles.length,
+            totalFiles: scanned.length,
+          },
+        );
       }
     }
     self.assertReusableCounts(reusableEntries, vocabularyCounts);
@@ -85,7 +90,7 @@ export async function do_performSparseGenerationRefresh(
     self.reportProgress(
       onProgress,
       "indexing",
-      15,
+      0,
       { processedFiles: changedFiles.length, totalFiles: scanned.length },
       { processedChunks: 0, totalChunks },
     );
@@ -118,7 +123,7 @@ export async function do_performSparseGenerationRefresh(
           self.reportProgress(
             onProgress,
             "indexing",
-            15 + (70 * copiedChunks) / Math.max(reusableChunkTotal, 1),
+            (100 * copiedChunks) / Math.max(totalChunks, 1),
             { processedFiles: changedFiles.length, totalFiles: scanned.length },
             {
               processedChunks: copiedChunks,
@@ -135,7 +140,7 @@ export async function do_performSparseGenerationRefresh(
       self.reportProgress(
         onProgress,
         "indexing",
-        85,
+        (100 * reusableChunkTotal) / Math.max(totalChunks, 1),
         { processedFiles: plan.unchanged.length + changedFiles.length, totalFiles: scanned.length },
         {
           processedChunks: reusableChunkTotal,
@@ -150,7 +155,7 @@ export async function do_performSparseGenerationRefresh(
         self.reportProgress(
           onProgress,
           "indexing",
-          85 + (14.8 * completed) / Math.max(total, 1),
+          (100 * (reusableChunkTotal + completed)) / Math.max(totalChunks, 1),
           { processedFiles: scanned.length, totalFiles: scanned.length },
           {
             processedChunks: reusableChunkTotal + completed,
@@ -164,7 +169,7 @@ export async function do_performSparseGenerationRefresh(
       self.reportProgress(
         onProgress,
         "finalizing",
-        99.9,
+        0,
         { processedFiles: scanned.length, totalFiles: scanned.length },
         {
           processedChunks: totalChunks,

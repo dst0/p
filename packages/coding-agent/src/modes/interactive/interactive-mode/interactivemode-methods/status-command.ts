@@ -41,8 +41,8 @@ export async function do_buildIndexStatusText(
       `${theme.bold("Code Indexing")}\n\n` +
       (alreadyActive
         ? `This repository is already actively indexing: ${theme.fg("dim", resolvedPath)}\n`
-        : `Moved this repository to the top of the indexing queue: ${theme.fg("dim", resolvedPath)}\n` +
-          "The background service is activating it now; progress will appear in the footer.\n")
+        : `Prioritized this repository: ${theme.fg("dim", resolvedPath)}\n` +
+          "The active indexing job will stop, release the embedding device, and return to the queue.\n")
     );
   }
   if (args) return `Usage: ${theme.fg("dim", "/index | /index enable | /index disable | /index up")}`;
@@ -83,14 +83,18 @@ export async function do_buildIndexStatusText(
   }
 
   if (status.ragState) {
-    text += `Service state: ${status.ragState}\n`;
-    if (status.ragFiles !== undefined) {
-      const totalFiles = status.totalFiles ?? status.ragFiles;
-      text += `Files indexed: ${status.ragFiles} out of ${totalFiles}\n`;
+    const phase = status.progress?.phase;
+    text += `Service state: ${phase === "indexing" ? "embedding" : (phase ?? status.ragState)}\n`;
+    if (status.progress?.totalFiles !== undefined) {
+      const label = phase === "scanning" ? "Files scanned" : "Files prepared";
+      text += `${label}: ${status.progress.processedFiles ?? 0} out of ${status.progress.totalFiles}\n`;
+    } else if (status.ragState === "ready" && status.ragFiles !== undefined) {
+      text += `Files indexed: ${status.ragFiles}\n`;
     }
-    if (status.ragChunks !== undefined) {
-      const totalChunks = status.totalChunks ?? status.ragChunks;
-      text += `Chunks indexed: ${status.ragChunks} out of ${totalChunks}\n`;
+    if (status.progress?.totalChunks !== undefined) {
+      text += `Chunks indexed: ${status.progress.processedChunks ?? 0} out of ${status.progress.totalChunks}\n`;
+    } else if (status.ragState === "ready" && status.ragChunks !== undefined) {
+      text += `Chunks indexed: ${status.ragChunks}\n`;
     }
   }
   if (status.lastError) text += `Last error: ${status.lastError}\n`;

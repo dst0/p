@@ -16,6 +16,7 @@ import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import { type IndexingProgress, type IndexUpdateSummary, WorkspaceCodeRagService } from "../src/index.ts";
 import { StoredPointError } from "../src/rag/vector-store.ts";
 import { FakeVectorStore } from "./fake-vector-store.ts";
+import { isPhaseProgressMonotonic } from "./indexing-progress-assertions.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -224,7 +225,7 @@ describe("WorkspaceCodeRagService", () => {
     expect(migratedUnchanged.payload.indexGeneration).toBe(refreshed.status.generation);
     expect(migratedUnchanged.payload.indexedAt).toBe(originalIndexedAt);
     expect(progress.some((value) => value.processedChunks === 9 && value.totalChunks === 10)).toBe(true);
-    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+    expect(isPhaseProgressMonotonic(progress)).toBe(true);
   });
 
   it("excludes deleted files from a sparse migration without embedding unchanged files", async () => {
@@ -301,7 +302,7 @@ describe("WorkspaceCodeRagService", () => {
     const failedMigration = store.createdCollections.at(-2)!;
     expect(store.deletedCollections).toContain(failedMigration);
     expect(store.collections.has(failedMigration)).toBe(false);
-    expect(progress.every((value, index) => index === 0 || value.percent >= progress[index - 1].percent)).toBe(true);
+    expect(isPhaseProgressMonotonic(progress)).toBe(true);
   });
 
   it("preserves the old generation when sparse migration fails for a backend error", async () => {
@@ -529,7 +530,7 @@ describe("WorkspaceCodeRagService", () => {
     await service.refresh({ onProgress: (value) => progress.push(value) });
 
     expect(progress).toContainEqual(
-      expect.objectContaining({ phase: "indexing", percent: 15, processedFiles: 1, totalFiles: 257 }),
+      expect.objectContaining({ phase: "preparing", processedFiles: 1, totalFiles: 257 }),
     );
   });
 
@@ -637,9 +638,7 @@ describe("WorkspaceCodeRagService", () => {
     await service.rebuild({ onProgress: (progress) => rebuildProgress.push(progress) });
     expect(rebuildProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
     expect(rebuildProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
-    expect(
-      rebuildProgress.every((progress, index) => index === 0 || progress.percent >= rebuildProgress[index - 1].percent),
-    ).toBe(true);
+    expect(isPhaseProgressMonotonic(rebuildProgress)).toBe(true);
 
     writeFileSync(join(root, "main.ts"), "export const replacement = 'changed';\n");
     const refreshProgress: IndexingProgress[] = [];
@@ -647,9 +646,7 @@ describe("WorkspaceCodeRagService", () => {
     expect(refreshProgress[0]).toMatchObject({ phase: "scanning", percent: 0 });
     expect(refreshProgress.at(-1)).toMatchObject({ phase: "finalizing", percent: 100 });
     expect(refreshProgress.some((progress) => progress.phase === "indexing" && progress.percent > 0.1)).toBe(true);
-    expect(
-      refreshProgress.every((progress, index) => index === 0 || progress.percent >= refreshProgress[index - 1].percent),
-    ).toBe(true);
+    expect(isPhaseProgressMonotonic(refreshProgress)).toBe(true);
   });
 
   it("dynamically reloads batch size configuration during an active rebuild", async () => {

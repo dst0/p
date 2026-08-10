@@ -1,4 +1,4 @@
-export const DRAIN_MAX_CONCURRENCY = 2;
+export const DRAIN_MAX_CONCURRENCY = 1;
 
 export const MANUAL_PRIORITY_OFFSET = 1_000_000_000_000_000;
 

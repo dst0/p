@@ -104,8 +104,7 @@ export interface SemanticSearchResponse {
 export interface InitializeRagOptions {
   checkFreshness?: boolean;
 }
-
-export type IndexingProgressPhase = "scanning" | "indexing" | "finalizing";
+export type IndexingProgressPhase = "scanning" | "preparing" | "indexing" | "finalizing";
 
 export interface IndexingProgress {
   phase: IndexingProgressPhase;
@@ -125,9 +124,9 @@ export interface IndexingProgress {
   /** Estimated remaining seconds to completion based on recent processing speed. */
   etaSeconds?: number;
 }
-
 export interface RefreshIndexOptions {
   forceSparseRebuild?: boolean;
+  transactional?: boolean; // Build an isolated generation so cancellation cannot expose a partial update.
   onProgress?: (progress: IndexingProgress) => void;
 }
 
@@ -286,6 +285,7 @@ export interface CodeRagService {
 
 export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   enabled: boolean;
+  searchMode?: "hybrid" | "bm25-only" | "dense-only";
   autoRefresh: boolean;
   allowStaleSearch: boolean;
   remoteBackendsAllowed: boolean;

@@ -9,6 +9,7 @@ interface CapturedEmbeddingRequest {
   input: string[];
   normalize: boolean;
   priority: "background" | "interactive";
+  requestId: string;
 }
 
 function captureEmbeddingRequests(): CapturedEmbeddingRequest[] {
@@ -49,7 +50,14 @@ describe("EmbeddingProviderHttp.encodeQuery", () => {
 
     await provider.encodeQuery("tool definition system");
 
-    expect(requests).toEqual([{ input: ["tool definition system"], normalize: true, priority: "interactive" }]);
+    expect(requests).toEqual([
+      {
+        input: ["tool definition system"],
+        normalize: true,
+        priority: "interactive",
+        requestId: expect.stringMatching(/^[0-9a-f-]{36}$/),
+      },
+    ]);
   });
 });
 

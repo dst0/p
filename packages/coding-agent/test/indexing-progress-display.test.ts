@@ -45,7 +45,7 @@ describe("formatIndexingStatus", () => {
     initTheme("dark");
   });
 
-  it("shows percentage for queued state with progress", () => {
+  it("shows queued state even if stale progress is present", () => {
     expect(
       formatIndexingStatus({
         decision: "enabled",
@@ -54,10 +54,10 @@ describe("formatIndexingStatus", () => {
         ragState: "queued",
         progress: { phase: "scanning", percent: 42 },
       }),
-    ).toContain("🔎 42.0%");
+    ).toBe("🔎 queued");
   });
 
-  it("shows 0.0% for queued state with zero progress", () => {
+  it("does not show zero progress for a queued repository", () => {
     expect(
       formatIndexingStatus({
         decision: "enabled",
@@ -66,7 +66,7 @@ describe("formatIndexingStatus", () => {
         ragState: "queued",
         progress: { phase: "scanning", percent: 0 },
       }),
-    ).toContain("🔎 0.0%");
+    ).toBe("🔎 queued");
   });
 
   it("shows queued text when no progress is available", () => {
@@ -87,9 +87,9 @@ describe("formatIndexingStatus", () => {
         indexed: true,
         serviceRunning: true,
         ragState: "updating",
-        progress: { phase: "indexing", percent: 75 },
+        progress: { phase: "indexing", percent: 75, processedChunks: 75, totalChunks: 100 },
       }),
-    ).toContain("🔎 75.0%");
+    ).toContain("🔎 75.0% (75/100 chunks)");
   });
 
   it("formats reused vs new chunk breakdown when chunk stats are present", () => {
@@ -147,16 +147,16 @@ describe("formatIndexingStatus", () => {
     ).toBe("🔎 init");
   });
 
-  it("shows percentage for initializing state with progress", () => {
+  it("shows the preparing phase without a synthetic percentage", () => {
     expect(
       formatIndexingStatus({
         decision: "enabled",
         indexed: true,
         serviceRunning: true,
         ragState: "initializing",
-        progress: { phase: "scanning", percent: 12 },
+        progress: { phase: "preparing", percent: 12, processedFiles: 3, totalFiles: 8 },
       }),
-    ).toContain("🔎 12.0%");
+    ).toBe("🔎 preparing 3/8");
   });
 
   it("shows OFF when indexing is disabled", () => {
@@ -190,7 +190,7 @@ describe("formatIndexingStatus", () => {
     ).toBe("🔎 ON!");
   });
 
-  it("shows ETA when startedAt is provided and percent > 0", () => {
+  it("does not infer ETA from elapsed time alone", () => {
     const startedAt = new Date(Date.now() - 30_000).toISOString();
     expect(
       formatIndexingStatus({
@@ -200,7 +200,7 @@ describe("formatIndexingStatus", () => {
         ragState: "updating",
         progress: { phase: "indexing", percent: 50, startedAt },
       }),
-    ).toMatch(/🔎 50\.0%\s+\(ETA: 30s\)/);
+    ).toBe("🔎 50.0%");
   });
 
   it("shows decimal minutes ETA for longer runs", () => {
@@ -213,7 +213,7 @@ describe("formatIndexingStatus", () => {
         ragState: "updating",
         progress: { phase: "indexing", percent: 20, startedAt },
       }),
-    ).toMatch(/🔎 20\.0%\s+\(ETA: 8\.0m\)/);
+    ).toBe("🔎 20.0%");
   });
 
   it("shows decimal minutes with fractional part", () => {
@@ -226,7 +226,7 @@ describe("formatIndexingStatus", () => {
         ragState: "updating",
         progress: { phase: "indexing", percent: 20, startedAt },
       }),
-    ).toMatch(/🔎 20\.0%\s+\(ETA: 8\.3m\)/);
+    ).toBe("🔎 20.0%");
   });
 
   it("omits ETA when percent is 0", () => {
@@ -264,7 +264,7 @@ describe("formatIndexingStatus", () => {
         ragState: "updating",
         progress: { phase: "indexing", percent: 1, startedAt },
       }),
-    ).toBe("🔎 1.0% (ETA: 3.3h)");
+    ).toBe("🔎 1.0%");
   });
 
   it("uses explicit etaSeconds from progress when present", () => {
@@ -285,7 +285,7 @@ describe("FooterComponent indexing progress display", () => {
     initTheme("dark");
   });
 
-  it("renders 0.0% for queued indexing with progress available", () => {
+  it("renders queued for queued indexing with stale progress", () => {
     const footer = new FooterComponent(createSession("normal"), {
       ...createFooterData(),
       getIndexingStatus: () => ({
@@ -297,7 +297,7 @@ describe("FooterComponent indexing progress display", () => {
       }),
     });
 
-    expect(footer.render(100).join("\n")).toContain("🔎 0.0%");
+    expect(footer.render(100).join("\n")).toContain("🔎 queued");
   });
 
   it("renders percentage for updating indexing in progress", () => {

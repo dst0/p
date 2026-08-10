@@ -22,9 +22,9 @@ import json
 import os
 import sys
 import time
-import traceback
+from collections.abc import Callable
 from dataclasses import replace
-from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.server import HTTPServer
 from socketserver import ThreadingMixIn
 
 from embedding_runtime_config import (
@@ -34,6 +34,8 @@ from embedding_runtime_config import (
 )
 from embedding_benchmark import BENCHMARK_CORPUS
 from embedding_performance import EmbeddingPerformanceTracker
+from embedding_http_handler import EmbeddingHttpHandler
+from embedding_http_handler import configure as configure_http_handler
 from embedding_priority_lock import EmbeddingPriorityLock
 
 os.environ.setdefault("PYTORCH_ENABLE_MPS_FALLBACK", "1")
@@ -193,9 +195,15 @@ class EmbeddingServer:
             flush=True,
         )
 
-    def encode(self, texts: list[str], normalize: bool = True) -> list[list[float]]:
+    def encode(
+        self,
+        texts: list[str],
+        normalize: bool = True,
+        cancellation_check: Callable[[], bool] | None = None,
+    ) -> list[list[float]]:
         if self.model is None or self.plan is None:
             raise RuntimeError("model not loaded")
+        self._raise_if_cancelled(cancellation_check)
         self._refresh_active_plan()
         performance_backend = self.plan.backend
         performance_started_at = time.perf_counter()
@@ -203,14 +211,22 @@ class EmbeddingServer:
         offset = 0
         request_had_oom = False
         while offset < len(texts):
+            self._raise_if_cancelled(cancellation_check)
             batch_size = min(self._effective_batch_size(), len(texts) - offset)
             try:
                 if hasattr(self.model, "backend_id"):
                     # Custom EmbeddingBackend protocol implementation (e.g. AppleANEBackend)
+                    encode_options = {
+                        "normalize": normalize,
+                        "batch_size": batch_size,
+                    }
+                    if self.model.backend_id in {
+                        "amd-phoenix-npu",
+                        "amd-ryzenai-npu",
+                    }:
+                        encode_options["cancellation_check"] = cancellation_check
                     raw_vecs = self.model.encode(
-                        texts[offset : offset + batch_size],
-                        normalize=normalize,
-                        batch_size=batch_size,
+                        texts[offset : offset + batch_size], **encode_options
                     )
                     embeddings = list(raw_vecs)
                 else:
@@ -221,6 +237,7 @@ class EmbeddingServer:
                         show_progress_bar=False,
                     )
                     embeddings = raw_vecs.tolist() if hasattr(raw_vecs, "tolist") else list(raw_vecs)
+                self._raise_if_cancelled(cancellation_check)
             except Exception as error:
                 if not _is_out_of_memory(error):
                     raise
@@ -249,6 +266,11 @@ class EmbeddingServer:
         if self.plan.backend == performance_backend:
             self.performance.record(performance_backend, len(output), time.perf_counter() - performance_started_at)
         return output
+
+    @staticmethod
+    def _raise_if_cancelled(cancellation_check: Callable[[], bool] | None) -> None:
+        if cancellation_check is not None and cancellation_check():
+            raise InterruptedError("embedding request cancelled")
 
     def health(self) -> dict:
         plan = self.plan.to_dict() if self.plan is not None else None
@@ -707,63 +729,24 @@ server: EmbeddingServer | None = None
 encode_lock = EmbeddingPriorityLock()
 
 
-class Handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        if self.path == "/health":
-            if server is None or server.model is None:
-                self._json(503, {"status": "loading"})
-            else:
-                self._json(200, server.health())
-        else:
-            self._json(404, {"error": "not found"})
-
-    def do_POST(self):
-        if self.path != "/embed":
-            self._json(404, {"error": "not found"})
-            return
-        if server is None or server.model is None:
-            self._json(503, {"error": "model not loaded"})
-            return
-
-        try:
-            length = int(self.headers.get("Content-Length", 0))
-            body = json.loads(self.rfile.read(length))
-            texts: list[str] = body.get("input", [])
-            normalize = body.get("normalize", True)
-            if not texts:
-                self._json(400, {"error": "empty input"})
-                return
-            interactive = body.get("priority") == "interactive"
-            with torch.inference_mode():
-                embeddings = encode_lock.run(
-                    texts, lambda batch: server.encode(batch, normalize), interactive=interactive
-                )
-            self._json(200, {
-                "model": server.model_name,
-                "dim": server.dim,
-                "embeddings": embeddings,
-            })
-        except (BrokenPipeError, ConnectionResetError):
-            # Client disconnected — don't crash the server
-            self.close_connection = True
-        except Exception as e:
-            traceback.print_exc()
-            try:
-                self._json(500, {"error": str(e)})
-            except (BrokenPipeError, ConnectionResetError):
-                self.close_connection = True
-
-    def _json(self, code: int, data: dict):
-        body = json.dumps(data).encode()
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(body)))
-        self.send_header("Connection", "keep-alive")
-        self.end_headers()
-        self.wfile.write(body)
-
-    def log_message(self, format, *args):
-        pass  # silence request logs
+def _run_encode_request(
+    texts: list[str],
+    normalize: bool,
+    interactive: bool,
+    cancellation_check: Callable[[], bool],
+) -> list[list[float]]:
+    if server is None:
+        raise RuntimeError("model not loaded")
+    return encode_lock.run(
+        texts,
+        lambda batch: server.encode(
+            batch,
+            normalize,
+            cancellation_check=cancellation_check,
+        ),
+        interactive=interactive,
+        cancellation_check=cancellation_check,
+    )
 
 
 def _mps_available() -> bool:
@@ -811,9 +794,10 @@ def main():
     global server
     server = EmbeddingServer(args.model or runtime_config.embedding_model, runtime_config)
     server.load()
+    configure_http_handler(server, torch.inference_mode, _run_encode_request)
 
     addr = ("127.0.0.1", args.port)
-    httpd = ThreadedHTTPServer(addr, Handler)
+    httpd = ThreadedHTTPServer(addr, EmbeddingHttpHandler)
     print(f"Embedding server listening on http://{addr[0]}:{addr[1]} (threaded)", flush=True)
     httpd.serve_forever()
 
