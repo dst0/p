@@ -187,8 +187,9 @@ export async function do_encodeAndUpsert(
     onProgress?.(0, 0);
     return;
   }
-  // Ensure embedding provider is ready (auto-start if needed)
-  if (self.embeddingProvider.ensureReady) await self.embeddingProvider.ensureReady(signal);
+  if (self.settings.searchMode !== "bm25-only" && self.embeddingProvider.ensureReady) {
+    await self.embeddingProvider.ensureReady(signal);
+  }
   let offset = 0;
   while (offset < chunks.length) {
     if (signal.aborted) throw signal.reason ?? new Error("Code RAG refresh cancelled");
@@ -207,7 +208,7 @@ export async function do_encodeAndUpsert(
     const points: VectorPoint[] = batch.map((chunk, index) => ({
       id: chunk.id,
       vectors: {
-        dense: Array.from(denseVectors[index]),
+        ...(denseVectors[index].length > 0 ? { dense: Array.from(denseVectors[index]) } : {}),
         sparse: vocabulary.encode(chunk.retrievalText),
       },
       payload: chunk.payload,

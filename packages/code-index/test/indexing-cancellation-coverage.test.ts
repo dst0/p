@@ -6,11 +6,12 @@ import { do_encodeAndUpsert } from "../src/rag/service/workspacecoderagservice-m
 
 describe("indexing cancellation coverage", () => {
   it("skips dense embedding when incremental indexing is BM25-only", async () => {
+    const ensureReady = vi.fn(async () => {});
     const encode = vi.fn(async () => [new Float32Array([1])]);
     const upsert = vi.fn(async () => {});
     const service = {
       settings: { searchMode: "bm25-only", encodeBatchSize: 8, upsertBatchSize: 8 },
-      embeddingProvider: { ensureReady: async () => {}, encode },
+      embeddingProvider: { ensureReady, encode },
       refreshSettingsSilently: () => {},
       vectorStore: { upsert },
     } as unknown as WorkspaceCodeRagService;
@@ -46,8 +47,9 @@ describe("indexing cancellation coverage", () => {
     await do_encodeAndUpsert(service, "collection", chunks, vocabulary, new AbortController().signal);
 
     expect(encode).not.toHaveBeenCalled();
+    expect(ensureReady).not.toHaveBeenCalled();
     expect(upsert).toHaveBeenCalledWith("collection", [
-      expect.objectContaining({ vectors: expect.objectContaining({ dense: [] }) }),
+      expect.objectContaining({ vectors: expect.not.objectContaining({ dense: expect.anything() }) }),
     ]);
   });
 });

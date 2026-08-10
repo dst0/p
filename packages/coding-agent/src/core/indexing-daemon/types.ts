@@ -28,6 +28,7 @@ export interface IndexingDaemonOptions {
   pythonExecutable: string;
   embeddingModel: string;
   embeddingConfigPath?: string;
+  useDenseEmbeddings?: boolean;
   debounceMs?: number;
   retryMs?: number;
   reconcileMs?: number;

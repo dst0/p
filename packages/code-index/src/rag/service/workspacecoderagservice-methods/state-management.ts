@@ -108,6 +108,7 @@ export function do_manifestIncompatibility(self: WorkspaceCodeRagService, manife
     self.settings.embeddingDimensions,
     self.settings.embeddingPooling,
     self.settings.embeddingNormalization,
+    self.settings.searchMode,
   );
   if (
     manifest.embedding.compatibilityGroup !== expectedCompatibilityGroup ||

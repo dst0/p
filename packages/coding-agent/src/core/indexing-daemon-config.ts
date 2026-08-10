@@ -17,5 +17,6 @@ export function createIndexingDaemonOptions(agentDir: string): IndexingDaemonOpt
     pythonExecutable: settings.pythonExecutable,
     embeddingModel: settings.embeddingModel,
     embeddingConfigPath: configPath,
+    useDenseEmbeddings: settings.searchMode !== "bm25-only",
   };
 }

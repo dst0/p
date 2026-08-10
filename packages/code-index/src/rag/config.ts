@@ -11,6 +11,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   autoRefresh: true,
   allowStaleSearch: true,
   remoteBackendsAllowed: false,
+  searchMode: "hybrid",
   qdrantUrl: "http://127.0.0.1:6333",
   qdrantBinary: "qdrant",
   qdrantDataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
@@ -90,6 +91,7 @@ const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "sparseRebuildDriftRatio",
 ]);
 const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
+  "searchMode",
   "qdrantUrl",
   "qdrantBinary",
   "qdrantDataDirectory",
@@ -134,15 +136,18 @@ const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
   "intel-openvino-npu",
 ]);
 const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
+const SEARCH_MODES = new Set<WorkspaceCodeRagSettings["searchMode"]>(["hybrid", "bm25-only"]);
 
 export function computeEmbeddingCompatibilityGroup(
   model: string,
   dimensions: number,
   pooling: string,
   normalization: string,
+  searchMode: WorkspaceCodeRagSettings["searchMode"] = "hybrid",
 ): string {
   const slug = model.toLowerCase().replaceAll("/", "_").replaceAll("-", "_");
-  return `${slug}-${dimensions}-${pooling}-${normalization}`;
+  const base = `${slug}-${dimensions}-${pooling}-${normalization}`;
+  return searchMode === "hybrid" ? base : `${base}-${searchMode}`;
 }
 
 function parseConfigFile(configPath: string | undefined): Partial<WorkspaceCodeRagSettings> {
@@ -194,6 +199,8 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   if (!TORCH_BACKENDS.has(settings.torchBackend)) {
     throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
   }
+  if (!SEARCH_MODES.has(settings.searchMode))
+    throw new Error(`Code RAG searchMode is unsupported: ${settings.searchMode}`);
   if (
     settings.embeddingModelParameterCount !== undefined &&
     (!Number.isSafeInteger(settings.embeddingModelParameterCount) || settings.embeddingModelParameterCount <= 0)

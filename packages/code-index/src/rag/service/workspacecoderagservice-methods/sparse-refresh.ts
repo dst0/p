@@ -102,15 +102,16 @@ export async function do_performSparseGenerationRefresh(
       const copiedCounts = new Map<string, number>();
       const pending: VectorPoint[] = [];
       let copiedChunks = 0;
-      for await (const point of iteratePoints(previousManifest.collection, self.repoId, true, signal)) {
+      const withDense = self.settings.searchMode !== "bm25-only";
+      for await (const point of iteratePoints(previousManifest.collection, self.repoId, withDense, signal)) {
         if (!self.isReusablePoint(point, reusableEntries)) continue;
-        if (!point.dense || point.dense.length !== self.settings.embeddingDimensions) {
+        if (withDense && (!point.dense || point.dense.length !== self.settings.embeddingDimensions)) {
           throw new ReusableGenerationError(`Dense vector is missing or incompatible for point: ${point.id}`);
         }
         pending.push({
           id: point.id,
           vectors: {
-            dense: point.dense,
+            ...(point.dense ? { dense: point.dense } : {}),
             sparse: vocabulary.encode(retrievalTextForPayload(point.payload, self.settings.maxEncodeCharacters)),
           },
           payload: { ...point.payload, indexGeneration: generation },
@@ -208,6 +209,7 @@ export async function do_performSparseGenerationRefresh(
             self.settings.embeddingDimensions,
             self.settings.embeddingPooling,
             self.settings.embeddingNormalization,
+            self.settings.searchMode,
           ),
           pooling: self.settings.embeddingPooling,
           normalization: self.settings.embeddingNormalization,

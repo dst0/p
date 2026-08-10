@@ -45,10 +45,10 @@ for ARG in "$@"; do
             echo ""
             echo "Options:"
             echo "  --help, -h             Show this help message."
-            echo "  --select-indexing      Re-prompt for the embedding device"
+            echo "  --select-indexing      Re-prompt for the code indexing mode"
             echo "                         selection in ~/.p/agent/code-rag.json."
             echo ""
-            echo "The embedding device is saved in the standard code-index config"
+            echo "The indexing mode is saved in the standard code-index config"
             echo "and reused automatically on subsequent runs."
             exit 0
             ;;

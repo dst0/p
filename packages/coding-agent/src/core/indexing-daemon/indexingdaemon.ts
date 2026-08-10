@@ -53,7 +53,10 @@ import type {
 
 export class IndexingDaemon {
   public readonly options: Required<
-    Pick<IndexingDaemonOptions, "agentDir" | "debounceMs" | "retryMs" | "reconcileMs" | "repositoryTimeoutMs">
+    Pick<
+      IndexingDaemonOptions,
+      "agentDir" | "debounceMs" | "retryMs" | "reconcileMs" | "repositoryTimeoutMs" | "useDenseEmbeddings"
+    >
   >;
 
   public readonly serviceFactory: (workspaceRoot: string) => CodeRagService;
@@ -105,6 +108,7 @@ export class IndexingDaemon {
       retryMs: options.retryMs ?? 30_000,
       reconcileMs: options.reconcileMs ?? 5 * 60_000,
       repositoryTimeoutMs: options.repositoryTimeoutMs ?? DEFAULT_REPOSITORY_TIMEOUT_MS,
+      useDenseEmbeddings: options.useDenseEmbeddings ?? true,
     };
     const qdrantManager = new QdrantServerManager(6333, {
       qdrantBinary: options.qdrantBinary,
@@ -132,7 +136,7 @@ export class IndexingDaemon {
       options.ensureBackends ??
       (async (signal) => {
         await qdrantManager.ensureStarted(signal);
-        await this.embeddingManager.ensureStarted(signal);
+        if (this.options.useDenseEmbeddings) await this.embeddingManager.ensureStarted(signal);
       });
     this.disposeBackends =
       options.disposeBackends ??
@@ -142,6 +146,7 @@ export class IndexingDaemon {
     this.releaseEmbeddingDevice =
       options.releaseEmbeddingDevice ??
       (async () => {
+        if (!this.options.useDenseEmbeddings) return;
         if (!(await this.embeddingManager.waitUntilIdle())) await this.embeddingManager.stop();
       });
     this.watchFactory =

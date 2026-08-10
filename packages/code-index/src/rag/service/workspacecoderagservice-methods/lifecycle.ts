@@ -113,7 +113,10 @@ export async function do_search(
       return self.emptySearchResponse(normalized.query, startedAt);
     }
     const vocabulary = self.loadVocabulary(manifest);
-    const dense = await self.embeddingProvider.encodeQuery(normalized.query, operationSignal);
+    const dense =
+      self.settings.searchMode === "bm25-only"
+        ? new Float32Array(0)
+        : await self.embeddingProvider.encodeQuery(normalized.query, operationSignal);
     const sparse = vocabulary.encode(normalized.query);
     const candidateLimit = Math.max(normalized.limit * 5, 40);
     const candidates = await self.vectorStore.search(
