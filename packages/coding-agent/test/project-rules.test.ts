@@ -2,6 +2,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { classifySeverity, severityScore, sourceRank } from "../src/core/project-rule-text-analysis.ts";
+import type { RuleSource } from "../src/core/project-rules.ts";
 import {
   buildRuleIndex,
   createRulesContext,
@@ -24,6 +26,14 @@ afterEach(() => {
 });
 
 describe("project rules resolver", () => {
+  it("ranks every rule severity and source", () => {
+    expect(["optional note", "should verify", "must verify"].map(classifySeverity).map(severityScore)).toEqual([
+      1, 2, 3,
+    ]);
+    const sources: RuleSource[] = ["pdev", "nearest_agents", "repo_agents", "global", "compatibility"];
+    expect(sources.map(sourceRank)).toEqual([0, 1, 2, 3, 4]);
+  });
+
   it("indexes scoped rules in precedence order and renders bounded context", () => {
     const cwd = createTempProject();
     mkdirSync(join(cwd, ".pdev/rules"), { recursive: true });
