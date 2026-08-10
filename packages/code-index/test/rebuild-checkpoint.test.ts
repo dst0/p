@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -114,6 +114,26 @@ describe("resumable full rebuild", () => {
     expect(summary.status.collection).toBe(partialCollection);
     await expect(vectorStore.collectionStatus(partialCollection)).resolves.toMatchObject({ points: 4 });
     expect(existsSync(checkpointPath)).toBe(false);
+  });
+
+  it("continues after metadata-only timestamp changes", async () => {
+    const { root, data } = createFixture();
+    const vectorStore = new FakeVectorStore();
+    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+    await interruptAfterTwoChunks(initialService);
+    const partialCollection = vectorStore.createdCollections[0];
+
+    const touchedFile = join(root, "file-0.ts");
+    const touchedAt = new Date(Date.now() + 60_000);
+    utimesSync(touchedFile, touchedAt, touchedAt);
+
+    const resumedEmbedding = new RecordingEmbeddingProvider();
+    const resumedService = createService(root, data, resumedEmbedding, vectorStore);
+    const summary = await resumedService.rebuild();
+
+    expect(summary.status.collection).toBe(partialCollection);
+    expect(vectorStore.createdCollections).toEqual([partialCollection]);
+    expect(resumedEmbedding.encodedTexts).toHaveLength(2);
   });
 
   it("invalidates a checkpoint when repository contents change", async () => {
