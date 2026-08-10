@@ -30,6 +30,7 @@ export interface EmbeddingRuntimeSettings {
   maxEmbeddingBatchSize: number;
   maxCpuThreads: number;
   maxSequenceLength: number;
+  mpsPrecision: "bfloat16" | "float32";
   minSystemMemoryReserveBytes: number;
   minAcceleratorMemoryReserveBytes: number;
   embeddingModelParameterCount?: number;

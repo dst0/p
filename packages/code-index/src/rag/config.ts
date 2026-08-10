@@ -27,6 +27,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   maxEmbeddingBatchSize: 64,
   maxCpuThreads: os.cpus().length,
   maxSequenceLength: 512,
+  mpsPrecision: "bfloat16",
   minSystemMemoryReserveBytes: 1024 * 1024 * 1024,
   minAcceleratorMemoryReserveBytes: 512 * 1024 * 1024,
   openvinoCacheDirectory: path.join(os.homedir(), ".p", "agent", "indexing-service", "openvino-cache"),
@@ -102,6 +103,7 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "embeddingDevice",
   "pythonExecutable",
   "torchBackend",
+  "mpsPrecision",
   "openvinoCacheDirectory",
   "vitisaiCacheDirectory",
   "vitisaiCacheKey",
@@ -136,6 +138,7 @@ const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
   "intel-openvino-npu",
 ]);
 const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
+const MPS_PRECISIONS = new Set<WorkspaceCodeRagSettings["mpsPrecision"]>(["bfloat16", "float32"]);
 const SEARCH_MODES = new Set<WorkspaceCodeRagSettings["searchMode"]>(["hybrid", "bm25-only"]);
 
 export function computeEmbeddingCompatibilityGroup(
@@ -198,6 +201,9 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   }
   if (!TORCH_BACKENDS.has(settings.torchBackend)) {
     throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
+  }
+  if (!MPS_PRECISIONS.has(settings.mpsPrecision)) {
+    throw new Error(`Code RAG mpsPrecision is unsupported: ${settings.mpsPrecision}`);
   }
   if (!SEARCH_MODES.has(settings.searchMode))
     throw new Error(`Code RAG searchMode is unsupported: ${settings.searchMode}`);

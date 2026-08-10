@@ -1,6 +1,6 @@
 {
   "name": "@dst0/p-code-index",
-  "version": "0.4.202",
+  "version": "0.4.203",
   "description": "Codebase indexer — hybrid dense (Qwen3-Embedding) + BM25 sparse vectors into Qdrant",
   "type": "module",
   "main": "./dist/index.js",
@@ -16,6 +16,7 @@
   },
   "files": [
     "dist",
+    "benchmarks",
     "*.py",
     "embedding_backends/*.py",
     "requirements-coreai.txt",
@@ -25,6 +26,7 @@
   "scripts": {
     "clean": "shx rm -rf dist",
     "build": "tsgo -p tsconfig.build.json",
+    "benchmark:mps-precision": "node benchmarks/mps-precision/run.js",
     "test": "vitest --run && python3 -m unittest discover -s test -p 'test_*.py'",
     "test:coverage": "vitest --run --coverage",
     "prepublishOnly": "npm run clean && npm run build"

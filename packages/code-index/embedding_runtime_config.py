@@ -14,6 +14,7 @@ class EmbeddingRuntimeConfig:
     max_embedding_batch_size: int = 64
     max_cpu_threads: int = os.cpu_count() or 1
     max_sequence_length: int = MPS_DEFAULT_SEQUENCE_LENGTH
+    mps_precision: str = "bfloat16"
     min_system_memory_reserve_bytes: int = 1024 * 1024 * 1024
     min_accelerator_memory_reserve_bytes: int = 512 * 1024 * 1024
     model_parameter_count: int | None = None
@@ -62,6 +63,7 @@ def load_embedding_runtime_config(config_path: str | None) -> EmbeddingRuntimeCo
         max_embedding_batch_size=_positive_int(raw, "maxEmbeddingBatchSize", 64),
         max_cpu_threads=_positive_int(raw, "maxCpuThreads", os.cpu_count() or 1),
         max_sequence_length=_positive_int(raw, "maxSequenceLength", MPS_DEFAULT_SEQUENCE_LENGTH),
+        mps_precision=_choice(raw, "mpsPrecision", "bfloat16", {"bfloat16", "float32"}),
         min_system_memory_reserve_bytes=_positive_int(
             raw, "minSystemMemoryReserveBytes", 1024 * 1024 * 1024
         ),
@@ -121,6 +123,13 @@ def _string(raw: dict, key: str, default: str) -> str:
     value = raw.get(key, default)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} must be a non-empty string")
+    return value
+
+
+def _choice(raw: dict, key: str, default: str, choices: set[str]) -> str:
+    value = _string(raw, key, default)
+    if value not in choices:
+        raise ValueError(f"{key} must be one of: {', '.join(sorted(choices))}")
     return value
 
 

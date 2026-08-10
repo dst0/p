@@ -432,7 +432,6 @@ class EmbeddingServer:
                 accelerator_total_bytes=memory.system_total_bytes,
                 accelerator_free_bytes=memory.system_available_bytes,
             )
-
         self._cached_accelerator = (backend, memory, now)
         return backend, memory
 
@@ -449,6 +448,7 @@ class EmbeddingServer:
             memory=memory,
             model_parameter_count=self.model_parameter_count,
             sequence_length=self.sequence_length,
+            mps_precision=self.runtime_config.mps_precision,
             max_batch_size=self.runtime_config.max_embedding_batch_size,
             max_cpu_threads=self.runtime_config.max_cpu_threads,
             min_system_reserve_bytes=self.runtime_config.min_system_memory_reserve_bytes,
