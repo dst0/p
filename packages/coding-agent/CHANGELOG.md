@@ -17,6 +17,8 @@
 
 ### Fixed
 
+- Keep the Python embedding server alive while repository indexing is active or queued, and start its idle timeout only after the queue drains.
+- Include split indexing-daemon runtime modules in the indexing version so reinstalls cannot leave an older daemon running after daemon-only fixes.
 - Bound native Core AI NDArray/IOSurface lifetime during long Apple Neural Engine indexing, recycle the worker before its native buffer pool is exhausted, recover once from an unexpected worker exit, and stop reporting a dead worker as ready.
 - Run one repository-indexing worker per embedding device, make `/index up` cancel the active embedding request and wait for device release before promotion, and preserve the interrupted repository as queued transactional work.
 - Replace synthetic indexing percentages and zero totals with named scanning, preparing, embedding, and finalizing stages, real file/chunk counters, and ETA derived only from measured embedding progress.

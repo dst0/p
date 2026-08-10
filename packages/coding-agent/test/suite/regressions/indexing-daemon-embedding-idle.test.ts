@@ -2,7 +2,7 @@ import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { CodeRagService, InitializeRagOptions, RagState, RagStatus } from "@dst0/p-code-index";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { enableIndexingForRepo } from "../../../src/core/indexed-repos.ts";
 import { IndexingDaemon, type IndexingDaemonOptions } from "../../../src/core/indexing-daemon.ts";
 
@@ -18,6 +18,7 @@ class IdleRagService implements CodeRagService {
   readonly workspaceRoot: string;
   refreshCount = 0;
   initializeCount = 0;
+  refreshBlocker?: Promise<void>;
   private state: RagState;
 
   constructor(workspaceRoot: string, state: RagState) {
@@ -44,6 +45,7 @@ class IdleRagService implements CodeRagService {
 
   async refresh(): Promise<any> {
     this.refreshCount += 1;
+    await this.refreshBlocker;
     this.state = "ready";
     return {
       status: this.createStatus(true),
@@ -119,6 +121,39 @@ async function waitFor(predicate: () => boolean, timeoutMs: number = 2_000): Pro
 }
 
 describe("embedding server idle lifecycle", () => {
+  it("does not stop the embedding server while indexing is active or queued", async () => {
+    vi.useFakeTimers();
+    const fixture = createFixture();
+    enableIndexingForRepo(fixture.repo, fixture.agentDir);
+    let releaseRefresh: () => void = () => {};
+    const refreshBlocker = new Promise<void>((resolve) => {
+      releaseRefresh = resolve;
+    });
+    const service = new IdleRagService(fixture.repo, "not_initialized");
+    service.refreshBlocker = refreshBlocker;
+    const daemon = createDaemon(fixture.agentDir, fixture.repo, () => service);
+    const stopSpy = vi.spyOn(daemon.embeddingManager, "stop").mockResolvedValue();
+
+    try {
+      await daemon.start();
+      await vi.advanceTimersByTimeAsync(0);
+      expect(service.refreshCount).toBe(1);
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(stopSpy).not.toHaveBeenCalled();
+      releaseRefresh();
+      await vi.advanceTimersByTimeAsync(0);
+      daemon.drainPaused = true;
+      daemon.requestRefresh([...daemon.runtimes.values()][0]!, false, 0, false);
+      await vi.advanceTimersByTimeAsync(15 * 60_000);
+      expect(stopSpy).not.toHaveBeenCalled();
+    } finally {
+      releaseRefresh();
+      await vi.advanceTimersByTimeAsync(0);
+      await daemon.stop({ graceful: true });
+      vi.useRealTimers();
+    }
+  });
+
   it("does not stop backends during normal operation before idle timeout", async () => {
     const fixture = createFixture();
     enableIndexingForRepo(fixture.repo, fixture.agentDir);

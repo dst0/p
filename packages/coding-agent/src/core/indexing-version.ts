@@ -27,9 +27,12 @@ function collectIndexingFiles(projectRoot: string): string[] {
 
   const distCore = path.join(agentRoot, "dist", "core");
   const sourceCore = path.join(agentRoot, "src", "core");
-  collectFlatFiles(isDirectory(distCore) ? distCore : sourceCore, files, (name) => {
+  const runtimeCore = isDirectory(distCore) ? distCore : sourceCore;
+  collectFlatFiles(runtimeCore, files, (name) => {
     return name.startsWith("indexing") && (name.endsWith(".js") || name.endsWith(".ts"));
   });
+  const indexingDaemon = path.join(runtimeCore, "indexing-daemon");
+  if (isDirectory(indexingDaemon)) collectRecursiveFiles(indexingDaemon, files, [".js", ".ts"]);
 
   const installerNames = [
     "compute-indexing-version.js",

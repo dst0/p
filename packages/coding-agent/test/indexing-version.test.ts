@@ -15,7 +15,7 @@ function createMockProjectRoot(): string {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-version-"));
   temporaryDirectories.push(root);
   // Create the expected directory structure
-  fs.mkdirSync(path.join(root, "packages", "coding-agent", "dist", "core"), { recursive: true });
+  fs.mkdirSync(path.join(root, "packages", "coding-agent", "dist", "core", "indexing-daemon"), { recursive: true });
   fs.mkdirSync(path.join(root, "packages", "code-index", "dist"), { recursive: true });
   fs.mkdirSync(path.join(root, "packages", "code-index", "src", "code-index"), { recursive: true });
   fs.mkdirSync(path.join(root, "scripts"), { recursive: true });
@@ -231,14 +231,14 @@ describe("computeIndexingVersion", () => {
     expect(after).not.toBe(before);
   });
 
-  it("detects newly added indexing core runtime files dynamically", () => {
+  it("detects newly added indexing daemon runtime files dynamically", () => {
     const root = createMockProjectRoot();
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
 
-    // Add a new indexing helper file to coding-agent/dist/core/
+    // Add a new module under the split indexing daemon runtime.
     fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-helpers.js"),
+      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-daemon", "status-logging.js"),
       "export const helper = true;\n",
     );
 
