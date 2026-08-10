@@ -200,6 +200,10 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   if (!EMBEDDING_DEVICES.has(settings.embeddingDevice)) {
     throw new Error(`Code RAG embeddingDevice is unsupported: ${settings.embeddingDevice}`);
   }
+  const deviceDefaultSequenceLength = defaultMaxSequenceLength(settings.embeddingDevice, os.platform());
+  if (deviceDefaultSequenceLength < DEFAULT_MAX_SEQUENCE_LENGTH) {
+    settings.maxSequenceLength = Math.min(settings.maxSequenceLength, deviceDefaultSequenceLength);
+  }
   if (!TORCH_BACKENDS.has(settings.torchBackend)) {
     throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
   }
@@ -288,13 +292,10 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
 export function loadWorkspaceCodeRagSettings(options: WorkspaceCodeRagServiceOptions): WorkspaceCodeRagSettings {
   const userConfigPath = options.userConfigPath ?? path.join(options.dataDirectory, "..", "code-rag.json");
   const repositoryConfigPath = options.repositoryConfigPath ?? path.join(options.workspaceRoot, ".p", "code-rag.json");
-  const configured = { ...parseConfigFile(userConfigPath), ...parseConfigFile(repositoryConfigPath), ...(options.settings ?? {}) };
   return validateSettings({
     ...DEFAULT_WORKSPACE_CODE_RAG_SETTINGS,
-    maxSequenceLength: defaultMaxSequenceLength(
-      configured.embeddingDevice ?? DEFAULT_WORKSPACE_CODE_RAG_SETTINGS.embeddingDevice,
-      os.platform(),
-    ),
-    ...configured,
+    ...parseConfigFile(userConfigPath),
+    ...parseConfigFile(repositoryConfigPath),
+    ...(options.settings ?? {}),
   });
 }
