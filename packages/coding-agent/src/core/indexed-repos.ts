@@ -19,6 +19,11 @@ export interface IndexedRepoEntry {
     id: string;
     requestedAt: string;
   };
+  backendWakeRequest?: {
+    id: string;
+    requestedAt: string;
+  };
+  resourceFailure?: { id: string; requestedAt: string; message: string };
 }
 
 interface IndexedReposData {
@@ -114,6 +119,26 @@ export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentD
   return entry;
 }
 
+export function requestIndexingBackendForRepo(
+  cwd: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  const canonical = findIndexWorkspaceRoot(cwd);
+  const repoId = computeRepoId(canonical);
+  const repos = loadIndexedRepos(agentDir);
+  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
+  const entry: IndexedRepoEntry = {
+    ...repos[index],
+    path: canonical,
+    repoId,
+    backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+  };
+  repos[index] = entry;
+  saveIndexedRepos(repos, agentDir);
+  return entry;
+}
+
 export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
   const canonical = findIndexWorkspaceRoot(cwd);
   const repoId = computeRepoId(canonical);
@@ -127,6 +152,7 @@ export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAge
     repoId,
     priorityRequest: { id: randomUUID(), requestedAt },
   };
+  delete entry.resourceFailure;
   repos[index] = entry;
   saveIndexedRepos(repos, agentDir);
   return entry;
@@ -143,15 +169,50 @@ export function acknowledgeIndexingPriorityForRepo(
   const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
   const existing = repos[index];
   if (!existing || existing.priorityRequest?.id !== requestId) return false;
-  const entry: IndexedRepoEntry = {
-    path: existing.path,
-    repoId: existing.repoId,
-    decision: existing.decision,
-    updatedAt: existing.updatedAt,
-  };
+  const entry: IndexedRepoEntry = { ...existing };
+  delete entry.priorityRequest;
   repos[index] = entry;
   saveIndexedRepos(repos, agentDir);
   return true;
+}
+
+export function acknowledgeIndexingBackendWakeForRepo(
+  cwd: string,
+  requestId: string,
+  agentDir: string = getAgentDir(),
+): boolean {
+  const canonical = findIndexWorkspaceRoot(cwd);
+  const repoId = computeRepoId(canonical);
+  const repos = loadIndexedRepos(agentDir);
+  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const existing = repos[index];
+  if (!existing || existing.backendWakeRequest?.id !== requestId) return false;
+  const entry: IndexedRepoEntry = { ...existing };
+  delete entry.backendWakeRequest;
+  repos[index] = entry;
+  saveIndexedRepos(repos, agentDir);
+  return true;
+}
+
+export function recordIndexingResourceFailureForRepo(
+  cwd: string,
+  message: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  const canonical = findIndexWorkspaceRoot(cwd);
+  const repoId = computeRepoId(canonical);
+  const repos = loadIndexedRepos(agentDir);
+  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  const existing = repos[index];
+  if (!existing || existing.decision !== "enabled") return undefined;
+  const entry: IndexedRepoEntry = {
+    ...existing,
+    resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
+  };
+  delete entry.priorityRequest;
+  repos[index] = entry;
+  saveIndexedRepos(repos, agentDir);
+  return entry;
 }
 
 export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
@@ -196,12 +257,20 @@ function isIndexedReposData(value: unknown): value is IndexedReposData {
     candidate.repos.every(
       (entry) =>
         isIndexedRepoEntry(entry) &&
-        (entry.priorityRequest === undefined ||
-          (typeof entry.priorityRequest === "object" &&
-            entry.priorityRequest !== null &&
-            typeof entry.priorityRequest.id === "string" &&
-            typeof entry.priorityRequest.requestedAt === "string")),
+        isRegistryRequest(entry.priorityRequest) &&
+        isRegistryRequest(entry.backendWakeRequest) &&
+        isRegistryRequest(entry.resourceFailure),
     )
+  );
+}
+
+function isRegistryRequest(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "id") === "string" &&
+    typeof Reflect.get(value, "requestedAt") === "string"
   );
 }
 

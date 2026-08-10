@@ -1,9 +1,16 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import type { CodeRagService, RagStatus } from "@dst0/p-code-index";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { enableIndexingForRepo, getIndexedReposPath, loadIndexedRepos } from "../src/core/indexed-repos.ts";
+import {
+  enableIndexingForRepo,
+  getIndexedReposPath,
+  loadIndexedRepos,
+  requestIndexingBackendForRepo,
+} from "../src/core/indexed-repos.ts";
 import { waitForIndexingEmbeddingBackend } from "../src/core/indexing-backend-readiness.ts";
+import { IndexingDaemon } from "../src/core/indexing-daemon.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -43,7 +50,7 @@ function readyResponse(): Response {
 }
 
 describe("indexing embedding backend readiness", () => {
-  it("wakes the daemon and lets the first request continue after idle shutdown", async () => {
+  it("wakes the daemon without scheduling a repository refresh", async () => {
     const fixture = createFixture();
     const fetchImplementation = vi
       .fn<typeof fetch>()
@@ -59,7 +66,68 @@ describe("indexing embedding backend readiness", () => {
     });
 
     expect(fetchImplementation).toHaveBeenCalledTimes(3);
-    expect(loadIndexedRepos(fixture.agentDir)[0]?.updatedAt).not.toBe("2000-01-01T00:00:00.000Z");
+    expect(loadIndexedRepos(fixture.agentDir)[0]?.updatedAt).toBe("2000-01-01T00:00:00.000Z");
+  });
+
+  it("starts an idle backend without refreshing an already-ready repository", async () => {
+    const fixture = createFixture();
+    const status: RagStatus = {
+      state: "ready",
+      workspaceRoot: fixture.repository,
+      repoId: "ready-repository",
+      collection: "ready-collection",
+      generation: "ready-generation",
+      indexedFiles: 1,
+      indexedChunks: 1,
+      sparse: { exact: true, driftFileCount: 0 },
+    };
+    let backendStarts = 0;
+    let refreshCount = 0;
+    const service: CodeRagService = {
+      initialize: async () => status,
+      status: async () => status,
+      search: async (input) => ({
+        query: input.query,
+        workspaceRoot: fixture.repository,
+        status,
+        results: [],
+        diagnostics: { durationMs: 0, truncated: false },
+      }),
+      refresh: async () => {
+        refreshCount += 1;
+        throw new Error("Unexpected repository refresh");
+      },
+      rebuild: async () => {
+        throw new Error("Unexpected repository rebuild");
+      },
+      dispose: async () => {},
+    };
+    const daemon = new IndexingDaemon({
+      agentDir: fixture.agentDir,
+      qdrantBinary: "unused",
+      qdrantDataDirectory: path.join(fixture.agentDir, "qdrant"),
+      pythonExecutable: "unused",
+      embeddingModel: "unused",
+      serviceFactory: () => service,
+      ensureBackends: async () => {
+        backendStarts += 1;
+      },
+      disposeBackends: async () => {},
+    });
+
+    try {
+      await daemon.start();
+      backendStarts = 0;
+      expect(requestIndexingBackendForRepo(fixture.repository, fixture.agentDir)).toBeDefined();
+      await daemon.syncRegistry();
+      await waitFor(() => backendStarts === 1);
+
+      expect(refreshCount).toBe(0);
+      expect(loadIndexedRepos(fixture.agentDir)[0]?.backendWakeRequest).toBeUndefined();
+      expect(loadIndexedRepos(fixture.agentDir)[0]?.updatedAt).toBe("2000-01-01T00:00:00.000Z");
+    } finally {
+      await daemon.stop();
+    }
   });
 
   it("fails when the daemon does not resume before the configured deadline", async () => {
@@ -122,3 +190,11 @@ describe("indexing embedding backend readiness", () => {
     expect(fetchImplementation).not.toHaveBeenCalled();
   });
 });
+
+async function waitFor(predicate: () => boolean): Promise<void> {
+  const deadline = Date.now() + 2_000;
+  while (!predicate()) {
+    if (Date.now() >= deadline) throw new Error("Timed out waiting for indexing state");
+    await new Promise((resolve) => setTimeout(resolve, 10));
+  }
+}

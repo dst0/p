@@ -545,7 +545,7 @@
   },
   "packages/coding-agent/test/indexing-service.test.ts": {
     "classes": 5,
-    "lines": 872
+    "lines": 858
   },
   "packages/coding-agent/test/interactive-mode-plan-panel.test.ts": {
     "classes": 0,

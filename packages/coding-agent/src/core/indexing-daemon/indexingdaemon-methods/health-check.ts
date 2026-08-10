@@ -1,5 +1,6 @@
-import { DRAIN_MAX_CONCURRENCY } from "../constants.ts";
-import { getResourceBackoffMs, isResourceFailure, safeErrorMessage } from "../helpers.ts";
+import { recordIndexingResourceFailureForRepo } from "../../indexed-repos.ts";
+import { DRAIN_MAX_CONCURRENCY, MANUAL_PRIORITY_OFFSET } from "../constants.ts";
+import { isResourceFailure, safeErrorMessage } from "../helpers.ts";
 import type { IndexingDaemon } from "../indexingdaemon.ts";
 import type { DrainWorker, RepositoryRuntime } from "../types.ts";
 
@@ -11,6 +12,11 @@ export function do_requestRefresh(
   startDrain: boolean = true,
 ): void {
   if (self.disposed || self.quiescing || self.runtimes.get(runtime.root) !== runtime) return;
+  if (runtime.resourceBlocked) {
+    if (priority < MANUAL_PRIORITY_OFFSET) return;
+    runtime.resourceBlocked = false;
+    runtime.consecutiveResourceFailureCount = 0;
+  }
   self.cancelEmbeddingIdleTimer();
   if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
   const queue = () => {
@@ -109,6 +115,7 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
         delete runtime.progress;
         delete runtime.lastError;
         runtime.consecutiveResourceFailureCount = 0;
+        runtime.resourceBlocked = false;
       });
     } catch (error) {
       if (w.preemptedRuntime === runtime) {
@@ -128,17 +135,30 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
         if (!self.disposed && !self.quiescing && self.runtimes.get(runtime.root) === runtime && !runtime.retryTimer) {
           if (isResourceError) {
             runtime.consecutiveResourceFailureCount += 1;
-            const backoffMs = getResourceBackoffMs(runtime.consecutiveResourceFailureCount);
+            runtime.resourceBlocked = true;
+            runtime.dirty = false;
+            runtime.queueOrder = 0;
+            runtime.queuePriority = 0;
+            if (runtime.debounceTimer) clearTimeout(runtime.debounceTimer);
+            runtime.debounceTimer = undefined;
+            runtime.registryPriorityRequestId = undefined;
             self.log(
               "error",
-              `Resource failure #${runtime.consecutiveResourceFailureCount} for ${runtime.root}, retrying in ${backoffMs / 1000}s`,
+              `Resource failure #${runtime.consecutiveResourceFailureCount} for ${runtime.root}; automatic retries blocked. Run /index up to retry explicitly.`,
             );
-            runtime.retryTimer = setTimeout(() => {
-              runtime.retryTimer = undefined;
-              self.requestRefresh(runtime, false);
-            }, backoffMs);
+            try {
+              recordIndexingResourceFailureForRepo(runtime.root, runtime.lastError, self.options.agentDir);
+            } catch (persistenceError) {
+              self.log("error", `Failed to persist the indexing resource block: ${safeErrorMessage(persistenceError)}`);
+            }
+            try {
+              await self.releaseEmbeddingDevice();
+            } catch (releaseError) {
+              self.log("error", `Failed to release the embedding device: ${safeErrorMessage(releaseError)}`);
+            }
           } else {
             runtime.consecutiveResourceFailureCount = 0;
+            runtime.resourceBlocked = false;
             runtime.retryTimer = setTimeout(() => {
               runtime.retryTimer = undefined;
               self.requestRefresh(runtime, false);

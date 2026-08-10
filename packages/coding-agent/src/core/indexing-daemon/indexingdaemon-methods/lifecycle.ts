@@ -76,7 +76,7 @@ export async function do_reconcile(self: IndexingDaemon): Promise<void> {
   await self.syncRegistry();
   if (self.disposed || self.quiescing) return;
   for (const runtime of self.runtimes.values()) {
-    if (runtime.active || runtime.dirty || runtime.debounceTimer) continue;
+    if (runtime.active || runtime.dirty || runtime.debounceTimer || runtime.resourceBlocked) continue;
     try {
       const status = await runtime.service.initialize({ checkFreshness: true });
       self.applyRuntimeStatus(runtime, status);

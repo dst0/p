@@ -68,8 +68,10 @@ export interface RepositoryRuntime {
   indexingStartedAt?: string;
   progressSamples?: Array<{ timestamp: number; percent: number }>;
   lastError?: string;
-  /** Consecutive resource (OOM/disk/fd) failures for exponential backoff retry. */
+  /** Consecutive resource failures retained for status and diagnostics. */
   consecutiveResourceFailureCount: number;
+  /** Resource failures require an explicit priority request before indexing can resume. */
+  resourceBlocked: boolean;
   updatedAt: string;
   debounceTimer?: ReturnType<typeof setTimeout>;
   retryTimer?: ReturnType<typeof setTimeout>;

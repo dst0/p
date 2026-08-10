@@ -10,7 +10,7 @@ import {
 import { type Static, Type } from "typebox";
 import { getAgentDir } from "../../config.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
-import { findIndexWorkspaceRoot, isRepoIndexed, requestIndexingForRepo } from "../indexed-repos.ts";
+import { findIndexWorkspaceRoot, isRepoIndexed } from "../indexed-repos.ts";
 import { waitForIndexingEmbeddingBackend } from "../indexing-backend-readiness.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
@@ -43,7 +43,6 @@ let cleanupRegistered = false;
 
 function getSharedService(cwd: string): WorkspaceCodeRagService {
   const workspaceRoot = findIndexWorkspaceRoot(cwd);
-  requestIndexingForRepo(workspaceRoot);
   const key = path.resolve(workspaceRoot);
   const existing = sharedServices.get(key);
   if (existing) return existing;

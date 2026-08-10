@@ -63,7 +63,7 @@ function createBlockedService(workspaceRoot: string, starts: string[], aborts: s
 }
 
 describe("new repository priority", { timeout: 30_000 }, () => {
-  it("stops the managed embedding server when idle cannot be confirmed", async () => {
+  it.each([true, false])("stops the managed embedding server after waiting for idle (%s)", async (idleConfirmed) => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-up-device-release-"));
     temporaryDirectories.push(root);
     const daemon = new IndexingDaemon({
@@ -75,7 +75,7 @@ describe("new repository priority", { timeout: 30_000 }, () => {
       ensureBackends: async () => {},
       disposeBackends: async () => {},
     });
-    vi.spyOn(daemon.embeddingManager, "waitUntilIdle").mockResolvedValue(false);
+    vi.spyOn(daemon.embeddingManager, "waitUntilIdle").mockResolvedValue(idleConfirmed);
     const stop = vi.spyOn(daemon.embeddingManager, "stop").mockResolvedValue();
 
     await daemon.releaseEmbeddingDevice();

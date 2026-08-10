@@ -1,5 +1,5 @@
 import type { IndexingProgress, RagStatus } from "@dst0/p-code-index";
-import { acknowledgeIndexingPriorityForRepo } from "../../indexed-repos.ts";
+import { acknowledgeIndexingBackendWakeForRepo, acknowledgeIndexingPriorityForRepo } from "../../indexed-repos.ts";
 import type { IndexingDaemon } from "../indexingdaemon.ts";
 import type { DrainWorker, RepositoryRuntime } from "../types.ts";
 
@@ -26,6 +26,14 @@ export function do_acknowledgePriorityRequest(
 ): void {
   acknowledgeIndexingPriorityForRepo(runtime.root, requestId, self.options.agentDir);
   if (runtime.registryPriorityRequestId === requestId) runtime.registryPriorityRequestId = undefined;
+}
+
+export function do_acknowledgeBackendWakeRequest(
+  self: IndexingDaemon,
+  runtime: RepositoryRuntime,
+  requestId: string,
+): void {
+  acknowledgeIndexingBackendWakeForRepo(runtime.root, requestId, self.options.agentDir);
 }
 
 export async function do_runRepositoryOperation(

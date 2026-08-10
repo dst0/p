@@ -22,6 +22,7 @@ import {
   do_syncRegistry,
 } from "./indexingdaemon-methods/lifecycle.ts";
 import {
+  do_acknowledgeBackendWakeRequest,
   do_acknowledgePriorityRequest,
   do_applyRuntimeStatus,
   do_pauseIntake,
@@ -153,7 +154,11 @@ export class IndexingDaemon {
       options.releaseEmbeddingDevice ??
       (async () => {
         if (!this.options.useDenseEmbeddings) return;
-        if (!(await this.embeddingManager.waitUntilIdle())) await this.embeddingManager.stop();
+        try {
+          await this.embeddingManager.waitUntilIdle();
+        } finally {
+          await this.embeddingManager.stop();
+        }
       });
     this.watchFactory =
       options.watchFactory ??
@@ -230,6 +235,10 @@ export class IndexingDaemon {
 
   acknowledgePriorityRequest(runtime: RepositoryRuntime, requestId: string): void {
     do_acknowledgePriorityRequest(this, runtime, requestId);
+  }
+
+  acknowledgeBackendWakeRequest(runtime: RepositoryRuntime, requestId: string): void {
+    do_acknowledgeBackendWakeRequest(this, runtime, requestId);
   }
 
   async runRepositoryOperation(
