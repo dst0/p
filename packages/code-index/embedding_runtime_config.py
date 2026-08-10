@@ -40,11 +40,13 @@ class EmbeddingRuntimeConfig:
     vitisai_log_level: str = "error"
 
     def __post_init__(self) -> None:
-        object.__setattr__(
-            self,
-            "max_sequence_length",
-            min(self.max_sequence_length, default_sequence_length(self.device)),
-        )
+        device_default = default_sequence_length(self.device)
+        if device_default < DEFAULT_SEQUENCE_LENGTH:
+            object.__setattr__(
+                self,
+                "max_sequence_length",
+                min(self.max_sequence_length, device_default),
+            )
 
 
 def config_path_from_arguments(arguments: list[str]) -> str | None:
