@@ -2,18 +2,14 @@ import type { AgentMessage } from "@dst0/p-agent-core";
 import { estimateContextTokens } from "../../compaction/index.ts";
 import { type ConstraintPhase, evaluateGuardrails, type GuardrailReport } from "../../guardrails.ts";
 import {
-  diffProjectMemorySnapshot,
   forgetProjectMemory,
   initProjectMemory,
-  type ProjectMemoryDiffResult,
   type ProjectMemoryForgetResult,
   type ProjectMemoryInitResult,
   type ProjectMemoryPinResult,
   type ProjectMemorySearchResult,
-  type ProjectMemoryUpdateResult,
   pinProjectMemory,
   searchProjectMemory,
-  updateProjectMemorySnapshot,
 } from "../../project-memory.ts";
 import {
   explainProjectRules,
@@ -98,36 +94,12 @@ export function do_initProjectMemory(self: AgentSession): ProjectMemoryInitResul
   return initProjectMemory(self._cwd);
 }
 
-export function do_syncProjectMemory(self: AgentSession): ProjectMemoryUpdateResult {
-  const snapshot = self.getSessionStateSnapshot();
-  return updateProjectMemorySnapshot({
-    cwd: self._cwd,
-    sessionId: snapshot.sessionId,
-    checkpoint: snapshot.checkpoint,
-    state: snapshot.state,
-    contextUsage: snapshot.contextUsage,
-  });
-}
-
-export function do_diffProjectMemory(self: AgentSession): ProjectMemoryDiffResult {
-  const snapshot = self.getSessionStateSnapshot();
-  return diffProjectMemorySnapshot({
-    cwd: self._cwd,
-    sessionId: snapshot.sessionId,
-    checkpoint: snapshot.checkpoint,
-    state: snapshot.state,
-    contextUsage: snapshot.contextUsage,
-  });
-}
-
 export function do_searchProjectMemory(self: AgentSession, query: string): ProjectMemorySearchResult {
   return searchProjectMemory(self._cwd, query);
 }
 
 export function do_pinProjectMemory(self: AgentSession, text: string): ProjectMemoryPinResult {
-  const result = pinProjectMemory(self._cwd, text);
-  self._syncProjectMemory();
-  return result;
+  return pinProjectMemory(self._cwd, text);
 }
 
 export function do_forgetProjectMemory(self: AgentSession, id: string): ProjectMemoryForgetResult {
@@ -153,11 +125,18 @@ export function do_recordSubagentDigest(
   summary: string,
   evidencePointers: string[] = [],
 ): SubagentDigest {
-  return persistSubagentDigest(self._cwd, {
+  const target = {
+    sessionDir: self.sessionManager.getSessionDir(),
+    sessionId: self.sessionManager.getSessionId(),
+    isPersisted: self.sessionManager.isPersisted(),
+  };
+  return persistSubagentDigest(target, {
     profile,
     query,
     summary,
     evidencePointers,
+    sessionId: self.sessionManager.getSessionId(),
+    parentEntryId: self.sessionManager.getLeafId(),
   });
 }
 

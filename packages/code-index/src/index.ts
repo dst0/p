@@ -11,6 +11,10 @@ export {
   loadGitignore,
 } from "./discover.ts";
 export {
+  type EmbeddingBackendHealthIdentity,
+  matchesConfiguredEmbeddingBackend,
+} from "./embed/backend-health.ts";
+export {
   type EmbeddingProvider,
   EmbeddingProviderHttp,
   EmbeddingServerManager,

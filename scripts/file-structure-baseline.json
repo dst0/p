@@ -379,10 +379,6 @@
     "classes": 0,
     "lines": 685
   },
-  "packages/coding-agent/src/core/repo-map.ts": {
-    "classes": 0,
-    "lines": 438
-  },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
     "lines": 470
@@ -469,7 +465,7 @@
   },
   "packages/coding-agent/test/agent-session-auto-compaction-queue.test.ts": {
     "classes": 0,
-    "lines": 535
+    "lines": 534
   },
   "packages/coding-agent/test/agent-session-concurrent.test.ts": {
     "classes": 1,
@@ -633,7 +629,7 @@
   },
   "packages/coding-agent/test/suite/agent-session-prompt.test.ts": {
     "classes": 0,
-    "lines": 1183
+    "lines": 1182
   },
   "packages/coding-agent/test/suite/agent-session-queue.test.ts": {
     "classes": 0,

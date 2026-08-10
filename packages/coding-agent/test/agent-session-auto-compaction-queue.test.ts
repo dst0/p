@@ -120,7 +120,6 @@ vi.mock("../src/core/compaction/index.js", () => ({
     tokenSavingsEstimate: 0,
   }),
   truncateKeptMessages: (messages: any[]) => messages,
-  writeSessionStateFile: () => {},
 }));
 
 describe("AgentSession auto-compaction queue resume", () => {

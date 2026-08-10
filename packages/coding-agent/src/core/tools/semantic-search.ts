@@ -11,6 +11,7 @@ import { type Static, Type } from "typebox";
 import { getAgentDir } from "../../config.ts";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { findIndexWorkspaceRoot, isRepoIndexed, requestIndexingForRepo } from "../indexed-repos.ts";
+import { waitForIndexingEmbeddingBackend } from "../indexing-backend-readiness.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
 
 const semanticSearchSchema = Type.Object({
@@ -90,6 +91,7 @@ export function createSemanticSearchToolDefinition(
         };
       }
       try {
+        if (requiresRepositoryOptIn) await waitForIndexingEmbeddingBackend(cwd, signal);
         const response = await activeService.search(input, signal);
         const failure = getSemanticSearchFailure(response);
         return {

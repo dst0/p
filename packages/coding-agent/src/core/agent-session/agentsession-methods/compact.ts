@@ -5,7 +5,6 @@ import {
   prepareCompaction,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
   truncateKeptMessages,
-  writeSessionStateFile,
 } from "../../compaction/index.ts";
 import type { SessionBeforeCompactResult } from "../../extensions/index.ts";
 import type { CompactionEntry } from "../../session-manager.ts";
@@ -86,9 +85,7 @@ export async function do_compact(self: AgentSession, customInstructions?: string
     self.sessionManager.appendCompaction(summary, firstKeptEntryId, tokensBefore, tokensAfter, details, fromExtension);
     if (!fromExtension && structuredState && isStructuredSessionState(structuredState)) {
       self.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, structuredState);
-      writeSessionStateFile(self._cwd, structuredState);
     }
-    self._syncProjectMemory();
     const newEntries = self.sessionManager.getEntries();
     const sessionContext = self.sessionManager.buildSessionContext();
 

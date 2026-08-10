@@ -45,6 +45,7 @@ done
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
+node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
 initialize_indexing_batch_size_selection "$SELECT_INDEXING"
@@ -135,36 +136,21 @@ console.log('Compaction settings verified OK');
 # However, if the indexing-related code hasn't changed, skip the quiesce entirely.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
 
-# Read the old indexing version from the current daemon's status file.
-OLD_INDEXING_VERSION=$(node -e "
-const fs = require('fs');
-const path = require('path');
-const os = require('os');
-const agentDir = process.env.P_CODING_AGENT_DIR || path.join(os.homedir(), '.p', 'agent');
-try {
-  const status = JSON.parse(fs.readFileSync(path.join(agentDir, 'indexing-service-status.json'), 'utf8'));
-  if (status && typeof status.indexingVersion === 'string') {
-    console.log(status.indexingVersion);
-    process.exit(0);
-  }
-} catch {}
-console.log('');
-process.exit(0);
-")
-
 # Compute the new indexing version from the freshly-built files.
 NEW_INDEXING_VERSION=$(node scripts/compute-indexing-version.js 2>/dev/null || echo "")
+NEW_INDEXING_RUNTIME_FINGERPRINT=$(node scripts/compute-indexing-runtime-fingerprint.js 2>/dev/null || echo "")
+INDEXING_REUSE_DECISION=$(
+    node scripts/indexing-service-reuse.js "$NEW_INDEXING_VERSION" "$NEW_INDEXING_RUNTIME_FINGERPRINT" 2>/dev/null || echo "restart"
+)
 
-if [[ -n "$OLD_INDEXING_VERSION" && "$OLD_INDEXING_VERSION" == "$NEW_INDEXING_VERSION" ]]; then
+if [[ "$INDEXING_REUSE_DECISION" == "reuse" ]]; then
     # Indexing version unchanged; write flag file so prepare/install skip disruptive operations.
     AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
     touch "$AGENT_DIR/indexing-version-unchanged"
     echo "Indexing version unchanged; skipping daemon quiesce and restart."
     node scripts/prepare-indexing-service-reinstall.js --skip-quiesce
 else
-    if [[ -n "$OLD_INDEXING_VERSION" && -n "$NEW_INDEXING_VERSION" ]]; then
-        echo "Indexing version changed; preparing daemon for reinstall..."
-    fi
+    echo "Indexing code, runtime configuration, or backend health changed; preparing daemon for reinstall..."
     node scripts/prepare-indexing-service-reinstall.js
 fi
 
@@ -176,5 +162,6 @@ check_and_prompt_missing_indexing_deps
 node scripts/install-indexing-service.js
 node scripts/prepare-indexing-service-reinstall.js --clear
 INDEXING_REINSTALL_MARKER_ACTIVE=false
+node scripts/indexing-service-health.js "$AGENT_DIR"
 
 echo "Done. Version $VERSION installed."

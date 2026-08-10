@@ -2,16 +2,6 @@ export const PROJECT_MEMORY_ROOT = ".pdev";
 
 export const PROJECT_MEMORY_DIR = ".pdev/memory";
 
-export const PROJECT_STATE_DIR = ".pdev/state";
-
-export const PROJECT_SESSIONS_DIR = ".pdev/sessions";
-
-export const PROJECT_TRACES_DIR = ".pdev/traces";
-
-export const PROJECT_MEMORY_STATE_FILE = ".pdev/state/session.current.json";
-
-export const SNAPSHOT_VERSION = 1;
-
 export const MAX_SEARCH_FILE_BYTES = 500_000;
 
 export const MAX_SEARCH_RESULTS = 8;

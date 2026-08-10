@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { Agent, type AgentMessage } from "@dst0/p-agent-core";
 import { formatNoModelSelectedMessage } from "../../auth-guidance.ts";
 import type { EvidenceKind } from "../../compaction/index.ts";
@@ -29,6 +30,7 @@ export async function do__runSubagent(self: AgentSession, input: RunSubagentInpu
   if (!model) {
     throw new Error(formatNoModelSelectedMessage());
   }
+  const parentEntryId = self.sessionManager.getLeafId();
 
   const allowedToolNames = getSubagentAllowedTools(input.profile);
   const tools = self.agent.state.tools.filter((tool) => allowedToolNames.has(tool.name));
@@ -84,14 +86,21 @@ export async function do__runSubagent(self: AgentSession, input: RunSubagentInpu
   }
 
   const summary = summarizeSubagentTranscript(transcript);
-  const provisionalId = `subagent:${input.profile}:${Date.now().toString(36)}`;
-  const transcriptPath = persistSubagentTranscript(self._cwd, provisionalId, transcript);
-  const digest = persistSubagentDigest(self._cwd, {
+  const provisionalId = `subagent:${input.profile}:${randomUUID()}`;
+  const target = {
+    sessionDir: self.sessionManager.getSessionDir(),
+    sessionId: self.sessionManager.getSessionId(),
+    isPersisted: self.sessionManager.isPersisted(),
+  };
+  const transcriptPath = persistSubagentTranscript(target, provisionalId, transcript);
+  const digest = persistSubagentDigest(target, {
     profile: input.profile,
     query: input.task,
     summary,
     evidencePointers: [`file:${transcriptPath}`],
     transcriptPath,
+    sessionId: self.sessionManager.getSessionId(),
+    parentEntryId,
   });
 
   return {

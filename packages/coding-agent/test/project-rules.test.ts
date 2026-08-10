@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -48,6 +48,24 @@ describe("project rules resolver", () => {
     expect(context).toContain("<project_rules>");
     expect(context).toContain("npm run check");
     expect(explanation.content).toContain("git add -A");
+  });
+
+  it("uses repository pdev rules without losing nearer nested AGENTS rules", () => {
+    const cwd = createTempProject();
+    mkdirSync(join(cwd, ".git"), { recursive: true });
+    writeFileSync(join(cwd, ".git/HEAD"), "ref: refs/heads/main\n");
+    mkdirSync(join(cwd, ".pdev/rules"), { recursive: true });
+    writeFileSync(join(cwd, ".pdev/rules/repo.md"), "# Repository\n- Must preserve repository policy.\n");
+    writeFileSync(join(cwd, "AGENTS.md"), "# Root\n- Must preserve root policy.\n");
+    const nested = join(cwd, "packages", "feature");
+    mkdirSync(nested, { recursive: true });
+    writeFileSync(join(nested, "AGENTS.md"), "# Feature\n- Must preserve nearest package policy.\n");
+
+    const index = buildRuleIndex(nested);
+
+    expect(index.cwd).toBe(realpathSync(cwd));
+    expect(index.files.map((file) => file.source)).toEqual(["pdev", "nearest_agents", "repo_agents"]);
+    expect(index.snippets.map((snippet) => snippet.text).join("\n")).toContain("nearest package policy");
   });
 
   it("lints duplicate rules, conflicts, and guardrail candidates", () => {

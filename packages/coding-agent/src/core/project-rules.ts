@@ -10,6 +10,7 @@ import {
   sourceRank,
   tokenize,
 } from "./project-rule-text-analysis.ts";
+import { canonicalizePath, findWorkspaceRoot } from "./workspace-root.ts";
 
 const MAX_RULE_FILE_BYTES = 500_000;
 const LARGE_RULE_FILE_CHARS = 6000;
@@ -60,14 +61,16 @@ export interface RuleExplainResult {
 }
 
 export function buildRuleIndex(cwd: string): RuleIndex {
-  const files = discoverRuleFiles(cwd);
+  const canonicalCwd = canonicalizePath(cwd);
+  const projectRoot = findWorkspaceRoot(canonicalCwd);
+  const files = discoverRuleFiles(canonicalCwd, projectRoot);
   const snippets: RuleSnippet[] = [];
   for (const file of files) {
     const text = safeRead(file.path);
     if (!text) continue;
     snippets.push(...extractRuleSnippets(text, file.path, file.source));
   }
-  return { cwd, files, snippets };
+  return { cwd: projectRoot, files, snippets };
 }
 
 export function createRulesContext(cwd: string, query: string, maxTokens = MAX_CONTEXT_TOKENS): string | undefined {
@@ -79,7 +82,7 @@ export function createRulesContext(cwd: string, query: string, maxTokens = MAX_C
       "<project_rules>",
       "Automatically selected scoped project rules. Current user instructions still take precedence.",
       ...snippets.map(
-        (snippet) => `- ${relative(cwd, snippet.path)}:${snippet.line} [${snippet.severity}] ${snippet.text}`,
+        (snippet) => `- ${relative(index.cwd, snippet.path)}:${snippet.line} [${snippet.severity}] ${snippet.text}`,
       ),
       "</project_rules>",
     ].join("\n"),
@@ -89,6 +92,7 @@ export function createRulesContext(cwd: string, query: string, maxTokens = MAX_C
 
 export function lintProjectRules(cwd: string): RuleLintResult {
   const index = buildRuleIndex(cwd);
+  const canonicalCwd = index.cwd;
   const issues: RuleLintIssue[] = [];
   for (const file of index.files) {
     if (file.size > LARGE_RULE_FILE_CHARS) {
@@ -111,7 +115,7 @@ export function lintProjectRules(cwd: string): RuleLintResult {
         code: "duplicate_rule",
         path: snippet.path,
         line: snippet.line,
-        message: `Duplicate rule also appears at ${relative(cwd, existing.path)}:${existing.line}.`,
+        message: `Duplicate rule also appears at ${relative(canonicalCwd, existing.path)}:${existing.line}.`,
       });
     } else {
       seen.set(normalized, snippet);
@@ -138,7 +142,7 @@ export function lintProjectRules(cwd: string): RuleLintResult {
           code: "conflicting_rule",
           path: snippets[indexB].path,
           line: snippets[indexB].line,
-          message: `Possible conflict with ${relative(cwd, snippets[indexA].path)}:${snippets[indexA].line}.`,
+          message: `Possible conflict with ${relative(canonicalCwd, snippets[indexA].path)}:${snippets[indexA].line}.`,
         });
       }
     }
@@ -149,17 +153,23 @@ export function lintProjectRules(cwd: string): RuleLintResult {
 
 export function explainProjectRules(cwd: string, query: string): RuleExplainResult {
   const index = buildRuleIndex(cwd);
+  const canonicalCwd = index.cwd;
   const snippets = selectRuleSnippets(index, query || "rules");
   const content =
     snippets.length > 0
       ? snippets
-          .map((snippet) => `${relative(cwd, snippet.path)}:${snippet.line} [${snippet.source}] ${snippet.text}`)
+          .map(
+            (snippet) => `${relative(canonicalCwd, snippet.path)}:${snippet.line} [${snippet.source}] ${snippet.text}`,
+          )
           .join("\n")
       : "No scoped rules matched.";
   return { query, snippets, content };
 }
 
-function discoverRuleFiles(cwd: string): Array<{ path: string; source: RuleSource; size: number }> {
+function discoverRuleFiles(
+  cwd: string,
+  projectRoot: string,
+): Array<{ path: string; source: RuleSource; size: number }> {
   const result: Array<{ path: string; source: RuleSource; size: number }> = [];
   const seen = new Set<string>();
   const add = (path: string, source: RuleSource): void => {
@@ -171,7 +181,7 @@ function discoverRuleFiles(cwd: string): Array<{ path: string; source: RuleSourc
     result.push({ path: resolved, source, size: stat.size });
   };
 
-  const pdevRulesDir = join(cwd, ".pdev", "rules");
+  const pdevRulesDir = join(projectRoot, ".pdev", "rules");
   if (existsSync(pdevRulesDir)) {
     for (const entry of readdirSync(pdevRulesDir, { withFileTypes: true })) {
       if (entry.isFile() && entry.name.endsWith(".md")) {
@@ -183,8 +193,7 @@ function discoverRuleFiles(cwd: string): Array<{ path: string; source: RuleSourc
   const ancestors = getAncestors(cwd);
   const nearest = [...ancestors].reverse().find((dir) => existsSync(join(dir, "AGENTS.md")));
   if (nearest) add(join(nearest, "AGENTS.md"), "nearest_agents");
-  const repoRoot = ancestors.find((dir) => existsSync(join(dir, ".git"))) ?? ancestors[0];
-  if (repoRoot) add(join(repoRoot, "AGENTS.md"), "repo_agents");
+  add(join(projectRoot, "AGENTS.md"), "repo_agents");
   add(join(homedir(), ".pdev", "AGENTS.md"), "global");
 
   for (const dir of [...ancestors].reverse()) {

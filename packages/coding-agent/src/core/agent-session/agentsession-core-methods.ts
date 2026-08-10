@@ -161,7 +161,6 @@ export interface AgentSessionCoreMethods {
     branchEntries: SessionEntry[],
     previous?: StructuredSessionState,
   ): StructuredSessionState;
-  _syncProjectMemory(): void;
   _createProjectMemoryPrompt(query: string): string | undefined;
   _createRuntimeContextPrompts(
     query: string,

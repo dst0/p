@@ -28,21 +28,30 @@ test("writes private config atomically and preserves unrelated fields", () => {
 
 test("migrates legacy device and batch files once", () => {
   const agentDirectory = createAgentDirectory();
-  fs.writeFileSync(path.join(agentDirectory, "indexing-device"), "npu\n");
+  fs.writeFileSync(path.join(agentDirectory, "indexing-device.txt"), "mps\n");
   fs.writeFileSync(path.join(agentDirectory, "indexing-max-batch-size"), "12\n");
 
   assert.deepEqual(migrateLegacyIndexingConfig(agentDirectory), {
-    embeddingDevice: "npu",
+    embeddingDevice: "mps",
     maxEmbeddingBatchSize: 12,
   });
-  assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device")), false);
+  assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device.txt")), false);
   assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-max-batch-size")), false);
-  assert.deepEqual(readCodeRagConfig(agentDirectory), { embeddingDevice: "npu", maxEmbeddingBatchSize: 12 });
+  assert.deepEqual(readCodeRagConfig(agentDirectory), { embeddingDevice: "mps", maxEmbeddingBatchSize: 12 });
+});
+
+test("supports the extensionless legacy device filename", () => {
+  const agentDirectory = createAgentDirectory();
+  fs.writeFileSync(path.join(agentDirectory, "indexing-device"), "cpu\n");
+
+  assert.deepEqual(migrateLegacyIndexingConfig(agentDirectory), { embeddingDevice: "cpu" });
+  assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device")), false);
 });
 
 test("existing config wins over legacy files", () => {
   const agentDirectory = createAgentDirectory();
   writeCodeRagConfig(agentDirectory, { embeddingDevice: "cpu", maxEmbeddingBatchSize: 4 });
+  fs.writeFileSync(path.join(agentDirectory, "indexing-device.txt"), "mps\n");
   fs.writeFileSync(path.join(agentDirectory, "indexing-device"), "npu\n");
   fs.writeFileSync(path.join(agentDirectory, "indexing-max-batch-size"), "64\n");
 
@@ -50,6 +59,8 @@ test("existing config wins over legacy files", () => {
     embeddingDevice: "cpu",
     maxEmbeddingBatchSize: 4,
   });
+  assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device.txt")), false);
+  assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device")), false);
 });
 
 test("rejects non-object configuration", () => {

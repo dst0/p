@@ -21,21 +21,6 @@ export function do_handleMemoryCommand(self: InteractiveMode, text: string): voi
         info += `${theme.fg("dim", "Existing:")} ${result.existing.length}`;
         break;
       }
-      case "update":
-      case "sync": {
-        const result = self.session.syncProjectMemory();
-        info += `${theme.fg("dim", "Snapshot:")} ${result.path}\n`;
-        info += `${theme.fg("dim", "Created:")} ${result.created ? "yes" : "no"}\n`;
-        info += `${theme.fg("dim", "Managed files:")} ${result.managedFiles.join(", ") || "(none changed)"}`;
-        break;
-      }
-      case "diff": {
-        const result = self.session.diffProjectMemory();
-        info += `${theme.fg("dim", "Snapshot:")} ${result.path}\n`;
-        info += `${theme.fg("dim", "Status:")} ${result.status}\n`;
-        info += result.lines.map((line) => `- ${line}`).join("\n");
-        break;
-      }
       case "search": {
         if (!rest) {
           info += "Usage: /memory search <query>";
@@ -62,7 +47,7 @@ export function do_handleMemoryCommand(self: InteractiveMode, text: string): voi
         break;
       }
       default:
-        info += "Usage: /memory [status|sync|diff|search <query>|pin <text>|forget <id>]";
+        info += "Usage: /memory [status|init|search <query>|pin <text>|forget <id>]";
     }
 
     self.chatContainer.addChild(new Spacer(1));

@@ -8,6 +8,7 @@ import {
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
+import { computeIndexingRuntimeConfigFingerprint } from "../indexing-runtime-config.ts";
 import { computeIndexingVersion } from "../indexing-version.ts";
 import { DEFAULT_REPOSITORY_TIMEOUT_MS } from "./constants.ts";
 import { do_drainWorker, do_requestRefresh, do_startDrain } from "./indexingdaemon-methods/health-check.ts";
@@ -76,6 +77,8 @@ export class IndexingDaemon {
   public readonly startedAt = new Date().toISOString();
 
   public readonly indexingVersion: string;
+
+  public readonly runtimeConfigFingerprint: string;
 
   public registryWatcher: FSWatcher | null = null;
 
@@ -153,6 +156,7 @@ export class IndexingDaemon {
       options.watchFactory ??
       ((target, watchOptions, listener) => fs.watch(target, { ...watchOptions, encoding: "utf8" }, listener));
     this.indexingVersion = computeIndexingVersion();
+    this.runtimeConfigFingerprint = computeIndexingRuntimeConfigFingerprint(options.agentDir);
   }
 
   async ensureBackends(signal?: AbortSignal): Promise<void> {

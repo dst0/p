@@ -13,7 +13,6 @@ export {
   selectKeepRecentTokensForTarget,
   truncateKeptMessages,
 } from "./minimal-compaction.ts";
-export * from "./session-state-file.ts";
 export {
   createLiveStructuredSessionState,
   createStructuredSessionState,

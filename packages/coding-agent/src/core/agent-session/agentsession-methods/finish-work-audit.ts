@@ -5,9 +5,7 @@ import {
   getLatestStructuredSessionState,
   mergeStructuredSessionState,
   parseSessionStateUpdateBlock,
-  readSessionStateFile,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
-  writeSessionStateFile,
 } from "../../compaction/index.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { MARK_SESSION_PROGRESS_TOOL_NAME, UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
@@ -15,9 +13,7 @@ import { getFinishWorkRemainingWork, getFinishWorkStatus, getOpenSessionStateIte
 import type { AgentSessionEvent } from "../session-types.ts";
 
 export function do__getFinishWorkSessionStateBlockReason(self: AgentSession, args: unknown): string | undefined {
-  const state =
-    getLatestStructuredSessionState(self.sessionManager.getBranch()) ??
-    readSessionStateFile(self._cwd, self.sessionManager.getSessionId());
+  const state = getLatestStructuredSessionState(self.sessionManager.getBranch());
   if (!state) {
     return undefined;
   }
@@ -185,5 +181,4 @@ export function do__applyAssistantSessionStateUpdate(
   const previous = self._getCurrentStructuredSessionState(branchEntries);
   const state = mergeStructuredSessionState(previous, parsed.patch);
   self.sessionManager.appendCustomEntry(STRUCTURED_SESSION_STATE_CUSTOM_TYPE, state);
-  writeSessionStateFile(self._cwd, state);
 }

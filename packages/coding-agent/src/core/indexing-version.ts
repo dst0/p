@@ -36,11 +36,14 @@ function collectIndexingFiles(projectRoot: string): string[] {
 
   const installerNames = [
     "compute-indexing-version.js",
+    "compute-indexing-runtime-fingerprint.js",
     "indexing-device-detection.sh",
     "indexing-device-selection.sh",
     "indexing-install-fallback.js",
     "indexing-install-plans.js",
     "indexing-python-discovery.js",
+    "indexing-service-reuse.js",
+    "indexing-service-health.js",
     "install-apple-coreai.js",
     "install-amd-ryzen-ai.js",
     "install-amd-xdna-driver.js",

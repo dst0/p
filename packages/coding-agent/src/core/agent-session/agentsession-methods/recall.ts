@@ -1,6 +1,7 @@
 import { existsSync, readFileSync } from "node:fs";
+import { isAbsolute } from "node:path";
 import { resolvePath } from "../../../utils/paths.ts";
-import { readSubagentDigests } from "../../subagents.ts";
+import { getSubagentStorageDir, readSubagentDigests } from "../../subagents.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { getMessageTextForRecall, normalizeCompactionDetails } from "../message-utils.ts";
 import { addOriginalRequestRecallCandidates } from "../recall-candidates.ts";
@@ -9,13 +10,28 @@ import type { RecallCandidate } from "../state-types.ts";
 export function do__collectRecallCandidates(self: AgentSession): RecallCandidate[] {
   const candidates: RecallCandidate[] = [];
   const seenOriginalRequestIds = new Set<string>();
+  const branchEntries = self.sessionManager.getBranch();
+  const branchEntryIds = new Set(branchEntries.map((e) => e.id));
+  const storageTarget = {
+    sessionDir: self.sessionManager.getSessionDir(),
+    sessionId: self.sessionManager.getSessionId(),
+    isPersisted: self.sessionManager.isPersisted(),
+  };
   addOriginalRequestRecallCandidates(
     candidates,
-    self._getCurrentStructuredSessionState(self.sessionManager.getBranch()),
+    self._getCurrentStructuredSessionState(branchEntries),
     seenOriginalRequestIds,
   );
-  for (const digest of readSubagentDigests(self._cwd)) {
-    const transcriptPath = digest.transcriptPath ? resolvePath(self._cwd, digest.transcriptPath) : undefined;
+  for (const digest of readSubagentDigests(storageTarget, {
+    sessionId: self.sessionManager.getSessionId(),
+    validEntryIds: branchEntryIds,
+  })) {
+    const storageDir = getSubagentStorageDir(storageTarget);
+    const transcriptPath = digest.transcriptPath
+      ? isAbsolute(digest.transcriptPath)
+        ? digest.transcriptPath
+        : resolvePath(storageDir, digest.transcriptPath)
+      : undefined;
     const transcriptText =
       transcriptPath && existsSync(transcriptPath) ? readFileSync(transcriptPath, "utf8") : undefined;
     const rawText = transcriptText ?? JSON.stringify(digest, undefined, 2);

@@ -21,6 +21,7 @@ import {
   createInitialStructuredSessionState,
   STRUCTURED_SESSION_STATE_CUSTOM_TYPE,
 } from "../../../src/core/compaction/index.ts";
+import { pinProjectMemory } from "../../../src/core/project-memory.ts";
 import { createAgentSession } from "../../../src/core/sdk.ts";
 import { SessionManager } from "../../../src/core/session-manager.ts";
 import { SettingsManager } from "../../../src/core/settings-manager.ts";
@@ -31,7 +32,6 @@ interface CapturedPrompt {
   roles: string[];
   texts: string[];
 }
-
 /**
  * Regression: working state must NOT be embedded in the system prompt.
  *
@@ -43,8 +43,7 @@ interface CapturedPrompt {
  *
  * The working state is injected as a custom message after the user message that
  * caused it, and that insertion is replayed on later turns. This preserves the
- * exact previous prompt prefix when the assistant response is appended to
- * history.
+ * exact previous prompt prefix when the assistant response is appended to history.
  */
 describe("working state cache isolation", () => {
   const cleanups: Array<() => Promise<void> | void> = [];
@@ -355,6 +354,7 @@ describe("working state cache isolation", () => {
 
   it("keeps reopened runtime-context turns prefix-cache stable", async () => {
     const { runtime, session, faux, createRuntime, tempDir } = await createRuntimeForTest([]);
+    pinProjectMemory(tempDir, "Explicit cache-stability project invariant");
     const prompts: Array<ReturnType<typeof captureProviderPrompt>> = [];
     const promptStrings: string[] = [];
     const usageByTurn: AssistantMessage["usage"][] = [];

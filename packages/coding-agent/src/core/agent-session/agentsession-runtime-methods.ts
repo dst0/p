@@ -13,12 +13,10 @@ import type { ContextUsage, ExtensionRunner, ReplacedSessionContext, ToolDefinit
 import type { ConstraintPhase, GuardrailReport } from "../guardrails.ts";
 import type { CustomMessage } from "../messages.ts";
 import type {
-  ProjectMemoryDiffResult,
   ProjectMemoryForgetResult,
   ProjectMemoryInitResult,
   ProjectMemoryPinResult,
   ProjectMemorySearchResult,
-  ProjectMemoryUpdateResult,
 } from "../project-memory.ts";
 import type { RuleExplainResult, RuleLintResult } from "../project-rules.ts";
 import type { RepoMap } from "../repo-map.ts";
@@ -78,8 +76,6 @@ export interface AgentSessionRuntimeMethods {
     },
   ): TokenBreakdown;
   initProjectMemory(): ProjectMemoryInitResult;
-  syncProjectMemory(): ProjectMemoryUpdateResult;
-  diffProjectMemory(): ProjectMemoryDiffResult;
   searchProjectMemory(query: string): ProjectMemorySearchResult;
   pinProjectMemory(text: string): ProjectMemoryPinResult;
   forgetProjectMemory(id: string): ProjectMemoryForgetResult;

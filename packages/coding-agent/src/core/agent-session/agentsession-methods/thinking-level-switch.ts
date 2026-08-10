@@ -8,7 +8,7 @@ import {
   type StructuredSessionState,
 } from "../../compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "../../defaults.ts";
-import { createProjectMemoryContext, updateProjectMemorySnapshot } from "../../project-memory.ts";
+import { createProjectMemoryContext } from "../../project-memory.ts";
 import type { SessionEntry } from "../../session-manager.ts";
 import { getLatestCompactionEntry } from "../../session-manager.ts";
 import type { AgentSession } from "../agentsession.ts";
@@ -149,21 +149,6 @@ export function do__createLiveStructuredSessionState(
     entries: branchEntries,
     timestamp: new Date().toISOString(),
   });
-}
-
-export function do__syncProjectMemory(self: AgentSession): void {
-  try {
-    const snapshot = self.getSessionStateSnapshot();
-    updateProjectMemorySnapshot({
-      cwd: self._cwd,
-      sessionId: snapshot.sessionId,
-      checkpoint: snapshot.checkpoint,
-      state: snapshot.state,
-      contextUsage: snapshot.contextUsage,
-    });
-  } catch {
-    // Project memory is a durability aid; prompt execution must not fail because the workspace is read-only.
-  }
 }
 
 export function do__createProjectMemoryPrompt(self: AgentSession, query: string): string | undefined {
