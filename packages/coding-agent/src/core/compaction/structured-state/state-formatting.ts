@@ -18,16 +18,22 @@ export function scoreComparableText(left: string, right: string): number {
 
 export function findPlanItemByIdOrText(plan: PlanItem[], id: string | undefined, text: string): PlanItem | undefined {
   if (id) {
-    const byId = plan.find((item) => item.id === id);
-    if (byId) return byId;
+    for (let i = 0; i < plan.length; i++) {
+      if (plan[i].id === id) return plan[i];
+    }
   }
   const normalizedText = normalizeComparableText(text);
   if (!normalizedText) return undefined;
-  const exactText = plan.find((item) => normalizeComparableText(item.text) === normalizedText);
-  if (exactText) return exactText;
+
+  for (let i = 0; i < plan.length; i++) {
+    if (normalizeComparableText(plan[i].text) === normalizedText) {
+      return plan[i];
+    }
+  }
 
   let best: { item: PlanItem; score: number } | undefined;
-  for (const item of plan) {
+  for (let i = 0; i < plan.length; i++) {
+    const item = plan[i];
     const score = scoreComparableText(item.text, text);
     if (score < 0.66) continue;
     if (!best || score > best.score) {
@@ -147,10 +153,18 @@ export function mergePlan(state: StructuredSessionState, patch: NonNullable<Stat
     rememberOrder(existing);
   }
   // Remove items matched by id or text
-  for (const removal of patch.remove ?? []) {
-    const matchId = typeof removal === "string" ? undefined : removal.id;
-    const matchText = typeof removal === "string" ? removal : removal.text;
-    state.plan = state.plan.filter((item) => !findPlanItemByIdOrText([item], matchId, matchText));
+  if (patch.remove && patch.remove.length > 0) {
+    state.plan = state.plan.filter((item) => {
+      for (let i = 0; i < patch.remove!.length; i++) {
+        const removal = patch.remove![i];
+        const matchId = typeof removal === "string" ? undefined : removal.id;
+        const matchText = typeof removal === "string" ? removal : removal.text;
+        if (findPlanItemByIdOrText([item], matchId, matchText)) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
   if (orderedIds.length > 0) {
     reorderPlan(state, orderedIds);

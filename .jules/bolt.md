@@ -20,3 +20,7 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+
+## 2026-08-12 - Invert multi-pass array filters inside loops
+**Learning:** Re-filtering a large array in a loop (e.g., `for (const removal of itemsToRemove) { list = list.filter(item => item.id !== removal.id) }`) creates `O(M)` intermediate array allocations and causes redundant iterations.
+**Action:** When applying a series of removals to a list, invert the logic to perform a single `.filter()` pass over the list, checking each element against the removals array inside the filter callback (preferably using a pre-calculated Set or an explicit `for` loop). This prevents `O(M)` array allocations and reduces overall processing time.
