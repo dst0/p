@@ -7,6 +7,7 @@ import {
   getOrderedPlanTree,
   mergeStructuredSessionState,
   renderWorkingSessionState,
+  mergePlan,
 } from "../../src/core/compaction/structured-state.ts";
 import type { SessionEntry } from "../../src/core/session-manager.ts";
 
@@ -327,6 +328,15 @@ describe("structured-state normalization", () => {
     // Task B was added first (moved to front), then Task C was added (moved to front)
     const ids = merged.plan.map((p) => p.id);
     expect(ids).toEqual(["c", "b", "a"]);
+  });
+
+  it("should handle plan item removals via mergePlan", () => {
+    const state = createInitialStructuredSessionState("test");
+    state.plan = [{ id: "test-id", text: "Test Item", status: "not_started", evidenceEntryIds: [] }];
+    mergePlan(state, {
+      remove: ["Test Item"]
+    });
+    expect(state.plan).toHaveLength(0);
   });
 
   it("renders plan with tree indentation for parent-child relationships", () => {
