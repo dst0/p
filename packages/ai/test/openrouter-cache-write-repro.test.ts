@@ -14,10 +14,7 @@ function createLongSystemPrompt(): string {
 describe.skipIf(!process.env.OPENROUTER_API_KEY)("OpenRouter cache_write repro E2E", () => {
   it(
     "regression: preserves cache_write_tokens on openai-completions stream path",
-    {
-      retry: 2,
-      timeout: 90000,
-    },
+    { retry: 2, timeout: 90000 },
     async () => {
       const model = getModel("openrouter", "google/gemini-2.5-flash");
       const context = {
