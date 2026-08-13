@@ -128,7 +128,52 @@ class AppleNpuBackendsTest(unittest.TestCase):
             result = backend.encode(["one", "two"], batch_size=8)
         self.assertEqual(result, [[1.0], [2.0]])
         encode.assert_called_once_with(["one", "two"], True, 1)
+    def test_core_ai_artifact_uses_sequence_length_shape_key(self):
+        from pathlib import Path
+        import numpy as np
+        import torch
+        from apple_coreai_artifact import BATCH_SIZE, SEQUENCE_LENGTH, export_asset
+
+        mock_program = Mock()
+        mock_converter = Mock()
+        mock_converter.to_coreai.return_value = mock_program
+        with patch(
+            "apple_coreai_artifact.load_model",
+            return_value=(
+                Mock(),
+                np.zeros((64, 1024)),
+                torch.zeros((1, 64, 128)),
+                torch.zeros((1, 64, 128)),
+            ),
+        ), patch("apple_coreai_artifact.torch.export.export") as mock_export, patch(
+            "apple_coreai_artifact.remove_functionalization"
+        ), patch(
+            "apple_coreai_artifact.TorchConverter", return_value=mock_converter
+        ), patch(
+            "apple_coreai_artifact.register_custom_torch_lowering"
+        ), patch(
+            "apple_coreai_artifact.np.save"
+        ), patch(
+            "apple_coreai_artifact.AutoTokenizer"
+        ), patch.object(
+            Path, "write_text"
+        ):
+            mock_export.return_value.run_decompositions.return_value = Mock()
+            export_asset(Path("/tmp/mock_asset"))
+        expected_shape_key = f'"{SEQUENCE_LENGTH}"'
+        mock_program.set_static_shape_config.assert_called_once_with(
+            "embed",
+            {
+                expected_shape_key: {
+                    "token_embeddings": (BATCH_SIZE, SEQUENCE_LENGTH, 1, 1024),
+                    "rope_cos": (1, SEQUENCE_LENGTH, 128),
+                    "rope_sin": (1, SEQUENCE_LENGTH, 128),
+                    "causal_mask": (1, SEQUENCE_LENGTH, 1, SEQUENCE_LENGTH),
+                }
+            },
+        )
 
 
 if __name__ == "__main__":
     unittest.main()
+

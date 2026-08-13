@@ -108,7 +108,7 @@ def export_asset(destination: Path) -> None:
     program.set_static_shape_config(
         "embed",
         {
-            '"ane"': {
+            f'"{SEQUENCE_LENGTH}"': {
                 "token_embeddings": (BATCH_SIZE, SEQUENCE_LENGTH, 1, 1024),
                 "rope_cos": (1, SEQUENCE_LENGTH, 128),
                 "rope_sin": (1, SEQUENCE_LENGTH, 128),
