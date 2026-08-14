@@ -247,10 +247,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   if (!model) {
     const defaultModelString = settingsManager.getDefaultModel();
     const defaultProvider = settingsManager.getDefaultProvider();
-    // defaultModel may be "provider/modelId" or just "modelId"
+    // defaultModel may be "provider/modelId" or just "modelId" (when defaultProvider is not set)
     let resolvedProvider = defaultProvider;
     let resolvedModelId = defaultModelString;
-    if (defaultModelString?.includes("/")) {
+    if (!resolvedProvider && defaultModelString?.includes("/")) {
       const slashIdx = defaultModelString.indexOf("/");
       resolvedProvider = defaultModelString.substring(0, slashIdx);
       resolvedModelId = defaultModelString.substring(slashIdx + 1);

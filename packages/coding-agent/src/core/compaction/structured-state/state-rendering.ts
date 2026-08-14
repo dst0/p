@@ -9,6 +9,7 @@ import {
   TERM_SPLIT_REGEX,
   termsCache,
 } from "./constants.ts";
+import { extractPlanItems } from "./section-rendering.ts";
 import {
   collectOriginalUserRequests,
   createPlainSummaryFallback,
@@ -132,6 +133,8 @@ export function createStatePatchFromSummary(input: StructuredStateUpdateInput): 
     normalizeCanonicalRequest(input.previous?.canonicalRequest.current ?? "") ||
     normalizeCanonicalRequest(latestRequest?.summary ?? "") ||
     createPlainSummaryFallback(input.summary);
+  const previousPlanCount = input.previous?.plan?.length ?? 0;
+  const planItems = previousPlanCount === 0 ? extractPlanItems(input.summary, sourceEntryIds) : [];
   const decisions = extractDecisions(input.summary);
   const evidence = createEvidencePointers(input);
   const touchedFiles = [
@@ -162,6 +165,7 @@ export function createStatePatchFromSummary(input: StructuredStateUpdateInput): 
           originalRequests,
         }
       : undefined,
+    plan: planItems.length > 0 ? { add: planItems } : undefined,
     decisions: decisions.length > 0 ? { add: decisions } : undefined,
     codebase: touchedFiles.length > 0 ? { touchedFiles, relevantSymbols: [] } : undefined,
     evidence: evidence.length > 0 ? { add: evidence } : undefined,
