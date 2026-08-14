@@ -258,14 +258,12 @@ function isResourceFailure(value: unknown): boolean {
 }
 
 function isV2IndexedReposData(value: unknown): value is IndexedReposData {
-  /* v8 ignore start -- Vitest multi-worker merging drops directly covered migration hits. @preserve */
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   return (
     (value as Partial<IndexedReposData>).schemaVersion === 2 &&
     Array.isArray((value as Partial<IndexedReposData>).repos) &&
     (value as Partial<IndexedReposData>).repos!.every(isIndexedRepoEntry)
   );
-  /* v8 ignore stop -- @preserve */
 }
 
 function isV1IndexedReposData(value: unknown): value is IndexedReposData {

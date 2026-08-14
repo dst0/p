@@ -220,4 +220,42 @@ describe("indexed repository decisions", () => {
     fs.writeFileSync(registryPath, `${JSON.stringify(stored2, undefined, 2)}\n`);
     expect(loadIndexedRepos(agentDir)).toEqual([]);
   });
+
+  it("migrates a valid v1 registry and recomputes repoId", () => {
+    const { agentDir, repo } = createFixture();
+    enableIndexingForRepo(repo, agentDir);
+    const registryPath = getIndexedReposPath(agentDir);
+    const stored = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
+      schemaVersion: number;
+      repos: Array<{ path: string; repoId: string; decision: string; updatedAt: string }>;
+    };
+    stored.schemaVersion = 1;
+    stored.repos[0]!.repoId = "legacy-v1-id";
+    fs.writeFileSync(registryPath, `${JSON.stringify(stored, undefined, 2)}\n`);
+
+    const loaded = loadIndexedRepos(agentDir);
+    expect(loaded).toHaveLength(1);
+    expect(loaded[0]?.repoId).not.toBe("legacy-v1-id");
+
+    const migrated = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as { schemaVersion: number };
+    expect(migrated.schemaVersion).toBe(INDEXED_REPOS_SCHEMA_VERSION);
+  });
+
+  it("rejects v1 or v2 data with non-array repos or invalid entries", () => {
+    const { agentDir } = createFixture();
+    fs.mkdirSync(agentDir, { recursive: true });
+    const registryPath = getIndexedReposPath(agentDir);
+
+    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 2, repos: "not-array" }));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+
+    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 2, repos: [{ path: 123 }] }));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+
+    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 1, repos: "not-array" }));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+
+    fs.writeFileSync(registryPath, JSON.stringify({ schemaVersion: 1, repos: [{ path: 123 }] }));
+    expect(loadIndexedRepos(agentDir)).toEqual([]);
+  });
 });

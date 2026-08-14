@@ -107,10 +107,6 @@
     "classes": 2,
     "lines": 88
   },
-  "packages/ai/src/utils/oauth/anthropic.ts": {
-    "classes": 0,
-    "lines": 405
-  },
   "packages/ai/src/utils/oauth/github-copilot.ts": {
     "classes": 0,
     "lines": 361
