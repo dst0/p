@@ -170,23 +170,8 @@ describe("AgentSession compaction characterization", () => {
     });
     harnesses.push(harness);
     seedCompactableSession(harness);
-    const markdownSummary = [
-      "## Goal",
-      "Preserve the current goal, plan, and context through compaction.",
-      "",
-      "## Plan",
-      "- [v] Reproduce the loss",
-      "- [.] Patch compaction summary state",
-      "",
-      "## Decisions",
-      "- **Use LLM summaries**: Keep semantic history alongside structured state.",
-      "",
-      "## Files",
-      "- (none)",
-      "",
-      "## Risks",
-      "- (none)",
-    ].join("\n");
+    const markdownSummary =
+      "## Goal\nPreserve the current goal, plan, and context through compaction.\n\n## Plan\n- [v] Reproduce the loss\n- [.] Patch compaction summary state\n\n## Decisions\n- **Use LLM summaries**: Keep semantic history alongside structured state.\n\n## Files\n- (none)\n\n## Risks\n- (none)";
     const getStreamCallCount = useSummaryStreamFn(harness, markdownSummary);
 
     const result = await harness.session.compact();
@@ -205,8 +190,10 @@ describe("AgentSession compaction characterization", () => {
     expect(details.structuredState?.canonicalRequest.current).toBe(
       "Preserve the current goal, plan, and context through compaction.",
     );
-    // Plan is preserved from previous state (empty), not re-parsed from summary
-    expect(details.structuredState?.plan).toEqual([]);
+    expect(details.structuredState?.plan.map((i) => `${i.status}:${i.text}`)).toEqual([
+      "done:Reproduce the loss",
+      "in_progress:Patch compaction summary state",
+    ]);
   });
 
   it("falls back to deterministic manual compaction when no summarizer is available", async () => {

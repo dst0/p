@@ -621,7 +621,7 @@
   },
   "packages/coding-agent/test/suite/agent-session-compaction.test.ts": {
     "classes": 0,
-    "lines": 1340
+    "lines": 1327
   },
   "packages/coding-agent/test/suite/agent-session-model-extension.test.ts": {
     "classes": 0,

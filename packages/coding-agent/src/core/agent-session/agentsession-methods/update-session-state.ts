@@ -28,12 +28,15 @@ export function do__autoExecuteUpdateSessionState(self: AgentSession): void {
   const isNewTurn = self._stateUpdateRequiredForCurrentUserTurn;
   const action = isNewTurn ? (state?.canonicalRequest.current ? "replan" : "initial_plan") : "progress_update";
   const userGoal = liveState.canonicalRequest.current || state?.canonicalRequest.current || "";
+  const existingPlan = (state?.plan ?? []).map((item) => ({ text: item.text, status: item.status }));
+  const livePlan = (liveState.plan ?? []).map((item) => ({ text: item.text, status: item.status }));
+  const fallbackPlan = userGoal.trim().length > 0 ? [{ text: userGoal.trim(), status: "in_progress" as const }] : [];
+  const plan = existingPlan.length > 0 ? existingPlan : livePlan.length > 0 ? livePlan : fallbackPlan;
 
   const params: UpdateSessionStateInput = {
     action,
     goal: userGoal,
-    plan: (state?.plan ?? []).map((item) => ({ text: item.text, status: item.status })),
-
+    plan,
     decisions: (state?.decisions ?? []).map((item) => ({ decision: item.decision, rationale: item.rationale })),
     risks: state?.audit.knownRisks ?? [],
     touchedFiles: (state?.codebase.touchedFiles ?? []).map((file: TouchedFile) => ({

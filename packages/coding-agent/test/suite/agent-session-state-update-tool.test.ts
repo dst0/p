@@ -67,7 +67,7 @@ describe("AgentSession default session-state tool", () => {
       expect(finishEnds[0]?.isError).toBe(false);
       const state = getLatestStructuredSessionState(harness.sessionManager.getEntries());
       expect(state?.canonicalRequest.current).toBe("Read note.txt and report the result");
-      expect(state?.plan).toEqual([]);
+      expect(state?.plan?.map((p) => `${p.status}:${p.text}`)).toEqual(["done:Read note.txt and report the result"]);
     } finally {
       harness.cleanup();
     }

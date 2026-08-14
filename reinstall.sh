@@ -110,7 +110,7 @@ if [[ "$INSTALLED_VERSION" != "$VERSION" ]]; then
     echo "Expected p $VERSION, but $INSTALLED_P reports $INSTALLED_VERSION." >&2
     exit 1
 fi
-for P_COMMAND in "${P_COMMANDS[@]}"; do
+for P_COMMAND in ${P_COMMANDS[@]+"${P_COMMANDS[@]}"}; do
     P_COMMAND_VERSION=$("$P_COMMAND" --version)
     if [[ "$P_COMMAND_VERSION" != "$VERSION" ]]; then
         echo "Expected p $VERSION, but $P_COMMAND reports $P_COMMAND_VERSION." >&2

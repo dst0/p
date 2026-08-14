@@ -53,19 +53,21 @@ describe("compaction plan preservation (no plan rewriting from summary)", () => 
     expect(texts).not.toContain("Another old plan from history");
   });
 
-  it("preserves empty plan when compaction summary contains plan section", () => {
+  it("populates plan from compaction summary when previous plan is empty", () => {
     const previous = createInitialStructuredSessionState("test");
     // previous.plan is empty by default
 
     const state = createStructuredSessionState({
       sessionId: "test",
       previous,
-      summary: "Goal: Continue working\n\nPlan:\n- [ ] Plan from summary",
+      summary: "Goal: Continue working\n\nPlan:\n- [ ] Plan step 1\n- [ ] Plan step 2",
       entries: [makeEntry()],
     });
 
-    // Plan should remain empty, not populated from summary
-    expect(state.plan.length).toBe(0);
+    // Plan should be populated from summary as fallback
+    expect(state.plan.length).toBe(2);
+    expect(state.plan[0]?.text).toBe("Plan step 1");
+    expect(state.plan[1]?.text).toBe("Plan step 2");
   });
 
   it("preserves plan when compaction summary has no plan section", () => {
