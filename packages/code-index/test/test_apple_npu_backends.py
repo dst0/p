@@ -132,34 +132,68 @@ class AppleNpuBackendsTest(unittest.TestCase):
         from pathlib import Path
         import numpy as np
         import torch
-        from apple_coreai_artifact import BATCH_SIZE, SEQUENCE_LENGTH, export_asset
 
         mock_program = Mock()
         mock_converter = Mock()
         mock_converter.to_coreai.return_value = mock_program
-        with patch(
-            "apple_coreai_artifact.load_model",
-            return_value=(
-                Mock(),
-                np.zeros((64, 1024)),
-                torch.zeros((1, 64, 128)),
-                torch.zeros((1, 64, 128)),
-            ),
-        ), patch("apple_coreai_artifact.torch.export.export") as mock_export, patch(
-            "apple_coreai_artifact.remove_functionalization"
-        ), patch(
-            "apple_coreai_artifact.TorchConverter", return_value=mock_converter
-        ), patch(
-            "apple_coreai_artifact.register_custom_torch_lowering"
-        ), patch(
-            "apple_coreai_artifact.np.save"
-        ), patch(
-            "apple_coreai_artifact.AutoTokenizer"
-        ), patch.object(
-            Path, "write_text"
+        mock_coreai_torch = Mock()
+        mock_coreai_torch.TorchConverter = Mock(return_value=mock_converter)
+        mock_coreai_models = Mock()
+        mock_apple_coreai_model = Mock()
+        mock_safetensors = Mock()
+        mock_safetensors_torch = Mock()
+        mock_transformers = Mock()
+        mock_huggingface_hub = Mock()
+        mock_torch = Mock()
+        mock_torch.no_grad.return_value.__enter__ = Mock(return_value=None)
+        mock_torch.no_grad.return_value.__exit__ = Mock(return_value=None)
+
+        with patch.dict(
+            "sys.modules",
+            {
+                "torch": mock_torch,
+                "torch.export": mock_torch.export,
+                "coreai_torch": mock_coreai_torch,
+                "coreai_models": mock_coreai_models,
+                "coreai_models.export": mock_coreai_models,
+                "coreai_models.export.mlir_ops": mock_coreai_models,
+                "coreai_models.models": mock_coreai_models,
+                "coreai_models.models.ios": mock_coreai_models,
+                "coreai_models.models.ios.qwen3": mock_coreai_models,
+                "apple_coreai_model": mock_apple_coreai_model,
+                "safetensors": mock_safetensors,
+                "safetensors.torch": mock_safetensors_torch,
+                "transformers": mock_transformers,
+                "huggingface_hub": mock_huggingface_hub,
+            },
         ):
-            mock_export.return_value.run_decompositions.return_value = Mock()
-            export_asset(Path("/tmp/mock_asset"))
+            from apple_coreai_artifact import BATCH_SIZE, SEQUENCE_LENGTH, export_asset
+
+            with patch(
+                "apple_coreai_artifact.load_model",
+                return_value=(
+                    Mock(),
+                    np.zeros((64, 1024)),
+                    Mock(),
+                    Mock(),
+                ),
+            ), patch("apple_coreai_artifact.make_causal_mask", return_value=Mock()), patch(
+                "apple_coreai_artifact.torch.export.export"
+            ) as mock_export, patch(
+                "apple_coreai_artifact.remove_functionalization"
+            ), patch(
+                "apple_coreai_artifact.TorchConverter", return_value=mock_converter
+            ), patch(
+                "apple_coreai_artifact.register_custom_torch_lowering"
+            ), patch(
+                "apple_coreai_artifact.np.save"
+            ), patch(
+                "apple_coreai_artifact.AutoTokenizer"
+            ), patch.object(
+                Path, "write_text"
+            ):
+                mock_export.return_value.run_decompositions.return_value = Mock()
+                export_asset(Path("/tmp/mock_asset"))
         expected_shape_key = f'"{SEQUENCE_LENGTH}"'
         mock_program.set_static_shape_config.assert_called_once_with(
             "embed",
