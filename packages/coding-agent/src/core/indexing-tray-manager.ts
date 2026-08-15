@@ -6,6 +6,7 @@ import { getAgentDir } from "../config.ts";
 
 export interface IndexingTrayManagerOptions {
   agentDir?: string;
+  platform?: NodeJS.Platform;
   spawnProcess?: (command: string, args: string[], options: Record<string, unknown>) => ChildProcess;
 }
 
@@ -93,22 +94,24 @@ export function resolveTrayCommand(
 
 export class IndexingTrayManager implements IndexingTrayService {
   private readonly agentDir: string;
+  private readonly platform: NodeJS.Platform;
   private readonly spawnProcess: (command: string, args: string[], options: Record<string, unknown>) => ChildProcess;
   private process: ChildProcess | undefined;
 
   constructor(options: IndexingTrayManagerOptions = {}) {
     this.agentDir = options.agentDir ?? getAgentDir();
+    this.platform = options.platform ?? process.platform;
     this.spawnProcess = options.spawnProcess ?? ((cmd, args, opts) => spawn(cmd, args, opts));
   }
 
   start(): boolean {
-    if (!isGuiDesktopAvailable() || !isTrayEnabled(this.agentDir)) {
+    if (!isGuiDesktopAvailable(this.platform) || !isTrayEnabled(this.agentDir)) {
       return false;
     }
     if (this.isRunning()) {
       return true;
     }
-    const plan = resolveTrayCommand(this.agentDir);
+    const plan = resolveTrayCommand(this.agentDir, this.platform);
     if (!plan) {
       return false;
     }

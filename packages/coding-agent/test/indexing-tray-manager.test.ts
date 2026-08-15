@@ -158,6 +158,7 @@ describe("indexing-tray-manager", () => {
 
       const manager = new IndexingTrayManager({
         agentDir: tempDir,
+        platform: "darwin",
         spawnProcess: (_cmd, _args, opts) => {
           spawnCount++;
           passedOpts = opts;
@@ -194,6 +195,7 @@ describe("indexing-tray-manager", () => {
 
       const manager = new IndexingTrayManager({
         agentDir: tempDir,
+        platform: "darwin",
         spawnProcess: () => {
           throw new Error("ENOENT: spawn failure");
         },
@@ -219,6 +221,7 @@ describe("indexing-tray-manager", () => {
 
       const manager = new IndexingTrayManager({
         agentDir: tempDir,
+        platform: "darwin",
         spawnProcess: () => mockChild as never,
       });
 
@@ -237,6 +240,7 @@ describe("indexing-tray-manager", () => {
       let spawned = false;
       const manager = new IndexingTrayManager({
         agentDir: tempDir,
+        platform: "darwin",
         spawnProcess: () => {
           spawned = true;
           return {} as never;
