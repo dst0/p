@@ -1,4 +1,5 @@
 import fs from "node:fs";
+import { isTrayEnabled } from "../../indexing-tray-manager.ts";
 import { acquireDaemonLock, releaseDaemonLock, safeErrorMessage, shouldRefreshRuntime } from "../helpers.ts";
 import type { IndexingDaemon } from "../indexingdaemon.ts";
 import type { IndexingDaemonStopOptions } from "../types.ts";
@@ -18,6 +19,7 @@ export async function do_start(self: IndexingDaemon): Promise<void> {
     await self.syncRegistry();
     self.reconcileTimer = setInterval(() => void self.reconcile(), self.options.reconcileMs);
     self.resetEmbeddingIdleTimer();
+    self.trayManager.start();
     self.writeStatus();
   } catch (error) {
     try {
@@ -45,6 +47,7 @@ export async function do_stop(self: IndexingDaemon, options: IndexingDaemonStopO
   self.quiescing = true;
   self.pauseIntake();
   if (self.embeddingIdleTimer) clearTimeout(self.embeddingIdleTimer);
+  self.trayManager.stop();
   const registrySyncPromise = self.registrySyncPromise;
   try {
     if (registrySyncPromise) await Promise.allSettled([registrySyncPromise]);
@@ -65,6 +68,11 @@ export async function do_stop(self: IndexingDaemon, options: IndexingDaemonStopO
 
 export async function do_reconcile(self: IndexingDaemon): Promise<void> {
   if (self.disposed || self.quiescing) return;
+  if (isTrayEnabled(self.options.agentDir)) {
+    self.trayManager.start();
+  } else {
+    self.trayManager.stop();
+  }
   await self.syncRegistry();
   if (self.disposed || self.quiescing) return;
   for (const runtime of self.runtimes.values()) {

@@ -23,47 +23,28 @@ function createMockProjectRoot(): string {
 }
 
 function populateMockFiles(root: string): void {
-  // Daemon files
-  fs.writeFileSync(
-    path.join(root, "packages", "coding-agent", "dist", "indexing-service-daemon.js"),
-    "export const daemon = true;\n",
-  );
-  fs.writeFileSync(
-    path.join(root, "packages", "coding-agent", "dist", "core", "indexing-daemon.js"),
-    "export const daemonCore = true;\n",
-  );
-  fs.writeFileSync(
-    path.join(root, "packages", "coding-agent", "dist", "core", "indexing-service.js"),
-    "export const indexingService = true;\n",
-  );
-  fs.writeFileSync(
-    path.join(root, "packages", "coding-agent", "dist", "core", "indexed-repos.js"),
-    "export const indexedRepos = true;\n",
-  );
-
-  // Installer scripts
-  fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install');\n");
-  fs.writeFileSync(path.join(root, "scripts", "indexing-device-selection.sh"), "select_indexing_device() { :; }\n");
-  fs.writeFileSync(path.join(root, "scripts", "prepare-indexing-service-reinstall.js"), "console.log('prepare');\n");
-  fs.writeFileSync(path.join(root, "scripts", "compute-indexing-version.js"), "console.log('compute');\n");
-
-  // code-index dist files
-  fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "index.js"), "export const codeIndex = true;\n");
-  fs.writeFileSync(path.join(root, "packages", "code-index", "dist", "chunk.js"), "export const chunk = true;\n");
-
-  // code-index Python files
-  fs.writeFileSync(path.join(root, "packages", "code-index", "embedding_server.py"), "print('embedding')\n");
-  fs.writeFileSync(path.join(root, "packages", "code-index", "resource_manager.py"), "print('resource')\n");
-
-  // code-index Python package
-  fs.writeFileSync(
-    path.join(root, "packages", "code-index", "src", "code-index", "preparation.py"),
-    "def prepare(): pass\n",
-  );
-
-  // code-index config
-  fs.writeFileSync(path.join(root, "packages", "code-index", "requirements.txt"), "numpy==1.26.0\n");
-  fs.writeFileSync(path.join(root, "packages", "code-index", "pyproject.toml"), '[project]\nname = "code-index"\n');
+  const files: [string, string][] = [
+    ["packages/coding-agent/dist/indexing-service-daemon.js", "export const daemon = true;\n"],
+    ["packages/coding-agent/dist/core/indexing-daemon.js", "export const daemonCore = true;\n"],
+    ["packages/coding-agent/dist/core/indexing-service.js", "export const indexingService = true;\n"],
+    ["packages/coding-agent/dist/core/indexed-repos.js", "export const indexedRepos = true;\n"],
+    ["scripts/install-indexing-service.js", "console.log('install');\n"],
+    ["scripts/indexing-device-selection.sh", "select_indexing_device() { :; }\n"],
+    ["scripts/prepare-indexing-service-reinstall.js", "console.log('prepare');\n"],
+    ["scripts/compute-indexing-version.js", "console.log('compute');\n"],
+    ["packages/code-index/dist/index.js", "export const codeIndex = true;\n"],
+    ["packages/code-index/dist/chunk.js", "export const chunk = true;\n"],
+    ["packages/code-index/embedding_server.py", "print('embedding')\n"],
+    ["packages/code-index/resource_manager.py", "print('resource')\n"],
+    ["packages/code-index/src/code-index/preparation.py", "def prepare(): pass\n"],
+    ["packages/code-index/requirements.txt", "numpy==1.26.0\n"],
+    ["packages/code-index/pyproject.toml", '[project]\nname = "code-index"\n'],
+  ];
+  for (const [relPath, content] of files) {
+    const full = path.join(root, relPath);
+    fs.mkdirSync(path.dirname(full), { recursive: true });
+    fs.writeFileSync(full, content);
+  }
 }
 
 describe("computeIndexingVersion", () => {
@@ -194,28 +175,11 @@ describe("computeIndexingVersion", () => {
 
   it("handles missing optional directories gracefully", () => {
     const root = createMockProjectRoot();
-    // Only write daemon files, omit code-index dist and Python package
-    fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "indexing-service-daemon.js"),
-      "export const daemon = true;\n",
-    );
-    fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-daemon.js"),
-      "export const daemonCore = true;\n",
-    );
-    fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-service.js"),
-      "export const indexingService = true;\n",
-    );
-    fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "core", "indexed-repos.js"),
-      "export const indexedRepos = true;\n",
-    );
-
-    // Don't create code-index/dist or code-index/src/code-index
-    fs.rmSync(path.join(root, "packages", "code-index", "dist"), { recursive: true, force: true });
-    fs.rmSync(path.join(root, "packages", "code-index", "src"), { recursive: true, force: true });
-
+    for (const f of ["indexing-service-daemon.js", "core/indexing-daemon.js", "core/indexing-service.js"]) {
+      const full = path.join(root, "packages", "coding-agent", "dist", f);
+      fs.mkdirSync(path.dirname(full), { recursive: true });
+      fs.writeFileSync(full, "export const ok = true;\n");
+    }
     expect(() => computeIndexingVersion(root)).not.toThrow();
   });
 
@@ -246,17 +210,30 @@ describe("computeIndexingVersion", () => {
     expect(after).not.toBe(before);
   });
 
+  it("detects modifications to indexing tray source and script files", () => {
+    const root = createMockProjectRoot();
+    populateMockFiles(root);
+    const before = computeIndexingVersion(root);
+
+    fs.mkdirSync(path.join(root, "packages", "coding-agent", "src", "tray", "macos"), { recursive: true });
+    fs.writeFileSync(
+      path.join(root, "packages", "coding-agent", "src", "tray", "macos", "main.swift"),
+      "import Cocoa\n",
+    );
+
+    const after = computeIndexingVersion(root);
+    expect(after).not.toBe(before);
+  });
+
   it("ignores files outside the expected indexing directories", () => {
     const root = createMockProjectRoot();
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
 
-    // Add a file in an unrelated location
     fs.writeFileSync(path.join(root, "packages", "coding-agent", "dist", "cli.js"), "export const cli = true;\n");
     fs.writeFileSync(path.join(root, "packages", "code-index", "README.md"), "# Code Index\n");
 
     const after = computeIndexingVersion(root);
-    // Hash should be unchanged since we only track specific files
     expect(after).toBe(before);
   });
 });

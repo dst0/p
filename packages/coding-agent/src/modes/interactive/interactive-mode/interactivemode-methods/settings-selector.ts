@@ -40,6 +40,7 @@ export function do_showSettingsSelector(self: InteractiveMode): void {
         showTokenProgress: self.settingsManager.getShowTokenProgress(),
         showTokenStats: self.settingsManager.getShowTokenStats(),
         showIndexingInfo: self.settingsManager.getShowIndexingInfo(),
+        enableIndexingTray: self.settingsManager.getEnableIndexingTray(),
         showVersion: self.settingsManager.getShowVersion(),
         showHarnessMessages: self.settingsManager.getShowHarnessMessages(),
         warnings: self.settingsManager.getWarnings(),
@@ -183,6 +184,9 @@ export function do_showSettingsSelector(self: InteractiveMode): void {
           self.settingsManager.setShowIndexingInfo(enabled);
           self.footer.setShowIndexingInfo(enabled);
           self.ui.requestRender();
+        },
+        onEnableIndexingTrayChange: (enabled) => {
+          self.settingsManager.setEnableIndexingTray(enabled);
         },
         onShowVersionChange: (enabled) => {
           self.settingsManager.setShowVersion(enabled);

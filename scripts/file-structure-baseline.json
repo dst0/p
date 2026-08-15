@@ -547,10 +547,6 @@
     "classes": 5,
     "lines": 872
   },
-  "packages/coding-agent/test/indexing-version.test.ts": {
-    "classes": 0,
-    "lines": 317
-  },
   "packages/coding-agent/test/interactive-mode-plan-panel.test.ts": {
     "classes": 0,
     "lines": 550
@@ -773,7 +769,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 575
+    "lines": 573
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,

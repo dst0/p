@@ -35,6 +35,7 @@ function collectIndexingFiles(projectRoot: string): string[] {
   if (isDirectory(indexingDaemon)) collectRecursiveFiles(indexingDaemon, files, [".js", ".ts"]);
 
   const installerNames = [
+    "build-indexing-tray.js",
     "compute-indexing-version.js",
     "compute-indexing-runtime-fingerprint.js",
     "indexing-device-detection.sh",
@@ -57,6 +58,9 @@ function collectIndexingFiles(projectRoot: string): string[] {
     const filePath = path.join(projectRoot, "scripts", name);
     if (isFile(filePath)) files.push(filePath);
   }
+
+  const trayDir = path.join(agentRoot, "src", "tray");
+  if (isDirectory(trayDir)) collectRecursiveFiles(trayDir, files, [".swift", ".sh"]);
 
   const codeIndexDist = path.join(codeIndexDir, "dist");
   if (isDirectory(codeIndexDist)) collectRecursiveFiles(codeIndexDist, files, [".js"]);
