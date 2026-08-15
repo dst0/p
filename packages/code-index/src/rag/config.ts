@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_MAX_SEQUENCE_LENGTH, defaultMaxSequenceLength } from "./embedding-settings.ts";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
 export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
@@ -26,7 +27,8 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   torchBackend: "auto",
   maxEmbeddingBatchSize: 64,
   maxCpuThreads: os.cpus().length,
-  maxSequenceLength: 2048,
+  maxSequenceLength: DEFAULT_MAX_SEQUENCE_LENGTH,
+  mpsPrecision: "bfloat16",
   minSystemMemoryReserveBytes: 1024 * 1024 * 1024,
   minAcceleratorMemoryReserveBytes: 512 * 1024 * 1024,
   openvinoCacheDirectory: path.join(os.homedir(), ".p", "agent", "indexing-service", "openvino-cache"),
@@ -102,6 +104,7 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "embeddingDevice",
   "pythonExecutable",
   "torchBackend",
+  "mpsPrecision",
   "openvinoCacheDirectory",
   "vitisaiCacheDirectory",
   "vitisaiCacheKey",
@@ -136,6 +139,7 @@ const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
   "intel-openvino-npu",
 ]);
 const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
+const MPS_PRECISIONS = new Set<WorkspaceCodeRagSettings["mpsPrecision"]>(["bfloat16", "float32"]);
 const SEARCH_MODES = new Set<WorkspaceCodeRagSettings["searchMode"]>(["hybrid", "bm25-only"]);
 
 export function computeEmbeddingCompatibilityGroup(
@@ -196,8 +200,15 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   if (!EMBEDDING_DEVICES.has(settings.embeddingDevice)) {
     throw new Error(`Code RAG embeddingDevice is unsupported: ${settings.embeddingDevice}`);
   }
+  const deviceDefaultSequenceLength = defaultMaxSequenceLength(settings.embeddingDevice, os.platform());
+  if (deviceDefaultSequenceLength < DEFAULT_MAX_SEQUENCE_LENGTH) {
+    settings.maxSequenceLength = Math.min(settings.maxSequenceLength, deviceDefaultSequenceLength);
+  }
   if (!TORCH_BACKENDS.has(settings.torchBackend)) {
     throw new Error(`Code RAG torchBackend is unsupported: ${settings.torchBackend}`);
+  }
+  if (!MPS_PRECISIONS.has(settings.mpsPrecision)) {
+    throw new Error(`Code RAG mpsPrecision is unsupported: ${settings.mpsPrecision}`);
   }
   if (!SEARCH_MODES.has(settings.searchMode))
     throw new Error(`Code RAG searchMode is unsupported: ${settings.searchMode}`);
@@ -264,9 +275,7 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
       let url: URL;
       try {
         url = new URL(value);
-        if (!url.protocol.startsWith("http")) {
-          throw new Error("Invalid protocol");
-        }
+        if (!url.protocol.startsWith("http")) throw new Error("Invalid protocol");
       } catch {
         throw new Error(`Code RAG ${name} must be a valid absolute URL (starting with http:// or https://)`);
       }

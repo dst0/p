@@ -8,6 +8,8 @@ import {
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
+import { sendSystemNotification } from "../../utils/system-notifier.ts";
+import { recordIndexingResourceFailureForRepo } from "../indexed-repos.ts";
 import { computeIndexingRuntimeConfigFingerprint } from "../indexing-runtime-config.ts";
 import { IndexingTrayManager, type IndexingTrayService } from "../indexing-tray-manager.ts";
 import { computeIndexingVersion } from "../indexing-version.ts";
@@ -22,6 +24,7 @@ import {
   do_syncRegistry,
 } from "./indexingdaemon-methods/lifecycle.ts";
 import {
+  do_acknowledgeBackendWakeRequest,
   do_acknowledgePriorityRequest,
   do_applyRuntimeStatus,
   do_pauseIntake,
@@ -67,44 +70,27 @@ export class IndexingDaemon {
 
   public readonly disposeBackends: () => Promise<void>;
 
+  public readonly persistResourceFailure: (workspaceRoot: string, message: string) => void;
+  public readonly sendSystemNotification: (options: { title: string; message: string }) => void;
   public readonly releaseEmbeddingDevice: () => Promise<void>;
-
   public readonly watchFactory: WatchFactory;
-
   public readonly embeddingManager: EmbeddingServerManager;
-
   public readonly trayManager: IndexingTrayService;
-
   public readonly runtimes = new Map<string, RepositoryRuntime>();
-
   public readonly startedAt = new Date().toISOString();
-
   public readonly indexingVersion: string;
-
   public readonly runtimeConfigFingerprint: string;
-
   public registryWatcher: FSWatcher | null = null;
-
   public registryWatchRetryTimer: ReturnType<typeof setTimeout> | undefined;
-
   public registrySyncPromise: Promise<void> | undefined;
-
   public registrySyncRequested = false;
-
   public reconcileTimer: ReturnType<typeof setInterval> | undefined;
-
   public drainWorkers: DrainWorker[] = [];
-
   public drainPaused = false;
-
   public nextQueueOrder = 0;
-
   public daemonLock: DaemonLock | undefined;
-
   public quiescing = false;
-
   public disposed = false;
-
   public embeddingIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: IndexingDaemonOptions) {
@@ -149,11 +135,21 @@ export class IndexingDaemon {
       (async () => {
         await Promise.all([this.embeddingManager.stop(), qdrantManager.stop()]);
       });
+    this.persistResourceFailure =
+      options.persistResourceFailure ??
+      ((workspaceRoot, message) => {
+        recordIndexingResourceFailureForRepo(workspaceRoot, message, this.options.agentDir);
+      });
+    this.sendSystemNotification = options.sendSystemNotification ?? sendSystemNotification;
     this.releaseEmbeddingDevice =
       options.releaseEmbeddingDevice ??
       (async () => {
         if (!this.options.useDenseEmbeddings) return;
-        if (!(await this.embeddingManager.waitUntilIdle())) await this.embeddingManager.stop();
+        try {
+          await this.embeddingManager.waitUntilIdle();
+        } finally {
+          await this.embeddingManager.stop();
+        }
       });
     this.watchFactory =
       options.watchFactory ??
@@ -230,6 +226,10 @@ export class IndexingDaemon {
 
   acknowledgePriorityRequest(runtime: RepositoryRuntime, requestId: string): void {
     do_acknowledgePriorityRequest(this, runtime, requestId);
+  }
+
+  acknowledgeBackendWakeRequest(runtime: RepositoryRuntime, requestId: string): void {
+    do_acknowledgeBackendWakeRequest(this, runtime, requestId);
   }
 
   async runRepositoryOperation(

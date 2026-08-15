@@ -12,6 +12,7 @@
 ### Added
 
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.
+- Add a reproducible MPS FP32/BF16 benchmark that generates a deterministic Git repository and measures complete Code RAG rebuild throughput, memory, backend placement, and semantic-search validity.
 - Add a `fast (BM25)` install/reinstall indexing mode that skips dense embedding startup, indexing, and queries while retaining local sparse code search.
 - Automatically detect supported AMD and Intel Linux NPUs, install the generation-matched Phoenix MLIR-AIE/IRON, Ryzen AI 1.8, or Intel NPU/OpenVINO runtime, validate the full embedding encoder on the actual accelerator, and offer only detected GPU/CPU fallbacks when an interactive NPU installation cannot continue.
 - Restore Apple Neural Engine indexing with a verified full-ANE Core AI fast path and bounded ANE windowing for long inputs on macOS 27+, while retaining the ONNX Runtime CoreML EP hybrid path for older macOS releases.
@@ -20,6 +21,9 @@
 ### Fixed
 
 - Recover plan items from compaction summaries when previous session state has an empty plan, and auto-initialize a baseline plan item from the user goal during unmanaged tool execution.
+- Resume interrupted transactional full-index rebuilds from durable per-batch checkpoints, while invalidating checkpoints when repository contents or embedding compatibility change.
+- Compute indexing-service reuse only after applying interactive device selection, so `reinstall.sh --select-indexing` restarts a daemon still running the previous backend.
+- Separate embedding-backend wake requests from repository refresh requests, and fail closed after indexing resource errors by releasing the embedding device and requiring an explicit `/index up` before retrying.
 - Preserve a single intentional blank line when project-memory migration removes generated managed blocks.
 - Preserve the legacy indexing device during non-interactive reinstalls, restart the indexing daemon when its runtime configuration changes, require daemon-owned embedding health before installation succeeds, and wake an idle embedding backend before the first semantic query.
 - Isolate structured session state and subagent artifacts to each session and branch, keep project memory explicitly promoted, canonicalize project-scoped storage, and move the repo map to `.pdev/cache`.
@@ -31,6 +35,7 @@
 - Replace synthetic indexing percentages and zero totals with named scanning, preparing, embedding, and finalizing stages, real file/chunk counters, and ETA derived only from measured embedding progress.
 - Preserve real Apple Silicon indexing through MPS instead of the placeholder Swift ANE worker, report the selected execution backend and AMD artifact identity truthfully in embedding health, use Qwen3 last-token pooling for every backend, and invalidate indexes missing embedding compatibility metadata.
 - Label Apple Metal acceleration as `GPU (MPS)`, report Core AI versus legacy CoreML NPU placement explicitly, prevent an explicitly selected accelerator from falling back to CPU after OOM, and avoid artificial MPS OOMs by retaining PyTorch's default allocator watermarks.
+- Prevent MPSGraph native-memory growth during indexing by using a stable 512-token padded input shape and BF16 Qwen3 weights while preserving explicit MPS fail-closed behavior.
 - Prioritize interactive semantic-search embeddings between background indexing batches, while serializing Core AI work through one bounded model graph so large repository rebuilds cannot starve live queries or duplicate model memory.
 - Restored the executable `p-voice` entry point that was replaced by an inert export barrel during the earlier source split.
 

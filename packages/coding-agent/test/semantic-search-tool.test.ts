@@ -11,7 +11,12 @@ import type {
 import { describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
-import { disableIndexingForRepo } from "../src/core/indexed-repos.ts";
+import {
+  disableIndexingForRepo,
+  enableIndexingForRepo,
+  getIndexedReposPath,
+  loadIndexedRepos,
+} from "../src/core/indexed-repos.ts";
 import { createAllToolDefinitions, createSemanticSearchTool } from "../src/core/tools/index.ts";
 import { createSemanticSearchToolDefinition } from "../src/core/tools/semantic-search.ts";
 
@@ -57,6 +62,28 @@ class FakeRagService implements CodeRagService {
 }
 
 describe("semantic_search tool", () => {
+  it("does not schedule a refresh while registering the tool", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-semantic-registration-"));
+    const agentDir = path.join(root, "agent");
+    const workspace = path.join(root, "workspace");
+    fs.mkdirSync(workspace);
+    enableIndexingForRepo(workspace, agentDir);
+    const registryPath = getIndexedReposPath(agentDir);
+    const registry = JSON.parse(fs.readFileSync(registryPath, "utf8")) as { repos: Array<{ updatedAt: string }> };
+    registry.repos[0]!.updatedAt = "2000-01-01T00:00:00.000Z";
+    fs.writeFileSync(registryPath, `${JSON.stringify(registry, undefined, 2)}\n`);
+    const previousAgentDir = process.env[ENV_AGENT_DIR];
+    process.env[ENV_AGENT_DIR] = agentDir;
+    try {
+      createSemanticSearchToolDefinition(workspace);
+      expect(loadIndexedRepos(agentDir)[0]?.updatedAt).toBe("2000-01-01T00:00:00.000Z");
+    } finally {
+      if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
+      else process.env[ENV_AGENT_DIR] = previousAgentDir;
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("does not initialize the default service before repository opt-in", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-semantic-opt-in-"));
     const agentDir = path.join(root, "agent");

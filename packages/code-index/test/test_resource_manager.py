@@ -28,7 +28,7 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertEqual(plan.dtype, "float16")
         self.assertEqual(plan.batch_size, 64)
 
-    def test_uses_float32_for_mps_to_keep_qwen_layers_dtype_compatible(self):
+    def test_uses_bfloat16_for_mps_to_reduce_unified_memory(self):
         plan = build_runtime_plan(
             preferred_backend="mps",
             logical_cpu_count=12,
@@ -43,6 +43,23 @@ class ResourceManagerTest(unittest.TestCase):
 
         self.assertTrue(plan.usable)
         self.assertEqual(plan.backend, "mps")
+        self.assertEqual(plan.dtype, "bfloat16")
+        self.assertEqual(plan.model_bytes, 1_200_000_000)
+
+    def test_allows_an_explicit_float32_mps_benchmark_baseline(self):
+        plan = build_runtime_plan(
+            preferred_backend="mps",
+            logical_cpu_count=12,
+            memory=MemorySnapshot(
+                system_total_bytes=24 * GIB,
+                system_available_bytes=8 * GIB,
+                accelerator_total_bytes=24 * GIB,
+                accelerator_free_bytes=8 * GIB,
+            ),
+            model_parameter_count=600_000_000,
+            mps_precision="float32",
+        )
+
         self.assertEqual(plan.dtype, "float32")
         self.assertEqual(plan.model_bytes, 2_400_000_000)
 

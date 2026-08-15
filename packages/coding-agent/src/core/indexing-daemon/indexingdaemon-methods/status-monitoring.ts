@@ -35,13 +35,23 @@ export async function do_runRegistrySync(self: IndexingDaemon): Promise<void> {
   }
   if (self.disposed || self.quiescing) return;
 
-  const hasNewRuntimes = enabledEntries.some((entry) => !self.runtimes.has(entry.root));
-  if (hasNewRuntimes) await self.ensureBackends();
+  const hasNewRuntimes = enabledEntries.some((entry) => !entry.resourceFailure && !self.runtimes.has(entry.root));
+  const hasBackendWakeRequests = enabledEntries.some((entry) => entry.backendWakeRequest !== undefined);
+  if (hasNewRuntimes || hasBackendWakeRequests) await self.ensureBackends();
 
   for (const entry of enabledEntries) {
     const root = entry.root;
     const existing = self.runtimes.get(root);
     if (existing) {
+      if (entry.backendWakeRequest) {
+        self.acknowledgeBackendWakeRequest(existing, entry.backendWakeRequest.id);
+      }
+      if (entry.resourceFailure) {
+        existing.resourceBlocked = true;
+        existing.state = "error";
+        existing.lastError = entry.resourceFailure.message;
+        continue;
+      }
       if (entry.priorityRequest && existing.registryPriorityRequestId !== entry.priorityRequest.id) {
         existing.registryPriorityRequestId = entry.priorityRequest.id;
         if (existing.active) {
@@ -68,15 +78,21 @@ export async function do_runRegistrySync(self: IndexingDaemon): Promise<void> {
       activePriority: 0,
       registryUpdatedAt: entry.updatedAt,
       registryPriorityRequestId: entry.priorityRequest?.id,
-      state: "queued",
+      state: entry.resourceFailure ? "error" : "queued",
       indexedFiles: 0,
       indexedChunks: 0,
       readyValidated: false,
       consecutiveResourceFailureCount: 0,
+      resourceBlocked: entry.resourceFailure !== undefined,
+      ...(entry.resourceFailure ? { lastError: entry.resourceFailure.message } : {}),
       updatedAt: new Date().toISOString(),
     };
     self.runtimes.set(root, runtime);
     self.watchRepository(runtime);
+    if (entry.backendWakeRequest) {
+      self.acknowledgeBackendWakeRequest(runtime, entry.backendWakeRequest.id);
+    }
+    if (entry.resourceFailure) continue;
 
     try {
       const initializedStatus = await runtime.service.initialize({ checkFreshness: true });

@@ -19,6 +19,15 @@ export interface IndexedRepoEntry {
     id: string;
     requestedAt: string;
   };
+  backendWakeRequest?: {
+    id: string;
+    requestedAt: string;
+  };
+  resourceFailure?: {
+    id: string;
+    requestedAt: string;
+    message: string;
+  };
 }
 
 interface IndexedReposData {
@@ -59,13 +68,19 @@ export function loadIndexedRepos(agentDir: string = getAgentDir()): IndexedRepoE
   }
 }
 
-export function getRepoIndexingDecision(cwd: string, agentDir: string = getAgentDir()): RepoIndexingDecision {
+function findEntry(
+  cwd: string,
+  agentDir: string,
+): { repos: IndexedRepoEntry[]; index: number; entry?: IndexedRepoEntry } {
   const canonical = findIndexWorkspaceRoot(cwd);
   const repoId = computeRepoId(canonical);
-  const entry = loadIndexedRepos(agentDir).find(
-    (candidate) => canonicalizePath(candidate.path) === canonical || candidate.repoId === repoId,
-  );
-  return entry?.decision ?? "unknown";
+  const repos = loadIndexedRepos(agentDir);
+  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  return { repos, index, entry: repos[index] };
+}
+
+export function getRepoIndexingDecision(cwd: string, agentDir: string = getAgentDir()): RepoIndexingDecision {
+  return findEntry(cwd, agentDir).entry?.decision ?? "unknown";
 }
 
 export function setRepoIndexingDecision(
@@ -97,39 +112,42 @@ export function enableIndexingForRepo(cwd: string, agentDir: string = getAgentDi
   return setRepoIndexingDecision(cwd, "enabled", agentDir);
 }
 
-export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
-  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = {
-    ...repos[index],
-    path: canonical,
-    repoId,
-    updatedAt: new Date().toISOString(),
-  };
-  repos[index] = entry;
+function mutateRepoEntry(
+  cwd: string,
+  agentDir: string,
+  mutate: (entry: IndexedRepoEntry) => IndexedRepoEntry,
+): IndexedRepoEntry | undefined {
+  const { repos, index, entry } = findEntry(cwd, agentDir);
+  if (index < 0 || !entry || entry.decision !== "enabled") return undefined;
+  const updated = mutate(entry);
+  repos[index] = updated;
   saveIndexedRepos(repos, agentDir);
-  return entry;
+  return updated;
+}
+
+function clearField(
+  cwd: string,
+  agentDir: string,
+  predicate: (entry: IndexedRepoEntry) => boolean,
+  clear: (entry: IndexedRepoEntry) => IndexedRepoEntry,
+): boolean {
+  const { repos, index, entry } = findEntry(cwd, agentDir);
+  if (index < 0 || !entry || !predicate(entry)) return false;
+  repos[index] = clear(entry);
+  saveIndexedRepos(repos, agentDir);
+  return true;
+}
+
+export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({ ...entry, updatedAt: new Date().toISOString() }));
 }
 
 export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
-  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const requestedAt = new Date().toISOString();
-  const entry: IndexedRepoEntry = {
-    ...repos[index],
-    path: canonical,
-    repoId,
-    priorityRequest: { id: randomUUID(), requestedAt },
-  };
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return entry;
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    resourceFailure: undefined,
+    priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+  }));
 }
 
 export function acknowledgeIndexingPriorityForRepo(
@@ -137,25 +155,51 @@ export function acknowledgeIndexingPriorityForRepo(
   requestId: string,
   agentDir: string = getAgentDir(),
 ): boolean {
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
-  const existing = repos[index];
-  if (!existing || existing.priorityRequest?.id !== requestId) return false;
-  const entry: IndexedRepoEntry = {
-    path: existing.path,
-    repoId: existing.repoId,
-    decision: existing.decision,
-    updatedAt: existing.updatedAt,
-  };
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return true;
+  return clearField(
+    cwd,
+    agentDir,
+    (entry) => entry.priorityRequest?.id === requestId,
+    (entry) => ({ ...entry, priorityRequest: undefined }),
+  );
 }
 
 export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
   return setRepoIndexingDecision(cwd, "disabled", agentDir);
+}
+
+export function requestIndexingBackendForRepo(
+  cwd: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+  }));
+}
+
+export function acknowledgeIndexingBackendWakeForRepo(
+  cwd: string,
+  requestId: string,
+  agentDir: string = getAgentDir(),
+): boolean {
+  return clearField(
+    cwd,
+    agentDir,
+    (entry) => entry.backendWakeRequest?.id === requestId,
+    (entry) => ({ ...entry, backendWakeRequest: undefined }),
+  );
+}
+
+export function recordIndexingResourceFailureForRepo(
+  cwd: string,
+  message: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    priorityRequest: undefined,
+    resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
+  }));
 }
 
 function computeRepoId(repoPath: string): string {
@@ -196,13 +240,26 @@ function isIndexedReposData(value: unknown): value is IndexedReposData {
     candidate.repos.every(
       (entry) =>
         isIndexedRepoEntry(entry) &&
-        (entry.priorityRequest === undefined ||
-          (typeof entry.priorityRequest === "object" &&
-            entry.priorityRequest !== null &&
-            typeof entry.priorityRequest.id === "string" &&
-            typeof entry.priorityRequest.requestedAt === "string")),
+        isRegistryRequest(entry.priorityRequest) &&
+        isRegistryRequest(entry.backendWakeRequest) &&
+        isResourceFailure(entry.resourceFailure),
     )
   );
+}
+
+function isRegistryRequest(value: unknown): boolean {
+  if (value === undefined) return true;
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof Reflect.get(value, "id") === "string" &&
+    typeof Reflect.get(value, "requestedAt") === "string"
+  );
+}
+
+function isResourceFailure(value: unknown): boolean {
+  if (value === undefined) return true;
+  return isRegistryRequest(value) && typeof Reflect.get(value as object, "message") === "string";
 }
 
 function isV2IndexedReposData(value: unknown): value is IndexedReposData {

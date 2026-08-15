@@ -107,10 +107,6 @@
     "classes": 2,
     "lines": 88
   },
-  "packages/ai/src/utils/oauth/anthropic.ts": {
-    "classes": 0,
-    "lines": 405
-  },
   "packages/ai/src/utils/oauth/github-copilot.ts": {
     "classes": 0,
     "lines": 361
@@ -217,7 +213,7 @@
   },
   "packages/code-index/embedding_server.py": {
     "classes": 2,
-    "lines": 806
+    "lines": 803
   },
   "packages/code-index/resource_manager.py": {
     "classes": 2,
@@ -545,7 +541,7 @@
   },
   "packages/coding-agent/test/indexing-service.test.ts": {
     "classes": 5,
-    "lines": 872
+    "lines": 858
   },
   "packages/coding-agent/test/interactive-mode-plan-panel.test.ts": {
     "classes": 0,

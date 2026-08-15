@@ -39,13 +39,21 @@
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 
+## Test Quality & Adversarial Review
+
+- Tests must never be added solely as mechanical line-fillers to pass coverage gates (`scripts/check-changed-coverage.js`). Tests must meaningfully verify domain logic, invariant preservation, realistic crash recovery, positive cases, negative cases, and edge cases.
+- When investigating uncovered lines reported by `check-changed-coverage.js`, never bypass them or write superficial mocks. Always investigate why the branch was unexercised (e.g. realistic repository fixture setup such as `.git/config` remotes, real abort signals, default environment/argument paths, fatal error transitions) and write genuine tests exercising the domain behavior.
+- Bug fixes must start with a reproducible failing regression test before writing the fix.
+- For non-trivial features, bug fixes, or test additions, automatically spawn an adversarial test-critic subagent to review the tests. The critic must evaluate whether the suite verifies real behavior vs artificial line coverage, identifies missing edge cases, and flags fragile/vacuous tests before work is completed.
+- Never use `/* v8 ignore */` or coverage comments to bypass coverage gates. All code in the repository must be reachable and exercised by tests; dead or unreachable code must be deleted rather than kept or suppressed (except rare compiler/type-exhaustiveness edge cases where a branch is syntactically required but provably unreachable at runtime).
+- If you create or modify a test file, run it and iterate on test or implementation until it passes.
+- For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
+- Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
+
 ## Version Bump
 
 - When a feature, fix, or improvement is finished, run the version bump before pushing changes. Run `node scripts/version-bump.js patch` to bump all workspace packages and root `package.json`. Do this before running `./reinstall.sh` so the installed CLI reports the correct version.
 - Include the version bump in the same commit as the changes.
-- If you create or modify a test file, run it and iterate on test or implementation until it passes.
-- For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
-- Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 - Before pushing code changes, run the touched focused tests, `npm run test:unit` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.

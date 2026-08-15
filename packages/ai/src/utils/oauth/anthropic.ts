@@ -5,76 +5,32 @@
  * It is only intended for CLI use, not browser environments.
  */
 
-import type { Server } from "node:http";
-import { oauthErrorHtml, oauthSuccessHtml } from "./oauth-page.ts";
+import { REDIRECT_URI, startCallbackServer, stopCallbackServer } from "./anthropic-callback-server.ts";
 import { generatePKCE } from "./pkce.ts";
 import type { OAuthCredentials, OAuthLoginCallbacks, OAuthPrompt, OAuthProviderInterface } from "./types.ts";
-
-type CallbackServerInfo = {
-  server: Server;
-  redirectUri: string;
-  cancelWait: () => void;
-  waitForCode: () => Promise<{ code: string; state: string } | null>;
-};
-
-type NodeApis = {
-  createServer: typeof import("node:http").createServer;
-};
-
-let nodeApis: NodeApis | null = null;
-let nodeApisPromise: Promise<NodeApis> | null = null;
 
 const decode = (s: string) => atob(s);
 const CLIENT_ID = decode("OWQxYzI1MGEtZTYxYi00NGQ5LTg4ZWQtNTk0NGQxOTYyZjVl");
 const AUTHORIZE_URL = "https://claude.ai/oauth/authorize";
 const TOKEN_URL = "https://platform.claude.com/v1/oauth/token";
-const CALLBACK_HOST = process.env.P_OAUTH_CALLBACK_HOST || "127.0.0.1";
-const CALLBACK_PORT = 53692;
-const CALLBACK_PATH = "/callback";
-const REDIRECT_URI = `http://localhost:${CALLBACK_PORT}${CALLBACK_PATH}`;
 const SCOPES =
   "org:create_api_key user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload";
-async function getNodeApis(): Promise<NodeApis> {
-  if (typeof process === "undefined" || (!process.versions?.node && !process.versions?.bun)) {
-    throw new Error("Anthropic OAuth is only available in Node.js environments");
-  }
-  if (nodeApis) return nodeApis;
-  if (!nodeApisPromise) {
-    nodeApisPromise = import("node:http").then((httpModule) => ({
-      createServer: httpModule.createServer,
-    }));
-  }
-  nodeApis = await nodeApisPromise;
-  return nodeApis;
-}
 
 function parseAuthorizationInput(input: string): { code?: string; state?: string } {
   const value = input.trim();
   if (!value) return {};
-
   try {
     const url = new URL(value);
-    return {
-      code: url.searchParams.get("code") ?? undefined,
-      state: url.searchParams.get("state") ?? undefined,
-    };
-  } catch {
-    // not a URL
-  }
-
+    return { code: url.searchParams.get("code") ?? undefined, state: url.searchParams.get("state") ?? undefined };
+  } catch {}
   if (value.includes("#")) {
     const [code, state] = value.split("#", 2);
     return { code, state };
   }
-
   if (value.includes("code=")) {
     const params = new URLSearchParams(value);
-    return {
-      code: params.get("code") ?? undefined,
-      state: params.get("state") ?? undefined,
-    };
+    return { code: params.get("code") ?? undefined, state: params.get("state") ?? undefined };
   }
-
   return { code: value };
 }
 
@@ -84,86 +40,11 @@ function formatErrorDetails(error: unknown): string {
     const errorWithCode = error as Error & { code?: string; errno?: number | string; cause?: unknown };
     if (errorWithCode.code) details.push(`code=${errorWithCode.code}`);
     if (typeof errorWithCode.errno !== "undefined") details.push(`errno=${String(errorWithCode.errno)}`);
-    if (typeof error.cause !== "undefined") {
-      details.push(`cause=${formatErrorDetails(error.cause)}`);
-    }
-    if (error.stack) {
-      details.push(`stack=${error.stack}`);
-    }
+    if (typeof error.cause !== "undefined") details.push(`cause=${formatErrorDetails(error.cause)}`);
+    if (error.stack) details.push(`stack=${error.stack}`);
     return details.join("; ");
   }
   return String(error);
-}
-
-async function startCallbackServer(expectedState: string): Promise<CallbackServerInfo> {
-  const { createServer } = await getNodeApis();
-
-  return new Promise((resolve, reject) => {
-    let settleWait: ((value: { code: string; state: string } | null) => void) | undefined;
-    const waitForCodePromise = new Promise<{ code: string; state: string } | null>((resolveWait) => {
-      let settled = false;
-      settleWait = (value) => {
-        if (settled) return;
-        settled = true;
-        resolveWait(value);
-      };
-    });
-
-    const server = createServer((req, res) => {
-      try {
-        const url = new URL(req.url || "", "http://localhost");
-        if (url.pathname !== CALLBACK_PATH) {
-          res.writeHead(404, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(oauthErrorHtml("Callback route not found."));
-          return;
-        }
-
-        const code = url.searchParams.get("code");
-        const state = url.searchParams.get("state");
-        const error = url.searchParams.get("error");
-
-        if (error) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(oauthErrorHtml("Anthropic authentication did not complete.", `Error: ${error}`));
-          return;
-        }
-
-        if (!code || !state) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(oauthErrorHtml("Missing code or state parameter."));
-          return;
-        }
-
-        if (state !== expectedState) {
-          res.writeHead(400, { "Content-Type": "text/html; charset=utf-8" });
-          res.end(oauthErrorHtml("State mismatch."));
-          return;
-        }
-
-        res.writeHead(200, { "Content-Type": "text/html; charset=utf-8" });
-        res.end(oauthSuccessHtml("Anthropic authentication completed. You can close this window."));
-        settleWait?.({ code, state });
-      } catch {
-        res.writeHead(500, { "Content-Type": "text/plain; charset=utf-8" });
-        res.end("Internal error");
-      }
-    });
-
-    server.on("error", (err) => {
-      reject(err);
-    });
-
-    server.listen(CALLBACK_PORT, CALLBACK_HOST, () => {
-      resolve({
-        server,
-        redirectUri: REDIRECT_URI,
-        cancelWait: () => {
-          settleWait?.(null);
-        },
-        waitForCode: () => waitForCodePromise,
-      });
-    });
-  });
 }
 
 async function postJson(url: string, body: Record<string, string | number>): Promise<string> {
@@ -336,12 +217,9 @@ export async function loginAnthropic(options: {
     }
 
     options.onProgress?.("Exchanging authorization code for tokens...");
-    return exchangeAuthorizationCode(code, state, verifier, redirectUriForExchange);
+    return await exchangeAuthorizationCode(code, state, verifier, redirectUriForExchange);
   } finally {
-    try {
-      (server.server as any).closeAllConnections?.();
-    } catch {}
-    server.server.close();
+    await stopCallbackServer(server.server);
   }
 }
 

@@ -11,7 +11,6 @@ import type {
   SemanticSearchResponse,
 } from "@dst0/p-code-index";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { ENV_AGENT_DIR } from "../src/config.ts";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { enableIndexingForRepo, getIndexedReposPath } from "../src/core/indexed-repos.ts";
 import { IndexingDaemon } from "../src/core/indexing-daemon.ts";
@@ -451,7 +450,7 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     await daemon.stop();
   });
 
-  it("honors a current-repository request that predates daemon startup", async () => {
+  it("honors an explicit priority request that predates daemon startup", async () => {
     const fixture = createFixture();
     const repositories = [fixture.repo, path.join(fixture.root, "repo-two"), path.join(fixture.root, "current-repo")];
     for (const repository of repositories) {
@@ -487,22 +486,19 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       disposeBackends: async () => {},
     });
 
-    const previousAgentDir = process.env[ENV_AGENT_DIR];
-    process.env[ENV_AGENT_DIR] = fixture.agentDir;
+    const client = new IndexingService(fixture.agentDir);
+    expect(client.prioritizeIndexing(currentRepository)).toBe(true);
     try {
-      createSemanticSearchToolDefinition(currentRepository);
       await daemon.start();
       await waitFor(() => starts.length === 1);
       expect(starts[0]).toBe(currentRepository);
     } finally {
       for (const service of services) service.releaseRefresh();
       await daemon.stop();
-      if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
-      else process.env[ENV_AGENT_DIR] = previousAgentDir;
     }
   });
 
-  it("prioritizes the current PAgent repository and recovers its missing collection before semantic search", async () => {
+  it("recovers an explicitly prioritized repository before semantic search", async () => {
     const fixture = createFixture();
     const repositories = [
       fixture.repo,
@@ -548,8 +544,6 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
       disposeBackends: async () => {},
     });
 
-    const previousAgentDir = process.env[ENV_AGENT_DIR];
-    process.env[ENV_AGENT_DIR] = fixture.agentDir;
     try {
       await daemon.start();
       await waitFor(() => starts.length === 1);
@@ -558,15 +552,9 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
         repos: Array<{ path: string; updatedAt: string }>;
       };
       const initialCurrentUpdatedAt = initialStatus.repos.find((entry) => entry.path === currentRepository)?.updatedAt;
-      createSemanticSearchToolDefinition(currentRepository);
-      await waitFor(() => {
-        const requested = JSON.parse(fs.readFileSync(registryPath, "utf-8")) as {
-          repos: Array<{ path: string; updatedAt: string }>;
-        };
-        return requested.repos.some(
-          (entry) => entry.path === currentRepository && entry.updatedAt !== "2026-01-01T00:00:00.000Z",
-        );
-      });
+      const client = new IndexingService(fixture.agentDir);
+      expect(client.prioritizeIndexing(currentRepository)).toBe(true);
+      await daemon.syncRegistry();
       await waitFor(() => {
         const status = JSON.parse(fs.readFileSync(statusPath, "utf-8")) as {
           repos: Array<{ path: string; updatedAt: string }>;
@@ -592,8 +580,6 @@ describe("indexing daemon", { timeout: 60_000 }, () => {
     } finally {
       for (const service of services.values()) service.releaseRefresh();
       await daemon.stop();
-      if (previousAgentDir === undefined) delete process.env[ENV_AGENT_DIR];
-      else process.env[ENV_AGENT_DIR] = previousAgentDir;
     }
   });
 

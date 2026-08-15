@@ -2,24 +2,15 @@ import { randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 import type { RagStatus } from "@dst0/p-code-index";
-import {
-  DAEMON_LOCK_INITIALIZATION_GRACE_MS,
-  MANUAL_PRIORITY_OFFSET,
-  RESOURCE_BACKOFF_INTERVALS_SECONDS,
-} from "./constants.ts";
+import { DAEMON_LOCK_INITIALIZATION_GRACE_MS, MANUAL_PRIORITY_OFFSET } from "./constants.ts";
 import type { DaemonLock, RepositoryRuntime } from "./types.ts";
 
 const IGNORED_WATCH_PATH_PATTERN =
   /(?:^|[\\/])(?:\.git|\.hg|\.p|\.svn|\.venv|build|coverage|dist|node_modules|storage|target)(?:[\\/]|$)/;
 
-export function getResourceBackoffMs(consecutiveFailureCount: number): number {
-  const index = Math.min(Math.max(consecutiveFailureCount - 1, 0), RESOURCE_BACKOFF_INTERVALS_SECONDS.length - 1);
-  return RESOURCE_BACKOFF_INTERVALS_SECONDS[index] * 1000;
-}
-
 export function isResourceFailure(error: unknown): boolean {
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof Error && "kind" in error && (error as any).kind === "resource") return true;
+  if (error instanceof Error && Reflect.get(error, "kind") === "resource") return true;
   // Match resource error messages by content
   return (
     /\b(out of memory|oom|OOM)\b/i.test(message) ||

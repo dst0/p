@@ -101,6 +101,7 @@ def build_runtime_plan(
     memory: MemorySnapshot,
     model_parameter_count: int,
     sequence_length: int = 2048,
+    mps_precision: str = "bfloat16",
     max_batch_size: int = DEFAULT_MAX_BATCH_SIZE,
     max_cpu_threads: int | None = None,
     min_system_reserve_bytes: int = MIN_SYSTEM_RESERVE_BYTES,
@@ -119,6 +120,8 @@ def build_runtime_plan(
         raise ValueError("max_batch_size must be positive")
     if max_cpu_threads is not None and max_cpu_threads <= 0:
         raise ValueError("max_cpu_threads must be positive")
+    if mps_precision not in {"bfloat16", "float32"}:
+        raise ValueError("mps_precision must be bfloat16 or float32")
 
     system_reserve = max(
         min_system_reserve_bytes,
@@ -128,9 +131,9 @@ def build_runtime_plan(
     accelerator_reserve = (
         max(min_accelerator_reserve_bytes, int(accelerator_total * 0.10)) if preferred_backend != "cpu" else 0
     )
-
     cpu_model_bytes = model_parameter_count * 4
-    accelerator_model_bytes = model_parameter_count * (4 if preferred_backend in {"mps", "coreml"} else 2)
+    accelerator_float32 = preferred_backend == "coreml" or preferred_backend == "mps" and mps_precision == "float32"
+    accelerator_model_bytes = model_parameter_count * (4 if accelerator_float32 else 2)
     cpu_load_bytes = 0 if model_resident else int(cpu_model_bytes * 1.20)
     accelerator_load_bytes = 0 if model_resident else int(accelerator_model_bytes * 1.20)
     cpu_workspace = memory.system_available_bytes - system_reserve - cpu_load_bytes
@@ -165,7 +168,6 @@ def build_runtime_plan(
             if system_apu_headroom >= MIN_RUNTIME_WORKSPACE_BYTES:
                 accelerator_free = max(accelerator_free or 0, memory.system_available_bytes - system_reserve)
                 accelerator_reserve = min(accelerator_reserve, MIN_ACCELERATOR_RESERVE_BYTES)
-
         accelerator_fits = (
             accelerator_free is not None
             and (accelerator_total > 0 or preferred_backend in SHARED_MEMORY_ACCELERATORS)
@@ -187,7 +189,6 @@ def build_runtime_plan(
             )
     elif not cpu_fits:
         return unusable_plan(cpu_model_bytes, 0, "insufficient system memory for the embedding model and safety reserve")
-
     default_cpu_thread_limit = (
         min(2, max(1, logical_cpu_count // 4)) if max_cpu_threads is None else max_cpu_threads
     )
@@ -217,7 +218,6 @@ def build_runtime_plan(
         batch_item_bytes = max(1, int(ACCELERATOR_BATCH_ITEM_BYTES * sequence_scale * model_scale))
         batch_capacity = max(1, accelerator_workspace // batch_item_bytes)
         effective_max_batch = max_batch_size
-
     batch_size = _power_of_two_floor(min(effective_max_batch, batch_capacity))
     if reason is None and (cpu_threads < thread_limit or batch_size < max_batch_size):
         reason = "parallelism reduced to preserve memory headroom"
@@ -227,7 +227,7 @@ def build_runtime_plan(
         preferred_backend=preferred_backend,
         backend=selected_backend,
         device="cuda" if selected_backend in {"cuda", "rocm"} else selected_backend,
-        dtype="float32" if selected_backend in {"cpu", "mps", "coreml", "npu", "openvino", "vitisai", "amd-phoenix-npu", "amd-ryzenai-npu"} else "float16",
+        dtype=mps_precision if selected_backend == "mps" else "float32" if selected_backend in {"cpu", "coreml", "npu", "openvino", "vitisai", "amd-phoenix-npu", "amd-ryzenai-npu"} else "float16",
         batch_size=batch_size,
         cpu_threads=cpu_threads,
         model_bytes=selected_model_bytes,

@@ -4,6 +4,8 @@ import json
 import os
 from dataclasses import dataclass
 
+from embedding_mps_policy import DEFAULT_SEQUENCE_LENGTH, default_sequence_length
+
 
 @dataclass(frozen=True)
 class EmbeddingRuntimeConfig:
@@ -11,7 +13,8 @@ class EmbeddingRuntimeConfig:
     device: str = "auto"
     max_embedding_batch_size: int = 64
     max_cpu_threads: int = os.cpu_count() or 1
-    max_sequence_length: int = 2048
+    max_sequence_length: int | None = None
+    mps_precision: str = "bfloat16"
     min_system_memory_reserve_bytes: int = 1024 * 1024 * 1024
     min_accelerator_memory_reserve_bytes: int = 512 * 1024 * 1024
     model_parameter_count: int | None = None
@@ -36,6 +39,14 @@ class EmbeddingRuntimeConfig:
     vitisai_config_file: str | None = None
     vitisai_log_level: str = "error"
 
+    def __post_init__(self) -> None:
+        if self.max_sequence_length is None:
+            object.__setattr__(
+                self,
+                "max_sequence_length",
+                default_sequence_length(self.device),
+            )
+
 
 def config_path_from_arguments(arguments: list[str]) -> str | None:
     try:
@@ -59,7 +70,8 @@ def load_embedding_runtime_config(config_path: str | None) -> EmbeddingRuntimeCo
         device=_string(raw, "embeddingDevice", "auto"),
         max_embedding_batch_size=_positive_int(raw, "maxEmbeddingBatchSize", 64),
         max_cpu_threads=_positive_int(raw, "maxCpuThreads", os.cpu_count() or 1),
-        max_sequence_length=_positive_int(raw, "maxSequenceLength", 2048),
+        max_sequence_length=_optional_positive_int(raw, "maxSequenceLength"),
+        mps_precision=_choice(raw, "mpsPrecision", "bfloat16", {"bfloat16", "float32"}),
         min_system_memory_reserve_bytes=_positive_int(
             raw, "minSystemMemoryReserveBytes", 1024 * 1024 * 1024
         ),
@@ -119,6 +131,13 @@ def _string(raw: dict, key: str, default: str) -> str:
     value = raw.get(key, default)
     if not isinstance(value, str) or not value.strip():
         raise ValueError(f"{key} must be a non-empty string")
+    return value
+
+
+def _choice(raw: dict, key: str, default: str, choices: set[str]) -> str:
+    value = _string(raw, key, default)
+    if value not in choices:
+        raise ValueError(f"{key} must be one of: {', '.join(sorted(choices))}")
     return value
 
 

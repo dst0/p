@@ -1,6 +1,6 @@
 import { matchesConfiguredEmbeddingBackend } from "@dst0/p-code-index";
 import { getAgentDir } from "../config.ts";
-import { requestIndexingForRepo } from "./indexed-repos.ts";
+import { requestIndexingBackendForRepo } from "./indexed-repos.ts";
 import { readIndexingSelectionConfiguration } from "./indexing-config-reader.ts";
 
 const DEFAULT_STARTUP_TIMEOUT_MS = 5 * 60_000;
@@ -23,7 +23,9 @@ export async function waitForIndexingEmbeddingBackend(
   if (configuration.searchMode === "bm25-only") return;
   const fetchImplementation = options.fetchImplementation ?? fetch;
   if (await probeEmbeddingBackend(configuration.device, fetchImplementation, signal)) return;
-  if (!requestIndexingForRepo(cwd, agentDir)) throw new Error("Code indexing is not enabled for this repository");
+  if (!requestIndexingBackendForRepo(cwd, agentDir)) {
+    throw new Error("Code indexing is not enabled for this repository");
+  }
 
   const timeoutMs = options.timeoutMs ?? configuration.startupTimeoutMs ?? DEFAULT_STARTUP_TIMEOUT_MS;
   const pollMs = options.pollMs ?? DEFAULT_POLL_MS;

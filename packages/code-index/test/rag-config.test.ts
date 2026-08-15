@@ -107,7 +107,26 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     expect(settings.amdIronArtifactDirectory).toBe("/managed/artifacts");
     expect(settings.amdNpuGeneration).toBe("npu1");
     expect(settings.maxEmbeddingBatchSize).toBe(12);
+    expect(settings.mpsPrecision).toBe("bfloat16");
+    expect(settings.maxSequenceLength).toBe(2048);
     expect(settings.torchBackend).toBe("cpu");
+  });
+
+  it("bounds the sequence default only for Apple accelerators", () => {
+    const dir = createTempDir();
+    const mps = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      settings: { embeddingDevice: "mps", maxSequenceLength: 1024 },
+    });
+    const cuda = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      settings: { embeddingDevice: "cuda" },
+    });
+
+    expect(mps.maxSequenceLength).toBe(512);
+    expect(cuda.maxSequenceLength).toBe(2048);
   });
 
   it("rejects unsupported embedding runtime settings", () => {
@@ -126,6 +145,13 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { torchBackend: "invalid" as "cpu" },
       }),
     ).toThrow("torchBackend is unsupported");
+    expect(() =>
+      loadWorkspaceCodeRagSettings({
+        dataDirectory: dir,
+        workspaceRoot: dir,
+        settings: { mpsPrecision: "invalid" as "bfloat16" },
+      }),
+    ).toThrow("mpsPrecision is unsupported");
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -246,16 +272,10 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
   it("validates remote URLs when remoteBackendsAllowed is false", () => {
     const dir = createTempDir();
 
-    // Invalid URL string
     expect(() =>
-      loadWorkspaceCodeRagSettings({
-        dataDirectory: dir,
-        workspaceRoot: dir,
-        settings: { qdrantUrl: "invalid-url" },
-      }),
+      loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir, settings: { qdrantUrl: "invalid-url" } }),
     ).toThrow("must be a valid absolute URL");
 
-    // Remote non-local URL when remoteBackendsAllowed = false
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -264,7 +284,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
       }),
     ).toThrow("must be local unless remoteBackendsAllowed");
 
-    // Non-http protocol
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
