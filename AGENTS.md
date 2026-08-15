@@ -38,7 +38,7 @@
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
-- Never poll running background tasks repeatedly in tight loops. Rely on reactive completion messages; if status checks are necessary, poll no more often than once per minute.
+- Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
 
 ## Test Quality & Adversarial Review
 
