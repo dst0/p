@@ -41,11 +41,14 @@ export function configureHttpDispatcher(timeoutMs: number = DEFAULT_HTTP_IDLE_TI
   if (normalizedTimeoutMs === undefined) {
     throw new Error(`Invalid HTTP idle timeout: ${String(timeoutMs)}`);
   }
+  const connect: undici.Agent.Options["connect"] =
+    process.env.NODE_TLS_REJECT_UNAUTHORIZED === "0" ? { rejectUnauthorized: false } : undefined;
   undici.setGlobalDispatcher(
     new undici.EnvHttpProxyAgent({
       allowH2: false,
       bodyTimeout: normalizedTimeoutMs,
       headersTimeout: normalizedTimeoutMs,
+      ...(connect ? { connect } : {}),
     }),
   );
   // Keep fetch and the dispatcher on the same undici implementation. Node 26.0's

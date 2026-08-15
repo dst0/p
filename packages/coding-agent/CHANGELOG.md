@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- Forward `rejectUnauthorized: false` to Undici's global proxy agent when `NODE_TLS_REJECT_UNAUTHORIZED=0` to support custom self-signed HTTPS endpoints.
 - Support optional `enableTray` setting in code-index RAG configuration parser and types.
 - Recover plan items from compaction summaries when previous session state has an empty plan, and auto-initialize a baseline plan item from the user goal during unmanaged tool execution.
 - Resume interrupted transactional full-index rebuilds from durable per-batch checkpoints, while invalidating checkpoints when repository contents or embedding compatibility change.
