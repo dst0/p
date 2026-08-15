@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- Added exhaustive domain test suites for response streaming, generation progress telemetry, repetitive output detection, cold prefill detection, and sequential tool batch execution with 100% statement, function, and branch coverage.
+
+### Fixed
+
+- Fixed unhandled rejection in `streaming-handler.ts` when async tool update event emissions reject by using `Promise.allSettled` in the catch block.
+
 ## [0.4.158] - 2026-08-06
 
 ### Added

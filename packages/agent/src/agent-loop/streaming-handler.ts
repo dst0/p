@@ -42,7 +42,7 @@ export async function executePreparedToolCall(
     return { result, isError: false };
   } catch (error) {
     acceptingUpdates = false;
-    await Promise.all(updateEvents);
+    await Promise.allSettled(updateEvents);
     return {
       result: createErrorToolResult(error instanceof Error ? error.message : String(error)),
       isError: true,
