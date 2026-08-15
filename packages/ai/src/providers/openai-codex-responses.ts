@@ -38,6 +38,7 @@ import {
   createAssistantMessageDiagnostic,
   formatThrownValue,
 } from "../utils/diagnostics.ts";
+import { extractErrorDetails } from "../utils/error-details.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -394,7 +395,7 @@ export const streamOpenAICodexResponses: StreamFunction<"openai-codex-responses"
         delete (block as { partialJson?: string }).partialJson;
       }
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = error instanceof Error ? error.message : String(error);
+      output.errorMessage = extractErrorDetails(error);
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

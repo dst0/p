@@ -13,6 +13,7 @@ import type {
   StreamOptions,
   Usage,
 } from "../types.ts";
+import { extractErrorDetails } from "../utils/error-details.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "./cloudflare.ts";
@@ -55,22 +56,6 @@ function getPromptCacheRetention(
   cacheRetention: CacheRetention,
 ): "24h" | undefined {
   return cacheRetention === "long" && compat.supportsLongCacheRetention ? "24h" : undefined;
-}
-
-function formatOpenAIResponsesError(error: unknown): string {
-  if (error instanceof Error) {
-    const status = (error as Error & { status?: unknown }).status;
-    const statusCode = typeof status === "number" ? status : undefined;
-    if (statusCode !== undefined) {
-      return `OpenAI API error (${statusCode}): ${error.message}`;
-    }
-    return error.message;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
 }
 
 // OpenAI Responses-specific options
@@ -155,7 +140,7 @@ export const streamOpenAIResponses: StreamFunction<"openai-responses", OpenAIRes
         delete (block as { partialJson?: string }).partialJson;
       }
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = formatOpenAIResponsesError(error);
+      output.errorMessage = extractErrorDetails(error);
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

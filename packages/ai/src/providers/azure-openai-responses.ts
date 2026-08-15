@@ -10,6 +10,7 @@ import type {
   StreamFunction,
   StreamOptions,
 } from "../types.ts";
+import { extractErrorDetails } from "../utils/error-details.ts";
 import { AssistantMessageEventStream } from "../utils/event-stream.ts";
 import { headersToRecord } from "../utils/headers.ts";
 import { clampOpenAIPromptCacheKey } from "./openai-prompt-cache.ts";
@@ -43,22 +44,6 @@ function resolveDeploymentName(model: Model<"azure-openai-responses">, options?:
   }
   const mappedDeployment = parseDeploymentNameMap(process.env.AZURE_OPENAI_DEPLOYMENT_NAME_MAP).get(model.id);
   return mappedDeployment || model.id;
-}
-
-function formatAzureOpenAIError(error: unknown): string {
-  if (error instanceof Error) {
-    const status = (error as Error & { status?: unknown }).status;
-    const statusCode = typeof status === "number" ? status : undefined;
-    if (statusCode !== undefined) {
-      return `Azure OpenAI API error (${statusCode}): ${error.message}`;
-    }
-    return error.message;
-  }
-  try {
-    return JSON.stringify(error);
-  } catch {
-    return String(error);
-  }
 }
 
 // Azure OpenAI Responses-specific options
@@ -143,7 +128,7 @@ export const streamAzureOpenAIResponses: StreamFunction<"azure-openai-responses"
         delete (block as { partialJson?: string }).partialJson;
       }
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = formatAzureOpenAIError(error);
+      output.errorMessage = extractErrorDetails(error);
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

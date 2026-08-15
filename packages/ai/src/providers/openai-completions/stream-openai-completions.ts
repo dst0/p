@@ -1,5 +1,6 @@
 import type OpenAI from "openai";
 import type { AssistantMessage, Context, Model, StreamFunction, ToolCall } from "../../types.ts";
+import { extractErrorDetails } from "../../utils/error-details.ts";
 import { AssistantMessageEventStream } from "../../utils/event-stream.ts";
 import { headersToRecord } from "../../utils/headers.ts";
 import { parseStreamingJson } from "../../utils/json-parse.ts";
@@ -283,10 +284,7 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
         ).streamIndex;
       }
       output.stopReason = options?.signal?.aborted ? "aborted" : "error";
-      output.errorMessage = error instanceof Error ? error.message : JSON.stringify(error);
-      // Some providers via OpenRouter give additional information in this field.
-      const rawMetadata = (error as any)?.error?.metadata?.raw;
-      if (rawMetadata) output.errorMessage += `\n${rawMetadata}`;
+      output.errorMessage = extractErrorDetails(error);
       stream.push({ type: "error", reason: output.stopReason, error: output });
       stream.end();
     }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Surface the real underlying error (ECONNREFUSED, ETIMEDOUT, DNS failures, etc.) instead of the generic "Connection error." message from the OpenAI SDK by walking the `cause` chain in all four provider error handlers.
+
 ### Changed
 
 - Split Anthropic and OpenAI-compatible streaming implementations into focused modules while preserving their public exports and streaming behavior.

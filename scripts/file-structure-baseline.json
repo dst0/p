@@ -89,15 +89,11 @@
   },
   "packages/ai/src/providers/openai-codex-responses.ts": {
     "classes": 4,
-    "lines": 1483
+    "lines": 1484
   },
   "packages/ai/src/providers/openai-responses-shared.ts": {
     "classes": 0,
     "lines": 558
-  },
-  "packages/ai/src/providers/openai-responses.ts": {
-    "classes": 0,
-    "lines": 314
   },
   "packages/ai/src/providers/register-builtins.ts": {
     "classes": 0,
@@ -229,7 +225,7 @@
   },
   "packages/code-index/src/rag/vector-store.ts": {
     "classes": 3,
-    "lines": 446
+    "lines": 450
   },
   "packages/code-index/test/coverage-completion-final.test.ts": {
     "classes": 1,
@@ -749,7 +745,7 @@
   },
   "scripts/benchmark-agents.js": {
     "classes": 0,
-    "lines": 2126
+    "lines": 2138
   },
   "scripts/edit-tool-stats.js": {
     "classes": 0,
