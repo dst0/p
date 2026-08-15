@@ -168,8 +168,5 @@ node scripts/prepare-indexing-service-reinstall.js --clear
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 node scripts/indexing-service-health.js "$AGENT_DIR"
 
-# Sync bundled skills to agent directory
-node scripts/sync-bundled-skills.js "$AGENT_DIR"
-
 echo "Done. Version $VERSION installed."
 

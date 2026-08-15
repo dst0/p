@@ -20,8 +20,8 @@ describe("buildSystemPrompt", () => {
 
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
-    expect(prompt).toContain(
-      "- Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+    expect(prompt).not.toContain(
+      "- Before implementing non-trivial features, architectural changes, third-party library integrations",
     );
     expect(prompt).toContain(
       "- When modifying or creating code, write tests covering all changes across the 5-factor test matrix: positive paths, negative paths, boundary edge cases, crash/recovery (e.g. AbortSignal, I/O errors, rollbacks), and invariant preservation. Superficial mocks or assertions added solely to pass line coverage without validating domain logic are prohibited.",
@@ -60,6 +60,16 @@ describe("buildSystemPrompt", () => {
       promptGuidelines: ["Custom guideline"],
     });
     expect(prompt).toContain("- Custom guideline");
+  });
+
+  it("includes web search guideline when search tools are available", () => {
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      selectedTools: ["read", "bash", "web_search"],
+    });
+    expect(prompt).toContain(
+      "- Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+    );
   });
 
   it("includes tool-specific guidelines when tools are available", () => {

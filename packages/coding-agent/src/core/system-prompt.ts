@@ -150,9 +150,13 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   // Core agent guidelines
   addGuideline("Be concise in your responses");
   addGuideline("Show file paths clearly when working with files");
-  addGuideline(
-    "Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
-  );
+
+  const hasSearch = tools.some((t) => /search|fetch|curl|browser|web/i.test(t));
+  if (hasSearch) {
+    addGuideline(
+      "Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+    );
+  }
   addGuideline(
     "Develop in vertical slices (test -> code -> verify): write concise invariant tests first (10-30 lines), implement the minimal logic, and run tests immediately for fast feedback before moving to the next module. Never postpone testing to a single massive monolithic file at the end.",
   );

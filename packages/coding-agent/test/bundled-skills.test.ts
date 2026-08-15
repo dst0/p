@@ -1,15 +1,8 @@
-import { execFileSync } from "child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
-import { join, resolve } from "path";
+import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { loadSkills } from "../src/core/skills.ts";
-
-const syncScriptPath = resolve(__dirname, "../../../scripts/sync-bundled-skills.js");
-
-function runSyncScript(targetDir: string, ...args: string[]): void {
-  execFileSync(process.execPath, [syncScriptPath, targetDir, ...args], { encoding: "utf-8" });
-}
 
 describe("bundled skills and precedence hierarchy", () => {
   let tempDir: string;
@@ -26,7 +19,7 @@ describe("bundled skills and precedence hierarchy", () => {
     rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("should discover bundled software-testing skill by default", () => {
+  it("should discover bundled software-testing skill by default from package directory", () => {
     const { skills, diagnostics } = loadSkills({
       agentDir: tempAgentDir,
       cwd: tempCwd,
@@ -147,19 +140,5 @@ description: Project level testing
     expect(testingSkill?.description).toBe("Project level testing");
     expect(testingSkill?.sourceInfo.scope).toBe("project");
     expect(diagnostics.filter((d) => d.type === "collision")).toHaveLength(0);
-  });
-
-  it("should preserve user customized skills non-destructively during sync", () => {
-    // First sync creates files
-    runSyncScript(tempAgentDir);
-    const userSkillMd = join(tempAgentDir, "skills", "software-testing", "SKILL.md");
-    expect(existsSync(userSkillMd)).toBe(true);
-
-    // User modifies the skill
-    writeFileSync(userSkillMd, "# My Custom Edits", "utf-8");
-
-    // Second sync should NOT overwrite user edits
-    runSyncScript(tempAgentDir);
-    expect(readFileSync(userSkillMd, "utf-8")).toBe("# My Custom Edits");
   });
 });
