@@ -29,7 +29,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain(
       "- Consult the software-testing skill and its reference playbooks for TDD workflows, invariant contracts, realistic fixture isolation, and mutation self-verification.",
     );
-    expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
+    expect(prompt).toContain("- Never create generic, catch-all, or branch-filler test files");
+    expect(prompt).toContain("- Strive for 100% branch coverage across all tested modules");
+    expect(prompt).toContain(
+      "- Develop in vertical slices (test -> code -> verify): write concise invariant tests first",
+    );
+    expect(prompt).toContain("- Verify mathematical, timing, and concurrency formulas");
+    expect(prompt).toContain(
+      "- Maintain a green test suite continuously: run tests after each slice to verify they pass before proceeding.",
+    );
     expect(prompt).toContain(
       "- Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
     );

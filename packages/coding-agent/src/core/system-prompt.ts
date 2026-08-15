@@ -154,12 +154,26 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
   );
   addGuideline(
+    "Develop in vertical slices (test -> code -> verify): write concise invariant tests first (10-30 lines), implement the minimal logic, and run tests immediately for fast feedback before moving to the next module. Never postpone testing to a single massive monolithic file at the end.",
+  );
+  addGuideline(
+    "Verify mathematical, timing, and concurrency formulas (e.g. monotonic clock checks, failedAt + retryDelay * 2 ** (attempt - 1) exponential backoff, DAG topological cycles, and lease expiration) with lean, targeted invariant assertions.",
+  );
+  addGuideline(
+    "Never create generic, catch-all, or branch-filler test files (e.g. branches.test.ts, coverage.test.ts). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.",
+  );
+  addGuideline(
+    "Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.",
+  );
+  addGuideline(
     "When modifying or creating code, write tests covering all changes across the 5-factor test matrix: positive paths, negative paths, boundary edge cases, crash/recovery (e.g. AbortSignal, I/O errors, rollbacks), and invariant preservation. Superficial mocks or assertions added solely to pass line coverage without validating domain logic are prohibited.",
   );
   addGuideline(
     "Consult the software-testing skill and its reference playbooks for TDD workflows, invariant contracts, realistic fixture isolation, and mutation self-verification.",
   );
-  addGuideline("Run tests after writing or modifying them to verify they pass before proceeding");
+  addGuideline(
+    "Maintain a green test suite continuously: run tests after each slice to verify they pass before proceeding.",
+  );
   addGuideline(
     "Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
   );

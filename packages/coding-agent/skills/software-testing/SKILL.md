@@ -14,16 +14,28 @@ across all languages and frameworks.
 
 ## Core Invariants
 
-1. **Meaningful Verification Over Line Coverage**: Tests must verify domain logic, boundary
+1. **Incremental Slice-by-Slice TDD Over Big-Bang Testing**: Never postpone test writing to a single
+   massive final turn. Write tests and code in tight vertical slices (e.g., test invariant $\to$ implement
+   logic $\to$ run test runner). Ensure the test suite is green after every module.
+2. **Domain-Specific Test Structure (No Branch Fillers)**: Never create generic catch-all or
+   branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into
+   descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
+3. **100% Branch Coverage via Real Permutations**: Strive for 100% branch coverage by exercising real
+   operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter
+   paths, and event sequences with and without initial lifecycle triggers.
+4. **Lean Invariant Verification Over Bloated Boilerplate**: Verify mathematical formulas (e.g. exponential
+   backoff $t_{\text{fail}} + \text{delay} \times 2^{\text{attempt}-1}$, monotonic timestamps, DAG cycles) with
+   compact table-driven assertions rather than verbose repetitive files.
+5. **Meaningful Verification Over Line Coverage**: Tests must verify domain logic, boundary
    conditions, state invariants, and realistic crash recovery. Passing coverage gates with
    tautological assertions or superficial mocks is prohibited.
-2. **Zero Dead Code**: Never use ignore pragmas (e.g. `v8 ignore`) to bypass coverage gates.
+6. **Zero Dead Code**: Never use ignore pragmas (e.g. `v8 ignore`) to bypass coverage gates.
    All code must be reachable and exercised by tests.
-3. **Mandatory Web Search**: Before implementing non-trivial logic, asynchronous state machines,
+7. **Mandatory Web Search**: Before implementing non-trivial logic, asynchronous state machines,
    or testing complex APIs, search the web to clarify current ecosystem best practices,
    concurrency caveats, error types, and edge cases.
-4. **Reproducible Regression First (TDD)**: When fixing a bug, write a failing regression test
-   first, execute the test runner to confirm failure, then write the minimal fix.
+8. **Reproducible Regression First**: When fixing a bug, write a failing regression test first,
+   execute the test runner to confirm failure, then write the minimal fix.
 
 ---
 
@@ -36,10 +48,11 @@ Before writing tests or code:
 - Identify common pitfalls (e.g., event listener leaks, stream truncation, race conditions).
 - See detailed guidance: [`references/web-research-playbook.md`](./references/web-research-playbook.md).
 
-### Phase 2: Test-First Strategy (TDD)
-- Define the test file and test cases before touching implementation files.
-- Run the test suite to observe the failure (ensuring the test is not vacuously passing).
-- Write implementation to satisfy the test, then re-run to verify passage.
+### Phase 2: Incremental Slice TDD (Test-First per Invariant)
+- For each module or capability, write a concise test asserting the invariant before implementing the code.
+- Run the test runner immediately to observe the failure.
+- Implement the minimal logic to satisfy the test, then re-run to confirm green status before proceeding.
+- Maintain a fully passing test suite throughout the task.
 
 ### Phase 3: The 5-Factor Test Matrix
 Every change must be validated against all 5 aspects:

@@ -1,7 +1,19 @@
 # TDD & Invariant Testing Matrix
 
 This guide provides deep technical instructions for designing comprehensive test suites
-that verify mathematical, stateful, and domain invariants.
+that verify mathematical, stateful, and domain invariants using concise, fast-feedback TDD.
+
+---
+
+## Incremental Slice-by-Slice TDD Protocol
+
+Avoid "Big-Bang" test generation at the end of a project. Instead:
+1. **Vertical Slice Loop**:
+   - `module.test.ts` (10–30 lines of invariant tests) $\to$ `module.ts` (implementation) $\to$ run `npm test`.
+   - Never proceed to the next module until the current slice's tests are 100% green.
+2. **Lean Invariant Assertions**:
+   - Write parameterized or table-driven tests for arithmetic invariants, monotonic clocks, exponential backoff formulas, and DAG topological order.
+   - Avoid hundreds of lines of repetitive boilerplate; test the boundary conditions directly.
 
 ---
 
@@ -21,45 +33,60 @@ that verify mathematical, stateful, and domain invariants.
 
 An invariant is a condition that remains true across all transformations and error states.
 
-### 1. The Rollback Invariant
+### 1. Timing & Monotonic Clock Invariant
+*Guarantee*: Operations must validate monotonic virtual time; timestamps cannot move backwards ($t_{\text{current}} \ge t_{\text{previous}}$), and retry backoff must compute against the exact failure timestamp:
+\[
+t_{\text{next}} = t_{\text{failed}} + \text{delay} \times 2^{\text{attempt} - 1}
+\]
+*Verification Pattern*:
+```typescript
+test("enforces monotonic clock and exponential retry backoff", () => {
+  const engine = new WorkflowEngine();
+  engine.start({ workflowId: "wf1", tasks: [{ id: "t1", maxAttempts: 3, retryDelayMs: 10 }] }, { commandId: "c1", now: 0 });
+  const claim1 = engine.claim("w1", 0, 5);
+  
+  // Non-monotonic time rejection
+  assert.throws(() => engine.claim("w1", -1, 5), ValidationError);
+
+  // Failed at now: 1 -> next retry strictly at now >= 1 + 10 * 2^0 = 11
+  engine.fail(claim1, "err1", { commandId: "f1", now: 1 });
+  assert.equal(engine.claim("w1", 10, 5), null, "must not allow claim before backoff expiry");
+  const claim2 = engine.claim("w1", 11, 5);
+  assert.ok(claim2, "must allow claim at backoff expiry");
+});
+```
+
+### 2. The Rollback Invariant
 *Guarantee*: If an operation fails at step $N$ of $M$, the system state must match the state
 prior to step 1 exactly.
 *Verification Pattern*:
 ```typescript
-// 1. Capture snapshot of initial state
 const initialSnapshot = captureStateSnapshot();
-
-// 2. Trigger intentional mid-operation failure
 await expect(atomicOperationWithFailure()).rejects.toThrow();
-
-// 3. Assert current state is identical to initial state
 const postFailureSnapshot = captureStateSnapshot();
 expect(postFailureSnapshot).toEqual(initialSnapshot);
 ```
 
-### 2. The Idempotency Invariant
+### 3. The Idempotency Invariant
 *Guarantee*: Executing operation $f(x)$ once produces the exact same system state as executing
 $f(x)$ multiple times consecutively.
 *Verification Pattern*:
 ```typescript
 const result1 = await executeOperation(payload);
-const snapshotAfterFirst = captureStateSnapshot();
+const snapshot1 = captureStateSnapshot();
 
 const result2 = await executeOperation(payload);
-const snapshotAfterSecond = captureStateSnapshot();
+const snapshot2 = captureStateSnapshot();
 
 expect(result1).toEqual(result2);
-expect(snapshotAfterSecond).toEqual(snapshotAfterFirst);
+expect(snapshot2).toEqual(snapshot1);
 ```
 
-### 3. Exact Truncation Boundary Invariant
-*Guarantee*: A parser or deserializer must reject incomplete or truncated payloads cleanly,
-without hanging or producing partial corrupted records.
+### 4. Exact Truncation & Tamper Invariant
+*Guarantee*: A parser, stream consumer, or event log must reject incomplete or truncated payloads cleanly.
 *Verification Pattern*:
 ```typescript
-// Test exact byte boundary mutation: strip the trailing newline or byte
-const completePayload = serializeValidRecord();
-const truncatedPayload = completePayload.slice(0, -1);
-
-expect(() => parseRecord(truncatedPayload)).toThrow(/incomplete|unexpected eof/i);
+const validLog = exportDurableLog();
+const truncatedLog = validLog.slice(0, -1);
+expect(() => parseLog(truncatedLog)).toThrow(/validationerror|unexpected eof|truncated/i);
 ```
