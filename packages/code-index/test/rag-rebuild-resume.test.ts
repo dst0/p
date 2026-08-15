@@ -64,7 +64,7 @@ function createService(root: string, data: string, vectorStore: FakeVectorStore)
   });
 }
 
-describe("rebuild checkpoint coverage edge cases", () => {
+describe("active rebuild resumption and vector store point verification", () => {
   it("loadRebuildPlan returns undefined for corrupted json and invalid files schema", () => {
     const { data } = createFixture();
     const planPath = join(data, "plan.json");

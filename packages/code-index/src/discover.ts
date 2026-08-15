@@ -144,7 +144,7 @@ export function discoverFilesWithOptions(repoPath: string, options: DiscoverFile
     .filter((fpath) => {
       try {
         const fileStat = fs.lstatSync(fpath);
-        if (fileStat.isSymbolicLink() || !fileStat.isFile()) return false;
+        if (!fileStat.isFile()) return false;
         const canonicalPath = fs.realpathSync(fpath);
         const containmentPath = path.relative(canonicalRoot, canonicalPath);
         if (

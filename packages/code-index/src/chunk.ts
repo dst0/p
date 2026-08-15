@@ -19,8 +19,6 @@ const CHUNK_PATTERNS: Record<string, RegExp> = {
  * Extract a symbol name from the first line of a chunk.
  */
 function extractSymbol(firstLine: string, language: string): string {
-  if (!firstLine.trim()) return "";
-
   const patterns: Record<string, RegExp> = {
     rust: /\b(fn|struct|enum|impl|trait)\s+(\w+)/,
     python: /\b(def|async def|class)\s+(\w+)/,
@@ -35,9 +33,7 @@ function extractSymbol(firstLine: string, language: string): string {
   };
 
   const re = patterns[language];
-  if (!re) return "";
-
-  const m = firstLine.match(re);
+  const m = re ? firstLine.match(re) : null;
   if (!m) return "";
 
   if (language === "go") {

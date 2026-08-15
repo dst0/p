@@ -228,6 +228,10 @@ describe("QdrantClient wrapper", () => {
       with_payload: true,
     });
     expect(results).toEqual([{ id: 10, score: 0.92, payload }]);
+
+    rawClientMock.search.mockResolvedValueOnce([{ id: 11, score: 0.88, payload }]);
+    const float32Results = await qdrant.searchDense(new Float32Array([0.3, 0.4]), 3);
+    expect(float32Results).toEqual([{ id: 11, score: 0.88, payload }]);
   });
 
   it("initializes with qdrantApiKey in IndexConfig", () => {
