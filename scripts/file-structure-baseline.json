@@ -227,10 +227,6 @@
     "classes": 3,
     "lines": 450
   },
-  "packages/code-index/test/coverage-completion-final.test.ts": {
-    "classes": 1,
-    "lines": 319
-  },
   "packages/code-index/test/coverage-completion.test.ts": {
     "classes": 0,
     "lines": 471
