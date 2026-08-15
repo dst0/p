@@ -189,6 +189,43 @@ prompt_indexing_device_and_batch_size_selection() {
   echo "Using max embedding batch size: $INDEXING_MAX_EMBED_BATCH_SIZE"
 }
 
+initialize_indexing_tray_selection() {
+  local force_selection="$1"
+  local interactive="${2:-}"
+  if [[ -z "$interactive" ]]; then
+    [[ -t 0 ]] && interactive=true || interactive=false
+  fi
+  if [[ "$force_selection" == true ]]; then
+    [[ "$interactive" == true ]] && unset INDEXING_ENABLE_TRAY
+    return 0
+  fi
+  local saved_tray
+  saved_tray="$(read_indexing_config_value enableTray)" || return 1
+  [[ -z "$saved_tray" ]] && return 0
+  INDEXING_ENABLE_TRAY="$saved_tray"
+  echo "Loaded configured indexing tray indicator: $INDEXING_ENABLE_TRAY"
+}
+
+prompt_indexing_tray_selection() {
+  [[ -n "${INDEXING_ENABLE_TRAY:-}" || ! -t 0 ]] && return 0
+  echo ""
+  echo "=== Code indexing system tray / menu bar indicator ==="
+  echo "Show a background status indicator icon in the system menu bar / tray?"
+  local default_choice="Y"
+  read -rp "Enable status tray indicator? [Y/n] (default: Y): " choice
+  choice="${choice:-$default_choice}"
+  case "$choice" in
+    [yY]|[yY][eE][sS])
+      INDEXING_ENABLE_TRAY=true
+      ;;
+    *)
+      INDEXING_ENABLE_TRAY=false
+      ;;
+  esac
+  write_indexing_config_value enableTray "$INDEXING_ENABLE_TRAY" || return 1
+  echo "Using indexing tray indicator: $INDEXING_ENABLE_TRAY"
+}
+
 check_and_prompt_missing_indexing_deps() {
   if [[ "${INDEXING_DEVICE:-}" == "npu" && "$(uname)" != "Darwin" ]]; then
     echo "The matching AMD Ryzen AI or Intel OpenVINO runtime will be installed automatically."
@@ -199,3 +236,4 @@ install_amd_xdna_npu_driver_if_needed() {
   [[ "$(uname)" != "Linux" ]] && return 0
   echo "AMD XDNA and Intel OpenVINO NPU installation is handled automatically by scripts/install-indexing-service.js."
 }
+

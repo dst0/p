@@ -1,6 +1,26 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { streamBedrock, streamSimpleBedrock } from "../src/providers/amazon-bedrock.ts";
 import type { Context, Model } from "../src/types.ts";
+
+const mockSend = vi.fn().mockRejectedValue(new Error("UnrecognizedClientException: Invalid credentials"));
+
+vi.mock("@aws-sdk/client-bedrock-runtime", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@aws-sdk/client-bedrock-runtime")>();
+  return {
+    ...actual,
+    BedrockRuntimeClient: vi.fn().mockImplementation(function (
+      this: { config?: unknown; middlewareStack?: unknown; send?: unknown },
+      config: unknown,
+    ) {
+      this.config = config;
+      this.middlewareStack = { add: vi.fn() };
+      this.send = mockSend;
+    }),
+    ConverseStreamCommand: vi.fn().mockImplementation(function (this: { input?: unknown }, input: unknown) {
+      this.input = input;
+    }),
+  };
+});
 
 describe("amazon-bedrock-unit", () => {
   const origEnv = { ...process.env };

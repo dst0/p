@@ -17,12 +17,8 @@ export {
 	selectTorchInstallPlan,
 } from "./indexing-install-plans.js";
 import { migrateLegacyIndexingConfig, readCodeRagConfig, writeCodeRagConfig } from "./indexing-config.js";
-import {
-	detectAmdNpuPciDevices,
-} from "./install-amd-ryzen-ai.js";
-import {
-	detectIntelNpuPciDevices,
-} from "./install-intel-openvino-npu.js";
+import { detectAmdNpuPciDevices } from "./install-amd-ryzen-ai.js";
+import { detectIntelNpuPciDevices } from "./install-intel-openvino-npu.js";
 import { installPythonEnvironment } from "./indexing-python-environment.js";
 import {
 	buildManagedIndexingConfig,
@@ -33,6 +29,7 @@ import {
 } from "./indexing-install-fallback.js";
 import { findCompatiblePython } from "./indexing-python-discovery.js";
 import { installAppleCoreAiRuntime, isMacOsCoreAiAvailable } from "./install-apple-coreai.js";
+import { installIndexingTray } from "./build-indexing-tray.js";
 
 const SCRIPT_DIR = path.dirname(fileURLToPath(import.meta.url));
 const ROOT = path.resolve(SCRIPT_DIR, "..");
@@ -261,6 +258,7 @@ async function main() {
 	fs.mkdirSync(BIN_DIR, { recursive: true, mode: 0o700 });
 	fs.mkdirSync(LOG_DIR, { recursive: true, mode: 0o700 });
 	fs.mkdirSync(QDRANT_DATA_DIR, { recursive: true, mode: 0o700 });
+	installIndexingTray(AGENT_DIR, CODE_INDEX_DIR, BIN_DIR, SERVICE_ROOT);
 	await installQdrant(qdrantBinary);
 	while (true) {
 		try {

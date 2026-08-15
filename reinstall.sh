@@ -49,6 +49,7 @@ node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
 initialize_indexing_batch_size_selection "$SELECT_INDEXING"
+initialize_indexing_tray_selection "$SELECT_INDEXING"
 
 
 # ---------------------------------------------------------------------------
@@ -131,6 +132,13 @@ if (settings.triggerReserveTokens !== 2000) { console.error('ERROR: triggerReser
 console.log('Compaction settings verified OK');
 "
 
+# Apply interactive indexing choices before computing the runtime fingerprint.
+# Otherwise an unchanged code version can incorrectly reuse a daemon running
+# with the previous device configuration.
+prompt_indexing_device_and_batch_size_selection
+prompt_indexing_tray_selection
+check_and_prompt_missing_indexing_deps
+
 # Give the indexing daemon a bounded opportunity to quiesce. If active work cannot
 # settle promptly, stop the validated daemon before replacing its managed service.
 # However, if the indexing-related code hasn't changed, skip the quiesce entirely.
@@ -154,10 +162,6 @@ else
     node scripts/prepare-indexing-service-reinstall.js
 fi
 
-# ---------- embedding device selection & dependencies ----------
-prompt_indexing_device_and_batch_size_selection
-check_and_prompt_missing_indexing_deps
-
 # Install or update the persistent code-indexing service (launchd/systemd)
 node scripts/install-indexing-service.js
 node scripts/prepare-indexing-service-reinstall.js --clear
@@ -165,3 +169,4 @@ INDEXING_REINSTALL_MARKER_ACTIVE=false
 node scripts/indexing-service-health.js "$AGENT_DIR"
 
 echo "Done. Version $VERSION installed."
+

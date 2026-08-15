@@ -88,6 +88,9 @@ export function createSettingChangeHandler(callbacks: SettingsCallbacks): (id: s
       case "indexing-info":
         callbacks.onShowIndexingInfoChange(newValue === "true");
         break;
+      case "indexing-tray":
+        callbacks.onEnableIndexingTrayChange?.(newValue === "true");
+        break;
       case "version":
         callbacks.onShowVersionChange(newValue === "true");
         break;

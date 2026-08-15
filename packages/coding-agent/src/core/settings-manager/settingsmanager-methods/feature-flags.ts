@@ -1,3 +1,6 @@
+import fs from "node:fs";
+import path from "node:path";
+import { getAgentDir } from "../../../config.ts";
 import type { SettingsManager } from "../settingsmanager.ts";
 import type { ThinkingBudgetsSettings } from "../types.ts";
 
@@ -112,6 +115,48 @@ export function do_setShowIndexingInfo(self: SettingsManager, enabled: boolean):
   self.globalSettings.terminal.showIndexingInfo = enabled;
   self.markModified("terminal", "showIndexingInfo");
   self.save();
+}
+
+function resolveAgentDir(self: SettingsManager): string {
+  const storage = self.storage as { globalSettingsPath?: string };
+  if (typeof storage?.globalSettingsPath === "string") {
+    return path.dirname(storage.globalSettingsPath);
+  }
+  return getAgentDir();
+}
+
+export function do_getEnableIndexingTray(self: SettingsManager): boolean {
+  try {
+    const configPath = path.join(resolveAgentDir(self), "code-rag.json");
+    if (fs.existsSync(configPath)) {
+      const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+      if (typeof parsed.enableTray === "boolean") return parsed.enableTray;
+    }
+  } catch {
+    // Fallback on error.
+  }
+  return self.settings.enableIndexingTray ?? true;
+}
+
+export function do_setEnableIndexingTray(self: SettingsManager, enabled: boolean): void {
+  self.globalSettings.enableIndexingTray = enabled;
+  self.markModified("enableIndexingTray");
+  self.save();
+
+  try {
+    const configPath = path.join(resolveAgentDir(self), "code-rag.json");
+    let current: Record<string, unknown> = {};
+    if (fs.existsSync(configPath)) {
+      current = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    }
+    current.enableTray = enabled;
+    fs.mkdirSync(path.dirname(configPath), { recursive: true, mode: 0o700 });
+    const tempPath = `${configPath}.${process.pid}.tmp`;
+    fs.writeFileSync(tempPath, `${JSON.stringify(current, null, 2)}\n`, { mode: 0o600 });
+    fs.renameSync(tempPath, configPath);
+  } catch {
+    // Best effort persistence to code-rag.json.
+  }
 }
 
 export function do_getShowVersion(self: SettingsManager): boolean {

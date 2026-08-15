@@ -101,6 +101,13 @@ export function createInterfaceSettingsItems(config: SettingsConfig, supportsIma
       values: ["true", "false"],
     },
     {
+      id: "indexing-tray",
+      label: "Indexing tray indicator",
+      description: "Show menu bar / system tray status indicator for code indexing",
+      currentValue: config.enableIndexingTray !== false ? "true" : "false",
+      values: ["true", "false"],
+    },
+    {
       id: "version",
       label: "Show version",
       description: "Show p agent version in the footer",

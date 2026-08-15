@@ -9,6 +9,7 @@ import {
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
 import { computeIndexingRuntimeConfigFingerprint } from "../indexing-runtime-config.ts";
+import { IndexingTrayManager, type IndexingTrayService } from "../indexing-tray-manager.ts";
 import { computeIndexingVersion } from "../indexing-version.ts";
 import { DEFAULT_REPOSITORY_TIMEOUT_MS } from "./constants.ts";
 import { do_drainWorker, do_requestRefresh, do_startDrain } from "./indexingdaemon-methods/health-check.ts";
@@ -71,6 +72,8 @@ export class IndexingDaemon {
   public readonly watchFactory: WatchFactory;
 
   public readonly embeddingManager: EmbeddingServerManager;
+
+  public readonly trayManager: IndexingTrayService;
 
   public readonly runtimes = new Map<string, RepositoryRuntime>();
 
@@ -155,6 +158,7 @@ export class IndexingDaemon {
     this.watchFactory =
       options.watchFactory ??
       ((target, watchOptions, listener) => fs.watch(target, { ...watchOptions, encoding: "utf8" }, listener));
+    this.trayManager = options.trayManager ?? new IndexingTrayManager({ agentDir: options.agentDir });
     this.indexingVersion = computeIndexingVersion();
     this.runtimeConfigFingerprint = computeIndexingRuntimeConfigFingerprint(options.agentDir);
   }

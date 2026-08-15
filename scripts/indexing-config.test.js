@@ -63,8 +63,18 @@ test("existing config wins over legacy files", () => {
   assert.equal(fs.existsSync(path.join(agentDirectory, "indexing-device")), false);
 });
 
+test("supports enableTray boolean field", () => {
+  const agentDirectory = createAgentDirectory();
+  writeCodeRagConfig(agentDirectory, { enableTray: true });
+  assert.equal(readCodeRagConfig(agentDirectory).enableTray, true);
+
+  writeCodeRagConfig(agentDirectory, { enableTray: false });
+  assert.equal(readCodeRagConfig(agentDirectory).enableTray, false);
+});
+
 test("rejects non-object configuration", () => {
   const agentDirectory = createAgentDirectory();
   fs.writeFileSync(path.join(agentDirectory, "code-rag.json"), "[]\n");
   assert.throws(() => readCodeRagConfig(agentDirectory), /expected a JSON object/);
 });
+

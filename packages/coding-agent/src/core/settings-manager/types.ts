@@ -143,6 +143,7 @@ export interface Settings {
   planPanelMode?: "hidden" | "compact" | "expanded"; // Plan panel visibility state (persisted across sessions)
   planPanelCompactWidth?: number; // Compact plan panel width in columns (default: 50)
   planPanelHeight?: number; // Plan panel custom height in rows (undefined = auto)
+  enableIndexingTray?: boolean; // default: true - whether to show system tray / menu bar status indicator for indexing
 }
 
 export type SettingsScope = "global" | "project";

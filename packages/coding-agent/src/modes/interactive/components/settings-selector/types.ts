@@ -33,6 +33,7 @@ export interface SettingsConfig {
   showTokenProgress: boolean;
   showTokenStats: boolean;
   showIndexingInfo: boolean;
+  enableIndexingTray?: boolean;
   showVersion: boolean;
   showHarnessMessages: boolean;
   warnings: WarningSettings;
@@ -68,6 +69,7 @@ export interface SettingsCallbacks {
   onShowTokenProgressChange: (enabled: boolean) => void;
   onShowTokenStatsChange: (enabled: boolean) => void;
   onShowIndexingInfoChange: (enabled: boolean) => void;
+  onEnableIndexingTrayChange?: (enabled: boolean) => void;
   onShowVersionChange: (enabled: boolean) => void;
   onShowHarnessMessagesChange: (enabled: boolean) => void;
   onWarningsChange: (warnings: WarningSettings) => void;

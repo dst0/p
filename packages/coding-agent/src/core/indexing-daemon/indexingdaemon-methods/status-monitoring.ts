@@ -1,4 +1,5 @@
 import { INDEXED_REPOS_FILE, loadIndexedRepos } from "../../indexed-repos.ts";
+import { isTrayEnabled } from "../../indexing-tray-manager.ts";
 import {
   canonicalizePath,
   isDirectory,
@@ -107,6 +108,13 @@ export function do_watchRegistry(self: IndexingDaemon): void {
   try {
     const watcher = self.watchFactory(self.options.agentDir, { recursive: false }, (_eventType, filename) => {
       const name = filename === null ? undefined : String(filename);
+      if (name === "code-rag.json" || name === "settings.json") {
+        if (isTrayEnabled(self.options.agentDir)) {
+          self.trayManager.start();
+        } else {
+          self.trayManager.stop();
+        }
+      }
       if (name && name !== INDEXED_REPOS_FILE) return;
       void self.syncRegistry();
     });

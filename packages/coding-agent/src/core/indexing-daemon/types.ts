@@ -1,5 +1,6 @@
 import type { FSWatcher } from "node:fs";
 import type { CodeRagService, IndexingProgress, RagState } from "@dst0/p-code-index";
+import type { IndexingTrayService } from "../indexing-tray-manager.ts";
 
 export type WatchFactory = (
   target: string,
@@ -38,6 +39,7 @@ export interface IndexingDaemonOptions {
   releaseEmbeddingDevice?: () => Promise<void>;
   disposeBackends?: () => Promise<void>;
   watchFactory?: WatchFactory;
+  trayManager?: IndexingTrayService;
 }
 
 export interface IndexingDaemonStopOptions {

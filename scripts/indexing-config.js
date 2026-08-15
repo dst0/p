@@ -5,6 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 const CONFIG_FILE = "code-rag.json";
+const BOOLEAN_FIELDS = new Set(["enableTray"]);
 const NUMERIC_FIELDS = new Set([
   "maxEmbeddingBatchSize",
   "maxCpuThreads",
@@ -71,6 +72,11 @@ function readLegacyValue(filePath) {
 }
 
 function parseCliValue(field, rawValue) {
+  if (BOOLEAN_FIELDS.has(field)) {
+    if (rawValue === "true" || rawValue === "1") return true;
+    if (rawValue === "false" || rawValue === "0") return false;
+    throw new Error(`${field} must be a boolean (true or false)`);
+  }
   if (!NUMERIC_FIELDS.has(field)) return rawValue;
   const value = Number(rawValue);
   if (!Number.isSafeInteger(value) || value < 1) throw new Error(`${field} must be a positive integer`);
