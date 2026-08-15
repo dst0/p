@@ -38,6 +38,7 @@
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
+- Poll running background tasks with reasonable intervals that approximately equal to ETA or reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Rely on reactive completion messages instead.
 
 ## Test Quality & Adversarial Review
 
@@ -113,6 +114,11 @@ When reviewing PRs:
 - Use `gh pr view`, `gh pr diff`, `gh api`, and local `git show`/`git diff` against fetched refs to inspect PR metadata, commits, and patches without changing branches.
 - If you need PR file contents, fetch/read them into temporary files or use `git show <ref>:<path>` without switching branches.
 
+When creating PRs:
+
+- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
+- Always include a `## Bug Fixes` section in the PR description detailing any bugs uncovered and resolved during the task, with references to their regression tests.
+
 When creating issues:
 
 - Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
@@ -127,18 +133,22 @@ When closing issues via commit:
 
 - Include `fixes #<number>` or `closes #<number>` in the message so merging auto-closes the issue. For multiple issues, repeat the keyword per issue (`closes #1, closes #2`); a shared keyword (`closes #1, #2`) only closes the first.
 
-## Testing p Interactive Mode with tmux
+## Testing and Smoke Verification of p CLI & Features
 
-Run the TUI in a controlled terminal (from the repo root):
-
-```bash
-tmux new-session -d -s p-test -x 80 -y 24
-tmux send-keys -t p-test "npm run dev --" Enter
-sleep 3 && tmux capture-pane -t p-test -p     # capture after startup
-tmux send-keys -t p-test "your prompt here" Enter
-tmux send-keys -t p-test Escape               # special keys (also C-o for ctrl+o, etc.)
-tmux kill-session -t p-test
-```
+- **No bare hanging commands**: Never run bare commands like `p -p "..."` directly in background subprocesses without a TTY. Without an attached pseudo-terminal, the TUI engine blocks waiting for terminal events or stdin, causing commands to hang indefinitely.
+- **No generic dummy prompts**: Never use generic placeholder prompts (e.g. `Say exactly: ok`) as a substitute for real smoke testing. Smoke verification must specifically and meaningfully target the feature or bug that was changed:
+  * **CLI version & metadata**: Verify `p --version` or `p --list-models` to confirm binary linkage and version metadata.
+  * **Interactive TUI & visual layout**: Always run in a controlled terminal via `tmux`, capture the rendered pane with `tmux capture-pane -p`, and inspect/assert the exact UI state:
+    ```bash
+    tmux new-session -d -s p-test -x 80 -y 24
+    tmux send-keys -t p-test "npm run dev --" Enter
+    sleep 3 && tmux capture-pane -t p-test -p     # capture after startup
+    tmux send-keys -t p-test "feature-specific prompt here" Enter
+    sleep 3 && tmux capture-pane -t p-test -p     # capture response/UI state
+    tmux kill-session -t p-test
+    ```
+  * **Semantic search & indexing**: Run concrete indexer queries or status checks (e.g. `p-code-index` search verification).
+  * **Agent responses & streaming**: Verify through unit/domain harnesses (`test/suite/harness.ts` or domain unit tests) and targeted interactive session assertions.
 
 ## Changelog
 
