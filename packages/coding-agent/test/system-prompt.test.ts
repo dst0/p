@@ -79,6 +79,24 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("Use bash for file operations like ls, rg, find when dedicated tools are unavailable");
   });
 
+  it("includes explicit_finish completion protocol instructions", () => {
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      completionMode: "explicit_finish",
+    });
+    expect(prompt).toContain("You are operating in explicit completion mode.");
+    expect(prompt).toContain("When the task is complete, call `finish_work`.");
+  });
+
+  it("includes hybrid completion protocol instructions", () => {
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      completionMode: "hybrid",
+    });
+    expect(prompt).toContain("You are operating in hybrid completion mode.");
+    expect(prompt).toContain("Prefer calling `finish_work` when the task is complete");
+  });
+
   it("includes p documentation section", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain("p documentation");
