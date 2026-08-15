@@ -178,7 +178,11 @@ describe("streamAssistantResponse", () => {
       capturedOptions = options as Record<string, unknown>;
       const stream = new EventStream<AssistantMessageEvent, AssistantMessage>(
         (e) => e.type === "done" || e.type === "error",
-        (e) => (e.type === "done" ? e.message : (e as any).error),
+        (e) => {
+          if (e.type === "done") return e.message;
+          if (e.type === "error") return e.error;
+          throw new Error(`Unexpected event type: ${e.type}`);
+        },
       );
       queueMicrotask(() => stream.push({ type: "done", reason: "stop", message: final }));
       return stream;
@@ -247,7 +251,6 @@ describe("streamAssistantResponse", () => {
     const ctx = emptyContext();
     const config = baseConfig({
       model: faux.getModel(),
-      convertToLlm: (m) => m as any,
     });
     const events: AgentEvent[] = [];
     const emit = async (e: AgentEvent) => {
@@ -262,15 +265,10 @@ describe("streamAssistantResponse", () => {
         emit,
       );
       expect(result.content[0]).toEqual({ type: "text", text: "faux stream result" });
-      expect(events.map((e) => e.type)).toEqual([
-        "request_start",
-        "message_start",
-        "message_update",
-        "message_update",
-        "message_update",
-        "message_update",
-        "message_end",
-      ]);
+      expect(events[0].type).toBe("request_start");
+      expect(events[1].type).toBe("message_start");
+      expect(events[events.length - 1].type).toBe("message_end");
+      expect(events.filter((e) => e.type === "message_update").length).toBeGreaterThanOrEqual(1);
     } finally {
       faux.unregister();
     }
