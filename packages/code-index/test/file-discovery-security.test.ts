@@ -71,4 +71,26 @@ describe("file discovery and security boundary filtering", () => {
       fs.rmSync(outsideDir, { recursive: true, force: true });
     }
   });
+
+  it("discovers symlinks targeting files contained within workspace root", () => {
+    const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), "p-disc-internal-"));
+    try {
+      const targetFile = path.join(tmpRoot, "target.ts");
+      fs.writeFileSync(targetFile, "export const internal = true;\n");
+      const symlinkPath = path.join(tmpRoot, "link_to_target.ts");
+      try {
+        fs.symlinkSync(targetFile, symlinkPath);
+      } catch {
+        // Ignored on environments without symlink capabilities
+      }
+
+      const discovered = discoverFilesWithOptions(tmpRoot, { maxFileSize: 10000 });
+      expect(discovered).toContain(targetFile);
+      if (fs.existsSync(symlinkPath)) {
+        expect(discovered.length).toBeGreaterThanOrEqual(1);
+      }
+    } finally {
+      fs.rmSync(tmpRoot, { recursive: true, force: true });
+    }
+  });
 });

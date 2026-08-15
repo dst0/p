@@ -73,8 +73,15 @@ describe("qdrant server manager lifecycle and client batching", () => {
   });
 
   it("handles checkHealth receiving non-ok HTTP responses", async () => {
-    const mgr = new QdrantServerManager(9999, { dataDirectory: "/tmp" });
-    const isHealthy = await (mgr as unknown as { checkHealth(): Promise<boolean> }).checkHealth();
-    expect(isHealthy).toBe(false);
+    const fetchSpy = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(new Response("Service Unavailable", { status: 503 }));
+    try {
+      const mgr = new QdrantServerManager(9999, { dataDirectory: "/tmp" });
+      const isHealthy = await (mgr as unknown as { checkHealth(): Promise<boolean> }).checkHealth();
+      expect(isHealthy).toBe(false);
+    } finally {
+      fetchSpy.mockRestore();
+    }
   });
 });
