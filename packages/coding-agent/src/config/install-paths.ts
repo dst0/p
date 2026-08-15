@@ -144,6 +144,10 @@ export function getChangelogPath(): string {
   return resolve(join(getPackageDir(), "CHANGELOG.md"));
 }
 
+export function getBundledSkillsDir(): string {
+  return resolve(join(getPackageDir(), "skills"));
+}
+
 export function getInteractiveAssetsDir(): string {
   if (isBunBinary) {
     return join(getPackageDir(), "assets");

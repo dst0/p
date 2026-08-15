@@ -12,6 +12,7 @@
 
 ### Added
 
+- Add universal multi-language software testing skill tree (`software-testing`) with 5-factor coverage matrix, mandatory web research for domain edge cases, progressive disclosure playbooks, bundled skill loading with non-destructive sync, and strict system prompt guidelines prohibiting vacuous mocks.
 - Secure Qdrant vector database connection with automatic 256-bit API key generation, mode 0600 file isolation, and authenticated REST client headers across background daemons and agent instances.
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.
 - Add a reproducible MPS FP32/BF16 benchmark that generates a deterministic Git repository and measures complete Code RAG rebuild throughput, memory, backend placement, and semantic-search validity.

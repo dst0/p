@@ -2,29 +2,12 @@ import { homedir } from "os";
 import { join, resolve } from "path";
 import { describe, expect, it } from "vitest";
 import type { ResourceDiagnostic } from "../src/core/diagnostics.ts";
-import { formatSkillsForPrompt, loadSkills, loadSkillsFromDir, type Skill } from "../src/core/skills.ts";
-import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { loadSkills, loadSkillsFromDir, validateDescription, validateName } from "../src/core/skills.ts";
 
 const fixturesDir = resolve(__dirname, "fixtures/skills");
 const collisionFixturesDir = resolve(__dirname, "fixtures/skills-collision");
-
-function createTestSkill(options: {
-  name: string;
-  description: string;
-  filePath: string;
-  baseDir: string;
-  disableModelInvocation?: boolean;
-  source?: string;
-}): Skill {
-  return {
-    name: options.name,
-    description: options.description,
-    filePath: options.filePath,
-    baseDir: options.baseDir,
-    sourceInfo: createSyntheticSourceInfo(options.filePath, { source: options.source ?? "test" }),
-    disableModelInvocation: options.disableModelInvocation ?? false,
-  };
-}
+const emptyAgentDir = resolve(__dirname, "fixtures/empty-agent");
+const emptyCwd = resolve(__dirname, "fixtures/empty-cwd");
 
 describe("skills", () => {
   describe("loadSkillsFromDir", () => {
@@ -123,7 +106,6 @@ describe("skills", () => {
         source: "test",
       });
 
-      // no-frontmatter has no description, so it should be skipped
       expect(skills).toHaveLength(0);
       expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("description is required"))).toBe(true);
     });
@@ -166,9 +148,6 @@ describe("skills", () => {
         source: "test",
       });
 
-      // Should load all skills that have descriptions (even with warnings)
-      // valid-skill, name-mismatch, invalid-name-chars, long-name, unknown-field, nested/child-skill, consecutive-hyphens
-      // NOT: missing-description, no-frontmatter (both missing descriptions)
       expect(skills.length).toBeGreaterThanOrEqual(6);
     });
 
@@ -183,9 +162,6 @@ describe("skills", () => {
     });
 
     it("should use parent directory name when name not in frontmatter", () => {
-      // The no-frontmatter fixture has no name in frontmatter, so it should use "no-frontmatter"
-      // But it also has no description, so it won't load
-      // Let's test with a valid skill that relies on directory name
       const { skills } = loadSkillsFromDir({
         dir: join(fixturesDir, "valid-skill"),
         source: "test",
@@ -204,7 +180,6 @@ describe("skills", () => {
       expect(skills).toHaveLength(1);
       expect(skills[0].name).toBe("disable-model-invocation");
       expect(skills[0].disableModelInvocation).toBe(true);
-      // Should not warn about unknown field
       expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("unknown frontmatter field"))).toBe(false);
     });
 
@@ -219,140 +194,13 @@ describe("skills", () => {
     });
   });
 
-  describe("formatSkillsForPrompt", () => {
-    it("should return empty string for no skills", () => {
-      const result = formatSkillsForPrompt([]);
-      expect(result).toBe("");
-    });
-
-    it("should format skills as XML", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "test-skill",
-          description: "A test skill.",
-          filePath: "/path/to/skill/SKILL.md",
-          baseDir: "/path/to/skill",
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-
-      expect(result).toContain("<available_skills>");
-      expect(result).toContain("</available_skills>");
-      expect(result).toContain("<skill>");
-      expect(result).toContain("<name>test-skill</name>");
-      expect(result).toContain("<description>A test skill.</description>");
-      expect(result).toContain("<location>/path/to/skill/SKILL.md</location>");
-    });
-
-    it("should include intro text before XML", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "test-skill",
-          description: "A test skill.",
-          filePath: "/path/to/skill/SKILL.md",
-          baseDir: "/path/to/skill",
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-      const xmlStart = result.indexOf("<available_skills>");
-      const introText = result.substring(0, xmlStart);
-
-      expect(introText).toContain("The following skills provide specialized instructions");
-      expect(introText).toContain("Use the read tool to load a skill's file");
-    });
-
-    it("should escape XML special characters", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "test-skill",
-          description: 'A skill with <special> & "characters".',
-          filePath: "/path/to/skill/SKILL.md",
-          baseDir: "/path/to/skill",
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-
-      expect(result).toContain("&lt;special&gt;");
-      expect(result).toContain("&amp;");
-      expect(result).toContain("&quot;characters&quot;");
-    });
-
-    it("should format multiple skills", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "skill-one",
-          description: "First skill.",
-          filePath: "/path/one/SKILL.md",
-          baseDir: "/path/one",
-        }),
-        createTestSkill({
-          name: "skill-two",
-          description: "Second skill.",
-          filePath: "/path/two/SKILL.md",
-          baseDir: "/path/two",
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-
-      expect(result).toContain("<name>skill-one</name>");
-      expect(result).toContain("<name>skill-two</name>");
-      expect((result.match(/<skill>/g) || []).length).toBe(2);
-    });
-
-    it("should exclude skills with disableModelInvocation from prompt", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "visible-skill",
-          description: "A visible skill.",
-          filePath: "/path/visible/SKILL.md",
-          baseDir: "/path/visible",
-        }),
-        createTestSkill({
-          name: "hidden-skill",
-          description: "A hidden skill.",
-          filePath: "/path/hidden/SKILL.md",
-          baseDir: "/path/hidden",
-          disableModelInvocation: true,
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-
-      expect(result).toContain("<name>visible-skill</name>");
-      expect(result).not.toContain("<name>hidden-skill</name>");
-      expect((result.match(/<skill>/g) || []).length).toBe(1);
-    });
-
-    it("should return empty string when all skills have disableModelInvocation", () => {
-      const skills: Skill[] = [
-        createTestSkill({
-          name: "hidden-skill",
-          description: "A hidden skill.",
-          filePath: "/path/hidden/SKILL.md",
-          baseDir: "/path/hidden",
-          disableModelInvocation: true,
-        }),
-      ];
-
-      const result = formatSkillsForPrompt(skills);
-      expect(result).toBe("");
-    });
-  });
-
   describe("loadSkills with options", () => {
-    const emptyAgentDir = resolve(__dirname, "fixtures/empty-agent");
-    const emptyCwd = resolve(__dirname, "fixtures/empty-cwd");
-
     it("should load from explicit skillPaths", () => {
       const { skills, diagnostics } = loadSkills({
         agentDir: emptyAgentDir,
         cwd: emptyCwd,
         skillPaths: [join(fixturesDir, "valid-skill")],
-        includeDefaults: true,
+        includeDefaults: false,
       });
       expect(skills).toHaveLength(1);
       expect(skills[0].sourceInfo.scope).toBe("temporary");
@@ -364,7 +212,7 @@ describe("skills", () => {
         agentDir: emptyAgentDir,
         cwd: emptyCwd,
         skillPaths: ["/non/existent/path"],
-        includeDefaults: true,
+        includeDefaults: false,
       });
       expect(skills).toHaveLength(0);
       expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("does not exist"))).toBe(true);
@@ -376,55 +224,68 @@ describe("skills", () => {
         agentDir: emptyAgentDir,
         cwd: emptyCwd,
         skillPaths: ["~/.p/agent/skills"],
-        includeDefaults: true,
+        includeDefaults: false,
       });
       const { skills: withoutTilde } = loadSkills({
         agentDir: emptyAgentDir,
         cwd: emptyCwd,
         skillPaths: [homeSkillsDir],
-        includeDefaults: true,
+        includeDefaults: false,
       });
       expect(withTilde.length).toBe(withoutTilde.length);
+    });
+
+    it("should warn when skill path is not a markdown file", () => {
+      const { skills, diagnostics } = loadSkills({
+        agentDir: emptyAgentDir,
+        cwd: emptyCwd,
+        skillPaths: [resolve(__dirname, "../package.json")],
+        includeDefaults: false,
+      });
+      expect(skills).toHaveLength(0);
+      expect(diagnostics.some((d: ResourceDiagnostic) => d.message.includes("not a markdown file"))).toBe(true);
+    });
+  });
+
+  describe("validation helpers", () => {
+    it("validates description length and empty checks", () => {
+      expect(validateDescription("   \n\t  ")).toContain("description is required");
+      expect(validateDescription("a".repeat(1025))).toEqual([
+        expect.stringContaining("description exceeds 1024 characters"),
+      ]);
+      expect(validateDescription("Valid description")).toHaveLength(0);
+    });
+
+    it("validates name format boundaries", () => {
+      expect(validateName("-leading-hyphen")).toContain("name must not start or end with a hyphen");
+      expect(validateName("trailing-hyphen-")).toContain("name must not start or end with a hyphen");
+      expect(validateName("Uppercase_Name")).toEqual([expect.stringContaining("name contains invalid characters")]);
+      expect(validateName("consecutive--hyphens")).toContain("name must not contain consecutive hyphens");
+      expect(validateName("a".repeat(65))).toEqual([expect.stringContaining("name exceeds 64 characters")]);
+      expect(validateName("valid-skill-123")).toHaveLength(0);
     });
   });
 
   describe("collision handling", () => {
-    it("should detect name collisions and keep first skill", () => {
-      // Load from first directory
-      const first = loadSkillsFromDir({
-        dir: join(collisionFixturesDir, "first"),
-        source: "first",
+    it("should detect name collisions in loadSkills and keep first skill with diagnostic", () => {
+      const { skills, diagnostics } = loadSkills({
+        agentDir: emptyAgentDir,
+        cwd: emptyCwd,
+        skillPaths: [join(collisionFixturesDir, "first"), join(collisionFixturesDir, "second")],
+        includeDefaults: false,
       });
 
-      const second = loadSkillsFromDir({
-        dir: join(collisionFixturesDir, "second"),
-        source: "second",
-      });
+      expect(skills).toHaveLength(1);
+      expect(skills[0].name).toBe("calendar");
+      expect(skills[0].filePath).toContain("first");
 
-      // Simulate the collision behavior from loadSkills()
-      const skillMap = new Map<string, Skill>();
-      const collisionWarnings: Array<{ skillPath: string; message: string }> = [];
-
-      for (const skill of first.skills) {
-        skillMap.set(skill.name, skill);
+      const collisions = diagnostics.filter((d) => d.type === "collision");
+      expect(collisions).toHaveLength(1);
+      expect(collisions[0].message).toContain('name "calendar" collision');
+      if (collisions[0]?.collision) {
+        expect(collisions[0].collision.winnerPath).toContain("first");
+        expect(collisions[0].collision.loserPath).toContain("second");
       }
-
-      for (const skill of second.skills) {
-        const existing = skillMap.get(skill.name);
-        if (existing) {
-          collisionWarnings.push({
-            skillPath: skill.filePath,
-            message: `name collision: "${skill.name}" already loaded from ${existing.filePath}`,
-          });
-        } else {
-          skillMap.set(skill.name, skill);
-        }
-      }
-
-      expect(skillMap.size).toBe(1);
-      expect(skillMap.get("calendar")?.sourceInfo.source).toBe("first");
-      expect(collisionWarnings).toHaveLength(1);
-      expect(collisionWarnings[0].message).toContain("name collision");
     });
   });
 });

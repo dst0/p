@@ -21,15 +21,15 @@ describe("buildSystemPrompt", () => {
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain(
-      "- Always write comprehensive tests for new functionality and bug fixes across happy paths",
+      "- Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+    );
+    expect(prompt).toContain(
+      "- When modifying or creating code, write tests covering all changes across the 5-factor test matrix: positive paths, negative paths, boundary edge cases, crash/recovery (e.g. AbortSignal, I/O errors, rollbacks), and invariant preservation. Superficial mocks or assertions added solely to pass line coverage without validating domain logic are prohibited.",
+    );
+    expect(prompt).toContain(
+      "- Consult the software-testing skill and its reference playbooks for TDD workflows, invariant contracts, realistic fixture isolation, and mutation self-verification.",
     );
     expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
-    expect(prompt).toContain(
-      "- When editing, writing, creating, or refactoring code, write tests for the changes unless the user explicitly asks not to",
-    );
-    expect(prompt).toContain(
-      "- Run tests to verify that code changes are correct and do not break existing functionality",
-    );
     expect(prompt).toContain(
       "- Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
     );
@@ -143,6 +143,77 @@ describe("buildSystemPrompt", () => {
       contextFiles: [],
     });
     expect(prompt).not.toContain("<project_context>");
+  });
+
+  it("includes skills in prompt when read tool is available", () => {
+    const mockSkill = {
+      name: "test-skill",
+      description: "A test skill description",
+      filePath: "/test/skills/test-skill/SKILL.md",
+      baseDir: "/test/skills/test-skill",
+      sourceInfo: {
+        path: "/test/skills/test-skill/SKILL.md",
+        source: "local",
+        scope: "user" as const,
+        origin: "top-level" as const,
+      },
+      disableModelInvocation: false,
+    };
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      selectedTools: ["read", "bash"],
+      skills: [mockSkill],
+    });
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("<name>test-skill</name>");
+    expect(prompt).toContain("<description>A test skill description</description>");
+  });
+
+  it("omits skills from prompt when read tool is not available", () => {
+    const mockSkill = {
+      name: "test-skill",
+      description: "A test skill description",
+      filePath: "/test/skills/test-skill/SKILL.md",
+      baseDir: "/test/skills/test-skill",
+      sourceInfo: {
+        path: "/test/skills/test-skill/SKILL.md",
+        source: "local",
+        scope: "user" as const,
+        origin: "top-level" as const,
+      },
+      disableModelInvocation: false,
+    };
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      selectedTools: ["bash", "edit"],
+      skills: [mockSkill],
+    });
+    expect(prompt).not.toContain("<available_skills>");
+  });
+
+  it("includes skills in custom prompt mode when read tool is available", () => {
+    const mockSkill = {
+      name: "test-skill",
+      description: "A test skill description",
+      filePath: "/test/skills/test-skill/SKILL.md",
+      baseDir: "/test/skills/test-skill",
+      sourceInfo: {
+        path: "/test/skills/test-skill/SKILL.md",
+        source: "local",
+        scope: "user" as const,
+        origin: "top-level" as const,
+      },
+      disableModelInvocation: false,
+    };
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      customPrompt: "Custom prompt text",
+      selectedTools: ["read", "bash"],
+      skills: [mockSkill],
+    });
+    expect(prompt).toContain("Custom prompt text");
+    expect(prompt).toContain("<available_skills>");
+    expect(prompt).toContain("<name>test-skill</name>");
   });
 });
 

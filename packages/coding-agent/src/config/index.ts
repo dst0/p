@@ -26,6 +26,7 @@ export {
   expandTildePath,
   getAgentDir,
   getBundledInteractiveAssetPath,
+  getBundledSkillsDir,
   getChangelogPath,
   getDocsPath,
   getExamplesPath,

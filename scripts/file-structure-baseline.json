@@ -371,10 +371,6 @@
     "classes": 0,
     "lines": 470
   },
-  "packages/coding-agent/src/core/skills.ts": {
-    "classes": 0,
-    "lines": 487
-  },
   "packages/coding-agent/src/core/tools/bash.ts": {
     "classes": 1,
     "lines": 491
@@ -590,10 +586,6 @@
   "packages/coding-agent/test/show-harness-messages.test.ts": {
     "classes": 0,
     "lines": 457
-  },
-  "packages/coding-agent/test/skills.test.ts": {
-    "classes": 0,
-    "lines": 430
   },
   "packages/coding-agent/test/suite/agent-session-compaction.test.ts": {
     "classes": 0,
