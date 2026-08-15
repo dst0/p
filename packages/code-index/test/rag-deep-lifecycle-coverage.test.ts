@@ -9,17 +9,19 @@ import { WorkspaceCodeRagService } from "../src/rag/service/workspacecoderagserv
 describe("rag-deep-lifecycle-coverage", () => {
   describe("cli.ts error path handling", () => {
     it("catches fatal CLI errors and exits with code 1", async () => {
-      const exitSpy = vi
-        .spyOn(process, "exit")
-        .mockImplementation((() => {}) as unknown as (code?: string | number | null | undefined) => never);
+      const exitSpy = vi.spyOn(process, "exit").mockImplementation(((code?: string | number | null | undefined) => {
+        throw new Error(`process.exit: ${code}`);
+      }) as never);
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
       try {
-        await runCliMain(["node", "cli.ts", "invalid-subcommand-xyz"]);
+        await expect(runCliMain(["node", "cli.ts", "--unknown-flag"])).rejects.toThrow("process.exit: 1");
         expect(exitSpy).toHaveBeenCalledWith(1);
         expect(errorSpy).toHaveBeenCalled();
       } finally {
         exitSpy.mockRestore();
         errorSpy.mockRestore();
+        logSpy.mockRestore();
       }
     });
   });

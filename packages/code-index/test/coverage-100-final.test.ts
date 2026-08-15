@@ -3,7 +3,7 @@ import os from "node:os";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { chunkFile } from "../src/chunk.ts";
-import { runCliMain } from "../src/cli.ts";
+import { parseArgs } from "../src/cli.ts";
 import { discoverFilesWithOptions } from "../src/discover.ts";
 import { EmbeddingProviderHttp } from "../src/embed/http.ts";
 import { QdrantServerManager } from "../src/embed/qdrant-server.ts";
@@ -45,18 +45,11 @@ describe("coverage-100-final", () => {
   });
 
   describe("cli arguments parsing edge cases", () => {
-    it("handles batch-size and limit with default fallbacks when args are omitted", async () => {
-      const exitSpy = vi
-        .spyOn(process, "exit")
-        .mockImplementation((() => {}) as unknown as (code?: string | number | null | undefined) => never);
-      const logSpy = vi.spyOn(console, "log").mockImplementation(() => {});
-      try {
-        await runCliMain(["node", "cli.ts", "--batch-size"]);
-        expect(exitSpy).toHaveBeenCalled();
-      } finally {
-        exitSpy.mockRestore();
-        logSpy.mockRestore();
-      }
+    it("handles batch-size and limit with default fallbacks when args are omitted", () => {
+      const parsedBatch = parseArgs(["node", "cli.ts", "--batch-size"]);
+      expect(parsedBatch.batchSize).toBe(64);
+      const parsedLimit = parseArgs(["node", "cli.ts", "--limit"]);
+      expect(parsedLimit.limit).toBe(10);
     });
   });
 
@@ -111,46 +104,56 @@ describe("coverage-100-final", () => {
 
   describe("workspace file preparation security block handling", () => {
     it("maps security FilePreparationTaskError to RAG_SECURITY_BLOCK in do_scanWorkspace and do_refreshPreparedFileIfChanged", async () => {
-      const service = {
-        workspaceRoot: "/tmp",
-        settings: { maxFileBytes: 1000 },
-        preparationLimits: () => ({
-          maxWorkers: 1,
-          workerMemoryBytes: 64 * 1024 * 1024,
-          memoryReserveBytes: 32 * 1024 * 1024,
-        }),
-        preparationTask: () => {
-          throw new FilePreparationTaskError("security", "File too large");
-        },
-      } as unknown as WorkspaceCodeRagService;
+      const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "p-prep-sec-"));
+      try {
+        fs.writeFileSync(path.join(tmpDir, "file.ts"), "export const x = 1;\n");
+        const service = {
+          workspaceRoot: tmpDir,
+          settings: { maxFileBytes: 1000 },
+          preparationLimits: () => ({
+            maxWorkers: 1,
+            workerMemoryBytes: 64 * 1024 * 1024,
+            memoryReserveBytes: 32 * 1024 * 1024,
+          }),
+          preparationTask: () => {
+            throw new FilePreparationTaskError("security", "File too large");
+          },
+          recordPreparationPlan: () => {},
+          reportProgress: () => {},
+        } as unknown as WorkspaceCodeRagService;
 
-      const signal = new AbortController().signal;
-      await expect(do_scanWorkspace(service, signal, () => {})).rejects.toThrow("File too large");
+        const signal = new AbortController().signal;
+        await expect(do_scanWorkspace(service, signal, () => {})).rejects.toThrow("File too large");
 
-      const prepared = {
-        file: {
-          absPath: "/nonexistent/f.ts",
-          path: "f.ts",
-          size: 100,
-          mtimeMs: 100,
-          hash: "h",
-          language: "typescript",
-          isTest: false,
-          isGenerated: false,
-        },
-        chunks: [],
-        entry: {
-          hash: "h",
-          size: 100,
-          mtimeMs: 100,
-          chunkCount: 0,
-          indexedAt: "now",
-          language: "typescript",
-          isTest: false,
-          isGenerated: false,
-        },
-      };
-      await expect(do_refreshPreparedFileIfChanged(service, prepared, "g1", signal)).rejects.toThrow("File too large");
+        const prepared = {
+          file: {
+            absPath: path.join(tmpDir, "f.ts"),
+            path: "f.ts",
+            size: 100,
+            mtimeMs: 100,
+            hash: "h",
+            language: "typescript",
+            isTest: false,
+            isGenerated: false,
+          },
+          chunks: [],
+          entry: {
+            hash: "h",
+            size: 100,
+            mtimeMs: 100,
+            chunkCount: 0,
+            indexedAt: "now",
+            language: "typescript",
+            isTest: false,
+            isGenerated: false,
+          },
+        };
+        await expect(do_refreshPreparedFileIfChanged(service, prepared, "g1", signal)).rejects.toThrow(
+          "File too large",
+        );
+      } finally {
+        fs.rmSync(tmpDir, { recursive: true, force: true });
+      }
     });
   });
 });
