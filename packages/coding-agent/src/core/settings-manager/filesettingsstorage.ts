@@ -6,8 +6,8 @@ import { resolvePath } from "../../utils/paths.ts";
 import type { SettingsScope, SettingsStorage } from "./types.ts";
 
 export class FileSettingsStorage implements SettingsStorage {
-  private globalSettingsPath: string;
-  private projectSettingsPath: string;
+  public readonly globalSettingsPath: string;
+  public readonly projectSettingsPath: string;
 
   constructor(cwd: string, agentDir: string) {
     const resolvedCwd = resolvePath(cwd);

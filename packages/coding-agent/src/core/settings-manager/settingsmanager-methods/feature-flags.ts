@@ -117,9 +117,17 @@ export function do_setShowIndexingInfo(self: SettingsManager, enabled: boolean):
   self.save();
 }
 
+function resolveAgentDir(self: SettingsManager): string {
+  const storage = self.storage as { globalSettingsPath?: string };
+  if (typeof storage?.globalSettingsPath === "string") {
+    return path.dirname(storage.globalSettingsPath);
+  }
+  return getAgentDir();
+}
+
 export function do_getEnableIndexingTray(self: SettingsManager): boolean {
   try {
-    const configPath = path.join(getAgentDir(), "code-rag.json");
+    const configPath = path.join(resolveAgentDir(self), "code-rag.json");
     if (fs.existsSync(configPath)) {
       const parsed = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
       if (typeof parsed.enableTray === "boolean") return parsed.enableTray;
@@ -136,7 +144,7 @@ export function do_setEnableIndexingTray(self: SettingsManager, enabled: boolean
   self.save();
 
   try {
-    const configPath = path.join(getAgentDir(), "code-rag.json");
+    const configPath = path.join(resolveAgentDir(self), "code-rag.json");
     let current: Record<string, unknown> = {};
     if (fs.existsSync(configPath)) {
       current = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
