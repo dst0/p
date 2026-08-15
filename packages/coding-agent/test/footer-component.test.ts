@@ -1,3 +1,4 @@
+import chalk from "chalk";
 import { beforeAll, describe, expect, it } from "vitest";
 import type { AgentSession } from "../src/core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../src/core/footer-data-provider.ts";
@@ -69,7 +70,9 @@ describe("FooterComponent", () => {
       }),
     });
 
-    expect(footer.render(100).join("\n")).toContain("🔎 42.0%");
+    const rendered = footer.render(100).join("\n");
+    expect(rendered).toContain("42.0%");
+    expect(rendered).toContain(chalk.bgWhite.bold.green("▲"));
   });
 
   it("shows disabled indexing and can hide indexing information", () => {

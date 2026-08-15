@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -43,7 +43,14 @@ describe("QdrantServerManager", () => {
         'const configIndex = args.indexOf("--config-path");',
         'const config = fs.readFileSync(args[configIndex + 1], "utf8");',
         "const port = Number(config.match(/http_port:\\s*(\\d+)/)?.[1]);",
-        "const server = http.createServer((_request, response) => {",
+        'const expectedKey = config.match(/api_key:\\s*"([^"]+)"/)?.[1];',
+        "const server = http.createServer((request, response) => {",
+        "  if (expectedKey && request.headers['api-key'] !== expectedKey) {",
+        "    response.statusCode = 401;",
+        "    response.setHeader('content-type', 'application/json');",
+        "    response.end(JSON.stringify({ status: 'error', message: 'Unauthorized' }));",
+        "    return;",
+        "  }",
         '  response.setHeader("content-type", "application/json");',
         '  response.end(JSON.stringify({ status: "ok" }));',
         "});",
@@ -138,6 +145,50 @@ describe("QdrantServerManager", () => {
     } finally {
       await manager.stop();
     }
+  });
+
+  it("generates and persists qdrant.key with api_key in config.yaml", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "p-qdrant-key-"));
+    temporaryDirectories.push(directory);
+    const dataDir = join(directory, "data");
+    const manager = new QdrantServerManager(9998, {
+      qdrantBinary: "non-existent-binary",
+      dataDirectory: dataDir,
+    });
+
+    const apiKey = manager.getApiKey();
+    expect(apiKey).toBeDefined();
+    expect(apiKey).toHaveLength(64); // 32 hex bytes
+
+    const keyFilePath = join(dataDir, "qdrant.key");
+    expect(existsSync(keyFilePath)).toBe(true);
+    expect(readFileSync(keyFilePath, "utf-8").trim()).toBe(apiKey);
+
+    const configPath = join(dataDir, "config.yaml");
+    // @ts-expect-error test private writeConfig
+    manager.writeConfig();
+    expect(existsSync(configPath)).toBe(true);
+    const configContent = readFileSync(configPath, "utf-8");
+    expect(configContent).toContain(`api_key: ${JSON.stringify(apiKey)}`);
+
+    const manager2 = new QdrantServerManager(9998, {
+      qdrantBinary: "non-existent-binary",
+      dataDirectory: dataDir,
+    });
+    expect(manager2.getApiKey()).toBe(apiKey);
+  });
+
+  it("uses explicitly provided apiKey in QdrantServerManager", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "p-qdrant-explicit-key-"));
+    temporaryDirectories.push(directory);
+    const dataDir = join(directory, "data");
+    const manager = new QdrantServerManager(9998, {
+      qdrantBinary: "non-existent-binary",
+      dataDirectory: dataDir,
+      apiKey: "my-explicit-secret-key",
+    });
+
+    expect(manager.getApiKey()).toBe("my-explicit-secret-key");
   });
 });
 

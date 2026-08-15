@@ -26,6 +26,7 @@ export interface IndexingDaemonOptions {
   agentDir: string;
   qdrantBinary: string;
   qdrantDataDirectory: string;
+  qdrantApiKey?: string;
   pythonExecutable: string;
   embeddingModel: string;
   embeddingConfigPath?: string;

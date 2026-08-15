@@ -6,6 +6,8 @@
 export interface IndexConfig {
   /** Qdrant server URL */
   qdrantUrl: string;
+  /** Qdrant API key */
+  qdrantApiKey?: string;
   /** Qdrant collection name */
   collection: string;
   /** Embedding model ID (for server) */

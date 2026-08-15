@@ -1,150 +1,19 @@
-import { isAbsolute, relative, resolve, sep } from "node:path";
 import { type Component, truncateToWidth, visibleWidth } from "@dst0/p-tui";
 import type { AgentSession } from "../../../core/agent-session.ts";
 import type { ReadonlyFooterDataProvider } from "../../../core/footer-data-provider.ts";
-import type { IndexStatus } from "../../../core/indexing-service.ts";
 import { theme } from "../theme/theme.ts";
+import { formatEta, formatIndexingStatus, formatTokens } from "./footer-indexing-status.ts";
+import {
+  computeGenTrend,
+  formatCwdForFooter,
+  formatQueuedProgress,
+  formatQueuedSpinner,
+  QUEUED_FOOTER_ANIMATION_MS,
+  renderProgressBar,
+  sanitizeStatusText,
+} from "./footer-progress.ts";
 
-const QUEUED_SPINNER_FRAMES = ["|", "/", "-", "\\"];
-export const QUEUED_FOOTER_ANIMATION_MS = 250;
-
-/**
- * Sanitize text for display in a single-line status.
- * Removes newlines, tabs, carriage returns, and other control characters.
- */
-function sanitizeStatusText(text: string): string {
-  // Replace newlines, tabs, carriage returns with space, then collapse multiple spaces
-  return text
-    .replace(/[\r\n\t]/g, " ")
-    .replace(/ +/g, " ")
-    .trim();
-}
-
-/**
- * Format token counts for compact footer display.
- */
-function formatTokens(count: number): string {
-  if (count < 1000) return count.toString();
-  if (count < 10000) return `${(count / 1000).toFixed(1)}k`;
-  if (count < 1000000) return `${Math.round(count / 1000)}k`;
-  if (count < 10000000) return `${(count / 1000000).toFixed(1)}M`;
-  return `${Math.round(count / 1000000)}M`;
-}
-
-/**
- * Render a compact visual progress bar.
- * Uses block characters for filled/empty portions.
- */
-function renderProgressBar(percent: number, barWidth: number): string {
-  const filled = Math.round((percent / 100) * barWidth);
-  const clampedFilled = Math.max(0, Math.min(barWidth, filled));
-  const empty = barWidth - clampedFilled;
-  return "▓".repeat(clampedFilled) + "░".repeat(empty);
-}
-
-/**
- * Compute a trend indicator for generation speed.
- * Returns ↑ if speed increased, ↓ if decreased, → if stable, or ▸ for first reading.
- */
-function computeGenTrend(currentRate: number, previousRate: number | undefined): string {
-  if (previousRate === undefined) return "▸";
-  const diff = currentRate - previousRate;
-  if (diff > 5) return "↑";
-  if (diff < -5) return "↓";
-  return "→";
-}
-
-function formatQueuedProgress(queued: { position: number; queuedAhead: number; queuedAt?: number }): string {
-  const ahead = queued.queuedAhead === 0 ? "next" : `${queued.queuedAhead} ahead`;
-  const parts = [`#${queued.position}, ${ahead}`];
-  if (queued.queuedAt !== undefined) {
-    const elapsed = Math.max(0, Math.floor((Date.now() - queued.queuedAt) / 1000));
-    parts.push(`${elapsed}s`);
-  }
-  return parts.join(" ");
-}
-
-function formatQueuedSpinner(now = Date.now()): string {
-  const frameIndex = Math.floor(now / QUEUED_FOOTER_ANIMATION_MS) % QUEUED_SPINNER_FRAMES.length;
-  return QUEUED_SPINNER_FRAMES[frameIndex] ?? QUEUED_SPINNER_FRAMES[0];
-}
-
-/**
- * Format a duration in seconds as a compact human-readable string.
- * Shows seconds when under 2 minutes, otherwise decimal minutes (e.g., 5.1m).
- */
-function formatEta(seconds: number): string {
-  const rounded = Math.max(0, Math.round(seconds));
-  if (rounded < 120) return `${rounded}s`;
-  const minutes = rounded / 60;
-  if (minutes < 60) return `${minutes.toFixed(1)}m`;
-  const hours = minutes / 60;
-  return `${hours.toFixed(1)}h`;
-}
-
-export function formatIndexingStatus(status: IndexStatus): string {
-  if (status.decision === "disabled") return "🔎 OFF";
-  if (status.decision === "unknown") return "🔎 ?";
-  if (!status.serviceRunning) return "🔎 ON!";
-  if (status.ragState === "queued") return "🔎 queued";
-  if (status.ragState === "initializing" || status.ragState === "updating") {
-    const progress = status.progress;
-    if (!progress) return status.ragState === "initializing" ? "🔎 init" : "🔎 updating";
-    const files =
-      progress.processedFiles !== undefined && progress.totalFiles !== undefined
-        ? ` ${formatTokens(progress.processedFiles)}/${formatTokens(progress.totalFiles)}`
-        : "";
-    if (progress.phase === "scanning") return `🔎 scanning${files}`;
-    if (progress.phase === "preparing") return `🔎 preparing${files}`;
-    if (progress.phase === "finalizing") return "🔎 finalizing";
-
-    const percent = `${Math.min(100, Math.max(0, progress.percent)).toFixed(1)}%`;
-    const chunks =
-      progress.processedChunks !== undefined && progress.totalChunks !== undefined
-        ? ` (${formatTokens(progress.processedChunks)}/${formatTokens(progress.totalChunks)} chunks)`
-        : "";
-    const reused = progress.reusedChunks;
-    const recalculatedTotal = progress.recalculatedTotal;
-    const breakdown =
-      reused !== undefined && reused > 0 && recalculatedTotal !== undefined && recalculatedTotal > 0
-        ? ` (${formatTokens(reused)} reused, ${formatTokens(recalculatedTotal)} new)`
-        : reused !== undefined && reused > 0
-          ? ` (${formatTokens(reused)} reused)`
-          : recalculatedTotal !== undefined && recalculatedTotal > 0
-            ? ` (${formatTokens(recalculatedTotal)} new)`
-            : "";
-    const eta =
-      progress.etaSeconds !== undefined && progress.etaSeconds > 0 ? ` (ETA: ${formatEta(progress.etaSeconds)})` : "";
-    return `🔎 ${percent}${chunks}${breakdown}${eta}`;
-  }
-  if (
-    status.lastError !== undefined ||
-    status.ragState === "error" ||
-    status.ragState === "partial" ||
-    status.ragState === "unavailable" ||
-    status.ragState === "disabled"
-  ) {
-    return "🔎 ON!";
-  }
-  if (status.ragState === "ready") {
-    return "🔎: ✅";
-  }
-  return "🔎 ON";
-}
-
-export function formatCwdForFooter(cwd: string, home: string | undefined): string {
-  if (!home) return cwd;
-
-  const resolvedCwd = resolve(cwd);
-  const resolvedHome = resolve(home);
-  const relativeToHome = relative(resolvedHome, resolvedCwd);
-  const isInsideHome =
-    relativeToHome === "" ||
-    (relativeToHome !== ".." && !relativeToHome.startsWith(`..${sep}`) && !isAbsolute(relativeToHome));
-
-  if (!isInsideHome) return cwd;
-  return relativeToHome === "" ? "~" : `~${sep}${relativeToHome}`;
-}
+export { formatCwdForFooter, formatEta, formatIndexingStatus, formatTokens, QUEUED_FOOTER_ANIMATION_MS };
 
 /**
  * Footer component that shows pwd, token stats, and context usage.
@@ -191,21 +60,9 @@ export class FooterComponent implements Component {
     this.version = version;
   }
 
-  /**
-   * No-op: git branch caching now handled by provider.
-   * Kept for compatibility with existing call sites in interactive-mode.
-   */
-  invalidate(): void {
-    // No-op: git branch is cached/invalidated by provider
-  }
+  invalidate(): void {}
 
-  /**
-   * Clean up resources.
-   * Git watcher cleanup now handled by provider.
-   */
-  dispose(): void {
-    // Git watcher cleanup handled by provider
-  }
+  dispose(): void {}
 
   render(width: number): string[] {
     const state = this.session.state;

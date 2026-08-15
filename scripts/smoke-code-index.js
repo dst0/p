@@ -72,9 +72,14 @@ try {
 
 async function deleteSmokeCollection(collectionName) {
 	try {
+		const apiKey = service.settings?.qdrantApiKey ?? resolvedSettings.qdrantApiKey;
+		const headers = {};
+		if (apiKey) {
+			headers["api-key"] = apiKey;
+		}
 		const response = await fetch(
 			`${resolvedSettings.qdrantUrl.replace(/\/$/, "")}/collections/${encodeURIComponent(collectionName)}`,
-			{ method: "DELETE", signal: AbortSignal.timeout(10_000) },
+			{ method: "DELETE", headers: Object.keys(headers).length > 0 ? headers : undefined, signal: AbortSignal.timeout(10_000) },
 		);
 		if (!response.ok && response.status !== 404) {
 			console.warn(`Could not remove semantic-search smoke collection: HTTP ${response.status}`);

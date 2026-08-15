@@ -11,6 +11,7 @@ import type {
 export interface QdrantVectorStoreOptions {
   url: string;
   timeoutMs: number;
+  apiKey?: string;
   upsertBatchSize?: number;
   fetch?: typeof fetch;
 }
@@ -54,7 +55,6 @@ interface QdrantStoredPoint {
   payload?: Record<string, unknown>;
   vector?: unknown;
 }
-
 interface QdrantScrollRequest {
   offset?: QdrantPointId;
   limit: number;
@@ -62,7 +62,6 @@ interface QdrantScrollRequest {
   with_payload: true;
   with_vector: false | ["dense"];
 }
-
 interface QdrantScrollResult {
   points: QdrantStoredPoint[];
   next_page_offset?: QdrantPointId | null;
@@ -95,11 +94,13 @@ class FetchQdrantRestClient implements QdrantRestClient {
   private readonly baseUrl: string;
   private readonly timeoutMs: number;
   private readonly fetchImpl: typeof fetch;
+  private readonly apiKey?: string;
 
   constructor(options: QdrantVectorStoreOptions) {
     this.baseUrl = options.url.replace(/\/+$/, "");
     this.timeoutMs = options.timeoutMs;
     this.fetchImpl = options.fetch ?? globalThis.fetch;
+    this.apiKey = options.apiKey;
   }
 
   async collectionExists(collection: string): Promise<{ exists: boolean }> {
@@ -156,9 +157,12 @@ class FetchQdrantRestClient implements QdrantRestClient {
     let response: Response;
     try {
       const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
+      const headers: Record<string, string> = {};
+      if (body !== undefined) headers["Content-Type"] = "application/json";
+      if (this.apiKey) headers["api-key"] = this.apiKey;
       response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
         method,
-        headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+        headers: Object.keys(headers).length > 0 ? headers : undefined,
         body: body === undefined ? undefined : JSON.stringify(body),
         signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
       });

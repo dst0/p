@@ -59,6 +59,7 @@ describe("indexing runtime startup", () => {
       agentDir,
       qdrantBinary: "/opt/qdrant",
       qdrantDataDirectory: "/var/lib/p-qdrant",
+      qdrantApiKey: undefined,
       pythonExecutable: "/opt/p-indexing/bin/python",
       embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
       embeddingConfigPath: path.join(agentDir, "code-rag.json"),
@@ -73,6 +74,15 @@ describe("indexing runtime startup", () => {
     fs.writeFileSync(configPath, `${JSON.stringify({ ...config, searchMode: "bm25-only" })}\n`);
 
     expect(createIndexingDaemonOptions(agentDir).useDenseEmbeddings).toBe(false);
+  });
+
+  it("loads qdrantApiKey from code-rag.json when configured", () => {
+    const agentDir = createAgentDir();
+    const configPath = path.join(agentDir, "code-rag.json");
+    const config = JSON.parse(fs.readFileSync(configPath, "utf8")) as Record<string, unknown>;
+    fs.writeFileSync(configPath, `${JSON.stringify({ ...config, qdrantApiKey: "daemon-secret-key" })}\n`);
+
+    expect(createIndexingDaemonOptions(agentDir).qdrantApiKey).toBe("daemon-secret-key");
   });
 
   it("fingerprints runtime configuration independently of JSON key order", () => {

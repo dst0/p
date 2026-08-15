@@ -1,6 +1,9 @@
+import chalk from "chalk";
 import { describe, expect, it } from "vitest";
 import type { IndexStatus } from "../../../src/core/indexing-service.ts";
 import { formatIndexingStatus } from "../../../src/modes/interactive/components/footer.ts";
+
+const updateIcon = chalk.bgWhite.bold.green("▲");
 
 describe("indexing regressions", () => {
   describe("formatIndexingStatus", () => {
@@ -43,7 +46,7 @@ describe("indexing regressions", () => {
         ragState: "updating",
         progress: { phase: "indexing", percent: 42 },
       };
-      expect(formatIndexingStatus(status)).toBe("🔎 42.0%");
+      expect(formatIndexingStatus(status)).toBe(`🔎 ${updateIcon} 42.0%`);
     });
 
     it("shows init when daemon is running and status is initializing", () => {

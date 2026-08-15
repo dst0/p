@@ -415,10 +415,6 @@
     "classes": 3,
     "lines": 628
   },
-  "packages/coding-agent/src/modes/interactive/components/footer.ts": {
-    "classes": 1,
-    "lines": 425
-  },
   "packages/coding-agent/src/modes/interactive/components/model-selector.ts": {
     "classes": 1,
     "lines": 335
@@ -522,10 +518,6 @@
   "packages/coding-agent/test/git-update.test.ts": {
     "classes": 0,
     "lines": 484
-  },
-  "packages/coding-agent/test/indexing-progress-display.test.ts": {
-    "classes": 0,
-    "lines": 317
   },
   "packages/coding-agent/test/indexing-reinstall-lifecycle.test.ts": {
     "classes": 1,

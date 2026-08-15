@@ -7,7 +7,10 @@ export class QdrantClient {
   private config: IndexConfig;
 
   constructor(config: IndexConfig) {
-    this.client = new QdrantClientRaw({ url: config.qdrantUrl });
+    this.client = new QdrantClientRaw({
+      url: config.qdrantUrl,
+      apiKey: config.qdrantApiKey,
+    });
     this.config = config;
   }
 

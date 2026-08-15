@@ -152,6 +152,6 @@ describe("azure-openai-responses comprehensive coverage", () => {
     const res = await stream.result();
 
     expect(res.stopReason).toBe("error");
-    expect(res.errorMessage).toBe("Azure OpenAI API error (404): Deployment not found");
+    expect(res.errorMessage).toBe("API error (404): Deployment not found");
   });
 });

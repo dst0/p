@@ -58,68 +58,21 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   collectionPrefix: "p_code_chunks",
 };
 
-const BOOLEAN_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
-  "enabled",
-  "enableTray",
-  "autoRefresh",
-  "allowStaleSearch",
-  "remoteBackendsAllowed",
-]);
-const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
-  "qdrantStartupTimeoutMs",
-  "embeddingDimensions",
-  "defaultLimit",
-  "maxLimit",
-  "maxContextCharacters",
-  "maxResultCharacters",
-  "searchTimeoutMs",
-  "embeddingTimeoutMs",
-  "embeddingStartupTimeoutMs",
-  "maxEmbeddingBatchSize",
-  "maxCpuThreads",
-  "maxSequenceLength",
-  "minSystemMemoryReserveBytes",
-  "minAcceleratorMemoryReserveBytes",
-  "embeddingModelParameterCount",
-  "maxFileBytes",
-  "defaultChunkLines",
-  "maxChunkLines",
-  "maxSparseVocabularyTokens",
-  "preparationMaxWorkers",
-  "preparationWorkerMemoryBytes",
-  "preparationMemoryReserveBytes",
-  "encodeBatchSize",
-  "upsertBatchSize",
-  "maxEncodeCharacters",
-  "fullSparseRebuildChangeRatio",
-  "sparseRebuildDriftRatio",
-]);
-const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
-  "searchMode",
-  "qdrantUrl",
-  "qdrantBinary",
-  "qdrantDataDirectory",
-  "embeddingServerUrl",
-  "embeddingModel",
-  "embeddingPooling",
-  "embeddingNormalization",
-  "embeddingDevice",
-  "pythonExecutable",
-  "torchBackend",
-  "mpsPrecision",
-  "openvinoCacheDirectory",
-  "vitisaiCacheDirectory",
-  "vitisaiCacheKey",
-  "vitisaiConfigFile",
-  "vitisaiLogLevel",
-  "amdIronArtifactDirectory",
-  "amdIronCacheDirectory",
-  "amdIronSourceDirectory",
-  "amdNpuGeneration",
-  "amdNpuRuntimeVersion",
-  "ryzenAiArchivePath",
-  "collectionPrefix",
-]);
+const BOOLEAN_KEYS = new Set<keyof WorkspaceCodeRagSettings>(
+  "enabled enableTray autoRefresh allowStaleSearch remoteBackendsAllowed".split(
+    " ",
+  ) as (keyof WorkspaceCodeRagSettings)[],
+);
+const NUMBER_KEYS = new Set<keyof WorkspaceCodeRagSettings>(
+  "qdrantStartupTimeoutMs embeddingDimensions defaultLimit maxLimit maxContextCharacters maxResultCharacters searchTimeoutMs embeddingTimeoutMs embeddingStartupTimeoutMs maxEmbeddingBatchSize maxCpuThreads maxSequenceLength minSystemMemoryReserveBytes minAcceleratorMemoryReserveBytes embeddingModelParameterCount maxFileBytes defaultChunkLines maxChunkLines maxSparseVocabularyTokens preparationMaxWorkers preparationWorkerMemoryBytes preparationMemoryReserveBytes encodeBatchSize upsertBatchSize maxEncodeCharacters fullSparseRebuildChangeRatio sparseRebuildDriftRatio".split(
+    " ",
+  ) as (keyof WorkspaceCodeRagSettings)[],
+);
+const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>(
+  "searchMode qdrantUrl qdrantApiKey qdrantBinary qdrantDataDirectory embeddingServerUrl embeddingModel embeddingPooling embeddingNormalization embeddingDevice pythonExecutable torchBackend mpsPrecision openvinoCacheDirectory vitisaiCacheDirectory vitisaiCacheKey vitisaiConfigFile vitisaiLogLevel amdIronArtifactDirectory amdIronCacheDirectory amdIronSourceDirectory amdNpuGeneration amdNpuRuntimeVersion ryzenAiArchivePath collectionPrefix".split(
+    " ",
+  ) as (keyof WorkspaceCodeRagSettings)[],
+);
 const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>(
   "auto cpu cuda rocm mps npu apple-ane apple-mps amd-rocm nvidia-cuda ryzenai vitisai amd-phoenix-npu amd-ryzenai-npu openvino openvino-npu intel-openvino-cpu intel-openvino-npu".split(
     " ",
@@ -276,13 +229,35 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   return settings;
 }
 
+function resolveQdrantApiKey(apiKey?: string, qdrantDataDirectory?: string): string | undefined {
+  if (apiKey && apiKey.trim().length > 0) return apiKey.trim();
+  const envKey = process.env.P_QDRANT_API_KEY ?? process.env.QDRANT_API_KEY;
+  if (envKey && envKey.trim().length > 0) return envKey.trim();
+  if (qdrantDataDirectory) {
+    const keyFile = path.join(qdrantDataDirectory, "qdrant.key");
+    try {
+      if (fs.existsSync(keyFile)) {
+        const fileKey = fs.readFileSync(keyFile, "utf-8").trim();
+        if (fileKey.length > 0) return fileKey;
+      }
+    } catch {
+      // ignore
+    }
+  }
+  return undefined;
+}
+
 export function loadWorkspaceCodeRagSettings(options: WorkspaceCodeRagServiceOptions): WorkspaceCodeRagSettings {
   const userConfigPath = options.userConfigPath ?? path.join(options.dataDirectory, "..", "code-rag.json");
   const repositoryConfigPath = options.repositoryConfigPath ?? path.join(options.workspaceRoot, ".p", "code-rag.json");
-  return validateSettings({
+  const settings = validateSettings({
     ...DEFAULT_WORKSPACE_CODE_RAG_SETTINGS,
     ...parseConfigFile(userConfigPath),
     ...parseConfigFile(repositoryConfigPath),
     ...(options.settings ?? {}),
   });
+  if (!settings.qdrantApiKey) {
+    settings.qdrantApiKey = resolveQdrantApiKey(undefined, settings.qdrantDataDirectory);
+  }
+  return settings;
 }

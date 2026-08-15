@@ -226,6 +226,7 @@ export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   allowStaleSearch: boolean;
   remoteBackendsAllowed: boolean;
   qdrantUrl: string;
+  qdrantApiKey?: string;
   qdrantBinary: string;
   qdrantDataDirectory: string;
   qdrantStartupTimeoutMs: number;

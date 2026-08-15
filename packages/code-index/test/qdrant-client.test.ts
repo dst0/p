@@ -229,4 +229,18 @@ describe("QdrantClient wrapper", () => {
     });
     expect(results).toEqual([{ id: 10, score: 0.92, payload }]);
   });
+
+  it("initializes with qdrantApiKey in IndexConfig", () => {
+    const configWithoutKey = createConfig();
+    const qdrantWithoutKey = new QdrantClient(configWithoutKey);
+    // @ts-expect-error inspect raw client private property
+    expect(qdrantWithoutKey.client._https).toBe(false);
+
+    const configWithKey = createConfig({ qdrantApiKey: "custom-api-key-test" });
+    const qdrantWithKey = new QdrantClient(configWithKey);
+    // @ts-expect-error inspect raw client private property
+    expect(qdrantWithKey.client._https).toBe(true);
+    // @ts-expect-error config check
+    expect(qdrantWithKey.config.qdrantApiKey).toBe("custom-api-key-test");
+  });
 });

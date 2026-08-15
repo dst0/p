@@ -6,6 +6,7 @@ import type { IndexConfig } from "./types.ts";
 /** Default configuration values. */
 export const DEFAULT_CONFIG: IndexConfig = {
   qdrantUrl: "http://localhost:6333",
+  qdrantApiKey: undefined,
   collection: "code_chunks",
   modelId: "Qwen/Qwen3-Embedding-0.6B",
   denseDim: 1024,

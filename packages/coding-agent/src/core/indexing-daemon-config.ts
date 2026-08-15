@@ -14,6 +14,7 @@ export function createIndexingDaemonOptions(agentDir: string): IndexingDaemonOpt
     agentDir,
     qdrantBinary: settings.qdrantBinary,
     qdrantDataDirectory: settings.qdrantDataDirectory,
+    qdrantApiKey: settings.qdrantApiKey,
     pythonExecutable: settings.pythonExecutable,
     embeddingModel: settings.embeddingModel,
     embeddingConfigPath: configPath,

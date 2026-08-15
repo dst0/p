@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import crypto from "node:crypto";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
@@ -7,6 +8,7 @@ export interface QdrantServerManagerOptions {
   qdrantBinary: string;
   dataDirectory: string;
   startupTimeoutMs: number;
+  apiKey?: string;
   onLog?: (level: "debug" | "error", message: string) => void;
 }
 
@@ -146,11 +148,46 @@ export class QdrantServerManager {
     });
   }
 
+  getApiKey(): string | undefined {
+    return this.ensureApiKey();
+  }
+
+  private readSavedApiKey(): string | undefined {
+    const keyPath = path.join(this.options.dataDirectory, "qdrant.key");
+    try {
+      if (fs.existsSync(keyPath)) {
+        const key = fs.readFileSync(keyPath, "utf-8").trim();
+        if (key.length > 0) return key;
+      }
+    } catch {
+      // ignore
+    }
+    return undefined;
+  }
+
+  private ensureApiKey(): string {
+    if (this.options.apiKey && this.options.apiKey.trim().length > 0) {
+      return this.options.apiKey.trim();
+    }
+    const saved = this.readSavedApiKey();
+    if (saved) {
+      this.options.apiKey = saved;
+      return saved;
+    }
+    const generated = crypto.randomBytes(32).toString("hex");
+    const keyPath = path.join(this.options.dataDirectory, "qdrant.key");
+    fs.mkdirSync(this.options.dataDirectory, { recursive: true, mode: 0o700 });
+    fs.writeFileSync(keyPath, `${generated}\n`, { mode: 0o600 });
+    this.options.apiKey = generated;
+    return generated;
+  }
+
   private writeConfig(): string {
     fs.mkdirSync(this.options.dataDirectory, { recursive: true, mode: 0o700 });
     const storagePath = path.join(this.options.dataDirectory, "storage");
     fs.mkdirSync(storagePath, { recursive: true, mode: 0o700 });
     const configPath = path.join(this.options.dataDirectory, "config.yaml");
+    const apiKey = this.ensureApiKey();
     const content = [
       "log_level: INFO",
       "storage:",
@@ -159,6 +196,7 @@ export class QdrantServerManager {
       "  host: 127.0.0.1",
       `  http_port: ${this.port}`,
       `  grpc_port: ${this.port + 1}`,
+      `  api_key: ${JSON.stringify(apiKey)}`,
       "telemetry_disabled: true",
       "",
     ].join("\n");
@@ -170,7 +208,13 @@ export class QdrantServerManager {
 
   private async checkHealth(): Promise<boolean> {
     try {
+      const apiKey = this.options.apiKey ?? this.readSavedApiKey();
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers["api-key"] = apiKey;
+      }
       const response = await fetch(`http://127.0.0.1:${this.port}/collections`, {
+        headers,
         signal: AbortSignal.timeout(2_000),
       });
       if (!response.ok) return false;

@@ -120,13 +120,6 @@ export class WorkspaceCodeRagService implements CodeRagService {
         },
       );
     this.ownsVectorStore = options.vectorStore === undefined;
-    this.vectorStore =
-      options.vectorStore ??
-      new QdrantVectorStore({
-        url: this.settings.qdrantUrl,
-        timeoutMs: this.settings.searchTimeoutMs,
-        upsertBatchSize: this.settings.upsertBatchSize,
-      });
     const qdrantUrl = new URL(this.settings.qdrantUrl);
     const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
     const managesLocalQdrant =
@@ -138,8 +131,19 @@ export class WorkspaceCodeRagService implements CodeRagService {
           qdrantBinary: this.settings.qdrantBinary,
           dataDirectory: this.settings.qdrantDataDirectory,
           startupTimeoutMs: this.settings.qdrantStartupTimeoutMs,
+          apiKey: this.settings.qdrantApiKey,
         })
       : null;
+    const qdrantApiKey = this.settings.qdrantApiKey ?? this.qdrantServerManager?.getApiKey();
+    if (qdrantApiKey) this.settings.qdrantApiKey = qdrantApiKey;
+    this.vectorStore =
+      options.vectorStore ??
+      new QdrantVectorStore({
+        url: this.settings.qdrantUrl,
+        apiKey: qdrantApiKey,
+        timeoutMs: this.settings.searchTimeoutMs,
+        upsertBatchSize: this.settings.upsertBatchSize,
+      });
   }
 }
 

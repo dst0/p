@@ -4,6 +4,7 @@
 
 ### Changed
 
+- Update footer indexing status to differentiate incremental updates (bold green arrow on white background) and focus progress on new chunks being embedded rather than total chunks already preserved.
 - Precompute project-rule polarity and token features once before quadratic conflict comparisons without changing conflict semantics.
 - Precompile ignored indexing-watch path segments so filesystem events avoid per-event path normalization and array allocation.
 - Refactored recent session, interactive-mode, RPC, settings, resource, package, and voice-server splits into focused modules with explicit typed delegation and regression coverage.
@@ -11,6 +12,7 @@
 
 ### Added
 
+- Secure Qdrant vector database connection with automatic 256-bit API key generation, mode 0600 file isolation, and authenticated REST client headers across background daemons and agent instances.
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.
 - Add a reproducible MPS FP32/BF16 benchmark that generates a deterministic Git repository and measures complete Code RAG rebuild throughput, memory, backend placement, and semantic-search validity.
 - Add a `fast (BM25)` install/reinstall indexing mode that skips dense embedding startup, indexing, and queries while retaining local sparse code search.

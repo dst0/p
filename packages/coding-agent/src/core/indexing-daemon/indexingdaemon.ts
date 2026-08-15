@@ -106,6 +106,7 @@ export class IndexingDaemon {
       qdrantBinary: options.qdrantBinary,
       dataDirectory: options.qdrantDataDirectory,
       startupTimeoutMs: 30_000,
+      apiKey: options.qdrantApiKey,
       onLog: (level, message) => this.log(level, message),
     });
     this.embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {

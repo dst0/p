@@ -114,4 +114,9 @@ describe("extractErrorDetails", () => {
     err.status = 502;
     expect(extractErrorDetails(err)).toBe("API error (502): Connection error. (ECONNREFUSED)");
   });
+
+  it("handles non-string non-Error causes gracefully", () => {
+    const err = new Error("Custom error", { cause: { customData: 123 } });
+    expect(extractErrorDetails(err)).toBe("Custom error");
+  });
 });
