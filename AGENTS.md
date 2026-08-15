@@ -46,7 +46,7 @@
 - Never create generic, catch-all, or branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
 - Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.
 - When investigating uncovered lines reported by `check-changed-coverage.js`, never bypass them or write superficial mocks. Always investigate why the branch was unexercised (e.g. realistic repository fixture setup such as `.git/config` remotes, real abort signals, default environment/argument paths, fatal error transitions) and write genuine tests exercising the domain behavior.
-- Bug fixes must start with a reproducible failing regression test before writing the fix.
+- Bug fixes must start with a reproducible failing regression test before writing the fix. Any bugs discovered during test authoring, coverage expansion, or refactoring must be fixed with dedicated regressions, explicitly documented in the PR description, and reported directly to the user in the session summary.
 - For non-trivial features, bug fixes, or test additions, automatically spawn an adversarial test-critic subagent to review the tests. The critic must evaluate whether the suite verifies real behavior vs artificial line coverage, identifies missing edge cases, and flags fragile/vacuous tests before work is completed.
 - Never use `/* v8 ignore */` or coverage comments to bypass coverage gates. All code in the repository must be reachable and exercised by tests; dead or unreachable code must be deleted rather than kept or suppressed (except rare compiler/type-exhaustiveness edge cases where a branch is syntactically required but provably unreachable at runtime).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
@@ -115,6 +115,11 @@ When reviewing PRs:
 - Do not run `gh pr checkout`, `git switch`, or otherwise move the worktree to the PR branch unless the user explicitly asks.
 - Use `gh pr view`, `gh pr diff`, `gh api`, and local `git show`/`git diff` against fetched refs to inspect PR metadata, commits, and patches without changing branches.
 - If you need PR file contents, fetch/read them into temporary files or use `git show <ref>:<path>` without switching branches.
+
+When creating PRs:
+
+- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
+- Always include a `## Bug Fixes` section in the PR description detailing any bugs uncovered and resolved during the task, with references to their regression tests.
 
 When creating issues:
 
