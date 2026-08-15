@@ -8,9 +8,9 @@ const CHUNK_PATTERNS: Record<string, RegExp> = {
   typescript:
     /^\s*(function |const |let |var |class |async function |interface |type |enum |export |\w+\s*=.*=>|\w+\s*\(|module\.exports)/gm,
   go: /^\s*func\s+/gm,
-  java: /^\s*(public |private |protected |static )*(void |String|int|boolean|long|double|float|char|byte|short|\w+)\s+\w+\s*\(/gm,
-  cpp: /^\s*(void |String|int|bool|long|double|float|char|auto|\w+)\s+\w+\s*\(|^\s*(class |struct )/gm,
-  c: /^\s*(void |int|char|float|double|long|short|unsigned|signed|struct|\w+)\s+\w+\s*\(/gm,
+  java: /^\s*(public |private |protected |static )*(class |interface |enum |record |void |String|int|boolean|long|double|float|char|byte|short|\w+)\s+\w+\s*(\(|{)/gm,
+  cpp: /^\s*(void |String|int|bool|long|double|float|char|auto|\w+)\s+\w+\s*\(|^\s*(class |struct |enum |namespace )\s+\w+\s*(\(|{|:)/gm,
+  c: /^\s*(void |int |char |float |double |long |short |unsigned |signed |struct |enum |\w+)\s+\w+\s*(\(|{)/gm,
   ruby: /^\s*(def |class )/gm,
   swift: /^\s*(func |class |struct |enum |protocol )/gm,
 };
@@ -27,8 +27,9 @@ function extractSymbol(firstLine: string, language: string): string {
     javascript: /\b(function|class|const|let|var|interface|type|enum)\s+(\w+)/,
     typescript: /\b(function|class|const|let|var|interface|type|enum)\s+(\w+)/,
     go: /\bfunc\s+(\w+\([^)]*\)|\w+)/,
-    cpp: /\b(\w+)\s+(\w+)\s*\(/,
-    c: /\b(\w+)\s+(\w+)\s*\(/,
+    java: /\b(class|interface|enum|record|void|String|int|boolean|long|double|float|char|byte|short)\s+(\w+)/,
+    cpp: /\b(class|struct|enum|namespace|void|int|bool|long|double|float|char|auto)\s+(\w+)/,
+    c: /\b(struct|enum|void|int|char|float|double|long|short)\s+(\w+)/,
     ruby: /\b(def|class)\s+(\w+)/,
     swift: /\b(func|class|struct|enum|protocol)\s+(\w+)/,
   };
@@ -75,8 +76,9 @@ function skipLeadingComments(lines: string[], startLine: number): number {
   }
 
   const previous = lines[i - 1]?.trim();
-  if (previous?.startsWith("//")) {
-    while (i > 0 && lines[i - 1].trimStart().startsWith("//")) i -= 1;
+  if (previous?.startsWith("//") || previous?.startsWith("#")) {
+    const prefix = previous.startsWith("//") ? "//" : "#";
+    while (i > 0 && lines[i - 1].trimStart().startsWith(prefix)) i -= 1;
     return i;
   }
 
@@ -99,7 +101,7 @@ function findDeclarationLine(lines: string[], startLine: number): number {
   let inBlockComment = false;
   while (i < lines.length) {
     const trimmed = lines[i].trim();
-    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("@")) {
+    if (trimmed === "" || trimmed.startsWith("//") || trimmed.startsWith("#") || trimmed.startsWith("@")) {
       i += 1;
       continue;
     }
