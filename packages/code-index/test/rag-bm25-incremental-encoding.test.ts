@@ -4,7 +4,7 @@ import type { PreparedChunk } from "../src/rag/service/types.ts";
 import type { WorkspaceCodeRagService } from "../src/rag/service/workspacecoderagservice.ts";
 import { do_encodeAndUpsert } from "../src/rag/service/workspacecoderagservice-methods/incremental-refresh.ts";
 
-describe("indexing cancellation coverage", () => {
+describe("BM25-only incremental encoding and vector upsert", () => {
   it("skips dense embedding when incremental indexing is BM25-only", async () => {
     const ensureReady = vi.fn(async () => {});
     const encode = vi.fn(async () => [new Float32Array([1])]);

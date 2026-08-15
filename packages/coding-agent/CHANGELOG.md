@@ -12,6 +12,7 @@
 
 ### Added
 
+- Structure and domain-test code-index with comprehensive suites for file discovery security, AST chunk symbol extraction, hardware backend health matching, Qdrant client lifecycle, BM25 incremental indexing, RAG lifecycle transitions, search candidate ranking, multi-worker tasks, crash recovery, and error classification.
 - Secure Qdrant vector database connection with automatic 256-bit API key generation, mode 0600 file isolation, and authenticated REST client headers across background daemons and agent instances.
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.
 - Add a reproducible MPS FP32/BF16 benchmark that generates a deterministic Git repository and measures complete Code RAG rebuild throughput, memory, backend placement, and semantic-search validity.

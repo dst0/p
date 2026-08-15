@@ -20,6 +20,7 @@ import type { WorkspaceCodeRagService } from "../workspacecoderagservice.ts";
 export function do_updateFastFreshness(self: WorkspaceCodeRagService): void {
   if (!self.manifest || self.state === "unavailable" || self.state === "disabled") return;
   try {
+    fs.statSync(self.workspaceRoot);
     const files = discoverFilesWithOptions(self.workspaceRoot, { maxFileSize: self.settings.maxFileBytes });
     if (files.length !== Object.keys(self.manifest.files).length) {
       self.state = "stale";

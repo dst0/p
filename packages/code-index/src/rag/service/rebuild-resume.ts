@@ -107,7 +107,6 @@ export async function prepareActiveRebuild(
   const spool = fs.openSync(artifacts.spool, "wx", 0o600);
   let spoolOpen = true;
   let chunkCount = 0;
-  let collectionCreated = false;
   try {
     const vocabularyTokenLimit = self.sparseVocabularyTokenLimit();
     await self.processPreparedFiles(scanned, generation, signal, (prepared, index) => {
@@ -153,11 +152,9 @@ export async function prepareActiveRebuild(
     };
     writeRebuildCheckpoint(artifacts.checkpoint, checkpoint);
     await self.vectorStore.createCollection(collection, self.settings.embeddingDimensions);
-    collectionCreated = true;
     return { checkpoint, artifacts, plan, vocabulary, resumed: false };
   } catch (error) {
     if (spoolOpen) fs.closeSync(spool);
-    if (collectionCreated) await deleteCollectionBestEffort(self, collection);
     removeRebuildArtifacts(artifacts);
     throw error;
   }
