@@ -13,7 +13,7 @@ class EmbeddingRuntimeConfig:
     device: str = "auto"
     max_embedding_batch_size: int = 64
     max_cpu_threads: int = os.cpu_count() or 1
-    max_sequence_length: int = DEFAULT_SEQUENCE_LENGTH
+    max_sequence_length: int | None = None
     mps_precision: str = "bfloat16"
     min_system_memory_reserve_bytes: int = 1024 * 1024 * 1024
     min_accelerator_memory_reserve_bytes: int = 512 * 1024 * 1024
@@ -40,12 +40,11 @@ class EmbeddingRuntimeConfig:
     vitisai_log_level: str = "error"
 
     def __post_init__(self) -> None:
-        device_default = default_sequence_length(self.device)
-        if device_default < DEFAULT_SEQUENCE_LENGTH:
+        if self.max_sequence_length is None:
             object.__setattr__(
                 self,
                 "max_sequence_length",
-                min(self.max_sequence_length, device_default),
+                default_sequence_length(self.device),
             )
 
 
@@ -71,7 +70,7 @@ def load_embedding_runtime_config(config_path: str | None) -> EmbeddingRuntimeCo
         device=_string(raw, "embeddingDevice", "auto"),
         max_embedding_batch_size=_positive_int(raw, "maxEmbeddingBatchSize", 64),
         max_cpu_threads=_positive_int(raw, "maxCpuThreads", os.cpu_count() or 1),
-        max_sequence_length=_positive_int(raw, "maxSequenceLength", DEFAULT_SEQUENCE_LENGTH),
+        max_sequence_length=_optional_positive_int(raw, "maxSequenceLength"),
         mps_precision=_choice(raw, "mpsPrecision", "bfloat16", {"bfloat16", "float32"}),
         min_system_memory_reserve_bytes=_positive_int(
             raw, "minSystemMemoryReserveBytes", 1024 * 1024 * 1024

@@ -110,10 +110,6 @@ export async function stopCallbackServer(server: Server): Promise<void> {
     try {
       (server as any).closeAllConnections?.();
     } catch {}
-    try {
-      server.close(() => resolve());
-    } catch {
-      resolve();
-    }
+    server.close(() => resolve());
   });
 }

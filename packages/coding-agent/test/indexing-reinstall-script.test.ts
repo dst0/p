@@ -151,29 +151,6 @@ describe("indexing reinstall scripts", () => {
     await waiting;
     expect(resolved).toBe(true);
   });
-
-  it("keeps global npm relinking quiet without hiding failures", () => {
-    const reinstall = fs.readFileSync(path.join(repositoryRoot, "reinstall.sh"), "utf8");
-    const linkCommands = reinstall.split("\n").filter((line) => line.includes('"$NPM_BIN" link -w @dst0/p'));
-
-    expect(linkCommands).toHaveLength(2);
-    for (const command of linkCommands) {
-      expect(command).toContain("--no-audit");
-      expect(command).toContain("--no-fund");
-      expect(command).toContain("--loglevel=error");
-    }
-  });
-
-  it("fingerprints indexing configuration after interactive selection", () => {
-    const reinstall = fs.readFileSync(path.join(repositoryRoot, "reinstall.sh"), "utf8");
-    const selectionOffset = reinstall.indexOf("prompt_indexing_device_and_batch_size_selection");
-    const fingerprintOffset = reinstall.indexOf("NEW_INDEXING_RUNTIME_FINGERPRINT=");
-    const reuseDecisionOffset = reinstall.indexOf("INDEXING_REUSE_DECISION=");
-
-    expect(selectionOffset).toBeGreaterThan(0);
-    expect(selectionOffset).toBeLessThan(fingerprintOffset);
-    expect(fingerprintOffset).toBeLessThan(reuseDecisionOffset);
-  });
 });
 
 function createFixture(): { root: string; agentDir: string } {

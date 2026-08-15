@@ -115,42 +115,53 @@ function locateRepo(
   return { canonical, repoId, repos, index };
 }
 
-export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+function updateEnabledRepo(
+  cwd: string,
+  agentDir: string = getAgentDir(),
+  update: (entry: IndexedRepoEntry, canonical: string, repoId: string) => IndexedRepoEntry | undefined,
+): IndexedRepoEntry | undefined {
   const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
-  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = { ...repos[index]!, path: canonical, repoId, updatedAt: new Date().toISOString() };
-  repos[index] = entry;
+  const existing = repos[index];
+  if (!existing || existing.decision !== "enabled") return undefined;
+  const updated = update(existing, canonical, repoId);
+  if (!updated) return undefined;
+  repos[index] = updated;
   saveIndexedRepos(repos, agentDir);
-  return entry;
+  return updated;
 }
 
-export function requestIndexingBackendForRepo(cwd: string, agentDir: string): IndexedRepoEntry | undefined {
-  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
-  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = {
-    ...repos[index]!,
+export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => ({
+    ...entry,
+    path: canonical,
+    repoId,
+    updatedAt: new Date().toISOString(),
+  }));
+}
+
+export function requestIndexingBackendForRepo(
+  cwd: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => ({
+    ...entry,
     path: canonical,
     repoId,
     backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
-  };
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return entry;
+  }));
 }
 
 export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
-  if (index < 0 || repos[index]?.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = {
-    ...repos[index]!,
-    path: canonical,
-    repoId,
-    priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
-  };
-  delete entry.resourceFailure;
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return entry;
+  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => {
+    const updated: IndexedRepoEntry = {
+      ...entry,
+      path: canonical,
+      repoId,
+      priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+    };
+    if (updated.resourceFailure) delete updated.resourceFailure;
+    return updated;
+  });
 }
 
 export function acknowledgeIndexingPriorityForRepo(
@@ -158,43 +169,42 @@ export function acknowledgeIndexingPriorityForRepo(
   requestId: string,
   agentDir: string = getAgentDir(),
 ): boolean {
-  const { repos, index } = locateRepo(cwd, agentDir);
-  const existing = repos[index];
-  if (!existing || existing.priorityRequest?.id !== requestId) return false;
-  const entry: IndexedRepoEntry = { ...existing };
-  delete entry.priorityRequest;
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return true;
+  const result = updateEnabledRepo(cwd, agentDir, (entry) => {
+    if (entry.priorityRequest?.id !== requestId) return undefined;
+    const updated = { ...entry };
+    delete updated.priorityRequest;
+    return updated;
+  });
+  return result !== undefined;
 }
 
-export function acknowledgeIndexingBackendWakeForRepo(cwd: string, requestId: string, agentDir: string): boolean {
-  const { repos, index } = locateRepo(cwd, agentDir);
-  const existing = repos[index];
-  if (!existing || existing.backendWakeRequest?.id !== requestId) return false;
-  const entry: IndexedRepoEntry = { ...existing };
-  delete entry.backendWakeRequest;
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return true;
+export function acknowledgeIndexingBackendWakeForRepo(
+  cwd: string,
+  requestId: string,
+  agentDir: string = getAgentDir(),
+): boolean {
+  const result = updateEnabledRepo(cwd, agentDir, (entry) => {
+    if (entry.backendWakeRequest?.id !== requestId) return undefined;
+    const updated = { ...entry };
+    delete updated.backendWakeRequest;
+    return updated;
+  });
+  return result !== undefined;
 }
 
 export function recordIndexingResourceFailureForRepo(
   cwd: string,
   message: string,
-  agentDir: string,
+  agentDir: string = getAgentDir(),
 ): IndexedRepoEntry | undefined {
-  const { repos, index } = locateRepo(cwd, agentDir);
-  const existing = repos[index];
-  if (!existing || existing.decision !== "enabled") return undefined;
-  const entry: IndexedRepoEntry = {
-    ...existing,
-    resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
-  };
-  delete entry.priorityRequest;
-  repos[index] = entry;
-  saveIndexedRepos(repos, agentDir);
-  return entry;
+  return updateEnabledRepo(cwd, agentDir, (entry) => {
+    const updated: IndexedRepoEntry = {
+      ...entry,
+      resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
+    };
+    if (updated.priorityRequest) delete updated.priorityRequest;
+    return updated;
+  });
 }
 
 function computeRepoId(repoPath: string): string {

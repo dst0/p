@@ -8,6 +8,7 @@ import {
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
+import { sendSystemNotification } from "../../utils/system-notifier.ts";
 import { recordIndexingResourceFailureForRepo } from "../indexed-repos.ts";
 import { computeIndexingRuntimeConfigFingerprint } from "../indexing-runtime-config.ts";
 import { IndexingTrayManager, type IndexingTrayService } from "../indexing-tray-manager.ts";
@@ -70,45 +71,26 @@ export class IndexingDaemon {
   public readonly disposeBackends: () => Promise<void>;
 
   public readonly persistResourceFailure: (workspaceRoot: string, message: string) => void;
-
+  public readonly sendSystemNotification: (options: { title: string; message: string }) => void;
   public readonly releaseEmbeddingDevice: () => Promise<void>;
-
   public readonly watchFactory: WatchFactory;
-
   public readonly embeddingManager: EmbeddingServerManager;
-
   public readonly trayManager: IndexingTrayService;
-
   public readonly runtimes = new Map<string, RepositoryRuntime>();
-
   public readonly startedAt = new Date().toISOString();
-
   public readonly indexingVersion: string;
-
   public readonly runtimeConfigFingerprint: string;
-
   public registryWatcher: FSWatcher | null = null;
-
   public registryWatchRetryTimer: ReturnType<typeof setTimeout> | undefined;
-
   public registrySyncPromise: Promise<void> | undefined;
-
   public registrySyncRequested = false;
-
   public reconcileTimer: ReturnType<typeof setInterval> | undefined;
-
   public drainWorkers: DrainWorker[] = [];
-
   public drainPaused = false;
-
   public nextQueueOrder = 0;
-
   public daemonLock: DaemonLock | undefined;
-
   public quiescing = false;
-
   public disposed = false;
-
   public embeddingIdleTimer: ReturnType<typeof setTimeout> | undefined;
 
   constructor(options: IndexingDaemonOptions) {
@@ -158,6 +140,7 @@ export class IndexingDaemon {
       ((workspaceRoot, message) => {
         recordIndexingResourceFailureForRepo(workspaceRoot, message, this.options.agentDir);
       });
+    this.sendSystemNotification = options.sendSystemNotification ?? sendSystemNotification;
     this.releaseEmbeddingDevice =
       options.releaseEmbeddingDevice ??
       (async () => {

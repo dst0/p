@@ -9,6 +9,10 @@ from test_embedding_server import EmbeddingServer
 class MpsMemoryPolicyTest(unittest.TestCase):
     def test_default_sequence_length_bounds_mps_attention_memory(self):
         self.assertEqual(EmbeddingRuntimeConfig(device="mps").max_sequence_length, 512)
+        self.assertEqual(
+            EmbeddingRuntimeConfig(device="mps", max_sequence_length=1024).max_sequence_length,
+            1024,
+        )
         self.assertEqual(EmbeddingRuntimeConfig(device="cpu").max_sequence_length, 2048)
         self.assertEqual(
             EmbeddingRuntimeConfig(device="cuda", max_sequence_length=4096).max_sequence_length,

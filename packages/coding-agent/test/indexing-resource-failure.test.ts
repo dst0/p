@@ -84,6 +84,7 @@ describe("indexing resource failure lifecycle", () => {
     enableIndexingForRepo(repository, agentDir);
     const service = new OutOfMemoryRagService(repository);
     let deviceReleases = 0;
+    const notifications: Array<{ title: string; message: string }> = [];
     const createDaemon = () =>
       new IndexingDaemon({
         agentDir,
@@ -99,6 +100,9 @@ describe("indexing resource failure lifecycle", () => {
         releaseEmbeddingDevice: async () => {
           deviceReleases += 1;
         },
+        sendSystemNotification: (opts) => {
+          notifications.push(opts);
+        },
         disposeBackends: async () => {},
       });
     let daemon = createDaemon();
@@ -111,6 +115,9 @@ describe("indexing resource failure lifecycle", () => {
       await waitFor(() => daemon.runtimes.get(fs.realpathSync(repository))?.state === "error");
       const initialRuntime = daemon.runtimes.get(fs.realpathSync(repository));
       expect(deviceReleases).toBe(1);
+      expect(notifications).toHaveLength(1);
+      expect(notifications[0]?.title).toBe("p Indexing Resource Failure");
+      expect(notifications[0]?.message).toContain("out of memory");
       expect(initialRuntime?.retryTimer).toBeUndefined();
       expect(initialRuntime?.resourceBlocked).toBe(true);
       expect(loadIndexedRepos(agentDir)[0]?.resourceFailure?.message).toContain("out of memory");

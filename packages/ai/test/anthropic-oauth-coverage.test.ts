@@ -209,4 +209,62 @@ describe.sequential("Anthropic OAuth Coverage", () => {
     ).rejects.toThrow("Anthropic OAuth is only available in Node.js environments");
     vi.stubGlobal("process", origProcess);
   });
+
+  it("handles server port conflicts and cleanly severs keep-alive sockets on shutdown", async () => {
+    const { startCallbackServer, stopCallbackServer } = await import("../src/utils/oauth/anthropic-callback-server.ts");
+    const serverInfo = await startCallbackServer("expected-state");
+
+    try {
+      // 1. Port conflict: another server attempting to listen on 53692 fails
+      await expect(startCallbackServer("conflict-state")).rejects.toThrow();
+
+      // 2. Open an HTTP keep-alive connection
+      const keepAliveAgent = new http.Agent({ keepAlive: true });
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.get("http://127.0.0.1:53692/callback?state=wrong", { agent: keepAliveAgent }, resolve);
+        req.on("error", reject);
+      });
+      res.resume(); // consume response
+
+      // 3. Stop callback server while keep-alive connection is active
+      await stopCallbackServer(serverInfo.server);
+      keepAliveAgent.destroy();
+
+      // 4. Invariant: port must be immediately re-bindable without EADDRINUSE
+      const rebindServer = http.createServer();
+      await new Promise<void>((resolve, reject) => {
+        rebindServer.listen(53692, "127.0.0.1", () => {
+          rebindServer.close(() => resolve());
+        });
+        rebindServer.on("error", reject);
+      });
+    } finally {
+      await stopCallbackServer(serverInfo.server);
+    }
+  });
+
+  it("handles malformed request URL and duplicate stopCallbackServer calls", async () => {
+    const { startCallbackServer, stopCallbackServer } = await import("../src/utils/oauth/anthropic-callback-server.ts");
+    const serverInfo = await startCallbackServer("expected-state");
+
+    try {
+      const res = await new Promise<http.IncomingMessage>((resolve, reject) => {
+        const req = http.request(
+          {
+            hostname: "127.0.0.1",
+            port: 53692,
+            path: "http://[invalid-host:port",
+            method: "GET",
+          },
+          resolve,
+        );
+        req.on("error", reject);
+        req.end();
+      });
+      expect(res.statusCode).toBe(500);
+    } finally {
+      await stopCallbackServer(serverInfo.server);
+      await stopCallbackServer(serverInfo.server);
+    }
+  });
 });

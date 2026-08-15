@@ -1,3 +1,4 @@
+import path from "node:path";
 import { DRAIN_MAX_CONCURRENCY, MANUAL_PRIORITY_OFFSET } from "../constants.ts";
 import { isResourceFailure, safeErrorMessage } from "../helpers.ts";
 import type { IndexingDaemon } from "../indexingdaemon.ts";
@@ -150,6 +151,10 @@ export async function do_drainWorker(self: IndexingDaemon, w: DrainWorker): Prom
             } catch (persistenceError) {
               self.log("error", `Failed to persist the indexing resource block: ${safeErrorMessage(persistenceError)}`);
             }
+            self.sendSystemNotification({
+              title: "p Indexing Resource Failure",
+              message: `Indexing paused for ${path.basename(runtime.root)}: ${runtime.lastError}. Run /index up to retry.`,
+            });
             try {
               await self.releaseEmbeddingDevice();
             } catch (releaseError) {
