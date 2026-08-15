@@ -117,4 +117,132 @@ describe("cold prefill events", () => {
       }),
     ]);
   });
+
+  it("emits cold_prefill_detected with provider_signal reason when cachedTokens > 0", async () => {
+    const events: AgentEvent[] = [];
+    const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+    const config: AgentLoopConfig = {
+      model,
+      completionMode: "implicit",
+      convertToLlm: (messages) => messages.filter(isLlmMessage),
+    };
+    const streamFn: StreamFn = () => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const msg = assistantMessage("ok");
+        const partial = { ...msg, content: [] };
+        stream.push({ type: "start", partial });
+        stream.push({
+          type: "prefill_progress",
+          elapsedMs: 800,
+          tokens: 2048,
+          cachedTokens: 512,
+          cold: true,
+          partial,
+        });
+        stream.push({ type: "done", reason: "stop", message: msg });
+      });
+      return stream;
+    };
+
+    const stream = agentLoop([userMessage("test")], context, config, undefined, streamFn);
+    for await (const event of stream) events.push(event);
+
+    const coldEvents = events
+      .filter((e): e is Extract<AgentEvent, { type: "message_update" }> => e.type === "message_update")
+      .map((e) => e.assistantMessageEvent)
+      .filter((e) => e.type === "cold_prefill_detected");
+
+    expect(coldEvents).toEqual([
+      expect.objectContaining({
+        type: "cold_prefill_detected",
+        reason: "provider_signal",
+        cachedTokens: 512,
+      }),
+    ]);
+  });
+
+  it("suppresses subsequent duplicate cold prefill detections within the same turn", async () => {
+    const events: AgentEvent[] = [];
+    const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+    const config: AgentLoopConfig = {
+      model,
+      completionMode: "implicit",
+      convertToLlm: (messages) => messages.filter(isLlmMessage),
+    };
+    const streamFn: StreamFn = () => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const msg = assistantMessage("ok");
+        const partial = { ...msg, content: [] };
+        stream.push({ type: "start", partial });
+        stream.push({
+          type: "cold_prefill_detected",
+          elapsedMs: 500,
+          tokens: 1000,
+          cachedTokens: 0,
+          reason: "cache_miss",
+          partial,
+        });
+        stream.push({
+          type: "prefill_progress",
+          elapsedMs: 1000,
+          tokens: 2000,
+          cachedTokens: 0,
+          cold: true,
+          partial,
+        });
+        stream.push({ type: "done", reason: "stop", message: msg });
+      });
+      return stream;
+    };
+
+    const stream = agentLoop([userMessage("test")], context, config, undefined, streamFn);
+    for await (const event of stream) events.push(event);
+
+    const coldEvents = events
+      .filter((e): e is Extract<AgentEvent, { type: "message_update" }> => e.type === "message_update")
+      .map((e) => e.assistantMessageEvent)
+      .filter((e) => e.type === "cold_prefill_detected");
+
+    expect(coldEvents).toHaveLength(1);
+  });
+
+  it("does not emit cold_prefill_detected for warm prefill progress", async () => {
+    const events: AgentEvent[] = [];
+    const context: AgentContext = { systemPrompt: "", messages: [], tools: [] };
+    const config: AgentLoopConfig = {
+      model,
+      completionMode: "implicit",
+      convertToLlm: (messages) => messages.filter(isLlmMessage),
+    };
+    const streamFn: StreamFn = () => {
+      const stream = createAssistantMessageEventStream();
+      queueMicrotask(() => {
+        const msg = assistantMessage("ok");
+        const partial = { ...msg, content: [] };
+        stream.push({ type: "start", partial });
+        stream.push({
+          type: "prefill_progress",
+          elapsedMs: 200,
+          tokens: 500,
+          cachedTokens: 500,
+          cold: false,
+          partial,
+        });
+        stream.push({ type: "done", reason: "stop", message: msg });
+      });
+      return stream;
+    };
+
+    const stream = agentLoop([userMessage("test")], context, config, undefined, streamFn);
+    for await (const event of stream) events.push(event);
+
+    const coldEvents = events
+      .filter((e): e is Extract<AgentEvent, { type: "message_update" }> => e.type === "message_update")
+      .map((e) => e.assistantMessageEvent)
+      .filter((e) => e.type === "cold_prefill_detected");
+
+    expect(coldEvents).toHaveLength(0);
+  });
 });

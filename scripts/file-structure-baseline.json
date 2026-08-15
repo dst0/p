@@ -121,7 +121,7 @@
   },
   "packages/ai/test/bedrock-convert-messages.test.ts": {
     "classes": 3,
-    "lines": 245
+    "lines": 528
   },
   "packages/ai/test/bedrock-custom-headers.test.ts": {
     "classes": 3,
