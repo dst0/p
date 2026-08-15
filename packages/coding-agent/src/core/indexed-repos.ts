@@ -23,7 +23,11 @@ export interface IndexedRepoEntry {
     id: string;
     requestedAt: string;
   };
-  resourceFailure?: { id: string; requestedAt: string; message: string };
+  resourceFailure?: {
+    id: string;
+    requestedAt: string;
+    message: string;
+  };
 }
 
 interface IndexedReposData {
@@ -64,13 +68,19 @@ export function loadIndexedRepos(agentDir: string = getAgentDir()): IndexedRepoE
   }
 }
 
-export function getRepoIndexingDecision(cwd: string, agentDir: string = getAgentDir()): RepoIndexingDecision {
+function findEntry(
+  cwd: string,
+  agentDir: string,
+): { repos: IndexedRepoEntry[]; index: number; entry?: IndexedRepoEntry } {
   const canonical = findIndexWorkspaceRoot(cwd);
   const repoId = computeRepoId(canonical);
-  const entry = loadIndexedRepos(agentDir).find(
-    (candidate) => canonicalizePath(candidate.path) === canonical || candidate.repoId === repoId,
-  );
-  return entry?.decision ?? "unknown";
+  const repos = loadIndexedRepos(agentDir);
+  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
+  return { repos, index, entry: repos[index] };
+}
+
+export function getRepoIndexingDecision(cwd: string, agentDir: string = getAgentDir()): RepoIndexingDecision {
+  return findEntry(cwd, agentDir).entry?.decision ?? "unknown";
 }
 
 export function setRepoIndexingDecision(
@@ -101,67 +111,43 @@ export function isRepoIndexed(cwd: string, agentDir: string = getAgentDir()): bo
 export function enableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
   return setRepoIndexingDecision(cwd, "enabled", agentDir);
 }
-export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
-  return setRepoIndexingDecision(cwd, "disabled", agentDir);
-}
-function locateRepo(
+
+function mutateRepoEntry(
   cwd: string,
   agentDir: string,
-): { canonical: string; repoId: string; repos: IndexedRepoEntry[]; index: number } {
-  const canonical = findIndexWorkspaceRoot(cwd);
-  const repoId = computeRepoId(canonical);
-  const repos = loadIndexedRepos(agentDir);
-  const index = repos.findIndex((entry) => canonicalizePath(entry.path) === canonical || entry.repoId === repoId);
-  return { canonical, repoId, repos, index };
-}
-
-function updateEnabledRepo(
-  cwd: string,
-  agentDir: string = getAgentDir(),
-  update: (entry: IndexedRepoEntry, canonical: string, repoId: string) => IndexedRepoEntry | undefined,
+  mutate: (entry: IndexedRepoEntry) => IndexedRepoEntry,
 ): IndexedRepoEntry | undefined {
-  const { canonical, repoId, repos, index } = locateRepo(cwd, agentDir);
-  const existing = repos[index];
-  if (!existing || existing.decision !== "enabled") return undefined;
-  const updated = update(existing, canonical, repoId);
-  if (!updated) return undefined;
+  const { repos, index, entry } = findEntry(cwd, agentDir);
+  if (index < 0 || !entry || entry.decision !== "enabled") return undefined;
+  const updated = mutate(entry);
   repos[index] = updated;
   saveIndexedRepos(repos, agentDir);
   return updated;
 }
 
-export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => ({
-    ...entry,
-    path: canonical,
-    repoId,
-    updatedAt: new Date().toISOString(),
-  }));
+function clearField(
+  cwd: string,
+  agentDir: string,
+  predicate: (entry: IndexedRepoEntry) => boolean,
+  clear: (entry: IndexedRepoEntry) => IndexedRepoEntry,
+): boolean {
+  const { repos, index, entry } = findEntry(cwd, agentDir);
+  if (index < 0 || !entry || !predicate(entry)) return false;
+  repos[index] = clear(entry);
+  saveIndexedRepos(repos, agentDir);
+  return true;
 }
 
-export function requestIndexingBackendForRepo(
-  cwd: string,
-  agentDir: string = getAgentDir(),
-): IndexedRepoEntry | undefined {
-  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => ({
-    ...entry,
-    path: canonical,
-    repoId,
-    backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
-  }));
+export function requestIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({ ...entry, updatedAt: new Date().toISOString() }));
 }
 
 export function prioritizeIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry | undefined {
-  return updateEnabledRepo(cwd, agentDir, (entry, canonical, repoId) => {
-    const updated: IndexedRepoEntry = {
-      ...entry,
-      path: canonical,
-      repoId,
-      priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
-    };
-    if (updated.resourceFailure) delete updated.resourceFailure;
-    return updated;
-  });
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    resourceFailure: undefined,
+    priorityRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+  }));
 }
 
 export function acknowledgeIndexingPriorityForRepo(
@@ -169,13 +155,26 @@ export function acknowledgeIndexingPriorityForRepo(
   requestId: string,
   agentDir: string = getAgentDir(),
 ): boolean {
-  const result = updateEnabledRepo(cwd, agentDir, (entry) => {
-    if (entry.priorityRequest?.id !== requestId) return undefined;
-    const updated = { ...entry };
-    delete updated.priorityRequest;
-    return updated;
-  });
-  return result !== undefined;
+  return clearField(
+    cwd,
+    agentDir,
+    (entry) => entry.priorityRequest?.id === requestId,
+    (entry) => ({ ...entry, priorityRequest: undefined }),
+  );
+}
+
+export function disableIndexingForRepo(cwd: string, agentDir: string = getAgentDir()): IndexedRepoEntry {
+  return setRepoIndexingDecision(cwd, "disabled", agentDir);
+}
+
+export function requestIndexingBackendForRepo(
+  cwd: string,
+  agentDir: string = getAgentDir(),
+): IndexedRepoEntry | undefined {
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    backendWakeRequest: { id: randomUUID(), requestedAt: new Date().toISOString() },
+  }));
 }
 
 export function acknowledgeIndexingBackendWakeForRepo(
@@ -183,13 +182,12 @@ export function acknowledgeIndexingBackendWakeForRepo(
   requestId: string,
   agentDir: string = getAgentDir(),
 ): boolean {
-  const result = updateEnabledRepo(cwd, agentDir, (entry) => {
-    if (entry.backendWakeRequest?.id !== requestId) return undefined;
-    const updated = { ...entry };
-    delete updated.backendWakeRequest;
-    return updated;
-  });
-  return result !== undefined;
+  return clearField(
+    cwd,
+    agentDir,
+    (entry) => entry.backendWakeRequest?.id === requestId,
+    (entry) => ({ ...entry, backendWakeRequest: undefined }),
+  );
 }
 
 export function recordIndexingResourceFailureForRepo(
@@ -197,14 +195,11 @@ export function recordIndexingResourceFailureForRepo(
   message: string,
   agentDir: string = getAgentDir(),
 ): IndexedRepoEntry | undefined {
-  return updateEnabledRepo(cwd, agentDir, (entry) => {
-    const updated: IndexedRepoEntry = {
-      ...entry,
-      resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
-    };
-    if (updated.priorityRequest) delete updated.priorityRequest;
-    return updated;
-  });
+  return mutateRepoEntry(cwd, agentDir, (entry) => ({
+    ...entry,
+    priorityRequest: undefined,
+    resourceFailure: { id: randomUUID(), requestedAt: new Date().toISOString(), message },
+  }));
 }
 
 function computeRepoId(repoPath: string): string {
@@ -269,20 +264,14 @@ function isResourceFailure(value: unknown): boolean {
 
 function isV2IndexedReposData(value: unknown): value is IndexedReposData {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return (
-    (value as Partial<IndexedReposData>).schemaVersion === 2 &&
-    Array.isArray((value as Partial<IndexedReposData>).repos) &&
-    (value as Partial<IndexedReposData>).repos!.every(isIndexedRepoEntry)
-  );
+  const candidate = value as Partial<IndexedReposData>;
+  return candidate.schemaVersion === 2 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
 }
 
 function isV1IndexedReposData(value: unknown): value is IndexedReposData {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-  return (
-    (value as Partial<IndexedReposData>).schemaVersion === 1 &&
-    Array.isArray((value as Partial<IndexedReposData>).repos) &&
-    (value as Partial<IndexedReposData>).repos!.every(isIndexedRepoEntry)
-  );
+  const candidate = value as Partial<IndexedReposData>;
+  return candidate.schemaVersion === 1 && Array.isArray(candidate.repos) && candidate.repos.every(isIndexedRepoEntry);
 }
 
 function isIndexedRepoEntry(entry: unknown): entry is IndexedRepoEntry {

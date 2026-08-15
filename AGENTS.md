@@ -42,6 +42,7 @@
 ## Test Quality & Adversarial Review
 
 - Tests must never be added solely as mechanical line-fillers to pass coverage gates (`scripts/check-changed-coverage.js`). Tests must meaningfully verify domain logic, invariant preservation, realistic crash recovery, positive cases, negative cases, and edge cases.
+- When investigating uncovered lines reported by `check-changed-coverage.js`, never bypass them or write superficial mocks. Always investigate why the branch was unexercised (e.g. realistic repository fixture setup such as `.git/config` remotes, real abort signals, default environment/argument paths, fatal error transitions) and write genuine tests exercising the domain behavior.
 - Bug fixes must start with a reproducible failing regression test before writing the fix.
 - For non-trivial features, bug fixes, or test additions, automatically spawn an adversarial test-critic subagent to review the tests. The critic must evaluate whether the suite verifies real behavior vs artificial line coverage, identifies missing edge cases, and flags fragile/vacuous tests before work is completed.
 - Never use `/* v8 ignore */` or coverage comments to bypass coverage gates. All code in the repository must be reachable and exercised by tests; dead or unreachable code must be deleted rather than kept or suppressed (except rare compiler/type-exhaustiveness edge cases where a branch is syntactically required but provably unreachable at runtime).

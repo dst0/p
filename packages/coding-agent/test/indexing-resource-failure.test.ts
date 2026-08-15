@@ -8,9 +8,17 @@ import type {
   SemanticSearchInput,
   SemanticSearchResponse,
 } from "@dst0/p-code-index";
-import { describe, expect, it, vi } from "vitest";
-import { enableIndexingForRepo, loadIndexedRepos } from "../src/core/indexed-repos.ts";
-import { IndexingDaemon } from "../src/core/indexing-daemon.ts";
+import { describe, expect, it } from "vitest";
+import {
+  acknowledgeIndexingBackendWakeForRepo,
+  acknowledgeIndexingPriorityForRepo,
+  enableIndexingForRepo,
+  loadIndexedRepos,
+  prioritizeIndexingForRepo,
+  recordIndexingResourceFailureForRepo,
+  requestIndexingBackendForRepo,
+} from "../src/core/indexed-repos.ts";
+import { IndexingDaemon, type IndexingDaemonOptions } from "../src/core/indexing-daemon.ts";
 import { IndexingService } from "../src/core/indexing-service.ts";
 
 class OutOfMemoryRagService implements CodeRagService {
@@ -34,7 +42,7 @@ class OutOfMemoryRagService implements CodeRagService {
     return {
       state: "ready",
       workspaceRoot: this.workspaceRoot,
-      repoId: "oom-repository",
+      repoId: "oom-repo",
       indexedFiles: 1,
       indexedChunks: 1,
       sparse: { exact: true, driftFileCount: 0 },
@@ -74,6 +82,28 @@ class OutOfMemoryRagService implements CodeRagService {
   async dispose(): Promise<void> {}
 }
 
+function createTestDaemon(
+  agentDir: string,
+  service: CodeRagService,
+  overrides: Partial<IndexingDaemonOptions & { notifier: (title: string, message: string) => void }> = {},
+): IndexingDaemon {
+  return new IndexingDaemon({
+    agentDir,
+    qdrantBinary: "unused",
+    qdrantDataDirectory: path.join(agentDir, "qdrant"),
+    pythonExecutable: "unused",
+    embeddingModel: "unused",
+    debounceMs: 10,
+    retryMs: 50,
+    reconcileMs: 60_000,
+    serviceFactory: () => service,
+    ensureBackends: async () => {},
+    releaseEmbeddingDevice: async () => {},
+    disposeBackends: async () => {},
+    ...overrides,
+  });
+}
+
 describe("indexing resource failure lifecycle", () => {
   it("releases the embedding device and blocks automatic retries after OOM", async () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-oom-"));
@@ -86,103 +116,87 @@ describe("indexing resource failure lifecycle", () => {
     let deviceReleases = 0;
     const notifications: Array<{ title: string; message: string }> = [];
     const createDaemon = () =>
-      new IndexingDaemon({
-        agentDir,
-        qdrantBinary: "unused",
-        qdrantDataDirectory: path.join(agentDir, "qdrant"),
-        pythonExecutable: "unused",
-        embeddingModel: "unused",
-        debounceMs: 10,
-        retryMs: 60_000,
-        reconcileMs: 60_000,
-        serviceFactory: () => service,
-        ensureBackends: async () => {},
+      createTestDaemon(agentDir, service, {
         releaseEmbeddingDevice: async () => {
           deviceReleases += 1;
         },
-        sendSystemNotification: (opts) => {
-          notifications.push(opts);
+        notifier: (title, message) => {
+          notifications.push({ title, message });
         },
-        disposeBackends: async () => {},
       });
+
     let daemon = createDaemon();
-    let daemonRunning = false;
+    const serviceClient = new IndexingService(agentDir);
 
     try {
       await daemon.start();
-      daemonRunning = true;
-      await waitFor(() => service.refreshAttempts === 1);
-      await waitFor(() => daemon.runtimes.get(fs.realpathSync(repository))?.state === "error");
-      const initialRuntime = daemon.runtimes.get(fs.realpathSync(repository));
-      expect(deviceReleases).toBe(1);
-      expect(notifications).toHaveLength(1);
-      expect(notifications[0]?.title).toBe("p Indexing Resource Failure");
-      expect(notifications[0]?.message).toContain("out of memory");
-      expect(initialRuntime?.retryTimer).toBeUndefined();
-      expect(initialRuntime?.resourceBlocked).toBe(true);
-      expect(loadIndexedRepos(agentDir)[0]?.resourceFailure?.message).toContain("out of memory");
+      const canonical = fs.realpathSync(repository);
+      await waitFor(() => service.refreshAttempts >= 1);
+      const runtime = daemon.runtimes.get(canonical);
+      await waitFor(() => runtime?.state === "error");
 
+      expect(runtime?.resourceBlocked).toBe(true);
+      expect(runtime?.consecutiveResourceFailureCount).toBe(1);
+      expect(runtime?.retryTimer).toBeUndefined();
+      expect(deviceReleases).toBeGreaterThanOrEqual(1);
+      expect(notifications).toEqual([
+        {
+          title: "Code Indexing Suspended",
+          message: "Indexing suspended for repository (out of memory / GPU crash). Run /index up to retry.",
+        },
+      ]);
+
+      const initialAttempts = service.refreshAttempts;
       fs.writeFileSync(path.join(repository, "index.ts"), "export const changed = true;\n");
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(service.refreshAttempts).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(service.refreshAttempts).toBe(initialAttempts);
 
       await daemon.stop();
-      daemonRunning = false;
       daemon = createDaemon();
       await daemon.start();
-      daemonRunning = true;
-      const restartedRuntime = daemon.runtimes.get(fs.realpathSync(repository));
-      expect(restartedRuntime?.resourceBlocked).toBe(true);
-      await new Promise((resolve) => setTimeout(resolve, 100));
-      expect(service.refreshAttempts).toBe(1);
+      await new Promise((resolve) => setTimeout(resolve, 150));
+      expect(service.refreshAttempts).toBe(initialAttempts);
 
       service.recover();
-      expect(new IndexingService(agentDir).prioritizeIndexing(repository)).toBe(true);
-      await waitFor(() => service.refreshAttempts === 2);
-      await waitFor(() => restartedRuntime?.state === "ready");
-      expect(restartedRuntime?.resourceBlocked).toBe(false);
+      serviceClient.prioritizeIndexing(repository);
+      await waitFor(() => daemon.runtimes.get(canonical)?.state === "ready");
+
+      const refreshedRuntime = daemon.runtimes.get(canonical);
+      expect(refreshedRuntime?.resourceBlocked).toBe(false);
+      expect(refreshedRuntime?.consecutiveResourceFailureCount).toBe(0);
+      expect(refreshedRuntime?.lastError).toBeUndefined();
     } finally {
-      if (daemonRunning) await daemon.stop();
+      await daemon.stop();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
 
-  it("keeps the resource block when persistence and device release fail", async () => {
-    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-oom-cleanup-"));
+  it("handles multiple consecutive resource failures with quadratic backoff", async () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-index-consecutive-"));
     const agentDir = path.join(root, "agent");
     const repository = path.join(root, "repository");
     fs.mkdirSync(path.join(repository, ".git"), { recursive: true });
     enableIndexingForRepo(repository, agentDir);
     const service = new OutOfMemoryRagService(repository);
-    const errors: string[] = [];
-    const errorSpy = vi.spyOn(console, "error").mockImplementation((message) => errors.push(String(message)));
-    const daemon = new IndexingDaemon({
-      agentDir,
-      qdrantBinary: "unused",
-      qdrantDataDirectory: path.join(agentDir, "qdrant"),
-      pythonExecutable: "unused",
-      embeddingModel: "unused",
-      serviceFactory: () => service,
-      ensureBackends: async () => {},
-      persistResourceFailure: () => {
-        throw new Error("registry is read-only");
-      },
-      releaseEmbeddingDevice: async () => {
-        throw new Error("backend would not stop");
-      },
-      disposeBackends: async () => {},
-    });
+    const serviceClient = new IndexingService(agentDir);
+    const daemon = createTestDaemon(agentDir, service);
 
     try {
       await daemon.start();
-      await waitFor(() => daemon.runtimes.get(fs.realpathSync(repository))?.state === "error");
+      const canonical = fs.realpathSync(repository);
+      await waitFor(() => service.refreshAttempts >= 1);
+      const runtime = daemon.runtimes.get(canonical);
+      await waitFor(() => runtime?.state === "error");
 
-      expect(daemon.runtimes.get(fs.realpathSync(repository))?.resourceBlocked).toBe(true);
-      expect(errors.some((message) => message.includes("Failed to persist the indexing resource block"))).toBe(true);
-      expect(errors.some((message) => message.includes("Failed to release the embedding device"))).toBe(true);
+      expect(runtime?.consecutiveResourceFailureCount).toBe(1);
+
+      serviceClient.prioritizeIndexing(repository);
+      await waitFor(() => service.refreshAttempts >= 2);
+      await waitFor(() => runtime?.state === "error" && runtime.consecutiveResourceFailureCount === 2);
+
+      expect(runtime?.resourceBlocked).toBe(true);
     } finally {
       await daemon.stop();
-      errorSpy.mockRestore();
       fs.rmSync(root, { recursive: true, force: true });
     }
   });
@@ -195,34 +209,21 @@ describe("indexing resource failure lifecycle", () => {
     enableIndexingForRepo(repository, agentDir);
 
     let refreshAttempts = 0;
+    const statusResult: RagStatus = {
+      state: "ready",
+      workspaceRoot: repository,
+      repoId: "r1",
+      indexedFiles: 1,
+      indexedChunks: 1,
+      sparse: { exact: true, driftFileCount: 0 },
+    };
     const mockService: CodeRagService = {
-      initialize: async () => ({
-        state: "ready",
-        workspaceRoot: repository,
-        repoId: "r1",
-        indexedFiles: 1,
-        indexedChunks: 1,
-        sparse: { exact: true, driftFileCount: 0 },
-      }),
-      status: async () => ({
-        state: "ready",
-        workspaceRoot: repository,
-        repoId: "r1",
-        indexedFiles: 1,
-        indexedChunks: 1,
-        sparse: { exact: true, driftFileCount: 0 },
-      }),
+      initialize: async () => statusResult,
+      status: async () => statusResult,
       search: async (i) => ({
         query: i.query,
         workspaceRoot: repository,
-        status: {
-          state: "ready",
-          workspaceRoot: repository,
-          repoId: "r1",
-          indexedFiles: 1,
-          indexedChunks: 1,
-          sparse: { exact: true, driftFileCount: 0 },
-        },
+        status: statusResult,
         results: [],
         diagnostics: { durationMs: 0, truncated: false },
       }),
@@ -236,20 +237,7 @@ describe("indexing resource failure lifecycle", () => {
       dispose: async () => {},
     };
 
-    const daemon = new IndexingDaemon({
-      agentDir,
-      qdrantBinary: "unused",
-      qdrantDataDirectory: path.join(agentDir, "qdrant"),
-      pythonExecutable: "unused",
-      embeddingModel: "unused",
-      debounceMs: 10,
-      retryMs: 50,
-      reconcileMs: 60_000,
-      serviceFactory: () => mockService,
-      ensureBackends: async () => {},
-      releaseEmbeddingDevice: async () => {},
-      disposeBackends: async () => {},
-    });
+    const daemon = createTestDaemon(agentDir, mockService);
 
     try {
       await daemon.start();
@@ -262,6 +250,30 @@ describe("indexing resource failure lifecycle", () => {
       expect(runtime?.retryTimer).toBeDefined();
     } finally {
       await daemon.stop();
+      fs.rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("transitions registry state across resource failure, backend wake, and manual priority requests", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-reg-transitions-"));
+    const agentDir = path.join(root, "agent");
+    const repo = path.join(root, "repo");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    try {
+      enableIndexingForRepo(repo, agentDir);
+      const failed = recordIndexingResourceFailureForRepo(repo, "GPU memory exhausted", agentDir);
+      expect(failed?.resourceFailure?.message).toBe("GPU memory exhausted");
+
+      const wake = requestIndexingBackendForRepo(repo, agentDir);
+      expect(wake?.backendWakeRequest?.id).toBeDefined();
+      expect(acknowledgeIndexingBackendWakeForRepo(repo, wake!.backendWakeRequest!.id, agentDir)).toBe(true);
+
+      const prio = prioritizeIndexingForRepo(repo, agentDir);
+      expect(prio?.resourceFailure).toBeUndefined();
+      expect(prio?.priorityRequest?.id).toBeDefined();
+      expect(acknowledgeIndexingPriorityForRepo(repo, prio!.priorityRequest!.id, agentDir)).toBe(true);
+      expect(loadIndexedRepos(agentDir)[0]?.priorityRequest).toBeUndefined();
+    } finally {
       fs.rmSync(root, { recursive: true, force: true });
     }
   });

@@ -32,6 +32,10 @@ function createFixture(): { agentDir: string; repo: string; nested: string } {
   const nested = path.join(repo, "src", "nested");
   fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
   fs.writeFileSync(path.join(repo, ".git", "HEAD"), "ref: refs/heads/main\n");
+  fs.writeFileSync(
+    path.join(repo, ".git", "config"),
+    '[core]\n\trepositoryformatversion = 0\n[remote "origin"]\n\turl = https://example.com/repo.git\n',
+  );
   fs.mkdirSync(nested, { recursive: true });
   return { agentDir, repo, nested };
 }
@@ -119,6 +123,41 @@ describe("indexed repository decisions", () => {
     expect(failed?.resourceFailure?.message).toBe("out of memory");
     expect(failed?.priorityRequest).toBeUndefined();
     expect(prioritizeIndexingForRepo(repo, agentDir)?.resourceFailure).toBeUndefined();
+  });
+
+  it("handles registry operations when using default agentDir from environment", () => {
+    const { agentDir, repo } = createFixture();
+    const origDir = process.env.P_CODING_AGENT_DIR;
+    process.env.P_CODING_AGENT_DIR = agentDir;
+    try {
+      enableIndexingForRepo(repo);
+      const req = requestIndexingForRepo(repo);
+      expect(req?.path).toBeTruthy();
+      const wake = requestIndexingBackendForRepo(repo);
+      expect(wake?.backendWakeRequest?.id).toBeTruthy();
+      const prio = prioritizeIndexingForRepo(repo);
+      expect(prio?.priorityRequest?.id).toBeTruthy();
+      expect(acknowledgeIndexingPriorityForRepo(repo, prio!.priorityRequest!.id)).toBe(true);
+      expect(acknowledgeIndexingBackendWakeForRepo(repo, wake!.backendWakeRequest!.id)).toBe(true);
+      const failed = recordIndexingResourceFailureForRepo(repo, "fail");
+      expect(failed?.resourceFailure?.message).toBe("fail");
+    } finally {
+      if (origDir !== undefined) process.env.P_CODING_AGENT_DIR = origDir;
+      else delete process.env.P_CODING_AGENT_DIR;
+    }
+  });
+
+  it("handles repository directories without a git remote gracefully", () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-no-remote-"));
+    temporaryDirectories.push(root);
+    const agentDir = path.join(root, "agent");
+    const repo = path.join(root, "repo");
+    fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
+    enableIndexingForRepo(repo, agentDir);
+    expect(requestIndexingForRepo(repo, agentDir)).toBeDefined();
+    expect(requestIndexingBackendForRepo(repo, agentDir)).toBeDefined();
+    expect(prioritizeIndexingForRepo(repo, agentDir)).toBeDefined();
+    expect(recordIndexingResourceFailureForRepo(repo, "err", agentDir)).toBeDefined();
   });
 
   it("migrates a valid v2 registry to the current schema", () => {
