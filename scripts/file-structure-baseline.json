@@ -227,10 +227,6 @@
     "classes": 3,
     "lines": 407
   },
-  "packages/code-index/src/rag/types.ts": {
-    "classes": 0,
-    "lines": 327
-  },
   "packages/code-index/src/rag/vector-store.ts": {
     "classes": 3,
     "lines": 446

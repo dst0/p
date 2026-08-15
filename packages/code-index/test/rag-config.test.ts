@@ -112,6 +112,24 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
     expect(settings.torchBackend).toBe("cpu");
   });
 
+  it("loads and defaults enableTray setting", () => {
+    const dir = createTempDir();
+    const defaultSettings = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+    });
+    expect(defaultSettings.enableTray).toBe(true);
+
+    const configPath = path.join(dir, "code-rag.json");
+    fs.writeFileSync(configPath, JSON.stringify({ enableTray: false }));
+    const customSettings = loadWorkspaceCodeRagSettings({
+      dataDirectory: dir,
+      workspaceRoot: dir,
+      userConfigPath: configPath,
+    });
+    expect(customSettings.enableTray).toBe(false);
+  });
+
   it("bounds the sequence default only for Apple accelerators", () => {
     const dir = createTempDir();
     const mps = loadWorkspaceCodeRagSettings({
@@ -191,26 +209,12 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
 
   it("validates result limits, dimensions, and rebuild ratios", () => {
     const dir = createTempDir();
-
-    // Invalid limit
     expect(() =>
-      loadWorkspaceCodeRagSettings({
-        dataDirectory: dir,
-        workspaceRoot: dir,
-        settings: { defaultLimit: 0 },
-      }),
+      loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir, settings: { defaultLimit: 0 } }),
     ).toThrow("result limits are invalid");
-
-    // Invalid embeddingDimensions
     expect(() =>
-      loadWorkspaceCodeRagSettings({
-        dataDirectory: dir,
-        workspaceRoot: dir,
-        settings: { embeddingDimensions: -1 },
-      }),
+      loadWorkspaceCodeRagSettings({ dataDirectory: dir, workspaceRoot: dir, settings: { embeddingDimensions: -1 } }),
     ).toThrow("must be a positive integer");
-
-    // Invalid fullSparseRebuildChangeRatio
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -218,8 +222,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { fullSparseRebuildChangeRatio: 1.5 },
       }),
     ).toThrow("fullSparseRebuildChangeRatio must be between 0 and 1");
-
-    // Invalid sparseRebuildDriftRatio
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -227,7 +229,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { sparseRebuildDriftRatio: -0.1 },
       }),
     ).toThrow("sparseRebuildDriftRatio must be between 0 and 1");
-
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -235,7 +236,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { preparationMaxWorkers: 1.5 },
       }),
     ).toThrow("preparationMaxWorkers must be a positive integer");
-
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -243,7 +243,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { preparationWorkerMemoryBytes: 1024 },
       }),
     ).toThrow("preparationWorkerMemoryBytes must be an integer of at least 1 MiB");
-
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -251,7 +250,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { preparationMemoryReserveBytes: Number.MAX_SAFE_INTEGER + 1 },
       }),
     ).toThrow("preparationMemoryReserveBytes must be a positive integer");
-
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,
@@ -259,7 +257,6 @@ describe("loadWorkspaceCodeRagSettings edge cases", () => {
         settings: { maxFileBytes: Number.MAX_SAFE_INTEGER + 1 },
       }),
     ).toThrow("maxFileBytes must be a positive integer");
-
     expect(() =>
       loadWorkspaceCodeRagSettings({
         dataDirectory: dir,

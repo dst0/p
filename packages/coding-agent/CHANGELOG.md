@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- Support optional `enableTray` setting in code-index RAG configuration parser and types.
 - Recover plan items from compaction summaries when previous session state has an empty plan, and auto-initialize a baseline plan item from the user goal during unmanaged tool execution.
 - Resume interrupted transactional full-index rebuilds from durable per-batch checkpoints, while invalidating checkpoints when repository contents or embedding compatibility change.
 - Compute indexing-service reuse only after applying interactive device selection, so `reinstall.sh --select-indexing` restarts a daemon still running the previous backend.

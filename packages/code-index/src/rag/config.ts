@@ -9,6 +9,7 @@ export const DEFAULT_EMBEDDING_NORMALIZATION = "l2";
 
 export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   enabled: true,
+  enableTray: true,
   autoRefresh: true,
   allowStaleSearch: true,
   remoteBackendsAllowed: false,
@@ -59,6 +60,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
 
 const BOOLEAN_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "enabled",
+  "enableTray",
   "autoRefresh",
   "allowStaleSearch",
   "remoteBackendsAllowed",
@@ -118,26 +120,12 @@ const STRING_KEYS = new Set<keyof WorkspaceCodeRagSettings>([
   "ryzenAiArchivePath",
   "collectionPrefix",
 ]);
-const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>([
-  "auto",
-  "cpu",
-  "cuda",
-  "rocm",
-  "mps",
-  "npu",
-  "apple-ane",
-  "apple-mps",
-  "amd-rocm",
-  "nvidia-cuda",
-  "ryzenai",
-  "vitisai",
-  "amd-phoenix-npu",
-  "amd-ryzenai-npu",
-  "openvino",
-  "openvino-npu",
-  "intel-openvino-cpu",
-  "intel-openvino-npu",
-]);
+const EMBEDDING_DEVICES = new Set<WorkspaceCodeRagSettings["embeddingDevice"]>(
+  "auto cpu cuda rocm mps npu apple-ane apple-mps amd-rocm nvidia-cuda ryzenai vitisai amd-phoenix-npu amd-ryzenai-npu openvino openvino-npu intel-openvino-cpu intel-openvino-npu".split(
+    " ",
+  ) as WorkspaceCodeRagSettings["embeddingDevice"][],
+);
+
 const TORCH_BACKENDS = new Set<WorkspaceCodeRagSettings["torchBackend"]>(["auto", "cpu", "cuda", "rocm"]);
 const MPS_PRECISIONS = new Set<WorkspaceCodeRagSettings["mpsPrecision"]>(["bfloat16", "float32"]);
 const SEARCH_MODES = new Set<WorkspaceCodeRagSettings["searchMode"]>(["hybrid", "bm25-only"]);
@@ -268,10 +256,11 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
     if (!Number.isFinite(value) || value <= 0) throw new Error("Code RAG numeric settings must be positive");
   }
   if (!settings.remoteBackendsAllowed) {
-    for (const [name, value] of [
+    const urls = [
       ["qdrantUrl", settings.qdrantUrl],
       ["embeddingServerUrl", settings.embeddingServerUrl],
-    ] as const) {
+    ] as const;
+    for (const [name, value] of urls) {
       let url: URL;
       try {
         url = new URL(value);

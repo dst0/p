@@ -1,5 +1,6 @@
 import type { EmbeddingProvider } from "../embed/provider.ts";
 import type { EmbeddingRuntimeSettings } from "./embedding-settings.ts";
+import type { RagVectorStore } from "./vector-types.ts";
 
 export type RagState =
   | "not_initialized"
@@ -198,81 +199,15 @@ export interface IndexManifest {
   lastError?: RagErrorInfo;
 }
 
-export interface StoredChunkPayload {
-  repoId: string;
-  fileId: string;
-  path: string;
-  language: string;
-  symbolName: string;
-  symbolType: string;
-  startLine: number;
-  endLine: number;
-  fileHash: string;
-  chunkHash: string;
-  chunkOrdinal: number;
-  chunkerVersion: string;
-  indexGeneration: string;
-  isTest: boolean;
-  isGenerated: boolean;
-  content: string;
-  indexedAt: string;
-}
-
-export interface SparseVector {
-  indices: number[];
-  values: number[];
-}
-
-export interface VectorPoint {
-  id: string;
-  vectors: {
-    dense?: number[];
-    sparse: SparseVector;
-  };
-  payload: StoredChunkPayload;
-}
-
-export interface StoredVectorPoint {
-  id: string;
-  dense?: number[];
-  payload: StoredChunkPayload;
-}
-
-export interface VectorSearchFilters {
-  repoId: string;
-  languages?: string[];
-  includeTests: boolean;
-  includeGenerated: boolean;
-}
-
-export interface VectorSearchResult {
-  id: string | number;
-  score: number;
-  payload: StoredChunkPayload;
-}
-
-export interface RagVectorStore {
-  collectionExists(collection: string): Promise<boolean>;
-  createCollection(collection: string, denseDimensions: number): Promise<void>;
-  deleteCollection(collection: string): Promise<void>;
-  collectionStatus(collection: string): Promise<{ points: number; dimensions: number | undefined }>;
-  upsert(collection: string, points: VectorPoint[]): Promise<void>;
-  deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void>;
-  iteratePoints?(
-    collection: string,
-    repoId: string,
-    withDense: boolean,
-    signal?: AbortSignal,
-  ): AsyncIterable<StoredVectorPoint>;
-  search(
-    collection: string,
-    dense: Float32Array,
-    sparse: SparseVector,
-    filters: VectorSearchFilters,
-    limit: number,
-  ): Promise<VectorSearchResult[]>;
-  dispose?(): Promise<void> | void;
-}
+export type {
+  RagVectorStore,
+  SparseVector,
+  StoredChunkPayload,
+  StoredVectorPoint,
+  VectorPoint,
+  VectorSearchFilters,
+  VectorSearchResult,
+} from "./vector-types.ts";
 
 export interface CodeRagService {
   initialize(options?: InitializeRagOptions): Promise<RagStatus>;
@@ -285,6 +220,7 @@ export interface CodeRagService {
 
 export interface WorkspaceCodeRagSettings extends EmbeddingRuntimeSettings {
   enabled: boolean;
+  enableTray?: boolean;
   searchMode: "hybrid" | "bm25-only" | "dense-only";
   autoRefresh: boolean;
   allowStaleSearch: boolean;
