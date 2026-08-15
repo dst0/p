@@ -46,6 +46,8 @@ export interface LoadSkillsOptions {
   skillPaths: string[];
   /** Include default skills directories. */
   includeDefaults: boolean;
+  /** Include bundled skills directory (defaults to includeDefaults). */
+  includeBundled?: boolean;
   /** Optional bundled skills directory override. */
   bundledSkillsDir?: string;
 }

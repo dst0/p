@@ -151,6 +151,7 @@ export function do_updateSkillsFromPaths(
       agentDir: self.agentDir,
       skillPaths,
       includeDefaults: false,
+      includeBundled: !self.noSkills,
     });
   }
   const resolvedSkills = self.skillsOverride ? self.skillsOverride(skillsResult) : skillsResult;

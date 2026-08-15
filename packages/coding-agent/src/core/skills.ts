@@ -64,11 +64,15 @@ export function loadSkills(options: LoadSkillsOptions): LoadSkillsResult {
     }
   }
 
-  if (includeDefaults) {
+  const shouldIncludeBundled = options.includeBundled ?? includeDefaults;
+  if (shouldIncludeBundled) {
     const effectiveBundledDir = bundledSkillsDir ?? getBundledSkillsDir();
     if (effectiveBundledDir && existsSync(effectiveBundledDir)) {
       addSkills(loadSkillsFromDirInternal(effectiveBundledDir, "bundled", true));
     }
+  }
+
+  if (includeDefaults) {
     addSkills(loadSkillsFromDirInternal(join(resolvedAgentDir, "skills"), "user", true));
     addSkills(loadSkillsFromDirInternal(resolve(resolvedCwd, CONFIG_DIR_NAME, "skills"), "project", true));
   }

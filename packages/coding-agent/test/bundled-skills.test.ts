@@ -141,4 +141,18 @@ description: Project level testing
     expect(testingSkill?.sourceInfo.scope).toBe("project");
     expect(diagnostics.filter((d) => d.type === "collision")).toHaveLength(0);
   });
+
+  it("should expose bundled skills via DefaultResourceLoader in runtime", async () => {
+    const { DefaultResourceLoader } = await import("../src/core/resource-loader.ts");
+    const loader = new DefaultResourceLoader({
+      cwd: tempCwd,
+      agentDir: tempAgentDir,
+    });
+    await loader.reload();
+
+    const { skills } = loader.getSkills();
+    const testingSkill = skills.find((s) => s.name === "software-testing");
+    expect(testingSkill).toBeDefined();
+    expect(testingSkill?.sourceInfo.source).toBe("bundled");
+  });
 });
