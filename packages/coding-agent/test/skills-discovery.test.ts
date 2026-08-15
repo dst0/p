@@ -1,14 +1,9 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import ignore from "ignore";
 import { tmpdir } from "os";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import {
-  addIgnoreRules,
-  loadSkillsFromDir,
-  prefixIgnorePattern,
-  toPosixPath,
-} from "../src/core/skills/discovery.ts";
-import ignore from "ignore";
+import { addIgnoreRules, loadSkillsFromDir, prefixIgnorePattern, toPosixPath } from "../src/core/skills/discovery.ts";
 
 describe("skills discovery & ignore rules", () => {
   let tempDir: string;
@@ -88,11 +83,7 @@ describe("skills discovery & ignore rules", () => {
         "utf-8",
       );
 
-      writeFileSync(
-        join(tempDir, ".gitignore"),
-        "ignored-skill/\nignored-file-skill/SKILL.md\n",
-        "utf-8",
-      );
+      writeFileSync(join(tempDir, ".gitignore"), "ignored-skill/\nignored-file-skill/SKILL.md\n", "utf-8");
 
       // 5. node_modules skill
       const nodeModulesSkillDir = join(tempDir, "node_modules", "vendor-skill");

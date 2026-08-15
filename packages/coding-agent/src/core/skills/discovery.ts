@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import ignore from "ignore";
-import { basename, dirname, join, relative, sep } from "path";
+import { basename, dirname, join, relative } from "path";
 import { parseFrontmatter } from "../../utils/frontmatter.ts";
 import type { ResourceDiagnostic } from "../diagnostics.ts";
 import { createSyntheticSourceInfo, type SourceInfo } from "../source-info.ts";
@@ -17,7 +17,7 @@ import {
 export type IgnoreMatcher = ReturnType<typeof ignore>;
 
 export function toPosixPath(p: string): string {
-  return p.split(sep).join("/");
+  return p.replaceAll("\\", "/");
 }
 
 export function prefixIgnorePattern(line: string, prefix: string): string | null {
@@ -31,7 +31,7 @@ export function prefixIgnorePattern(line: string, prefix: string): string | null
   if (pattern.startsWith("!")) {
     negated = true;
     pattern = pattern.slice(1);
-  } else if (pattern.startsWith("\\!")) {
+  } else if (prefix && (pattern.startsWith("\\!") || pattern.startsWith("\\#"))) {
     pattern = pattern.slice(1);
   }
 
