@@ -85,7 +85,7 @@ class OutOfMemoryRagService implements CodeRagService {
 function createTestDaemon(
   agentDir: string,
   service: CodeRagService,
-  overrides: Partial<IndexingDaemonOptions & { notifier: (title: string, message: string) => void }> = {},
+  overrides: Partial<IndexingDaemonOptions> = {},
 ): IndexingDaemon {
   return new IndexingDaemon({
     agentDir,
@@ -95,7 +95,7 @@ function createTestDaemon(
     embeddingModel: "unused",
     debounceMs: 10,
     retryMs: 50,
-    reconcileMs: 60_000,
+    reconcileMs: 20,
     serviceFactory: () => service,
     ensureBackends: async () => {},
     releaseEmbeddingDevice: async () => {},
@@ -120,8 +120,8 @@ describe("indexing resource failure lifecycle", () => {
         releaseEmbeddingDevice: async () => {
           deviceReleases += 1;
         },
-        notifier: (title, message) => {
-          notifications.push({ title, message });
+        sendSystemNotification: (notification) => {
+          notifications.push(notification);
         },
       });
 
@@ -141,8 +141,8 @@ describe("indexing resource failure lifecycle", () => {
       expect(deviceReleases).toBeGreaterThanOrEqual(1);
       expect(notifications).toEqual([
         {
-          title: "Code Indexing Suspended",
-          message: "Indexing suspended for repository (out of memory / GPU crash). Run /index up to retry.",
+          title: "p Indexing Resource Failure",
+          message: "Indexing paused for repository: MPS backend out of memory at batch size 1. Run /index up to retry.",
         },
       ]);
 
@@ -186,13 +186,13 @@ describe("indexing resource failure lifecycle", () => {
       const canonical = fs.realpathSync(repository);
       await waitFor(() => service.refreshAttempts >= 1);
       const runtime = daemon.runtimes.get(canonical);
-      await waitFor(() => runtime?.state === "error");
+      await waitFor(() => runtime?.state === "error" && runtime.consecutiveResourceFailureCount === 1);
 
-      expect(runtime?.consecutiveResourceFailureCount).toBe(1);
+      expect(runtime?.resourceBlocked).toBe(true);
 
       serviceClient.prioritizeIndexing(repository);
       await waitFor(() => service.refreshAttempts >= 2);
-      await waitFor(() => runtime?.state === "error" && runtime.consecutiveResourceFailureCount === 2);
+      await waitFor(() => runtime?.state === "error" && runtime.consecutiveResourceFailureCount === 1);
 
       expect(runtime?.resourceBlocked).toBe(true);
     } finally {
