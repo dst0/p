@@ -1289,7 +1289,6 @@ function commandFor(agent, options, task, configDir, workspace) {
 		options.model,
 		"--no-session",
 		"--no-extensions",
-		"--no-skills",
 		"--no-context-files",
 		"--no-themes",
 		task.prompt,

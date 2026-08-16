@@ -154,47 +154,26 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const hasSearch = tools.some((t) => /search|fetch|curl|browser|web/i.test(t));
   if (hasSearch) {
     addGuideline(
-      "Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+      "Use web search to consult current documentation, ecosystem practices, and library error modes when integrating unfamiliar packages or APIs.",
     );
   }
   addGuideline(
-    "Develop in vertical slices (test -> code -> verify): write concise invariant tests first (10-30 lines), implement the minimal logic, and run tests immediately for fast feedback before moving to the next module. Never postpone testing to a single massive monolithic file at the end.",
+    "Preserve existing public API shapes, signatures, and contracts strictly. Do not invent response wrappers, extra properties, or altered return types unless explicitly requested.",
   );
   addGuideline(
-    "Verify mathematical, timing, and concurrency formulas (e.g. monotonic clock checks, failedAt + retryDelay * 2 ** (attempt - 1) exponential backoff, DAG topological cycles, and lease expiration) with lean, targeted invariant assertions.",
+    "Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
   );
   addGuideline(
-    "Never create generic, catch-all, or branch-filler test files (e.g. branches.test.ts, coverage.test.ts). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.",
+    "Ensure transactional and atomic operations guarantee clean rollback: on any mid-operation failure, all state modifications, caches, logs, and identity registries must revert to their pre-operation state.",
   );
   addGuideline(
-    "Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.",
+    "Validate input streams, parsers, and serializations thoroughly against incomplete, corrupted, or truncated data (e.g. data missing terminating delimiters).",
   );
   addGuideline(
-    "When modifying or creating code, write tests covering all changes across the 5-factor test matrix: positive paths, negative paths, boundary edge cases, crash/recovery (e.g. AbortSignal, I/O errors, rollbacks), and invariant preservation. Superficial mocks or assertions added solely to pass line coverage without validating domain logic are prohibited.",
+    "Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",
   );
   addGuideline(
-    "Consult the software-testing skill and its reference playbooks for TDD workflows, invariant contracts, realistic fixture isolation, and mutation self-verification.",
-  );
-  addGuideline(
-    "Maintain a green test suite continuously: run tests after each slice to verify they pass before proceeding.",
-  );
-  addGuideline(
-    "Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
-  );
-  addGuideline(
-    "For transactional and serialization guarantees, test the smallest boundary mutation literally: remove exactly one final byte, not a whole line or record. After every failed atomic operation, retry each attempted identity with both the same and changed payload to prove that state, logs, positions, hashes, and idempotency registries all rolled back. A coarser proxy test does not satisfy an exact boundary requirement",
-  );
-  addGuideline(
-    "Preserve public API shapes exactly and do not invent response wrappers. For idempotency, compare a lossless canonical identity containing every semantically relevant command field and option; never use a partial projection such as only operation type and resource ID",
-  );
-  addGuideline(
-    "After writing any guard, validation, or idempotency check, trace every branch: list the input states, the boolean conditions evaluated, and which path is taken. Verify the throw path triggers only on the intended violation, not on the happy path. A common error is inverting the condition so valid inputs are rejected.",
-  );
-  addGuideline(
-    "Every filter, parser, or line splitter must include a test for the exact truncation boundary: a string missing its final newline terminator. Verify the code rejects incomplete data, not just malformed data.",
-  );
-  addGuideline(
-    "Before declaring any code complete, run the type checker and visible test suite. Do not assume code compiles or tests pass based on syntax alone. Fix all type errors and test failures before moving to the next step.",
+    "When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
   );
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

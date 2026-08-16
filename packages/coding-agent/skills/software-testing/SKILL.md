@@ -14,57 +14,48 @@ across all languages and frameworks.
 
 ## Core Invariants
 
-1. **Incremental Slice-by-Slice TDD Over Big-Bang Testing**: Never postpone test writing to a single
-   massive final turn. Write tests and code in tight vertical slices (e.g., test invariant $\to$ implement
-   logic $\to$ run test runner). Ensure the test suite is green after every module.
+1. **Iterative Verification (Code & Test in Slices)**: Avoid postponing all testing to the very end of a project.
+   Implement focused functionality, then immediately author domain tests to verify correctness, edge cases, and contracts before moving to subsequent modules.
 2. **Domain-Specific Test Structure (No Branch Fillers)**: Never create generic catch-all or
    branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into
    descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
 3. **100% Branch Coverage via Real Permutations**: Strive for 100% branch coverage by exercising real
    operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter
    paths, and event sequences with and without initial lifecycle triggers.
-4. **Lean Invariant Verification Over Bloated Boilerplate**: Verify mathematical formulas (e.g. exponential
-   backoff $t_{\text{fail}} + \text{delay} \times 2^{\text{attempt}-1}$, monotonic timestamps, DAG cycles) with
-   compact table-driven assertions rather than verbose repetitive files.
+4. **Lean Invariant Verification**: Verify system invariants (monotonic clocks, retry delays, rollback guarantees,
+   DAG acyclicity, idempotency) with compact table-driven assertions rather than verbose boilerplate.
 5. **Meaningful Verification Over Line Coverage**: Tests must verify domain logic, boundary
    conditions, state invariants, and realistic crash recovery. Passing coverage gates with
    tautological assertions or superficial mocks is prohibited.
 6. **Zero Dead Code**: Never use ignore pragmas (e.g. `v8 ignore`) to bypass coverage gates.
    All code must be reachable and exercised by tests.
-7. **Mandatory Web Search**: Before implementing non-trivial logic, asynchronous state machines,
-   or testing complex APIs, search the web to clarify current ecosystem best practices,
-   concurrency caveats, error types, and edge cases.
-8. **Reproducible Regression First**: When fixing a bug, write a failing regression test first,
+7. **Ecosystem & Library Research**: Before implementing unfamiliar APIs, asynchronous state machines,
+   or complex protocols, research current ecosystem best practices, cancellation semantics, error types, and edge cases.
+8. **Reproducible Regression First for Bug Fixes**: When fixing an existing bug, write a failing regression test first,
    execute the test runner to confirm failure, then write the minimal fix.
 
 ---
 
 ## 4-Phase Testing Protocol
 
-### Phase 1: Research & Discovery (Web Search)
-Before writing tests or code:
-- Search the web for library-specific error modes, signal/cancellation semantics, and standard
-  test harness conventions.
-- Identify common pitfalls (e.g., event listener leaks, stream truncation, race conditions).
+### Phase 1: Research & Contract Discovery
+Before writing code:
+- Identify public APIs, data contracts, and error semantics.
+- If using external libraries or runtime APIs, consult documentation or search for known error modes and cancellation caveats.
 - See detailed guidance: [`references/web-research-playbook.md`](./references/web-research-playbook.md).
 
-### Phase 2: Incremental Slice TDD (Test-First per Invariant)
-- For each module or capability, write a concise test asserting the invariant before implementing the code.
-- Run the test runner immediately to observe the failure.
-- Implement the minimal logic to satisfy the test, then re-run to confirm green status before proceeding.
-- Maintain a fully passing test suite throughout the task.
+### Phase 2: Implementation & Immediate Verification
+- Write clean, modular implementation code for the current feature slice.
+- Immediately author dedicated domain tests to exercise the newly written functionality.
+- Run the test suite (`npm test`, `pytest`, `cargo test`) to verify green status before advancing.
 
 ### Phase 3: The 5-Factor Test Matrix
-Every change must be validated against all 5 aspects:
-1. **Positive Path**: Happy path scenarios with standard valid inputs and expected return types.
-2. **Negative Path**: Invalid inputs, type mismatches, rejected promises, unauthorized states,
-   and custom exception validation.
-3. **Boundary & Edge Cases**: Empty collections, zero values, single-element collections,
-   maximum buffer limits, unicode edge cases, off-by-one indices, and missing end-of-line tokens.
-4. **Crash, Fault & Recovery**: Abort signals (`AbortController`), timeouts, process termination,
-   unwritable disks, network disconnections, and partial rollback validation.
-5. **Invariant Preservation**: Pre- and post-condition checks ensuring that failed operations
-   leave state, registries, and file structures completely uncorrupted.
+Every change must be validated across all 5 dimensions:
+1. **Positive Path**: Happy path scenarios with standard valid inputs and expected return shapes.
+2. **Negative Path**: Invalid inputs, type mismatches, rejected promises, unauthorized states, and error handling.
+3. **Boundary & Edge Cases**: Empty collections, zero/negative values, single-element limits, buffer boundaries, and incomplete/truncated streams.
+4. **Crash, Fault & Recovery**: Abort signals (`AbortController`), timeouts, unexpected process termination, and partial failure rollback.
+5. **Invariant Preservation**: Pre- and post-condition checks ensuring that failed operations leave state, registries, and logs completely uncorrupted.
 - See detailed matrix guide: [`references/tdd-and-invariants.md`](./references/tdd-and-invariants.md).
 
 ### Phase 4: Adversarial Self-Check & Mutation Analysis

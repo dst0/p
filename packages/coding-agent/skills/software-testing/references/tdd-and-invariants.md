@@ -1,18 +1,18 @@
-# TDD & Invariant Testing Matrix
+# Invariant Testing & 5-Factor Verification Matrix
 
 This guide provides deep technical instructions for designing comprehensive test suites
-that verify mathematical, stateful, and domain invariants using concise, fast-feedback TDD.
+that verify mathematical, stateful, and domain invariants using iterative post-implementation testing.
 
 ---
 
-## Incremental Slice-by-Slice TDD Protocol
+## Iterative Verification Protocol
 
-Avoid "Big-Bang" test generation at the end of a project. Instead:
-1. **Vertical Slice Loop**:
-   - `module.test.ts` (10–30 lines of invariant tests) $\to$ `module.ts` (implementation) $\to$ run `npm test`.
-   - Never proceed to the next module until the current slice's tests are 100% green.
+Avoid "Big-Bang" test generation at the very end of a project. Instead:
+1. **Iterative Feature Slice Loop**:
+   - Write clean, focused implementation for a module or unit $\to$ author 10–30 lines of domain invariant tests $\to$ run test runner to verify.
+   - Confirm all tests pass before proceeding to dependent modules.
 2. **Lean Invariant Assertions**:
-   - Write parameterized or table-driven tests for arithmetic invariants, monotonic clocks, exponential backoff formulas, and DAG topological order.
+   - Write parameterized or table-driven tests for arithmetic invariants, monotonic clocks, retry delays, and graph acyclicity.
    - Avoid hundreds of lines of repetitive boilerplate; test the boundary conditions directly.
 
 ---

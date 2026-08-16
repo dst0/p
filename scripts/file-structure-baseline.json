@@ -725,7 +725,7 @@
   },
   "scripts/benchmark-agents.js": {
     "classes": 0,
-    "lines": 2138
+    "lines": 2137
   },
   "scripts/edit-tool-stats.js": {
     "classes": 0,

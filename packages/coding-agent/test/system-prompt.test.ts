@@ -20,38 +20,24 @@ describe("buildSystemPrompt", () => {
 
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
-    expect(prompt).not.toContain(
-      "- Before implementing non-trivial features, architectural changes, third-party library integrations",
+    expect(prompt).toContain(
+      "- Preserve existing public API shapes, signatures, and contracts strictly. Do not invent response wrappers, extra properties, or altered return types unless explicitly requested.",
     );
     expect(prompt).toContain(
-      "- When modifying or creating code, write tests covering all changes across the 5-factor test matrix: positive paths, negative paths, boundary edge cases, crash/recovery (e.g. AbortSignal, I/O errors, rollbacks), and invariant preservation. Superficial mocks or assertions added solely to pass line coverage without validating domain logic are prohibited.",
+      "- Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
     );
     expect(prompt).toContain(
-      "- Consult the software-testing skill and its reference playbooks for TDD workflows, invariant contracts, realistic fixture isolation, and mutation self-verification.",
-    );
-    expect(prompt).toContain("- Never create generic, catch-all, or branch-filler test files");
-    expect(prompt).toContain("- Strive for 100% branch coverage across all tested modules");
-    expect(prompt).toContain(
-      "- Develop in vertical slices (test -> code -> verify): write concise invariant tests first",
-    );
-    expect(prompt).toContain("- Verify mathematical, timing, and concurrency formulas");
-    expect(prompt).toContain(
-      "- Maintain a green test suite continuously: run tests after each slice to verify they pass before proceeding.",
+      "- Ensure transactional and atomic operations guarantee clean rollback: on any mid-operation failure, all state modifications, caches, logs, and identity registries must revert to their pre-operation state.",
     );
     expect(prompt).toContain(
-      "- Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
+      "- Validate input streams, parsers, and serializations thoroughly against incomplete, corrupted, or truncated data (e.g. data missing terminating delimiters).",
     );
     expect(prompt).toContain(
-      "- For transactional and serialization guarantees, test the smallest boundary mutation literally: remove exactly one final byte, not a whole line or record. After every failed atomic operation, retry each attempted identity with both the same and changed payload to prove that state, logs, positions, hashes, and idempotency registries all rolled back. A coarser proxy test does not satisfy an exact boundary requirement",
+      "- Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",
     );
     expect(prompt).toContain(
-      "- Preserve public API shapes exactly and do not invent response wrappers. For idempotency, compare a lossless canonical identity containing every semantically relevant command field and option; never use a partial projection such as only operation type and resource ID",
+      "- When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
     );
-    expect(prompt).toContain("- After writing any guard, validation, or idempotency check, trace every branch");
-    expect(prompt).toContain(
-      "- Every filter, parser, or line splitter must include a test for the exact truncation boundary",
-    );
-    expect(prompt).toContain("- Before declaring any code complete, run the type checker and visible test suite");
   });
 
   it("includes promptGuidelines in the prompt", () => {
@@ -68,7 +54,7 @@ describe("buildSystemPrompt", () => {
       selectedTools: ["read", "bash", "web_search"],
     });
     expect(prompt).toContain(
-      "- Before implementing non-trivial features, architectural changes, third-party library integrations, concurrency logic, or test strategies, use web search to consult current ecosystem best practices, error modes, and framework edge cases.",
+      "- Use web search to consult current documentation, ecosystem practices, and library error modes when integrating unfamiliar packages or APIs.",
     );
   });
 
