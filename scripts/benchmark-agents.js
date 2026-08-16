@@ -15,8 +15,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
-import { fileURLToPath } from "node:url";
-import { createGzip } from "node:zlib";
+import { createBrotliCompress, constants as zlibConstants } from "node:zlib";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
@@ -1533,7 +1532,7 @@ function runTurn(command, timeoutMs, compressor, options = {}) {
 function runCommand(command, timeoutMs, recordingPath, options = {}) {
 	return new Promise((resolveResult) => {
 		const recording = createWriteStream(recordingPath);
-		const compressor = createGzip();
+		const compressor = createBrotliCompress({ params: { [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT, [zlibConstants.BROTLI_PARAM_QUALITY]: 6 } });
 		compressor.pipe(recording);
 		let settled = false;
 		let childResult;
@@ -1776,7 +1775,7 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 			throw new Error(`Kilo resolved ${resolvedModel}; expected ${options.expectedResolvedModel}`);
 		}
 
-		const requestRecording = "request.jsonl.gz";
+		const requestRecording = "request.jsonl.br";
 		const requestStderr = "request.stderr.log";
 		const marker = "benchmark-startup-ok";
 		const requestResult = await runCommand(
@@ -1822,7 +1821,7 @@ async function runAgyStartupProbe(options, configDir, output, deadline) {
 	const workspace = join(configDir, "startup-probe-workspace");
 	ensureDir(diagnosticsDir);
 	ensureDir(workspace);
-	const recording = "request.jsonl.gz";
+	const recording = "request.jsonl.br";
 	const stderr = "request.stderr.log";
 	const marker = "benchmark-startup-ok";
 	const evidence = {
@@ -2232,7 +2231,7 @@ async function main() {
 					const workspace = createWorkspace(output, agent, run, task);
 					const baseline = createBaseline(task);
 					const taskTimeout = task.timeoutSeconds ?? options.timeoutSeconds;
-					const recordingName = `${agent}-run-${run}-${task.id}.jsonl.gz`;
+					const recordingName = `${agent}-run-${run}-${task.id}.jsonl.br`;
 					const stderrName = `${agent}-run-${run}-${task.id}.log`;
 					const result = await runAgentTask(
 						agent,
