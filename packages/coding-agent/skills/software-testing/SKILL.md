@@ -1,79 +1,95 @@
 ---
 name: software-testing
-description: >-
-  Universal software testing standard across all programming languages and frameworks.
-  Use whenever implementing new features, modifying existing code, fixing bugs, refactoring,
-  or writing tests. Enforces TDD, mandatory web search for ecosystem-specific edge cases,
-  5-factor test matrices, realistic fixtures without fake mocks, and mutation self-verification.
+description: "Universal software testing standard: Five-factor matrix, invariant verification, mutation-adversarial testing, and fixture isolation across TypeScript, Rust, Python, and distributed runtimes."
 ---
 
 # Universal Software Testing Standard
 
-This skill defines the mandatory protocol for designing, implementing, and verifying tests
-across all languages and frameworks.
-
-## Core Invariants
-
-1. **Iterative Verification (Code & Test in Slices)**: Avoid postponing all testing to the very end of a project.
-   Implement focused functionality, then immediately author domain tests to verify correctness, edge cases, and contracts before moving to subsequent modules.
-2. **Domain-Specific Test Structure (No Branch Fillers)**: Never create generic catch-all or
-   branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into
-   descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
-3. **100% Branch Coverage via Real Permutations**: Strive for 100% branch coverage by exercising real
-   operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter
-   paths, and event sequences with and without initial lifecycle triggers.
-4. **Lean Invariant Verification**: Verify system invariants (monotonic clocks, retry delays, rollback guarantees,
-   DAG acyclicity, idempotency) with compact table-driven assertions rather than verbose boilerplate.
-5. **Meaningful Verification Over Line Coverage**: Tests must verify domain logic, boundary
-   conditions, state invariants, and realistic crash recovery. Passing coverage gates with
-   tautological assertions or superficial mocks is prohibited.
-6. **Zero Dead Code**: Never use ignore pragmas (e.g. `v8 ignore`) to bypass coverage gates.
-   All code must be reachable and exercised by tests.
-7. **Ecosystem & Library Research**: Before implementing unfamiliar APIs, asynchronous state machines,
-   or complex protocols, research current ecosystem best practices, cancellation semantics, error types, and edge cases.
-8. **Reproducible Regression First for Bug Fixes**: When fixing an existing bug, write a failing regression test first,
-   execute the test runner to confirm failure, then write the minimal fix.
+This skill is the multi-tier engineering authority for software verification, test architecture, and adversarial quality assurance across modern programming languages and complex distributed runtimes.
 
 ---
 
-## 4-Phase Testing Protocol
+## 1. Multi-Tier Skill Navigation
 
-### Phase 1: Research & Contract Discovery
-Before writing code:
-- Identify public APIs, data contracts, and error semantics.
-- If using external libraries or runtime APIs, consult documentation or search for known error modes and cancellation caveats.
-- See detailed guidance: [`references/web-research-playbook.md`](./references/web-research-playbook.md).
-
-### Phase 2: Implementation & Immediate Verification
-- Write clean, modular implementation code for the current feature slice.
-- Immediately author dedicated domain tests to exercise the newly written functionality.
-- Run the test suite (`npm test`, `pytest`, `cargo test`) to verify green status before advancing.
-
-### Phase 3: The 5-Factor Test Matrix
-Every change must be validated across all 5 dimensions:
-1. **Positive Path**: Happy path scenarios with standard valid inputs and expected return shapes.
-2. **Negative Path**: Invalid inputs, type mismatches, rejected promises, unauthorized states, and error handling.
-3. **Boundary & Edge Cases**: Empty collections, zero/negative values, single-element limits, buffer boundaries, and incomplete/truncated streams.
-4. **Crash, Fault & Recovery**: Abort signals (`AbortController`), timeouts, unexpected process termination, and partial failure rollback.
-5. **Invariant Preservation**: Pre- and post-condition checks ensuring that failed operations leave state, registries, and logs completely uncorrupted.
-- See detailed matrix guide: [`references/tdd-and-invariants.md`](./references/tdd-and-invariants.md).
-
-### Phase 4: Adversarial Self-Check & Mutation Analysis
-Before considering testing complete:
-- Perform mental and physical mutation testing: invert conditional checks (`<` to `<=`, `===` to `!==`),
-  remove rollback statements, or return empty arrays in implementation code.
-- Verify that at least one test fails for each mutated branch. If no test fails, the test suite is deficient.
-- Ensure fixtures use realistic subsystems (temp directories, real git remotes, real signals) rather
-  than coarse mock stubs.
-- See detailed isolation guide: [`references/isolation-and-fixtures.md`](./references/isolation-and-fixtures.md)
-  and mutation guide: [`references/mutation-and-adversarial.md`](./references/mutation-and-adversarial.md).
+```
+software-testing/
+├── protocols/
+│   ├── five-factor-matrix.md
+│   ├── invariant-verification.md
+│   ├── mutation-adversarial.md
+│   └── fixture-isolation.md
+├── languages/
+│   ├── typescript/
+│   │   ├── SKILL.md
+│   │   ├── node-test/v20-v22.md
+│   │   ├── vitest/default-v4.md
+│   │   ├── vitest/v1-v3-compat.md
+│   │   └── jest/modern-esm.md
+│   ├── rust/
+│   │   ├── SKILL.md
+│   │   ├── cargo-test.md
+│   │   └── proptest-invariants.md
+│   └── python/
+│       ├── SKILL.md
+│       ├── pytest-fixtures.md
+│       └── hypothesis-property.md
+├── domains/
+│   ├── event-sourcing-streams/
+│   │   ├── eof-truncation.md
+│   │   └── hash-chain-validation.md
+│   ├── distributed-sagas/
+│   │   ├── virtual-clock-timing.md
+│   │   └── lease-fencing-invariants.md
+│   └── async-concurrency/
+│       ├── abort-signal-cancellation.md
+│       └── race-condition-barriers.md
+└── references/
+    ├── web-research-playbook.md
+    ├── tdd-and-invariants.md
+    ├── isolation-and-fixtures.md
+    ├── mutation-and-adversarial.md
+    └── ecosystem-adapters.md
+```
 
 ---
 
-## Deep-Dive References
+## 2. Core Methodologies & Direct Links
 
-- [Web Research Playbook](./references/web-research-playbook.md) — Query formulation and ecosystem research.
-- [TDD & Invariant Matrix](./references/tdd-and-invariants.md) — Mathematical and domain invariant testing.
-- [Isolation & Fixtures](./references/isolation-and-fixtures.md) — Realistic environments vs fake mock traps.
-- [Mutation & Adversarial Testing](./references/mutation-and-adversarial.md) — Inversion analysis and test-critic checklist.
-- [Ecosystem Adapters](./references/ecosystem-adapters.md) — Idiomatic playbooks for TypeScript, Python, Rust, Go, and C++.
+### Tier 1: Universal Protocols
+- [Five-Factor Testing Matrix](file:///packages/coding-agent/skills/software-testing/protocols/five-factor-matrix.md): Mandatory 5-dimensional coverage (Domain Logic, Invariants, Crash Recovery, Negative Permutations, Boundary Edge Cases).
+- [Invariant Verification](file:///packages/coding-agent/skills/software-testing/protocols/invariant-verification.md): Mathematical invariants, inductive proof preservation, and zero-drift state assertion.
+- [Mutation & Adversarial Testing](file:///packages/coding-agent/skills/software-testing/protocols/mutation-adversarial.md): Semantic mutation killing, branch-coverage falsification, and tautological test detection.
+- [Fixture Isolation](file:///packages/coding-agent/skills/software-testing/protocols/fixture-isolation.md): Hermetic test environments, ephemeral disk isolation, and mock elimination rules.
+
+### Tier 2: Language & Framework Specializations
+- [TypeScript Verification Suite](file:///packages/coding-agent/skills/software-testing/languages/typescript/SKILL.md)
+  - [Vitest v4+ Modern (Default)](file:///packages/coding-agent/skills/software-testing/languages/typescript/vitest/default-v4.md)
+  - [Vitest v1–v3 Compatibility](file:///packages/coding-agent/skills/software-testing/languages/typescript/vitest/v1-v3-compat.md)
+  - [Node.js Built-in Test Runner (v20–v22)](file:///packages/coding-agent/skills/software-testing/languages/typescript/node-test/v20-v22.md)
+  - [Jest Native ESM](file:///packages/coding-agent/skills/software-testing/languages/typescript/jest/modern-esm.md)
+- [Rust Verification Suite](file:///packages/coding-agent/skills/software-testing/languages/rust/SKILL.md)
+  - [Cargo Test Integration](file:///packages/coding-agent/skills/software-testing/languages/rust/cargo-test.md)
+  - [Proptest Invariants & Shrinking](file:///packages/coding-agent/skills/software-testing/languages/rust/proptest-invariants.md)
+- [Python Verification Suite](file:///packages/coding-agent/skills/software-testing/languages/python/SKILL.md)
+  - [Pytest Fixtures & Scopes](file:///packages/coding-agent/skills/software-testing/languages/python/pytest-fixtures.md)
+  - [Hypothesis Property Testing](file:///packages/coding-agent/skills/software-testing/languages/python/hypothesis-property.md)
+
+### Tier 3: Specialized Domain Runtimes
+- [Event-Sourcing & Streaming](file:///packages/coding-agent/skills/software-testing/domains/event-sourcing-streams/)
+  - [EOF & Truncation Boundaries](file:///packages/coding-agent/skills/software-testing/domains/event-sourcing-streams/eof-truncation.md)
+  - [Hash-Chain SHA256 Integrity](file:///packages/coding-agent/skills/software-testing/domains/event-sourcing-streams/hash-chain-validation.md)
+- [Distributed Sagas & Orchestration](file:///packages/coding-agent/skills/software-testing/domains/distributed-sagas/)
+  - [Virtual Clock & Deterministic Timing](file:///packages/coding-agent/skills/software-testing/domains/distributed-sagas/virtual-clock-timing.md)
+  - [Lease Fencing Invariants](file:///packages/coding-agent/skills/software-testing/domains/distributed-sagas/lease-fencing-invariants.md)
+- [Async Concurrency](file:///packages/coding-agent/skills/software-testing/domains/async-concurrency/)
+  - [AbortSignal & Cancellation Leaks](file:///packages/coding-agent/skills/software-testing/domains/async-concurrency/abort-signal-cancellation.md)
+  - [Race Condition Barriers](file:///packages/coding-agent/skills/software-testing/domains/async-concurrency/race-condition-barriers.md)
+
+---
+
+## 3. Mandatory Execution Flow
+
+1. **Before Writing Code**: Formulate reproducible failing test cases reflecting the exact defect or requirement.
+2. **Execute Five Factors**: Apply all 5 dimensions from `protocols/five-factor-matrix.md`.
+3. **Isolate Hermetically**: Ensure clean setup and teardown using isolated temporary directories and zero cross-test side effects.
+4. **Adversarial Pass**: Run mutation probes (inverting branches, omitting boundary characters) to prove the test suite fails when bugs are introduced.

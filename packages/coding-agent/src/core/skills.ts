@@ -8,6 +8,7 @@ import type { LoadSkillsOptions, LoadSkillsResult, Skill } from "./skills/types.
 
 export * from "./skills/discovery.ts";
 export * from "./skills/formatting.ts";
+export * from "./skills/skill-graph/index.ts";
 export * from "./skills/types.ts";
 
 /**
