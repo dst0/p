@@ -520,3 +520,26 @@ describe("structured-state normalization", () => {
     expect(implementIdx).toBeLessThan(testsIdx);
   });
 });
+
+describe("structured-state optimization formatting coverage", () => {
+  it("should remove plan items using single filter pass", async () => {
+    const { mergePlan } = await import("../../src/core/compaction/structured-state/state-formatting.ts");
+    const state = {
+      plan: [
+        { id: "1", text: "keep me", status: "not_started", evidenceEntryIds: [] },
+        { id: "2", text: "remove me by id", status: "not_started", evidenceEntryIds: [] },
+        { id: "3", text: "remove me by text", status: "not_started", evidenceEntryIds: [] },
+      ],
+      evidence: [],
+    };
+
+    const patch = {
+      remove: [{ id: "2", text: "ignore this" }, "remove me by text"],
+    };
+
+    mergePlan(state as any, patch as any);
+
+    expect(state.plan.length).toBe(1);
+    expect(state.plan[0].id).toBe("1");
+  });
+});
