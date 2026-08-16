@@ -236,7 +236,7 @@
     "lines": 548
   },
   "packages/code-index/test/rag-service.test.ts": {
-    "classes": 2,
+    "classes": 1,
     "lines": 1423
   },
   "packages/code-index/test/repository-directory.test.ts": {
@@ -245,7 +245,7 @@
   },
   "packages/code-index/test/test_device_selection.py": {
     "classes": 4,
-    "lines": 300
+    "lines": 259
   },
   "packages/code-index/test/test_embedding_server.py": {
     "classes": 4,
@@ -377,7 +377,7 @@
   },
   "packages/coding-agent/src/core/tools/index.ts": {
     "classes": 0,
-    "lines": 372
+    "lines": 343
   },
   "packages/coding-agent/src/core/tools/read.ts": {
     "classes": 0,
@@ -725,7 +725,7 @@
   },
   "scripts/benchmark-agents.js": {
     "classes": 0,
-    "lines": 2305
+    "lines": 2317
   },
   "scripts/edit-tool-stats.js": {
     "classes": 0,
@@ -764,3 +764,4 @@
     "lines": 406
   }
 }
+

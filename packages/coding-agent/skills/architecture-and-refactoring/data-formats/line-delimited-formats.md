@@ -59,32 +59,48 @@ data: {"status": "ok"}
 *   **Buffering:** Proxies (Nginx) or HTTP clients might buffer the stream waiting for a large chunk or EOF, destroying the real-time nature. You must disable buffering via headers (e.g., `X-Accel-Buffering: no`) and flush explicitly.
 *   **Partial Reads:** The network can deliver a partial message. Parsers must buffer incomplete chunks until the `\n\n` boundary is reached.
 
-## 4. Streaming vs. Batch Consumption
+## 4. Streaming vs. In-Memory Parsing & Framing Validation
 
-When processing line-delimited files, **never read the entire file into memory** (`fs.readFileSync`). Use streaming abstractions.
-
-**TypeScript (Node.js) Streaming JSONL:**
+### In-Memory Parsing with Framing Validation
+When parsing complete line-delimited text payloads (such as exported audit streams or NDJSON buffers), always validate trailing delimiter integrity:
 ```typescript
-import * as fs from 'fs';
-import * as readline from 'readline';
-
-async function processLogStream(filePath: string) {
-    const fileStream = fs.createReadStream(filePath, { encoding: 'utf8' });
-    
-    // readline handles the buffering and newline splitting
-    const rl = readline.createInterface({
-        input: fileStream,
-        crlfDelay: Infinity // Treats \r\n and \n equivalently
-    });
-
-    for await (const line of rl) {
-        if (!line.trim()) continue; // Skip empty lines
-        try {
-            const record = JSON.parse(line);
-            // Process record...
-        } catch (err) {
-            console.error(`Malformed JSON line: ${line}`);
-        }
+function parseLineDelimitedPayload<T>(raw: string): T[] {
+  if (typeof raw !== "string" || raw.length === 0) {
+    throw new StreamFramingError("Input stream is empty");
+  }
+  // In newline-terminated streams, a missing final '\n' indicates premature stream truncation
+  if (!raw.endsWith("\n")) {
+    throw new StreamFramingError("Truncated stream: missing terminal delimiter");
+  }
+  const lines = raw.slice(0, -1).split("\n");
+  return lines.map((line, idx) => {
+    try {
+      return JSON.parse(line) as T;
+    } catch {
+      throw new StreamFramingError(`Malformed record on line ${idx + 1}`);
     }
+  });
 }
 ```
+
+### Streaming Consumption for Large Files
+Never read massive multi-gigabyte log files entirely into memory at once. Use stream readers:
+```typescript
+import * as fs from "node:fs";
+import * as readline from "node:readline";
+
+async function processLogStream(filePath: string) {
+  const fileStream = fs.createReadStream(filePath, { encoding: "utf8" });
+  const rl = readline.createInterface({
+    input: fileStream,
+    crlfDelay: Infinity,
+  });
+
+  for await (const line of rl) {
+    if (line.length === 0) continue;
+    const record = JSON.parse(line);
+    // Process record...
+  }
+}
+```
+

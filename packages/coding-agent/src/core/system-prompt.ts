@@ -167,22 +167,25 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     );
   }
   addGuideline(
-    "Preserve existing public API shapes, signatures, and contracts strictly. Do not invent response wrappers, extra properties, or altered return types unless explicitly requested.",
+    "Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
   );
   addGuideline(
     "Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
   );
   addGuideline(
-    "Ensure transactional and atomic operations guarantee clean rollback: on any mid-operation failure, all state modifications, caches, logs, and identity registries must revert to their pre-operation state.",
+    "API Method Test Exhaustiveness: Every public method, static factory, and function exported by the module must have dedicated unit tests covering normal execution, edge cases, and failure modes. Never leave any public API method or lifecycle function untested in your test suite.",
   );
   addGuideline(
-    "Perform an explicit Requirements Traceability Audit before declaring work complete: re-read the original specification/README line-by-line, verifying that every requirement (happy paths, negative inputs, specific error types, idempotency rules, boundary conditions, and truncation/integrity handling) is implemented and asserted by dedicated tests.",
+    "Ensure transactional operations guarantee atomic rollback: on any mid-operation failure, all state modifications, external mutations, caches, logs, and tracking registries must revert cleanly to their pre-operation state.",
   );
   addGuideline(
-    "Direct Batch Return Types: Batch methods executing multi-item operations (e.g. executeBatch(items)) MUST return an array of results directly (e.g. CommandResult[]) matching the input items, never an artificial wrapping object like { results: [...] }.",
+    "Perform an explicit Requirements Traceability Audit before declaring work complete: re-read the original specification line-by-line, verifying that every requirement (happy paths, negative inputs, specific error types, idempotency rules, boundary conditions, and corruption/integrity handling) is implemented and asserted by dedicated tests.",
   );
   addGuideline(
-    "Stream & File Framing Integrity: When parsing line-delimited formats that mandate terminal record separators (e.g. newline-terminated JSONL/NDJSON), explicitly assert that the input ends with the required terminator (e.g. check string ends with '\\n') and throw a validation error if truncated or missing.",
+    "Stream & File Framing Integrity: In line-delimited and record-oriented protocols (e.g. JSONL/NDJSON), every valid stream must strictly terminate with a newline. When parsing, assert that the raw input string ends with '\\n' before splitting; reject with the domain validation error if the terminating delimiter is missing or stripped.",
+  );
+  addGuideline(
+    "Domain Error Hierarchy: Instantiate and throw domain-specific custom error types for business invariant, validation, or optimistic concurrency violations, rather than unadorned generic 'new Error()'.",
   );
   addGuideline(
     "Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",

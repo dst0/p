@@ -627,6 +627,18 @@ test("replays an exported log", () => {
   assert.deepEqual(restored.state("LAMP"), original.state("LAMP"));
   assert.deepEqual(restored.history("LAMP"), original.history("LAMP"));
 });
+
+test("executes an atomic batch of commands", () => {
+  const engine = new InventoryEngine();
+  engine.execute({ type: "create-sku", sku: "DESK" }, { commandId: "create", expectedVersion: 0 });
+  const results = engine.executeBatch([
+    { command: { type: "receive", sku: "DESK", quantity: 5 }, commandId: "recv-1", expectedVersion: 1 },
+    { command: { type: "reserve", sku: "DESK", orderId: "ord-1", quantity: 2 }, commandId: "res-1", expectedVersion: 2 },
+  ]);
+  assert.equal(Array.isArray(results), true);
+  assert.equal(results.length, 2);
+  assert.equal(engine.state("DESK").available, 3);
+});
 `;
 
 const inventoryHiddenVerification = `import * as assert from "node:assert/strict";
@@ -968,7 +980,7 @@ const tasks = [
 			"tsconfig.json": fixtureTsconfig,
 			"test/calculator.contract.test.ts": calculatorContract,
 		},
-		prompt: `Read requirements.md, package.json, tsconfig.json, and the contract test. Implement the complete TypeScript calculator library and CLI, including a real parser with precedence and unary minus, useful error handling, and your own meaningful unit tests in test/calculator.test.ts. Do not modify the contract test or project configuration. Use the existing toolchain; do not install dependencies. Run npm test, npm run typecheck, and npm run calc -- "2 + 3 * (4 - 1)" before finishing.`,
+		prompt: `Read requirements.md, package.json, tsconfig.json, and the contract test. Implement the complete TypeScript calculator library and CLI, including a real parser with precedence and unary minus, useful error handling, and your own meaningful unit tests in test/calculator.test.ts. Do not modify the contract test or project configuration. Use the existing toolchain; do not install dependencies. Run npm test, npm run typecheck, and npm run calc -- "2 + 3 * (4 - 1)" before finishing. When all requirements and tests pass, create finish_notes.md summarizing your verification before concluding.`,
 		verify(workspace, baseline) {
 			const preservedFiles = ["requirements.md", "package.json", "tsconfig.json", "test/calculator.contract.test.ts"];
 			const preserved = preservedFiles.every((file) => readText(join(workspace, file)) === baseline[file]);
@@ -1002,7 +1014,7 @@ const tasks = [
 			"src/monolith.ts": monolithSource,
 			"test/monolith.contract.test.ts": `import * as assert from "node:assert/strict";\nimport { test } from "node:test";\nimport { filterTasks, parseTaskFile, runReport, summarizeTasks } from "../src/monolith.ts";\n\nconst input = [\n  "101|Write release notes|todo|2|docs,release",\n  "102|Ship parser refactor|doing|5|code,release",\n  "103|Review dashboard|done|3|docs",\n  "104|Add regression tests|todo|4|code,test",\n].join("\\n");\n\ntest("public parser and query behavior remains stable", () => {\n  const tasks = parseTaskFile(input);\n  assert.equal(tasks.length, 4);\n  assert.deepEqual(filterTasks(tasks, { tag: "release" }).map((task) => task.id), [101, 102]);\n  assert.deepEqual(filterTasks(tasks, { status: "todo" }).map((task) => task.id), [101, 104]);\n});\n\ntest("public summary behavior remains stable", () => {\n  const summary = summarizeTasks(parseTaskFile(input));\n  assert.equal(summary.total, 4);\n  assert.equal(summary.completed, 1);\n  assert.equal(summary.totalEstimate, 14);\n  assert.equal(summary.tagCounts.code, 2);\n});\n\ntest("public report output retains its key sections", () => {\n  const report = runReport(input, { sort: "title" });\n  assert.match(report, /^# Task report/m);\n  assert.match(report, /## Summary/);\n  assert.match(report, /## Tasks/);\n  assert.match(report, /Ship parser refactor/);\n});\n`,
 		},
-		prompt: `Treat this as an existing TypeScript repository. Read README.md, package.json, tsconfig.json, the large src/monolith.ts, and the contract tests. Split the monolith into focused modules named src/parser.ts, src/query.ts, and src/report.ts (additional shared modules are fine). Keep src/monolith.ts as a small compatibility facade that preserves every public export and the existing import path. Do not modify the contract test or project configuration, do not change behavior, and add tests for the extracted modules. Use the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.`,
+		prompt: `Treat this as an existing TypeScript repository. Read README.md, package.json, tsconfig.json, the large src/monolith.ts, and the contract tests. Split the monolith into focused modules named src/parser.ts, src/query.ts, and src/report.ts (additional shared modules are fine). Keep src/monolith.ts as a small compatibility facade that preserves every public export and the existing import path. Do not modify the contract test or project configuration, do not change behavior, and add tests for the extracted modules. Use the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass. When all requirements and tests pass, create finish_notes.md summarizing your verification before concluding.`,
 		verify(workspace, baseline) {
 			const preservedFiles = ["README.md", "package.json", "tsconfig.json", "src/monolith.ts", "test/monolith.contract.test.ts"];
 			const contractPreserved = preservedFiles.filter((file) => file !== "src/monolith.ts").every((file) => readText(join(workspace, file)) === baseline[file]);
@@ -1046,7 +1058,7 @@ Export these from \`src/index.ts\`:
 \`InventoryEngine\` must provide:
 
 - \`execute(command, { commandId, expectedVersion })\`
-- \`executeBatch(items)\`, where each item contains \`command\`, \`commandId\`, and \`expectedVersion\`
+- \`executeBatch(items)\` returns an array of command results, where each item contains \`command\`, \`commandId\`, and \`expectedVersion\`
 - \`state(sku)\`
 - \`history(sku)\`
 - \`exportLog()\`
@@ -1079,7 +1091,7 @@ Keep storage/event-log concerns in \`src/store.ts\`, domain behavior in \`src/en
 			"tsconfig.json": fixtureTsconfig,
 			"test/inventory.contract.test.ts": inventoryContract,
 		},
-		prompt: `Implement the complete production-quality event-sourced inventory engine described in README.md. Read every provided file first. Preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep event-log storage in src/store.ts, domain behavior in src/engine.ts, and exports in src/index.ts; additional focused modules are allowed. Pay particular attention to exact idempotency, atomic multi-SKU rollback, optimistic concurrency within batches, deep immutability, deterministic hash-chained JSONL, rigorous replay validation, and continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.`,
+		prompt: `Implement the complete production-quality event-sourced inventory engine described in README.md. Read every provided file first. Preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep event-log storage in src/store.ts, domain behavior in src/engine.ts, and exports in src/index.ts; additional focused modules are allowed. Pay particular attention to exact idempotency, atomic multi-SKU rollback, optimistic concurrency within batches, deep immutability, deterministic hash-chained JSONL, rigorous replay validation, and continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass. When all requirements and tests pass, create finish_notes.md summarizing your verification before concluding.`,
 		verify(workspace, baseline) {
 			const preservedFiles = ["README.md", "package.json", "tsconfig.json", "test/inventory.contract.test.ts"];
 			const preserved = preservedFiles.every((file) => readText(join(workspace, file)) === baseline[file]);
@@ -1131,7 +1143,7 @@ Keep storage/event-log concerns in \`src/store.ts\`, domain behavior in \`src/en
 			"tsconfig.json": fixtureTsconfig,
 			"test/workflow.contract.test.ts": workflowContract,
 		},
-		prompt: `Implement the complete production-quality durable workflow and saga engine described in README.md. Read every supplied file first and preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep orchestration in src/engine.ts, deterministic scheduling and fenced leases in src/scheduler.ts, durable hash-chained log validation in src/store.ts, and public exports in src/index.ts. Pay particular attention to full DAG validation, global command idempotency, virtual-time retry backoff, stale lease fencing, reverse-order compensation, deep immutability, deterministic JSONL, adversarial restore validation, and exact continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.`,
+		prompt: `Implement the complete production-quality durable workflow and saga engine described in README.md. Read every supplied file first and preserve README.md, package.json, tsconfig.json, and the contract test exactly. Keep orchestration in src/engine.ts, deterministic scheduling and fenced leases in src/scheduler.ts, durable hash-chained log validation in src/store.ts, and public exports in src/index.ts. Pay particular attention to full DAG validation, global command idempotency, virtual-time retry backoff, stale lease fencing, reverse-order compensation, deep immutability, deterministic JSONL, adversarial restore validation, and exact continuation after restore. Add substantial meaningful tests of your own. Use only Node built-ins and the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass. When all requirements and tests pass, create finish_notes.md summarizing your verification before concluding.`,
 		verify(workspace, baseline) {
 			const preservedFiles = ["README.md", "package.json", "tsconfig.json", "test/workflow.contract.test.ts"];
 			const preserved = preservedFiles.every((file) => readText(join(workspace, file)) === baseline[file]);

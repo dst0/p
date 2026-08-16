@@ -43,6 +43,18 @@ export {
   type FinishWorkToolOptions,
 } from "./finish-work.ts";
 export {
+  createRecallLearningsTool,
+  createRecallLearningsToolDefinition,
+  createRecordLearningTool,
+  createRecordLearningToolDefinition,
+  type RecallLearningsToolDetails,
+  type RecallLearningsToolInput,
+  type RecordLearningToolDetails,
+  type RecordLearningToolInput,
+  recallLearningsSchema,
+  recordLearningSchema,
+} from "./learnings.ts";
+export {
   createLsTool,
   createLsToolDefinition,
   type LsOperations,
@@ -124,6 +136,12 @@ import { type BashToolOptions, createBashTool, createBashToolDefinition } from "
 import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
 import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
+import {
+  createRecallLearningsTool,
+  createRecallLearningsToolDefinition,
+  createRecordLearningTool,
+  createRecordLearningToolDefinition,
+} from "./learnings.ts";
 import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
 import { createProcessTool, createProcessToolDefinition, type ProcessToolOptions } from "./process.ts";
 import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
@@ -164,7 +182,9 @@ export type ToolName =
   | "ask_user"
   | "confirm_user"
   | "submit_plan"
-  | "finish_work";
+  | "finish_work"
+  | "record_learning"
+  | "recall_learnings";
 export const allToolNames: Set<ToolName> = new Set([
   "semantic_search",
   "rg",
@@ -181,6 +201,8 @@ export const allToolNames: Set<ToolName> = new Set([
   "confirm_user",
   "submit_plan",
   "finish_work",
+  "record_learning",
+  "recall_learnings",
 ]);
 
 export interface ToolsOptions {
@@ -235,6 +257,10 @@ export function createToolDefinition(toolName: ToolName, cwd: string, options?: 
       return createSubmitPlanToolDefinition(options?.submitPlan);
     case "finish_work":
       return createFinishWorkToolDefinition();
+    case "record_learning":
+      return createRecordLearningToolDefinition(cwd);
+    case "recall_learnings":
+      return createRecallLearningsToolDefinition(cwd);
     default:
       throw new Error(`Unknown tool name: ${toolName}`);
   }
@@ -278,6 +304,10 @@ export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptio
       return createSubmitPlanTool(options?.submitPlan);
     case "finish_work":
       return createFinishWorkTool();
+    case "record_learning":
+      return createRecordLearningTool(cwd);
+    case "recall_learnings":
+      return createRecallLearningsTool(cwd);
     default:
       throw new Error(`Unknown tool name: ${toolName}`);
   }
@@ -305,68 +335,9 @@ export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOption
   ];
 }
 
-export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
-  return {
-    semantic_search: createSemanticSearchToolDefinition(cwd),
-    rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
-    grep: createGrepToolDefinition(cwd, options?.grep ?? options?.rg, "grep"),
-    read: createReadToolDefinition(cwd, options?.read),
-    bash: createBashToolDefinition(cwd, { ...options?.bash, processManager: backgroundProcesses }),
-    edit: createEditToolDefinition(cwd, options?.edit),
-    write: createWriteToolDefinition(cwd, options?.write),
-    find: createFindToolDefinition(cwd, options?.find),
-    ls: createLsToolDefinition(cwd, options?.ls),
-    sleep: createSleepToolDefinition(),
-    process: createProcessToolDefinition({ ...options?.process, manager: backgroundProcesses }),
-    ask_user: createAskUserToolDefinition(),
-    confirm_user: createConfirmUserToolDefinition(),
-    submit_plan: createSubmitPlanToolDefinition(options?.submitPlan),
-    finish_work: createFinishWorkToolDefinition(),
-  };
-}
-
-export function createCodingTools(cwd: string, options?: ToolsOptions): Tool[] {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
-  return [
-    createReadTool(cwd, options?.read),
-    createBashTool(cwd, { ...options?.bash, processManager: backgroundProcesses }),
-    createProcessTool({ ...options?.process, manager: backgroundProcesses }),
-    createEditTool(cwd, options?.edit),
-    createWriteTool(cwd, options?.write),
-  ];
-}
-
-export function createReadOnlyTools(cwd: string, options?: ToolsOptions): Tool[] {
-  return [
-    createSemanticSearchTool(cwd),
-    createReadTool(cwd, options?.read),
-    createRgTool(cwd, options?.rg ?? options?.grep),
-    createFindTool(cwd, options?.find),
-    createLsTool(cwd, options?.ls),
-  ];
-}
-
-export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, Tool> {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
-  return {
-    semantic_search: createSemanticSearchTool(cwd),
-    rg: createRgTool(cwd, options?.rg ?? options?.grep),
-    grep: createGrepTool(cwd, options?.grep ?? options?.rg, "grep"),
-    read: createReadTool(cwd, options?.read),
-    bash: createBashTool(cwd, { ...options?.bash, processManager: backgroundProcesses }),
-    edit: createEditTool(cwd, options?.edit),
-    write: createWriteTool(cwd, options?.write),
-    find: createFindTool(cwd, options?.find),
-    ls: createLsTool(cwd, options?.ls),
-    sleep: createSleepTool(),
-    process: createProcessTool({ ...options?.process, manager: backgroundProcesses }),
-    ask_user: createAskUserTool(),
-    confirm_user: createConfirmUserTool(),
-    submit_plan: createSubmitPlanTool(options?.submitPlan),
-    finish_work: createFinishWorkTool(),
-  };
-}
+export {
+  createAllToolDefinitions,
+  createAllTools,
+  createCodingTools,
+  createReadOnlyTools,
+} from "./tool-factories.ts";

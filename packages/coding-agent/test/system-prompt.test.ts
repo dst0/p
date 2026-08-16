@@ -21,29 +21,38 @@ describe("buildSystemPrompt", () => {
   it("includes testing-related guidelines by default", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain(
-      "- Always write comprehensive tests for new functionality and bug fixes across happy paths",
-    );
-    expect(prompt).toContain("- Run tests after writing or modifying them to verify they pass before proceeding");
-    expect(prompt).toContain(
-      "- When editing, writing, creating, or refactoring code, write tests for the changes unless the user explicitly asks not to",
+      "- When creating or editing files (source code, JSON, JSONL, markdown, configs), always ensure the content terminates with a trailing newline ('\\n') unless explicitly requested otherwise. This preserves clean single-line diffs on future appends and adheres to POSIX line standards.",
     );
     expect(prompt).toContain(
-      "- Run tests to verify that code changes are correct and do not break existing functionality",
+      "- Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
     );
     expect(prompt).toContain(
-      "- Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
+      "- Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
     );
     expect(prompt).toContain(
-      "- For transactional and serialization guarantees, test the smallest boundary mutation literally: remove exactly one final byte, not a whole line or record. After every failed atomic operation, retry each attempted identity with both the same and changed payload to prove that state, logs, positions, hashes, and idempotency registries all rolled back. A coarser proxy test does not satisfy an exact boundary requirement",
+      "- API Method Test Exhaustiveness: Every public method, static factory, and function exported by the module must have dedicated unit tests covering normal execution, edge cases, and failure modes. Never leave any public API method or lifecycle function untested in your test suite.",
     );
     expect(prompt).toContain(
-      "- Preserve public API shapes exactly and do not invent response wrappers. For idempotency, compare a lossless canonical identity containing every semantically relevant command field and option; never use a partial projection such as only operation type and resource ID",
+      "- Ensure transactional operations guarantee atomic rollback: on any mid-operation failure, all state modifications, external mutations, caches, logs, and tracking registries must revert cleanly to their pre-operation state.",
     );
-    expect(prompt).toContain("- After writing any guard, validation, or idempotency check, trace every branch");
     expect(prompt).toContain(
-      "- Every filter, parser, or line splitter must include a test for the exact truncation boundary",
+      "- Perform an explicit Requirements Traceability Audit before declaring work complete: re-read the original specification line-by-line, verifying that every requirement (happy paths, negative inputs, specific error types, idempotency rules, boundary conditions, and corruption/integrity handling) is implemented and asserted by dedicated tests.",
     );
-    expect(prompt).toContain("- Before declaring any code complete, run the type checker and visible test suite");
+    expect(prompt).toContain(
+      "- Stream & File Framing Integrity: In line-delimited and record-oriented protocols (e.g. JSONL/NDJSON), every valid stream must strictly terminate with a newline. When parsing, assert that the raw input string ends with '\\n' before splitting; reject with the domain validation error if the terminating delimiter is missing or stripped.",
+    );
+    expect(prompt).toContain(
+      "- Domain Error Hierarchy: Instantiate and throw domain-specific custom error types for business invariant, validation, or optimistic concurrency violations, rather than unadorned generic 'new Error()'.",
+    );
+    expect(prompt).toContain(
+      "- Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",
+    );
+    expect(prompt).toContain(
+      "- When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
+    );
+    expect(prompt).toContain(
+      "- When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
+    );
   });
 
   it("includes promptGuidelines in the prompt", () => {
