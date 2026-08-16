@@ -1,0 +1,290 @@
+{
+  "generatedAt": "2026-08-16T13:33:30.636Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.213"
+  },
+  "startupProbes": {},
+  "runs": 1,
+  "timeoutSeconds": 3600,
+  "maxRuntimeSeconds": 7200,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 2400
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 0,
+      "qualityRawScore": 2,
+      "qualityMaxScore": 100,
+      "totalNudges": 5,
+      "totalPenalties": 75,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 26312.094834,
+      "averageInputTokens": 0,
+      "averageOutputTokens": 0,
+      "averageTotalTokens": 0,
+      "averageToolCalls": 0,
+      "averageToolErrors": 0
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 26312.094834,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "nudges": 5,
+      "nudgePenalty": 75,
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 90,
+        "eventTypes": {
+          "message_end": 36,
+          "request_start": 24,
+          "turn_end": 24,
+          "auto_retry_end": 6
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 0,
+          "output": 0,
+          "cacheRead": 0,
+          "cacheWrite": 0,
+          "totalTokens": 0
+        },
+        "turns": 24,
+        "assistantMessages": 24,
+        "toolCalls": 0,
+        "toolErrors": 0,
+        "toolNames": {},
+        "stopReasons": {
+          "error": 24
+        },
+        "errors": [
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b",
+          "API error (503): 503 No workers ready for group: mini-pc/sokann-qwen-27b"
+        ],
+        "finalText": "",
+        "rawEventCount": 246
+      },
+      "quality": {
+        "passed": false,
+        "score": 0,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# node:internal/modules/esm/resolve:272\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.contract.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:272:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:879:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:1006:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:708:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:728:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v26.5.0\n# Subtest: test/inventory.contract.test.ts\nnot ok 1 - test/inventory.contract.test.ts\n  ---\n  duration_ms: 108.407083\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.contract.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# node:internal/modules/esm/resolve:272\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:272:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:879:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:1006:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:708:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:728:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/src/index.ts'\n# }\n# Node.js v26.5.0\n# Subtest: test/inventory.hidden.test.ts\nnot ok 2 - test/inventory.hidden.test.ts\n  ---\n  duration_ms: 107.177375\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-16T13-33-03-057Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 0\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 114.0015\n"
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": false
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": false
+          }
+        ],
+        "rawScore": 2,
+        "penalty": 75,
+        "nudges": 5,
+        "finishNotesCreated": false
+      }
+    }
+  ]
+}

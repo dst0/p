@@ -1,0 +1,49 @@
+{
+  "status": "failed",
+  "expectedResolvedModel": "mini-pc/sokann-qwen-27b",
+  "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b",
+  "timeoutSeconds": 180,
+  "diagnostics": "diagnostics/kilo-startup",
+  "modelResolution": {
+    "status": "passed",
+    "elapsedMs": 3128.745917,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 270,
+    "recording": "model-resolution.log.gz",
+    "stderr": "model-resolution.stderr.log"
+  },
+  "resolvedModel": "mini-pc/sokann-qwen-27b",
+  "request": {
+    "status": "timed_out",
+    "elapsedMs": 180027.554458,
+    "exitCode": null,
+    "signal": "SIGTERM",
+    "timedOut": true,
+    "rawEventCount": 5,
+    "recording": "request.jsonl.gz",
+    "stderr": "request.stderr.log",
+    "responseMatched": true,
+    "errors": []
+  },
+  "error": "Kilo request startup probe timed_out",
+  "runtimeFiles": {
+    "data": [
+      "kilo/.metadata_never_index",
+      "kilo/kilo.db",
+      "kilo/kilo.db-shm",
+      "kilo/kilo.db-wal",
+      "kilo/log/2026-08-15T054417.log",
+      "kilo/log/2026-08-15T054420.log",
+      "kilo/log/opencode.log",
+      "kilo/storage/migration",
+      "kilo/storage/session_diff/ses_ffc0cdb9cffejVQh6wiVbMb7dI.json",
+      "kilo/telemetry-id"
+    ],
+    "state": [
+      "kilo-sandbox-policy/1fb8a8d37cbb10c6f3ca6fb4489c78fde906302a73f1b27fa1434708030f7ada/c4045808713fc64fda5aec76c8324eefc4a0bb2275f7777feb13190e128c217f.json",
+      "kilo/.metadata_never_index"
+    ]
+  }
+}

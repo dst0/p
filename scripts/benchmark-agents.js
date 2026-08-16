@@ -26,11 +26,36 @@ const defaultAuthFile = join(homedir(), ".p", "agent", "auth.json");
 const defaultKiloConfigFile = join(homedir(), ".config", "kilo", "kilo.jsonc");
 const defaultCodexConfigFile = join(homedir(), ".codex", "config.toml");
 const defaultPiVersion = "0.82.1";
-const defaultKiloVersion = "7.4.16";
+const defaultKiloVersion = "7.4.17";
 const supportedAgents = ["pi", "p", "kilo", "codex", "agy"];
 const defaultTimeoutSeconds = 300;
 const defaultMaxRuntimeSeconds = 900;
 const defaultKiloStartupTimeoutSeconds = 60;
+const nudgeMessage = "Are you done with the task or is there anything left? If you are finished, ensure all requirements are satisfied and create finish_notes.md.";
+const nudgePenaltyPerNudge = 15;
+
+function augmentPath() {
+	const separator = process.platform === "win32" ? ";" : ":";
+	const extraDirs = [
+		dirname(process.execPath),
+		join(repoRoot, "node_modules", ".bin"),
+		join(homedir(), ".local", "bin"),
+		"/opt/homebrew/bin",
+		"/usr/local/bin",
+	];
+	const nvmVersionsDir = join(homedir(), ".nvm", "versions", "node");
+	if (existsSync(nvmVersionsDir)) {
+		try {
+			for (const entry of readdirSync(nvmVersionsDir)) {
+				extraDirs.push(join(nvmVersionsDir, entry, "bin"));
+			}
+		} catch {
+			// ignore
+		}
+	}
+	return `${extraDirs.filter((d) => existsSync(d)).join(separator)}${separator}${process.env.PATH ?? ""}`;
+}
+process.env.PATH = augmentPath();
 
 function printHelp() {
 	console.log(`Usage:
@@ -169,10 +194,14 @@ function parseArgs(argv) {
 		throw new Error("--model is required when PI or P is selected");
 	}
 	if (options.agents.includes("kilo") && !options.kiloModel) {
-		throw new Error("--kilo-model is required when Kilo is selected");
+		if (options.model && options.model.includes("sokann-qwen-27b")) {
+			options.kiloModel = "llm-orchestrator/sokann-qwen-27b";
+		} else {
+			throw new Error("--kilo-model is required when Kilo is selected");
+		}
 	}
 	if (options.agents.includes("kilo")) {
-		options.expectedResolvedModel ??= options.model;
+		options.expectedResolvedModel ??= (options.kiloModel === "llm-orchestrator/sokann-qwen-27b" ? "mini-pc/sokann-qwen-27b" : options.model);
 		if (!options.expectedResolvedModel) {
 			throw new Error("--expected-resolved-model is required when Kilo runs without PI/P");
 		}
@@ -1218,22 +1247,27 @@ function kiloEnvironment(configDir) {
 	};
 }
 
-function commandFor(agent, options, task, configDir, workspace) {
+function commandFor(agent, options, task, configDir, workspace, isContinue = false, promptOverride = undefined) {
+	const prompt = promptOverride ?? task.prompt;
 	if (agent === "agy") {
+		const args = [
+			"--model",
+			options.agyModel,
+			"--dangerously-skip-permissions",
+			"--output-format",
+			"stream-json",
+			"--print-timeout",
+			`${task.timeoutSeconds ?? options.timeoutSeconds}s`,
+		];
+		if (isContinue) {
+			args.push("--continue");
+		} else {
+			args.push("--new-project");
+		}
+		args.push("-p", prompt);
 		return {
 			executable: "agy",
-			args: [
-				"--model",
-				options.agyModel,
-				"--new-project",
-				"--dangerously-skip-permissions",
-				"--output-format",
-				"stream-json",
-				"--print-timeout",
-				`${task.timeoutSeconds}s`,
-				"-p",
-				task.prompt,
-			],
+			args,
 			env: { ...process.env, NO_COLOR: "1" },
 			cwd: workspace,
 		};
@@ -1248,7 +1282,9 @@ function commandFor(agent, options, task, configDir, workspace) {
 			"--pure",
 		];
 		if (!task.isProbe) args.push("--auto");
-		args.push("--dir", workspace, task.prompt);
+		args.push("--dir", workspace);
+		if (isContinue) args.push("--continue");
+		args.push(prompt);
 		return {
 			executable: "kilo",
 			args,
@@ -1276,7 +1312,7 @@ function commandFor(agent, options, task, configDir, workspace) {
 				"never",
 				"-C",
 				workspace,
-				task.prompt,
+				prompt,
 			],
 			env,
 			cwd: workspace,
@@ -1287,13 +1323,15 @@ function commandFor(agent, options, task, configDir, workspace) {
 		"json",
 		"--model",
 		options.model,
-		"--no-session",
 		"--no-extensions",
 		"--no-skills",
 		"--no-context-files",
 		"--no-themes",
-		task.prompt,
 	];
+	if (isContinue) {
+		commonArgs.push("--continue");
+	}
+	commonArgs.push(prompt);
 	const env = { ...process.env };
 	env.P_CODING_AGENT_DIR = configDir;
 	env.PI_CODING_AGENT_DIR = configDir;
@@ -1305,8 +1343,7 @@ function commandFor(agent, options, task, configDir, workspace) {
 	}
 	env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
 	env.NO_COLOR = "1";
-	const separator = process.platform === "win32" ? ";" : ":";
-	env.PATH = `${join(repoRoot, "node_modules", ".bin")}${separator}${env.PATH ?? ""}`;
+	env.PATH = augmentPath();
 	if (agent === "p") {
 		return { executable: process.execPath, args: [codingAgentCli, ...commonArgs], env, cwd: workspace };
 	}
@@ -1390,12 +1427,9 @@ const metricEventTypes = new Set([
 	"turn_end",
 ]);
 
-function runCommand(command, timeoutMs, recordingPath, options = {}) {
+function runTurn(command, timeoutMs, compressor, options = {}) {
 	return new Promise((resolveResult) => {
 		const startedAt = performance.now();
-		const recording = createWriteStream(recordingPath);
-		const compressor = createGzip();
-		compressor.pipe(recording);
 		const child = spawn(command.executable, command.args, {
 			cwd: command.cwd,
 			env: command.env,
@@ -1418,7 +1452,7 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 		child.stdout.setEncoding("utf8");
 		child.stderr.setEncoding("utf8");
 		child.stdout.on("data", (chunk) => {
-			compressor.write(chunk);
+			if (compressor) compressor.write(chunk);
 			if (options.collectRawStdout) rawStdout += chunk;
 			stdoutBuffer += chunk;
 			const lines = stdoutBuffer.split(/\r?\n/);
@@ -1441,7 +1475,7 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 		child.stderr.on("data", (chunk) => {
 			stderr += chunk;
 		});
-		const resolveWhenRecorded = () => {
+		const resolveTurn = () => {
 			if (settled) return;
 			if (!childResult) return;
 			settled = true;
@@ -1459,14 +1493,9 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 				elapsedMs: performance.now() - startedAt,
 			});
 		};
-		recording.once("finish", resolveWhenRecorded);
-		recording.once("error", (error) => {
-			childResult ??= { code: undefined, signal: undefined, error: String(error.message ?? error) };
-			resolveWhenRecorded();
-		});
 		child.once("error", (error) => {
 			childResult = { code: undefined, signal: undefined, error: String(error.message ?? error) };
-			compressor.end();
+			resolveTurn();
 		});
 		child.once("close", (code, signal) => {
 			if (stdoutBuffer.trim()) {
@@ -1484,9 +1513,122 @@ function runCommand(command, timeoutMs, recordingPath, options = {}) {
 				signal: stoppedByMarker ? null : signal,
 				error: undefined,
 			};
+			resolveTurn();
+		});
+	});
+}
+
+function runCommand(command, timeoutMs, recordingPath, options = {}) {
+	return new Promise((resolveResult) => {
+		const recording = createWriteStream(recordingPath);
+		const compressor = createGzip();
+		compressor.pipe(recording);
+		let settled = false;
+		let childResult;
+
+		const finish = () => {
+			if (settled || !childResult) return;
+			settled = true;
+			resolveResult(childResult);
+		};
+
+		recording.once("finish", finish);
+		recording.once("error", (error) => {
+			childResult ??= { code: undefined, signal: undefined, error: String(error.message ?? error) };
+			finish();
+		});
+
+		runTurn(command, timeoutMs, compressor, options).then((result) => {
+			childResult = result;
 			compressor.end();
 		});
 	});
+}
+
+async function runAgentTask(agent, options, task, configDir, workspace, recordingPath, taskTimeoutSeconds, overallDeadline) {
+	const startedAt = performance.now();
+	let combinedStdout = "";
+	let combinedStderr = "";
+	let totalRawEventCount = 0;
+	let lastCode = 0;
+	let lastSignal = null;
+	let lastError;
+	let timedOut = false;
+	let nudges = 0;
+	const maxNudges = 5;
+	const taskTimeoutMs = taskTimeoutSeconds * 1000;
+
+	const recording = createWriteStream(recordingPath);
+	const compressor = createGzip();
+	compressor.pipe(recording);
+
+	try {
+		let isContinue = false;
+		let currentPrompt = task.prompt;
+
+		while (true) {
+			const elapsedSoFar = performance.now() - startedAt;
+			const remainingTaskMs = taskTimeoutMs - elapsedSoFar;
+			const remainingOverallMs = overallDeadline - performance.now();
+			const turnTimeoutMs = Math.min(remainingTaskMs, remainingOverallMs);
+
+			if (turnTimeoutMs <= 0) {
+				timedOut = true;
+				break;
+			}
+
+			const command = commandFor(agent, options, task, configDir, workspace, isContinue, currentPrompt);
+			const turnResult = await runTurn(command, turnTimeoutMs, compressor, options);
+			combinedStdout += turnResult.stdout;
+			if (turnResult.stderr) {
+				combinedStderr += (combinedStderr ? "\n--- TURN SEPARATOR ---\n" : "") + turnResult.stderr;
+			}
+			totalRawEventCount += turnResult.rawEventCount;
+			lastCode = turnResult.code;
+			lastSignal = turnResult.signal;
+			lastError = turnResult.error;
+
+			if (turnResult.timedOut) {
+				timedOut = true;
+				break;
+			}
+
+			// Check if finish_notes.md was created in workspace
+			const finished = existsSync(join(workspace, "finish_notes.md"));
+			if (finished) {
+				break;
+			}
+
+			// Agent exited before timeout without finish_notes.md
+			const remainingAfterTurn = taskTimeoutMs - (performance.now() - startedAt);
+			const overallRemainingAfterTurn = overallDeadline - performance.now();
+			const remainingUsableMs = Math.min(remainingAfterTurn, overallRemainingAfterTurn);
+			if (remainingUsableMs > 5000 && nudges < maxNudges) {
+				nudges += 1;
+				console.log(`[watchdog] ${agent}/${task.id}: premature exit without finish_notes.md; sending nudge #${nudges} (${Math.round(remainingUsableMs / 1000)}s remaining)`);
+				isContinue = true;
+				currentPrompt = nudgeMessage;
+				continue;
+			}
+
+			break;
+		}
+	} finally {
+		compressor.end();
+		await new Promise((resolve) => recording.once("finish", resolve));
+	}
+
+	return {
+		stdout: combinedStdout,
+		stderr: combinedStderr,
+		code: lastCode,
+		signal: lastSignal,
+		error: lastError,
+		timedOut,
+		rawEventCount: totalRawEventCount,
+		elapsedMs: performance.now() - startedAt,
+		nudges,
+	};
 }
 
 function extractText(content) {
@@ -1922,7 +2064,10 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 		passed: rows.filter((row) => row.status === "passed").length,
 		qualityPassed: rows.filter((row) => row.quality.passed).length,
 		qualityScore: rows.reduce((total, row) => total + row.quality.score, 0),
+		qualityRawScore: rows.reduce((total, row) => total + (row.quality.rawScore ?? row.quality.score), 0),
 		qualityMaxScore: rows.reduce((total, row) => total + row.quality.maxScore, 0),
+		totalNudges: rows.reduce((total, row) => total + (row.nudges ?? 0), 0),
+		totalPenalties: rows.reduce((total, row) => total + (row.quality.penalty ?? 0), 0),
 		timedOut: rows.filter((row) => row.status === "timed_out").length,
 		failed: rows.filter((row) => row.status === "failed").length,
 		averageWallMs: average(rows, (row) => row.elapsedMs),
@@ -1941,6 +2086,7 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 			return right.passed - left.passed
 				|| right.qualityPassed - left.qualityPassed
 				|| right.qualityScore / right.qualityMaxScore - left.qualityScore / left.qualityMaxScore
+				|| left.totalNudges - right.totalNudges
 				|| left.averageTotalTokens - right.averageTotalTokens
 				|| left.averageWallMs - right.averageWallMs;
 		});
@@ -1961,22 +2107,28 @@ function createReport(options, versions, results, output, benchmarkTasks = tasks
 	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
 	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
 	report += `## Summary\n\n`;
-	report += `| Agent | Completed passes | Quality passes | Weighted score | Timed out | Failed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
+	report += `| Agent | Completed passes | Quality passes | Weighted score | Nudges | Timed out | Failed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
 	for (const agent of options.agents) {
 		const data = summaries[agent];
-		report += `| ${agent} | ${data.passed}/${data.runs} | ${data.qualityPassed}/${data.runs} | ${data.qualityScore}/${data.qualityMaxScore} | ${data.timedOut} | ${data.failed} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
+		report += `| ${agent} | ${data.passed}/${data.runs} | ${data.qualityPassed}/${data.runs} | ${data.qualityScore}/${data.qualityMaxScore} | ${data.totalNudges} | ${data.timedOut} | ${data.failed} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
 	}
 	report += `\nSimple winner by completed pass count, then quality pass count, tokens, and time: **${winner ?? "none"}**. This is a directional result, not a general model or agent ranking.\n\n`;
 	report += `## Per-task results\n\n`;
-	report += `| Run | Agent | Task | Status | Wall time | Total tokens | Tool calls | Checks | Weighted score |\n| ---: | --- | --- | --- | ---: | ---: | ---: | --- | ---: |\n`;
+	report += `| Run | Agent | Task | Status | Wall time | Total tokens | Tool calls | Nudges | Checks | Weighted score |\n| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: |\n`;
 	for (const result of results) {
 		const checks = result.status === "skipped" ? "skipped" : `${result.quality.checks.filter((check) => check.passed).length}/${result.quality.checks.length}`;
-		const weightedScore = result.status === "skipped" ? "—" : `${result.quality.score}/${result.quality.maxScore}`;
-		report += `| ${result.run} | ${result.agent} | ${result.task} | ${result.status} | ${result.status === "skipped" ? "—" : formatMs(result.elapsedMs)} | ${result.status === "skipped" ? "—" : formatNumber(result.metrics.usage.totalTokens)} | ${result.status === "skipped" ? "—" : result.metrics.toolCalls} | ${checks} | ${weightedScore} |\n`;
+		const weightedScore = result.status === "skipped"
+			? "—"
+			: (result.quality?.penalty ?? 0) > 0
+				? `${result.quality.score}/${result.quality.maxScore} (-${result.quality.penalty})`
+				: `${result.quality.score}/${result.quality.maxScore}`;
+		const nudges = result.status === "skipped" ? "—" : (result.nudges ?? 0);
+		report += `| ${result.run} | ${result.agent} | ${result.task} | ${result.status} | ${result.status === "skipped" ? "—" : formatMs(result.elapsedMs)} | ${result.status === "skipped" ? "—" : formatNumber(result.metrics.usage.totalTokens)} | ${result.status === "skipped" ? "—" : result.metrics.toolCalls} | ${nudges} | ${checks} | ${weightedScore} |\n`;
 	}
 	report += `\n## Interpretation\n\n`;
 	report += `- Session recordings are the compressed JSONL files under [recordings](./recordings). They contain the event stream used to calculate these metrics.\n`;
 	report += `- Completed passes require a clean agent exit before the timeout. Quality passes report the final workspace checks independently, so a timed-out agent can still leave a passing artifact.\n`;
+	report += `- Nudge watchdog monitors agent task completion: if an agent exits before timeout without creating \`finish_notes.md\`, a reminder is sent to continue. Each nudge incurs a ${nudgePenaltyPerNudge}-point penalty from the raw weighted score.\n`;
 	report += `- Fixture checks run the TypeScript test suite and typecheck; advanced fixtures score each hidden invariant independently. Inventory emphasizes atomicity and tamper safety; durable workflow adds DAG scheduling, lease fencing, retry timing, compensation, and adversarial recovery.\n`;
 	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
 	if (options.agents.includes("kilo")) {
@@ -2067,20 +2219,32 @@ async function main() {
 					}
 					const workspace = createWorkspace(output, agent, run, task);
 					const baseline = createBaseline(task);
-					const command = commandFor(agent, options, task, agentDirs.dirs[agent], workspace);
 					const taskTimeout = task.timeoutSeconds ?? options.timeoutSeconds;
 					const recordingName = `${agent}-run-${run}-${task.id}.jsonl.gz`;
 					const stderrName = `${agent}-run-${run}-${task.id}.log`;
-					const result = await runCommand(
-						command,
-						Math.min(taskTimeout * 1000, remainingMs),
+					const result = await runAgentTask(
+						agent,
+						options,
+						task,
+						agentDirs.dirs[agent],
+						workspace,
 						join(output, "recordings", recordingName),
+						taskTimeout,
+						deadline,
 					);
 					writeFileSync(join(output, "stderr", stderrName), result.stderr, "utf8");
 					const metrics = parseRecording(result.stdout, agent);
 					metrics.rawEventCount = result.rawEventCount;
 					cleanupGeneratedWorkspaceState(workspace);
 					const quality = task.verify(workspace, baseline, metrics.finalText);
+					const penalty = result.nudges * nudgePenaltyPerNudge;
+					const rawScore = quality.score;
+					quality.rawScore = rawScore;
+					quality.penalty = penalty;
+					quality.score = Math.max(0, rawScore - penalty);
+					quality.nudges = result.nudges;
+					quality.finishNotesCreated = existsSync(join(workspace, "finish_notes.md"));
+
 					const status = result.timedOut ? "timed_out" : result.code === 0 && metrics.errors.length === 0 && quality.passed ? "passed" : "failed";
 					const row = {
 						run,
@@ -2094,6 +2258,8 @@ async function main() {
 						timedOut: result.timedOut,
 						error: result.error,
 						modelAlias: agent === "kilo" ? options.kiloModel : agent === "agy" ? options.agyModel : options.model,
+						nudges: result.nudges,
+						nudgePenalty: penalty,
 						recording: join("recordings", recordingName),
 						stderr: join("stderr", stderrName),
 						workspace: workspace.slice(output.length + 1),
@@ -2101,7 +2267,8 @@ async function main() {
 						quality,
 					};
 					results.push(row);
-					console.log(`[run ${run}] ${agent}/${task.id}: ${status}, ${formatMs(result.elapsedMs)}, ${formatNumber(metrics.usage.totalTokens)} tokens, ${metrics.toolCalls} tool calls`);
+					const nudgeNotice = result.nudges > 0 ? ` (${result.nudges} nudge${result.nudges === 1 ? "" : "s"}, -${penalty} pts)` : "";
+					console.log(`[run ${run}] ${agent}/${task.id}: ${status}${nudgeNotice}, ${formatMs(result.elapsedMs)}, ${formatNumber(metrics.usage.totalTokens)} tokens, ${metrics.toolCalls} tool calls`);
 				}
 			}
 		}

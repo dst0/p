@@ -1,0 +1,1966 @@
+{
+  "generatedAt": "2026-08-15T16:31:10.649Z",
+  "agents": [
+    "pi",
+    "p",
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache",
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.206",
+    "kilo": "7.4.17"
+  },
+  "startupProbes": {
+    "kilo": {
+      "status": "passed",
+      "expectedResolvedModel": "mini-pc/sokann-qwen-27b",
+      "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "timeoutSeconds": 180,
+      "diagnostics": "diagnostics/kilo-startup",
+      "modelResolution": {
+        "status": "passed",
+        "elapsedMs": 2274.643042,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "rawEventCount": 270,
+        "recording": "model-resolution.log.gz",
+        "stderr": "model-resolution.stderr.log"
+      },
+      "resolvedModel": "mini-pc/sokann-qwen-27b",
+      "request": {
+        "status": "failed",
+        "elapsedMs": 3063.937792,
+        "exitCode": 1,
+        "signal": null,
+        "timedOut": false,
+        "rawEventCount": 1,
+        "recording": "request.jsonl.gz",
+        "stderr": "request.stderr.log",
+        "responseMatched": false,
+        "errors": [
+          "Kilo error"
+        ]
+      },
+      "runtimeFiles": {
+        "data": [
+          "kilo/.metadata_never_index",
+          "kilo/kilo.db",
+          "kilo/kilo.db-shm",
+          "kilo/kilo.db-wal",
+          "kilo/log/2026-08-15T130057.log",
+          "kilo/log/2026-08-15T130059.log",
+          "kilo/log/opencode.log",
+          "kilo/storage/migration",
+          "kilo/storage/session_diff/ses_ffa7d1924ffeYCgG23I44h30sq.json",
+          "kilo/telemetry-id"
+        ],
+        "state": [
+          "kilo-sandbox-policy/1885a943ad55f58574b072b898dff836fd954f7f6add9c53e7cdaeb6993925c1/b9386a09b74e76cc4419f936bd0fce7019d2a1d76300fa8ab0443aab219c38e8.json",
+          "kilo/.metadata_never_index",
+          "kilo/locks/fe33fbd0cfc842c710f924c2eea51a1ebb2eda78.lock/heartbeat",
+          "kilo/locks/fe33fbd0cfc842c710f924c2eea51a1ebb2eda78.lock/meta.json"
+        ]
+      }
+    }
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 14400,
+  "tasks": [
+    {
+      "id": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "timeoutSeconds": 900
+    },
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    },
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 2400
+    },
+    {
+      "id": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "timeoutSeconds": 3600
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 4,
+      "passed": 2,
+      "qualityPassed": 2,
+      "qualityScore": 106,
+      "qualityMaxScore": 270,
+      "timedOut": 0,
+      "failed": 2,
+      "averageWallMs": 783609.159802,
+      "averageInputTokens": 8702.25,
+      "averageOutputTokens": 19329.75,
+      "averageTotalTokens": 452843.75,
+      "averageToolCalls": 25,
+      "averageToolErrors": 3.25
+    },
+    "p": {
+      "runs": 4,
+      "passed": 2,
+      "qualityPassed": 2,
+      "qualityScore": 225,
+      "qualityMaxScore": 270,
+      "timedOut": 0,
+      "failed": 2,
+      "averageWallMs": 1385289.1620625,
+      "averageInputTokens": 50953.25,
+      "averageOutputTokens": 26963.75,
+      "averageTotalTokens": 1130420.75,
+      "averageToolCalls": 42.25,
+      "averageToolErrors": 6.5
+    },
+    "kilo": {
+      "runs": 4,
+      "passed": 0,
+      "qualityPassed": 2,
+      "qualityScore": 108,
+      "qualityMaxScore": 270,
+      "timedOut": 1,
+      "failed": 3,
+      "averageWallMs": 979659.8032292495,
+      "averageInputTokens": 63678.5,
+      "averageOutputTokens": 10834,
+      "averageTotalTokens": 404637.25,
+      "averageToolCalls": 22,
+      "averageToolErrors": 0.25
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 220487.663,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/pi-run-1-typescript-calculator.log",
+      "workspace": "workspaces/pi/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 64,
+        "eventTypes": {
+          "message_end": 25,
+          "tool_execution_start": 15,
+          "tool_execution_end": 15,
+          "turn_end": 9
+        },
+        "usage": {
+          "input": 5018,
+          "output": 5280,
+          "cacheRead": 42781,
+          "cacheWrite": 0,
+          "totalTokens": 53079
+        },
+        "turns": 9,
+        "assistantMessages": 9,
+        "toolCalls": 15,
+        "toolErrors": 1,
+        "toolNames": {
+          "read": 4,
+          "bash": 7,
+          "write": 3,
+          "edit": 1
+        },
+        "stopReasons": {
+          "toolUse": 8,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "All 37 tests pass, typecheck is clean, and the CLI outputs `11` as required.\n\nHere's what was built:\n\n**`src/calculator.ts`** — Recursive descent parser with:\n- **Lexer**: tokenizes numbers (integers + decimals), operators (`+`, `-`, `*`, `/`), parentheses, and `eof`\n- **Parser** with proper precedence grammar:\n  - `expr` → `term` `(+|- term)*`  (addition/subtraction, lowest precedence)\n  - `term` → `unary` `(*|/ unary)*`  (multiplication/division)\n  - `unary` → `- unary | primary`  (unary minus, supports chaining like `--5`)\n  - `primary` → `NUMBER | ( expr )`\n- Error handling for: empty input, unexpected characters, mismatched parentheses, trailing operators, division by zero, and non-string arguments\n\n**`src/cli.ts`** — CLI that reads args, calls `evaluate()`, prints result to stdout, or writes errors to stderr and exits nonzero\n\n**`test/calculator.test.ts`** — 32 additional tests across 7 suites covering: basic operations, precedence, parentheses (including nested/deep), unary minus (including chained), whitespace handling, error conditions, and complex expressions",
+        "rawEventCount": 4750
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 492915.062,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/pi-run-1-monolith-split.log",
+      "workspace": "workspaces/pi/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 132,
+        "eventTypes": {
+          "message_end": 51,
+          "tool_execution_start": 31,
+          "tool_execution_end": 31,
+          "turn_end": 19
+        },
+        "usage": {
+          "input": 8601,
+          "output": 13534,
+          "cacheRead": 266109,
+          "cacheWrite": 0,
+          "totalTokens": 288244
+        },
+        "turns": 19,
+        "assistantMessages": 19,
+        "toolCalls": 31,
+        "toolErrors": 4,
+        "toolNames": {
+          "read": 6,
+          "bash": 10,
+          "write": 8,
+          "edit": 7
+        },
+        "stopReasons": {
+          "toolUse": 18,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Done. Here's the summary of the split:\n\n**Module structure:**\n\n| File | Role | Contents |\n|---|---|---|\n| `src/types.ts` | Shared types | `TaskStatus`, `SortKey`, `Task`, `TaskSummary`, `ReportOptions`, `STATUS_ORDER` |\n| `src/parser.ts` | Parsing | `parseTaskLine`, `parseTaskFile` + exported helpers `normalizeTitle`, `parseStatus`, `parseEstimate`, `parseTags` |\n| `src/query.ts` | Query/filter/sort | `filterTasks`, `sortTasks`, `groupTasksByStatus`, `selectLargest` + `normalizeTask`, `cloneTask` |\n| `src/report.ts` | Reporting | `summarizeTasks`, `formatSummary`, `serializeTasks`, `renderDashboard`, `runReport` |\n| `src/monolith.ts` | Compatibility facade | Re-exports all public symbols from the three modules |\n\n**Test coverage:** 45 tests total (3 contract + 12 parser + 16 query + 14 report), all passing. Typecheck passes clean. The contract test file and project configuration were not modified.",
+        "rawEventCount": 12720
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 1823428.3846250002,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/pi-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/pi/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 224,
+        "eventTypes": {
+          "message_end": 90,
+          "tool_execution_start": 45,
+          "tool_execution_end": 45,
+          "turn_end": 44
+        },
+        "usage": {
+          "input": 16908,
+          "output": 41302,
+          "cacheRead": 1366989,
+          "cacheWrite": 0,
+          "totalTokens": 1425199
+        },
+        "turns": 44,
+        "assistantMessages": 44,
+        "toolCalls": 45,
+        "toolErrors": 8,
+        "toolNames": {
+          "read": 8,
+          "bash": 16,
+          "write": 10,
+          "edit": 11
+        },
+        "stopReasons": {
+          "toolUse": 43,
+          "stop": 1
+        },
+        "errors": [],
+        "finalText": "Everything is complete. Here's a summary of the implementation:\n\n**Files created:**\n- `src/types.ts` — All domain types (commands, events, state, errors) with validation helpers\n- `src/store.ts` — Event log storage with SHA-256 hash-chained JSONL, deterministic export, rigorous replay validation\n- `src/engine.ts` — Core engine with domain logic, idempotency, optimistic concurrency, atomic batch processing\n- `src/index.ts` — Public API facade (`InventoryEngine`, error exports, type re-exports)\n- `test/inventory.test.ts` — 58 additional tests across 14 suites\n\n**Key behaviors implemented:**\n- **Input validation** — Positive integer quantities, non-empty trimmed strings for SKU/orderId/commandId\n- **Optimistic concurrency** — `expectedVersion` checked against current SKU version; stale commands throw `ConcurrencyError`\n- **Idempotency** — Same `commandId` + same command returns cached result; different command throws `ValidationError`\n- **Atomic batches** — All-or-nothing with snapshot rollback; intra-batch version awareness\n- **Deep immutability** — All returned state/history/results are JSON-stringified clones\n- **Hash-chained JSONL** — Canonical deterministic hashing (position, version, commandId, type, sku, data, previousHash) with SHA-256; manifest footer with eventCount and headHash\n- **Rigorous replay validation** — Structure, positions, stream versions, hash links, manifest, command-ID uniqueness, SKU version progression\n- **Continuation after restore** — Restored engine preserves positions, hash chains, idempotency registry; exports byte-for-byte identical logs",
+        "rawEventCount": 38418
+      },
+      "quality": {
+        "passed": false,
+        "score": 91,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false,
+            "details": "est_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [inventory:extra-data] data after the manifest is rejected\nok 26 - [inventory:extra-data] data after the manifest is rejected\n  ---\n  duration_ms: 0.06125\n  type: 'test'\n  ...\n# Subtest: [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\nok 27 - [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\n  ---\n  duration_ms: 0.044917\n  type: 'test'\n  ...\n# Subtest: [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\nok 28 - [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\n  ---\n  duration_ms: 0.074042\n  type: 'test'\n  ...\n# Subtest: input validation\n    # Subtest: rejects empty SKU\n    ok 1 - rejects empty SKU\n      ---\n      duration_ms: 0.494625\n      type: 'test'\n      ...\n    # Subtest: rejects empty commandId\n    ok 2 - rejects empty commandId\n      ---\n      duration_ms: 0.235917\n      type: 'test'\n      ...\n    # Subtest: rejects non-positive quantities\n    ok 3 - rejects non-positive quantities\n      ---\n      duration_ms: 0.100083\n      type: 'test'\n      ...\n    # Subtest: rejects non-integer expectedVersion\n    ok 4 - rejects non-integer expectedVersion\n      ---\n      duration_ms: 0.07475\n      type: 'test'\n      ...\n    # Subtest: rejects empty orderId for reserve/release/ship\n    ok 5 - rejects empty orderId for reserve/release/ship\n      ---\n      duration_ms: 0.109\n      type: 'test'\n      ...\n    # Subtest: trims SKU and orderId\n    ok 6 - trims SKU and orderId\n      ---\n      duration_ms: 0.333042\n      type: 'test'\n      ...\n    1..6\nok 29 - input validation\n  ---\n  duration_ms: 1.765416\n  type: 'suite'\n  ...\n# Subtest: idempotency\n    # Subtest: replaying same command returns original result\n    ok 1 - replaying same command returns original result\n      ---\n      duration_ms: 0.135708\n      type: 'test'\n      ...\n    # Subtest: reusing commandId for different command throws\n    ok 2 - reusing commandId for different command throws\n      ---\n      duration_ms: 0.127459\n      type: 'test'\n      ...\n    # Subtest: idempotent replay of create-sku\n    ok 3 - idempotent replay of create-sku\n      ---\n      duration_ms: 0.068583\n      type: 'test'\n      ...\n    1..3\nok 30 - idempotency\n  ---\n  duration_ms: 0.416708\n  type: 'suite'\n  ...\n# Subtest: release command\n    # Subtest: release reduces reservation and reserved count\n    ok 1 - release reduces reservation and reserved count\n      ---\n      duration_ms: 0.295541\n      type: 'test'\n      ...\n    # Subtest: full release removes order from reservations\n    ok 2 - full release removes order from reservations\n      ---\n      duration_ms: 0.099083\n      type: 'test'\n      ...\n    # Subtest: cannot release more than reserved for an order\n    ok 3 - cannot release more than reserved for an order\n      ---\n      duration_ms: 0.076625\n      type: 'test'\n      ...\n    # Subtest: cannot release from non-existent order\n    ok 4 - cannot release from non-existent order\n      ---\n      duration_ms: 0.051583\n      type: 'test'\n      ...\n    1..4\nok 31 - release command\n  ---\n  duration_ms: 0.583042\n  type: 'suite'\n  ...\n# Subtest: multi-SKU\n    # Subtest: multiple SKUs track versions independently\n    ok 1 - multiple SKUs track versions independently\n      ---\n      duration_ms: 0.063458\n      type: 'test'\n      ...\n    # Subtest: global position counter increments across SKUs\n    ok 2 - global position counter increments across SKUs\n      ---\n      duration_ms: 0.066959\n      type: 'test'\n      ...\n    1..2\nok 32 - multi-SKU\n  ---\n  duration_ms: 0.156375\n  type: 'suite'\n  ...\n# Subtest: deep immutability\n    # Subtest: returned state cannot mutate engine\n    ok 1 - returned state cannot mutate engine\n      ---\n      duration_ms: 0.057875\n      type: 'test'\n      ...\n    # Subtest: returned history cannot mutate engine\n    ok 2 - returned history cannot mutate engine\n      ---\n      duration_ms: 0.043208\n      type: 'test'\n      ...\n    # Subtest: returned command result cannot mutate engine\n    ok 3 - returned command result cannot mutate engine\n      ---\n      duration_ms: 0.055334\n      type: 'test'\n      ...\n    1..3\nok 33 - deep immutability\n  ---\n  duration_ms: 0.270625\n  type: 'suite'\n  ...\n# Subtest: batch operations\n    # Subtest: atomic multi-SKU batch\n    ok 1 - atomic multi-SKU batch\n      ---\n      duration_ms: 0.166209\n      type: 'test'\n      ...\n    # Subtest: batch rollback on failure\n    ok 2 - batch rollback on failure\n      ---\n      duration_ms: 0.10775\n      type: 'test'\n      ...\n    # Subtest: batch with intra-batch version awareness\n    ok 3 - batch with intra-batch version awareness\n      ---\n      duration_ms: 0.052792\n      type: 'test'\n      ...\n    # Subtest: batch idempotency\n    ok 4 - batch idempotency\n      ---\n      duration_ms: 0.068917\n      type: 'test'\n      ...\n    # Subtest: batch reusing commandId for different command throws\n    ok 5 - batch reusing commandId for different command throws\n      ---\n      duration_ms: 0.051958\n      type: 'test'\n      ...\n    1..5\nok 34 - batch operations\n  ---\n  duration_ms: 0.534125\n  type: 'suite'\n  ...\n# Subtest: hash chain integrity\n    # Subtest: hash chain links correctly\n    ok 1 - hash chain links correctly\n      ---\n      duration_ms: 0.058375\n      type: 'test'\n      ...\n    # Subtest: export log has correct manifest\n    ok 2 - export log has correct manifest\n      ---\n      duration_ms: 0.095708\n      type: 'test'\n      ...\n    # Subtest: tampered log is rejected\n    ok 3 - tampered log is rejected\n      ---\n      duration_ms: 0.188167\n      type: 'test'\n      ...\n    1..3\nok 35 - hash chain integrity\n  ---\n  duration_ms: 0.374625\n  type: 'suite'\n  ...\n# Subtest: continuation after restore\n    # Subtest: restored engine can continue with correct versions\n    ok 1 - restored engine can continue with correct versions\n      ---\n      duration_ms: 0.1465\n      type: 'test'\n      ...\n    # Subtest: restored engine preserves idempotency\n    ok 2 - restored engine preserves idempotency\n      ---\n      duration_ms: 0.068333\n      type: 'test'\n      ...\n    # Subtest: restored engine rejects reused commandId for different command\n    ok 3 - restored engine rejects reused commandId for different command\n      ---\n      duration_ms: 0.054625\n      type: 'test'\n      ...\n    # Subtest: export after restore matches original byte-for-byte\n    ok 4 - export after restore matches original byte-for-byte\n      ---\n      duration_ms: 0.177542\n      type: 'test'\n      ...\n    # Subtest: continuation after restore preserves hash chain\n    ok 5 - continuation after restore preserves hash chain\n      ---\n      duration_ms: 0.111916\n      type: 'test'\n      ...\n    1..5\nok 36 - continuation after restore\n  ---\n  duration_ms: 0.654625\n  type: 'suite'\n  ...\n# Subtest: fromLog validation\n    # Subtest: rejects malformed JSON\n    ok 1 - rejects malformed JSON\n      ---\n      duration_ms: 0.069583\n      type: 'test'\n      ...\n    # Subtest: rejects missing manifest\n    ok 2 - rejects missing manifest\n      ---\n      duration_ms: 0.03425\n      type: 'test'\n      ...\n    # Subtest: rejects wrong event count in manifest\n    ok 3 - rejects wrong event count in manifest\n      ---\n      duration_ms: 0.060417\n      type: 'test'\n      ...\n    # Subtest: rejects tampered hash in log\n    ok 4 - rejects tampered hash in log\n      ---\n      duration_ms: 0.071292\n      type: 'test'\n      ...\n    # Subtest: rejects skipped position\n    ok 5 - rejects skipped position\n      ---\n      duration_ms: 0.074333\n      type: 'test'\n      ...\n    # Subtest: rejects duplicate commandId in log\n    ok 6 - rejects duplicate commandId in log\n      ---\n      duration_ms: 0.056459\n      type: 'test'\n      ...\n    # Subtest: rejects duplicate SKU creation in log\n    ok 7 - rejects duplicate SKU creation in log\n      ---\n      duration_ms: 0.061458\n      type: 'test'\n      ...\n    1..7\nok 37 - fromLog validation\n  ---\n  duration_ms: 0.502292\n  type: 'suite'\n  ...\n# Subtest: ship command\n    # Subtest: ship reduces onHand and reservation\n    ok 1 - ship reduces onHand and reservation\n      ---\n      duration_ms: 0.080166\n      type: 'test'\n      ...\n    # Subtest: full ship removes order from reservations\n    ok 2 - full ship removes order from reservations\n      ---\n      duration_ms: 0.06125\n      type: 'test'\n      ...\n    # Subtest: cannot ship more than reserved\n    ok 3 - cannot ship more than reserved\n      ---\n      duration_ms: 0.059583\n      type: 'test'\n      ...\n    # Subtest: cannot ship more than onHand\n    ok 4 - cannot ship more than onHand\n      ---\n      duration_ms: 0.051833\n      type: 'test'\n      ...\n    # Subtest: cannot ship from non-existent order\n    ok 5 - cannot ship from non-existent order\n      ---\n      duration_ms: 0.046333\n      type: 'test'\n      ...\n    1..5\nok 38 - ship command\n  ---\n  duration_ms: 0.351667\n  type: 'suite'\n  ...\n# Subtest: reserve command\n    # Subtest: cannot reserve more than available\n    ok 1 - cannot reserve more than available\n      ---\n      duration_ms: 0.056292\n      type: 'test'\n      ...\n    # Subtest: cannot reserve when nothing received\n    ok 2 - cannot reserve when nothing received\n      ---\n      duration_ms: 0.032792\n      type: 'test'\n      ...\n    # Subtest: cumulative reservations across orders\n    ok 3 - cumulative reservations across orders\n      ---\n      duration_ms: 0.045209\n      type: 'test'\n      ...\n    # Subtest: cumulative reservations for same order\n    ok 4 - cumulative reservations for same order\n      ---\n      duration_ms: 0.048833\n      type: 'test'\n      ...\n    1..4\nok 39 - reserve command\n  ---\n  duration_ms: 0.219833\n  type: 'suite'\n  ...\n# Subtest: export format\n    # Subtest: export ends with newline\n    ok 1 - export ends with newline\n      ---\n      duration_ms: 0.07\n      type: 'test'\n      ...\n    # Subtest: export is deterministic\n    ok 2 - export is deterministic\n      ---\n      duration_ms: 0.03825\n      type: 'test'\n      ...\n    # Subtest: each event line is valid JSON\n    ok 3 - each event line is valid JSON\n      ---\n      duration_ms: 0.041375\n      type: 'test'\n      ...\n    # Subtest: hash is lowercase hex\n    ok 4 - hash is lowercase hex\n      ---\n      duration_ms: 0.04925\n      type: 'test'\n      ...\n    1..4\nok 40 - export format\n  ---\n  duration_ms: 0.284167\n  type: 'suite'\n  ...\n# Subtest: error types\n    # Subtest: ConcurrencyError extends Error\n    ok 1 - ConcurrencyError extends Error\n      ---\n      duration_ms: 0.046959\n      type: 'test'\n      ...\n    # Subtest: ValidationError extends Error\n    ok 2 - ValidationError extends Error\n      ---\n      duration_ms: 0.027083\n      type: 'test'\n      ...\n    1..2\nok 41 - error types\n  ---\n  duration_ms: 0.094333\n  type: 'suite'\n  ...\n# Subtest: edge cases\n    # Subtest: SKU with special characters in name\n    ok 1 - SKU with special characters in name\n      ---\n      duration_ms: 0.041333\n      type: 'test'\n      ...\n    # Subtest: state for non-existent SKU throws\n    ok 2 - state for non-existent SKU throws\n      ---\n      duration_ms: 0.025792\n      type: 'test'\n      ...\n    # Subtest: history for non-existent SKU returns empty array\n    ok 3 - history for non-existent SKU returns empty array\n      ---\n      duration_ms: 0.022958\n      type: 'test'\n      ...\n    # Subtest: large quantity receive\n    ok 4 - large quantity receive\n      ---\n      duration_ms: 0.028834\n      type: 'test'\n      ...\n    # Subtest: available stays correct through complex lifecycle\n    ok 5 - available stays correct through complex lifecycle\n      ---\n      duration_ms: 0.1295\n      type: 'test'\n      ...\n    1..5\nok 42 - edge cases\n  ---\n  duration_ms: 0.325166\n  type: 'suite'\n  ...\n1..42\n# tests 86\n# suites 14\n# pass 84\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 137.169542\n"
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "failed",
+      "elapsedMs": 597605.5295830001,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/pi-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/pi-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/pi/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 42,
+        "eventTypes": {
+          "message_end": 17,
+          "tool_execution_start": 9,
+          "tool_execution_end": 9,
+          "turn_end": 7
+        },
+        "usage": {
+          "input": 4282,
+          "output": 17203,
+          "cacheRead": 23368,
+          "cacheWrite": 0,
+          "totalTokens": 44853
+        },
+        "turns": 7,
+        "assistantMessages": 7,
+        "toolCalls": 9,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 4,
+          "bash": 5
+        },
+        "stopReasons": {
+          "toolUse": 6,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": "",
+        "rawEventCount": 17119
+      },
+      "quality": {
+        "passed": false,
+        "score": 3,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": false
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# node:internal/modules/run_main:107\n#     triggerUncaughtException(\n#     ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.contract.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at nextResolve (node:internal/modules/esm/hooks:785:28)\n#     at resolveBase (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000336:2:3811)\n#     at async resolveDirectory (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000336:2:4304)\n#     at async resolve (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000336:2:5422)\n#     at async nextResolve (node:internal/modules/esm/hooks:785:22)\n#     at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)\n#     at async handleMessage (node:internal/modules/esm/worker:251:18) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/workflow.contract.test.ts\nnot ok 1 - test/workflow.contract.test.ts\n  ---\n  duration_ms: 104.794\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.contract.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# node:internal/modules/run_main:107\n#     triggerUncaughtException(\n#     ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.hidden.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at nextResolve (node:internal/modules/esm/hooks:785:28)\n#     at resolveBase (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000334:2:3811)\n#     at async resolveDirectory (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000334:2:4304)\n#     at async resolve (file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/node_modules/tsx/dist/esm/index.mjs?1786802000334:2:5422)\n#     at async nextResolve (node:internal/modules/esm/hooks:785:22)\n#     at async AsyncLoaderHooksOnLoaderHookWorker.resolve (node:internal/modules/esm/hooks:269:24)\n#     at async handleMessage (node:internal/modules/esm/worker:251:18) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/workflow.hidden.test.ts\nnot ok 2 - test/workflow.hidden.test.ts\n  ---\n  duration_ms: 117.421334\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 0\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 122.694\n"
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": false
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "passed",
+      "elapsedMs": 510915.5311250002,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/p-run-1-typescript-calculator.log",
+      "workspace": "workspaces/p/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 224,
+        "eventTypes": {
+          "message_end": 100,
+          "request_start": 29,
+          "tool_execution_start": 33,
+          "tool_execution_end": 33,
+          "turn_end": 29
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 23390,
+          "output": 11265,
+          "cacheRead": 616652,
+          "cacheWrite": 0,
+          "totalTokens": 651307
+        },
+        "turns": 29,
+        "assistantMessages": 29,
+        "toolCalls": 33,
+        "toolErrors": 8,
+        "toolNames": {
+          "update_session_state": 5,
+          "bash": 8,
+          "read": 5,
+          "write": 3,
+          "edit": 2,
+          "finish_work": 7,
+          "record_task_verification": 3
+        },
+        "stopReasons": {
+          "toolUse": 29
+        },
+        "errors": [],
+        "finalText": "All implementation work is complete and verified:\n\n- **src/calculator.ts**: Recursive descent parser with tokenizer (decimal literals, whitespace, binary +, -, *, / with standard precedence and left associativity, unary minus, parentheses) and descriptive error handling\n- **src/cli.ts**: CLI that prints result or exits nonzero with useful stderr message\n- **test/calculator.test.ts**: 36 unit tests covering happy paths, error cases, and edge cases\n\nVerification results:\n- `npm run typecheck`: passes (0 errors) [verification-evidence-13]\n- `npm test`: 41/41 tests pass (5 contract + 36 unit) [verification-evidence-10]\n- `npm run calc -- \"2 + 3 * (4 - 1)\"`: prints 11 [verification-evidence-11]\n- Invalid input exits nonzero with error [verification-evidence-12]\n\nBlocked: finish_work requires a verification_token parameter not present in the tool schema. The ready_to_finish step issued token fa0465f4-524c-4c5f-9a35-5343edd0cfeb but finish_work schema lacks this field.",
+        "rawEventCount": 12620
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 648305.9657080001,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 191,
+        "eventTypes": {
+          "message_end": 83,
+          "request_start": 21,
+          "tool_execution_start": 33,
+          "tool_execution_end": 33,
+          "turn_end": 21
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 19055,
+          "output": 15643,
+          "cacheRead": 508761,
+          "cacheWrite": 0,
+          "totalTokens": 543459
+        },
+        "turns": 21,
+        "assistantMessages": 21,
+        "toolCalls": 33,
+        "toolErrors": 3,
+        "toolNames": {
+          "update_session_state": 4,
+          "read": 6,
+          "bash": 9,
+          "write": 8,
+          "edit": 3,
+          "record_task_verification": 2,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 21
+        },
+        "errors": [],
+        "finalText": "Split src/monolith.ts into three focused modules:\n- **src/parser.ts**: Types (Task, TaskStatus, SortKey, TaskSummary, ReportOptions), STATUS_ORDER constant, and parsing functions (parseTaskLine, parseTaskFile, cloneTask, normalizeTask)\n- **src/query.ts**: Filtering, sorting, grouping, selection (filterTasks, sortTasks, groupTasksByStatus, selectLargest)\n- **src/report.ts**: Summarization and formatting (summarizeTasks, formatSummary, serializeTasks, renderDashboard, runReport)\n\nReplaced src/monolith.ts with a thin compatibility facade that re-exports all public symbols. No contract tests modified, no project config changed, no behavior changed.\n\nAdded 59 new tests across test/parser.test.ts, test/query.test.ts, and test/report.test.ts covering happy paths, edge cases, error handling, and immutability guarantees.\n\nFinal results: 62/62 tests pass, typecheck clean.",
+        "rawEventCount": 17750
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 2211566.6840419993,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 420,
+        "eventTypes": {
+          "message_end": 185,
+          "request_start": 59,
+          "tool_execution_start": 58,
+          "tool_execution_end": 58,
+          "turn_end": 59,
+          "auto_retry_end": 1
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "responseModel": "mini-pc/sokann-qwen-27b",
+        "usage": {
+          "input": 99806,
+          "output": 34600,
+          "cacheRead": 1737851,
+          "cacheWrite": 0,
+          "totalTokens": 1872257
+        },
+        "turns": 59,
+        "assistantMessages": 59,
+        "toolCalls": 58,
+        "toolErrors": 5,
+        "toolNames": {
+          "update_session_state": 1,
+          "bash": 21,
+          "read": 10,
+          "write": 5,
+          "edit": 18,
+          "record_task_verification": 2,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 55,
+          "length": 1,
+          "error": 3
+        },
+        "errors": [
+          "terminated",
+          "Connection error.",
+          "Connection error."
+        ],
+        "finalText": "Implemented complete production-quality event-sourced inventory engine per README.md. All 64 tests pass and TypeScript typecheck succeeds. Key deliverables:\n\n- **src/store.ts**: Event-log storage with SHA-256 hash chaining, JSONL persistence with manifest, full replay validation (positions, hash chain, version monotonicity, commandId uniqueness, forward compatibility)\n- **src/engine.ts**: Domain commands (create-sku, receive, reserve, release, ship) with input validation, idempotency via commandId registry, optimistic concurrency control, atomic batch execution with simulated rollback, state projection from event log, and replay-domain-transition validation\n- **src/index.ts**: Clean public facade exporting all types, errors, and InventoryEngine\n- **test/inventory.test.ts**: 64 tests covering lifecycle, concurrency, idempotency, batches, persistence, hash integrity, immutability, edge cases, and forward compatibility",
+        "rawEventCount": 50421
+      },
+      "quality": {
+        "passed": false,
+        "score": 88,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": false,
+            "details": "ntinues positions and hash links\n  ---\n  duration_ms: 0.1035\n  type: 'test'\n  ...\n# Subtest: [inventory:content-tamper] changed event content is rejected\nok 24 - [inventory:content-tamper] changed event content is rejected\n  ---\n  duration_ms: 0.85325\n  type: 'test'\n  ...\n# Subtest: [inventory:truncation] removing the final byte is rejected\nnot ok 25 - [inventory:truncation] removing the final byte is rejected\n  ---\n  duration_ms: 0.25575\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:9066'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:259:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [inventory:extra-data] data after the manifest is rejected\nok 26 - [inventory:extra-data] data after the manifest is rejected\n  ---\n  duration_ms: 0.086708\n  type: 'test'\n  ...\n# Subtest: [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\nok 27 - [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\n  ---\n  duration_ms: 0.06125\n  type: 'test'\n  ...\n# Subtest: [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\nok 28 - [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\n  ---\n  duration_ms: 0.091167\n  type: 'test'\n  ...\n# Subtest: idempotent retry of create-sku returns original result\nok 29 - idempotent retry of create-sku returns original result\n  ---\n  duration_ms: 1.514542\n  type: 'test'\n  ...\n# Subtest: idempotent retry of receive returns original result\nok 30 - idempotent retry of receive returns original result\n  ---\n  duration_ms: 0.144333\n  type: 'test'\n  ...\n# Subtest: reusing command ID for different command throws ValidationError\nok 31 - reusing command ID for different command throws ValidationError\n  ---\n  duration_ms: 0.264333\n  type: 'test'\n  ...\n# Subtest: empty sku throws ValidationError\nok 32 - empty sku throws ValidationError\n  ---\n  duration_ms: 0.142958\n  type: 'test'\n  ...\n# Subtest: whitespace-only sku throws ValidationError\nok 33 - whitespace-only sku throws ValidationError\n  ---\n  duration_ms: 0.087125\n  type: 'test'\n  ...\n# Subtest: empty commandId throws ValidationError\nok 34 - empty commandId throws ValidationError\n  ---\n  duration_ms: 0.148958\n  type: 'test'\n  ...\n# Subtest: zero quantity throws ValidationError\nok 35 - zero quantity throws ValidationError\n  ---\n  duration_ms: 0.096042\n  type: 'test'\n  ...\n# Subtest: negative quantity throws ValidationError\nok 36 - negative quantity throws ValidationError\n  ---\n  duration_ms: 0.0645\n  type: 'test'\n  ...\n# Subtest: non-integer quantity throws ValidationError\nok 37 - non-integer quantity throws ValidationError\n  ---\n  duration_ms: 0.115209\n  type: 'test'\n  ...\n# Subtest: empty orderId throws ValidationError\nok 38 - empty orderId throws ValidationError\n  ---\n  duration_ms: 0.133\n  type: 'test'\n  ...\n# Subtest: receiving to non-existent SKU throws ValidationError\nok 39 - receiving to non-existent SKU throws ValidationError\n  ---\n  duration_ms: 0.053292\n  type: 'test'\n  ...\n# Subtest: creating already-existing SKU throws ValidationError\nok 40 - creating already-existing SKU throws ValidationError\n  ---\n  duration_ms: 0.06475\n  type: 'test'\n  ...\n# Subtest: reserving more than available throws ValidationError\nok 41 - reserving more than available throws ValidationError\n  ---\n  duration_ms: 0.061958\n  type: 'test'\n  ...\n# Subtest: releasing more than reserved throws ValidationError\nok 42 - releasing more than reserved throws ValidationError\n  ---\n  duration_ms: 0.069333\n  type: 'test'\n  ...\n# Subtest: shipping more than reserved throws ValidationError\nok 43 - shipping more than reserved throws ValidationError\n  ---\n  duration_ms: 0.054958\n  type: 'test'\n  ...\n# Subtest: wrong expectedVersion throws ConcurrencyError\nok 44 - wrong expectedVersion throws ConcurrencyError\n  ---\n  duration_ms: 0.051041\n  type: 'test'\n  ...\n# Subtest: state is isolated across SKUs\nok 45 - state is isolated across SKUs\n  ---\n  duration_ms: 0.626375\n  type: 'test'\n  ...\n# Subtest: state returns deep copy — mutations do not affect engine\nok 46 - state returns deep copy — mutations do not affect engine\n  ---\n  duration_ms: 0.05675\n  type: 'test'\n  ...\n# Subtest: history returns deep copy — mutations do not affect engine\nok 47 - history returns deep copy — mutations do not affect engine\n  ---\n  duration_ms: 0.055834\n  type: 'test'\n  ...\n# Subtest: release reduces reservation and restores available\nok 48 - release reduces reservation and restores available\n  ---\n  duration_ms: 0.097083\n  type: 'test'\n  ...\n# Subtest: full release removes reservation entry\nok 49 - full release removes reservation entry\n  ---\n  duration_ms: 0.064208\n  type: 'test'\n  ...\n# Subtest: empty batch returns empty results\nok 50 - empty batch returns empty results\n  ---\n  duration_ms: 0.340917\n  type: 'test'\n  ...\n# Subtest: batch executes multiple commands across SKUs atomically\nok 51 - batch executes multiple commands across SKUs atomically\n  ---\n  duration_ms: 0.1535\n  type: 'test'\n  ...\n# Subtest: batch fails atomically — no state changes on error\nok 52 - batch fails atomically — no state changes on error\n  ---\n  duration_ms: 0.119625\n  type: 'test'\n  ...\n# Subtest: batch validates domain rules across items\nok 53 - batch validates domain rules across items\n  ---\n  duration_ms: 0.064\n  type: 'test'\n  ...\n# Subtest: batch with optimistic concurrency within batch\nok 54 - batch with optimistic concurrency within batch\n  ---\n  duration_ms: 0.067416\n  type: 'test'\n  ...\n# Subtest: batch with duplicate command IDs throws ValidationError\nok 55 - batch with duplicate command IDs throws ValidationError\n  ---\n  duration_ms: 0.117459\n  type: 'test'\n  ...\n# Subtest: batch with idempotent retry of single item\nok 56 - batch with idempotent retry of single item\n  ---\n  duration_ms: 0.095958\n  type: 'test'\n  ...\n# Subtest: exportLog produces valid JSONL with manifest\nok 57 - exportLog produces valid JSONL with manifest\n  ---\n  duration_ms: 0.131542\n  type: 'test'\n  ...\n# Subtest: exportLog ends with newline\nok 58 - exportLog ends with newline\n  ---\n  duration_ms: 0.030875\n  type: 'test'\n  ...\n# Subtest: fromLog with truncated log throws ValidationError\nok 59 - fromLog with truncated log throws ValidationError\n  ---\n  duration_ms: 0.147708\n  type: 'test'\n  ...\n# Subtest: fromLog with tampered hash throws ValidationError\nok 60 - fromLog with tampered hash throws ValidationError\n  ---\n  duration_ms: 0.059833\n  type: 'test'\n  ...\n# Subtest: fromLog with malformed JSON throws ValidationError\nok 61 - fromLog with malformed JSON throws ValidationError\n  ---\n  duration_ms: 0.036875\n  type: 'test'\n  ...\n# Subtest: fromLog with empty string works (empty engine)\nok 62 - fromLog with empty string works (empty engine)\n  ---\n  duration_ms: 0.080584\n  type: 'test'\n  ...\n# Subtest: fromLog with wrong event count in manifest throws ValidationError\nok 63 - fromLog with wrong event count in manifest throws ValidationError\n  ---\n  duration_ms: 0.051833\n  type: 'test'\n  ...\n# Subtest: restored engine can continue executing commands\nok 64 - restored engine can continue executing commands\n  ---\n  duration_ms: 0.064\n  type: 'test'\n  ...\n# Subtest: restored engine exports byte-for-byte identical log after continuation\nok 65 - restored engine exports byte-for-byte identical log after continuation\n  ---\n  duration_ms: 0.11575\n  type: 'test'\n  ...\n# Subtest: restored engine preserves idempotency\nok 66 - restored engine preserves idempotency\n  ---\n  duration_ms: 0.052291\n  type: 'test'\n  ...\n# Subtest: export log events have correct hash chain\nok 67 - export log events have correct hash chain\n  ---\n  duration_ms: 0.052541\n  type: 'test'\n  ...\n# Subtest: multiple SKUs with independent versions\nok 68 - multiple SKUs with independent versions\n  ---\n  duration_ms: 0.034208\n  type: 'test'\n  ...\n# Subtest: ship reduces onHand and reservation\nok 69 - ship reduces onHand and reservation\n  ---\n  duration_ms: 0.04675\n  type: 'test'\n  ...\n# Subtest: exportLog is deterministic\nok 70 - exportLog is deterministic\n  ---\n  duration_ms: 0.040875\n  type: 'test'\n  ...\n# Subtest: global positions are sequential across SKUs\nok 71 - global positions are sequential across SKUs\n  ---\n  duration_ms: 0.040042\n  type: 'test'\n  ...\n# Subtest: reserving exactly available quantity succeeds\nok 72 - reserving exactly available quantity succeeds\n  ---\n  duration_ms: 0.032125\n  type: 'test'\n  ...\n# Subtest: partial ship preserves remaining reservation\nok 73 - partial ship preserves remaining reservation\n  ---\n  duration_ms: 0.043875\n  type: 'test'\n  ...\n# Subtest: multiple reservations for same SKU\nok 74 - multiple reservations for same SKU\n  ---\n  duration_ms: 0.037666\n  type: 'test'\n  ...\n# Subtest: history for SKU with no events returns empty array\nok 75 - history for SKU with no events returns empty array\n  ---\n  duration_ms: 0.02575\n  type: 'test'\n  ...\n# Subtest: export → import → export is byte-for-byte identical\nok 76 - export → import → export is byte-for-byte identical\n  ---\n  duration_ms: 0.051708\n  type: 'test'\n  ...\n# Subtest: fromLog rejects duplicate commandIds\nok 77 - fromLog rejects duplicate commandIds\n  ---\n  duration_ms: 0.134417\n  type: 'test'\n  ...\n# Subtest: fromLog rejects extra lines after manifest\nok 78 - fromLog rejects extra lines after manifest\n  ---\n  duration_ms: 0.053958\n  type: 'test'\n  ...\n# Subtest: batch result returns deep copy\nok 79 - batch result returns deep copy\n  ---\n  duration_ms: 0.064042\n  type: 'test'\n  ...\n# Subtest: command result returns deep copy\nok 80 - command result returns deep copy\n  ---\n  duration_ms: 0.032042\n  type: 'test'\n  ...\n# Subtest: releasing non-existent order throws ValidationError\nok 81 - releasing non-existent order throws ValidationError\n  ---\n  duration_ms: 0.074\n  type: 'test'\n  ...\n# Subtest: shipping non-existent order throws ValidationError\nok 82 - shipping non-existent order throws ValidationError\n  ---\n  duration_ms: 0.069334\n  type: 'test'\n  ...\n# Subtest: batch creates SKU and receives in same batch\nok 83 - batch creates SKU and receives in same batch\n  ---\n  duration_ms: 0.05575\n  type: 'test'\n  ...\n# Subtest: batch domain error on second item rolls back first\nok 84 - batch domain error on second item rolls back first\n  ---\n  duration_ms: 0.055791\n  type: 'test'\n  ...\n# Subtest: idempotent retry ignores expectedVersion\nok 85 - idempotent retry ignores expectedVersion\n  ---\n  duration_ms: 0.034917\n  type: 'test'\n  ...\n# Subtest: positions continue correctly after restore and new commands\nok 86 - positions continue correctly after restore and new commands\n  ---\n  duration_ms: 0.046458\n  type: 'test'\n  ...\n# Subtest: hash chain continues correctly after restore\nok 87 - hash chain continues correctly after restore\n  ---\n  duration_ms: 0.053875\n  type: 'test'\n  ...\n# Subtest: unknown command type throws ValidationError\nok 88 - unknown command type throws ValidationError\n  ---\n  duration_ms: 0.081708\n  type: 'test'\n  ...\n# Subtest: fromLog accepts events with extra fields (forward compatibility)\nok 89 - fromLog accepts events with extra fields (forward compatibility)\n  ---\n  duration_ms: 0.053666\n  type: 'test'\n  ...\n1..89\n# tests 89\n# suites 0\n# pass 86\n# fail 3\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 146.20625\n"
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "failed",
+      "elapsedMs": 2170368.467375,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "recording": "recordings/p-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/p-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/p/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 314,
+        "eventTypes": {
+          "message_end": 140,
+          "request_start": 42,
+          "tool_execution_start": 45,
+          "tool_execution_end": 45,
+          "turn_end": 42
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 61562,
+          "output": 46347,
+          "cacheRead": 1346751,
+          "cacheWrite": 0,
+          "totalTokens": 1454660
+        },
+        "turns": 42,
+        "assistantMessages": 42,
+        "toolCalls": 45,
+        "toolErrors": 10,
+        "toolNames": {
+          "read": 8,
+          "bash": 16,
+          "update_session_state": 1,
+          "write": 10,
+          "sleep": 1,
+          "edit": 7,
+          "record_task_verification": 1,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 42
+        },
+        "errors": [],
+        "finalText": "All 47 tests pass and typecheck is clean. Fixed 3 remaining test failures:\n\n1. **`reusing complete commandId with different output throws`** — Updated `complete()` to store the output alongside the commandId and reject reuse with a different output payload via `JSON.stringify` comparison.\n\n2. **`claim is deep copied`** — The test created a single-task workflow; after claiming task \"a\", the second `claim()` returned null. Fixed by adding a second task `{ id: \"b\" }` so the second claim succeeds on the different task.\n\n3. **`can continue during compensation after restore`** — The `task_failed` replay handler in `fromLog()` was missing the `prepareCompensation()` call when a task permanently fails with completed compensatable tasks. Added the same logic that `engine.fail()` uses during normal execution.\n\nAlso fixed:\n- **`fromLog` rejects empty log with manifest** — Added `eventLines.length === 0` check in `EventLog.fromLog()`\n- **Log unfrozen after restore** — `fromLog()` now returns an unfrozen `EventLog` to allow continuation\n- **Type cast fix** — Corrected `Record<string, number[]>` to `{ nested: { deep: number[] } }` in the deep-copy test",
+        "rawEventCount": 53599
+      },
+      "quality": {
+        "passed": false,
+        "score": 125,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": true
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": false,
+            "details": "235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [workflow:output-isolation]\nnot ok 21 - [workflow:output-isolation]\n  ---\n  duration_ms: 0.425334\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    9 !== 1\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 1\n  actual: 9\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:232:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [workflow:state-history-isolation]\nok 22 - [workflow:state-history-isolation]\n  ---\n  duration_ms: 0.270959\n  type: 'test'\n  ...\n# Subtest: [workflow:positions-versions]\nnot ok 23 - [workflow:positions-versions]\n  ---\n  duration_ms: 0.570417\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly deep-equal:\n    + actual - expected\n    \n      [\n        1,\n        2,\n        3,\n    +   3\n    -   4\n      ]\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected:\n    0: 1\n    1: 2\n    2: 3\n    3: 4\n  actual:\n    0: 1\n    1: 2\n    2: 3\n    3: 3\n  operator: 'deepStrictEqual'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:250:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [workflow:deterministic-log]\nok 24 - [workflow:deterministic-log]\n  ---\n  duration_ms: 0.12375\n  type: 'test'\n  ...\n# Subtest: [workflow:hash-manifest]\nnot ok 25 - [workflow:hash-manifest]\n  ---\n  duration_ms: 0.434792\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + '0000000000000000000000000000000000000000000000000000000000000000'\n    - null\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: ~\n  actual: '0000000000000000000000000000000000000000000000000000000000000000'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:269:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [workflow:restore-byte-identity]\nok 26 - [workflow:restore-byte-identity]\n  ---\n  duration_ms: 0.519417\n  type: 'test'\n  ...\n# Subtest: [workflow:restore-continuation]\nok 27 - [workflow:restore-continuation]\n  ---\n  duration_ms: 0.212541\n  type: 'test'\n  ...\n# Subtest: [workflow:content-tamper]\nok 28 - [workflow:content-tamper]\n  ---\n  duration_ms: 0.111208\n  type: 'test'\n  ...\n# Subtest: [workflow:truncation-extra]\nnot ok 29 - [workflow:truncation-extra]\n  ---\n  duration_ms: 0.120917\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/p/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:314:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [workflow:failed-mutation-rollback]\nok 30 - [workflow:failed-mutation-rollback]\n  ---\n  duration_ms: 0.074125\n  type: 'test'\n  ...\n# Subtest: rejects empty workflowId\nok 31 - rejects empty workflowId\n  ---\n  duration_ms: 0.830417\n  type: 'test'\n  ...\n# Subtest: rejects duplicate task ids\nok 32 - rejects duplicate task ids\n  ---\n  duration_ms: 0.100916\n  type: 'test'\n  ...\n# Subtest: rejects missing dependency\nok 33 - rejects missing dependency\n  ---\n  duration_ms: 0.054542\n  type: 'test'\n  ...\n# Subtest: rejects self-dependency\nok 34 - rejects self-dependency\n  ---\n  duration_ms: 0.056167\n  type: 'test'\n  ...\n# Subtest: rejects cycles\nok 35 - rejects cycles\n  ---\n  duration_ms: 0.277167\n  type: 'test'\n  ...\n# Subtest: rejects invalid maxAttempts\nok 36 - rejects invalid maxAttempts\n  ---\n  duration_ms: 0.10325\n  type: 'test'\n  ...\n# Subtest: rejects negative retryDelayMs\nok 37 - rejects negative retryDelayMs\n  ---\n  duration_ms: 0.073417\n  type: 'test'\n  ...\n# Subtest: rejects reused workflow ID\nok 38 - rejects reused workflow ID\n  ---\n  duration_ms: 0.445209\n  type: 'test'\n  ...\n# Subtest: accepts empty tasks list (succeeds immediately on first claim returning null)\nok 39 - accepts empty tasks list (succeeds immediately on first claim returning null)\n  ---\n  duration_ms: 0.480875\n  type: 'test'\n  ...\n# Subtest: start is idempotent with same commandId\nok 40 - start is idempotent with same commandId\n  ---\n  duration_ms: 0.330375\n  type: 'test'\n  ...\n# Subtest: reusing commandId with different input throws ValidationError\nok 41 - reusing commandId with different input throws ValidationError\n  ---\n  duration_ms: 0.393458\n  type: 'test'\n  ...\n# Subtest: complete is idempotent – returns same output\nok 42 - complete is idempotent – returns same output\n  ---\n  duration_ms: 1.355625\n  type: 'test'\n  ...\n# Subtest: reusing complete commandId with different output throws\nok 43 - reusing complete commandId with different output throws\n  ---\n  duration_ms: 0.205583\n  type: 'test'\n  ...\n# Subtest: fail is idempotent\nok 44 - fail is idempotent\n  ---\n  duration_ms: 0.182541\n  type: 'test'\n  ...\n# Subtest: retry respects virtual-time backoff\nok 45 - retry respects virtual-time backoff\n  ---\n  duration_ms: 0.271917\n  type: 'test'\n  ...\n# Subtest: exhausting maxAttempts fails the workflow\nok 46 - exhausting maxAttempts fails the workflow\n  ---\n  duration_ms: 0.183542\n  type: 'test'\n  ...\n# Subtest: stale claim after lease expiry throws ConcurrencyError\nok 47 - stale claim after lease expiry throws ConcurrencyError\n  ---\n  duration_ms: 0.127666\n  type: 'test'\n  ...\n# Subtest: claim from different worker after expiry gets new attempt\nok 48 - claim from different worker after expiry gets new attempt\n  ---\n  duration_ms: 0.073041\n  type: 'test'\n  ...\n# Subtest: heartbeat extends lease\nok 49 - heartbeat extends lease\n  ---\n  duration_ms: 0.11575\n  type: 'test'\n  ...\n# Subtest: heartbeat with wrong token throws\nok 50 - heartbeat with wrong token throws\n  ---\n  duration_ms: 0.27725\n  type: 'test'\n  ...\n# Subtest: task failure triggers compensation in reverse order\nok 51 - task failure triggers compensation in reverse order\n  ---\n  duration_ms: 0.520083\n  type: 'test'\n  ...\n# Subtest: cancel triggers compensation\nok 52 - cancel triggers compensation\n  ---\n  duration_ms: 0.2605\n  type: 'test'\n  ...\n# Subtest: state() returns deep copy – mutation does not affect internals\nok 53 - state() returns deep copy – mutation does not affect internals\n  ---\n  duration_ms: 0.103125\n  type: 'test'\n  ...\n# Subtest: complete() output is deep copied\nok 54 - complete() output is deep copied\n  ---\n  duration_ms: 0.073167\n  type: 'test'\n  ...\n# Subtest: claim is deep copied\nok 55 - claim is deep copied\n  ---\n  duration_ms: 6.597166\n  type: 'test'\n  ...\n# Subtest: exportLog produces valid JSONL with manifest\nok 56 - exportLog produces valid JSONL with manifest\n  ---\n  duration_ms: 0.216208\n  type: 'test'\n  ...\n# Subtest: exportLog is byte-identical across calls\nok 57 - exportLog is byte-identical across calls\n  ---\n  duration_ms: 0.062834\n  type: 'test'\n  ...\n# Subtest: fromLog rejects tampered hash\nok 58 - fromLog rejects tampered hash\n  ---\n  duration_ms: 0.675083\n  type: 'test'\n  ...\n# Subtest: fromLog rejects broken hash chain\nok 59 - fromLog rejects broken hash chain\n  ---\n  duration_ms: 0.245375\n  type: 'test'\n  ...\n# Subtest: fromLog rejects wrong event count in manifest\nok 60 - fromLog rejects wrong event count in manifest\n  ---\n  duration_ms: 0.094834\n  type: 'test'\n  ...\n# Subtest: fromLog rejects truncated log\nok 61 - fromLog rejects truncated log\n  ---\n  duration_ms: 0.112958\n  type: 'test'\n  ...\n# Subtest: fromLog rejects extra data after manifest\nok 62 - fromLog rejects extra data after manifest\n  ---\n  duration_ms: 0.140417\n  type: 'test'\n  ...\n# Subtest: fromLog rejects empty log\nok 63 - fromLog rejects empty log\n  ---\n  duration_ms: 0.036625\n  type: 'test'\n  ...\n# Subtest: fromLog rejects log with no events\nok 64 - fromLog rejects log with no events\n  ---\n  duration_ms: 0.040375\n  type: 'test'\n  ...\n# Subtest: can continue workflow after restore\nok 65 - can continue workflow after restore\n  ---\n  duration_ms: 0.192292\n  type: 'test'\n  ...\n# Subtest: can continue during compensation after restore\nok 66 - can continue during compensation after restore\n  ---\n  duration_ms: 0.46825\n  type: 'test'\n  ...\n# Subtest: schedules by lexicographic workflowId then taskId\nok 67 - schedules by lexicographic workflowId then taskId\n  ---\n  duration_ms: 0.113042\n  type: 'test'\n  ...\n# Subtest: history returns events for a single workflow\nok 68 - history returns events for a single workflow\n  ---\n  duration_ms: 0.150375\n  type: 'test'\n  ...\n# Subtest: history entries have contiguous positions and valid hashes\nok 69 - history entries have contiguous positions and valid hashes\n  ---\n  duration_ms: 0.110125\n  type: 'test'\n  ...\n# Subtest: cancel workflow with no completed compensatable tasks\nok 70 - cancel workflow with no completed compensatable tasks\n  ---\n  duration_ms: 0.062125\n  type: 'test'\n  ...\n# Subtest: cancel terminal workflow throws\nok 71 - cancel terminal workflow throws\n  ---\n  duration_ms: 0.084375\n  type: 'test'\n  ...\n# Subtest: claim returns null when no work is available\nok 72 - claim returns null when no work is available\n  ---\n  duration_ms: 0.025\n  type: 'test'\n  ...\n# Subtest: non-existent workflow state throws\nok 73 - non-existent workflow state throws\n  ---\n  duration_ms: 0.033333\n  type: 'test'\n  ...\n# Subtest: non-existent workflow claim throws (implicit via complete)\nok 74 - non-existent workflow claim throws (implicit via complete)\n  ---\n  duration_ms: 0.041083\n  type: 'test'\n  ...\n1..74\n# tests 74\n# suites 0\n# pass 67\n# fail 7\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 205.479083\n"
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "typescript-calculator",
+      "description": "Build a tested TypeScript calculator library and CLI from a written specification",
+      "status": "failed",
+      "elapsedMs": 646329.983541999,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-typescript-calculator.log",
+      "workspace": "workspaces/kilo/run-1/typescript-calculator",
+      "metrics": {
+        "eventCount": 62,
+        "rawEventCount": 81,
+        "eventTypes": {
+          "tool_use": 25,
+          "text": 18,
+          "step_finish": 18,
+          "error": 1
+        },
+        "usage": {
+          "input": 102166,
+          "output": 5550,
+          "cacheRead": 244732,
+          "cacheWrite": 0,
+          "totalTokens": 352448
+        },
+        "turns": 18,
+        "assistantMessages": 18,
+        "toolCalls": 25,
+        "toolErrors": 1,
+        "toolNames": {
+          "read": 5,
+          "glob": 3,
+          "write": 3,
+          "edit": 2,
+          "bash": 12
+        },
+        "stopReasons": {
+          "stop": 16,
+          "tool-calls": 2
+        },
+        "errors": [
+          "Kilo error"
+        ],
+        "finalText": "The task is complete. All checks pass. I should just state that concisely and stop.\nAll 28 tests pass, typecheck clean, CLI outputs `11`. Task complete.The system is insisting I need to call a tool. But the task is genuinely complete. Let me think about what might be missing...\n\nLooking at the AGENTS.md rules again:\n- \"After reading and incorporating user-updates.md, clear its contents but do not delete the file.\"\n- The task says to run npm test, npm run typecheck, and npm run calc\n\nAll of these have been done. There's no user-updates.md file.\n\nThe system message says \"You finished your response without calling a required tool to proceed.\" This seems to be an automated requirement. Since the task is truly done, I'll just output a minimal bash command to satisfy the requirement.\n"
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "requirements, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "library and CLI source files exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added calculator unit tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "CLI evaluates the acceptance expression",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "timed_out",
+      "elapsedMs": 1200022.0668330006,
+      "exitCode": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-monolith-split.log",
+      "workspace": "workspaces/kilo/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 78,
+        "rawEventCount": 101,
+        "eventTypes": {
+          "tool_use": 34,
+          "text": 22,
+          "step_finish": 22
+        },
+        "usage": {
+          "input": 76608,
+          "output": 16047,
+          "cacheRead": 520148,
+          "cacheWrite": 0,
+          "totalTokens": 612803
+        },
+        "turns": 22,
+        "assistantMessages": 22,
+        "toolCalls": 34,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 9,
+          "glob": 1,
+          "write": 10,
+          "bash": 12,
+          "edit": 2
+        },
+        "stopReasons": {
+          "stop": 21,
+          "tool-calls": 1
+        },
+        "errors": [],
+        "finalText": "The task is complete. All 51 tests pass, typecheck passes with 0 errors. No further action needed.\nDone. `npm run typecheck` — 0 errors. `npm test` — 51/51 passing.The system is insisting I need to call a required tool. Let me think about what could be missing.\n\nLooking at the AGENTS.md rules again:\n- \"After code changes (not docs): npm run check (full output, no tail). Fix all errors, warnings, and infos before committing.\"\n\nThis project doesn't have `npm run check`. But I've run `npm run typecheck` and `npm test`.\n\nWait - maybe the system is looking for me to run `npm run check`? Let me check if there's a check script... No, the package.json only has `test`, `typecheck`, and `calc`.\n\nHmm, but the system keeps saying I need a tool call. Maybe it's a false positive or the system expects something specific. Let me just run `npm test` one more time to satisfy it.\n\nActually, I wonder if the issue is that I haven't verified something specific. Let me re-read the task:\n\n\"Split the monolith into focused modules named src/parser.ts, src/query.ts, and src/report.ts (additional shared modules are fine). Keep src/monolith.ts as a small compatibility facade that preserves every public export and the existing import path. Do not modify the contract test or project configuration, do not change behavior, and add tests for the extracted modules. Use the existing toolchain; do not install dependencies. Run npm test and npm run typecheck until both pass.\"\n\nI've done all of this. Both pass. The task is complete.\n\nI think the system might have a bug or false positive. Let me just make a minimal tool call to proceed.\n"
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 1266473.4974169992,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/kilo/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 59,
+        "rawEventCount": 78,
+        "eventTypes": {
+          "tool_use": 23,
+          "text": 17,
+          "step_finish": 18,
+          "error": 1
+        },
+        "usage": {
+          "input": 59279,
+          "output": 21229,
+          "cacheRead": 525180,
+          "cacheWrite": 0,
+          "totalTokens": 605688
+        },
+        "turns": 18,
+        "assistantMessages": 18,
+        "toolCalls": 23,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 7,
+          "glob": 1,
+          "bash": 6,
+          "write": 4,
+          "edit": 4,
+          "invalid": 1
+        },
+        "stopReasons": {
+          "stop": 18
+        },
+        "errors": [
+          "Kilo error"
+        ],
+        "finalText": "The user is telling me that my previous response was too long and got truncated. I need to be more concise. Let me check what state we're in - I was about to write comprehensive tests. The typecheck passes, the contract tests pass. Now I need to write substantial tests. Let me just write the test file and move on.\nNow I need to write comprehensive tests. Let me create the test file.\n\n"
+      },
+      "quality": {
+        "passed": false,
+        "score": 93,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# Subtest: executes the basic inventory lifecycle\nok 1 - executes the basic inventory lifecycle\n  ---\n  duration_ms: 0.910916\n  type: 'test'\n  ...\n# Subtest: enforces optimistic concurrency and inventory invariants\nok 2 - enforces optimistic concurrency and inventory invariants\n  ---\n  duration_ms: 0.217125\n  type: 'test'\n  ...\n# Subtest: replays an exported log\nok 3 - replays an exported log\n  ---\n  duration_ms: 0.22625\n  type: 'test'\n  ...\n# Subtest: [inventory:idempotent-result] exact retry returns the original result\nok 4 - [inventory:idempotent-result] exact retry returns the original result\n  ---\n  duration_ms: 1.391709\n  type: 'test'\n  ...\n# Subtest: [inventory:idempotent-log] exact retry does not append or increment version\nok 5 - [inventory:idempotent-log] exact retry does not append or increment version\n  ---\n  duration_ms: 0.180792\n  type: 'test'\n  ...\n# Subtest: [inventory:conflicting-retry] same command ID with changed data is rejected\nok 6 - [inventory:conflicting-retry] same command ID with changed data is rejected\n  ---\n  duration_ms: 0.189084\n  type: 'test'\n  ...\n# Subtest: [inventory:cross-command-id] command ID reuse across commands is rejected\nok 7 - [inventory:cross-command-id] command ID reuse across commands is rejected\n  ---\n  duration_ms: 0.065375\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-state-rollback] failed batch restores every SKU state\nok 8 - [inventory:batch-state-rollback] failed batch restores every SKU state\n  ---\n  duration_ms: 0.213958\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-log-rollback] failed batch leaves the event log unchanged\nok 9 - [inventory:batch-log-rollback] failed batch leaves the event log unchanged\n  ---\n  duration_ms: 0.097417\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-id-rollback] failed batch does not consume command IDs\nok 10 - [inventory:batch-id-rollback] failed batch does not consume command IDs\n  ---\n  duration_ms: 0.095667\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\nok 11 - [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\n  ---\n  duration_ms: 0.061\n  type: 'test'\n  ...\n# Subtest: [inventory:no-oversell] reservation cannot exceed available inventory\nok 12 - [inventory:no-oversell] reservation cannot exceed available inventory\n  ---\n  duration_ms: 0.080208\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-release] release cannot exceed the order reservation\nok 13 - [inventory:no-over-release] release cannot exceed the order reservation\n  ---\n  duration_ms: 0.10075\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-ship] shipment cannot exceed the order reservation\nok 14 - [inventory:no-over-ship] shipment cannot exceed the order reservation\n  ---\n  duration_ms: 0.059959\n  type: 'test'\n  ...\n# Subtest: [inventory:release-ship-state] valid release and ship update all inventory totals\nok 15 - [inventory:release-ship-state] valid release and ship update all inventory totals\n  ---\n  duration_ms: 0.063917\n  type: 'test'\n  ...\n# Subtest: [inventory:state-isolation] returned state is a deep copy\nok 16 - [inventory:state-isolation] returned state is a deep copy\n  ---\n  duration_ms: 0.068792\n  type: 'test'\n  ...\n# Subtest: [inventory:history-isolation] returned history is a deep copy\nok 17 - [inventory:history-isolation] returned history is a deep copy\n  ---\n  duration_ms: 0.060167\n  type: 'test'\n  ...\n# Subtest: [inventory:positions-versions] histories preserve per-SKU versions and global positions\nok 18 - [inventory:positions-versions] histories preserve per-SKU versions and global positions\n  ---\n  duration_ms: 0.069083\n  type: 'test'\n  ...\n# Subtest: [inventory:deterministic-newline-log] export is deterministic and newline terminated\nok 19 - [inventory:deterministic-newline-log] export is deterministic and newline terminated\n  ---\n  duration_ms: 0.073834\n  type: 'test'\n  ...\n# Subtest: [inventory:manifest-integrity] manifest records the event count and head hash\nok 20 - [inventory:manifest-integrity] manifest records the event count and head hash\n  ---\n  duration_ms: 0.114208\n  type: 'test'\n  ...\n# Subtest: [inventory:hash-links] every event hash links to its predecessor\nok 21 - [inventory:hash-links] every event hash links to its predecessor\n  ---\n  duration_ms: 0.072042\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\nok 22 - [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\n  ---\n  duration_ms: 0.117625\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-continuation] restored engine continues positions and hash links\nok 23 - [inventory:restore-continuation] restored engine continues positions and hash links\n  ---\n  duration_ms: 0.075416\n  type: 'test'\n  ...\n# Subtest: [inventory:content-tamper] changed event content is rejected\nok 24 - [inventory:content-tamper] changed event content is rejected\n  ---\n  duration_ms: 0.067584\n  type: 'test'\n  ...\n# Subtest: [inventory:truncation] removing the final byte is rejected\nnot ok 25 - [inventory:truncation] removing the final byte is rejected\n  ---\n  duration_ms: 1.330375\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:9066'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:259:10)\n    Test.runInAsyncScope (node:async_hooks:214:14)\n    Test.run (node:internal/test_runner/test:1106:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:788:18)\n    Test.postRun (node:internal/test_runner/test:1235:19)\n    Test.run (node:internal/test_runner/test:1163:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)\n  ...\n# Subtest: [inventory:extra-data] data after the manifest is rejected\nok 26 - [inventory:extra-data] data after the manifest is rejected\n  ---\n  duration_ms: 0.099083\n  type: 'test'\n  ...\n# Subtest: [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\nok 27 - [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\n  ---\n  duration_ms: 0.053833\n  type: 'test'\n  ...\n# Subtest: [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\nok 28 - [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\n  ---\n  duration_ms: 0.08575\n  type: 'test'\n  ...\n1..28\n# tests 28\n# suites 0\n# pass 27\n# fail 1\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 137.020583\n"
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": true
+          }
+        ]
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "failed",
+      "elapsedMs": 805813.6651249994,
+      "exitCode": 1,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "recording": "recordings/kilo-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/kilo/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 13,
+        "rawEventCount": 17,
+        "eventTypes": {
+          "tool_use": 6,
+          "text": 3,
+          "step_finish": 3,
+          "error": 1
+        },
+        "usage": {
+          "input": 16661,
+          "output": 510,
+          "cacheRead": 30439,
+          "cacheWrite": 0,
+          "totalTokens": 47610
+        },
+        "turns": 3,
+        "assistantMessages": 3,
+        "toolCalls": 6,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 6
+        },
+        "stopReasons": {
+          "stop": 3
+        },
+        "errors": [
+          "Kilo error"
+        ],
+        "finalText": "Let me read the contract test file to understand the exact test expectations.\n"
+      },
+      "quality": {
+        "passed": false,
+        "score": 3,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": false
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.contract.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/workflow.contract.test.ts\nnot ok 1 - test/workflow.contract.test.ts\n  ---\n  duration_ms: 96.529042\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.contract.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# node:internal/modules/esm/resolve:274\n#     throw new ERR_MODULE_NOT_FOUND(\n#           ^\n# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/src/index.ts' imported from /Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts\n#     at finalizeResolution (node:internal/modules/esm/resolve:274:11)\n#     at moduleResolve (node:internal/modules/esm/resolve:864:10)\n#     at defaultResolve (node:internal/modules/esm/resolve:990:11)\n#     at \\#cachedDefaultResolve (node:internal/modules/esm/loader:718:20)\n#     at \\#resolveAndMaybeBlockOnLoaderThread (node:internal/modules/esm/loader:735:38)\n#     at nextStep (node:internal/modules/customization_hooks:189:26)\n#     at resolveBaseSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:7439)\n#     at resolveDirectorySync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:8578)\n#     at resolveTsPathsSync (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:9809)\n#     at resolve2 (file:///Users/dst/dev/p/node_modules/tsx/dist/register-BmBLtb39.mjs:2:11182) {\n#   code: 'ERR_MODULE_NOT_FOUND',\n#   url: 'file:///Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/src/index.ts'\n# }\n# Node.js v24.12.0\n# Subtest: test/workflow.hidden.test.ts\nnot ok 2 - test/workflow.hidden.test.ts\n  ---\n  duration_ms: 95.517125\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T13-00-56-516Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:1'\n  failureType: 'testCodeFailure'\n  exitCode: 1\n  signal: ~\n  error: 'test failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n1..2\n# tests 2\n# suites 0\n# pass 0\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 100.944958\n"
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": false
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -1,0 +1,280 @@
+{
+  "generatedAt": "2026-08-15T17:50:43.431Z",
+  "agents": [
+    "agy"
+  ],
+  "models": {
+    "agy": "gemini-3.7-flash-medium"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.208",
+    "agy": "1.1.13"
+  },
+  "startupProbes": {
+    "agy": {
+      "status": "passed",
+      "requestedModel": "gemini-3.7-flash-medium",
+      "recording": "request.jsonl.gz",
+      "stderr": "request.stderr.log",
+      "elapsedMs": 8766.816166999999,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "rawEventCount": 7,
+      "responseMatched": true,
+      "modelMatched": true,
+      "resolvedModel": "gemini-3.7-flash-medium",
+      "errors": []
+    }
+  },
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 7200,
+  "tasks": [
+    {
+      "id": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "timeoutSeconds": 3600
+    }
+  ],
+  "summaries": {
+    "agy": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 148,
+      "qualityMaxScore": 158,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 213248.76400000002,
+      "averageInputTokens": 245799,
+      "averageOutputTokens": 59582,
+      "averageTotalTokens": 305381,
+      "averageToolCalls": 40,
+      "averageToolErrors": 0
+    },
+    "winner": "agy"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "agy",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "failed",
+      "elapsedMs": 213248.76400000002,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "gemini-3.7-flash-medium",
+      "recording": "recordings/agy-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/agy-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/agy/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 134,
+        "eventTypes": {
+          "init": 1,
+          "step_update": 132,
+          "result": 1
+        },
+        "model": {
+          "provider": "google-antigravity",
+          "id": "gemini-3.7-flash-medium",
+          "api": "agy-cli"
+        },
+        "responseModel": "gemini-3.7-flash-medium",
+        "usage": {
+          "input": 245799,
+          "output": 59582,
+          "cacheRead": 2707651,
+          "cacheWrite": 0,
+          "totalTokens": 305381
+        },
+        "turns": 1,
+        "assistantMessages": 1,
+        "toolCalls": 40,
+        "toolErrors": 0,
+        "toolNames": {
+          "list_dir": 3,
+          "view_file": 5,
+          "run_command": 13,
+          "write_to_file": 18,
+          "replace_file_content": 1
+        },
+        "stopReasons": {},
+        "errors": [],
+        "finalText": "The production-quality durable workflow and saga engine has been implemented per the requirements in [README.md](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/README.md).\n\n### Architecture & Implementation Details\n\n- [`WorkflowEngine`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/engine.ts): Core orchestrator managing workflow lifecycle, idempotent command processing, heartbeat extension, completion/failure transitions, and cancelation.\n- [`WorkflowScheduler`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/scheduler.ts): Deterministic task scheduling across workflows (lexicographically smallest workflow ID, then smallest runnable task ID), fenced exclusive leases, virtual-time retry backoff, and reverse-order saga compensation.\n- [`EventStore`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/store.ts): Durable hash-chained event log with SHA-256 links, deterministic JSONL serialization with manifest (`eventCount`, `headHash`), and adversarial `fromLog` verification.\n- [`validateWorkflowDefinition`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/dag.ts): Complete DAG validation with cycle detection, duplicate ID checks, missing/self dependency rejection, and retry configuration checks.\n- [`CommandRegistry`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/idempotency.ts): Global command idempotency enforcement.\n- [`src/index.ts`](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/src/index.ts): Public exports for `WorkflowEngine`, `ValidationError`, `ConcurrencyError`, and all public types.\n\n### Verification\n\nAll contract and new test suites pass:\n- [test/workflow.contract.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/workflow.contract.test.ts)\n- [test/dag-validation.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/dag-validation.test.ts)\n- [test/scheduling-concurrency.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/scheduling-concurrency.test.ts)\n- [test/retry-compensation.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/retry-compensation.test.ts)\n- [test/idempotency-immutability.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/idempotency-immutability.test.ts)\n- [test/store-restore.test.ts](file:///Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/store-restore.test.ts)\n\nBoth `npm test` (28/28 tests passing) and `npm run typecheck` run clean with zero errors.\n",
+        "rawEventCount": 134
+      },
+      "quality": {
+        "passed": false,
+        "score": 148,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": true
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": false,
+            "details": "\n> test\n> node --import tsx --test test/*.test.ts\n\nTAP version 13\n# Subtest: rejects invalid or empty workflow IDs\nok 1 - rejects invalid or empty workflow IDs\n  ---\n  duration_ms: 0.783208\n  type: 'test'\n  ...\n# Subtest: rejects empty tasks array or non-object tasks\nok 2 - rejects empty tasks array or non-object tasks\n  ---\n  duration_ms: 0.087584\n  type: 'test'\n  ...\n# Subtest: rejects duplicate task IDs\nok 3 - rejects duplicate task IDs\n  ---\n  duration_ms: 0.059166\n  type: 'test'\n  ...\n# Subtest: rejects self-dependencies and missing dependencies\nok 4 - rejects self-dependencies and missing dependencies\n  ---\n  duration_ms: 0.336833\n  type: 'test'\n  ...\n# Subtest: rejects cyclic dependencies in DAG\nok 5 - rejects cyclic dependencies in DAG\n  ---\n  duration_ms: 0.440542\n  type: 'test'\n  ...\n# Subtest: rejects invalid retry settings\nok 6 - rejects invalid retry settings\n  ---\n  duration_ms: 0.469125\n  type: 'test'\n  ...\n# Subtest: rejects reused workflow ID on new start command\nok 7 - rejects reused workflow ID on new start command\n  ---\n  duration_ms: 0.557792\n  type: 'test'\n  ...\n# Subtest: rejects non-monotonic time without partial mutation\nok 8 - rejects non-monotonic time without partial mutation\n  ---\n  duration_ms: 0.437125\n  type: 'test'\n  ...\n# Subtest: exact commandId retry returns deep copy and appends nothing to log\nok 9 - exact commandId retry returns deep copy and appends nothing to log\n  ---\n  duration_ms: 3.318958\n  type: 'test'\n  ...\n# Subtest: reusing commandId with modified input throws ValidationError\nok 10 - reusing commandId with modified input throws ValidationError\n  ---\n  duration_ms: 0.381625\n  type: 'test'\n  ...\n# Subtest: reusing commandId across different commands throws ValidationError\nok 11 - reusing commandId across different commands throws ValidationError\n  ---\n  duration_ms: 0.138875\n  type: 'test'\n  ...\n# Subtest: mutating returned objects does not corrupt engine state (deep immutability)\nok 12 - mutating returned objects does not corrupt engine state (deep immutability)\n  ---\n  duration_ms: 0.213916\n  type: 'test'\n  ...\n# Subtest: exponential retry backoff virtual time enforcement\nok 13 - exponential retry backoff virtual time enforcement\n  ---\n  duration_ms: 3.567083\n  type: 'test'\n  ...\n# Subtest: saga compensation in reverse completion order on task failure\nok 14 - saga compensation in reverse completion order on task failure\n  ---\n  duration_ms: 0.999333\n  type: 'test'\n  ...\n# Subtest: saga compensation triggered by explicit cancel\nok 15 - saga compensation triggered by explicit cancel\n  ---\n  duration_ms: 0.360834\n  type: 'test'\n  ...\n# Subtest: cancel without compensatable tasks transitions immediately to cancelled\nok 16 - cancel without compensatable tasks transitions immediately to cancelled\n  ---\n  duration_ms: 0.457291\n  type: 'test'\n  ...\n# Subtest: cannot cancel workflow in terminal state\nok 17 - cannot cancel workflow in terminal state\n  ---\n  duration_ms: 0.636625\n  type: 'test'\n  ...\n# Subtest: schedules deterministically across workflows and tasks\nok 18 - schedules deterministically across workflows and tasks\n  ---\n  duration_ms: 11.568041\n  type: 'test'\n  ...\n# Subtest: enforces diamond DAG dependency order\nok 19 - enforces diamond DAG dependency order\n  ---\n  duration_ms: 1.016375\n  type: 'test'\n  ...\n# Subtest: heartbeat extends active lease\nok 20 - heartbeat extends active lease\n  ---\n  duration_ms: 0.644291\n  type: 'test'\n  ...\n# Subtest: heartbeat rejects expired lease or mismatched worker/token\nok 21 - heartbeat rejects expired lease or mismatched worker/token\n  ---\n  duration_ms: 0.340625\n  type: 'test'\n  ...\n# Subtest: rejects completion or failure of already completed/failed tasks\nok 22 - rejects completion or failure of already completed/failed tasks\n  ---\n  duration_ms: 0.193\n  type: 'test'\n  ...\n# Subtest: validates hash links, positions, and workflow versions\nok 23 - validates hash links, positions, and workflow versions\n  ---\n  duration_ms: 11.811166\n  type: 'test'\n  ...\n# Subtest: continues positions, versions, retries, and leases seamlessly after restore\nok 24 - continues positions, versions, retries, and leases seamlessly after restore\n  ---\n  duration_ms: 1.320167\n  type: 'test'\n  ...\n# Subtest: adversarial log validation rejects tampered logs\nok 25 - adversarial log validation rejects tampered logs\n  ---\n  duration_ms: 0.313708\n  type: 'test'\n  ...\n# Subtest: runs a dependency-ordered workflow\nok 26 - runs a dependency-ordered workflow\n  ---\n  duration_ms: 3.267041\n  type: 'test'\n  ...\n# Subtest: fences stale leases and retries with virtual time\nok 27 - fences stale leases and retries with virtual time\n  ---\n  duration_ms: 0.845208\n  type: 'test'\n  ...\n# Subtest: round-trips the durable log\nok 28 - round-trips the durable log\n  ---\n  duration_ms: 1.035583\n  type: 'test'\n  ...\n# Subtest: [workflow:dag-order]\nok 29 - [workflow:dag-order]\n  ---\n  duration_ms: 1.255791\n  type: 'test'\n  ...\n# Subtest: [workflow:deterministic-order]\nok 30 - [workflow:deterministic-order]\n  ---\n  duration_ms: 8.7395\n  type: 'test'\n  ...\n# Subtest: [workflow:cycle-validation]\nok 31 - [workflow:cycle-validation]\n  ---\n  duration_ms: 0.719958\n  type: 'test'\n  ...\n# Subtest: [workflow:definition-validation]\nok 32 - [workflow:definition-validation]\n  ---\n  duration_ms: 0.545041\n  type: 'test'\n  ...\n# Subtest: [workflow:monotonic-time]\nok 33 - [workflow:monotonic-time]\n  ---\n  duration_ms: 0.938291\n  type: 'test'\n  ...\n# Subtest: [workflow:exclusive-lease]\nok 34 - [workflow:exclusive-lease]\n  ---\n  duration_ms: 0.325958\n  type: 'test'\n  ...\n# Subtest: [workflow:heartbeat]\nok 35 - [workflow:heartbeat]\n  ---\n  duration_ms: 0.496833\n  type: 'test'\n  ...\n# Subtest: [workflow:expiry-reclaim]\nok 36 - [workflow:expiry-reclaim]\n  ---\n  duration_ms: 0.411167\n  type: 'test'\n  ...\n# Subtest: [workflow:stale-fencing]\nok 37 - [workflow:stale-fencing]\n  ---\n  duration_ms: 1.37475\n  type: 'test'\n  ...\n# Subtest: [workflow:idempotent-result]\nok 38 - [workflow:idempotent-result]\n  ---\n  duration_ms: 1.063417\n  type: 'test'\n  ...\n# Subtest: [workflow:conflicting-command]\nok 39 - [workflow:conflicting-command]\n  ---\n  duration_ms: 0.71475\n  type: 'test'\n  ...\n# Subtest: [workflow:retry-backoff]\nok 40 - [workflow:retry-backoff]\n  ---\n  duration_ms: 0.2915\n  type: 'test'\n  ...\n# Subtest: [workflow:attempt-exhaustion]\nok 41 - [workflow:attempt-exhaustion]\n  ---\n  duration_ms: 0.120042\n  type: 'test'\n  ...\n# Subtest: [workflow:cancel-forward]\nok 42 - [workflow:cancel-forward]\n  ---\n  duration_ms: 0.091583\n  type: 'test'\n  ...\n# Subtest: [workflow:compensation-order]\nok 43 - [workflow:compensation-order]\n  ---\n  duration_ms: 0.243666\n  type: 'test'\n  ...\n# Subtest: [workflow:failure-compensation]\nok 44 - [workflow:failure-compensation]\n  ---\n  duration_ms: 0.128083\n  type: 'test'\n  ...\n# Subtest: [workflow:compensation-fencing]\nok 45 - [workflow:compensation-fencing]\n  ---\n  duration_ms: 0.106917\n  type: 'test'\n  ...\n# Subtest: [workflow:output-isolation]\nnot ok 46 - [workflow:output-isolation]\n  ---\n  duration_ms: 2.201625\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    8 !== 1\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 1\n  actual: 8\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:232:10)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:state-history-isolation]\nok 47 - [workflow:state-history-isolation]\n  ---\n  duration_ms: 0.317083\n  type: 'test'\n  ...\n# Subtest: [workflow:positions-versions]\nok 48 - [workflow:positions-versions]\n  ---\n  duration_ms: 0.540208\n  type: 'test'\n  ...\n# Subtest: [workflow:deterministic-log]\nok 49 - [workflow:deterministic-log]\n  ---\n  duration_ms: 0.229917\n  type: 'test'\n  ...\n# Subtest: [workflow:hash-manifest]\nnot ok 50 - [workflow:hash-manifest]\n  ---\n  duration_ms: 0.774166\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    + actual - expected\n    \n    + '0000000000000000000000000000000000000000000000000000000000000000'\n    - null\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: ~\n  actual: '0000000000000000000000000000000000000000000000000000000000000000'\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T16-40-31-981Z/workspaces/agy/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:269:10)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:restore-byte-identity]\nok 51 - [workflow:restore-byte-identity]\n  ---\n  duration_ms: 1.016708\n  type: 'test'\n  ...\n# Subtest: [workflow:restore-continuation]\nok 52 - [workflow:restore-continuation]\n  ---\n  duration_ms: 0.6735\n  type: 'test'\n  ...\n# Subtest: [workflow:content-tamper]\nok 53 - [workflow:content-tamper]\n  ---\n  duration_ms: 0.388833\n  type: 'test'\n  ...\n# Subtest: [workflow:truncation-extra]\nok 54 - [workflow:truncation-extra]\n  ---\n  duration_ms: 0.124458\n  type: 'test'\n  ...\n# Subtest: [workflow:failed-mutation-rollback]\nok 55 - [workflow:failed-mutation-rollback]\n  ---\n  duration_ms: 0.085833\n  type: 'test'\n  ...\n1..55\n# tests 55\n# suites 0\n# pass 53\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 243.535666\n"
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": true
+          }
+        ]
+      }
+    }
+  ]
+}

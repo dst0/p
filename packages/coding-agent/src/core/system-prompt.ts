@@ -2,14 +2,15 @@
  * System prompt construction and project context loading
  */
 
-import { type CompletionMode, FINISH_WORK_TOOL_NAME } from "@dst0/p-agent-core";
+import type { CompletionMode } from "@dst0/p-agent-core";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import { LearningsStore } from "./learnings/learnings-store.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
+import { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
+import { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
 
-const MAX_FULL_CONTEXT_FILE_CHARS = 6000;
-const MAX_COMPACT_CONTEXT_FILE_CHARS = 6000;
-const RULE_KEYWORD_PATTERN =
-  /\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|no \w+|only|required|rules?|run|should|test|use \w+|verify)\b|^\s*(No |Prefer |Avoid |For |Use )/i;
+export { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
+export { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
 
 export interface BuildSystemPromptOptions {
   /** Custom system prompt (replaces default). */
@@ -30,37 +31,6 @@ export interface BuildSystemPromptOptions {
   skills?: Skill[];
   /** Completion protocol to instruct the model about. */
   completionMode?: CompletionMode;
-}
-
-function formatCompletionProtocolInstructions(mode: CompletionMode | undefined): string {
-  const sessionStateInstructions = [
-    `Before calling \`${FINISH_WORK_TOOL_NAME}\`, reconcile the visible working state.`,
-    `Examine the <working_state> block to check current plan items and their statuses.`,
-    "Call finish_work with status 'success' only when the requested work is genuinely complete. A successful call automatically reconciles stale not_started or in_progress plan statuses; failed or blocked items must be resolved, or reported with status 'partial'/'failed' and remaining_work.",
-    "A next action must be a specific unfinished action; never use completed or status-only entries such as `Done`, `Complete`, or `All done`. Record completed work as progress, and leave next actions empty when no work remains.",
-    "Use `initial_plan` only for a fresh task with no active plan; otherwise use `replan` to replace the complete current plan.",
-    `If \`${FINISH_WORK_TOOL_NAME}\` is rejected for unresolved state, do not retry it unchanged: first update or replan the state, or finish as partial/failed with remaining work.`,
-    "Use session-state tools to update that state. Never edit `.pdev` state or snapshot files directly; they do not update the running session.",
-  ].join(" ");
-  if (mode === "explicit_finish") {
-    return [
-      "You are operating in explicit completion mode.",
-      `You must not end the task with a normal assistant message. When the task is complete, call \`${FINISH_WORK_TOOL_NAME}\`.`,
-      "If more work is needed, call tools.",
-      `If you encounter an unrecoverable problem, call \`${FINISH_WORK_TOOL_NAME}\` with status \`failed\` or \`partial\` and explain the remaining issue.`,
-      sessionStateInstructions,
-    ].join("\n");
-  }
-  if (mode === "hybrid") {
-    return [
-      "You are operating in hybrid completion mode.",
-      `Prefer calling \`${FINISH_WORK_TOOL_NAME}\` when the task is complete instead of ending with a normal assistant message.`,
-      "If more work is needed, call tools.",
-      `If you encounter an unrecoverable problem, call \`${FINISH_WORK_TOOL_NAME}\` with status \`failed\` or \`partial\` and explain the remaining issue.`,
-      sessionStateInstructions,
-    ].join("\n");
-  }
-  return "";
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -91,6 +61,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const contextFiles = providedContextFiles ?? [];
   const skills = providedSkills ?? [];
+  const learningsStore = new LearningsStore({ cwd: resolvedCwd });
+  const learningsSection = learningsStore.formatForPrompt(5);
 
   if (customPrompt) {
     let prompt = customPrompt;
@@ -112,6 +84,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
       prompt += "</project_context>\n";
     }
 
+    if (learningsSection) {
+      prompt += `\n\n${learningsSection}\n`;
+    }
+
     // Append skills section (only if read tool is available)
     const customPromptHasRead = !selectedTools || selectedTools.includes("read");
     if (customPromptHasRead && skills.length > 0) {
@@ -131,7 +107,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const examplesPath = getExamplesPath();
 
   // Build tools list based on selected tools.
-  // A tool appears in Available tools only when the caller provides a one-line snippet.
   const tools = selectedTools || ["read", "bash", "edit", "write"];
   const visibleTools = tools.filter((name) => !!toolSnippets?.[name]);
   const toolsList =
@@ -153,7 +128,6 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const hasFind = tools.includes("find");
   const hasLs = tools.includes("ls");
   const hasRead = tools.includes("read");
-
   const hasSemanticSearch = tools.includes("semantic_search");
 
   // File exploration guidelines
@@ -180,34 +154,44 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     }
   }
 
-  // Always include these
   addGuideline("Be concise in your responses");
   addGuideline("Show file paths clearly when working with files");
   addGuideline(
-    "Always write comprehensive tests for new functionality and bug fixes across happy paths, unhappy paths (error handling, invalid inputs, rollbacks, custom exception types), and all edge cases (boundaries, empty states, duplicate inputs) unless the user explicitly asks not to",
+    "When creating or editing files (source code, JSON, JSONL, markdown, configs), always ensure the content terminates with a trailing newline ('\\n') unless explicitly requested otherwise. This preserves clean single-line diffs on future appends and adheres to POSIX line standards.",
   );
-  addGuideline("Run tests after writing or modifying them to verify they pass before proceeding");
+
+  const hasSearch = tools.some((t) => /search|fetch|curl|browser|web/i.test(t));
+  if (hasSearch) {
+    addGuideline(
+      "Use web search to consult current documentation, ecosystem practices, and library error modes when integrating unfamiliar packages or APIs.",
+    );
+  }
   addGuideline(
-    "Before final verification, map every explicit acceptance requirement to fresh evidence. For absolute or negative guarantees such as any, all, never, exactly, atomic, idempotent, or tamper-proof, add adversarial boundary tests; passing visible tests alone is not sufficient",
-  );
-  addGuideline(
-    "For transactional and serialization guarantees, test the smallest boundary mutation literally: remove exactly one final byte, not a whole line or record. After every failed atomic operation, retry each attempted identity with both the same and changed payload to prove that state, logs, positions, hashes, and idempotency registries all rolled back. A coarser proxy test does not satisfy an exact boundary requirement",
-  );
-  addGuideline(
-    "Preserve public API shapes exactly and do not invent response wrappers. For idempotency, compare a lossless canonical identity containing every semantically relevant command field and option; never use a partial projection such as only operation type and resource ID",
-  );
-  addGuideline(
-    "After writing any guard, validation, or idempotency check, trace every branch: list the input states, the boolean conditions evaluated, and which path is taken. Verify the throw path triggers only on the intended violation, not on the happy path. A common error is inverting the condition so valid inputs are rejected.",
+    "Preserve existing public API shapes, signatures, and contracts strictly. Do not invent response wrappers, extra properties, or altered return types unless explicitly requested.",
   );
   addGuideline(
-    "Every filter, parser, or line splitter must include a test for the exact truncation boundary: a string missing its final newline terminator. Verify the code rejects incomplete data, not just malformed data.",
+    "Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
   );
   addGuideline(
-    "When editing, writing, creating, or refactoring code, write tests for the changes unless the user explicitly asks not to",
+    "Ensure transactional and atomic operations guarantee clean rollback: on any mid-operation failure, all state modifications, caches, logs, and identity registries must revert to their pre-operation state.",
   );
-  addGuideline("Run tests to verify that code changes are correct and do not break existing functionality");
   addGuideline(
-    "Before declaring any code complete, run the type checker and visible test suite. Do not assume code compiles or tests pass based on syntax alone. Fix all type errors and test failures before moving to the next step.",
+    "Perform an explicit Requirements Traceability Audit before declaring work complete: re-read the original specification/README line-by-line, verifying that every requirement (happy paths, negative inputs, specific error types, idempotency rules, boundary conditions, and truncation/integrity handling) is implemented and asserted by dedicated tests.",
+  );
+  addGuideline(
+    "Direct Batch Return Types: Batch methods executing multi-item operations (e.g. executeBatch(items)) MUST return an array of results directly (e.g. CommandResult[]) matching the input items, never an artificial wrapping object like { results: [...] }.",
+  );
+  addGuideline(
+    "Stream & File Framing Integrity: When parsing line-delimited formats that mandate terminal record separators (e.g. newline-terminated JSONL/NDJSON), explicitly assert that the input ends with the required terminator (e.g. check string ends with '\\n') and throw a validation error if truncated or missing.",
+  );
+  addGuideline(
+    "Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",
+  );
+  addGuideline(
+    "When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
+  );
+  addGuideline(
+    "When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
   );
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
@@ -248,6 +232,10 @@ p documentation (read only when the user asks about p itself, its SDK, extension
     prompt += "</project_context>\n";
   }
 
+  if (learningsSection) {
+    prompt += `\n\n${learningsSection}\n`;
+  }
+
   // Append skills section (only if read tool is available)
   if (hasRead && skills.length > 0) {
     prompt += formatSkillsForPrompt(skills);
@@ -258,40 +246,4 @@ p documentation (read only when the user asks about p itself, its SDK, extension
   prompt += `\nCurrent working directory: ${promptCwd}`;
 
   return prompt;
-}
-
-export function formatContextFileForPrompt(filePath: string, content: string): string {
-  if (content.length <= MAX_FULL_CONTEXT_FILE_CHARS) {
-    return content;
-  }
-
-  const selectedLines: string[] = [
-    `[Large project rules file compacted from ${content.length} chars.]`,
-    `Full rules remain available at ${filePath}; read the file before broad changes or when exact wording matters.`,
-    "",
-  ];
-  let omitted = 0;
-  for (const rawLine of content.split("\n")) {
-    const line = rawLine.trimEnd();
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-    if (trimmed.startsWith("#") || RULE_KEYWORD_PATTERN.test(trimmed)) {
-      selectedLines.push(line);
-    } else {
-      omitted++;
-    }
-    if (selectedLines.join("\n").length >= MAX_COMPACT_CONTEXT_FILE_CHARS) {
-      break;
-    }
-  }
-
-  if (omitted > 0) {
-    selectedLines.push("", `[${omitted} lower-signal lines omitted from prompt context.]`);
-  }
-
-  const compacted = selectedLines.join("\n");
-  if (compacted.length <= MAX_COMPACT_CONTEXT_FILE_CHARS) {
-    return compacted;
-  }
-  return `${compacted.slice(0, MAX_COMPACT_CONTEXT_FILE_CHARS - 80).trimEnd()}\n[compacted rules truncated to prompt budget]`;
 }

@@ -232,3 +232,33 @@ Before executing any semantic refactoring (TypeScript/JavaScript, HTML, Rust), t
 4. After making edits, run `npm run check` (full output, no tail). Fix all errors, warnings, and infos.
    - Rust: `cargo fmt`, `cargo clippy`, `cargo test` as applicable.
 5. Never perform large cross-module or architectural refactors without creating a plan first.
+
+## Durable Learning Capture
+
+- Treat every resolved bug, regression, setup trap, operator mistake, failed experiment, and unexpected behavior as a learning opportunity, not only as a code change.
+- Before or while fixing an issue, preserve the observable symptom and decisive evidence. Once understood, record the root cause rather than only the final patch.
+- Record enough detail to make the learning reusable:
+  - what went wrong and why;
+  - which approaches were tried, including what worked, what did not work, and why;
+  - any unexpected constraints, side effects, or environmental differences;
+  - the correct path and how it was verified;
+  - the regression test, prevention rule, cleanup, or reset procedure that prevents recurrence.
+- Put durable guidance in the appropriate canonical repository document in the same change: use `AGENTS.md` for agent behavior, `README.md` for user or setup paths, and the canonical architecture or product documentation for design and runtime contracts.
+- When a cross-session memory tool such as `memory_save` is available, save resolved bugs, architectural decisions, durable facts, and learned patterns so future sessions can retrieve them.
+- Do not leave important learnings only in chat, temporary notes, commit history, or a pull-request discussion.
+- If an issue exposes repeated agent friction, add the shortest durable instruction here that would have prevented it.
+- Keep learning records safe: never store credentials, tokens, private keys, customer data, or sensitive payloads; sanitize examples and evidence.
+
+## Mandatory Learning Log
+
+- Maintain the repository-wide append-only journal at `docs/learnings.md`.
+- Add an entry in the same change whenever work reveals a resolved bug or regression, failed or misleading experiment, unexpected behavior, setup or environment trap, non-obvious constraint, important workaround, or rejected approach with reusable rationale.
+- Routine successful work does not need an entry unless it produces a reusable insight.
+- Use the exact entry structure documented in `docs/learnings.md`. Include the task/context, observation or failure, evidence, approaches tried and their outcomes, root cause, resolution, verification, prevention or follow-up, and the reusable learning.
+- Mark uncertainty honestly. If root cause or resolution is incomplete, record the entry as `Partial` or `Open` and state what evidence is still missing.
+- Keep the journal append-only by default: do not delete or rewrite older entries merely to make the history cleaner.
+- Exception for confirmed falsehoods: when authoritative evidence proves that an entry itself was fabricated, hallucinated, or factually false, correct or remove the false content so future agents do not reuse it.
+- A confirmed-falsehood correction must never be silent. Mark the entry `Corrected` and add a dated correction note stating what was wrong, the authoritative evidence used, and what was changed. Do not repeat removed sensitive content.
+- If the evidence is incomplete or disputed, do not rewrite the original entry; add a dated `Partial` or `Open` follow-up instead.
+- Link relevant issues, commits, logs, or regression tests when safe and useful.
+- Never place credentials, tokens, private keys, customer data, sensitive payloads, or unsanitized production evidence in the journal.

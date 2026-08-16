@@ -1,0 +1,37 @@
+{
+  "status": "failed",
+  "expectedResolvedModel": "mini-pc/sokann-qwen-27b-cache",
+  "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b",
+  "timeoutSeconds": 60,
+  "diagnostics": "diagnostics/kilo-startup",
+  "modelResolution": {
+    "status": "passed",
+    "elapsedMs": 5762.876333,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 270,
+    "recording": "model-resolution.log.gz",
+    "stderr": "model-resolution.stderr.log"
+  },
+  "resolvedModel": "mini-pc/sokann-qwen-27b",
+  "error": "Kilo resolved mini-pc/sokann-qwen-27b; expected mini-pc/sokann-qwen-27b-cache",
+  "runtimeFiles": {
+    "data": [
+      "kilo/.metadata_never_index",
+      "kilo/kilo.db",
+      "kilo/kilo.db-shm",
+      "kilo/kilo.db-wal",
+      "kilo/log/2026-08-15T053420.log",
+      "kilo/log/opencode.log",
+      "kilo/telemetry-id"
+    ],
+    "state": [
+      "kilo/.metadata_never_index",
+      "kilo/locks/1481f54efef149905c6ba0f3565612053c6ea394.lock/heartbeat",
+      "kilo/locks/1481f54efef149905c6ba0f3565612053c6ea394.lock/meta.json",
+      "kilo/locks/70674fe677c737539c4c16a947a9129a2929de4b.lock/heartbeat",
+      "kilo/locks/70674fe677c737539c4c16a947a9129a2929de4b.lock/meta.json"
+    ]
+  }
+}

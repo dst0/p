@@ -1,0 +1,566 @@
+{
+  "generatedAt": "2026-08-16T01:23:55.247Z",
+  "agents": [
+    "pi",
+    "kilo"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache",
+    "kilo": "llm-orchestrator/sokann-qwen-27b"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.211",
+    "kilo": "7.4.17"
+  },
+  "startupProbes": {
+    "kilo": {
+      "status": "passed",
+      "expectedResolvedModel": "mini-pc/sokann-qwen-27b",
+      "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "timeoutSeconds": 60,
+      "diagnostics": "diagnostics/kilo-startup",
+      "modelResolution": {
+        "status": "passed",
+        "elapsedMs": 2329.611375,
+        "exitCode": 0,
+        "signal": null,
+        "timedOut": false,
+        "rawEventCount": 270,
+        "recording": "model-resolution.log.gz",
+        "stderr": "model-resolution.stderr.log"
+      },
+      "resolvedModel": "mini-pc/sokann-qwen-27b",
+      "request": {
+        "status": "timed_out",
+        "elapsedMs": 60017.6085,
+        "exitCode": null,
+        "signal": "SIGTERM",
+        "timedOut": true,
+        "rawEventCount": 0,
+        "recording": "request.jsonl.gz",
+        "stderr": "request.stderr.log",
+        "responseMatched": false,
+        "errors": []
+      },
+      "runtimeFiles": {
+        "data": [
+          "kilo/.metadata_never_index",
+          "kilo/kilo.db",
+          "kilo/kilo.db-shm",
+          "kilo/kilo.db-wal",
+          "kilo/log/2026-08-15T232353.log",
+          "kilo/log/2026-08-15T232355.log",
+          "kilo/log/opencode.log",
+          "kilo/storage/migration",
+          "kilo/storage/session_diff/ses_ff842cac6ffeCYxMpmr8fjXiVI.json",
+          "kilo/telemetry-id"
+        ],
+        "state": [
+          "kilo-sandbox-policy/735a84c3f3588beb260bf7e4ead0923fbafbfe05787da31e4f6ae9fe830ad085/2e67c472a3c6b03c10b47d36c1a845cdada4a2e28b1562b76ce9e7b1b44bfbba.json",
+          "kilo/.metadata_never_index",
+          "kilo/locks/f92b7e895e19a80fc51f32b1f68f07913801ac5d.lock/heartbeat",
+          "kilo/locks/f92b7e895e19a80fc51f32b1f68f07913801ac5d.lock/meta.json"
+        ]
+      }
+    }
+  },
+  "runs": 1,
+  "timeoutSeconds": 1800,
+  "maxRuntimeSeconds": 7200,
+  "tasks": [
+    {
+      "id": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "timeoutSeconds": 3600
+    }
+  ],
+  "summaries": {
+    "pi": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 77,
+      "qualityRawScore": 107,
+      "qualityMaxScore": 158,
+      "totalNudges": 2,
+      "totalPenalties": 30,
+      "timedOut": 1,
+      "failed": 0,
+      "averageWallMs": 3600045.237958,
+      "averageInputTokens": 381824,
+      "averageOutputTokens": 69444,
+      "averageTotalTokens": 1035177,
+      "averageToolCalls": 40,
+      "averageToolErrors": 5
+    },
+    "kilo": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 11,
+      "qualityRawScore": 26,
+      "qualityMaxScore": 158,
+      "totalNudges": 1,
+      "totalPenalties": 15,
+      "timedOut": 1,
+      "failed": 0,
+      "averageWallMs": 3534918.1732090004,
+      "averageInputTokens": 163111,
+      "averageOutputTokens": 17879,
+      "averageTotalTokens": 465726,
+      "averageToolCalls": 25,
+      "averageToolErrors": 0
+    },
+    "winner": "pi"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "pi",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "timed_out",
+      "elapsedMs": 3600045.237958,
+      "exitCode": 143,
+      "signal": null,
+      "timedOut": true,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "nudges": 2,
+      "nudgePenalty": 30,
+      "recording": "recordings/pi-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/pi-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/pi/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 199,
+        "eventTypes": {
+          "message_end": 81,
+          "tool_execution_start": 40,
+          "tool_execution_end": 40,
+          "turn_end": 38
+        },
+        "usage": {
+          "input": 381824,
+          "output": 69444,
+          "cacheRead": 583909,
+          "cacheWrite": 0,
+          "totalTokens": 1035177
+        },
+        "turns": 38,
+        "assistantMessages": 38,
+        "toolCalls": 40,
+        "toolErrors": 5,
+        "toolNames": {
+          "read": 14,
+          "bash": 11,
+          "write": 5,
+          "edit": 10
+        },
+        "stopReasons": {
+          "toolUse": 36,
+          "length": 2
+        },
+        "errors": [],
+        "finalText": "",
+        "rawEventCount": 67020
+      },
+      "quality": {
+        "passed": false,
+        "score": 77,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": true
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": false,
+            "details": "    ok 1 - expired lease allows re-claim\n      ---\n      duration_ms: 0.236416\n      type: 'test'\n      ...\n    # Subtest: complete with expired claim throws\n    ok 2 - complete with expired claim throws\n      ---\n      duration_ms: 0.376083\n      type: 'test'\n      ...\n    # Subtest: complete with stale claim throws\n    ok 3 - complete with stale claim throws\n      ---\n      duration_ms: 0.247417\n      type: 'test'\n      ...\n    # Subtest: heartbeat extends lease\n    ok 4 - heartbeat extends lease\n      ---\n      duration_ms: 0.227458\n      type: 'test'\n      ...\n    # Subtest: heartbeat with expired claim throws\n    ok 5 - heartbeat with expired claim throws\n      ---\n      duration_ms: 0.253042\n      type: 'test'\n      ...\n    # Subtest: heartbeat with foreign claim throws\n    ok 6 - heartbeat with foreign claim throws\n      ---\n      duration_ms: 0.208625\n      type: 'test'\n      ...\n    1..6\nok 33 - Lease fencing\n  ---\n  duration_ms: 1.769583\n  type: 'suite'\n  ...\n# Subtest: Retry backoff\n    # Subtest: fail triggers retry after virtual delay\n    ok 1 - fail triggers retry after virtual delay\n      ---\n      duration_ms: 0.314709\n      type: 'test'\n      ...\n    # Subtest: exponential backoff increases\n    ok 2 - exponential backoff increases\n      ---\n      duration_ms: 0.15475\n      type: 'test'\n      ...\n    # Subtest: exhausting attempts fails workflow\n    ok 3 - exhausting attempts fails workflow\n      ---\n      duration_ms: 0.19575\n      type: 'test'\n      ...\n    1..3\nok 34 - Retry backoff\n  ---\n  duration_ms: 0.760667\n  type: 'suite'\n  ...\n# Subtest: Compensation\n    # Subtest: compensation starts on task failure\n    ok 1 - compensation starts on task failure\n      ---\n      duration_ms: 0.359875\n      type: 'test'\n      ...\n    # Subtest: reverse compensation order\n    ok 2 - reverse compensation order\n      ---\n      duration_ms: 0.351416\n      type: 'test'\n      ...\n    # Subtest: non-compensate tasks skipped in compensation\n    ok 3 - non-compensate tasks skipped in compensation\n      ---\n      duration_ms: 0.824167\n      type: 'test'\n      ...\n    # Subtest: failed forward task cancels dependents\n    ok 4 - failed forward task cancels dependents\n      ---\n      duration_ms: 0.369583\n      type: 'test'\n      ...\n    1..4\nok 35 - Compensation\n  ---\n  duration_ms: 2.09325\n  type: 'suite'\n  ...\n# Subtest: Cancel\n    # Subtest: cancel with compensation\n    ok 1 - cancel with compensation\n      ---\n      duration_ms: 0.415792\n      type: 'test'\n      ...\n    # Subtest: cancel without completed compensatable tasks\n    ok 2 - cancel without completed compensatable tasks\n      ---\n      duration_ms: 0.098417\n      type: 'test'\n      ...\n    1..2\nok 36 - Cancel\n  ---\n  duration_ms: 0.608167\n  type: 'suite'\n  ...\n# Subtest: Command idempotency\n    # Subtest: exact start retry is idempotent\n    ok 1 - exact start retry is idempotent\n      ---\n      duration_ms: 0.122667\n      type: 'test'\n      ...\n    # Subtest: different input with same command ID throws\n    not ok 2 - different input with same command ID throws\n      ---\n      duration_ms: 4.516\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:11726'\n      failureType: 'testCodeFailure'\n      error: 'Missing expected exception (ValidationError).'\n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      stack: |-\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:484:12)\n        Test.runInAsyncScope (node:async_hooks:226:14)\n        Test.run (node:internal/test_runner/test:1382:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:960:18)\n        Test.postRun (node:internal/test_runner/test:1522:19)\n        Test.run (node:internal/test_runner/test:1447:12)\n        async Promise.all (index 0)\n        async Suite.run (node:internal/test_runner/test:1869:7)\n        async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n      ...\n    # Subtest: complete idempotency returns deep copy\n    ok 3 - complete idempotency returns deep copy\n      ---\n      duration_ms: 1.059583\n      type: 'test'\n      ...\n    # Subtest: different complete with same command ID throws\n    ok 4 - different complete with same command ID throws\n      ---\n      duration_ms: 0.210667\n      type: 'test'\n      ...\n    # Subtest: fail idempotency\n    ok 5 - fail idempotency\n      ---\n      duration_ms: 0.13175\n      type: 'test'\n      ...\n    # Subtest: different fail with same command ID throws\n    ok 6 - different fail with same command ID throws\n      ---\n      duration_ms: 0.122\n      type: 'test'\n      ...\n    # Subtest: cancel idempotency\n    ok 7 - cancel idempotency\n      ---\n      duration_ms: 0.116833\n      type: 'test'\n      ...\n    # Subtest: cross-command ID reuse throws\n    ok 8 - cross-command ID reuse throws\n      ---\n      duration_ms: 0.12025\n      type: 'test'\n      ...\n    1..8\nnot ok 37 - Command idempotency\n  ---\n  duration_ms: 6.661667\n  type: 'suite'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:11470'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# Subtest: Deep immutability\n    # Subtest: complete output is deep copy\n    ok 1 - complete output is deep copy\n      ---\n      duration_ms: 0.618209\n      type: 'test'\n      ...\n    # Subtest: state tasks output is deep copy\n    ok 2 - state tasks output is deep copy\n      ---\n      duration_ms: 0.275375\n      type: 'test'\n      ...\n    # Subtest: claim is deep copy\n    not ok 3 - claim is deep copy\n      ---\n      duration_ms: 0.160959\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:14668'\n      failureType: 'testCodeFailure'\n      error: \"Cannot read properties of null (reading 'taskId')\"\n      code: 'ERR_TEST_FAILURE'\n      name: 'TypeError'\n      stack: |-\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:591:21)\n        Test.runInAsyncScope (node:async_hooks:226:14)\n        Test.run (node:internal/test_runner/test:1382:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:960:18)\n        Test.postRun (node:internal/test_runner/test:1522:19)\n        Test.run (node:internal/test_runner/test:1447:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:960:7)\n      ...\n    # Subtest: history returns deep copies\n    ok 4 - history returns deep copies\n      ---\n      duration_ms: 0.223125\n      type: 'test'\n      ...\n    1..4\nnot ok 38 - Deep immutability\n  ---\n  duration_ms: 1.402916\n  type: 'suite'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:13887'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# Subtest: Durable log\n    # Subtest: exportLog produces valid JSONL\n    ok 1 - exportLog produces valid JSONL\n      ---\n      duration_ms: 0.599916\n      type: 'test'\n      ...\n    # Subtest: exportLog is deterministic\n    ok 2 - exportLog is deterministic\n      ---\n      duration_ms: 0.429041\n      type: 'test'\n      ...\n    # Subtest: hash chain is contiguous\n    ok 3 - hash chain is contiguous\n      ---\n      duration_ms: 0.653625\n      type: 'test'\n      ...\n    # Subtest: fromLog restores identical export\n    ok 4 - fromLog restores identical export\n      ---\n      duration_ms: 2.566083\n      type: 'test'\n      ...\n    # Subtest: fromLog with adversarial truncated log throws\n    not ok 5 - fromLog with adversarial truncated log throws\n      ---\n      duration_ms: 0.363167\n      type: 'test'\n      location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:17362'\n      failureType: 'testCodeFailure'\n      error: 'Missing expected exception.'\n      code: 'ERR_ASSERTION'\n      name: 'AssertionError'\n      operator: 'throws'\n      stack: |-\n        TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:687:12)\n        Test.runInAsyncScope (node:async_hooks:226:14)\n        Test.run (node:internal/test_runner/test:1382:25)\n        Suite.processPendingSubtests (node:internal/test_runner/test:960:18)\n        Test.postRun (node:internal/test_runner/test:1522:19)\n        Test.run (node:internal/test_runner/test:1447:12)\n        async Suite.processPendingSubtests (node:internal/test_runner/test:960:7)\n      ...\n    # Subtest: fromLog with tampered hash throws\n    ok 6 - fromLog with tampered hash throws\n      ---\n      duration_ms: 0.164958\n      type: 'test'\n      ...\n    # Subtest: fromLog with extra data after manifest throws\n    ok 7 - fromLog with extra data after manifest throws\n      ---\n      duration_ms: 0.107625\n      type: 'test'\n      ...\n    1..7\nnot ok 39 - Durable log\n  ---\n  duration_ms: 5.133041\n  type: 'suite'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/pi/run-1/durable-workflow-saga/test/workflow.test.ts:1:15274'\n  failureType: 'subtestsFailed'\n  error: '1 subtest failed'\n  code: 'ERR_TEST_FAILURE'\n  ...\n# Subtest: Continuation after restore\n    # Subtest: continue workflow after restore\n    ok 1 - continue workflow after restore\n      ---\n      duration_ms: 0.406209\n      type: 'test'\n      ...\n    # Subtest: positions and versions continue after restore\n    ok 2 - positions and versions continue after restore\n      ---\n      duration_ms: 0.193083\n      type: 'test'\n      ...\n    # Subtest: retries survive restore\n    ok 3 - retries survive restore\n      ---\n      duration_ms: 0.51425\n      type: 'test'\n      ...\n    # Subtest: compensation continues after restore\n    ok 4 - compensation continues after restore\n      ---\n      duration_ms: 0.550375\n      type: 'test'\n      ...\n    1..4\nok 40 - Continuation after restore\n  ---\n  duration_ms: 1.808584\n  type: 'suite'\n  ...\n# Subtest: Multiple workflows\n    # Subtest: independent workflows don't interfere\n    ok 1 - independent workflows don't interfere\n      ---\n      duration_ms: 0.417042\n      type: 'test'\n      ...\n    # Subtest: cancel one workflow doesn't affect others\n    ok 2 - cancel one workflow doesn't affect others\n      ---\n      duration_ms: 0.212875\n      type: 'test'\n      ...\n    1..2\nok 41 - Multiple workflows\n  ---\n  duration_ms: 0.745334\n  type: 'suite'\n  ...\n# Subtest: Edge cases\n    # Subtest: single task workflow\n    ok 1 - single task workflow\n      ---\n      duration_ms: 0.137792\n      type: 'test'\n      ...\n    # Subtest: diamond DAG\n    ok 2 - diamond DAG\n      ---\n      duration_ms: 0.223292\n      type: 'test'\n      ...\n    # Subtest: task with no dependencies and maxAttempts 1\n    ok 3 - task with no dependencies and maxAttempts 1\n      ---\n      duration_ms: 0.103125\n      type: 'test'\n      ...\n    # Subtest: history for non-existent workflow returns empty\n    ok 4 - history for non-existent workflow returns empty\n      ---\n      duration_ms: 0.056209\n      type: 'test'\n      ...\n    # Subtest: state for non-existent workflow throws\n    ok 5 - state for non-existent workflow throws\n      ---\n      duration_ms: 0.068625\n      type: 'test'\n      ...\n    # Subtest: cancel non-existent workflow throws\n    ok 6 - cancel non-existent workflow throws\n      ---\n      duration_ms: 0.072375\n      type: 'test'\n      ...\n    1..6\nok 42 - Edge cases\n  ---\n  duration_ms: 0.8255\n  type: 'suite'\n  ...\n1..42\n# tests 90\n# suites 12\n# pass 81\n# fail 9\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 308.273166\n"
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": true
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": false
+          }
+        ],
+        "rawScore": 107,
+        "penalty": 30,
+        "nudges": 2,
+        "finishNotesCreated": false
+      }
+    },
+    {
+      "run": 1,
+      "agent": "kilo",
+      "task": "durable-workflow-saga",
+      "description": "Build a deterministic durable workflow and saga engine with DAG scheduling, fenced leases, retries, compensation, and tamper-evident recovery",
+      "status": "timed_out",
+      "elapsedMs": 3534918.1732090004,
+      "exitCode": null,
+      "signal": "SIGTERM",
+      "timedOut": true,
+      "modelAlias": "llm-orchestrator/sokann-qwen-27b",
+      "nudges": 1,
+      "nudgePenalty": 15,
+      "recording": "recordings/kilo-run-1-durable-workflow-saga.jsonl.gz",
+      "stderr": "stderr/kilo-run-1-durable-workflow-saga.log",
+      "workspace": "workspaces/kilo/run-1/durable-workflow-saga",
+      "metrics": {
+        "eventCount": 54,
+        "rawEventCount": 70,
+        "eventTypes": {
+          "tool_use": 25,
+          "text": 14,
+          "step_finish": 14,
+          "error": 1
+        },
+        "usage": {
+          "input": 163111,
+          "output": 17879,
+          "cacheRead": 284736,
+          "cacheWrite": 0,
+          "totalTokens": 465726
+        },
+        "turns": 14,
+        "assistantMessages": 14,
+        "toolCalls": 25,
+        "toolErrors": 0,
+        "toolNames": {
+          "read": 9,
+          "glob": 1,
+          "bash": 4,
+          "write": 6,
+          "edit": 5
+        },
+        "stopReasons": {
+          "stop": 14
+        },
+        "errors": [
+          "Kilo error"
+        ],
+        "finalText": "Let me trace through the failing test to understand what's happening:\n\n```js\nengine.start({ workflowId: \"retry\", tasks: [{ id: \"job\", maxAttempts: 2, retryDelayMs: 10 }] }, { commandId: \"s\", now: 0 });\nconst first = engine.claim(\"worker-a\", 0, 5)!;  // attempt 1, expires at 5\nconst second = engine.claim(\"worker-b\", 5, 5)!;  // should get attempt 2\n```\n\nWhen `claim(\"worker-a\", 0, 5)` is called:\n- `findRunnableTask` finds the task (pending, no deps, no active claim)\n- Task status set to \"running\", attempt set to 1\n- Claim created with leaseExpiresAt = 5\n\nWhen `claim(\"worker-b\", 5, 5)` is called:\n- `findRunnableTask` looks for pending tasks, but the task is \"running\"\n- Returns null\n- `claim()` returns undefined\n\nThe problem is that `findRunnableTask` only looks for \"pending\" tasks. But when a lease expires, the task is still \"running\" (it was never reset to pending).\n\nI need to handle expired leases. When a new claim is made, I should check if there's an expired claim for any task, and if so, reset that task to pending.\n\nLet me add a method to check for and reset expired claims. I'll add it to the engine and call it before `findRunnableTask`.\n\nActually, the cleanest approach is:\n1. In `claim()`, before calling `findRunnableTask`, scan all workflows for tasks with expired active claims\n2. For each expired claim, remove the claim and reset the task to pending\n3. Then call `findRunnableTask`\n\nOr I could modify `findRunnableTask` to handle this. But that would require passing the `now` parameter and modifying the task state, which is not ideal for a pure function.\n\nLet me add a private method `evictExpiredClaims(now)` that scans all workflows and removes expired claims, resetting tasks to pending.\n\nActually, I should also handle the case where the task is in \"compensating\" mode. But for now, let me focus on the \"running\" mode.\n\nLet me also think about the compensation case. When a compensation claim expires, the task's compensationStatus should be reset to \"pending\" (or null).\n\nLet me write the fix:\n\n```ts\nprivate evictExpiredClaims(now: number): void {\n  for (const wf of this.workflows.values()) {\n    for (const [token, claim] of this.activeClaims) {\n      if (claim.workflowId === wf.workflowId && now >= claim.leaseExpiresAt) {\n        this.activeClaims.delete(token);\n        const task = wf.tasks[claim.taskId];\n        if (claim.mode === \"execute\") {\n          task.status = \"pending\";\n        } else {\n          task.compensationStatus = \"pending\";\n        }\n      }\n    }\n  }\n}\n```\n\nThen call this at the beginning of `claim()`:\n```ts\nclaim(workerId: string, now: number, leaseMs: number): Claim | undefined {\n  this.checkTime(now);\n  this.evictExpiredClaims(now);\n  const runnable = findRunnableTask(this.workflows, this.activeClaims, now);\n  // ...\n}\n```\n\nThis should fix the issue. Let me also fix the other type errors.\n\nFor the `fromLog` method, the `(engine as never)` cast is causing issues. I need a different approach. Let me use a type assertion on the class itself:\n\n```ts\nstatic fromLog(log: string): WorkflowEngine {\n  const { events, userCommandIds } = parseLog(log);\n  const { workflows, activeClaims, lastNow } = replayEvents(events);\n  const engine = Object.create(WorkflowEngine.prototype) as WorkflowEngine;\n  engine.workflows = workflows;\n  engine.events = events;\n  engine.activeClaims = activeClaims;\n  engine.lastNow = lastNow;\n  engine.cmdHistory = new Map();\n  for (const cmdId of userCommandIds) {\n    engine.cmdHistory.set(cmdId, { input: \"\", result: null });\n  }\n  return engine;\n}\n```\n\nThis avoids the `as never` cast. Let me use this approach.\n\nFor the store.ts type error (`string` is not assignable to `WorkflowStatus`), I need to cast the status:\n```ts\nwf.status = ev.data.status as WorkflowStatus;\n```\n\nLet me fix all these issues now.\nNow fix the engine.ts issues: expired lease eviction, `fromLog` casts, and the store.ts type cast.\n\n"
+      },
+      "quality": {
+        "passed": false,
+        "score": 11,
+        "maxScore": 158,
+        "checks": [
+          {
+            "weight": 3,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "index, engine, scheduler, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "agent added substantial workflow tests",
+            "passed": false
+          },
+          {
+            "weight": 10,
+            "name": "visible npm test passes",
+            "passed": false
+          },
+          {
+            "weight": 8,
+            "name": "npm run typecheck passes",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "dependencies gate forward execution",
+            "passed": false,
+            "details": "s/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:218:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:output-isolation]\nnot ok 21 - [workflow:output-isolation]\n  ---\n  duration_ms: 0.163875\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:229:34)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:state-history-isolation]\nok 22 - [workflow:state-history-isolation]\n  ---\n  duration_ms: 0.348209\n  type: 'test'\n  ...\n# Subtest: [workflow:positions-versions]\nnot ok 23 - [workflow:positions-versions]\n  ---\n  duration_ms: 0.14975\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:247:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:deterministic-log]\nnot ok 24 - [workflow:deterministic-log]\n  ---\n  duration_ms: 0.354459\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:255:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:hash-manifest]\nnot ok 25 - [workflow:hash-manifest]\n  ---\n  duration_ms: 0.421583\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:263:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:restore-byte-identity]\nnot ok 26 - [workflow:restore-byte-identity]\n  ---\n  duration_ms: 0.326583\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:281:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:restore-continuation]\nnot ok 27 - [workflow:restore-continuation]\n  ---\n  duration_ms: 0.264333\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:288:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:content-tamper]\nnot ok 28 - [workflow:content-tamper]\n  ---\n  duration_ms: 0.146375\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'this.evictExpiredClaims is not a function'\n  code: 'ERR_TEST_FAILURE'\n  name: 'TypeError'\n  stack: |-\n    WorkflowEngine.claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/src/engine.ts:52:10)\n    claim (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:17:24)\n    complete (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:23:17)\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:305:3)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:truncation-extra]\nnot ok 29 - [workflow:truncation-extra]\n  ---\n  duration_ms: 3.540917\n  type: 'test'\n  location: '/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:1:321'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (/Users/dst/dev/p/benchmarks/results/2026-08-15T23-23-51-999Z/workspaces/kilo/run-1/durable-workflow-saga/test/workflow.hidden.test.ts:314:10)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [workflow:failed-mutation-rollback]\nok 30 - [workflow:failed-mutation-rollback]\n  ---\n  duration_ms: 0.342916\n  type: 'test'\n  ...\n1..30\n# tests 30\n# suites 0\n# pass 4\n# fail 26\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 314.616666\n"
+          },
+          {
+            "weight": 4,
+            "name": "runnable tasks and workflows are scheduled deterministically",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cycles and missing dependencies are rejected atomically",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "duplicate IDs and invalid retry settings are rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "virtual time cannot move backwards",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "claims are exclusive until lease expiry",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "heartbeat extends only the matching live lease",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "expired work is reclaimed with a fenced token and incremented attempt",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "stale, foreign, and consumed claims are rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "exact command retry returns the original result without events",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "changed reuse of a global command ID is rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "retry backoff uses virtual exponential timing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "max attempts transition the workflow out of forward execution",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "cancellation prevents new forward claims",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "compensation follows reverse completion order",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "failure triggers compensation to compensated status",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "compensation claims obey lease fencing",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "stored and returned task outputs are deeply isolated",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "state and history are deep copies",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event positions and workflow versions remain contiguous",
+            "passed": false
+          },
+          {
+            "weight": 3,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": false
+          },
+          {
+            "weight": 6,
+            "name": "event hash chain and manifest are internally valid",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "restore exports byte-identical JSONL",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "restore continues scheduling, positions, versions, and hashes",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "event content tampering is rejected",
+            "passed": false
+          },
+          {
+            "weight": 7,
+            "name": "truncation and data after the manifest are rejected",
+            "passed": false
+          },
+          {
+            "weight": 5,
+            "name": "failed commands consume no event position or command identity",
+            "passed": true
+          }
+        ],
+        "rawScore": 26,
+        "penalty": 15,
+        "nudges": 1,
+        "finishNotesCreated": false
+      }
+    }
+  ]
+}
