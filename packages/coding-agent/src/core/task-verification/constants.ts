@@ -2,6 +2,10 @@ import { Type } from "typebox";
 
 export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
 
+export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
+
+export const MAX_REQUIREMENT_COUNT = 32;
+
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
 
@@ -55,6 +59,8 @@ export const TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE = "task_verification_evidenc
 
 export const TASK_KINDS = ["bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation"] as const;
 
+export const REQUIREMENT_TYPES = ["behavior", "constraint", "deliverable", "verification", "workflow"] as const;
+
 export const BASELINE_METHODS = ["runtime_reproduction", "failing_regression_test", "static_trace"] as const;
 
 export const FINAL_METHODS = ["focused_test", "test_suite", "manual_reproduction", "static_review"] as const;
@@ -84,6 +90,38 @@ export const FinalMethodSchema = Type.Union([
 export const AcceptanceCheckSchema = Type.Object({
   criterion: Type.String({ minLength: 1 }),
   evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
+});
+
+export const RequirementTypeSchema = Type.Union([
+  Type.Literal("behavior"),
+  Type.Literal("constraint"),
+  Type.Literal("deliverable"),
+  Type.Literal("verification"),
+  Type.Literal("workflow"),
+]);
+
+export const RequirementDefinitionSchema = Type.Object({
+  type: RequirementTypeSchema,
+  text: Type.String({ minLength: 1 }),
+  acceptance_criterion: Type.String({ minLength: 1 }),
+  source_prompt_indexes: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
+});
+
+export const IgnoredSourcePromptSchema = Type.Object({
+  source_prompt_index: Type.Integer({ minimum: 1 }),
+  reason: Type.String({ minLength: 1 }),
+});
+
+export const RequirementAuditSchema = Type.Object({
+  action: Type.Union([Type.Literal("define"), Type.Literal("verdict")]),
+  requirements: Type.Optional(
+    Type.Array(RequirementDefinitionSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT }),
+  ),
+  ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
+  requirement_id: Type.Optional(Type.String()),
+  passed: Type.Optional(Type.Boolean()),
+  reason: Type.Optional(Type.String()),
+  evidence_refs: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
 });
 
 export const VerificationSchema = Type.Object({

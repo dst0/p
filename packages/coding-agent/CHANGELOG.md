@@ -13,6 +13,7 @@
 ### Added
 
 - Add canonical v1 event-sourced delta logging and session telemetry layer with typed channel multiplexing (reasoning, content, tool chunks), provider-aware KV cache telemetry normalization (Anthropic, OpenAI, DeepSeek, Gemini), and crash-safe stream replay.
+- Enforce a persisted, sequential audit of every canonical user requirement before issuing a revision- and requirement-bound completion certificate for mutating tasks.
 - Structure and domain-test code-index with comprehensive suites for file discovery security, AST chunk symbol extraction, hardware backend health matching, Qdrant client lifecycle, BM25 incremental indexing, RAG lifecycle transitions, search candidate ranking, multi-worker tasks, crash recovery, and error classification.
 - Secure Qdrant vector database connection with automatic 256-bit API key generation, mode 0600 file isolation, and authenticated REST client headers across background daemons and agent instances.
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.
@@ -24,6 +25,7 @@
 
 ### Fixed
 
+- Preserve exact ordered user prompts and active audit state across clarification, evidence collection, compaction, and finalization; invalidate completion readiness when later verification fails.
 - Forward `rejectUnauthorized: false` to Undici's global proxy agent when `NODE_TLS_REJECT_UNAUTHORIZED=0` to support custom self-signed HTTPS endpoints.
 - Support optional `enableTray` setting in code-index RAG configuration parser and types.
 - Recover plan items from compaction summaries when previous session state has an empty plan, and auto-initialize a baseline plan item from the user goal during unmanaged tool execution.

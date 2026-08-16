@@ -1,15 +1,21 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import {
   GENERIC_CHECK_PATTERN,
+  REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   TASK_VERIFICATION_TOOL_NAME,
   TEST_PATTERN,
 } from "../constants.ts";
-import { isCodeTask } from "../requirement-checks.ts";
+import {
+  computeCertificateHash,
+  computeRequirementSetHash,
+  computeUserRequirementsHash,
+  sourcePromptsForState,
+} from "../requirement-audit-hashing.ts";
+import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
-  emptyReadiness,
   isShellTool,
   isTaskVerificationEvidence,
   isTaskVerificationState,
@@ -51,7 +57,10 @@ export function do_resolveEvidence(
 }
 
 export function do_taskText(self: TaskVerificationController): string {
-  return `${self.state.taskContext ?? self.latestUserPrompt}\n${self.state.taskSummary ?? ""}`;
+  const promptText = sourcePromptsForState(self.state)
+    .map((prompt) => prompt.text)
+    .join("\n");
+  return `${promptText || self.state.taskContext || self.latestUserPrompt}\n${self.state.taskSummary ?? ""}`;
 }
 
 export function do_latestFailedVerificationEvidence(self: TaskVerificationController): TaskVerificationEvidence[] {
@@ -81,36 +90,88 @@ export function do_finalVerificationError(self: TaskVerificationController, acti
   return undefined;
 }
 
-export function do_finalGate(
-  self: TaskVerificationController,
-  action: string,
-  verificationToken?: string,
-  requireToken: boolean = false,
-): BeforeToolCallResult | undefined {
+export function do_publishGate(self: TaskVerificationController, action: string): BeforeToolCallResult | undefined {
   if (self.state.mutationRevision === 0) return undefined;
   const finalError = self.finalVerificationError(action);
   if (finalError) return self.blocked(finalError);
-  if (!isCodeTask(self.state.taskKind)) return undefined;
-
+  const failedVerifications = self.latestFailedVerificationEvidence();
+  if (failedVerifications.length > 0) {
+    return self.blocked(
+      `Cannot ${action}: rerun the latest failed verification successfully first (${failedVerifications
+        .map((item) => item.descriptor)
+        .join(", ")}).`,
+    );
+  }
   const readiness = self.state.readiness ?? emptyReadiness();
+  const currentRequirementsHash = computeUserRequirementsHash(sourcePromptsForState(self.state));
   if (
-    readiness.status !== "ready" ||
+    (readiness.status !== "evidence_ready" && readiness.status !== "completion_ready") ||
     readiness.verifiedMutationRevision !== self.state.mutationRevision ||
-    !readiness.token
+    readiness.userRequirementsHash !== currentRequirementsHash
   ) {
     return self.blocked(
       `Cannot ${action}: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" and map every explicit acceptance criterion to fresh evidence first.`,
     );
   }
-  if (requireToken && verificationToken !== readiness.token) {
+  return undefined;
+}
+
+export function do_completionGate(
+  self: TaskVerificationController,
+  action: string,
+  verificationToken?: string,
+): BeforeToolCallResult | undefined {
+  const publishError = do_publishGate(self, action);
+  if (publishError || self.state.mutationRevision === 0) return publishError;
+
+  const readiness = self.state.readiness ?? emptyReadiness();
+  const audit = self.state.requirementAudit;
+  const currentRequirementsHash = computeUserRequirementsHash(sourcePromptsForState(self.state));
+  const currentRequirementSetHash = computeRequirementSetHash(audit.requirements, audit.ignoredSourcePrompts);
+  const expectedCertificateHash = computeCertificateHash(
+    self.state.taskId,
+    self.state.mutationRevision,
+    currentRequirementsHash,
+    currentRequirementSetHash,
+  );
+  const allVerdictsPass =
+    audit.requirements.length > 0 &&
+    audit.requirements.every((requirement) => {
+      if (
+        requirement.verdict?.passed !== true ||
+        requirement.verdict.mutationRevision !== self.state.mutationRevision
+      ) {
+        return false;
+      }
+      const evidence = self.resolveEvidence(requirement.verdict.evidenceRefs);
+      return (
+        typeof evidence !== "string" &&
+        evidence.every((item) => !item.isError && item.mutationRevision === self.state.mutationRevision)
+      );
+    });
+  if (
+    readiness.status !== "completion_ready" ||
+    audit.status !== "passed" ||
+    !allVerdictsPass ||
+    audit.verifiedMutationRevision !== self.state.mutationRevision ||
+    readiness.requirementSetHash !== currentRequirementSetHash ||
+    readiness.certificateHash !== expectedCertificateHash ||
+    !readiness.token
+  ) {
     return self.blocked(
-      `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${self.state.mutationRevision}.`,
+      `Cannot ${action}: complete every sequential verdict through ${REQUIREMENT_AUDIT_TOOL_NAME} before finish_work.`,
+    );
+  }
+  if (verificationToken !== readiness.token) {
+    return self.blocked(
+      `Cannot ${action}: pass the exact verification_token returned after the requirement audit for mutation revision ${self.state.mutationRevision}.`,
     );
   }
   return undefined;
 }
 
 export function do_restore(self: TaskVerificationController): void {
+  const restoredEvidence: TaskVerificationEvidence[] = [];
   for (const entry of self.sessionManager.getBranch()) {
     if (entry.type !== "custom") continue;
     if (entry.customType === TASK_VERIFICATION_STATE_CUSTOM_TYPE && isTaskVerificationState(entry.data)) {
@@ -118,13 +179,17 @@ export function do_restore(self: TaskVerificationController): void {
         ...entry.data,
         taskPrompts: entry.data.taskPrompts ?? [],
         readiness: entry.data.readiness ?? emptyReadiness(),
+        requirementAudit: entry.data.requirementAudit ?? emptyRequirementAudit(),
       };
     }
     if (entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE && isTaskVerificationEvidence(entry.data)) {
-      self.evidence.set(entry.data.ref, entry.data);
+      restoredEvidence.push(entry.data);
       const numericRef = Number.parseInt(entry.data.ref.replace(/^verification-evidence-/, ""), 10);
       if (Number.isFinite(numericRef)) self.nextEvidence = Math.max(self.nextEvidence, numericRef + 1);
     }
+  }
+  for (const evidence of restoredEvidence) {
+    if (evidence.taskId === self.state.taskId) self.evidence.set(evidence.ref, evidence);
   }
 }
 
@@ -146,6 +211,7 @@ export function do_formatStatus(self: TaskVerificationController): string {
     `Authorized baseline tests: ${self.state.baseline.authorizedTestPaths.join(", ") || "none"}`,
     `Final: ${self.state.final.status}`,
     `Readiness: ${(self.state.readiness ?? emptyReadiness()).status}`,
+    `Requirement audit: ${self.state.requirementAudit.status}`,
     self.state.final.unresolvedFailures.length > 0
       ? `Unresolved failures: ${self.state.final.unresolvedFailures.join("; ")}`
       : undefined,

@@ -8,8 +8,9 @@ import {
   TEST_PATTERN,
 } from "../constants.ts";
 import { behavioralFinalRequired } from "../requirement-checks.ts";
+import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import { emptyReadiness, isShellTool, isStaticTool } from "../tool-classification.ts";
+import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import type { FinalMethod, TaskVerificationEvidence, VerificationResult } from "../types.ts";
 
 export function do_requiredBaselineReplayDescriptor(self: TaskVerificationController): string | undefined {
@@ -40,6 +41,14 @@ export function do_tryAutoFinalizeExactReplay(
     evidence.descriptor !== self.requiredBaselineReplayDescriptor()
   ) {
     return undefined;
+  }
+
+  if (
+    self.state.final.status === "passed" &&
+    self.state.final.verifiedMutationRevision === self.state.mutationRevision &&
+    self.state.readiness?.status !== "pending"
+  ) {
+    return "Additional exact baseline replay evidence was recorded; the active requirement audit remains valid.";
   }
 
   self.state = {
@@ -78,6 +87,14 @@ export function do_tryAutoFinalizeFocusedTest(
     return undefined;
   }
 
+  if (
+    self.state.final.status === "passed" &&
+    self.state.final.verifiedMutationRevision === self.state.mutationRevision &&
+    self.state.readiness?.status !== "pending"
+  ) {
+    return "Additional focused semantic evidence was recorded; the active requirement audit remains valid.";
+  }
+
   const result = self.recordFinal({
     action: "record_final",
     final_method: "focused_test",
@@ -104,7 +121,7 @@ export function do_highRiskAcceptanceAudit(
   ) {
     return undefined;
   }
-  const taskText = `${self.state.taskContext ?? self.latestUserPrompt}\n${self.state.taskSummary}`;
+  const taskText = self.taskText();
   if (!HIGH_RISK_PATTERN.test(taskText)) return undefined;
   return [
     "HIGH-RISK ACCEPTANCE AUDIT REQUIRED before completion: a broad suite passed, but it does not prove every explicit guarantee.",
@@ -139,7 +156,7 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   );
   if (manualReproduction) return [manualReproduction];
 
-  const taskText = `${self.state.taskContext ?? self.latestUserPrompt}\n${self.state.taskSummary ?? ""}`;
+  const taskText = self.taskText();
   const behavioral = self.state.taskKind ? behavioralFinalRequired(self.state.taskKind, taskText) : true;
   const highRisk = HIGH_RISK_PATTERN.test(taskText);
   if (!behavioral && !highRisk) {
