@@ -143,8 +143,6 @@ export function discoverFilesWithOptions(repoPath: string, options: DiscoverFile
   return files
     .filter((fpath) => {
       try {
-        const fileStat = fs.lstatSync(fpath);
-        if (fileStat.isSymbolicLink() || !fileStat.isFile()) return false;
         const canonicalPath = fs.realpathSync(fpath);
         const containmentPath = path.relative(canonicalRoot, canonicalPath);
         if (
@@ -154,6 +152,8 @@ export function discoverFilesWithOptions(repoPath: string, options: DiscoverFile
         ) {
           return false;
         }
+        const fileStat = fs.statSync(canonicalPath);
+        if (!fileStat.isFile()) return false;
         const relativePath = path.relative(canonicalRoot, canonicalPath).split(path.sep).join("/");
         if (gitignore.ignores(relativePath)) return false;
         if (isSensitivePath(relativePath)) return false;

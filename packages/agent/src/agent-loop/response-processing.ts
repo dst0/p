@@ -102,18 +102,16 @@ export async function streamAssistantResponse(
           const now = Date.now();
           if (lastGenProgressMs != null && now - lastGenProgressMs >= GEN_PROGRESS_INTERVAL_MS) {
             const intervalElapsed = (now - lastGenProgressMs) / 1000;
-            if (intervalElapsed > 0) {
-              await emit({
-                type: "message_update",
-                assistantMessageEvent: {
-                  type: "gen_progress",
-                  tokensPerSecond: Math.round(intervalTokenCount / intervalElapsed),
-                  tokens: tokenCount,
-                  partial: event.partial,
-                } as AssistantMessageEvent,
-                message: partialMessage!,
-              });
-            }
+            await emit({
+              type: "message_update",
+              assistantMessageEvent: {
+                type: "gen_progress",
+                tokensPerSecond: Math.round(intervalTokenCount / intervalElapsed),
+                tokens: tokenCount,
+                partial: event.partial,
+              } as AssistantMessageEvent,
+              message: partialMessage!,
+            });
             lastGenProgressMs = now;
             intervalTokenCount = 0;
           }

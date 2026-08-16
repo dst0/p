@@ -121,7 +121,7 @@
   },
   "packages/ai/test/bedrock-convert-messages.test.ts": {
     "classes": 3,
-    "lines": 245
+    "lines": 528
   },
   "packages/ai/test/bedrock-custom-headers.test.ts": {
     "classes": 3,
@@ -227,10 +227,6 @@
     "classes": 3,
     "lines": 450
   },
-  "packages/code-index/test/coverage-completion.test.ts": {
-    "classes": 0,
-    "lines": 471
-  },
   "packages/code-index/test/embed-servers-and-http-more.test.ts": {
     "classes": 0,
     "lines": 306
@@ -238,10 +234,6 @@
   "packages/code-index/test/file-preparation.test.ts": {
     "classes": 0,
     "lines": 548
-  },
-  "packages/code-index/test/rag-deep-coverage.test.ts": {
-    "classes": 1,
-    "lines": 355
   },
   "packages/code-index/test/rag-service.test.ts": {
     "classes": 2,

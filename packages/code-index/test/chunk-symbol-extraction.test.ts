@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { chunkFile } from "../src/chunk.ts";
 
-describe("chunkFile coverage", () => {
+describe("code chunking and multi-language symbol extraction", () => {
   it("handles empty content", () => {
     expect(chunkFile("", "typescript")).toEqual([]);
     expect(chunkFile("\n", "typescript")).toEqual([]);
@@ -109,6 +109,27 @@ describe("chunkFile coverage", () => {
       "\n",
     );
     const chunks = chunkFile(code, "typescript", 10, 50);
-    expect(chunks.length).toBeGreaterThanOrEqual(1);
+    expect(chunks).toHaveLength(2);
+    expect(chunks.map((c) => c.symbol)).toEqual(["const a", "const b"]);
+  });
+
+  it("handles multi-line decorators with blank lines and python comments", () => {
+    const code = [
+      "",
+      "",
+      "# Controller doc",
+      "# line 2",
+      "",
+      "@decorator1",
+      "",
+      "@decorator2",
+      "def handle():",
+      "    pass",
+    ].join("\n");
+
+    const chunks = chunkFile(code, "python", 10, 50);
+    expect(chunks.length).toBe(1);
+    expect(chunks[0].symbol).toBe("def handle");
+    expect(chunks[0].text).toContain("# Controller doc");
   });
 });

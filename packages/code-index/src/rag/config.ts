@@ -256,8 +256,6 @@ export function loadWorkspaceCodeRagSettings(options: WorkspaceCodeRagServiceOpt
     ...parseConfigFile(repositoryConfigPath),
     ...(options.settings ?? {}),
   });
-  if (!settings.qdrantApiKey) {
-    settings.qdrantApiKey = resolveQdrantApiKey(undefined, settings.qdrantDataDirectory);
-  }
+  settings.qdrantApiKey = resolveQdrantApiKey(settings.qdrantApiKey, settings.qdrantDataDirectory);
   return settings;
 }

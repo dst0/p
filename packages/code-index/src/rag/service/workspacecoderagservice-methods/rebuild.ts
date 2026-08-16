@@ -1,10 +1,10 @@
-import fs from "node:fs";
 import path from "node:path";
 import { getGitInfo } from "../../../discover.ts";
 import { computeEmbeddingCompatibilityGroup } from "../../config.ts";
 import type { ScannedFile } from "../../file-preparation-core.ts";
 import { CHUNKER_NAME, CHUNKER_VERSION, INDEX_MANIFEST_SCHEMA_VERSION, writeManifestAtomic } from "../../manifest.ts";
 import type { IndexManifest, IndexUpdateSummary, RefreshIndexOptions } from "../../types.ts";
+import { unlinkBestEffort } from "../helpers.ts";
 import { rebuildCompatibilityFingerprint } from "../rebuild-checkpoint.ts";
 import {
   type ActiveRebuild,
@@ -86,7 +86,7 @@ export async function do_performRebuild(
       } catch {
         // The new manifest is already committed; old-generation cleanup is best effort.
       }
-      unlinkOldVocabularyBestEffort(self, previousManifest.sparse.vocabularyFile);
+      unlinkBestEffort(path.join(self.repositoryDirectory, previousManifest.sparse.vocabularyFile));
     }
     self.reportProgress(onProgress, "finalizing", 100);
     return self.summaryForPlan(plan, startedAt, checkpoint.chunkCount, true);
@@ -152,15 +152,5 @@ function assertCheckpointCompatibility(self: WorkspaceCodeRagService, active: Ac
   const current = rebuildCompatibilityFingerprint(self.repoId, self.workspaceRoot, self.settings);
   if (current !== active.checkpoint.compatibilityFingerprint) {
     throw new Error("Rebuild compatibility settings changed while indexing");
-  }
-}
-
-function unlinkOldVocabularyBestEffort(self: WorkspaceCodeRagService, vocabularyFile: string): void {
-  try {
-    fs.unlinkSync(path.join(self.repositoryDirectory, vocabularyFile));
-  } catch (error) {
-    if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) {
-      // Old local vocabulary cleanup is best effort.
-    }
   }
 }

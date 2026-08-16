@@ -37,14 +37,15 @@
 
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
-- Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA or reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Rely on reactive completion messages instead.
 
 ## Test Quality & Adversarial Review
 
 - Tests must never be added solely as mechanical line-fillers to pass coverage gates (`scripts/check-changed-coverage.js`). Tests must meaningfully verify domain logic, invariant preservation, realistic crash recovery, positive cases, negative cases, and edge cases.
+- Never create generic, catch-all, or branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
+- Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.
 - When investigating uncovered lines reported by `check-changed-coverage.js`, never bypass them or write superficial mocks. Always investigate why the branch was unexercised (e.g. realistic repository fixture setup such as `.git/config` remotes, real abort signals, default environment/argument paths, fatal error transitions) and write genuine tests exercising the domain behavior.
-- Bug fixes must start with a reproducible failing regression test before writing the fix.
+- Bug fixes must start with a reproducible failing regression test before writing the fix. Any bugs discovered during test authoring, coverage expansion, or refactoring must be fixed with dedicated regressions, explicitly documented in the PR description, and reported directly to the user in the session summary.
 - For non-trivial features, bug fixes, or test additions, automatically spawn an adversarial test-critic subagent to review the tests. The critic must evaluate whether the suite verifies real behavior vs artificial line coverage, identifies missing edge cases, and flags fragile/vacuous tests before work is completed.
 - Never use `/* v8 ignore */` or coverage comments to bypass coverage gates. All code in the repository must be reachable and exercised by tests; dead or unreachable code must be deleted rather than kept or suppressed (except rare compiler/type-exhaustiveness edge cases where a branch is syntactically required but provably unreachable at runtime).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
