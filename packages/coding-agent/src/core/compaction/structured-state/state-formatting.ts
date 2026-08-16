@@ -147,10 +147,18 @@ export function mergePlan(state: StructuredSessionState, patch: NonNullable<Stat
     rememberOrder(existing);
   }
   // Remove items matched by id or text
-  for (const removal of patch.remove ?? []) {
-    const matchId = typeof removal === "string" ? undefined : removal.id;
-    const matchText = typeof removal === "string" ? removal : removal.text;
-    state.plan = state.plan.filter((item) => !findPlanItemByIdOrText([item], matchId, matchText));
+  if (patch.remove && patch.remove.length > 0) {
+    // ⚡ Bolt: Use a single filter pass over the list rather than filtering inside the removal loop
+    state.plan = state.plan.filter((item) => {
+      for (const removal of patch.remove!) {
+        const matchId = typeof removal === "string" ? undefined : removal.id;
+        const matchText = typeof removal === "string" ? removal : removal.text;
+        if (findPlanItemByIdOrText([item], matchId, matchText)) {
+          return false;
+        }
+      }
+      return true;
+    });
   }
   if (orderedIds.length > 0) {
     reorderPlan(state, orderedIds);
