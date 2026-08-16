@@ -36,7 +36,12 @@ export function do__buildRuntime(
         bash: {
           commandPrefix: shellCommandPrefix,
           shellPath,
-          onResult: (context) =>
+          onResult: (context: {
+            command: string;
+            exitCode: number | null;
+            truncated: boolean;
+            fullOutputPath?: string;
+          }) =>
             self._verificationLedger.record(context.command, {
               exitCode: context.exitCode ?? undefined,
               truncated: context.truncated,

@@ -121,6 +121,7 @@ export interface InteractiveModeRuntimeMethods {
   handleStateCommand(): void;
   handleMemoryCommand(text: string): void;
   handleRulesCommand(text: string): void;
+  handleLearnCommand(text: string): void;
   handleIndexCommand(text?: string): Promise<void>;
   buildIndexStatusText(resolvedPath: string, args: string): Promise<string>;
   handleChangelogCommand(): void;

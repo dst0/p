@@ -4,6 +4,7 @@
 
 import type { CompletionMode } from "@dst0/p-agent-core";
 import { getDocsPath, getExamplesPath, getReadmePath } from "../config.ts";
+import { LearningsStore } from "./learnings/learnings-store.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 import { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
@@ -60,6 +61,8 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const contextFiles = providedContextFiles ?? [];
   const skills = providedSkills ?? [];
+  const learningsStore = new LearningsStore({ cwd: resolvedCwd });
+  const learningsSection = learningsStore.formatForPrompt(5);
 
   if (customPrompt) {
     let prompt = customPrompt;
@@ -79,6 +82,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
         prompt += `<project_instructions path="${filePath}">\n${formatContextFileForPrompt(filePath, content)}\n</project_instructions>\n\n`;
       }
       prompt += "</project_context>\n";
+    }
+
+    if (learningsSection) {
+      prompt += `\n\n${learningsSection}\n`;
     }
 
     // Append skills section (only if read tool is available)
@@ -212,6 +219,10 @@ p documentation (read only when the user asks about p itself, its SDK, extension
       prompt += `<project_instructions path="${filePath}">\n${formatContextFileForPrompt(filePath, content)}\n</project_instructions>\n\n`;
     }
     prompt += "</project_context>\n";
+  }
+
+  if (learningsSection) {
+    prompt += `\n\n${learningsSection}\n`;
   }
 
   // Append skills section (only if read tool is available)

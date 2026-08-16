@@ -76,4 +76,5 @@ export {
   type TurnStartEvent,
   type WorkingIndicatorOptions,
 } from "./extensions/index.ts";
+export * from "./learnings/index.ts";
 export { createSyntheticSourceInfo } from "./source-info.ts";

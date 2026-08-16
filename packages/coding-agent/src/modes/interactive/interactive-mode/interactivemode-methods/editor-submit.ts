@@ -130,6 +130,11 @@ export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
       self.editor.setText("");
       return;
     }
+    if (text === "/learn" || text.startsWith("/learn ")) {
+      self.handleLearnCommand(text);
+      self.editor.setText("");
+      return;
+    }
     if (text === "/reload") {
       self.editor.setText("");
       await self.handleReloadCommand();
