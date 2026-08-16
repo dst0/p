@@ -136,7 +136,7 @@ export function do__rebuildSystemPrompt(
   }
   if (completionMode !== "implicit") {
     toolSnippets[FINISH_WORK_TOOL_NAME] =
-      "finish_work({ status, summary, result?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible result";
+      "finish_work({ status, summary, verification_token?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible result";
   }
 
   const loaderSystemPrompt = self._resourceLoader.getSystemPrompt();
