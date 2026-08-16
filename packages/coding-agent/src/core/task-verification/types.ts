@@ -1,5 +1,7 @@
 import type { Static } from "typebox";
-import type { BASELINE_METHODS, FINAL_METHODS, TASK_KINDS, VerificationSchema } from "./constants.ts";
+import type { BASELINE_METHODS, EXECUTION_MODES, FINAL_METHODS, TASK_KINDS, VerificationSchema } from "./constants.ts";
+
+export type ExecutionMode = (typeof EXECUTION_MODES)[number];
 
 export type TaskKind = (typeof TASK_KINDS)[number];
 
@@ -14,6 +16,7 @@ export interface TaskVerificationAcceptanceCheck {
 
 export interface TaskVerificationState {
   version: 1;
+  mode?: ExecutionMode;
   taskKind?: TaskKind;
   taskSummary?: string;
   /** Original user task context retained across compaction/session restore. */
@@ -67,4 +70,5 @@ export interface VerificationResult {
   status: "updated" | "needs_action";
   message: string;
   state: TaskVerificationState;
+  mode?: ExecutionMode;
 }

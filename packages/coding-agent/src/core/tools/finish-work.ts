@@ -22,7 +22,7 @@ const finishWorkSchema = Type.Object({
   verification_token: Type.Optional(
     Type.String({
       description:
-        "Readiness certificate returned by record_task_verification(action: 'ready_to_finish') for successful code completion",
+        "Optional readiness certificate returned by record_task_verification(action: 'ready_to_finish') for successful code completion. May be omitted if ready_to_finish was already recorded.",
     }),
   ),
   files_changed: Type.Optional(Type.Array(Type.String({ description: "Files changed during this task" }))),
@@ -126,7 +126,7 @@ export function createFinishWorkToolDefinition(
     promptSnippet: "Explicitly terminate the task with final status and user-visible result",
     promptGuidelines: [
       "Call finish_work exactly once when the task is complete, partially complete, or blocked.",
-      "For successful code changes, first call record_task_verification with action 'ready_to_finish', re-audit all user requirements and test coverage, then pass its verification_token unchanged.",
+      "For successful code changes, call record_task_verification with action 'ready_to_finish' to verify requirements and test coverage before finishing.",
       "status 'success' is incompatible with non-empty remaining_work.",
       "summary is required and must not be empty.",
     ],

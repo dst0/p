@@ -122,8 +122,8 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
       readiness.token
     ) {
       return [
-        "NEXT REQUIRED ACTION: readiness is current; git commit/push are unblocked.",
-        `Call finish_work with verification_token "${readiness.token}".`,
+        "NEXT REQUIRED ACTION: readiness is current; finish_work and git commit/push are unblocked.",
+        `Call finish_work (verification_token "${readiness.token}" is certified and may be passed or omitted).`,
       ].join("\n");
     }
     const requiredCheckCount = requiredAcceptanceCheckCount(self.taskText());

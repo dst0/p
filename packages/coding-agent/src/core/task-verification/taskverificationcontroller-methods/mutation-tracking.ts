@@ -57,6 +57,11 @@ export async function do_afterToolCall(
     return previousResult;
   }
 
+  if (context.toolCall.name === "finish_work" && !effectiveIsError) {
+    self.reset();
+    return previousResult;
+  }
+
   if (!isEvidenceTool(context.toolCall.name)) return previousResult;
   const evidence: TaskVerificationEvidence = {
     version: 1,
@@ -135,7 +140,7 @@ export async function do_detectMutation(
   self.bashFingerprints.delete(context.toolCall.id);
   if (hadFingerprint && beforeFingerprint !== undefined) {
     const afterFingerprint = await captureWorkspaceFingerprint(self.sessionManager.getCwd());
-    if (afterFingerprint !== undefined) return beforeFingerprint !== afterFingerprint;
+    if (afterFingerprint !== undefined && beforeFingerprint !== afterFingerprint) return true;
   }
   return isRecognizedBashMutation(context.args);
 }

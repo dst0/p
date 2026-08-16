@@ -112,7 +112,7 @@ export function do_beforeToolCall(
     argsRecord(context.args).status !== "failed"
   ) {
     const token = argsRecord(context.args).verification_token;
-    return self.finalGate("finish successfully", typeof token === "string" ? token : undefined, true);
+    return self.finalGate("finish successfully", typeof token === "string" && token.trim() ? token.trim() : undefined);
   }
   if (!isPotentialMutationTool(toolName, context.args)) return undefined;
   if (!self.state.taskKind) {

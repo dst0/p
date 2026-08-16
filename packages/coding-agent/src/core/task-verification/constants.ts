@@ -53,11 +53,19 @@ export const TASK_VERIFICATION_STATE_CUSTOM_TYPE = "task_verification_state";
 
 export const TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE = "task_verification_evidence";
 
+export const EXECUTION_MODES = ["conversational", "research", "development"] as const;
+
 export const TASK_KINDS = ["bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation"] as const;
 
 export const BASELINE_METHODS = ["runtime_reproduction", "failing_regression_test", "static_trace"] as const;
 
 export const FINAL_METHODS = ["focused_test", "test_suite", "manual_reproduction", "static_review"] as const;
+
+export const ExecutionModeSchema = Type.Union([
+  Type.Literal("conversational"),
+  Type.Literal("research"),
+  Type.Literal("development"),
+]);
 
 export const TaskKindSchema = Type.Union([
   Type.Literal("bug_fix"),

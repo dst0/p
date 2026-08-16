@@ -55,8 +55,9 @@ import {
   do_createToolDefinition,
   do_install,
 } from "./taskverificationcontroller-methods/tool-integration.ts";
-import { emptyState } from "./tool-classification.ts";
+import { computeExecutionMode, emptyState } from "./tool-classification.ts";
 import type {
+  ExecutionMode,
   FinalMethod,
   TaskVerificationEvidence,
   TaskVerificationState,
@@ -89,8 +90,24 @@ export class TaskVerificationController {
     this.toolDefinition = this.createToolDefinition() as unknown as ToolDefinition;
   }
 
+  get executionMode(): ExecutionMode {
+    return computeExecutionMode(this.state, this.evidence.size);
+  }
+
   get currentState(): TaskVerificationState {
-    return structuredClone(this.state);
+    const cloned = structuredClone(this.state);
+    cloned.mode = this.executionMode;
+    return cloned;
+  }
+
+  reset(): void {
+    this.state = emptyState();
+    this.evidence.clear();
+    this.nextEvidence = 1;
+    this.bashFingerprints.clear();
+    this.mutatedSourceFiles.clear();
+    this.latestUserPrompt = "";
+    this.persistState();
   }
 
   install(agent: Agent): void {

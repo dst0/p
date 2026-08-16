@@ -102,7 +102,12 @@ export function do_finalGate(
       `Cannot ${action}: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" and map every explicit acceptance criterion to fresh evidence first.`,
     );
   }
-  if (requireToken && verificationToken !== readiness.token) {
+  if (verificationToken && verificationToken !== readiness.token) {
+    return self.blocked(
+      `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${self.state.mutationRevision}.`,
+    );
+  }
+  if (requireToken && !verificationToken) {
     return self.blocked(
       `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${self.state.mutationRevision}.`,
     );
@@ -119,6 +124,10 @@ export function do_restore(self: TaskVerificationController): void {
         taskPrompts: entry.data.taskPrompts ?? [],
         readiness: entry.data.readiness ?? emptyReadiness(),
       };
+      if (entry.data.mutationRevision === 0 && !entry.data.taskKind && !entry.data.taskSummary) {
+        self.evidence.clear();
+        self.nextEvidence = 1;
+      }
     }
     if (entry.customType === TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE && isTaskVerificationEvidence(entry.data)) {
       self.evidence.set(entry.data.ref, entry.data);
@@ -140,6 +149,7 @@ export function do_formatStatus(self: TaskVerificationController): string {
         `${item.ref} (@${item.toolCallId}): ${item.isError ? "FAILED" : "passed"} ${item.toolName} at revision ${item.mutationRevision} — ${item.descriptor}${item.outputSummary ? ` — ${item.outputSummary}` : ""}`,
     );
   return [
+    `Mode: ${self.executionMode}`,
     `Task: ${self.state.taskKind ?? "undeclared"}${self.state.taskSummary ? ` — ${self.state.taskSummary}` : ""}`,
     `Mutation revision: ${self.state.mutationRevision}`,
     `Baseline: ${self.state.baseline.status}`,

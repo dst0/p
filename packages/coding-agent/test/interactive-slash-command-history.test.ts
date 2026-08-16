@@ -46,6 +46,7 @@ function createInteractiveModeContext(): { editor: Editor; mode: InteractiveMode
     handleStateCommand: vi.fn(),
     handleMemoryCommand: vi.fn(),
     handleRulesCommand: vi.fn(),
+    handleLearnCommand: vi.fn(),
     handleReloadCommand: vi.fn(async () => {}),
     handleIndexCommand: vi.fn(async () => {}),
     handleDebugCommand: vi.fn(),

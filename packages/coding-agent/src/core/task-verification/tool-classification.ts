@@ -21,6 +21,7 @@ import {
 } from "./constants.ts";
 import type {
   BaselineMethod,
+  ExecutionMode,
   FinalMethod,
   TaskKind,
   TaskVerificationEvidence,
@@ -33,19 +34,15 @@ export function findOversizedSourceFiles(
   mutatedFilePaths?: readonly string[],
   maxLines = 250,
 ): Array<{ path: string; lineCount: number }> {
-  if (USER_FILE_SIZE_OVERRIDE_PATTERN.test(taskText)) {
-    return [];
-  }
-
+  if (USER_FILE_SIZE_OVERRIDE_PATTERN.test(taskText)) return [];
   const oversizedFiles: Array<{ path: string; lineCount: number }> = [];
 
   const isExcludedPath = (fullPath: string, entry: string): boolean => {
     const rel = relative(cwd, fullPath).replace(/\\/g, "/");
-    const parts = rel.split("/");
-    for (let i = 0; i < parts.length; i++) {
-      if (EXCLUDED_DIRS.has(parts[i]!)) return true;
+    for (const part of rel.split("/")) {
+      if (EXCLUDED_DIRS.has(part)) return true;
     }
-    if (
+    return (
       entry.endsWith(".test.ts") ||
       entry.endsWith(".test.js") ||
       entry.endsWith(".test.tsx") ||
@@ -56,38 +53,27 @@ export function findOversizedSourceFiles(
       entry.startsWith("test_") ||
       entry.endsWith(".generated.ts") ||
       entry.endsWith(".d.ts")
-    ) {
-      return true;
-    }
-    return false;
+    );
   };
 
   const checkFile = (fullPath: string) => {
     const entry = fullPath.split(/[/\\]/).pop() || "";
     const ext = extname(entry).toLowerCase();
-    if (!CHECKED_SOURCE_EXTENSIONS.has(ext)) return;
-    if (isExcludedPath(fullPath, entry)) return;
-
+    if (!CHECKED_SOURCE_EXTENSIONS.has(ext) || isExcludedPath(fullPath, entry)) return;
     try {
       const content = readFileSync(fullPath, "utf-8");
       const lineCount = content.split("\n").length;
       if (lineCount > maxLines) {
-        const relPath = relative(cwd, fullPath) || entry;
-        oversizedFiles.push({ path: relPath, lineCount });
+        oversizedFiles.push({ path: relative(cwd, fullPath) || entry, lineCount });
       }
-    } catch {
-      // ignore unreadable files
-    }
+    } catch {}
   };
 
   if (mutatedFilePaths !== undefined) {
     for (const rawPath of mutatedFilePaths) {
       const absPath = isAbsolute(rawPath) ? rawPath : resolve(cwd, rawPath);
       try {
-        const stat = statSync(absPath);
-        if (stat.isFile()) {
-          checkFile(absPath);
-        }
+        if (statSync(absPath).isFile()) checkFile(absPath);
       } catch {}
     }
     return oversizedFiles;
@@ -100,17 +86,13 @@ export function findOversizedSourceFiles(
     } catch {
       return;
     }
-
     for (const entry of entries) {
       if (EXCLUDED_DIRS.has(entry) || entry.startsWith(".")) continue;
       const fullPath = join(dir, entry);
       try {
         const stat = statSync(fullPath);
-        if (stat.isDirectory()) {
-          walk(fullPath);
-        } else if (stat.isFile()) {
-          checkFile(fullPath);
-        }
+        if (stat.isDirectory()) walk(fullPath);
+        else if (stat.isFile()) checkFile(fullPath);
       } catch {}
     }
   }
@@ -164,6 +146,16 @@ export function isDirectMutationTool(toolName: string): boolean {
   return lower.includes("edit") || lower.includes("write") || lower.includes("patch") || lower.includes("replace");
 }
 
+export function computeExecutionMode(state: TaskVerificationState, evidenceCount: number): ExecutionMode {
+  if (state.mutationRevision > 0) {
+    return "development";
+  }
+  if (evidenceCount > 0) {
+    return "research";
+  }
+  return "conversational";
+}
+
 export function emptyReadiness(): NonNullable<TaskVerificationState["readiness"]> {
   return {
     status: "pending",
@@ -174,6 +166,7 @@ export function emptyReadiness(): NonNullable<TaskVerificationState["readiness"]
 export function emptyState(): TaskVerificationState {
   return {
     version: 1,
+    mode: "conversational",
     mutationRevision: 0,
     taskPrompts: [],
     baseline: {
