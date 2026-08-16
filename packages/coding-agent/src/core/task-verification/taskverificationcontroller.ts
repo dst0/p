@@ -184,12 +184,8 @@ export class TaskVerificationController {
     return do_finalVerificationError(this, action);
   }
 
-  finalGate(
-    action: string,
-    verificationToken?: string,
-    requireToken: boolean = false,
-  ): BeforeToolCallResult | undefined {
-    return do_finalGate(this, action, verificationToken, requireToken);
+  finalGate(action: string, verificationToken?: string): BeforeToolCallResult | undefined {
+    return do_finalGate(this, action, verificationToken);
   }
 
   restore(): void {

@@ -85,7 +85,6 @@ export function do_finalGate(
   self: TaskVerificationController,
   action: string,
   verificationToken?: string,
-  requireToken: boolean = false,
 ): BeforeToolCallResult | undefined {
   if (self.state.mutationRevision === 0) return undefined;
   const finalError = self.finalVerificationError(action);
@@ -103,11 +102,6 @@ export function do_finalGate(
     );
   }
   if (verificationToken && verificationToken !== readiness.token) {
-    return self.blocked(
-      `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${self.state.mutationRevision}.`,
-    );
-  }
-  if (requireToken && !verificationToken) {
     return self.blocked(
       `Cannot ${action}: pass the exact verification_token returned by ready_to_finish for mutation revision ${self.state.mutationRevision}.`,
     );
