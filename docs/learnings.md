@@ -292,3 +292,26 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Every state-schema migration must test restored prior-version records at the downstream policy decision, not only serialization round trips.
 - **Reusable learning:** Compatibility fallbacks must preserve the most authoritative persisted input; a derived summary must never replace surviving original user context.
 - **References:** `packages/coding-agent/src/core/task-verification/requirement-audit-hashing.ts`, `packages/coding-agent/test/task-verification-high-risk-acceptance.test.ts`
+
+### 2026-08-18 — Compatible dependency ranges still need lockfile security refreshes
+
+- **Status:** Resolved
+- **Task/context:** Repairing the scheduled production `npm audit` failure for the `p` monorepo.
+- **Unexpected observation or failure:** The daily audit began failing with a high-severity Nano ID denial-of-service advisory even though the owning PostCSS dependency already allowed the patched version.
+- **Evidence:** `npm audit --omit=dev --audit-level=moderate` reported `GHSA-2v37-7h3g-55p8` for `nanoid` 3.3.17; PostCSS declared `nanoid` as `^3.3.16`, and the advisory identifies 3.3.18 as the patched 3.x release.
+- **Approaches tried:**
+  - **Attempt:** Run `npm audit fix --package-lock-only --ignore-scripts --dry-run` to preview the remediation.
+    - **Outcome:** Did not work
+    - **Why:** The dry run reported no planned lockfile change even though the audit object still marked the transitive dependency as fixable.
+  - **Attempt:** Run `npm update nanoid --package-lock-only --ignore-scripts` within the existing compatible PostCSS range.
+    - **Outcome:** Worked
+    - **Why:** It changed only the Nano ID lock entry from 3.3.17 to 3.3.18 without introducing a direct dependency or running lifecycle scripts.
+  - **Attempt:** Run the complete unit suite after a clean `npm ci --ignore-scripts` in the new worktree but before building workspace packages.
+    - **Outcome:** Did not work
+    - **Why:** Workspace symlinks resolved to internal packages whose `dist/` directories did not exist yet, producing 74 unrelated `ERR_MODULE_NOT_FOUND` failures.
+- **Root cause:** The committed lockfile retained Nano ID 3.3.17 after the advisory's patched threshold advanced to 3.3.18; semantic compatibility in the parent range does not update an existing lock automatically. Separately, a fresh workspace install does not build internal package artifacts that some integration-style unit tests import.
+- **Resolution:** Refresh the single transitive Nano ID lock entry to 3.3.18, keep the existing PostCSS dependency range unchanged, and build the workspace through `./reinstall.sh` before rerunning the complete unit suite in a fresh worktree.
+- **Verification:** A clean install resolved Nano ID 3.3.18; production `npm audit` reported zero vulnerabilities; `npm audit signatures --omit=dev` verified 224 registry signatures and 46 attestations; `npm run check`, `./reinstall.sh`, the complete non-e2e unit suite, `p --version`, and `p --list-models` passed after workspace build hydration.
+- **Prevention/follow-up:** Treat scheduled audit failures as lockfile evidence first; inspect the exact dependency chain and prefer the smallest patched transitive update that remains inside the parent range. In fresh worktrees, build internal workspace packages before interpreting module-not-found failures from the complete suite.
+- **Reusable learning:** A compatible semver range is not a security fix until the committed lockfile resolves to a patched artifact; verify the exact locked version and integrity. Clean dependency hydration and workspace build readiness are separate preconditions for the monorepo unit suite.
+- **References:** `package-lock.json`, `.github/workflows/npm-audit.yml`, `GHSA-2v37-7h3g-55p8`.
