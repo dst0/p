@@ -55,7 +55,7 @@ export function createReleaseFlowFixture() {
   const repoRoot = join(root, "repo");
   const remoteRoot = join(root, "origin.git");
   mkdirSync(repoRoot);
-  git(root, "init", "--bare", remoteRoot);
+  git(root, "init", "--bare", "-b", "main", remoteRoot);
   git(repoRoot, "init", "-b", "main");
   git(repoRoot, "config", "user.email", "release-test@example.invalid");
   git(repoRoot, "config", "user.name", "Release Test");

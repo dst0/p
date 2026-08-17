@@ -196,3 +196,43 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Every verifier must be tested with `repoRoot !== process.cwd()`, every executable module must have a startup path in the focused suite, and deterministic mutations must use a shared pure transform rather than copied logic.
 - **Reusable learning:** At a release trust boundary, exact content reconstruction and foreign-cwd tests are mandatory; path allowlists and duplicated transformations are insufficient.
 - **References:** `scripts/release-certificate-receipt.js`, `scripts/release-output-verifier.js`, `scripts/release-version-content.js`, `scripts/release-pr-version-policy.test.js`
+
+### 2026-08-17 — Git release fixtures must pin the bare remote default branch
+
+- **Status:** Resolved
+- **Task/context:** Running the release-certificate pull-request suite on the Linux GitHub Actions runner.
+- **Unexpected observation or failure:** Two release-flow tests passed locally but failed in CI when a clone could not push `main`; the bare fixture remote advertised a nonexistent default branch.
+- **Evidence:** With `GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=master`, both the local reproduction and CI emitted `warning: remote HEAD refers to nonexistent ref` followed by `error: src refspec main does not match any`. The same tests passed when the host Git default branch was already `main`.
+- **Approaches tried:**
+  - **Attempt:** Rely on the non-bare fixture checkout being initialized with `-b main`.
+    - **Outcome:** Did not work
+    - **Why:** That selected only the working repository branch; the separately initialized bare remote kept the host-dependent default branch in its `HEAD` symbolic ref.
+  - **Attempt:** Initialize both the working repository and bare remote with an explicit `main` initial branch.
+    - **Outcome:** Worked
+    - **Why:** Fresh clones now check out the published `main` branch independently of global Git configuration.
+- **Root cause:** The fixture pinned the local repository branch but left the bare remote default branch implicit, so its behavior depended on the machine's `init.defaultBranch` setting.
+- **Resolution:** Initialize the bare fixture remote with `git init --bare -b main`.
+- **Verification:** Run the focused release-flow and origin-ancestry tests with `GIT_TEST_DEFAULT_INITIAL_BRANCH_NAME=master`, then rerun the ordinary focused release suite and CI.
+- **Prevention/follow-up:** Every Git fixture that clones a bare remote must explicitly set that remote's initial branch or symbolic `HEAD`; never depend on host Git defaults.
+- **Reusable learning:** Pin branch topology in fixtures at every repository boundary, not only in the primary working clone.
+- **References:** `scripts/release-flow-test-fixture.js`, `scripts/release-flow-certificate.test.js`, `scripts/release-origin-ancestry.test.js`
+
+### 2026-08-17 — Reject invalid CLI arguments before session initialization
+
+- **Status:** Resolved
+- **Task/context:** Re-running the full coding-agent unit suite after the release-fixture portability fix.
+- **Unexpected observation or failure:** The empty `--name` integration test timed out and killed the CLI process instead of receiving the expected validation error.
+- **Evidence:** The focused subprocess test repeatedly returned `code=null` after its 10-second kill deadline. A new parser regression showed that both an empty string and whitespace-only input were accepted into `Args.name` before the fix.
+- **Approaches tried:**
+  - **Attempt:** Treat the failure as load-only flakiness and rerun the complete suite.
+    - **Outcome:** Did not work
+    - **Why:** The focused test reproduced without suite load, proving that the expensive startup path preceded validation.
+  - **Attempt:** Validate and diagnose empty names while parsing CLI arguments.
+    - **Outcome:** Worked
+    - **Why:** Invalid input now exits through the existing diagnostic path before migrations, session lookup, or runtime startup; valid names retain their original whitespace until the existing append boundary trims them.
+- **Root cause:** `parseArgs` preserved blank names and `main` validated them only after creating the session manager, making a syntactic error depend on unrelated startup work.
+- **Resolution:** Reject empty and whitespace-only `--name` values in `parseArgs` and remove the now-unreachable late validation branch.
+- **Verification:** `test/args.test.ts` and `test/startup-session-name.test.ts` pass together with 81 tests after failing with two parser regressions and one subprocess timeout before the fix.
+- **Prevention/follow-up:** Validate argument syntax and value shape in the parser; defer only checks that genuinely require runtime or repository state.
+- **Reusable learning:** Fail-fast CLI validation reduces both side effects and false timeout flakes because invalid input never enters expensive initialization.
+- **References:** `packages/coding-agent/src/cli/args.ts`, `packages/coding-agent/src/main/command-dispatch.ts`, `packages/coding-agent/test/args.test.ts`, `packages/coding-agent/test/startup-session-name.test.ts`
