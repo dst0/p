@@ -212,9 +212,9 @@ describe("parseArgs", () => {
       expect(result.name).toBe("quick-session");
     });
 
-    test("preserves empty values for main validation", () => {
-      const result = parseArgs(["--name", ""]);
-      expect(result.name).toBe("");
+    test.each(["", "   "])("reports empty value %j before startup", (value) => {
+      const result = parseArgs(["--name", value]);
+      expect(result.diagnostics).toEqual([{ type: "error", message: "--name requires a non-empty value" }]);
     });
 
     test("reports missing value", () => {

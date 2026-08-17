@@ -1,7 +1,6 @@
 /**
  * CLI argument parsing and help display
  */
-
 import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
@@ -68,7 +67,6 @@ const VALID_COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish",
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
   return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
 }
-
 function parseCompletionMode(mode: string): CompletionMode | undefined {
   if (mode in COMPLETION_MODE_ALIASES) {
     return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
@@ -122,6 +120,8 @@ export function parseArgs(args: string[]): Args {
     } else if (arg === "--name" || arg === "-n") {
       if (i + 1 < args.length) {
         result.name = args[++i];
+        if (!result.name.trim())
+          result.diagnostics.push({ type: "error", message: "--name requires a non-empty value" });
       } else {
         result.diagnostics.push({ type: "error", message: "--name requires a value" });
       }
