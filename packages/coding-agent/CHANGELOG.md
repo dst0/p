@@ -12,6 +12,7 @@
 
 ### Added
 
+- Add canonical v1 event-sourced delta logging and session telemetry layer with typed channel multiplexing (reasoning, content, tool chunks), provider-aware KV cache telemetry normalization (Anthropic, OpenAI, DeepSeek, Gemini), and crash-safe stream replay.
 - Structure and domain-test code-index with comprehensive suites for file discovery security, AST chunk symbol extraction, hardware backend health matching, Qdrant client lifecycle, BM25 incremental indexing, RAG lifecycle transitions, search candidate ranking, multi-worker tasks, crash recovery, and error classification.
 - Secure Qdrant vector database connection with automatic 256-bit API key generation, mode 0600 file isolation, and authenticated REST client headers across background daemons and agent instances.
 - Add a menu bar / system tray status indicator for the background code indexing service with dynamic status, compute device info, repository progress, quick actions, settings toggle, and headless server detection.

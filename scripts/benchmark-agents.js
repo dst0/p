@@ -1570,7 +1570,7 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 	const taskTimeoutMs = taskTimeoutSeconds * 1000;
 
 	const recording = createWriteStream(recordingPath);
-	const compressor = createGzip();
+	const compressor = createBrotliCompress({ params: { [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT, [zlibConstants.BROTLI_PARAM_QUALITY]: 6 } });
 	compressor.pipe(recording);
 
 	try {
