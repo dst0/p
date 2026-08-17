@@ -40,7 +40,6 @@ if (versions.size > 1) {
 	console.error('Expected lockstep versioning. Run one of:');
 	console.error('  npm run version:patch');
 	console.error('  npm run version:minor');
-	console.error('  npm run version:major');
 	process.exit(1);
 }
 

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Automate changelog auditing with a revision-bound certificate that gates version bumps and atomic releases."
+}

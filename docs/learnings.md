@@ -124,3 +124,75 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Snapshot sanitizers should cover both complete and viewport-truncated forms of every volatile status field.
 - **Reusable learning:** Normalize volatile terminal fields after accounting for width truncation; delimiters visible in the source string may be absent from the captured viewport.
 - **References:** `packages/coding-agent/test/ui-visual-snapshot-sanitization.test.ts`, `packages/coding-agent/test/helpers/ui-visual-snapshot-harness.ts`, `packages/coding-agent/test/interactive-ui-regression.test.ts`
+
+### 2026-08-17 — Release approval must bind evidence to the exact immutable base
+
+- **Status:** Resolved
+- **Task/context:** Replacing the manual `/cl` confirmation before monorepo version bumps and releases.
+- **Unexpected observation or failure:** The release policy asked the user to confirm that a prompt had run, but the repository contained no `/cl` implementation, persisted result, commit binding, or check in either the version-bump or release scripts. A stale or entirely absent audit therefore could not be distinguished from a current successful audit.
+- **Evidence:** Repository and user-configuration searches found only the policy sentence in `AGENTS.md`; `scripts/version-bump.js` and `scripts/release.js` mutated versions without consuming audit evidence. Regression fixtures showed that direct bumps needed to be rejected before their first write and that a certificate had to become invalid after a new commit or release-input edit.
+- **Approaches tried:**
+  - **Attempt:** Preserve the user confirmation as the gate.
+    - **Outcome:** Did not work
+    - **Why:** Confirmation was neither machine-verifiable nor bound to the current main SHA or changelog contents.
+  - **Attempt:** Treat any new `[Unreleased]` bullet for an affected package as semantic coverage.
+    - **Outcome:** Did not work
+    - **Why:** One unrelated or placeholder bullet could certify multiple independent undocumented changes. Arbitrary prose and diffs have no reliable offline relation without change-owned metadata.
+  - **Attempt:** Treat certificate issuance as permanent approval.
+    - **Outcome:** Did not work
+    - **Why:** Version mutation necessarily changes certified inputs, so a reusable certificate would either invalidate mid-release or permit stale reuse.
+  - **Attempt:** Trust a receipt's own input paths and evidence hashes during CI verification.
+    - **Outcome:** Did not work
+    - **Why:** A self-consistent receipt could omit workspaces or replace audit evidence unless CI reconstructed both from the certified base tree.
+  - **Attempt:** Validate only allowed release path names around each commit.
+    - **Outcome:** Did not work
+    - **Why:** A hook could modify an allowed file after checks or during the next-cycle commit, and the tag verifier would not inspect the later main-only commit.
+  - **Attempt:** Separate immutable evidence certification from a one-time persisted release transaction.
+    - **Outcome:** Worked
+    - **Why:** The certificate is checked and consumed while the worktree is still identical to the audited base; subsequent controlled mutations advance through explicit states and cannot mint or reuse another authorization.
+- **Root cause:** An automatable evidence check was represented as a conversational convention instead of an enforced state machine at the mutation boundary.
+- **Resolution:** Require commit-local `.changes` fragments with package/category/summary or an explicit reasoned exemption, automatically fetch and audit the exact `origin/main`, persist a Brotli Q6 certificate bound to SHA, target, fragment evidence, and release-input hashes, require its one-time token in `version-bump.js`, bind each commit to its exact prevalidated index tree, reconcile interrupted publication against remote ancestry, and publish main plus tag with one atomic push. Commit a Brotli Q6 receipt at the release tag; CI reconstructs the canonical input scope, reruns evidence from the certified base in an isolated worktree, and verifies the exact normalized changelog preview before publishing.
+- **Verification:** Domain regressions cover malformed and historically rewritten changelogs, empty `[Unreleased]` aggregation, Markdown injection, mismatched/reused/`None`/breaking fragments, two consecutive releases, cross-process persistence, self-consistent evidence and input-scope tampering, commit and input invalidation, target mismatch, interrupted local-tag recovery, remote-main advancement after publish, unexpected and allowed-file hook injection in both commits, direct bump rejection, heterogeneous 0.4.224/0.4.134 to 0.5.0 lockstep mutation, exact-tag CI checkout, receipt verification, and a real temporary Git remote completing the audit-to-atomic-push flow.
+- **Prevention/follow-up:** Keep every release mutation behind the certificate consumer, include new audit/release inputs in the canonical deterministic scope, compare commit trees rather than only path names, and add a real transition regression whenever a new release phase is introduced. Preserve protected-main review and tag/workflow permissions because repository-contained verification cannot authenticate a malicious simultaneous policy rewrite.
+- **Reusable learning:** Automate evidence collection fully, bind approval to immutable inputs, consume it once at the first mutation, and independently reconstruct verifier scope and evidence; never let an artifact choose what the verifier checks.
+- **References:** `scripts/release-changelog-audit.js`, `scripts/release-audit-certificate.js`, `scripts/release-transaction.js`, `scripts/release-flow-certificate.test.js`
+
+### 2026-08-17 — Parallel agents must receive and verify the exact worktree path
+
+- **Status:** Resolved
+- **Task/context:** Parallelizing release-workflow hardening across the main checkout and an isolated feature worktree.
+- **Unexpected observation or failure:** A replacement subagent reported completing SHA-pinning but wrote its two files into the main checkout instead of the feature worktree that contained the release implementation.
+- **Evidence:** `git status` showed the workflow modification and a new workflow test under the main checkout, while byte comparison showed they differed from the stricter files already present in the feature worktree.
+- **Approaches tried:**
+  - **Attempt:** Rely on inherited conversation context to identify the intended worktree.
+    - **Outcome:** Did not work
+    - **Why:** The subagent inherited the process working directory even though the task text referred to the feature worktree.
+  - **Attempt:** Resolve both absolute paths, remove only the two agent-owned changes from the main checkout, and retain the independently verified feature-worktree implementation.
+    - **Outcome:** Worked
+    - **Why:** Path-specific status and byte comparisons separated agent-owned edits from unrelated user changes before cleanup.
+- **Root cause:** Delegation named the worktree informally but did not require an initial absolute `pwd` and branch assertion before editing.
+- **Resolution:** Restore only the agent-owned main-checkout files, preserve every unrelated change, and continue from `/Users/dst/dev/p-requirement-audit`.
+- **Verification:** The two affected paths are clean in the main checkout; the target worktree still contains the stricter SHA-pinned workflow and its focused regression.
+- **Prevention/follow-up:** Every multi-worktree subtask must include the absolute worktree path and require `pwd` plus `git branch --show-current` verification before any edit. The parent must verify changed paths in both checkouts before accepting the result.
+- **Reusable learning:** Shared filesystem access does not imply a shared current directory; pin and verify the absolute worktree at delegation boundaries.
+- **References:** `.github/workflows/build-binaries.yml`, `scripts/release-workflow.test.js`
+
+### 2026-08-17 — Release verifiers must share the production transform and run outside the repository cwd
+
+- **Status:** Resolved
+- **Task/context:** Hardening CI verification of the exact release-tag contents and the PR-only version gate.
+- **Unexpected observation or failure:** An intermediate verifier could not load because it imported `mkdtempSync` from `node:os`, used `process.cwd()` instead of the supplied repository, treated a Git ref as an expected commit path, and compared pre-release changelog bytes with released bytes. The PR gate also missed versions hidden in internal lockfile entries.
+- **Evidence:** Receipt, recovery, certificate, and authorization suites initially aborted at module load. After that was exposed, foreign-cwd receipt fixtures and an internal-lock-entry regression reproduced the remaining fail-open paths. The lockfile regression exited zero before its fix.
+- **Approaches tried:**
+  - **Attempt:** Independently reimplement version mutation inside the CI verifier and validate a broad release allowlist.
+    - **Outcome:** Did not work
+    - **Why:** Duplicate transforms drift, broad path checks cannot constrain allowed-file content, and ambient cwd accidentally verifies the caller rather than the supplied repository.
+  - **Attempt:** Share pure manifest and lockfile transforms, reconstruct outputs in a detached base worktree, and compare the exact path/blob set while validating the dynamic receipt separately.
+    - **Outcome:** Worked
+    - **Why:** Both mutation and verification now derive deterministic package, dependency, lockfile, shrinkwrap, fragment-deletion, and changelog outputs from the same certified base.
+- **Root cause:** The first verifier combined too many trust-boundary responsibilities without a module-load smoke, foreign-cwd execution, or one canonical content transform.
+- **Resolution:** Add `release-version-content.js`, verify lightweight tag and direct parent, recompute audit evidence at `baseSha`, bind one UTC release date, compare exact release outputs, require current origin-main ancestry, and inspect internal workspace versions and dependency ranges in PR lockfiles.
+- **Verification:** `npm run check` passes; the release regressions pass in three bounded groups with clean exit codes: 32/32, 9/9, and 9/9. The full combined run also reported 50/50 passing before the compression wrapper reached its own capture limit.
+- **Prevention/follow-up:** Every verifier must be tested with `repoRoot !== process.cwd()`, every executable module must have a startup path in the focused suite, and deterministic mutations must use a shared pure transform rather than copied logic.
+- **Reusable learning:** At a release trust boundary, exact content reconstruction and foreign-cwd tests are mandatory; path allowlists and duplicated transformations are insufficient.
+- **References:** `scripts/release-certificate-receipt.js`, `scripts/release-output-verifier.js`, `scripts/release-version-content.js`, `scripts/release-pr-version-policy.test.js`
