@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "coding-agent"
+  ],
+  "type": "Fixed",
+  "summary": "Allow finish_work without explicit verification_token after requirement audit passes, auto-populating token while continuing to block invalid tokens."
+}

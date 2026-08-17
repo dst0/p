@@ -15,6 +15,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
+import { fileURLToPath } from "node:url";
 import { createBrotliCompress, constants as zlibConstants } from "node:zlib";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");

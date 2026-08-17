@@ -156,4 +156,46 @@ describe("requirement-audit completion regressions", () => {
     expect(result).toContain("at most 32 atomic requirements");
     expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
   });
+
+  it("allows finish_work without explicit verification_token after requirement audit passes", async () => {
+    const harness = createRequirementAuditHarness();
+    const { evidenceRef } = await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The completion gate enforces the requested behavior",
+          acceptance_criterion: "Focused evidence passes and premature finish is blocked",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "verdict",
+      requirement_id: "R1",
+      passed: true,
+      reason: "Current focused evidence proves the complete requirement.",
+      evidence_refs: [evidenceRef],
+    });
+
+    const finishArgs: { status: "success"; summary: string; verification_token?: string } = {
+      status: "success",
+      summary: "all requirements verified",
+    };
+    const finishCall = await beforeAuditTool(harness.agent, "finish_work", finishArgs);
+    expect(finishCall?.block).not.toBe(true);
+    expect(finishArgs.verification_token).toBe(harness.controller.currentState.readiness?.token);
+
+    const wrongTokenCall = await beforeAuditTool(harness.agent, "finish_work", {
+      status: "success",
+      summary: "all requirements verified",
+      verification_token: "wrong-token",
+    });
+    expect(wrongTokenCall?.block).toBe(true);
+    expect(wrongTokenCall?.reason).toContain("exact verification_token");
+  });
 });

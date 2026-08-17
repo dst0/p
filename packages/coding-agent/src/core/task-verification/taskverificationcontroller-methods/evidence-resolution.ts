@@ -162,7 +162,7 @@ export function do_completionGate(
       `Cannot ${action}: complete every sequential verdict through ${REQUIREMENT_AUDIT_TOOL_NAME} before finish_work.`,
     );
   }
-  if (verificationToken !== readiness.token) {
+  if (verificationToken !== undefined && verificationToken !== readiness.token) {
     return self.blocked(
       `Cannot ${action}: pass the exact verification_token returned after the requirement audit for mutation revision ${self.state.mutationRevision}.`,
     );
