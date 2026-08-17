@@ -1,14 +1,15 @@
-import type { Agent, BeforeToolCallContext, BeforeToolCallResult } from "@dst0/p-agent-core";
+import type { Agent, AgentMessage, BeforeToolCallContext, BeforeToolCallResult } from "@dst0/p-agent-core";
 import type { ToolDefinition } from "../../extensions/types.ts";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
-import { TASK_VERIFICATION_TOOL_NAME, VerificationSchema } from "../constants.ts";
+import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME, VerificationSchema } from "../constants.ts";
+import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
-  emptyState,
   inferTaskKind,
   isPotentialMutationTool,
   isPublishCommand,
+  isRecord,
   isShellTool,
   normalizeText,
 } from "../tool-classification.ts";
@@ -37,33 +38,60 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
   };
 
   agent.subscribe((event) => {
-    if (event.type !== "message_start" || event.message.role !== "user") return;
-    const content = event.message.content;
-    const promptText =
-      typeof content === "string"
-        ? content
-        : content
-            .filter((part) => part.type === "text")
-            .map((part) => part.text)
-            .join("\n");
-    self.latestUserPrompt = promptText;
-    const cleanPrompt = normalizeText(promptText);
-    if (cleanPrompt) {
-      if (!self.state.taskPrompts) {
-        self.state.taskPrompts = [];
-      }
-      if (!self.state.taskPrompts.includes(cleanPrompt)) {
-        self.state.taskPrompts.push(cleanPrompt);
-      }
+    if (event.type === "turn_start") {
+      self.modelTurn += 1;
+      return;
     }
-    if (self.state.final.status === "passed") {
-      self.state = emptyState();
-      if (cleanPrompt) {
-        self.state.taskPrompts = [cleanPrompt];
-      }
-      self.persistState();
-    }
+    if (event.type !== "message_end" || event.message.role !== "user") return;
+    captureUserPrompt(self, event.message);
   });
+}
+
+function captureUserPrompt(self: TaskVerificationController, message: Extract<AgentMessage, { role: "user" }>): void {
+  if (isRecord(message.metadata) && message.metadata.pInternal !== undefined) return;
+  const promptText =
+    typeof message.content === "string"
+      ? message.content
+      : message.content
+          .filter((part) => part.type === "text")
+          .map((part) => part.text)
+          .join("\n");
+  if (!promptText.trim()) return;
+
+  self.latestUserPrompt = promptText;
+  const taskPrompts = self.state.taskPrompts ?? [];
+  const persistedId = [...self.sessionManager.getBranch()]
+    .reverse()
+    .find(
+      (entry) =>
+        entry.type === "message" &&
+        entry.message.role === "user" &&
+        entry.message.timestamp === message.timestamp &&
+        userMessageText(entry.message) === promptText,
+    )?.id;
+  self.state = {
+    ...self.state,
+    taskPrompts: [
+      ...taskPrompts,
+      {
+        id: persistedId ?? `user-${message.timestamp}-${taskPrompts.length + 1}`,
+        text: promptText,
+      },
+    ],
+    readiness: emptyReadiness(),
+    requirementAudit: emptyRequirementAudit(),
+    updatedAt: new Date().toISOString(),
+  };
+  self.persistState();
+}
+
+function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {
+  return typeof message.content === "string"
+    ? message.content
+    : message.content
+        .filter((part) => part.type === "text")
+        .map((part) => part.text)
+        .join("\n");
 }
 
 export function do_createToolDefinition(
@@ -87,8 +115,9 @@ export function do_createToolDefinition(
       "Final verification must rerun the exact same reproduction command or focused regression test that established the baseline. Do not substitute static_review or generic npm run check.",
       "Evidence handles from prior mutation revisions become stale after any file edit. Re-run your verification command after editing to produce fresh handles for the current revision.",
       "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
-      "After final verification passes, call action 'ready_to_finish' with one acceptance_checks entry for every explicit requirement and fresh evidence_refs proving it.",
-      "Successful finish_work and git commit/push are blocked until ready_to_finish issues a readiness certificate for the current mutation revision.",
+      "After final verification passes, call action 'ready_to_finish' with acceptance_checks and fresh evidence_refs. This opens finalization operations but does not issue a finish token.",
+      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: define only user-authored requirements and record one evidence-backed verdict per model turn until every requirement has been checked.`,
+      "Git commit/push require evidence readiness. Successful finish_work requires the later completion certificate and exact verification_token.",
     ],
     parameters: VerificationSchema,
     executionMode: "sequential",
@@ -105,14 +134,14 @@ export function do_beforeToolCall(
   context: BeforeToolCallContext,
 ): BeforeToolCallResult | undefined {
   const toolName = context.toolCall.name;
-  if (isPublishCommand(toolName, context.args)) return self.finalGate("publish changes");
+  if (isPublishCommand(toolName, context.args)) return self.publishGate("publish changes");
   if (
     toolName === "finish_work" &&
     argsRecord(context.args).status !== "partial" &&
     argsRecord(context.args).status !== "failed"
   ) {
     const token = argsRecord(context.args).verification_token;
-    return self.finalGate("finish successfully", typeof token === "string" ? token : undefined, true);
+    return self.completionGate("finish successfully", typeof token === "string" ? token : undefined);
   }
   if (!isPotentialMutationTool(toolName, context.args)) return undefined;
   if (!self.state.taskKind) {

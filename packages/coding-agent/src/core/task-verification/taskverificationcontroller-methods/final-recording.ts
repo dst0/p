@@ -6,16 +6,10 @@ import {
   TASK_VERIFICATION_TOOL_NAME,
   TEST_PATTERN,
 } from "../constants.ts";
-import { behavioralFinalRequired, isCodeTask } from "../requirement-checks.ts";
+import { behavioralFinalRequired } from "../requirement-checks.ts";
+import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import {
-  emptyReadiness,
-  isFinalMethod,
-  isShellTool,
-  isStaticTool,
-  normalizeStrings,
-  normalizeText,
-} from "../tool-classification.ts";
+import { isFinalMethod, isShellTool, isStaticTool, normalizeStrings, normalizeText } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
 
 export function do_recordFinal(self: TaskVerificationController, input: VerificationInput): VerificationResult {
@@ -66,7 +60,7 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
     return self.rejected("Passed final verification cannot contain unresolved failures or failed evidence.");
   }
 
-  const taskText = `${self.state.taskContext ?? self.latestUserPrompt}\n${self.state.taskSummary}`;
+  const taskText = self.taskText();
   const behavioral = behavioralFinalRequired(self.state.taskKind, taskText);
   if (
     finalMethod === "static_review" &&
@@ -152,11 +146,8 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
-  if (isCodeTask(self.state.taskKind)) {
-    return self.updated(
-      "Final semantic verification passed for the current mutation revision.\n\n" +
-        `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to review all user requirements and obtain a verification_token before calling finish_work.`,
-    );
-  }
-  return self.updated("Final semantic verification passed for the current mutation revision.");
+  return self.updated(
+    "Final semantic verification passed for the current mutation revision.\n\n" +
+      `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish", then complete the sequential requirement audit before a verification_token can be issued.`,
+  );
 }

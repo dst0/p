@@ -1,13 +1,18 @@
 import { isAbsolute, relative, resolve } from "node:path";
 import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
-import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, TEST_PATH_PATTERN } from "../constants.ts";
+import {
+  GENERIC_CHECK_PATTERN,
+  TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
+  TEST_PATH_PATTERN,
+  TEST_PATTERN,
+} from "../constants.ts";
 import { baselineRequired } from "../requirement-checks.ts";
+import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
+  argsRecord,
   describeToolCall,
-  emptyReadiness,
-  emptyState,
   isDirectMutationTool,
   isEvidenceTool,
   isPublishCommand,
@@ -30,6 +35,16 @@ export async function do_afterToolCall(
   const content = previousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
 
+  if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
+    self.state = emptyState();
+    self.evidence.clear();
+    self.bashFingerprints.clear();
+    self.mutatedSourceFiles.clear();
+    self.latestUserPrompt = "";
+    self.persistState();
+    return previousResult;
+  }
+
   const mutationDetected = await self.detectMutation(context, effectiveIsError);
   if (mutationDetected) {
     const filePath = pathArgument(context.args);
@@ -51,6 +66,7 @@ export async function do_afterToolCall(
       mutationRevision: self.state.mutationRevision + 1,
       final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
       readiness: emptyReadiness(),
+      requirementAudit: clearedRequirementAudit(self),
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
@@ -59,7 +75,8 @@ export async function do_afterToolCall(
 
   if (!isEvidenceTool(context.toolCall.name)) return previousResult;
   const evidence: TaskVerificationEvidence = {
-    version: 1,
+    version: 2,
+    taskId: self.state.taskId,
     ref: `verification-evidence-${self.nextEvidence++}`,
     toolCallId: context.toolCall.id,
     toolName: context.toolCall.name,
@@ -71,11 +88,13 @@ export async function do_afterToolCall(
   };
   self.evidence.set(evidence.ref, evidence);
   self.sessionManager.appendCustomEntry(TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, evidence);
+  const invalidation = invalidateAfterFailedVerification(self, evidence);
   const autoFinalized = self.tryAutoFinalizeExactReplay(evidence) ?? self.tryAutoFinalizeFocusedTest(evidence);
   const acceptanceAudit = autoFinalized ? undefined : self.highRiskAcceptanceAudit(evidence);
 
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
+    invalidation,
     autoFinalized,
     acceptanceAudit,
   ]
@@ -119,6 +138,45 @@ export async function do_afterToolCall(
   else if (context.result.details !== undefined) result.details = context.result.details;
   if (previousResult?.terminate !== undefined) result.terminate = previousResult.terminate;
   return result;
+}
+
+function clearedRequirementAudit(self: TaskVerificationController) {
+  const requirements = self.state.requirementAudit.requirements.map((requirement) => ({
+    id: requirement.id,
+    type: requirement.type,
+    text: requirement.text,
+    acceptanceCriterion: requirement.acceptanceCriterion,
+    sourcePromptIndexes: requirement.sourcePromptIndexes,
+  }));
+  if (requirements.length === 0) return emptyRequirementAudit();
+  return {
+    ...self.state.requirementAudit,
+    status: "pending" as const,
+    requirements,
+    nextRequirementIndex: 0,
+    verifiedMutationRevision: undefined,
+  };
+}
+
+function invalidateAfterFailedVerification(
+  self: TaskVerificationController,
+  evidence: TaskVerificationEvidence,
+): string | undefined {
+  if (
+    !evidence.isError ||
+    !isShellTool(evidence.toolName) ||
+    (!TEST_PATTERN.test(evidence.descriptor) && !GENERIC_CHECK_PATTERN.test(evidence.descriptor))
+  ) {
+    return undefined;
+  }
+  self.state = {
+    ...self.state,
+    readiness: emptyReadiness(),
+    requirementAudit: clearedRequirementAudit(self),
+    updatedAt: new Date().toISOString(),
+  };
+  self.persistState();
+  return "This failed verification invalidated completion readiness and all requirement verdicts. Repair it, rerun the exact command successfully, then restart ready_to_finish.";
 }
 
 export async function do_detectMutation(
@@ -168,14 +226,14 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
   const required = baselineRequired(input.task_kind, `${self.latestUserPrompt}\n${taskSummary}`);
   const currentPrompts = self.state.taskPrompts?.length
     ? self.state.taskPrompts
-    : normalizeText(self.latestUserPrompt)
-      ? [normalizeText(self.latestUserPrompt)]
+    : self.latestUserPrompt.trim()
+      ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
       : [];
   self.state = {
-    ...emptyState(),
+    ...emptyState(self.state.taskId),
     taskKind: input.task_kind,
     taskSummary,
-    taskContext: normalizeText(self.latestUserPrompt).slice(0, 2_000) || undefined,
+    taskContext: self.latestUserPrompt.slice(0, 2_000) || undefined,
     taskPrompts: currentPrompts,
     baseline: {
       required,

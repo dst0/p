@@ -15,7 +15,11 @@ import {
 import { type CreateAgentSessionOptions, type CreateAgentSessionResult, createAgentSession } from "./sdk.ts";
 import type { SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
-import { createTaskVerificationController, TASK_VERIFICATION_TOOL_NAME } from "./task-verification.ts";
+import {
+  createTaskVerificationController,
+  REQUIREMENT_AUDIT_TOOL_NAME,
+  TASK_VERIFICATION_TOOL_NAME,
+} from "./task-verification.ts";
 
 /**
  * Non-fatal issues collected while creating services or sessions.
@@ -89,7 +93,12 @@ export interface AgentSessionServices {
 const MUTATING_BUILTIN_TOOLS = new Set(["bash", "edit", "write"]);
 
 function shouldEnableTaskVerification(options: CreateAgentSessionFromServicesOptions): boolean {
-  if (options.excludeTools?.includes(TASK_VERIFICATION_TOOL_NAME)) return false;
+  if (
+    options.excludeTools?.includes(TASK_VERIFICATION_TOOL_NAME) ||
+    options.excludeTools?.includes(REQUIREMENT_AUDIT_TOOL_NAME)
+  ) {
+    return false;
+  }
   const activeTools = options.tools ?? (options.noTools ? [] : [...MUTATING_BUILTIN_TOOLS]);
   const excluded = new Set(options.excludeTools ?? []);
   return activeTools.some((name) => MUTATING_BUILTIN_TOOLS.has(name) && !excluded.has(name));
@@ -100,11 +109,16 @@ function addToolName(toolNames: string[] | undefined, toolName: string): string[
   return toolNames.includes(toolName) ? toolNames : [...toolNames, toolName];
 }
 
-function addToolDefinition(tools: ToolDefinition[] | undefined, verificationTool: ToolDefinition): ToolDefinition[] {
-  if (tools?.some((tool) => tool.name === TASK_VERIFICATION_TOOL_NAME)) {
-    throw new Error(`${TASK_VERIFICATION_TOOL_NAME} is reserved by the built-in verification controller`);
+function addToolDefinitions(
+  tools: ToolDefinition[] | undefined,
+  verificationTools: ToolDefinition[],
+): ToolDefinition[] {
+  const reservedNames = new Set([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME]);
+  const collision = tools?.find((tool) => reservedNames.has(tool.name));
+  if (collision) {
+    throw new Error(`${collision.name} is reserved by the built-in verification controller`);
   }
-  return [verificationTool, ...(tools ?? [])];
+  return [...verificationTools, ...(tools ?? [])];
 }
 
 function applyExtensionFlagValues(
@@ -228,12 +242,17 @@ export async function createAgentSessionFromServices(
     model: options.model,
     thinkingLevel: options.thinkingLevel,
     scopedModels: options.scopedModels,
-    tools: verificationEnabled ? addToolName(options.tools, TASK_VERIFICATION_TOOL_NAME) : options.tools,
+    tools: verificationEnabled
+      ? addToolName(addToolName(options.tools, TASK_VERIFICATION_TOOL_NAME), REQUIREMENT_AUDIT_TOOL_NAME)
+      : options.tools,
     userInputTools: options.userInputTools,
     excludeTools: options.excludeTools,
     noTools: options.noTools,
     customTools: verificationController
-      ? addToolDefinition(options.customTools, verificationController.toolDefinition)
+      ? addToolDefinitions(options.customTools, [
+          verificationController.toolDefinition,
+          verificationController.requirementAuditToolDefinition,
+        ])
       : options.customTools,
     sessionStartEvent: options.sessionStartEvent,
     completionMode: options.completionMode,
@@ -241,7 +260,11 @@ export async function createAgentSessionFromServices(
     maxTokens: options.maxTokens,
   });
   if (verificationController) {
-    result.session.setActiveToolsByName([...result.session.getActiveToolNames(), TASK_VERIFICATION_TOOL_NAME]);
+    result.session.setActiveToolsByName([
+      ...result.session.getActiveToolNames(),
+      TASK_VERIFICATION_TOOL_NAME,
+      REQUIREMENT_AUDIT_TOOL_NAME,
+    ]);
     verificationController.install(result.session.agent);
   }
   return result;

@@ -1,12 +1,16 @@
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { Agent } from "@dst0/p-agent-core";
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
   createTaskVerificationController,
+  findOversizedSourceFiles,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   type TaskVerificationController,
 } from "../src/core/task-verification.ts";
+import { completeSingleRequirementAudit } from "./task-requirement-audit-test-harness.ts";
 
 function createInstalledController(): {
   agent: Agent;
@@ -94,12 +98,6 @@ async function afterTool(
 function evidenceHandle(text: string | undefined): string {
   const match = text?.match(/Verification evidence handle: (verification-evidence-\d+)/u);
   if (!match) throw new Error(`Missing evidence handle in: ${text ?? "<empty>"}`);
-  return match[1];
-}
-
-function verificationToken(text: string): string {
-  const match = text.match(/verification_token: ([0-9a-f-]+)/u);
-  if (!match) throw new Error(`Missing verification token in: ${text}`);
   return match[1];
 }
 
@@ -242,7 +240,7 @@ describe("task verification controller", () => {
     expect(beforeReadiness?.block).toBe(true);
     expect(beforeReadiness?.reason).toContain("ready_to_finish");
 
-    const ready = await callVerificationTool(controller, {
+    await callVerificationTool(controller, {
       action: "ready_to_finish",
       acceptance_checks: [
         {
@@ -252,7 +250,7 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    const token = verificationToken(ready.text);
+    const token = await completeSingleRequirementAudit(controller, reproduction);
     const wrongToken = await beforeTool(agent, "finish_work", {
       status: "success",
       verification_token: "wrong-token",
@@ -413,7 +411,7 @@ describe("task verification controller", () => {
       verifiedMutationRevision: 1,
     });
     const focusedEvidence = evidenceHandle(focusedOutput);
-    const ready = await callVerificationTool(controller, {
+    await callVerificationTool(controller, {
       action: "ready_to_finish",
       acceptance_checks: [
         {
@@ -423,7 +421,7 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    const token = verificationToken(ready.text);
+    const token = await completeSingleRequirementAudit(controller, focusedEvidence);
     expect(
       (
         await beforeTool(agent, "finish_work", {
@@ -486,8 +484,8 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    expect(ready.text).toContain("Finish readiness passed");
-    expect(verificationToken(ready.text)).toBeTruthy();
+    expect(ready.text).toContain("Evidence readiness passed");
+    expect(ready.text).not.toContain("verification_token:");
   });
 
   it("honors an explicit request to skip tests and typecheck", async () => {
@@ -527,7 +525,7 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    expect(ready.text).toContain("Finish readiness passed");
+    expect(ready.text).toContain("Evidence readiness passed");
   });
 
   it("requires multiple acceptance mappings for complex adversarial guarantees", async () => {
@@ -567,7 +565,7 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    expect(ready.text).toContain("Finish readiness passed");
+    expect(ready.text).toContain("Evidence readiness passed");
   });
 
   it("does not treat checksum inspection as a manual behavioral reproduction", async () => {
@@ -770,7 +768,7 @@ describe("task verification controller", () => {
     expect(restored.currentState.final.status).toBe("passed");
     expect(restored.currentState.final.evidenceRefs).toEqual([replayHandle]);
     expect(afterReplay.text).toContain('action "ready_to_finish"');
-    const ready = await callVerificationTool(restored, {
+    await callVerificationTool(restored, {
       action: "ready_to_finish",
       acceptance_checks: [
         {
@@ -784,7 +782,7 @@ describe("task verification controller", () => {
       ],
       unresolved_failures: [],
     });
-    const token = verificationToken(ready.text);
+    const token = await completeSingleRequirementAudit(restored, replayHandle);
     const readinessRestored = createTaskVerificationController(sessionManager);
     const readinessAgent = new Agent();
     readinessRestored.install(readinessAgent);
@@ -826,13 +824,14 @@ describe("task verification controller", () => {
       unresolved_failures: [],
     });
     expect(final.isError).toBe(false);
-    expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).not.toBe(true);
+    expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).toBe(true);
   });
 
   it("uses persisted task context to preserve high-risk baseline guidance after restoration", async () => {
     const sessionManager = SessionManager.inMemory();
     sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
-      version: 1,
+      version: 2,
+      taskId: "restored-task",
       taskKind: "bug_fix",
       taskSummary: "Fix the reported issue",
       taskContext: "The daemon restart loses persisted indexing state and recovery repeats work",
@@ -845,6 +844,12 @@ describe("task verification controller", () => {
         testSetupChanged: false,
       },
       final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
+      requirementAudit: {
+        status: "pending",
+        requirements: [],
+        ignoredSourcePrompts: [],
+        nextRequirementIndex: 0,
+      },
       updatedAt: new Date().toISOString(),
     });
     const agent = new Agent();
@@ -1051,89 +1056,14 @@ describe("task verification controller", () => {
     expect(controller.currentState.final.status).toBe("failed");
   });
 
-  it("accumulates user prompts and includes semantic audit checklist in ready_to_finish output", async () => {
-    const sessionManager = SessionManager.inMemory();
-    const controller = createTaskVerificationController(sessionManager);
-    let capturedSubscriber: Parameters<Agent["subscribe"]>[0] | undefined;
-    const agent = new Agent();
-    const originalSubscribe = agent.subscribe.bind(agent);
-    agent.subscribe = (listener: Parameters<Agent["subscribe"]>[0]) => {
-      capturedSubscriber = listener;
-      return originalSubscribe(listener);
-    };
-    controller.install(agent);
-
-    // Simulate user messages during session
-    if (capturedSubscriber) {
-      const signal = new AbortController().signal;
-      capturedSubscriber(
-        {
-          type: "message_start",
-          message: { role: "user", content: "Build a calculator with 100% test coverage." },
-        } as never,
-        signal,
-      );
-      capturedSubscriber(
-        {
-          type: "message_start",
-          message: { role: "user", content: "Also support exponentiation and handle division by zero." },
-        } as never,
-        signal,
-      );
-    }
-
-    expect(controller.currentState.taskPrompts).toEqual([
-      "Build a calculator with 100% test coverage.",
-      "Also support exponentiation and handle division by zero.",
-    ]);
-
-    await callVerificationTool(controller, {
-      action: "declare_task",
-      task_kind: "feature",
-      task_summary: "Build calculator with exponentiation and zero division handling",
-    });
-
-    await afterTool(agent, "edit", {
-      path: "src/calc.ts",
-      edits: [{ oldText: "old", newText: "new" }],
-    });
-    const testEvidence = evidenceHandle(
-      await afterTool(agent, "bash", { command: "vitest --run test/calc.test.ts" }, { text: "passed" }),
-    );
-
-    const ready = await callVerificationTool(controller, {
-      action: "ready_to_finish",
-      acceptance_checks: [
-        {
-          criterion: "Calculator with exponentiation and zero division handled",
-          evidence_refs: [testEvidence],
-        },
-      ],
-      unresolved_failures: [],
-    });
-
-    expect(ready.isError).toBe(false);
-    expect(ready.text).toContain("SEMANTIC AUDIT REQUIREMENT (RE-READ ORIGINAL USER INSTRUCTIONS):");
-    expect(ready.text).toContain("[Requirement 1]: Build a calculator with 100% test coverage.");
-    expect(ready.text).toContain("[Requirement 2]: Also support exponentiation and handle division by zero.");
-    expect(ready.text).toContain("VERIFICATION CHECKLIST:");
-    expect(ready.text).toContain("1. Have you fulfilled EVERY single user requirement and constraint above?");
-    expect(ready.text).toContain(
-      "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests",
-    );
-  });
-
   it("blocks ready_to_finish if a mutated source file exceeds 250 lines unless user requested an override", async () => {
-    const os = await import("node:os");
-    const fs = await import("node:fs/promises");
-    const tmpDir = await fs.mkdtemp(`${os.tmpdir()}/test-oversized-`);
+    const tmpDir = await mkdtemp(`${tmpdir()}/test-oversized-`);
     const sourceFile = `${tmpDir}/src/large_module.ts`;
 
-    await fs.mkdir(`${tmpDir}/src`, { recursive: true });
+    await mkdir(`${tmpDir}/src`, { recursive: true });
     const lines = Array.from({ length: 260 }, (_, i) => `export const val${i} = ${i};`).join("\n");
-    await fs.writeFile(sourceFile, lines, "utf-8");
+    await writeFile(sourceFile, lines, "utf-8");
 
-    const { findOversizedSourceFiles } = await import("../src/core/task-verification.ts");
     const oversized = findOversizedSourceFiles(tmpDir, "Build feature", ["src/large_module.ts"], 250);
     expect(oversized.length).toBe(1);
     expect(oversized[0]?.path).toBe("src/large_module.ts");
@@ -1147,6 +1077,6 @@ describe("task verification controller", () => {
     );
     expect(overridden.length).toBe(0);
 
-    await fs.rm(tmpDir, { recursive: true, force: true });
+    await rm(tmpDir, { recursive: true, force: true });
   });
 });

@@ -36,6 +36,7 @@ export function sanitizeUIOutput(text: string): string {
     .join("\n")
     .replace(/p v\d+\.\d+\.\d+/g, "p v0.4.169")
     .replace(/([^\n\s]+)\/packages\/coding-agent/g, "~/dev/p/packages/coding-agent")
+    .replace(/^(~\/dev\/p\/packages\/coding-agent) \([^\n)]*\.\.\.$/gm, "$1 (main)")
     .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
       (inner.includes("/") || inner === "detached") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
     )

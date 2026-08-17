@@ -1,7 +1,12 @@
-import { randomUUID } from "node:crypto";
 import { resolve } from "node:path";
 import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
-import { isCodeTask, requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import {
+  computeRequirementSetHash,
+  computeUserRequirementsHash,
+  sourcePromptsForState,
+} from "../requirement-audit-hashing.ts";
+import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   findOversizedSourceFiles,
@@ -17,11 +22,9 @@ import type {
   VerificationInput,
   VerificationResult,
 } from "../types.ts";
+import { formatRequirementPrompt } from "./requirement-audit.ts";
 
 export function do_readyToFinish(self: TaskVerificationController, input: VerificationInput): VerificationResult {
-  if (!isCodeTask(self.state.taskKind)) {
-    return self.updated("Finish readiness certificates are not required for documentation or investigation tasks.");
-  }
   if (!self.state.taskSummary || self.state.mutationRevision === 0) {
     return self.rejected("ready_to_finish requires a declared code task and at least one production mutation.");
   }
@@ -120,42 +123,62 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
     );
   }
 
-  const token = randomUUID();
+  const transitionError = self.beginAuditTransition();
+  if (transitionError) return self.rejected(transitionError);
+
+  const sourcePrompts = sourcePromptsForState(self.state);
+  const userRequirementsHash = computeUserRequirementsHash(sourcePrompts);
+  const existingAudit = self.state.requirementAudit;
+  const reuseRequirements =
+    existingAudit.requirements.length > 0 && existingAudit.userRequirementsHash === userRequirementsHash;
+  const requirements = reuseRequirements
+    ? existingAudit.requirements.map((requirement) => ({
+        id: requirement.id,
+        type: requirement.type,
+        text: requirement.text,
+        acceptanceCriterion: requirement.acceptanceCriterion,
+        sourcePromptIndexes: requirement.sourcePromptIndexes,
+      }))
+    : [];
+  const ignoredSourcePrompts = reuseRequirements ? existingAudit.ignoredSourcePrompts : [];
+  const requirementSetHash = reuseRequirements
+    ? computeRequirementSetHash(requirements, ignoredSourcePrompts)
+    : undefined;
   self.state = {
     ...self.state,
     readiness: {
-      status: "ready",
-      token,
+      status: "evidence_ready",
       acceptanceChecks,
       verifiedMutationRevision: self.state.mutationRevision,
+      userRequirementsHash,
+      requirementSetHash,
+    },
+    requirementAudit: {
+      status: reuseRequirements ? "verifying" : "awaiting_definition",
+      requirements,
+      ignoredSourcePrompts,
+      nextRequirementIndex: 0,
+      userRequirementsHash,
+      requirementSetHash,
     },
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
-  const promptHistoryText = (self.state.taskPrompts?.length ? self.state.taskPrompts : [self.latestUserPrompt])
-    .filter(Boolean)
-    .map((p, i) => `[Requirement ${i + 1}]: ${p}`)
-    .join("\n\n");
 
-  const auditPrompt = [
-    "--------------------------------------------------------------------------------",
-    "SEMANTIC AUDIT REQUIREMENT (RE-READ ORIGINAL USER INSTRUCTIONS):",
-    "Before calling finish_work, re-read the accumulated user requirements below:",
-    promptHistoryText ? promptHistoryText : "(No explicit prompt text captured)",
-    "",
-    "VERIFICATION CHECKLIST:",
-    "1. Have you fulfilled EVERY single user requirement and constraint above?",
-    "2. Is every modified file, feature, and branch covered by comprehensive unit/integration tests — including happy paths, unhappy paths (error handling, invalid inputs, rollbacks, corrupt data), and all edge cases (unless the user explicitly asked NOT to write tests)?",
-    "3. Are all tests passing and is there zero remaining work or unresolved code issues?",
-    "If ALL items above are true, call finish_work with status 'success' and pass verification_token.",
-    "--------------------------------------------------------------------------------",
-  ].join("\n");
+  const auditPrompt = reuseRequirements
+    ? [
+        `Reusing the existing ${requirements.length}-item requirement set because the user requirements hash is unchanged.`,
+        "All prior verdicts were cleared. Re-verify every requirement for the current evidence state.",
+        "",
+        formatRequirementPrompt(requirements[0]!, 0, requirements.length),
+      ].join("\n")
+    : formatRequirementDefinitionPrompt(sourcePrompts);
 
   return self.updated(
     [
-      `Finish readiness passed for mutation revision ${self.state.mutationRevision}.`,
-      `verification_token: ${token}`,
-      "Pass this token unchanged to finish_work. Any subsequent workspace mutation invalidates it.",
+      `Evidence readiness passed for mutation revision ${self.state.mutationRevision}.`,
+      "Finalization operations such as git commit/push are now allowed.",
+      "No verification_token has been issued; finish_work remains blocked until the requirement audit passes.",
       "",
       auditPrompt,
     ].join("\n"),

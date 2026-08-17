@@ -39,6 +39,10 @@ jobs:
       - name: Check
         run: npm run check
 
+      - name: Enforce certified release-only version bumps
+        if: ${{ github.event_name == 'pull_request' }}
+        run: node scripts/release-pr-version-policy.js "${{ github.event.pull_request.base.sha }}"
+
       - name: Test with coverage
         env:
           COVERAGE_BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}

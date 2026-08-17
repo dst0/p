@@ -55,8 +55,9 @@
 
 ## Version Bump
 
-- When a feature, fix, or improvement is finished, run the version bump before pushing changes. Run `node scripts/version-bump.js patch` to bump all workspace packages and root `package.json`. Do this before running `./reinstall.sh` so the installed CLI reports the correct version.
-- Include the version bump in the same commit as the changes.
+- Do not bump package versions in feature or fix branches. Version changes are release mutations and may run only inside the certified release transaction on the exact current `origin/main` commit.
+- `scripts/version-bump.js` fails closed without the one-time authorization issued by `scripts/release.js`; never bypass or synthesize `P_RELEASE_AUDIT_TOKEN`.
+- The release transaction sets the root, published packages, private site package, extension examples, lockfile, and coding-agent shrinkwrap to one target version. Include those version changes only in the generated `Release vX.Y.Z` commit.
 - Before pushing code changes, run the touched focused tests, `npm run test:unit` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
@@ -119,6 +120,7 @@ When reviewing PRs:
 When creating PRs:
 
 - Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
+- The PR description must give a detailed, complete account of every material change in the PR: behavior and architecture changes, state or data migrations, operational and release impact, compatibility or security consequences, and the exact verification performed. Do not omit secondary changes discovered or made while completing the task.
 - Always include a `## Bug Fixes` section in the PR description detailing any bugs uncovered and resolved during the task, with references to their regression tests.
 
 When creating issues:
@@ -156,6 +158,8 @@ When closing issues via commit:
 
 Location: `packages/*/CHANGELOG.md` (one per package).
 
+Release-note inputs live in `.changes/*.json`. Every commit that changes releasable package or release-tool behavior must add or update a fragment in the same commit. A fragment names every affected changelog package, one canonical changelog category, and a specific single-line user-facing summary. Use `type: "None"` only with a concrete single-line reason for a deliberately non-user-facing change. The automated release audit binds each policy-era commit to the fragment IDs and content hashes, and the release transaction aggregates normal fragments into changelogs and removes the consumed files. Do not use an older unrelated fragment to cover a later commit. This proves deterministic package coverage, not the truth of arbitrary prose; reviewers remain responsible for the semantic accuracy of summaries and exemptions during normal PR review.
+
 Sections under `## [Unreleased]`: `### Breaking Changes` (API changes requiring migration), `### Added`, `### Changed`, `### Fixed`, `### Removed`.
 
 Rules:
@@ -175,7 +179,13 @@ Attribution:
 
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. No major releases.
 
-1. **Update and validate CHANGELOGs**: ask the user whether they ran the `/cl` prompt on the latest commit on `main`. If not, they must run `/cl` first to audit and update each package's `[Unreleased]` section before releasing. Before any version bump, verify every changelog has exactly one topmost `[Unreleased]` section, the newest released version is greater than the previously topmost release, and all release dates are UTC dates.
+Feature PRs must not change root, workspace, lockfile, or shrinkwrap release versions. CI runs `scripts/release-pr-version-policy.js` against the PR base and rejects such bumps; version mutation happens only inside the certified transaction on exact `main`.
+
+Live provider model generators are not release-time mutations because their network inputs are not reproducible during later certificate verification. Run and review model metadata regeneration in a normal pre-release PR when needed; the certified release commit must leave generated model source identical to its audited base.
+
+1. **Automatic changelog audit and certificate**: do not ask the user whether `/cl` ran. `scripts/release.js` fetches `origin/main` and tags, requires the clean current `HEAD` to equal the fetched `origin/main`, runs the deterministic changelog audit, and persists a Brotli Q6 certificate in the worktree Git directory before authorizing any version mutation. The certificate binds the exact main SHA, target version, changelog evidence, release-note fragment IDs and hashes, and release-input hash. A rebase, commit, changed `[Unreleased]` section or `.changes` fragment, changed release script/workflow/manifest, target change, restart into an inconsistent state, or previously consumed certificate fails closed. `npm run release:audit -- audit <x.y.z>` may create the same certificate as a standalone preflight, and `npm run release:audit -- status <x.y.z>` checks it without mutation, but the release command always reruns the audit automatically. Evidence certification and one-time release authorization are separate state transitions. There is currently no repository rule requiring a human semantic approval; if one is introduced, preserve it as an additional decision after automated evidence collection rather than using the user to launch automatable checks.
+
+   If a release process stops after authorization, run `npm run release:audit -- recover`. It marks an unpublished transaction `aborted` when the target tag is absent and remote main does not contain the release commit; it also deletes only a matching local-only target tag so linked worktrees can retry safely. It marks the transaction `released` when the target tag matches and remote main contains the persisted next-cycle commit, even if main advanced afterward. A partial release commit without its tag, mismatched tag, or divergent publication remains a hard failure. Use a clean disposable worktree for a new attempt after an aborted transaction; do not reset a dirty release worktree automatically.
 
 2. **Local smoke test**: build an unpublished release and smoke test from outside the repo (so it can't resolve workspace files):
 
@@ -209,9 +219,9 @@ Attribution:
 
    Use `npm_config_min_release_age=0` only for the release command. The repo's normal npm age gate can otherwise block the release lockfile refresh when the current workspace package version was published recently. Review any lockfile or shrinkwrap diffs the release creates before push.
 
-   The release script bumps all package versions, updates changelogs, regenerates release artifacts, runs `npm run check`, commits `Release vX.Y.Z`, tags `vX.Y.Z`, adds fresh `## [Unreleased]` changelog sections, commits `Add [Unreleased] section for next cycle`, then pushes `main` and the tag. Do not rerun the release script after a tag was pushed.
+   The release script consumes the valid certificate, bumps all package versions, updates changelogs, regenerates release artifacts, runs `npm run check`, commits `Release vX.Y.Z`, tags `vX.Y.Z`, adds fresh `## [Unreleased]` changelog sections, commits `Add [Unreleased] section for next cycle`, then atomically pushes `HEAD:main` and the tag and verifies both remote refs. Do not rerun the release script after a tag was pushed.
 
-4. **CI publishes npm packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The `publish-npm` job uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
+4. **CI publishes npm packages**: pushing the `vX.Y.Z` tag triggers `.github/workflows/build-binaries.yml`. The validation job resolves the remote lightweight tag once, exports its verified commit SHA, and every downstream build or publish job checks out that exact SHA and rechecks that the remote tag still points to it immediately before an external side effect; recovery dispatches cannot substitute another source ref. Before building or publishing, CI reconstructs the canonical workspace and release-input scope from the certified base tree, reruns deterministic audit evidence from that base SHA, and verifies the Brotli Q6 receipt, exact normalized changelog preview, tag parent, release commit paths, every workspace and lockfile version, internal dependency ranges, and coding-agent shrinkwrap. A manual manifest bump or tag without that receipt cannot publish. Repository-contained certificates prevent accidental and stale bypasses; authenticity against a contributor deliberately changing both policy code and receipt still depends on protected-main review, tag permissions, and trusted workflow controls. The `publish-npm` job uses npm trusted publishing through GitHub Actions OIDC with environment `npm-publish`; no local `npm publish`, `npm whoami`, OTP, or WebAuthn flow is required.
 
 5. **If CI publish fails**: inspect the failed `publish-npm` job. The publish helper is idempotent and skips package versions already present on npm, so rerun the tag workflow after fixing CI or transient npm issues. Do not rerun `npm run release:patch` or `npm run release:minor` for the same version.
 

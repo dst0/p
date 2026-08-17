@@ -164,31 +164,6 @@ export function isDirectMutationTool(toolName: string): boolean {
   return lower.includes("edit") || lower.includes("write") || lower.includes("patch") || lower.includes("replace");
 }
 
-export function emptyReadiness(): NonNullable<TaskVerificationState["readiness"]> {
-  return {
-    status: "pending",
-    acceptanceChecks: [],
-  };
-}
-
-export function emptyState(): TaskVerificationState {
-  return {
-    version: 1,
-    mutationRevision: 0,
-    taskPrompts: [],
-    baseline: {
-      required: false,
-      status: "not_required",
-      evidenceRefs: [],
-      authorizedTestPaths: [],
-      testSetupChanged: false,
-    },
-    final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
-    readiness: emptyReadiness(),
-    updatedAt: new Date().toISOString(),
-  };
-}
-
 export function normalizeText(value: string | undefined): string {
   return value?.replace(/\s+/g, " ").trim() ?? "";
 }
@@ -224,19 +199,23 @@ export function isFinalMethod(value: unknown): value is FinalMethod {
 export function isTaskVerificationState(value: unknown): value is TaskVerificationState {
   return (
     isRecord(value) &&
-    value.version === 1 &&
+    value.version === 2 &&
+    typeof value.taskId === "string" &&
     typeof value.mutationRevision === "number" &&
     isRecord(value.baseline) &&
     Array.isArray(value.baseline.authorizedTestPaths) &&
     typeof value.baseline.testSetupChanged === "boolean" &&
-    isRecord(value.final)
+    isRecord(value.final) &&
+    isRecord(value.requirementAudit) &&
+    Array.isArray(value.requirementAudit.requirements)
   );
 }
 
 export function isTaskVerificationEvidence(value: unknown): value is TaskVerificationEvidence {
   return (
     isRecord(value) &&
-    value.version === 1 &&
+    value.version === 2 &&
+    typeof value.taskId === "string" &&
     typeof value.ref === "string" &&
     typeof value.toolCallId === "string" &&
     typeof value.toolName === "string" &&

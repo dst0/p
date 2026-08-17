@@ -623,10 +623,10 @@
     "classes": 0,
     "lines": 522
   },
-  "packages/coding-agent/test/task-verification.test.ts": {
-    "classes": 0,
-    "lines": 1152
-  },
+	"packages/coding-agent/test/task-verification.test.ts": {
+		"classes": 0,
+		"lines": 1082
+	},
   "packages/coding-agent/test/test-harness.test.ts": {
     "classes": 0,
     "lines": 321

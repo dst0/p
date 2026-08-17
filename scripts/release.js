@@ -1,223 +1,254 @@
 #!/usr/bin/env node
+
 /**
- * Release script for p-mono
+ * Executes a certified, lockstep monorepo release.
  *
- * Usage:
- *   node scripts/release.js <major|minor|patch>
- *   node scripts/release.js <x.y.z>
- *
- * Steps:
- * 1. Check for uncommitted changes
- * 2. Bump version via npm run version:xxx or set an explicit version
- * 3. Update CHANGELOG.md files: [Unreleased] -> [version] - date
- * 4. Regenerate release artifacts
- * 5. Run checks
- * 6. Commit and tag the release
- * 7. Add new [Unreleased] section to changelogs
- * 8. Commit next-cycle changelog updates
- * 9. Push main and the tag to trigger CI publishing
+ * Usage: node scripts/release.js <minor|patch|x.y.z>
  */
 
-import { execSync } from "child_process";
-import { readFileSync, writeFileSync, readdirSync, existsSync } from "fs";
-import { join } from "path";
+import { execFileSync } from "node:child_process";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { gt, inc, valid } from "semver";
 
-const RELEASE_TARGET = process.argv[2];
-const BUMP_TYPES = new Set(["major", "minor", "patch"]);
-const SEMVER_RE = /^\d+\.\d+\.\d+$/;
-const CHANGELOG_HEADER = "# Changelog\n\n## [Unreleased]\n\n";
-const RELEASE_HEADING_RE = /^## \[(\d+\.\d+\.\d+)\] - (\d{4}-\d{2}-\d{2})$/gm;
+import { certifyReleaseAudit, readReleaseAuditState } from "./release-audit-certificate.js";
+import { applyReleaseFragments } from "./release-change-fragments.js";
+import { getChangelogPaths } from "./release-changelog-audit.js";
+import { isAllowedReleaseMutationPath } from "./release-path-policy.js";
+import {
+  advanceReleaseState,
+  beginRelease,
+  failRelease,
+  reconcileReleaseState,
+  recordReleaseCommit,
+  writeReleaseReceipt,
+} from "./release-transaction.js";
 
-if (!RELEASE_TARGET || (!BUMP_TYPES.has(RELEASE_TARGET) && !SEMVER_RE.test(RELEASE_TARGET))) {
-	console.error("Usage: node scripts/release.js <major|minor|patch|x.y.z>");
-	process.exit(1);
+const requestedTarget = process.argv[2];
+const bumpTypes = new Set(["minor", "patch"]);
+const changelogHeader = "# Changelog\n\n## [Unreleased]\n\n";
+
+if (!requestedTarget) {
+  console.error("Usage: node scripts/release.js <minor|patch|x.y.z>");
+  process.exit(1);
 }
 
-function run(cmd, options = {}) {
-	console.log(`$ ${cmd}`);
-	try {
-		return execSync(cmd, { encoding: "utf-8", stdio: options.silent ? "pipe" : "inherit", ...options });
-	} catch (e) {
-		if (!options.ignoreError) {
-			console.error(`Command failed: ${cmd}`);
-			process.exit(1);
-		}
-		return null;
-	}
+function displayCommand(command, args) {
+  return [command, ...args].join(" ");
+}
+
+function run(command, args = [], options = {}) {
+  console.log(`$ ${displayCommand(command, args)}`);
+  return execFileSync(command, args, {
+    cwd: process.cwd(),
+    encoding: "utf8",
+    stdio: options.silent ? "pipe" : "inherit",
+    env: options.env ?? process.env,
+  });
+}
+
+function git(args, options = {}) {
+  return run("git", args, options)?.trim() ?? "";
 }
 
 function getVersion() {
-	const pkg = JSON.parse(readFileSync("packages/ai/package.json", "utf-8"));
-	return pkg.version;
+  return JSON.parse(readFileSync("package.json", "utf8")).version;
 }
 
-function compareVersions(a, b) {
-	const aParts = a.split(".").map(Number);
-	const bParts = b.split(".").map(Number);
-
-	for (let i = 0; i < 3; i++) {
-		const diff = (aParts[i] || 0) - (bParts[i] || 0);
-		if (diff !== 0) {
-			return diff;
-		}
-	}
-
-	return 0;
+function resolveTargetVersion() {
+  const currentVersion = getVersion();
+  if (bumpTypes.has(requestedTarget)) {
+    return inc(currentVersion, requestedTarget);
+  }
+  if (!valid(requestedTarget) || !gt(requestedTarget, currentVersion)) {
+    throw new Error(`Release target ${requestedTarget} must be a semantic version greater than ${currentVersion}`);
+  }
+  if (Number(requestedTarget.split(".")[0]) !== Number(currentVersion.split(".")[0])) {
+    throw new Error("Major releases are not permitted by repository policy");
+  }
+  return requestedTarget;
 }
 
-function shellQuote(value) {
-	return `'${value.replace(/'/g, `'\\''`)}'`;
+function changedPaths() {
+  const tracked = git(["diff", "--name-only"], { silent: true });
+  const staged = git(["diff", "--cached", "--name-only"], { silent: true });
+  const untracked = git(["ls-files", "--others", "--exclude-standard"], { silent: true });
+  return [...new Set(`${tracked}\n${staged}\n${untracked}`.split("\n").filter(Boolean))].sort();
 }
 
-function stageChangedFiles() {
-	const output = run("git ls-files -m -o -d --exclude-standard", { silent: true });
-	const paths = [...new Set((output || "").split("\n").map((line) => line.trim()).filter(Boolean))];
-	if (paths.length === 0) {
-		return;
-	}
-
-	run(`git add -- ${paths.map(shellQuote).join(" ")}`);
+function assertCleanWorktree() {
+  const status = git(["status", "--porcelain"], { silent: true });
+  if (status) {
+    throw new Error(`Uncommitted changes detected:\n${status}`);
+  }
 }
 
-function bumpOrSetVersion(target) {
-	const currentVersion = getVersion();
-
-	if (BUMP_TYPES.has(target)) {
-		console.log(`Bumping version (${target})...`);
-		run(`npm run version:${target}`);
-		return getVersion();
-	}
-
-	if (compareVersions(target, currentVersion) <= 0) {
-		console.error(`Error: explicit version ${target} must be greater than current version ${currentVersion}.`);
-		process.exit(1);
-	}
-
-	console.log(`Setting explicit version (${target})...`);
-	run(`npm version ${target} -ws --no-git-tag-version && node scripts/sync-versions.js && npm install --package-lock-only --ignore-scripts`);
-	return getVersion();
+function assertReleaseMutationPaths(paths) {
+  const unexpected = paths.filter((path) => !isAllowedReleaseMutationPath(process.cwd(), path));
+  if (unexpected.length > 0) {
+    throw new Error(`Release generated unexpected changes: ${unexpected.join(", ")}`);
+  }
 }
 
-function getUtcDate() {
-	return new Date().toISOString().slice(0, 10);
+function assertReleaseCommit(expectedTree) {
+  const paths = git(["diff-tree", "--no-commit-id", "--name-only", "-r", "HEAD"], { silent: true })
+    .split("\n")
+    .filter(Boolean);
+  assertReleaseMutationPaths(paths);
+  const committedTree = git(["show", "-s", "--format=%T", "HEAD"], { silent: true });
+  if (committedTree !== expectedTree) {
+    throw new Error("Release commit tree changed after the validated index was staged");
+  }
 }
 
-function getChangelogs() {
-	const packagesDir = "packages";
-	const packages = readdirSync(packagesDir);
-	return packages
-		.map((pkg) => join(packagesDir, pkg, "CHANGELOG.md"))
-		.filter((path) => existsSync(path));
+function stageReleaseChanges(expectedPaths) {
+  const paths = changedPaths();
+  if (paths.length === 0) {
+    throw new Error("Release did not generate any files to commit");
+  }
+  assertReleaseMutationPaths(paths);
+  if (expectedPaths) {
+    const expected = [...expectedPaths].sort();
+    if (JSON.stringify(paths) !== JSON.stringify(expected)) {
+      throw new Error(`Next-cycle commit must change exactly: ${expected.join(", ")}`);
+    }
+  }
+  run("git", ["add", "--", ...paths]);
+  return git(["write-tree"], { silent: true });
 }
 
-function validateChangelogs() {
-	for (const changelog of getChangelogs()) {
-		const content = readFileSync(changelog, "utf-8");
-		const unreleasedCount = content.match(/^## \[Unreleased\]$/gm)?.length ?? 0;
-		if (unreleasedCount !== 1 || !content.startsWith(CHANGELOG_HEADER)) {
-			throw new Error(`${changelog}: [Unreleased] must appear exactly once as the first section after # Changelog`);
-		}
-
-		const versions = [...content.matchAll(RELEASE_HEADING_RE)].map((match) => match[1]);
-		if (versions.length >= 2 && compareVersions(versions[0], versions[1]) <= 0) {
-			throw new Error(`${changelog}: newest release ${versions[0]} must be greater than previous release ${versions[1]}`);
-		}
-	}
+function updateChangelogsForRelease(version, releaseDate) {
+  for (const path of getChangelogPaths(process.cwd())) {
+    const content = readFileSync(path, "utf8");
+    if (!content.startsWith(changelogHeader)) {
+      throw new Error(`${path}: missing canonical [Unreleased] header`);
+    }
+    writeFileSync(
+      path,
+      content.replace(changelogHeader, `# Changelog\n\n## [${version}] - ${releaseDate}\n\n`),
+    );
+    console.log(`  Updated ${path}`);
+  }
 }
 
-function updateChangelogsForRelease(version) {
-	const date = getUtcDate();
-	const changelogs = getChangelogs();
-
-	for (const changelog of changelogs) {
-		const content = readFileSync(changelog, "utf-8");
-		const updated = content.replace(
-			CHANGELOG_HEADER,
-			`# Changelog\n\n## [${version}] - ${date}\n\n`,
-		);
-		writeFileSync(changelog, updated);
-		console.log(`  Updated ${changelog}`);
-	}
+function addUnreleasedSections() {
+  for (const path of getChangelogPaths(process.cwd())) {
+    const content = readFileSync(path, "utf8");
+    writeFileSync(path, content.replace(/^(# Changelog\n\n)/, `$1## [Unreleased]\n\n`));
+    console.log(`  Added [Unreleased] to ${path}`);
+  }
 }
 
-function addUnreleasedSection() {
-	const changelogs = getChangelogs();
-	const unreleasedSection = "## [Unreleased]\n\n";
-
-	for (const changelog of changelogs) {
-		const content = readFileSync(changelog, "utf-8");
-
-		// Insert after "# Changelog\n\n"
-		const updated = content.replace(
-			/^(# Changelog\n\n)/,
-			`$1${unreleasedSection}`
-		);
-		writeFileSync(changelog, updated);
-		console.log(`  Added [Unreleased] to ${changelog}`);
-	}
+function assertTagAvailable(version) {
+  const tagPath = join(".git", "refs", "tags", `v${version}`);
+  if (existsSync(tagPath)) {
+    throw new Error(`Tag v${version} already exists`);
+  }
+  try {
+    execFileSync("git", ["rev-parse", "--verify", `refs/tags/v${version}`], { stdio: "ignore" });
+    throw new Error(`Tag v${version} already exists`);
+  } catch (error) {
+    if (error instanceof Error && error.message === `Tag v${version} already exists`) {
+      throw error;
+    }
+  }
 }
 
-// Main flow
-console.log("\n=== Release Script ===\n");
-
-// 1. Check for uncommitted changes
-console.log("Checking for uncommitted changes...");
-const status = run("git status --porcelain", { silent: true });
-if (status && status.trim()) {
-	console.error("Error: Uncommitted changes detected. Commit or stash first.");
-	console.error(status);
-	process.exit(1);
+function verifyRemoteRelease(version) {
+  const output = git(
+    ["ls-remote", "--refs", "origin", "refs/heads/main", `refs/tags/v${version}`],
+    { silent: true },
+  );
+  const refs = new Map(
+    output
+      .split("\n")
+      .filter(Boolean)
+      .map((line) => line.split(/\s+/, 2).reverse()),
+  );
+  const expectedMain = git(["rev-parse", "HEAD"], { silent: true });
+  const expectedTag = git(["rev-parse", `refs/tags/v${version}`], { silent: true });
+  if (refs.get("refs/heads/main") !== expectedMain || refs.get(`refs/tags/v${version}`) !== expectedTag) {
+    throw new Error("Remote main and release tag do not match the completed local transaction");
+  }
 }
-console.log("  Working directory clean\n");
 
-// 2. Validate changelogs before mutating versions
-console.log("Validating changelogs...");
-validateChangelogs();
-console.log("  Changelog structure valid\n");
+let authorizationToken;
+let targetVersion;
+let releaseDate;
 
-// 3. Bump or set version
-const version = bumpOrSetVersion(RELEASE_TARGET);
-console.log(`  New version: ${version}\n`);
+try {
+  console.log("\n=== Certified Release ===\n");
+  run("git", ["fetch", "origin", "main", "--tags"]);
+  const priorState = readReleaseAuditState(process.cwd());
+  if (priorState && !["certified", "evidence_ready", "stale", "aborted", "released"].includes(priorState.state)) {
+    const recoveredState = reconcileReleaseState(process.cwd());
+    if (recoveredState?.state === "released") {
+      console.log(`Release v${recoveredState.targetVersion} was already published; transaction reconciled.`);
+      process.exit(0);
+    }
+    if (recoveredState?.state === "aborted") {
+      console.log("Aborted the incomplete local transaction because remote refs were unchanged.");
+    }
+  }
+  assertCleanWorktree();
+  targetVersion = resolveTargetVersion();
+  releaseDate = new Date().toISOString().slice(0, 10);
+  assertTagAvailable(targetVersion);
 
-// 4. Update changelogs
-console.log("Updating CHANGELOG.md files...");
-updateChangelogsForRelease(version);
-console.log();
+  console.log(`Auditing changelogs for origin/main -> ${targetVersion}...`);
+  const certificate = certifyReleaseAudit(process.cwd(), targetVersion);
+  const authorization = beginRelease(process.cwd(), targetVersion);
+  authorizationToken = authorization.token;
+  console.log(`  Certificate: ${certificate.certificateId}\n`);
 
-// 5. Regenerate release artifacts
-console.log("Regenerating release artifacts...");
-run("npm --prefix packages/ai run generate-models");
-run("npm --prefix packages/ai run generate-image-models");
-run("npm run shrinkwrap:coding-agent");
-console.log();
+  run(process.execPath, ["scripts/version-bump.js", targetVersion], {
+    env: { ...process.env, P_RELEASE_AUDIT_TOKEN: authorizationToken },
+  });
+  if (getVersion() !== targetVersion) {
+    throw new Error(`Version bump did not produce ${targetVersion}`);
+  }
 
-// 6. Run checks
-console.log("Running checks...");
-run("npm run check");
-console.log();
+  console.log("Updating changelogs...");
+  const appliedFragments = applyReleaseFragments(process.cwd());
+  console.log(`  Applied ${appliedFragments.length} release-note fragment(s)`);
+  updateChangelogsForRelease(targetVersion, releaseDate);
+  console.log("Regenerating deterministic release artifacts...");
+  run("npm", ["run", "shrinkwrap:coding-agent"]);
+  writeReleaseReceipt(process.cwd(), targetVersion, authorizationToken, releaseDate);
+  assertReleaseMutationPaths(changedPaths());
+  advanceReleaseState(process.cwd(), targetVersion, authorizationToken, "version_bumped", "artifacts_ready");
 
-// 7. Commit and tag
-console.log("Committing and tagging...");
-stageChangedFiles();
-run(`git commit -m "Release v${version}"`);
-run(`git tag v${version}`);
-console.log();
+  console.log("Running checks...");
+  run("npm", ["run", "check"]);
+  assertReleaseMutationPaths(changedPaths());
+  advanceReleaseState(process.cwd(), targetVersion, authorizationToken, "artifacts_ready", "checks_passed");
 
-// 8. Add new [Unreleased] sections
-console.log("Adding [Unreleased] sections for next cycle...");
-addUnreleasedSection();
-console.log();
+  console.log("Committing and tagging release...");
+  const releaseTree = stageReleaseChanges();
+  run("git", ["commit", "-m", `Release v${targetVersion}`]);
+  assertReleaseCommit(releaseTree);
+  recordReleaseCommit(process.cwd(), targetVersion, authorizationToken, "checks_passed", "release_committed");
+  assertCleanWorktree();
+  run("git", ["tag", `v${targetVersion}`]);
+  advanceReleaseState(process.cwd(), targetVersion, authorizationToken, "release_committed", "tagged");
 
-// 9. Commit
-console.log("Committing changelog updates...");
-stageChangedFiles();
-run(`git commit -m "Add [Unreleased] section for next cycle"`);
-console.log();
+  console.log("Adding [Unreleased] sections for the next cycle...");
+  addUnreleasedSections();
+  const nextCycleTree = stageReleaseChanges(getChangelogPaths(process.cwd()));
+  run("git", ["commit", "-m", "Add [Unreleased] section for next cycle"]);
+  assertReleaseCommit(nextCycleTree);
+  recordReleaseCommit(process.cwd(), targetVersion, authorizationToken, "tagged", "next_cycle_committed");
+  assertCleanWorktree();
 
-// 10. Push
-console.log("Pushing to remote...");
-run("git push origin main");
-run(`git push origin v${version}`);
-console.log();
-
-console.log(`=== Prepared release v${version}; CI publishing starts after the tag push ===`);
+  console.log("Atomically pushing main and tag...");
+  run("git", ["push", "--atomic", "origin", "HEAD:main", `refs/tags/v${targetVersion}`]);
+  verifyRemoteRelease(targetVersion);
+  advanceReleaseState(process.cwd(), targetVersion, authorizationToken, "next_cycle_committed", "released");
+  console.log(`\nPrepared release v${targetVersion}; CI publishing started from the tag.`);
+} catch (error) {
+  if (authorizationToken) {
+    failRelease(process.cwd(), authorizationToken, error);
+  }
+  console.error(error instanceof Error ? error.message : String(error));
+  process.exit(1);
+}

@@ -7,7 +7,8 @@ import type {
 } from "@dst0/p-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionManager } from "../session-manager.ts";
-import type { VerificationSchema } from "./constants.ts";
+import type { RequirementAuditSchema, VerificationSchema } from "./constants.ts";
+import { emptyState } from "./state-factories.ts";
 import {
   do_blocked,
   do_finalMethodForEvidence,
@@ -24,11 +25,12 @@ import {
 } from "./taskverificationcontroller-methods/auto-finalization.ts";
 import { do_recordBaseline } from "./taskverificationcontroller-methods/baseline-recording.ts";
 import {
-  do_finalGate,
+  do_completionGate,
   do_finalVerificationError,
   do_formatStatus,
   do_latestFailedVerificationEvidence,
   do_persistState,
+  do_publishGate,
   do_resolveEvidence,
   do_restore,
   do_taskText,
@@ -47,6 +49,11 @@ import {
   do_resolveFinalEvidence,
 } from "./taskverificationcontroller-methods/readiness-check.ts";
 import {
+  do_applyRequirementAudit,
+  do_beginAuditTransition,
+} from "./taskverificationcontroller-methods/requirement-audit.ts";
+import { do_createRequirementAuditToolDefinition } from "./taskverificationcontroller-methods/requirement-audit-tool.ts";
+import {
   do_baselineReplayInstruction,
   do_formatNextRequirement,
 } from "./taskverificationcontroller-methods/requirement-formatting.ts";
@@ -55,9 +62,9 @@ import {
   do_createToolDefinition,
   do_install,
 } from "./taskverificationcontroller-methods/tool-integration.ts";
-import { emptyState } from "./tool-classification.ts";
 import type {
   FinalMethod,
+  RequirementAuditInput,
   TaskVerificationEvidence,
   TaskVerificationState,
   VerificationInput,
@@ -66,6 +73,8 @@ import type {
 
 export class TaskVerificationController {
   readonly toolDefinition: ToolDefinition;
+
+  readonly requirementAuditToolDefinition: ToolDefinition;
 
   public readonly sessionManager: SessionManager;
 
@@ -83,10 +92,15 @@ export class TaskVerificationController {
 
   public installed = false;
 
+  public modelTurn = 0;
+
+  public lastAuditTransitionTurn = -1;
+
   constructor(sessionManager: SessionManager) {
     this.sessionManager = sessionManager;
     this.restore();
     this.toolDefinition = this.createToolDefinition() as unknown as ToolDefinition;
+    this.requirementAuditToolDefinition = this.createRequirementAuditToolDefinition() as unknown as ToolDefinition;
   }
 
   get currentState(): TaskVerificationState {
@@ -99,6 +113,10 @@ export class TaskVerificationController {
 
   createToolDefinition(): ToolDefinition<typeof VerificationSchema, VerificationResult> {
     return do_createToolDefinition(this);
+  }
+
+  createRequirementAuditToolDefinition(): ToolDefinition<typeof RequirementAuditSchema, VerificationResult> {
+    return do_createRequirementAuditToolDefinition(this);
   }
 
   beforeToolCall(context: BeforeToolCallContext): BeforeToolCallResult | undefined {
@@ -118,6 +136,14 @@ export class TaskVerificationController {
 
   applyInput(input: VerificationInput): VerificationResult {
     return do_applyInput(this, input);
+  }
+
+  applyRequirementAudit(input: RequirementAuditInput): VerificationResult {
+    return do_applyRequirementAudit(this, input);
+  }
+
+  beginAuditTransition(): string | undefined {
+    return do_beginAuditTransition(this);
   }
 
   declareTask(input: VerificationInput): VerificationResult {
@@ -167,12 +193,12 @@ export class TaskVerificationController {
     return do_finalVerificationError(this, action);
   }
 
-  finalGate(
-    action: string,
-    verificationToken?: string,
-    requireToken: boolean = false,
-  ): BeforeToolCallResult | undefined {
-    return do_finalGate(this, action, verificationToken, requireToken);
+  publishGate(action: string): BeforeToolCallResult | undefined {
+    return do_publishGate(this, action);
+  }
+
+  completionGate(action: string, verificationToken?: string): BeforeToolCallResult | undefined {
+    return do_completionGate(this, action, verificationToken);
   }
 
   restore(): void {

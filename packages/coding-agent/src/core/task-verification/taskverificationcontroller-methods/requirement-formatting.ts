@@ -3,12 +3,17 @@ import {
   GENERIC_CHECK_PATTERN,
   HIGH_RISK_PATTERN,
   READ_ONLY_PATTERN,
+  REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_TOOL_NAME,
   TEST_PATTERN,
 } from "../constants.ts";
-import { isCodeTask, requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import { emptyReadiness, isShellTool, isStaticTool } from "../tool-classification.ts";
+import { isShellTool, isStaticTool } from "../tool-classification.ts";
+import { formatRequirementPrompt } from "./requirement-audit.ts";
 
 export function do_formatNextRequirement(self: TaskVerificationController): string {
   if (!self.state.taskKind || !self.state.taskSummary) {
@@ -112,19 +117,43 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
     self.state.final.status === "passed" &&
     self.state.final.verifiedMutationRevision === self.state.mutationRevision
   ) {
-    if (!isCodeTask(self.state.taskKind)) {
-      return "NEXT REQUIRED ACTION: none. Final semantic verification is current; successful finish_work and git commit/push are unblocked.";
-    }
     const readiness = self.state.readiness ?? emptyReadiness();
     if (
-      readiness.status === "ready" &&
+      readiness.status === "completion_ready" &&
       readiness.verifiedMutationRevision === self.state.mutationRevision &&
       readiness.token
     ) {
       return [
-        "NEXT REQUIRED ACTION: readiness is current; git commit/push are unblocked.",
+        "NEXT REQUIRED ACTION: completion certificate is current; git commit/push are unblocked.",
         `Call finish_work with verification_token "${readiness.token}".`,
       ].join("\n");
+    }
+    if (readiness.status === "evidence_ready" && readiness.verifiedMutationRevision === self.state.mutationRevision) {
+      const audit = self.state.requirementAudit;
+      if (audit.status === "awaiting_definition") {
+        return [
+          `NEXT REQUIRED ACTION: define atomic user requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
+          formatRequirementDefinitionPrompt(sourcePromptsForState(self.state)),
+        ].join("\n");
+      }
+      if (audit.status === "verifying") {
+        const requirement = audit.requirements[audit.nextRequirementIndex];
+        if (requirement) {
+          return `NEXT REQUIRED ACTION:\n${formatRequirementPrompt(
+            requirement,
+            audit.nextRequirementIndex,
+            audit.requirements.length,
+          )}`;
+        }
+      }
+      if (audit.status === "failed") {
+        const failed = audit.requirements.filter((requirement) => requirement.verdict?.passed === false);
+        return [
+          `NEXT REQUIRED ACTION: complete all ${failed.length} failed user requirement(s).`,
+          ...failed.map((requirement) => `${requirement.id}: ${requirement.text} — ${requirement.verdict?.reason}`),
+          `Then call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to re-run every verdict.`,
+        ].join("\n");
+      }
     }
     const requiredCheckCount = requiredAcceptanceCheckCount(self.taskText());
     const currentEvidence = [...self.evidence.values()]
