@@ -256,3 +256,39 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Size subprocess watchdogs below the enclosing test timeout but above measured loaded-suite startup, and pair them with direct unit coverage so correctness is not inferred from timing alone.
 - **Reusable learning:** A source-entrypoint integration test measures both behavior and module-load cost; its watchdog must account for loaded-suite contention without becoming unbounded.
 - **References:** `packages/coding-agent/test/startup-session-name.test.ts`, `packages/coding-agent/vitest.config.ts`
+### 2026-08-17 — Full-workspace coverage must use the sanitized root launcher
+- **Status:** Resolved
+- **Task/context:** Recomputing changed-line coverage for the completion and release certificate implementation.
+- **Unexpected observation or failure:** Direct package-level coverage commands activated provider e2e tests from ambient authentication and endpoint variables, producing unrelated network failures instead of the intended unit-only evidence.
+- **Evidence:** The direct AI workspace run attempted provider requests and reported authorization failures, while `npm run test:unit:coverage` moved the local auth file aside, removed provider credentials through `test.sh`, and completed every workspace test suite successfully.
+- **Approaches tried:**
+- **Attempt:** Run each workspace `test:coverage` script directly in parallel.
+- **Outcome:** Did not work
+- **Why:** Package scripts do not provide the root launcher's authentication isolation and can activate environment-gated e2e cases.
+- **Attempt:** Run the root `npm run test:unit:coverage` command and inspect the retained log when the compression wrapper reached its capture limit.
+- **Outcome:** Worked
+- **Why:** The repository launcher sanitizes provider state before invoking the same workspace coverage scripts and restores it afterward.
+- **Root cause:** The direct commands bypassed the repository's unit-test environment boundary; the failures were test-selection errors, not product regressions.
+- **Resolution:** Discard direct workspace coverage results and use only the root sanitized launcher for full-workspace coverage evidence.
+- **Verification:** All five workspace coverage suites completed successfully, including 260 coding-agent files and 2,221 passing tests, before the changed-line checker reported 99.61% coverage.
+- **Prevention/follow-up:** Keep full coverage behind `test.sh`; use package-level Vitest only for explicitly focused, known non-e2e files.
+- **Reusable learning:** A package's coverage script is not necessarily a safe unit-test entrypoint; preserve the repository's environment-sanitizing root launcher whenever ambient provider configuration may exist.
+- **References:** `test.sh`, `package.json`, `scripts/check-changed-coverage.js`
+### 2026-08-17 — Legacy verification restores must preserve original task context
+- **Status:** Resolved
+- **Task/context:** Extending high-risk acceptance guidance and requirement hashing to use every persisted user prompt.
+- **Unexpected observation or failure:** A restored version-2 verification state without the new `taskPrompts` field fell back directly to the benign model-authored task summary, silently dropping the original high-risk `taskContext`.
+- **Evidence:** A focused restored-state regression recorded a successful broad unit suite at mutation revision 1 and received no `HIGH-RISK ACCEPTANCE AUDIT REQUIRED` guidance even though the persisted context described crash recovery and transactional writes.
+- **Approaches tried:**
+- **Attempt:** Treat `taskSummary` as the universal compatibility fallback for states without prompt entries.
+- **Outcome:** Did not work
+- **Why:** The summary is not authoritative source text and can omit the lifecycle or durability terms that trigger stricter acceptance guidance.
+- **Attempt:** Prefer the persisted legacy `taskContext` with a stable synthetic source ID, using the summary only when neither prompt representation exists.
+- **Outcome:** Worked
+- **Why:** Restored states retain their original user-authored risk signal while new states continue to use their complete ordered prompt entries.
+- **Root cause:** The prompt aggregation migration preserved the new representation but ordered its compatibility fallbacks incorrectly.
+- **Resolution:** Change `sourcePromptsForState` fallback order to `taskPrompts`, legacy `taskContext`, then `taskSummary`.
+- **Verification:** Focused regressions now prove both a later high-risk user clarification and a restored legacy high-risk context produce the mandatory broad-suite acceptance warning.
+- **Prevention/follow-up:** Every state-schema migration must test restored prior-version records at the downstream policy decision, not only serialization round trips.
+- **Reusable learning:** Compatibility fallbacks must preserve the most authoritative persisted input; a derived summary must never replace surviving original user context.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-audit-hashing.ts`, `packages/coding-agent/test/task-verification-high-risk-acceptance.test.ts`

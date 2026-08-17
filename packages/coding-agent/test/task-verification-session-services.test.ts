@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { getModel } from "@dst0/p-ai";
+import { Type } from "typebox";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
   type CreateAgentSessionFromServicesOptions,
@@ -27,7 +28,7 @@ describe("task verification session wiring", () => {
   });
 
   async function createSession(
-    overrides: Pick<CreateAgentSessionFromServicesOptions, "tools" | "excludeTools" | "noTools"> = {},
+    overrides: Pick<CreateAgentSessionFromServicesOptions, "tools" | "excludeTools" | "noTools" | "customTools"> = {},
   ) {
     const settingsManager = SettingsManager.create(tempDir, agentDir);
     const sessionManager = SessionManager.inMemory(tempDir);
@@ -94,4 +95,23 @@ describe("task verification session wiring", () => {
       session.dispose();
     }
   });
+
+  it.each([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME])(
+    "rejects a custom tool collision with reserved name %s",
+    async (name) => {
+      await expect(
+        createSession({
+          customTools: [
+            {
+              name,
+              label: "Conflicting verification tool",
+              description: "Must not replace a built-in verification controller tool",
+              parameters: Type.Object({}),
+              execute: async () => ({ content: [{ type: "text", text: "conflict" }], details: {} }),
+            },
+          ],
+        }),
+      ).rejects.toThrow(`${name} is reserved by the built-in verification controller`);
+    },
+  );
 });

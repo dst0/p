@@ -12,6 +12,7 @@ function sha256(value: unknown): string {
 
 export function sourcePromptsForState(state: TaskVerificationState): TaskVerificationSourcePrompt[] {
   if (state.taskPrompts && state.taskPrompts.length > 0) return state.taskPrompts;
+  if (state.taskContext) return [{ id: "legacy-task-context", text: state.taskContext }];
   if (state.taskSummary) return [{ id: "task-summary", text: state.taskSummary }];
   return [];
 }
