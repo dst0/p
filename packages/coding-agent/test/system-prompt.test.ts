@@ -24,6 +24,9 @@ describe("buildSystemPrompt", () => {
       "- When creating or editing files (source code, JSON, JSONL, markdown, configs), always ensure the content terminates with a trailing newline ('\\n') unless explicitly requested otherwise. This preserves clean single-line diffs on future appends and adheres to POSIX line standards.",
     );
     expect(prompt).toContain(
+      "- Parallel Research & Subagent Exploration: When confronting broad surveys, multi-framework comparisons, complex debugging investigations, or extensive multi-topic discovery, proactively delegate exploratory research to parallel subagents. Running research subagents concurrently gathers comprehensive documentation and solutions rapidly without polluting primary session context.",
+    );
+    expect(prompt).toContain(
       "- Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
     );
     expect(prompt).toContain(
@@ -51,7 +54,10 @@ describe("buildSystemPrompt", () => {
       "- When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
     );
     expect(prompt).toContain(
-      "- When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
+      "- Context Efficiency & Test Output Discipline: Run focused tests and targeted commands rather than dumping verbose full-suite logs. When processing command and test outputs, extract high-signal data only (e.g. 1-line pass confirmation on success, exact error message, expected vs. received diff, and failing invariant trace on failure). Never mistake a trailing 'success' or 'done' message for a pass if previous suites failed or the process exited with a non-zero status code.",
+    );
+    expect(prompt).toContain(
+      "- When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing, test-output-discipline) for domain playbooks and reference patterns.",
     );
   });
 

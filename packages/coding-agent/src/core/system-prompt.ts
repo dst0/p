@@ -163,9 +163,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const hasSearch = tools.some((t) => /search|fetch|curl|browser|web/i.test(t));
   if (hasSearch) {
     addGuideline(
-      "Use web search to consult current documentation, ecosystem practices, and library error modes when integrating unfamiliar packages or APIs.",
+      "Proactive Web Research & Validation: When starting a task involving unfamiliar packages, complex protocols, ambiguous architectures, or when uncertain about the optimal implementation approach, do not guess. Proactively perform web research to consult official documentation, ecosystem standards, real-world examples, and library error modes before writing code.",
     );
   }
+  addGuideline(
+    "Parallel Research & Subagent Exploration: When confronting broad surveys, multi-framework comparisons, complex debugging investigations, or extensive multi-topic discovery, proactively delegate exploratory research to parallel subagents. Running research subagents concurrently gathers comprehensive documentation and solutions rapidly without polluting primary session context.",
+  );
   addGuideline(
     "Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
   );
@@ -194,7 +197,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
   );
   addGuideline(
-    "When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing) for domain playbooks and reference patterns.",
+    "Context Efficiency & Test Output Discipline: Run focused tests and targeted commands rather than dumping verbose full-suite logs. When processing command and test outputs, extract high-signal data only (e.g. 1-line pass confirmation on success, exact error message, expected vs. received diff, and failing invariant trace on failure). Never mistake a trailing 'success' or 'done' message for a pass if previous suites failed or the process exited with a non-zero status code.",
+  );
+  addGuideline(
+    "When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing, test-output-discipline) for domain playbooks and reference patterns.",
   );
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

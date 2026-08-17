@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "coding-agent"
+  ],
+  "type": "Added",
+  "summary": "Add context efficiency, test output discipline, and parallel research subagent exploration guidelines to coding agent system prompt."
+}
