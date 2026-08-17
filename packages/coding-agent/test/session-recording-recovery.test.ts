@@ -98,4 +98,36 @@ describe("Session Recording Crash Recovery & Multi-Turn", () => {
     expect(result.turns.length).toBe(1);
     expect(result.finalText).toBe("Hello world!");
   });
+
+  it("records and replays WAL stream checkpoints for large turns", () => {
+    const events: SessionRecordingEvent[] = [];
+    const recorder = new SessionStreamRecorder({ onEvent: (e) => events.push(e) });
+
+    recorder.startTurn({ turnId: "turn_chk", turnIndex: 0 });
+    recorder.recordDelta("s_chk", "content", "First 1000 tokens of generation...");
+    const chk1 = recorder.recordCheckpoint("s_chk", 4096, 1000, 1000, "crc_chk1");
+    expect(chk1.type).toBe("checkpoint");
+    expect(chk1.payload.accumulated_tokens).toBe(1000);
+    expect(chk1.payload.rolling_crc32).toBe("crc_chk1");
+
+    recorder.recordDelta("s_chk", "content", "Second 1000 tokens of generation...");
+    const chk2 = recorder.recordCheckpoint("s_chk", 8192, 2000, 2000, "crc_chk2");
+    expect(chk2.payload.accumulated_tokens).toBe(2000);
+
+    recorder.endTurn({
+      turnId: "turn_chk",
+      turnIndex: 0,
+      status: "success",
+      message: { role: "assistant", content: "First 1000 tokens of generation...Second 1000 tokens of generation..." },
+      rawUsage: { input_tokens: 500, output_tokens: 2000 },
+    });
+
+    const replayer = new SessionStreamReplayer();
+    for (const e of events) replayer.feedEvent(e);
+    const result = replayer.finalize();
+
+    expect(result.turns.length).toBe(1);
+    expect(result.turns[0].events.filter((e) => e.type === "checkpoint").length).toBe(2);
+    expect(result.finalText).toBe("First 1000 tokens of generation...Second 1000 tokens of generation...");
+  });
 });
