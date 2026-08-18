@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Update the locked transitive Nano ID dependency to a patched release that prevents zero-size custom generators from hanging."
+}
