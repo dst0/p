@@ -244,6 +244,7 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
     },
     updatedAt: new Date().toISOString(),
   };
+  self.restoreError = undefined;
   self.persistState();
   return self.updated(
     required

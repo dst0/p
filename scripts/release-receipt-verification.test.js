@@ -1,7 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 import { brotliCompressSync, brotliDecompressSync, constants } from "node:zlib";
 
 import {
@@ -17,6 +18,9 @@ import {
   runFixtureRelease,
 } from "./release-flow-test-fixture.js";
 import { hashReleaseInputEntries } from "./release-inputs.js";
+import { isAllowedReleaseMutationPath } from "./release-path-policy.js";
+
+const repositoryRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 
 function releaseFixture() {
   const fixture = createReleaseFlowFixture();
@@ -164,6 +168,11 @@ test("rejects a generated source mutation in the release commit", () => {
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }
+});
+
+test("rejects generated model drift in the local release path policy", () => {
+  assert.equal(isAllowedReleaseMutationPath(repositoryRoot, "packages/ai/src/models.generated.ts"), false);
+  assert.equal(isAllowedReleaseMutationPath(repositoryRoot, "packages/ai/src/image-models.generated.ts"), false);
 });
 
 test("rejects a full lockfile content mismatch", () => {

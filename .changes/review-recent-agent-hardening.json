@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Make tool-output guidance capability-aware and harden completion and release gates against malformed state and alternate Git invocations."
+}

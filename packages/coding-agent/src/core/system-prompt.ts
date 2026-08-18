@@ -160,15 +160,12 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "When creating or editing files (source code, JSON, JSONL, markdown, configs), always ensure the content terminates with a trailing newline ('\\n') unless explicitly requested otherwise. This preserves clean single-line diffs on future appends and adheres to POSIX line standards.",
   );
 
-  const hasSearch = tools.some((t) => /search|fetch|curl|browser|web/i.test(t));
-  if (hasSearch) {
+  const hasWebResearch = tools.some((toolName) => /(?:web|browser|fetch|curl)/iu.test(toolName));
+  if (hasWebResearch) {
     addGuideline(
       "Proactive Web Research & Validation: When starting a task involving unfamiliar packages, complex protocols, ambiguous architectures, or when uncertain about the optimal implementation approach, do not guess. Proactively perform web research to consult official documentation, ecosystem standards, real-world examples, and library error modes before writing code.",
     );
   }
-  addGuideline(
-    "Parallel Research & Subagent Exploration: When confronting broad surveys, multi-framework comparisons, complex debugging investigations, or extensive multi-topic discovery, proactively delegate exploratory research to parallel subagents. Running research subagents concurrently gathers comprehensive documentation and solutions rapidly without polluting primary session context.",
-  );
   addGuideline(
     "Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
   );
@@ -197,10 +194,10 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
   );
   addGuideline(
-    "Context Efficiency & Test Output Discipline: Run focused tests and targeted commands rather than dumping verbose full-suite logs. When processing command and test outputs, extract high-signal data only (e.g. 1-line pass confirmation on success, exact error message, expected vs. received diff, and failing invariant trace on failure). Never mistake a trailing 'success' or 'done' message for a pass if previous suites failed or the process exited with a non-zero status code.",
+    "Context Efficiency & Tool Output Discipline: Before running tests, builds, benchmarks, or log-heavy commands, plan the smallest useful target and use available harnesses, quiet reporters, or output wrappers so the model reads only a compact PASS result or a FAIL result with the decisive reason. Preserve full output outside model context when it is needed for diagnosis. Treat the process exit code as authoritative; never infer success from a trailing 'success' or 'done' line.",
   );
   addGuideline(
-    "When working on complex testing, architecture, or ecosystem integrations, consult available specialized skills (e.g. software-testing, test-output-discipline) for domain playbooks and reference patterns.",
+    "When working on complex testing, architecture, or ecosystem integrations, consult any loaded specialized skills for domain playbooks and reference patterns.",
   );
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");

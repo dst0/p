@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Add non-user-facing regression coverage for Git publication parsing and restored-state validation."
+}

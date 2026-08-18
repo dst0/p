@@ -96,6 +96,8 @@ export class TaskVerificationController {
 
   public lastAuditTransitionTurn = -1;
 
+  public restoreError?: string;
+
   constructor(sessionManager: SessionManager) {
     this.sessionManager = sessionManager;
     this.restore();
