@@ -145,4 +145,18 @@ describe("requirement-audit corrupted restoration", () => {
     expect(commit?.reason).toContain("acceptance evidence");
     expect(commit?.reason).toContain("missing, failed, or stale");
   });
+
+  it("blocks in-memory readiness tampering without acceptance checks", async () => {
+    const harness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(harness);
+    const readiness = harness.controller.state.readiness!;
+    harness.controller.state = {
+      ...harness.controller.state,
+      readiness: { ...readiness, acceptanceChecks: [] },
+    };
+
+    const commit = await beforeAuditTool(harness.agent, "bash", { command: "git commit -m bypass" });
+    expect(commit?.block).toBe(true);
+    expect(commit?.reason).toContain("readiness has no evidence-backed acceptance checks");
+  });
 });
