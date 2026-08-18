@@ -173,8 +173,6 @@ export const BASH_MUTATION_PATTERN =
 
 export const WRITE_REDIRECT_PATTERN = /(?:^|[;&|]\s*)(?:echo|printf|cat)\b[^\n;]*(?:>|>>)\s*(?!\/dev\/null\b)/iu;
 
-export const PUBLISH_PATTERN = /(?:^|[;&|]\s*)git\s+(?:commit|push)\b/iu;
-
 export const GENERIC_CHECK_PATTERN =
   /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:check|typecheck)|pnpm\s+(?:run\s+)?(?:check|typecheck)|yarn\s+(?:run\s+)?(?:check|typecheck)|(?:npx\s+|npm\s+exec\s+)?tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
 

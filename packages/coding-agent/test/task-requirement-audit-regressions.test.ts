@@ -24,6 +24,98 @@ describe("requirement-audit completion regressions", () => {
     expect((await beforeAuditTool(harness.agent, "bash", { command: "git commit -m test" }))?.block).not.toBe(true);
   });
 
+  it("gates git -C commit and push commands before evidence readiness", async () => {
+    const harness = createRequirementAuditHarness();
+    await sendAuditUserPrompt(harness, "Add a guarded completion workflow.", 100);
+    await callTaskVerification(harness.controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add a guarded completion workflow",
+    });
+    await recordAuditToolResult(harness.agent, "edit", {
+      path: "src/gate.ts",
+      edits: [{ oldText: "old", newText: "new" }],
+    });
+
+    const commit = await beforeAuditTool(harness.agent, "bash", {
+      command: 'git -C "/tmp/review worktree" commit -m test',
+    });
+    const push = await beforeAuditTool(harness.agent, "bash", {
+      command: "git -C /tmp/review-worktree push origin HEAD",
+    });
+    const configuredPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "command git --no-pager -c core.quotePath=false -C /tmp/review-worktree push origin HEAD",
+    });
+    const unpaginatedPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "git -P -C /tmp/review-worktree push origin HEAD",
+    });
+    const unlockedPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "git --no-optional-locks -C /tmp/review-worktree push origin HEAD",
+    });
+    const namespacedPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "git --namespace=review -C /tmp/review-worktree push origin HEAD",
+    });
+    const mixedQuotePush = await beforeAuditTool(harness.agent, "bash", {
+      command: 'git -c core.sshCommand="ssh -i key" -C /tmp/review-worktree push origin HEAD',
+    });
+    const quotedPathPush = await beforeAuditTool(harness.agent, "bash", {
+      command: 'git --git-dir="/tmp/review repo/.git" push origin HEAD',
+    });
+    const absoluteGitPush = await beforeAuditTool(harness.agent, "bash", {
+      command: '"/usr/bin/git" -C /tmp/review-worktree push origin HEAD',
+    });
+    const commandPathPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "command -p git -C /tmp/review-worktree push origin HEAD",
+    });
+    const commandSeparatorPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "command -- git -C /tmp/review-worktree push origin HEAD",
+    });
+    const environmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "env GIT_OPTIONAL_LOCKS=0 git -C /tmp/review-worktree push origin HEAD",
+    });
+    const unsetEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "env -u GIT_DIR git -C /tmp/review-worktree push origin HEAD",
+    });
+    const splitEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "env -S 'git -C /tmp/review-worktree push origin HEAD'",
+    });
+    const longSplitEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "env --split-string='git -C /tmp/review-worktree push origin HEAD'",
+    });
+    const absoluteEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "/usr/bin/env git -C /tmp/review-worktree push origin HEAD",
+    });
+    const absoluteSplitEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "/usr/bin/env -S 'git -C /tmp/review-worktree push origin HEAD'",
+    });
+    const nestedSplitEnvironmentPush = await beforeAuditTool(harness.agent, "bash", {
+      command: "env env -S 'git -C /tmp/review-worktree push origin HEAD'",
+    });
+    const status = await beforeAuditTool(harness.agent, "bash", {
+      command: "git -C /tmp/review-worktree status --short",
+    });
+    expect(commit?.block).toBe(true);
+    expect(push?.block).toBe(true);
+    expect(configuredPush?.block).toBe(true);
+    expect(unpaginatedPush?.block).toBe(true);
+    expect(unlockedPush?.block).toBe(true);
+    expect(namespacedPush?.block).toBe(true);
+    expect(mixedQuotePush?.block).toBe(true);
+    expect(quotedPathPush?.block).toBe(true);
+    expect(absoluteGitPush?.block).toBe(true);
+    expect(commandPathPush?.block).toBe(true);
+    expect(commandSeparatorPush?.block).toBe(true);
+    expect(environmentPush?.block).toBe(true);
+    expect(unsetEnvironmentPush?.block).toBe(true);
+    expect(splitEnvironmentPush?.block).toBe(true);
+    expect(longSplitEnvironmentPush?.block).toBe(true);
+    expect(absoluteEnvironmentPush?.block).toBe(true);
+    expect(absoluteSplitEnvironmentPush?.block).toBe(true);
+    expect(nestedSplitEnvironmentPush?.block).toBe(true);
+    expect(status?.block).not.toBe(true);
+    expect(commit?.reason).toContain("semantic verification has not passed");
+  });
+
   it("preserves exact duplicate user prompts and excludes internal protocol messages", async () => {
     const harness = createRequirementAuditHarness();
     const exactPrompt = "  Preserve   spacing\nand duplicate entries.  ";

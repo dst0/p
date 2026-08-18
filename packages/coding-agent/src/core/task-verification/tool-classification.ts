@@ -13,19 +13,13 @@ import {
   KNOWN_DIRECT_MUTATION_TOOLS,
   KNOWN_EVIDENCE_TOOLS,
   KNOWN_STATIC_TOOLS,
-  PUBLISH_PATTERN,
   REFACTOR_PATTERN,
   TASK_KINDS,
   USER_FILE_SIZE_OVERRIDE_PATTERN,
   WRITE_REDIRECT_PATTERN,
 } from "./constants.ts";
-import type {
-  BaselineMethod,
-  FinalMethod,
-  TaskKind,
-  TaskVerificationEvidence,
-  TaskVerificationState,
-} from "./types.ts";
+import { containsGitPublishCommand } from "./git-command-classification.ts";
+import type { BaselineMethod, FinalMethod, TaskKind } from "./types.ts";
 
 export function findOversizedSourceFiles(
   cwd: string,
@@ -196,37 +190,6 @@ export function isFinalMethod(value: unknown): value is FinalMethod {
   return typeof value === "string" && (FINAL_METHODS as readonly string[]).includes(value);
 }
 
-export function isTaskVerificationState(value: unknown): value is TaskVerificationState {
-  return (
-    isRecord(value) &&
-    value.version === 2 &&
-    typeof value.taskId === "string" &&
-    typeof value.mutationRevision === "number" &&
-    isRecord(value.baseline) &&
-    Array.isArray(value.baseline.authorizedTestPaths) &&
-    typeof value.baseline.testSetupChanged === "boolean" &&
-    isRecord(value.final) &&
-    isRecord(value.requirementAudit) &&
-    Array.isArray(value.requirementAudit.requirements)
-  );
-}
-
-export function isTaskVerificationEvidence(value: unknown): value is TaskVerificationEvidence {
-  return (
-    isRecord(value) &&
-    value.version === 2 &&
-    typeof value.taskId === "string" &&
-    typeof value.ref === "string" &&
-    typeof value.toolCallId === "string" &&
-    typeof value.toolName === "string" &&
-    typeof value.descriptor === "string" &&
-    typeof value.outputSummary === "string" &&
-    typeof value.isError === "boolean" &&
-    typeof value.mutationRevision === "number" &&
-    typeof value.timestamp === "string"
-  );
-}
-
 export function argsRecord(args: unknown): Record<string, unknown> {
   return isRecord(args) ? args : {};
 }
@@ -238,7 +201,7 @@ export function shellCommand(args: unknown): string {
 }
 
 export function isPublishCommand(toolName: string, args: unknown): boolean {
-  return isShellTool(toolName) && PUBLISH_PATTERN.test(shellCommand(args));
+  return isShellTool(toolName) && containsGitPublishCommand(shellCommand(args));
 }
 
 export function isRecognizedBashMutation(args: unknown): boolean {

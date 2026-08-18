@@ -292,3 +292,63 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Every state-schema migration must test restored prior-version records at the downstream policy decision, not only serialization round trips.
 - **Reusable learning:** Compatibility fallbacks must preserve the most authoritative persisted input; a derived summary must never replace surviving original user context.
 - **References:** `packages/coding-agent/src/core/task-verification/requirement-audit-hashing.ts`, `packages/coding-agent/test/task-verification-high-risk-acceptance.test.ts`
+
+### 2026-08-18 — Agent guidance must describe available capabilities and compact outcomes
+
+- **Status:** Resolved
+- **Task/context:** Reviewing the coding-agent system-prompt guidance added for context-efficient tool use.
+- **Unexpected observation or failure:** The prompt unconditionally demanded parallel subagents, treated local `semantic_search` as proof of web access, and named a repository-local testing skill that is not necessarily loaded or shipped to the running agent.
+- **Evidence:** Focused prompt regressions showed the subagent instruction with only `read` and `bash`, and showed web-research guidance when the only search capability was local semantic code search.
+- **Approaches tried:**
+  - **Attempt:** Encode a particular parallel workflow and named skill directly in the default prompt.
+    - **Outcome:** Did not work
+    - **Why:** The prompt can only rely on tools and skills actually supplied to that agent instance; prescribing unavailable mechanisms creates impossible work and distracts from the output-control objective.
+  - **Attempt:** State the desired observable outcome and condition web guidance on web-capable tools.
+    - **Outcome:** Worked
+    - **Why:** The agent can choose an available harness, quiet reporter, or wrapper while returning only `PASS` or `FAIL` with the decisive reason and authoritative exit code.
+- **Root cause:** The original guidance conflated the goal of minimizing model-visible tool output with one optional orchestration mechanism and inferred capabilities from a broad name match.
+- **Resolution:** Remove the subagent demand, distinguish local semantic search from web tools, reference only loaded skills generically, and require planning the smallest useful command plus compact outcome reporting while retaining full logs outside model context.
+- **Verification:** `packages/coding-agent/test/system-prompt.test.ts` passes and explicitly rejects both subagent wording and the hard-coded `test-output-discipline` skill name.
+- **Prevention/follow-up:** Prompt tests must exercise both the presence and absence of capability-dependent guidance.
+- **Reusable learning:** Specify the output contract and detected capabilities, not an unavailable tool, skill, or orchestration strategy.
+- **References:** `packages/coding-agent/src/core/system-prompt.ts`, `packages/coding-agent/test/system-prompt.test.ts`
+
+### 2026-08-18 — Durable gates must validate the latest state, its evidence, and equivalent command forms
+
+- **Status:** Resolved
+- **Task/context:** Auditing the requirement certificate, Git publication gate, and certified release path policy.
+- **Unexpected observation or failure:** `git -C ... commit/push` and valid global Git options bypassed publication gating; a malformed latest persisted state fell back to an older valid completion certificate; a well-shaped state could claim passed final/readiness status without evidence; and the local release allowlist permitted generated model drift that CI rejected later.
+- **Evidence:** Dedicated regressions failed against quoted worktree paths, `-P`, `--no-optional-locks`, `--namespace`, incomplete nested state, type-correct evidence-free readiness, stale certificates, and generated model paths before the fixes.
+- **Approaches tried:**
+  - **Attempt:** Match only literal `git commit` and `git push` and shallowly validate persisted object shape.
+    - **Outcome:** Did not work
+    - **Why:** Equivalent Git invocation grammar escaped the regex, while status strings alone did not prove current evidence or semantic state consistency.
+  - **Attempt:** Make the latest state entry authoritative, validate status-dependent invariants, parse supported Git global options, and re-resolve final and acceptance evidence at the gate.
+    - **Outcome:** Worked
+    - **Why:** Corruption now fails closed and publication depends on current non-error evidence rather than persisted assertions alone.
+- **Root cause:** Trust-boundary checks validated convenient serialized labels and one command spelling instead of the complete state/evidence relationship and equivalent invocation forms.
+- **Resolution:** Add deep state/evidence validators, refuse stale-state fallback, expose a recoverable restore error until a new task is declared, verify evidence again before publication, parse Git global options before identifying the subcommand, and remove generated model sources from local release mutations.
+- **Verification:** The focused system-prompt and completion regressions pass 37/37, the requirement-audit cluster passes 29/29, the release suite passes 51/51, `npm run check` passes, and the full sanitized unit harness passes.
+- **Prevention/follow-up:** Add adversarial command variants and semantically impossible but type-correct persisted states whenever a durable gate changes.
+- **Reusable learning:** At a durable gate, the newest record is authoritative, status must be derivable from current evidence, and alternate command grammar must not change authorization.
+- **References:** `packages/coding-agent/src/core/task-verification/state-validation.ts`, `packages/coding-agent/src/core/task-verification/git-command-classification.ts`, `packages/coding-agent/test/task-requirement-audit-corrupted-restoration.test.ts`, `scripts/release-receipt-verification.test.js`
+
+### 2026-08-18 — Noisy verification needs a compact exit-code-preserving harness
+
+- **Status:** Resolved
+- **Task/context:** Running the monorepo unit and reinstall gates from a fresh isolated worktree during the review.
+- **Unexpected observation or failure:** The first unit run failed because workspace `dist` artifacts had not been built. After building, raw unit and reinstall output exceeded the context wrapper's capture limit and produced a wrapper exit of `1` even though the retained logs contained green suite summaries and completed smoke output.
+- **Evidence:** The unbuilt run reported `ERR_MODULE_NOT_FOUND` for workspace `dist` files. A compact rerun after `reinstall.sh` returned authoritative exit `0` for both the full unit harness and reinstall while preserving their closed logs as Brotli Q6 artifacts.
+- **Approaches tried:**
+  - **Attempt:** Stream the entire monorepo command through the model-facing wrapper.
+    - **Outcome:** Did not work
+    - **Why:** Multi-megabyte output hit the capture budget, making the wrapper result differ from the underlying command result.
+  - **Attempt:** Redirect to a bounded temporary log, retain the command exit code, close and compress the log, and print one result line.
+    - **Outcome:** Worked
+    - **Why:** The underlying process completed without output backpressure or context overflow, while failures can still expose a short decisive tail.
+- **Root cause:** The verification launcher mixed command execution with unbounded model-visible log transport, and a fresh workspace had not yet satisfied tests that import built package artifacts.
+- **Resolution:** Build/relink with the required reinstall path, then run noisy gates through a compact harness that reports only `PASS` or `FAIL` plus the saved Brotli Q6 log path.
+- **Verification:** Compact `npm run test:unit` and `./reinstall.sh` runs both returned exit `0`; `p --version` returned `0.4.224` and semantic-search smoke returned one result.
+- **Prevention/follow-up:** Prepare workspace artifacts before full integration-style unit runs and keep success output to one line; on failure include only exit code and the decisive log tail.
+- **Reusable learning:** Preserve the subprocess exit code separately from output capture, and compress only a closed log chunk rather than an actively appended stream.
+- **References:** `test.sh`, `reinstall.sh`, `.agents/skills/test-output-discipline/SKILL.md`

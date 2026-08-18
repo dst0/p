@@ -16,9 +16,6 @@ export function isAllowedReleaseMutationPath(repoRoot, path) {
   if (/^packages\/(?:agent|ai|coding-agent|tui)\/CHANGELOG\.md$/.test(path)) {
     return true;
   }
-  if (/^packages\/ai\/src\/(?:image-)?models\.generated\.ts$/.test(path)) {
-    return true;
-  }
   if (/^\.changes\/[^/]+\.json$/.test(path) && path !== ".changes/config.json") {
     return true;
   }
