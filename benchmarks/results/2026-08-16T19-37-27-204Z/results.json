@@ -1,0 +1,269 @@
+{
+  "generatedAt": "2026-08-16T19:53:56.297Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.221"
+  },
+  "startupProbes": {},
+  "runs": 1,
+  "timeoutSeconds": 3600,
+  "maxRuntimeSeconds": 7200,
+  "tasks": [
+    {
+      "id": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "timeoutSeconds": 2400
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 0,
+      "qualityPassed": 0,
+      "qualityScore": 91,
+      "qualityRawScore": 91,
+      "qualityMaxScore": 100,
+      "totalNudges": 0,
+      "totalPenalties": 0,
+      "timedOut": 0,
+      "failed": 1,
+      "averageWallMs": 987543.892792,
+      "averageInputTokens": 24630,
+      "averageOutputTokens": 19443,
+      "averageTotalTokens": 892493,
+      "averageToolCalls": 36,
+      "averageToolErrors": 2
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "event-sourced-inventory",
+      "description": "Build a transactional event-sourced inventory engine with concurrency, idempotency, replay, and tamper detection",
+      "status": "failed",
+      "elapsedMs": 987543.892792,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "nudges": 0,
+      "nudgePenalty": 0,
+      "recording": "recordings/p-run-1-event-sourced-inventory.jsonl.gz",
+      "stderr": "stderr/p-run-1-event-sourced-inventory.log",
+      "workspace": "workspaces/p/run-1/event-sourced-inventory",
+      "metrics": {
+        "eventCount": 253,
+        "eventTypes": {
+          "message_end": 113,
+          "request_start": 34,
+          "tool_execution_start": 36,
+          "tool_execution_end": 36,
+          "turn_end": 34
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 24630,
+          "output": 19443,
+          "cacheRead": 848420,
+          "cacheWrite": 0,
+          "totalTokens": 892493
+        },
+        "turns": 34,
+        "assistantMessages": 34,
+        "toolCalls": 36,
+        "toolErrors": 2,
+        "toolNames": {
+          "update_session_state": 4,
+          "bash": 13,
+          "read": 5,
+          "write": 6,
+          "edit": 5,
+          "record_task_verification": 2,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 33,
+          "length": 1
+        },
+        "errors": [],
+        "finalText": "Implemented a complete production-quality event-sourced inventory engine with:\n\n- **Domain behavior** (`src/engine.ts`): InventoryEngine with execute, executeBatch (atomic rollback), state, history, exportLog, and static fromLog. Full command lifecycle: create-sku, receive, reserve, release, ship.\n- **Event log storage** (`src/store.ts`): Deterministic SHA-256 hash-chained JSONL export with manifest, rigorous validation (positions, hash chain, manifest, tamper detection), and event replay.\n- **Types & errors** (`src/types.ts`): All public interfaces, discriminated unions, custom ConcurrencyError and ValidationError.\n- **Public facade** (`src/index.ts`): Exports all API surface.\n- **33 additional tests** (`test/inventory.test.ts`): Input validation, concurrency, idempotency, reservation invariants, deep immutability, export/import round-trip, log tamper detection, batch atomicity, multi-SKU operations, and edge cases.\n\nAll 36 tests pass (3 contract + 33 additional). Typecheck clean. Original files preserved. Only Node built-ins used.",
+        "rawEventCount": 26279
+      },
+      "quality": {
+        "passed": false,
+        "score": 91,
+        "maxScore": 100,
+        "checks": [
+          {
+            "weight": 2,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "index, engine, and store modules exist",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "agent added substantial inventory tests",
+            "passed": true
+          },
+          {
+            "weight": 8,
+            "name": "visible npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 6,
+            "name": "npm run typecheck passes",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry returns the original result",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "exact retry appends nothing and preserves version",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "changed retry with same command ID is rejected",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "cross-command command ID reuse is rejected",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch rolls back every SKU state",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch leaves the log unchanged",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "failed batch does not consume command IDs",
+            "passed": false,
+            "details": "...\n# Subtest: [inventory:conflicting-retry] same command ID with changed data is rejected\nok 6 - [inventory:conflicting-retry] same command ID with changed data is rejected\n  ---\n  duration_ms: 0.345167\n  type: 'test'\n  ...\n# Subtest: [inventory:cross-command-id] command ID reuse across commands is rejected\nok 7 - [inventory:cross-command-id] command ID reuse across commands is rejected\n  ---\n  duration_ms: 0.115667\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-state-rollback] failed batch restores every SKU state\nok 8 - [inventory:batch-state-rollback] failed batch restores every SKU state\n  ---\n  duration_ms: 0.410792\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-log-rollback] failed batch leaves the event log unchanged\nok 9 - [inventory:batch-log-rollback] failed batch leaves the event log unchanged\n  ---\n  duration_ms: 0.109042\n  type: 'test'\n  ...\n# Subtest: [inventory:batch-id-rollback] failed batch does not consume command IDs\nnot ok 10 - [inventory:batch-id-rollback] failed batch does not consume command IDs\n  ---\n  duration_ms: 1.6805\n  type: 'test'\n  location: './workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:3567'\n  failureType: 'testCodeFailure'\n  error: |-\n    Expected values to be strictly equal:\n    \n    undefined !== 2\n    \n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  expected: 2\n  operator: 'strictEqual'\n  stack: |-\n    TestContext.<anonymous> (./workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:114:10)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\nok 11 - [inventory:batch-ordered-commit] successful batch commits ordered cross-SKU effects\n  ---\n  duration_ms: 0.118792\n  type: 'test'\n  ...\n# Subtest: [inventory:no-oversell] reservation cannot exceed available inventory\nok 12 - [inventory:no-oversell] reservation cannot exceed available inventory\n  ---\n  duration_ms: 0.148833\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-release] release cannot exceed the order reservation\nok 13 - [inventory:no-over-release] release cannot exceed the order reservation\n  ---\n  duration_ms: 0.2555\n  type: 'test'\n  ...\n# Subtest: [inventory:no-over-ship] shipment cannot exceed the order reservation\nok 14 - [inventory:no-over-ship] shipment cannot exceed the order reservation\n  ---\n  duration_ms: 0.223583\n  type: 'test'\n  ...\n# Subtest: [inventory:release-ship-state] valid release and ship update all inventory totals\nok 15 - [inventory:release-ship-state] valid release and ship update all inventory totals\n  ---\n  duration_ms: 0.08525\n  type: 'test'\n  ...\n# Subtest: [inventory:state-isolation] returned state is a deep copy\nok 16 - [inventory:state-isolation] returned state is a deep copy\n  ---\n  duration_ms: 0.058375\n  type: 'test'\n  ...\n# Subtest: [inventory:history-isolation] returned history is a deep copy\nok 17 - [inventory:history-isolation] returned history is a deep copy\n  ---\n  duration_ms: 0.073\n  type: 'test'\n  ...\n# Subtest: [inventory:positions-versions] histories preserve per-SKU versions and global positions\nok 18 - [inventory:positions-versions] histories preserve per-SKU versions and global positions\n  ---\n  duration_ms: 0.077583\n  type: 'test'\n  ...\n# Subtest: [inventory:deterministic-newline-log] export is deterministic and newline terminated\nok 19 - [inventory:deterministic-newline-log] export is deterministic and newline terminated\n  ---\n  duration_ms: 0.088625\n  type: 'test'\n  ...\n# Subtest: [inventory:manifest-integrity] manifest records the event count and head hash\nok 20 - [inventory:manifest-integrity] manifest records the event count and head hash\n  ---\n  duration_ms: 0.111834\n  type: 'test'\n  ...\n# Subtest: [inventory:hash-links] every event hash links to its predecessor\nok 21 - [inventory:hash-links] every event hash links to its predecessor\n  ---\n  duration_ms: 0.082917\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\nok 22 - [inventory:restore-byte-identity] restored engine exports byte-identical JSONL\n  ---\n  duration_ms: 0.263125\n  type: 'test'\n  ...\n# Subtest: [inventory:restore-continuation] restored engine continues positions and hash links\nok 23 - [inventory:restore-continuation] restored engine continues positions and hash links\n  ---\n  duration_ms: 0.095708\n  type: 'test'\n  ...\n# Subtest: [inventory:content-tamper] changed event content is rejected\nok 24 - [inventory:content-tamper] changed event content is rejected\n  ---\n  duration_ms: 0.106333\n  type: 'test'\n  ...\n# Subtest: [inventory:truncation] removing the final byte is rejected\nnot ok 25 - [inventory:truncation] removing the final byte is rejected\n  ---\n  duration_ms: 0.164584\n  type: 'test'\n  location: './workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:1:9066'\n  failureType: 'testCodeFailure'\n  error: 'Missing expected exception (ValidationError).'\n  code: 'ERR_ASSERTION'\n  name: 'AssertionError'\n  stack: |-\n    TestContext.<anonymous> (./workspaces/p/run-1/event-sourced-inventory/test/inventory.hidden.test.ts:259:10)\n    Test.runInAsyncScope (node:async_hooks:226:14)\n    Test.run (node:internal/test_runner/test:1382:25)\n    Test.processPendingSubtests (node:internal/test_runner/test:960:18)\n    Test.postRun (node:internal/test_runner/test:1522:19)\n    Test.run (node:internal/test_runner/test:1447:12)\n    async Test.processPendingSubtests (node:internal/test_runner/test:960:7)\n  ...\n# Subtest: [inventory:extra-data] data after the manifest is rejected\nok 26 - [inventory:extra-data] data after the manifest is rejected\n  ---\n  duration_ms: 0.055625\n  type: 'test'\n  ...\n# Subtest: [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\nok 27 - [inventory:invalid-input-rollback] invalid input consumes neither command ID nor position\n  ---\n  duration_ms: 0.048583\n  type: 'test'\n  ...\n# Subtest: [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\nok 28 - [inventory:stale-batch-rollback] stale batch consumes neither command IDs nor positions\n  ---\n  duration_ms: 0.076167\n  type: 'test'\n  ...\n# (node:89682) [DEP0205] DeprecationWarning: `module.register()` is deprecated. Use `module.registerHooks()` instead.\n# (Use `node --trace-deprecation ...` to show where the warning was created)\n# Subtest: rejects empty SKU\nok 29 - rejects empty SKU\n  ---\n  duration_ms: 1.170041\n  type: 'test'\n  ...\n# Subtest: rejects non-positive integer quantities\nok 30 - rejects non-positive integer quantities\n  ---\n  duration_ms: 0.705583\n  type: 'test'\n  ...\n# Subtest: rejects empty orderId\nok 31 - rejects empty orderId\n  ---\n  duration_ms: 0.245958\n  type: 'test'\n  ...\n# Subtest: rejects operations on non-existent SKU\nok 32 - rejects operations on non-existent SKU\n  ---\n  duration_ms: 0.091125\n  type: 'test'\n  ...\n# Subtest: rejects duplicate SKU creation\nok 33 - rejects duplicate SKU creation\n  ---\n  duration_ms: 0.081916\n  type: 'test'\n  ...\n# Subtest: stale expectedVersion throws ConcurrencyError\nok 34 - stale expectedVersion throws ConcurrencyError\n  ---\n  duration_ms: 0.094458\n  type: 'test'\n  ...\n# Subtest: correct expectedVersion within batch\nok 35 - correct expectedVersion within batch\n  ---\n  duration_ms: 0.488\n  type: 'test'\n  ...\n# Subtest: retrying same command with same commandId returns original result\nok 36 - retrying same command with same commandId returns original result\n  ---\n  duration_ms: 0.296792\n  type: 'test'\n  ...\n# Subtest: reusing commandId for a different command throws ValidationError\nok 37 - reusing commandId for a different command throws ValidationError\n  ---\n  duration_ms: 0.209958\n  type: 'test'\n  ...\n# Subtest: reusing commandId with same command but different quantity throws\nok 38 - reusing commandId with same command but different quantity throws\n  ---\n  duration_ms: 0.383459\n  type: 'test'\n  ...\n# Subtest: cannot reserve more than available\nok 39 - cannot reserve more than available\n  ---\n  duration_ms: 0.087042\n  type: 'test'\n  ...\n# Subtest: cannot release more than reserved for an order\nok 40 - cannot release more than reserved for an order\n  ---\n  duration_ms: 0.082917\n  type: 'test'\n  ...\n# Subtest: cannot ship more than reserved for an order\nok 41 - cannot ship more than reserved for an order\n  ---\n  duration_ms: 0.075833\n  type: 'test'\n  ...\n# Subtest: full lifecycle: create, receive, reserve, release, ship\nok 42 - full lifecycle: create, receive, reserve, release, ship\n  ---\n  duration_ms: 0.393458\n  type: 'test'\n  ...\n# Subtest: multiple orders with separate reservations\nok 43 - multiple orders with separate reservations\n  ---\n  duration_ms: 0.078625\n  type: 'test'\n  ...\n# Subtest: state() returns deep copy\nok 44 - state() returns deep copy\n  ---\n  duration_ms: 0.051375\n  type: 'test'\n  ...\n# Subtest: history() returns deep copy\nok 45 - history() returns deep copy\n  ---\n  duration_ms: 0.095\n  type: 'test'\n  ...\n# Subtest: exportLog produces valid JSONL with manifest\nok 46 - exportLog produces valid JSONL with manifest\n  ---\n  duration_ms: 0.118292\n  type: 'test'\n  ...\n# Subtest: fromLog produces byte-identical export\nok 47 - fromLog produces byte-identical export\n  ---\n  duration_ms: 0.280667\n  type: 'test'\n  ...\n# Subtest: continuing after restore preserves positions and hash chain\nok 48 - continuing after restore preserves positions and hash chain\n  ---\n  duration_ms: 0.082917\n  type: 'test'\n  ...\n# Subtest: batch rollback on failure\nok 49 - batch rollback on failure\n  ---\n  duration_ms: 0.177083\n  type: 'test'\n  ...\n# Subtest: batch across multiple SKUs\nok 50 - batch across multiple SKUs\n  ---\n  duration_ms: 0.057042\n  type: 'test'\n  ...\n# Subtest: batch rollback on concurrency error\nok 51 - batch rollback on concurrency error\n  ---\n  duration_ms: 0.063792\n  type: 'test'\n  ...\n# Subtest: fromLog rejects truncated log\nok 52 - fromLog rejects truncated log\n  ---\n  duration_ms: 0.067458\n  type: 'test'\n  ...\n# Subtest: fromLog rejects tampered event data\nok 53 - fromLog rejects tampered event data\n  ---\n  duration_ms: 0.0635\n  type: 'test'\n  ...\n# Subtest: fromLog rejects invalid JSON\nok 54 - fromLog rejects invalid JSON\n  ---\n  duration_ms: 0.045333\n  type: 'test'\n  ...\n# Subtest: fromLog rejects empty log\nok 55 - fromLog rejects empty log\n  ---\n  duration_ms: 0.033416\n  type: 'test'\n  ...\n# Subtest: history returns events for a specific SKU\nok 56 - history returns events for a specific SKU\n  ---\n  duration_ms: 0.046917\n  type: 'test'\n  ...\n# Subtest: history throws for unknown SKU\nok 57 - history throws for unknown SKU\n  ---\n  duration_ms: 0.037292\n  type: 'test'\n  ...\n# Subtest: commandId is auto-generated when not provided\nok 58 - commandId is auto-generated when not provided\n  ---\n  duration_ms: 0.186917\n  type: 'test'\n  ...\n# Subtest: available = onHand - reserved invariant holds\nok 59 - available = onHand - reserved invariant holds\n  ---\n  duration_ms: 0.0715\n  type: 'test'\n  ...\n# Subtest: reserving exactly available is allowed\nok 60 - reserving exactly available is allowed\n  ---\n  duration_ms: 0.03575\n  type: 'test'\n  ...\n# Subtest: release fully removes an order from reservations\nok 61 - release fully removes an order from reservations\n  ---\n  duration_ms: 0.042792\n  type: 'test'\n  ...\n1..61\n# tests 61\n# suites 0\n# pass 59\n# fail 2\n# cancelled 0\n# skipped 0\n# todo 0\n# duration_ms 230.680125\n"
+          },
+          {
+            "weight": 3,
+            "name": "successful batch commits ordered cross-SKU effects",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "reservation cannot oversell available inventory",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "release cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "shipment cannot exceed an order reservation",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "valid release and ship preserve inventory invariants",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned state is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "returned history is deeply isolated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "versions and global positions remain contiguous",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "JSONL export is deterministic and newline terminated",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "manifest count and head hash are valid",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "event hashes form a valid predecessor chain",
+            "passed": true
+          },
+          {
+            "weight": 3,
+            "name": "restore exports byte-identical JSONL",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "restore continues positions and hash links",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "content tampering is rejected",
+            "passed": true
+          },
+          {
+            "weight": 5,
+            "name": "final-byte truncation is rejected",
+            "passed": false
+          },
+          {
+            "weight": 4,
+            "name": "data after the manifest is rejected",
+            "passed": true
+          },
+          {
+            "weight": 2,
+            "name": "invalid input consumes no ID or position",
+            "passed": true
+          },
+          {
+            "weight": 4,
+            "name": "stale batch consumes no IDs or positions",
+            "passed": true
+          }
+        ],
+        "rawScore": 91,
+        "penalty": 0,
+        "nudges": 0,
+        "finishNotesCreated": true
+      }
+    }
+  ]
+}

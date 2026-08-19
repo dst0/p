@@ -6,6 +6,7 @@ import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
 import { certifyReleaseAudit, readReleaseAuditState } from "./release-audit-certificate.js";
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
 import { advanceReleaseState, beginRelease } from "./release-transaction.js";
 import { discoverWorkspacePackagePaths } from "./release-workspaces.js";
 
@@ -38,6 +39,7 @@ function git(repoRoot, ...args) {
 function createFixture() {
   const repoRoot = mkdtempSync(join(tmpdir(), "p-version-bump-"));
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "release-test@example.invalid");
   git(repoRoot, "config", "user.name", "Release Test");
   write(repoRoot, "AGENTS.md", "release rules\n");

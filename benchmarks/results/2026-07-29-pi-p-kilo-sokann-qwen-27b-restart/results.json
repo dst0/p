@@ -73,7 +73,7 @@
       "signal": null,
       "timedOut": true,
       "modelAlias": "mini-pc/model",
-      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.gz",
+      "recording": "recordings/pi-run-1-typescript-calculator.jsonl.br",
       "stderr": "stderr/pi-run-1-typescript-calculator.log",
       "workspace": "workspaces/pi/run-1/typescript-calculator",
       "metrics": {
@@ -155,7 +155,7 @@
       "signal": null,
       "timedOut": false,
       "modelAlias": "mini-pc/model",
-      "recording": "recordings/pi-run-1-monolith-split.jsonl.gz",
+      "recording": "recordings/pi-run-1-monolith-split.jsonl.br",
       "stderr": "stderr/pi-run-1-monolith-split.log",
       "workspace": "workspaces/pi/run-1/monolith-split",
       "metrics": {
@@ -240,7 +240,7 @@
       "signal": null,
       "timedOut": true,
       "modelAlias": "mini-pc/model",
-      "recording": "recordings/p-run-1-typescript-calculator.jsonl.gz",
+      "recording": "recordings/p-run-1-typescript-calculator.jsonl.br",
       "stderr": "stderr/p-run-1-typescript-calculator.log",
       "workspace": "workspaces/p/run-1/typescript-calculator",
       "metrics": {
@@ -331,7 +331,7 @@
       "signal": null,
       "timedOut": false,
       "modelAlias": "mini-pc/model",
-      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "recording": "recordings/p-run-1-monolith-split.jsonl.br",
       "stderr": "stderr/p-run-1-monolith-split.log",
       "workspace": "workspaces/p/run-1/monolith-split",
       "metrics": {
@@ -424,7 +424,7 @@
       "signal": "SIGTERM",
       "timedOut": true,
       "modelAlias": "llm-orchestrator/sokann-qwen-27b",
-      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.gz",
+      "recording": "recordings/kilo-run-1-typescript-calculator.jsonl.br",
       "stderr": "stderr/kilo-run-1-typescript-calculator.log",
       "workspace": "workspaces/kilo/run-1/typescript-calculator",
       "metrics": {
@@ -488,7 +488,7 @@
       "signal": "SIGTERM",
       "timedOut": true,
       "modelAlias": "llm-orchestrator/sokann-qwen-27b",
-      "recording": "recordings/kilo-run-1-monolith-split.jsonl.gz",
+      "recording": "recordings/kilo-run-1-monolith-split.jsonl.br",
       "stderr": "stderr/kilo-run-1-monolith-split.log",
       "workspace": "workspaces/kilo/run-1/monolith-split",
       "metrics": {

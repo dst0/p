@@ -32,7 +32,7 @@
         "signal": null,
         "timedOut": false,
         "rawEventCount": 270,
-        "recording": "model-resolution.log.gz",
+        "recording": "model-resolution.log.br",
         "stderr": "model-resolution.stderr.log"
       },
       "resolvedModel": "mini-pc/sokann-qwen-27b",
@@ -43,7 +43,7 @@
         "signal": null,
         "timedOut": false,
         "rawEventCount": 2,
-        "recording": "request.jsonl.gz",
+        "recording": "request.jsonl.br",
         "stderr": "request.stderr.log",
         "responseMatched": true,
         "errors": []
@@ -70,7 +70,7 @@
     "agy": {
       "status": "passed",
       "requestedModel": "gemini-3.6-flash-medium",
-      "recording": "request.jsonl.gz",
+      "recording": "request.jsonl.br",
       "stderr": "request.stderr.log",
       "elapsedMs": 8711.614000000001,
       "exitCode": 0,

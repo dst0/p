@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
 import {
   applyReleaseFragments,
   createChangeFragmentEvidence,
@@ -28,6 +29,7 @@ function commit(repoRoot, message) {
 function fixture() {
   const repoRoot = mkdtempSync(join(tmpdir(), "p-change-fragments-"));
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "fragment-test@example.invalid");
   git(repoRoot, "config", "user.name", "Fragment Test");
   write(

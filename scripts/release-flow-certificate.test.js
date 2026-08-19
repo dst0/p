@@ -9,6 +9,7 @@ import {
 } from "./release-audit-certificate.js";
 import { verifyReleaseReceipt } from "./release-certificate-receipt.js";
 import {
+  cloneReleaseFlowFixtureRepository,
   createReleaseFlowFixture,
   git,
   runFixtureRelease,
@@ -38,8 +39,7 @@ test("release automatically audits, consumes the certificate, and atomically pus
     const released = readReleaseAuditState(fixture.repoRoot);
     writeReleaseAuditState(fixture.repoRoot, { ...released, state: "next_cycle_committed" });
     assert.equal(reconcileReleaseState(fixture.repoRoot).state, "released");
-    const advancedClone = join(fixture.root, "advanced-main");
-    git(fixture.root, "clone", fixture.remoteRoot, advancedClone);
+    const advancedClone = cloneReleaseFlowFixtureRepository(fixture, "advanced-main");
     git(advancedClone, "config", "user.email", "release-test@example.invalid");
     git(advancedClone, "config", "user.name", "Release Test");
     write(advancedClone, "README.md", "main advanced after the release\n");
@@ -88,6 +88,24 @@ test("rejects an allowed-file mutation staged by the next-cycle commit hook", ()
     assert.equal(readReleaseAuditState(fixture.repoRoot).state, "failed");
     assert.equal(git(fixture.remoteRoot, "rev-parse", "refs/heads/main"), originalRemoteMain);
     assert.throws(() => git(fixture.remoteRoot, "rev-parse", "refs/tags/v0.5.0"));
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
+test("release fixtures disable detached Git maintenance", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    const cloneRoot = cloneReleaseFlowFixtureRepository(fixture, "maintenance-policy-clone");
+    for (const repository of [fixture.repoRoot, fixture.remoteRoot, cloneRoot]) {
+      assert.equal(git(repository, "config", "--local", "--get", "--bool", "maintenance.auto"), "false");
+      assert.equal(
+        git(repository, "config", "--local", "--get", "--bool", "maintenance.autoDetach"),
+        "false",
+      );
+      assert.equal(git(repository, "config", "--local", "--get", "--int", "gc.auto"), "0");
+      assert.equal(git(repository, "config", "--local", "--get", "--bool", "gc.autoDetach"), "false");
+    }
   } finally {
     rmSync(fixture.root, { recursive: true, force: true });
   }

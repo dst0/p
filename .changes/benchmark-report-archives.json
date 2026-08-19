@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Harden non-user-facing benchmark evidence/report tooling and safe pre-commit restaging."
+}

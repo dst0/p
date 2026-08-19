@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import test from "node:test";
 import { brotliDecompressSync } from "node:zlib";
 
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
 import {
   certifyReleaseAudit,
   inspectReleaseCertificate,
@@ -18,16 +19,15 @@ const releaseAuditScript = resolve("scripts/release-audit.js");
 function git(repoRoot, ...args) {
   return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
 }
-
 function write(repoRoot, relativePath, content) {
   const target = join(repoRoot, relativePath);
   mkdirSync(join(target, ".."), { recursive: true });
   writeFileSync(target, content);
 }
-
 function createFixture() {
   const repoRoot = mkdtempSync(join(tmpdir(), "p-release-audit-"));
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "release-test@example.invalid");
   git(repoRoot, "config", "user.name", "Release Test");
   git(repoRoot, "remote", "add", "origin", repoRoot);

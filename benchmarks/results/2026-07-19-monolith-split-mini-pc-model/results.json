@@ -45,7 +45,7 @@
       "exitCode": 143,
       "signal": null,
       "timedOut": true,
-      "recording": "recordings/p-run-1-monolith-split.jsonl.gz",
+      "recording": "recordings/p-run-1-monolith-split.jsonl.br",
       "stderr": "stderr/p-run-1-monolith-split.log",
       "workspace": "workspaces/p/run-1/monolith-split",
       "metrics": {
@@ -133,7 +133,7 @@
       "exitCode": 143,
       "signal": null,
       "timedOut": true,
-      "recording": "recordings/original-run-1-monolith-split.jsonl.gz",
+      "recording": "recordings/original-run-1-monolith-split.jsonl.br",
       "stderr": "stderr/original-run-1-monolith-split.log",
       "workspace": "workspaces/original/run-1/monolith-split",
       "metrics": {

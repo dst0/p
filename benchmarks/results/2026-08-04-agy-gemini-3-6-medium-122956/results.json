@@ -21,7 +21,7 @@
       "resolvedModelId": "gemini-3.6-flash-medium",
       "outputFormat": "stream-json",
       "timeoutSeconds": 120,
-      "recording": "diagnostics/startup-probe/stdout.jsonl",
+      "recording": "diagnostics/startup-probe/stdout.jsonl.br",
       "stderr": "diagnostics/startup-probe/stderr.log"
     }
   },

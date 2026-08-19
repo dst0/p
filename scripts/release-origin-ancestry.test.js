@@ -1,10 +1,10 @@
 import assert from "node:assert/strict";
 import { rmSync } from "node:fs";
-import { join } from "node:path";
 import test from "node:test";
 
 import { verifyReleaseReceipt } from "./release-certificate-receipt.js";
 import {
+  cloneReleaseFlowFixtureRepository,
   createReleaseFlowFixture,
   git,
   runFixtureRelease,
@@ -33,8 +33,7 @@ test("receipt fetches an unseen current origin main before checking tag ancestry
   try {
     const result = runFixtureRelease(fixture);
     assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
-    const advancedClone = join(fixture.root, "advanced-origin-main");
-    git(fixture.root, "clone", fixture.remoteRoot, advancedClone);
+    const advancedClone = cloneReleaseFlowFixtureRepository(fixture, "advanced-origin-main");
     git(advancedClone, "config", "user.email", "release-test@example.invalid");
     git(advancedClone, "config", "user.name", "Release Test");
     write(advancedClone, "README.md", "advance origin main after release\n");

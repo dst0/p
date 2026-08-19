@@ -1,0 +1,50 @@
+{
+  "status": "passed",
+  "expectedResolvedModel": "mini-pc/sokann-qwen-27b",
+  "kiloModelAlias": "llm-orchestrator/sokann-qwen-27b",
+  "timeoutSeconds": 60,
+  "diagnostics": "diagnostics/kilo-startup",
+  "modelResolution": {
+    "status": "passed",
+    "elapsedMs": 2990.4310000000005,
+    "exitCode": 0,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 270,
+    "recording": "model-resolution.log.gz",
+    "stderr": "model-resolution.stderr.log"
+  },
+  "resolvedModel": "mini-pc/sokann-qwen-27b",
+  "request": {
+    "status": "timed_out",
+    "elapsedMs": 60043.416584,
+    "exitCode": null,
+    "signal": "SIGTERM",
+    "timedOut": true,
+    "rawEventCount": 0,
+    "recording": "request.jsonl.gz",
+    "stderr": "request.stderr.log",
+    "responseMatched": false,
+    "errors": []
+  },
+  "runtimeFiles": {
+    "data": [
+      "kilo/.metadata_never_index",
+      "kilo/kilo.db",
+      "kilo/kilo.db-shm",
+      "kilo/kilo.db-wal",
+      "kilo/log/2026-08-16T204702.log",
+      "kilo/log/2026-08-16T204705.log",
+      "kilo/log/opencode.log",
+      "kilo/storage/migration",
+      "kilo/storage/session_diff/ses_ff3ac02ccffekq44FPSntjaXig.json",
+      "kilo/telemetry-id"
+    ],
+    "state": [
+      "kilo-sandbox-policy/4cadda83966dc24c225ff515113527bb9ac983f68cfe25096836446f4036fb1d/eb6b2b3f8a1e5f0084ff78bd352f3dfbd7682e77cdf752fff46101e17466b2e8.json",
+      "kilo/.metadata_never_index",
+      "kilo/locks/c4accd87ed85ce3a9f17bfc84ab5371488cc3195.lock/heartbeat",
+      "kilo/locks/c4accd87ed85ce3a9f17bfc84ab5371488cc3195.lock/meta.json"
+    ]
+  }
+}
