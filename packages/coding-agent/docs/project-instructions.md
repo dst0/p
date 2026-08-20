@@ -22,6 +22,46 @@ p discovers `AGENTS.md` or `CLAUDE.md` from the global agent directory, ancestor
 
 `.pdev` is ignored by Git. Deleting `.pdev/instructions` while p is stopped is safe; p regenerates it from the authoritative source files on the next session start.
 
+## Processing and retrieval flow
+
+```text
+[A] Session startup or explicit /reload
+    -> [B] Discover ordered sources and skills; canonicalize paths;
+           split exact modules; hash the source chain and skill roots
+    -> [C] Deep-validate the immutable version selected by current.json
+
+[C] -- reusable exact/compiled, or fallback with no compiler --> [I]
+[C] -- miss, tamper, or retryable fallback ------------------> [D]
+
+[D] Does the complete exact injected block fit under 5,000 characters?
+[D] -- yes --> [G] Exact mode; never call a model
+[D] -- no  --> [E] Successful routing cache for AGENTS hash + compiler version?
+
+[E] -- yes --> [G] Validate cached body/triggers; compiled mode
+[E] -- no  --> [F] Active failure backoff for this model identity?
+
+[F] -- yes --> [G] Deterministic fallback mode
+[F] -- no  --> [H] Call the selected model with complete sources and prebuilt module links
+
+[H] -- valid --> cache bounded result --> [G] Compiled mode
+[H] -- error --> record model-specific failure --> [G] Deterministic fallback mode
+
+[G] -> [J] Build rule records from exact modules and deterministic paged catalogs
+    -> [K] Atomically install the content-addressed version, fallback guide,
+           and current lookup pointer
+    -> [I] Pin the immutable version to the live session and inject its block
+
+[I] -> read_rules  -> cached catalogs and exact cached modules -------+
+    -> read_skills -> cached catalog plus live canonical skill roots -+-> [L]
+                                                                       and resources
+
+[L] Recheck source/skill freshness, hashes, canonical paths, symlinks,
+    and byte limits. Only the next session startup or explicit /reload
+    returns to [A].
+```
+
+`current.json` is only a lookup pointer. A live session continues reading its pinned immutable version until `/reload` prepares and pins a new one.
+
 ## Hash and compilation lifecycle
 
 The manifest records a SHA-256 hash for the complete ordered context-file chain and a separate input hash covering that chain, visible canonical skill roots, and the compiler schema version.

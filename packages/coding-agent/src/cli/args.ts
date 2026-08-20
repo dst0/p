@@ -437,7 +437,7 @@ ${chalk.bold("Environment Variables:")}
   P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://p.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
-  read         - Read file contents
+  read         - Read file contents\n  read_rules   - Read integrity-checked project instruction modules\n  read_skills  - Read cataloged skills and skill-relative resources
   bash         - Execute bash commands
   edit         - Edit files with find/replace
   write        - Write files (creates/overwrites)

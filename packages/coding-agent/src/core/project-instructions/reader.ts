@@ -120,9 +120,6 @@ function readSkillFile(skill: ProjectInstructionSkillRecord, link: string, maxBy
   }
   const prefix = skill.link.slice(0, -"SKILL.md".length);
   const relativeResource = link.slice(prefix.length);
-  if (!relativeResource || relativeResource === "SKILL.md") {
-    throw new ProjectInstructionReadError(`Invalid skill resource link: ${link}`);
-  }
   return readBoundedFile(resolveWithin(realpathSync(skill.baseDir), relativeResource), maxBytes);
 }
 
@@ -168,7 +165,6 @@ function assertRegularFile(filePath: string): Stats {
   } catch {
     throw new ProjectInstructionReadError(`Instruction link does not reference a readable file: ${filePath}`);
   }
-  if (!stats) throw new ProjectInstructionReadError(`Instruction link is unreadable: ${filePath}`);
   if (!stats.isFile() || stats.isSymbolicLink()) {
     throw new ProjectInstructionReadError(`Instruction link does not reference a regular file: ${filePath}`);
   }

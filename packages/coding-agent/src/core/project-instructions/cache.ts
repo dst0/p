@@ -129,14 +129,9 @@ function writeCatalogPages(versionDir: string, catalog: ProjectInstructionCatalo
 
 function installVersion(options: LoadProjectInstructionsOptions, version: string, temporaryDir: string): void {
   const versionDir = join(options.cacheDir, "versions", version);
-  if (existsSync(versionDir)) {
-    const winner = loadVersion(options, version);
-    if (winner) return;
-  }
   try {
     renameSync(temporaryDir, versionDir);
   } catch (error) {
-    if (!hasFileSystemCode(error, "EEXIST") && !hasFileSystemCode(error, "ENOTEMPTY")) throw error;
     const winner = loadVersion(options, version);
     if (!winner) throw error;
   }

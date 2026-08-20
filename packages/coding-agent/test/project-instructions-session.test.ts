@@ -3,11 +3,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createExtensionRuntime } from "../src/core/extensions/loader.ts";
+import type { Extension } from "../src/core/extensions/types.ts";
 import type { ProjectInstructionCompiler } from "../src/core/project-instructions/index.ts";
 import { getProjectInstructionFallbackPath } from "../src/core/project-instructions/paths.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import type { Skill } from "../src/core/skills.ts";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -34,7 +37,12 @@ function createWorkspace() {
   return {
     root,
     agentsPath,
+    runtime,
     resourceLoader,
+    replaceInstructions(nextContent: string) {
+      content = nextContent;
+      writeFileSync(agentsPath, content);
+    },
     updateInstructions(label: string) {
       content = createLargeInstructions(label);
       writeFileSync(agentsPath, content);
@@ -149,11 +157,97 @@ describe("session project instruction integration", () => {
       second.session.dispose();
     }
   });
+
+  it("refreshes the injected skill catalog after extension resource discovery", async () => {
+    const workspace = createWorkspace();
+    workspace.replaceInstructions(`# Extension rules\n\n${"Preserve extension resource discovery. ".repeat(300)}\n`);
+    const baseDir = join(workspace.root, "extension-skill");
+    const filePath = join(baseDir, "SKILL.md");
+    mkdirSync(baseDir);
+    writeFileSync(
+      filePath,
+      "---\nname: extension-only\ndescription: Extension-only guidance\n---\n\nApply extension guidance.\n",
+    );
+    const skill: Skill = {
+      name: "extension-only",
+      description: "Extension-only guidance",
+      filePath,
+      baseDir,
+      sourceInfo: createSyntheticSourceInfo(filePath, { source: "test", baseDir }),
+      disableModelInvocation: false,
+    };
+    let visibleSkills: Skill[] = [];
+    const extendResources = vi.fn(() => {
+      visibleSkills = [skill];
+    });
+    workspace.resourceLoader.getSkills = () => ({ skills: visibleSkills, diagnostics: [] });
+    workspace.resourceLoader.extendResources = extendResources;
+    const handlers: Extension["handlers"] = new Map([
+      ["resources_discover", [async () => ({ skillPaths: [filePath] })]],
+    ]);
+    const extension: Extension = {
+      path: "extension-resources.js",
+      resolvedPath: join(workspace.root, "extension-resources.js"),
+      sourceInfo: createSyntheticSourceInfo("<test:extension-resources>", { source: "test" }),
+      handlers,
+      tools: new Map(),
+      messageRenderers: new Map(),
+      commands: new Map(),
+      flags: new Map(),
+      shortcuts: new Map(),
+    };
+    workspace.resourceLoader.getExtensions = () => ({
+      extensions: [extension],
+      errors: [],
+      runtime: workspace.runtime,
+    });
+    const compiler = createCompiler();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-extension"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionCompiler: compiler,
+    });
+    try {
+      const initialInputHash = readCurrentInputHash(workspace.root);
+      const initialPrompt = session.systemPrompt;
+      expect(session.systemPrompt).not.toContain("Extension-only guidance");
+      await session.bindExtensions({});
+      expect(extendResources).toHaveBeenCalledOnce();
+      const current = readCurrentPointer(workspace.root);
+      expect(current.inputHash).not.toBe(initialInputHash);
+      expect(session.systemPrompt).not.toBe(initialPrompt);
+      expect(session.systemPrompt).toContain("Extension-only guidance");
+      expect(compiler).toHaveBeenCalledOnce();
+      const catalog = readFileSync(
+        join(
+          realpathSync(workspace.root),
+          ".pdev",
+          "instructions",
+          "versions",
+          current.version,
+          "skills",
+          "catalog.md",
+        ),
+        "utf8",
+      );
+      expect(catalog).toContain("Extension-only guidance");
+      expect(catalog).toMatch(/skills\/extension-only-[a-f0-9]{8}\/SKILL\.md/u);
+    } finally {
+      session.dispose();
+    }
+  });
 });
 
 function readCurrentInputHash(root: string): string {
+  return readCurrentPointer(root).inputHash;
+}
+
+function readCurrentPointer(root: string): { inputHash: string; version: string } {
   const currentPath = join(realpathSync(root), ".pdev", "instructions", "current.json");
-  const value = JSON.parse(readFileSync(currentPath, "utf8")) as { inputHash?: unknown };
+  const value = JSON.parse(readFileSync(currentPath, "utf8")) as { inputHash?: unknown; version?: unknown };
   if (typeof value.inputHash !== "string") throw new Error("Missing project instruction input hash");
-  return value.inputHash;
+  if (typeof value.version !== "string") throw new Error("Missing project instruction cache version");
+  return { inputHash: value.inputHash, version: value.version };
 }

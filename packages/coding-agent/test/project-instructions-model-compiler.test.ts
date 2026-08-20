@@ -100,6 +100,12 @@ describe("project instruction model compiler", () => {
     });
   });
 
+  it("rejects valid JSON that violates the compiler response contract", async () => {
+    completeSimpleMock.mockResolvedValue(response('{"body":42,"triggers":[]}'));
+
+    await expect(compileProjectInstructionsWithModel(request, { model })).rejects.toThrow(/JSON contract/u);
+  });
+
   it("fails before provider invocation when complete sources exceed the model context", async () => {
     const oversizedRequest: ProjectInstructionCompilerRequest = {
       ...request,

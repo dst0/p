@@ -111,6 +111,34 @@ describe("read_rules", () => {
       tool.execute("call", { links: ["rules/catalog-pages/not-listed.md"] }, undefined, undefined, extensionContext),
     ).rejects.toThrow(/cataloged/i);
   });
+
+  it("rejects uncataloged rules and a forged immutable-version identity", async () => {
+    const fixture = await prepareFixture();
+    const tool = createReadRulesToolDefinition(fixture.state);
+
+    await expect(
+      tool.execute("call", { links: ["rules/not-cataloged.md"] }, undefined, undefined, extensionContext),
+    ).rejects.toThrow(/not cataloged/i);
+
+    fixture.state.current = {
+      ...fixture.prepared,
+      versionDir: join(fixture.prepared.versionDir, "forged-version"),
+    };
+    await expect(
+      tool.execute("call", { links: ["rules/catalog.md"] }, undefined, undefined, extensionContext),
+    ).rejects.toThrow(/version identity/i);
+  });
+
+  it.each(["missing", "directory"] as const)("rejects a %s authoritative source", async (state) => {
+    const fixture = await prepareFixture();
+    const tool = createReadRulesToolDefinition(fixture.state);
+    rmSync(fixture.agentsPath);
+    if (state === "directory") mkdirSync(fixture.agentsPath);
+
+    await expect(
+      tool.execute("call", { links: ["rules/catalog.md"] }, undefined, undefined, extensionContext),
+    ).rejects.toThrow(/unreadable|regular file/i);
+  });
 });
 
 describe("read_skills", () => {
@@ -159,5 +187,24 @@ describe("read_skills", () => {
     await expect(
       tool.execute("call", { links: [resourceLink] }, undefined, undefined, extensionContext),
     ).rejects.toThrow(/read limit/i);
+  });
+
+  it("rejects missing or non-file resources and a stale skill root", async () => {
+    const fixture = await prepareFixture();
+    const skill = fixture.prepared.manifest.skills[0];
+    const prefix = skill.link.replace(/SKILL\.md$/u, "");
+    const tool = createReadSkillsToolDefinition(fixture.state);
+
+    await expect(
+      tool.execute("call", { links: [`${prefix}references/missing.md`] }, undefined, undefined, extensionContext),
+    ).rejects.toThrow(/does not exist/i);
+    await expect(
+      tool.execute("call", { links: [`${prefix}references`] }, undefined, undefined, extensionContext),
+    ).rejects.toThrow(/regular file/i);
+
+    writeFileSync(fixture.skill.filePath, "changed skill root\n");
+    await expect(tool.execute("call", { links: [skill.link] }, undefined, undefined, extensionContext)).rejects.toThrow(
+      /stale/i,
+    );
   });
 });

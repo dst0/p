@@ -693,3 +693,63 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
   `packages/coding-agent/test/project-instructions-cache-integrity.test.ts`,
   `packages/coding-agent/test/project-instructions-recovery.test.ts`,
   `packages/coding-agent/docs/project-instructions.md`.
+
+### 2026-08-21 — Cache-boundary tests must canonicalize macOS temporary roots
+
+- **Status:** Resolved
+- **Task/context:** Adding direct corruption and lifecycle tests for the project-instruction compilation cache on macOS.
+- **Unexpected observation or failure:** Both direct cache tests failed the workspace-containment guard even though their cache directories were visibly nested beneath the temporary workspace.
+- **Evidence:** The fixtures supplied a `/var/folders/...` workspace root while `realpathSync()` resolved the cache authority through `/private/var/folders/...`; the focused suite passed after the fixture supplied the canonical workspace root used by production.
+- **Approaches tried:**
+  - **Attempt:** Pass the raw `mkdtempSync(tmpdir())` result directly to the low-level cache API.
+    - **Outcome:** Did not work
+    - **Why:** macOS exposes `/var` as a symlink, so string containment against a canonical cache path correctly rejected the noncanonical authority root.
+  - **Attempt:** Canonicalize the temporary workspace with `realpathSync()` before constructing cache options.
+    - **Outcome:** Worked
+    - **Why:** Both sides of the security boundary then used the same filesystem identity without weakening containment checks.
+- **Root cause:** The test bypassed the production processor, which canonicalizes the discovered workspace before calling cache primitives, and therefore omitted a required low-level API precondition.
+- **Resolution:** Direct cache tests now pass a canonical workspace root while retaining the raw temporary path only for cleanup.
+- **Verification:** `project-instructions-compilation-cache.test.ts` passes both successful-record and failure-backoff corruption lifecycles; the changed-line coverage gate passes at 99.01%.
+- **Prevention/follow-up:** Canonicalize both authority roots and candidate paths in direct filesystem-boundary fixtures; never relax containment logic to accommodate a path alias.
+- **Reusable learning:** On macOS, `/var` and `/private/var` can identify the same object but fail lexical containment; security tests must model the production canonicalization boundary.
+- **References:** `packages/coding-agent/test/project-instructions-compilation-cache.test.ts`, `packages/coding-agent/src/core/project-instructions/cache-safety.ts`.
+
+### 2026-08-21 — Atomic directory collisions must validate state, not errno
+
+- **Status:** Resolved
+- **Task/context:** Adversarial review of concurrent content-addressed project-instruction cache installation.
+- **Unexpected observation or failure:** After removing a non-atomic existence preflight, the collision handler accepted `EEXIST` and `ENOTEMPTY`, but Windows can report `EPERM` when renaming a temporary directory onto an existing deterministic version.
+- **Evidence:** A focused regression injected a Windows-style `EPERM` after a valid winner already existed; the old handler threw `Destination exists`, while the state-validating handler reused the winner and returned the same immutable version.
+- **Approaches tried:**
+  - **Attempt:** Enumerate the expected POSIX collision error codes.
+    - **Outcome:** Did not work
+    - **Why:** Rename error codes for an existing destination directory vary by platform.
+  - **Attempt:** On any rename error, accept only a destination that passes the complete immutable-version validation and otherwise rethrow the original error.
+    - **Outcome:** Worked
+    - **Why:** The decision now depends on authoritative state, so it is portable and cannot hide a failed install without a valid deterministic winner.
+- **Root cause:** The collision protocol treated an operating-system errno as the invariant instead of treating the integrity-checked destination as the invariant.
+- **Resolution:** `installVersion()` now validates the deterministic winner after every rename failure and rethrows unless that winner is complete and authoritative.
+- **Verification:** The Windows-style collision regression fails before the fix and passes after it; cache recovery and real cross-process same-result concurrency suites also pass.
+- **Prevention/follow-up:** For cross-platform atomic filesystem protocols, test representative foreign error codes and bind recovery to validated postconditions.
+- **Reusable learning:** An errno explains why an operation failed on one platform; a validated postcondition proves whether a concurrent operation already achieved the intended result.
+- **References:** `packages/coding-agent/test/project-instructions-cache-rename.test.ts`, `packages/coding-agent/src/core/project-instructions/cache.ts`.
+
+### 2026-08-21 — Built-in tools must be discoverable through CLI help
+
+- **Status:** Resolved
+- **Task/context:** Installed-CLI smoke verification for the new `read_rules` and `read_skills` tools.
+- **Unexpected observation or failure:** Both readers were active in sessions and accepted by `--tools`, but `p --help` omitted their names from the built-in tool catalog.
+- **Evidence:** The installed help output ended with the legacy built-ins while the session integration suite reported both readers active; a focused help regression failed on both missing names before the fix.
+- **Approaches tried:**
+  - **Attempt:** Treat the system-prompt routing text as sufficient discoverability.
+    - **Outcome:** Did not work
+    - **Why:** Users constructing an explicit `--tools` allowlist need the exact accepted names before a session starts.
+  - **Attempt:** Add both names and concise capability descriptions to the canonical CLI help output.
+    - **Outcome:** Worked
+    - **Why:** The installed command contract now matches the runtime tool registry.
+- **Root cause:** Tool registration and help text are maintained through separate paths, and the feature initially updated only runtime registration.
+- **Resolution:** `p --help` now advertises `read_rules` and `read_skills` beside the other built-ins.
+- **Verification:** `cli-help-project-instruction-tools.test.ts` fails before the help update and passes after it; the installed help will be rechecked after relinking.
+- **Prevention/follow-up:** Every new built-in tool must add a CLI-help contract assertion alongside runtime registration tests.
+- **Reusable learning:** A callable feature is not fully installed if users cannot discover its exact allowlist name from the product's canonical help surface.
+- **References:** `packages/coding-agent/test/cli-help-project-instruction-tools.test.ts`, `packages/coding-agent/src/cli/args.ts`.

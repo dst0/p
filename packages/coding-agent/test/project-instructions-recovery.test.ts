@@ -195,6 +195,10 @@ describe("project instruction compiler recovery", () => {
     ["blank body", async () => ({ body: " ", triggers: {} })],
     ["unknown link", async () => ({ body: "Read rules/not-cataloged.md", triggers: {} })],
     ["extra trigger", async () => ({ body: "Read rules/catalog.md", triggers: { "not-a-module": "Always" } })],
+    [
+      "non-record triggers",
+      async () => ({ body: "Read rules/catalog.md", triggers: [] as unknown as Record<string, string> }),
+    ],
   ])("fails closed for %s compiler output", async (_label, compiler) => {
     const workspace = createWorkspace();
     const content = createLargeContent("invalid");
