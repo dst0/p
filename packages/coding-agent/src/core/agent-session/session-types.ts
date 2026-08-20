@@ -21,6 +21,7 @@ import type {
   ToolDefinition,
 } from "../extensions/index.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import type { ProjectInstructionController } from "../project-instructions/index.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
@@ -101,6 +102,8 @@ export interface AgentSessionConfig {
   scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
   /** Resource loader for skills, prompts, themes, context files, system prompt */
   resourceLoader: ResourceLoader;
+  /** Prepared instruction cache and refresh lifecycle. */
+  projectInstructions?: ProjectInstructionController;
   /** SDK custom tools registered outside extensions */
   customTools?: ToolDefinition[];
   /** Whether every registered extension/custom tool starts active. */

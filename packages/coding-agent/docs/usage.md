@@ -135,7 +135,7 @@ p loads `AGENTS.md` or `CLAUDE.md` at startup from:
 - parent directories, walking up from the current working directory
 - the current directory
 
-Use context files for project conventions, commands, safety rules, and preferences. Disable loading with `--no-context-files` or `-nc`.
+Use context files for project conventions, commands, safety rules, and preferences. p hashes the complete source chain, injects an exact or compiled block under 5,000 characters, and keeps exact large-file sections available through `read_rules`. See [Project instructions](project-instructions.md). Disable loading with `--no-context-files` or `-nc`.
 
 ### System Prompt Files
 
@@ -241,7 +241,7 @@ cat README.md | p -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt`           | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt`                    | Disable all tools                                              |
 
-Built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`.
+Built-in tools: `read`, `read_rules`, `read_skills`, `semantic_search`, `bash`, `process`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`.
 
 `update_session_state` is active by default. The model is instructed to call it before other tools on each user turn so the durable goal and plan are revised explicitly instead of being inferred from the latest message. In interactive mode, `ask_user` and `confirm_user` are active by default. The model is instructed to use them only when you explicitly ask it to ask, collect information, or wait for confirmation. Type `/plan` or `/plan <request>` to enter plan mode: p may gather context and ask targeted questions, then must call `submit_plan` and wait for your approval before executing. The footer shows `PLAN` while this mode is active, and plan mode turns off automatically after you approve the suggested plan. Non-interactive modes do not enable user-input tools by default; RPC clients can enable them with `--tools` and answer the emitted UI requests.
 

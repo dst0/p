@@ -81,7 +81,7 @@ p
 /login  # Then select provider
 ```
 
-Then just talk to p. By default, p gives the model coding tools such as `read`, `write`, `edit`, and `bash`, plus `update_session_state` for explicit goal/plan updates before other tools on each user turn. In interactive mode, it also has narrow `ask_user` and `confirm_user` tools that it may use only when you explicitly ask it to ask, gather information, or wait for confirmation. Type `/plan` before a task to make p gather context, propose a plan, and wait for your approval before execution; the footer shows a `PLAN` badge until you approve the suggested plan. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [p packages](#p-packages).
+Then just talk to p. By default, p gives the model coding tools such as `read`, `write`, `edit`, and `bash`, plus `read_rules` and `read_skills` for cataloged on-demand instructions and `update_session_state` for explicit goal/plan updates before other tools on each user turn. In interactive mode, it also has narrow `ask_user` and `confirm_user` tools that it may use only when you explicitly ask it to ask, gather information, or wait for confirmation. Type `/plan` before a task to make p gather context, propose a plan, and wait for your approval before execution; the footer shows a `PLAN` badge until you approve the suggested plan. Add capabilities via [skills](#skills), [prompt templates](#prompt-templates), [extensions](#extensions), or [p packages](#p-packages).
 
 **Platform notes:** [Windows](docs/windows.md) | [Termux (Android)](docs/termux.md) | [tmux](docs/tmux.md) | [Terminal setup](docs/terminal-setup.md) | [Shell aliases](docs/shell-aliases.md)
 
@@ -392,7 +392,7 @@ p loads `AGENTS.md` (or `CLAUDE.md`) at startup from:
 - Parent directories (walking up from cwd)
 - Current directory
 
-Use for project instructions (`AGENTS.md`/`CLAUDE.md`), conventions, common commands. All matching files are concatenated.
+Use these files for project instructions, conventions, and common commands. p hashes the complete ordered source chain and caches a prompt-facing representation in `.pdev/instructions`. Small chains remain exact; larger chains become a sub-5,000-character routing block plus exact on-demand instruction modules. See [Project instructions](docs/project-instructions.md) for cache, compiler, integrity, and retrieval details.
 
 Disable context file loading with `--no-context-files` (or `-nc`).
 
@@ -667,7 +667,7 @@ cat README.md | p -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt` | Disable built-in tools by default but keep extension/custom tools enabled |
 | `--no-tools`, `-nt` | Disable all tools by default |
 
-Available built-in tools: `read`, `bash`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`
+Available built-in tools: `read`, `read_rules`, `read_skills`, `semantic_search`, `bash`, `process`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`
 
 `update_session_state` is active by default and records the current goal, plan, progress, and re-plans before other tools on each user turn. In interactive mode, `ask_user` and `confirm_user` are active by default but constrained by the system prompt to explicit user-requested information gathering or confirmation waits. `/plan` temporarily enables `submit_plan`; p stays in plan mode until that tool receives your approval, then restores the previous tool set and proceeds. In print and JSON modes, enable user-input tools explicitly with `--tools` only if the surrounding integration can answer UI requests; RPC mode can bridge those requests to a client.
 

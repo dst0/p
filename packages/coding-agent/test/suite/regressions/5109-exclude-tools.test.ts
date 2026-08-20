@@ -55,6 +55,8 @@ describe("regression #5109: exclude tools", () => {
         "dynamic_tool",
         "edit",
         "mark_session_progress",
+        "read_rules",
+        "read_skills",
         "sleep",
         "tool_search",
         "update_session_state",

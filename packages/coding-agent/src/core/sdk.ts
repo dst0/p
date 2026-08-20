@@ -17,6 +17,8 @@ import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefi
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
+import { createSessionProjectInstructionController } from "./project-instructions/session-controller.ts";
+import type { ProjectInstructionCompiler } from "./project-instructions/types.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
@@ -42,11 +44,8 @@ import {
 } from "./tools/index.ts";
 
 export interface CreateAgentSessionOptions {
-  /** Working directory for project-local discovery. Default: process.cwd() */
   cwd?: string;
-  /** Global config directory. Default: ~/.p/agent */
   agentDir?: string;
-
   /** Auth storage for credentials. Default: AuthStorage.create(agentDir/auth.json) */
   authStorage?: AuthStorage;
   /** Model registry. Default: ModelRegistry.create(authStorage, agentDir/models.json) */
@@ -97,6 +96,8 @@ export interface CreateAgentSessionOptions {
 
   /** Resource loader. When omitted, DefaultResourceLoader is used. */
   resourceLoader?: ResourceLoader;
+  /** Override the hash-miss project-instruction compiler. */
+  projectInstructionCompiler?: ProjectInstructionCompiler;
 
   /** Session manager. Default: SessionManager.create(cwd) */
   sessionManager?: SessionManager;
@@ -113,17 +114,11 @@ export interface CreateAgentSessionOptions {
   maxTokens?: number;
 }
 
-/** Result from createAgentSession */
 export interface CreateAgentSessionResult {
-  /** The created session */
   session: AgentSession;
-  /** Extensions result (for UI context setup in interactive mode) */
   extensionsResult: LoadExtensionsResult;
-  /** Warning if session was restored with a different model than saved */
   modelFallbackMessage?: string;
 }
-
-// Re-exports
 
 export type { InteractionMode } from "./agent-session.ts";
 export * from "./agent-session-runtime.ts";
@@ -139,7 +134,6 @@ export type {
 export type { PromptTemplate } from "./prompt-templates.ts";
 export type { Skill } from "./skills.ts";
 export type { Tool } from "./tools/index.ts";
-
 export {
   withFileMutationQueue,
   // Tool factories (for custom cwd)
@@ -159,12 +153,9 @@ export {
   createSubmitPlanTool,
 };
 
-// Helper Functions
-
 function getDefaultAgentDir(): string {
   return getAgentDir();
 }
-
 /**
  * Create an AgentSession with the specified options.
  *
@@ -205,7 +196,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
   let resourceLoader = options.resourceLoader;
 
-  // Use provided or create AuthStorage and ModelRegistry
   const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
   const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
   const authStorage = options.authStorage ?? AuthStorage.create(authPath);
@@ -280,12 +270,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       : (settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL);
   }
 
-  // Fall back to settings default
   if (thinkingLevel === undefined) {
     thinkingLevel = settingsManager.getDefaultThinkingLevel() ?? DEFAULT_THINKING_LEVEL;
   }
 
-  // Clamp to model capabilities
   if (!model) {
     thinkingLevel = "off";
   } else {
@@ -300,6 +288,8 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     "write",
     "sleep",
     "semantic_search",
+    "read_rules",
+    "read_skills",
     "update_session_state",
     "session_recall",
     "keep_context",
@@ -443,6 +433,15 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
+  const projectInstructions = await createSessionProjectInstructionController({
+    cwd,
+    resourceLoader,
+    modelRegistry,
+    settingsManager,
+    getModel: () => agent.state.model,
+    compiler: options.projectInstructionCompiler,
+  });
+
   const session = new AgentSession({
     agent,
     sessionManager,
@@ -450,6 +449,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     cwd,
     scopedModels: options.scopedModels,
     resourceLoader,
+    projectInstructions,
     customTools: options.customTools,
     includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
     modelRegistry,

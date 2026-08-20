@@ -7,6 +7,8 @@ import {
   createFinishWorkToolDefinition,
   createSubmitPlanToolDefinition,
 } from "../../tools/index.ts";
+import { createReadRulesToolDefinition } from "../../tools/read-rules.ts";
+import { createReadSkillsToolDefinition } from "../../tools/read-skills.ts";
 import { createToolDefinitionFromAgentTool } from "../../tools/tool-definition-wrapper.ts";
 import type { AgentSession } from "../agentsession.ts";
 import {
@@ -46,6 +48,8 @@ export function do__buildRuntime(
       });
   const builtInToolDefinitions: Record<string, ToolDefinition> = {
     ...baseToolDefinitions,
+    read_rules: createReadRulesToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
+    read_skills: createReadSkillsToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
     [UPDATE_SESSION_STATE_TOOL_NAME]: self._createUpdateSessionStateToolDefinition() as unknown as ToolDefinition,
     [MARK_SESSION_PROGRESS_TOOL_NAME]: self._createMarkSessionProgressToolDefinition() as unknown as ToolDefinition,
     submit_plan: createSubmitPlanToolDefinition({
@@ -104,6 +108,8 @@ export function do__buildRuntime(
         "bash",
         "edit",
         "write",
+        "read_rules",
+        "read_skills",
         "sleep",
         UPDATE_SESSION_STATE_TOOL_NAME,
         MARK_SESSION_PROGRESS_TOOL_NAME,
@@ -126,6 +132,7 @@ export async function do_reload(self: AgentSession): Promise<void> {
   self.syncQueueModesFromSettings();
   resetApiProviders();
   await self._resourceLoader.reload();
+  await self._projectInstructions.refresh();
   self._buildRuntime({
     activeToolNames: self.getActiveToolNames(),
     flagValues: previousFlagValues,

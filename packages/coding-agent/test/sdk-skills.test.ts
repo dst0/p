@@ -75,12 +75,19 @@ This is a test skill.
   });
 
   it("should use provided skills when resource loader supplies them", async () => {
+    const customSkillDir = join(tempDir, "skills", "custom-skill");
+    const customSkillPath = join(customSkillDir, "SKILL.md");
+    mkdirSync(customSkillDir, { recursive: true });
+    writeFileSync(
+      customSkillPath,
+      "---\nname: custom-skill\ndescription: A custom skill\n---\n\nCustom instructions.\n",
+    );
     const customSkill = {
       name: "custom-skill",
       description: "A custom skill",
-      filePath: "/fake/path/SKILL.md",
-      baseDir: "/fake/path",
-      sourceInfo: createSyntheticSourceInfo("/fake/path/SKILL.md", { source: "sdk" }),
+      filePath: customSkillPath,
+      baseDir: customSkillDir,
+      sourceInfo: createSyntheticSourceInfo(customSkillPath, { source: "sdk" }),
       disableModelInvocation: false,
     };
 
