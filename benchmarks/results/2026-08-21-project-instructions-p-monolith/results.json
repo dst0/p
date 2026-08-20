@@ -1,0 +1,150 @@
+{
+  "generatedAt": "2026-08-20T23:20:25.471Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.224"
+  },
+  "startupProbes": {},
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 2400,
+  "tasks": [
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 1,
+      "qualityPassed": 1,
+      "qualityScore": 6,
+      "qualityRawScore": 6,
+      "qualityMaxScore": 6,
+      "totalNudges": 0,
+      "totalPenalties": 0,
+      "timedOut": 0,
+      "failed": 0,
+      "averageWallMs": 1133256.459792,
+      "averageInputTokens": 77545,
+      "averageCachedTokens": 1612480,
+      "averageCacheWriteTokens": 0,
+      "averageOutputTokens": 23557,
+      "averageTotalTokens": 1713582,
+      "averageToolCalls": 64,
+      "averageToolErrors": 7
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 1133256.459792,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "nudges": 0,
+      "nudgePenalty": 0,
+      "recording": "recordings/p-run-1-monolith-split.jsonl.br",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 376,
+        "eventTypes": {
+          "message_end": 162,
+          "request_start": 43,
+          "tool_execution_start": 64,
+          "tool_execution_end": 64,
+          "turn_end": 43
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 77545,
+          "output": 23557,
+          "cacheRead": 1612480,
+          "cacheWrite": 0,
+          "totalTokens": 1713582
+        },
+        "turns": 43,
+        "assistantMessages": 43,
+        "toolCalls": 64,
+        "toolErrors": 7,
+        "toolNames": {
+          "update_session_state": 4,
+          "bash": 18,
+          "read": 6,
+          "write": 8,
+          "edit": 14,
+          "finish_work": 2,
+          "record_task_verification": 2,
+          "record_requirement_audit": 10
+        },
+        "stopReasons": {
+          "toolUse": 43
+        },
+        "errors": [],
+        "finalText": "Split src/monolith.ts into 3 focused modules while preserving all public exports:\n\n- **src/parser.ts**: Types (TaskStatus, SortKey, Task, TaskSummary, ReportOptions), parsing (parseTaskLine, parseTaskFile), shared helpers (cloneTask, normalizeTask, parseStatus)\n- **src/query.ts**: filterTasks, sortTasks, groupTasksByStatus, selectLargest\n- **src/report.ts**: summarizeTasks, formatSummary, serializeTasks, renderDashboard, runReport\n- **src/monolith.ts**: Compatibility facade re-exporting all public symbols\n\nAdded 47 new tests across 3 test files (parser.test.ts, query.test.ts, report.test.ts). Contract tests unmodified. All 50 tests pass, typecheck clean. No circular dependencies, no new dependencies installed. finish_notes.md created.",
+        "rawEventCount": 27015
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ],
+        "rawScore": 6,
+        "penalty": 0,
+        "nudges": 0,
+        "finishNotesCreated": true
+      }
+    }
+  ]
+}
