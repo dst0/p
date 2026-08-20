@@ -3,6 +3,8 @@ import { chmodSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
+
 const releaseScript = resolve("scripts/release.js");
 const versionBumpScript = resolve("scripts/version-bump.js");
 const workspacePackages = [
@@ -32,6 +34,13 @@ export function write(repoRoot, relativePath, content) {
   writeFileSync(target, content);
 }
 
+export function cloneReleaseFlowFixtureRepository(fixture, directoryName) {
+  const cloneRoot = join(fixture.root, directoryName);
+  git(fixture.root, "clone", fixture.remoteRoot, cloneRoot);
+  disableDetachedGitMaintenance(cloneRoot);
+  return cloneRoot;
+}
+
 function addPackageFiles(repoRoot) {
   const lockPackages = { "": { version: "0.4.0" } };
   for (const [path, name] of workspacePackages) {
@@ -57,6 +66,8 @@ export function createReleaseFlowFixture() {
   mkdirSync(repoRoot);
   git(root, "init", "--bare", "-b", "main", remoteRoot);
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(remoteRoot);
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "release-test@example.invalid");
   git(repoRoot, "config", "user.name", "Release Test");
   git(repoRoot, "remote", "add", "origin", remoteRoot);

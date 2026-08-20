@@ -53,7 +53,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/p-run-1-read-only.jsonl",
+      "recording": "recordings/p-run-1-read-only.jsonl.br",
       "stderr": "stderr/p-run-1-read-only.log",
       "workspace": "workspaces/p/run-1/read-only",
       "metrics": {
@@ -124,7 +124,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/original-run-1-read-only.jsonl",
+      "recording": "recordings/original-run-1-read-only.jsonl.br",
       "stderr": "stderr/original-run-1-read-only.log",
       "workspace": "workspaces/original/run-1/read-only",
       "metrics": {
@@ -187,7 +187,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/original-run-1-report.jsonl",
+      "recording": "recordings/original-run-1-report.jsonl.br",
       "stderr": "stderr/original-run-1-report.log",
       "workspace": "workspaces/original/run-1/report",
       "metrics": {
@@ -251,7 +251,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/p-run-1-report.jsonl",
+      "recording": "recordings/p-run-1-report.jsonl.br",
       "stderr": "stderr/p-run-1-report.log",
       "workspace": "workspaces/p/run-1/report",
       "metrics": {
@@ -323,7 +323,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/p-run-1-debug.jsonl",
+      "recording": "recordings/p-run-1-debug.jsonl.br",
       "stderr": "stderr/p-run-1-debug.log",
       "workspace": "workspaces/p/run-1/debug",
       "metrics": {
@@ -401,7 +401,7 @@
       "exitCode": 0,
       "signal": null,
       "timedOut": false,
-      "recording": "recordings/original-run-1-debug.jsonl",
+      "recording": "recordings/original-run-1-debug.jsonl.br",
       "stderr": "stderr/original-run-1-debug.log",
       "workspace": "workspaces/original/run-1/debug",
       "metrics": {

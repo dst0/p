@@ -5,6 +5,8 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
+
 const policyScript = resolve("scripts/release-pr-version-policy.js");
 
 function git(repoRoot, ...args) {
@@ -20,6 +22,7 @@ function write(repoRoot, path, content) {
 function fixture() {
   const repoRoot = mkdtempSync(join(tmpdir(), "p-pr-version-policy-"));
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "version-policy@example.invalid");
   git(repoRoot, "config", "user.name", "Version Policy Test");
   write(repoRoot, "package.json", '{"name":"root","version":"0.4.0","workspaces":["packages/*"]}\n');

@@ -5,6 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import test from "node:test";
 
+import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
 import { certifyReleaseAudit, writeReleaseAuditState } from "./release-audit-certificate.js";
 import { reconcileReleaseState } from "./release-transaction.js";
 
@@ -25,6 +26,8 @@ function createFixture() {
   mkdirSync(repoRoot);
   git(root, "init", "--bare", remoteRoot);
   git(repoRoot, "init", "-b", "main");
+  disableDetachedGitMaintenance(remoteRoot);
+  disableDetachedGitMaintenance(repoRoot);
   git(repoRoot, "config", "user.email", "recovery-test@example.invalid");
   git(repoRoot, "config", "user.name", "Recovery Test");
   git(repoRoot, "remote", "add", "origin", remoteRoot);

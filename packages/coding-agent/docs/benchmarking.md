@@ -1,8 +1,8 @@
 # Agent benchmarking
 
 The repository includes a comparative benchmark for this fork (`p`), the
-current `@earendil-works/pi-coding-agent` package, and optionally Kilo Code
-CLI. It runs the same underlying model against three TypeScript workloads
+current `@earendil-works/pi-coding-agent` package, and optional Kilo Code,
+Codex, and AGY CLIs. It runs the same underlying model against four TypeScript workloads
 and records each agent's JSON event stream. The workloads are deliberately
 large enough for planning, tool use, implementation, testing, and iteration to
 matter:
@@ -16,6 +16,9 @@ matter:
   engine with optimistic concurrency, idempotent commands, atomic batches,
   hash-chained JSONL replay, tamper detection, and hidden acceptance checks.
   This fixture allows 30 minutes per agent.
+- `durable-workflow-saga` — build a deterministic workflow and saga engine
+  with DAG scheduling, fenced leases, retries, compensation, and
+  tamper-evident recovery. This fixture allows 60 minutes per agent.
 
 ## Run it
 
@@ -45,7 +48,7 @@ npm run benchmark:agents -- \
   --models-file ~/.p/agent/models.json \
   --pi-version 0.82.1 \
   --kilo-model llm-orchestrator/sokann-qwen-27b \
-  --kilo-version 7.4.16 \
+  --kilo-version 7.4.17 \
   --kilo-config ~/.config/kilo/kilo.jsonc \
   --max-runtime-seconds 3600
 ```
@@ -56,7 +59,7 @@ before interpreting results. Kilo runs with `--pure --auto` and isolated
 temporary XDG config, data, cache, and state directories. Its source config is
 copied into that temporary directory and removed when the benchmark exits.
 
-The default run uses PI then P, three fixtures, one repetition, fixture-specific
+The default run uses PI then P, four fixtures, one repetition, fixture-specific
 timeouts, and a 15-minute overall deadline. `--agents` controls the fixed
 sequential order. Include a larger deadline for Kilo or repeated runs:
 
@@ -86,12 +89,15 @@ Each run creates `benchmarks/results/<timestamp>/` containing:
 
 - `report.md` — human-readable summary and per-task comparison.
 - `results.json` — machine-readable metrics and verification checks.
-- `recordings/*.jsonl.gz` — gzip-compressed raw JSONL session event recordings from each agent.
+- `recordings/*.jsonl.br` — individually Brotli Q6-compressed raw JSONL
+  session event recordings from each agent.
 - `stderr/*.log` — startup/provider diagnostics for each invocation.
 - `workspaces/` — final fixture files for inspecting the changes made.
 
-The benchmark reports wall time, input/output/total tokens, turns, tool calls,
-tool errors, retry/error events, and task quality checks. Kilo currently emits
+The benchmark reports wall time, input/output/total tokens, cached-read tokens,
+cache hit percentage, turns, tool calls, tool errors, retry/error events, and
+task quality checks. Cache hit percentage is cached-read tokens divided by the
+sum of input, cached-read, and cache-write prompt tokens. Kilo currently emits
 each JSONL event twice; raw recordings preserve those events, while calculated
 Kilo metrics deduplicate them by event type, part ID, and state. The quality
 checks run the fixture's test suite and typecheck; the calculator also has a
@@ -103,9 +109,13 @@ contiguous event positions, replay continuation, and hash-chain tamper
 detection. Reports distinguish a clean completion before timeout from a
 passing final workspace.
 
-Recordings are gzip-compressed directly to disk. Metric extraction retains
-only terminal message, tool, retry, and step events in memory, so long
-cumulative streaming-delta sessions do not exhaust the Node.js string limit.
+Each recording and closed diagnostic archive is compressed independently with
+Brotli quality 6. Metric extraction retains only terminal message, tool, retry,
+and step events in memory, so long cumulative streaming-delta sessions do not
+exhaust the Node.js string limit. Persisted result evidence replaces absolute
+output, repository, and home paths with portable placeholders. Kilo startup
+evidence retains runtime logs and sandbox policy but excludes volatile lock
+state, which can contain ephemeral credentials and host identity.
 
 The raw recordings can be decompressed or streamed directly, for example:
 
@@ -113,7 +123,7 @@ The raw recordings can be decompressed or streamed directly, for example:
 jq '.results[] | {agent, task, status, elapsedMs, tokens: .metrics.usage.totalTokens, toolCalls: .metrics.toolCalls, errors: .metrics.errors}' \
   benchmarks/results/<timestamp>/results.json
 
-gzip -dc benchmarks/results/<timestamp>/recordings/p-run-1-typescript-calculator.jsonl.gz | head
+brotli --decompress --stdout benchmarks/results/<timestamp>/recordings/p-run-1-typescript-calculator.jsonl.br | head
 ```
 
 Results are intentionally not treated as a universal ranking: one model, one

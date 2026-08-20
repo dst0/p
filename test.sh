@@ -82,5 +82,6 @@ echo "Running workspace $NPM_TEST_SCRIPT without API keys..."
 npm run "$NPM_TEST_SCRIPT" --workspaces --if-present
 
 if [ "$NPM_TEST_SCRIPT" = "test" ] || [ "$NPM_TEST_SCRIPT" = "test:coverage" ]; then
+  npm run test:scripts
   npm run test:release-audit
 fi

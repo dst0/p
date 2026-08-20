@@ -11,7 +11,7 @@
     "signal": null,
     "timedOut": false,
     "rawEventCount": 270,
-    "recording": "model-resolution.log.gz",
+    "recording": "model-resolution.log.br",
     "stderr": "model-resolution.stderr.log"
   },
   "resolvedModel": "mini-pc/sokann-qwen-27b",
@@ -22,7 +22,7 @@
     "signal": "SIGTERM",
     "timedOut": true,
     "rawEventCount": 5,
-    "recording": "request.jsonl.gz",
+    "recording": "request.jsonl.br",
     "stderr": "request.stderr.log",
     "responseMatched": true,
     "errors": []

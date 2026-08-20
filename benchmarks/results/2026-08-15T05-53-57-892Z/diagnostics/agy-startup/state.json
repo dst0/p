@@ -1,7 +1,7 @@
 {
   "status": "passed",
   "requestedModel": "gemini-3.6-flash-medium",
-  "recording": "request.jsonl.gz",
+  "recording": "request.jsonl.br",
   "stderr": "request.stderr.log",
   "elapsedMs": 8711.614000000001,
   "exitCode": 0,

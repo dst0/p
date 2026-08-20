@@ -17,6 +17,14 @@ import { dirname, join, resolve } from "node:path";
 import { performance } from "node:perf_hooks";
 import { fileURLToPath } from "node:url";
 import { createBrotliCompress, constants as zlibConstants } from "node:zlib";
+import { createBenchmarkReport } from "./benchmark-report.js";
+import { benchmarkModels, modelAliasForAgent } from "./benchmark-model-attribution.js";
+import { sanitizeBenchmarkEvidence } from "./benchmark-result-sanitization.js";
+import {
+	copyKiloRuntimeEvidence,
+	listKiloRuntimeDataEvidence,
+	listKiloRuntimeStateEvidence,
+} from "./benchmark-runtime-evidence.js";
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
@@ -61,7 +69,7 @@ function printHelp() {
 	console.log(`Usage:
   npm run benchmark:agents -- --model <provider/id> [options]
 
-Compare this checkout (p) with PI, optionally Kilo Code CLI and Codex CLI, using the same
+Compare this checkout (p) with PI and optional Kilo, Codex, and AGY CLIs, using the same
 underlying model and four deterministic TypeScript coding fixtures, including
 transactional event sourcing and an extreme durable workflow/saga challenge.
 
@@ -1412,17 +1420,6 @@ function parseJsonObjectAfterLine(output, line) {
 	return undefined;
 }
 
-function copyEvidenceTree(source, destination) {
-	if (!existsSync(source)) return;
-	ensureDir(destination);
-	for (const entry of readdirSync(source, { withFileTypes: true })) {
-		const sourcePath = join(source, entry.name);
-		const destinationPath = join(destination, entry.name);
-		if (entry.isDirectory()) copyEvidenceTree(sourcePath, destinationPath);
-		else if (entry.isFile()) copyFileSync(sourcePath, destinationPath);
-	}
-}
-
 const metricEventTypes = new Set([
 	"auto_retry_end",
 	"error",
@@ -1753,7 +1750,7 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 		diagnostics: join("diagnostics", "kilo-startup"),
 	};
 	try {
-		const resolutionRecording = "model-resolution.log.gz";
+		const resolutionRecording = "model-resolution.log.br";
 		const resolutionStderr = "model-resolution.stderr.log";
 		const resolutionResult = await runCommand(
 			commandForKiloModelResolution(options, configDir, workspace),
@@ -1808,11 +1805,10 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 		const dataRoot = join(configDir, "data");
 		const stateRoot = join(configDir, "state");
 		evidence.runtimeFiles = {
-			data: existsSync(dataRoot) ? listFiles(dataRoot) : [],
-			state: existsSync(stateRoot) ? listFiles(stateRoot) : [],
+			data: listKiloRuntimeDataEvidence(dataRoot),
+			state: listKiloRuntimeStateEvidence(stateRoot),
 		};
-		copyEvidenceTree(join(dataRoot, "kilo", "log"), join(diagnosticsDir, "runtime-logs"));
-		copyEvidenceTree(stateRoot, join(diagnosticsDir, "runtime-state"));
+		copyKiloRuntimeEvidence(dataRoot, stateRoot, diagnosticsDir);
 		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 	}
 }
@@ -2063,98 +2059,6 @@ function formatNumber(value) {
 	return Math.round(value).toLocaleString("en-US");
 }
 
-function average(rows, selector) {
-	if (rows.length === 0) return 0;
-	return rows.reduce((total, row) => total + selector(row), 0) / rows.length;
-}
-
-function createReport(options, versions, results, output, benchmarkTasks = tasks, startupProbes = {}) {
-	const completed = results.filter((result) => result.status !== "skipped");
-	const byAgent = (agent) => completed.filter((result) => result.agent === agent);
-	const summary = (rows) => ({
-		runs: rows.length,
-		passed: rows.filter((row) => row.status === "passed").length,
-		qualityPassed: rows.filter((row) => row.quality.passed).length,
-		qualityScore: rows.reduce((total, row) => total + row.quality.score, 0),
-		qualityRawScore: rows.reduce((total, row) => total + (row.quality.rawScore ?? row.quality.score), 0),
-		qualityMaxScore: rows.reduce((total, row) => total + row.quality.maxScore, 0),
-		totalNudges: rows.reduce((total, row) => total + (row.nudges ?? 0), 0),
-		totalPenalties: rows.reduce((total, row) => total + (row.quality.penalty ?? 0), 0),
-		timedOut: rows.filter((row) => row.status === "timed_out").length,
-		failed: rows.filter((row) => row.status === "failed").length,
-		averageWallMs: average(rows, (row) => row.elapsedMs),
-		averageInputTokens: average(rows, (row) => row.metrics.usage.input),
-		averageOutputTokens: average(rows, (row) => row.metrics.usage.output),
-		averageTotalTokens: average(rows, (row) => row.metrics.usage.totalTokens),
-		averageToolCalls: average(rows, (row) => row.metrics.toolCalls),
-		averageToolErrors: average(rows, (row) => row.metrics.toolErrors),
-	});
-	const summaries = Object.fromEntries(options.agents.map((agent) => [agent, summary(byAgent(agent))]));
-	const rankedAgents = options.agents
-		.filter((agent) => summaries[agent].runs > 0)
-		.toSorted((leftAgent, rightAgent) => {
-			const left = summaries[leftAgent];
-			const right = summaries[rightAgent];
-			return right.passed - left.passed
-				|| right.qualityPassed - left.qualityPassed
-				|| right.qualityScore / right.qualityMaxScore - left.qualityScore / left.qualityMaxScore
-				|| left.totalNudges - right.totalNudges
-				|| left.averageTotalTokens - right.averageTotalTokens
-				|| left.averageWallMs - right.averageWallMs;
-		});
-	const winner = rankedAgents[0];
-
-	let report = `# Agent benchmark report\n\n`;
-	report += `Generated: ${new Date().toISOString()}\n\n`;
-	report += `PI/P model alias: \`${options.model ?? "not selected"}\`\n\n`;
-	if (options.agents.includes("kilo")) report += `Kilo model alias: \`${options.kiloModel}\`\n\n`;
-	if (options.agents.includes("agy")) report += `AGY model: \`${options.agyModel}\`\n\n`;
-	if (startupProbes.kilo) {
-		report += `Kilo resolved backend model: \`${startupProbes.kilo.resolvedModel}\` (startup probe: ${startupProbes.kilo.status})\n\n`;
-	}
-	if (startupProbes.agy) {
-		report += `AGY resolved model: \`${startupProbes.agy.resolvedModel}\` (startup probe: ${startupProbes.agy.status})\n\n`;
-	}
-	report += `Versions: ${options.agents.map((agent) => `\`${agent} ${versions[agent]}\``).join(", ")}\n\n`;
-	report += `Sequential agent order: ${options.agents.map((agent) => `\`${agent}\``).join(" → ")}\n\n`;
-	report += `Runs: ${options.runs} repetition${options.runs === 1 ? "" : "s"} across ${benchmarkTasks.length} fixture${benchmarkTasks.length === 1 ? "" : "s"}; lower time/tokens/tool calls are better.\n\n`;
-	report += `## Summary\n\n`;
-	report += `| Agent | Completed passes | Quality passes | Weighted score | Nudges | Timed out | Failed | Avg wall time | Avg input tokens | Avg output tokens | Avg total tokens | Avg tool calls | Tool errors |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |\n`;
-	for (const agent of options.agents) {
-		const data = summaries[agent];
-		report += `| ${agent} | ${data.passed}/${data.runs} | ${data.qualityPassed}/${data.runs} | ${data.qualityScore}/${data.qualityMaxScore} | ${data.totalNudges} | ${data.timedOut} | ${data.failed} | ${formatMs(data.averageWallMs)} | ${formatNumber(data.averageInputTokens)} | ${formatNumber(data.averageOutputTokens)} | ${formatNumber(data.averageTotalTokens)} | ${data.averageToolCalls.toFixed(1)} | ${data.averageToolErrors.toFixed(1)} |\n`;
-	}
-	report += `\nSimple winner by completed pass count, then quality pass count, tokens, and time: **${winner ?? "none"}**. This is a directional result, not a general model or agent ranking.\n\n`;
-	report += `## Per-task results\n\n`;
-	report += `| Run | Agent | Task | Status | Wall time | Total tokens | Tool calls | Nudges | Checks | Weighted score |\n| ---: | --- | --- | --- | ---: | ---: | ---: | ---: | --- | ---: |\n`;
-	for (const result of results) {
-		const checks = result.status === "skipped" ? "skipped" : `${result.quality.checks.filter((check) => check.passed).length}/${result.quality.checks.length}`;
-		const weightedScore = result.status === "skipped"
-			? "—"
-			: (result.quality?.penalty ?? 0) > 0
-				? `${result.quality.score}/${result.quality.maxScore} (-${result.quality.penalty})`
-				: `${result.quality.score}/${result.quality.maxScore}`;
-		const nudges = result.status === "skipped" ? "—" : (result.nudges ?? 0);
-		report += `| ${result.run} | ${result.agent} | ${result.task} | ${result.status} | ${result.status === "skipped" ? "—" : formatMs(result.elapsedMs)} | ${result.status === "skipped" ? "—" : formatNumber(result.metrics.usage.totalTokens)} | ${result.status === "skipped" ? "—" : result.metrics.toolCalls} | ${nudges} | ${checks} | ${weightedScore} |\n`;
-	}
-	report += `\n## Interpretation\n\n`;
-	report += `- Session recordings are the compressed JSONL files under [recordings](./recordings). They contain the event stream used to calculate these metrics.\n`;
-	report += `- Completed passes require a clean agent exit before the timeout. Quality passes report the final workspace checks independently, so a timed-out agent can still leave a passing artifact.\n`;
-	report += `- Nudge watchdog monitors agent task completion: if an agent exits before timeout without creating \`finish_notes.md\`, a reminder is sent to continue. Each nudge incurs a ${nudgePenaltyPerNudge}-point penalty from the raw weighted score.\n`;
-	report += `- Fixture checks run the TypeScript test suite and typecheck; advanced fixtures score each hidden invariant independently. Inventory emphasizes atomicity and tamper safety; durable workflow adds DAG scheduling, lease fencing, retry timing, compensation, and adversarial recovery.\n`;
-	report += `- Agents run in the displayed order with fresh fixture workspaces and isolated configuration/session directories. Repeat with \`--runs 2\` and a sufficient overall deadline before treating small differences as meaningful.\n`;
-	if (options.agents.includes("kilo")) {
-		report += `- Kilo fixtures start only after bounded model-resolution and request probes pass. Probe recordings, stderr, runtime logs, and state evidence are under [diagnostics/kilo-startup](./diagnostics/kilo-startup).\n`;
-		report += `- Kilo currently emits duplicate JSONL events. Raw recordings preserve them; calculated Kilo metrics deduplicate events by event type, part ID, and state.\n`;
-	}
-	if (options.agents.includes("agy")) {
-		report += `- AGY fixtures start only after a bounded request probe confirms the exact requested model. Probe recording, stderr, and state evidence are under [diagnostics/agy-startup](./diagnostics/agy-startup).\n`;
-	}
-	report += `- Provider latency, model sampling, cache state, agent order, and package versions can dominate this small sample.\n`;
-	writeFileSync(join(output, "report.md"), report, "utf8");
-	return { ...summaries, winner };
-}
-
 async function main() {
 	const options = parseArgs(process.argv.slice(2));
 	if (options.help) {
@@ -2269,7 +2173,7 @@ async function main() {
 						signal: result.signal,
 						timedOut: result.timedOut,
 						error: result.error,
-						modelAlias: agent === "kilo" ? options.kiloModel : agent === "agy" ? options.agyModel : options.model,
+						modelAlias: modelAliasForAgent(agent, options),
 						nudges: result.nudges,
 						nudgePenalty: penalty,
 						recording: join("recordings", recordingName),
@@ -2287,16 +2191,19 @@ async function main() {
 	} finally {
 		rmSync(agentDirs.root, { recursive: true, force: true });
 	}
-	const summaries = createReport(options, versions, results, output, benchmarkTasks, startupProbes);
+	const summaries = createBenchmarkReport(
+		options,
+		versions,
+		results,
+		output,
+		benchmarkTasks,
+		startupProbes,
+		nudgePenaltyPerNudge,
+	);
 	const resultDocument = {
 		generatedAt: new Date().toISOString(),
 		agents: options.agents,
-		models: {
-			pi: options.model,
-			p: options.model,
-			kilo: options.agents.includes("kilo") ? options.kiloModel : undefined,
-			agy: options.agents.includes("agy") ? options.agyModel : undefined,
-		},
+		models: benchmarkModels(options),
 		versions,
 		startupProbes,
 		runs: options.runs,
@@ -2306,7 +2213,12 @@ async function main() {
 		summaries,
 		results,
 	};
-	writeFileSync(join(output, "results.json"), `${JSON.stringify(resultDocument, null, 2)}\n`, "utf8");
+	const sanitizedResultDocument = sanitizeBenchmarkEvidence(resultDocument, {
+		output,
+		repoRoot,
+		home: homedir(),
+	});
+	writeFileSync(join(output, "results.json"), `${JSON.stringify(sanitizedResultDocument, null, 2)}\n`, "utf8");
 	console.log(`Report: ${join(output, "report.md")}`);
 	if (!results.some((result) => result.status !== "skipped")) process.exitCode = 1;
 }

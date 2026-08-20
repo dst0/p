@@ -1,0 +1,34 @@
+{
+  "status": "failed",
+  "expectedResolvedModel": "mini-pc/sokann-qwen-27b-cache",
+  "kiloModelAlias": "mini-pc/sokann-qwen-27b-cache",
+  "timeoutSeconds": 60,
+  "diagnostics": "diagnostics/kilo-startup",
+  "modelResolution": {
+    "status": "failed",
+    "elapsedMs": 6289.308375,
+    "exitCode": 1,
+    "signal": null,
+    "timedOut": false,
+    "rawEventCount": 0,
+    "recording": "model-resolution.log.gz",
+    "stderr": "model-resolution.stderr.log"
+  },
+  "error": "Kilo model-resolution probe failed",
+  "runtimeFiles": {
+    "data": [
+      "kilo/.metadata_never_index",
+      "kilo/kilo.db",
+      "kilo/kilo.db-shm",
+      "kilo/kilo.db-wal",
+      "kilo/log/2026-08-16T204630.log",
+      "kilo/log/opencode.log",
+      "kilo/telemetry-id"
+    ],
+    "state": [
+      "kilo/.metadata_never_index",
+      "kilo/locks/55d884c8e6a23c0ba91172f1ced36a2276fb7557.lock/heartbeat",
+      "kilo/locks/55d884c8e6a23c0ba91172f1ced36a2276fb7557.lock/meta.json"
+    ]
+  }
+}

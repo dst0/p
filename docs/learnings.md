@@ -395,3 +395,226 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
 - **Prevention/follow-up:** Treat scheduled audit failures as lockfile evidence first; inspect the exact dependency chain and prefer the smallest patched transitive update that remains inside the parent range. In fresh worktrees, build internal workspace packages before interpreting module-not-found failures from the complete suite.
 - **Reusable learning:** A compatible semver range is not a security fix until the committed lockfile resolves to a patched artifact; verify the exact locked version and integrity. Clean dependency hydration and workspace build readiness are separate preconditions for the monorepo unit suite.
 - **References:** `package-lock.json`, `.github/workflows/npm-audit.yml`, `GHSA-2v37-7h3g-55p8`.
+
+### 2026-08-20 — Benchmark archives and reports must preserve format and attribution semantics
+
+- **Status:** Resolved
+- **Task/context:** Review and finish a local benchmark evidence cleanup that
+  removed large recordings, converted closed diagnostics, and extended report
+  telemetry.
+- **Unexpected observation or failure:** Eighteen recording deletions had no
+  replacement archives, a Brotli stream was written with a `.gz` name, cache
+  hit percentage omitted cache-write tokens, Codex results inherited the PI/P
+  model alias, and persisted result documents exposed machine-specific paths.
+- **Evidence:** Git status identified the unmatched recording deletions;
+  decompression proved existing diagnostic replacements were Brotli; a focused
+  report regression reproduced `50.0%` instead of `40.0%` for input/read/write
+  usage of 40/40/20; and generated JSON contained absolute home, repository,
+  and result paths.
+- **Approaches tried:**
+  - **Attempt:** Keep the deletions because the recordings were large, or put
+    all restored streams into one compressed bundle.
+    - **Outcome:** Rejected.
+    - **Why:** The recording evidence would be lost or no longer independently
+      addressable like the repository's other completed archives.
+  - **Attempt:** Infer compression from the filename and compute cache hits
+    from input plus cached reads only.
+    - **Outcome:** Failed.
+    - **Why:** The writer already emitted Brotli bytes, and cache writes are
+      prompt tokens in the canonical denominator.
+  - **Attempt:** Restore each source independently as Brotli Q6, extract report
+    logic for focused tests, and sanitize result documents before persistence.
+    - **Outcome:** Worked.
+    - **Why:** Every archive remains independently readable, report semantics
+      are regression-tested, and evidence is portable without changing runtime
+      measurements.
+- **Root cause:** The cleanup changed storage format and reporting fields
+  without an explicit round-trip inventory or focused semantic tests, while
+  agent-specific model attribution was incomplete.
+- **Resolution:** Restored all 18 recordings as separate `.jsonl.br` Brotli Q6
+  files, corrected the diagnostic extension, excluded volatile Kilo lock state,
+  added cache-write-aware telemetry, recorded the independent Codex model alias,
+  sanitized persisted paths, and reduced the legacy file-size baseline by
+  extracting the report module.
+- **Verification:** Each restored archive decompresses byte-for-byte to its Git
+  source; report and sanitization regressions pass; regenerated reports and
+  result JSON contain no absolute user paths; repository checks and the full
+  unit/reinstall gates provide the final integration proof.
+- **Prevention/follow-up:** Storage migrations must inventory every removed
+  artifact and prove decoded equivalence one file at a time. Report formulas
+  and agent/model attribution require focused fixtures before regenerating
+  historical evidence.
+- **Reusable learning:** A smaller archive is not a valid migration until its
+  decoded bytes, per-artifact boundaries, filename format, and downstream
+  report semantics are all proven.
+- **References:** `scripts/benchmark-agents.js`,
+  `scripts/benchmark-report.js`,
+  `scripts/benchmark-result-sanitization.js`,
+  `scripts/benchmark-runtime-evidence.js`,
+  `scripts/benchmark-report.test.js`,
+  `scripts/benchmark-result-sanitization.test.js`,
+  `packages/coding-agent/docs/benchmarking.md`
+
+### 2026-08-20 — One release-fixture cleanup race did not reproduce
+
+- **Status:** Partial
+- **Task/context:** Run the complete non-E2E unit gate after benchmark evidence
+  hardening.
+- **Unexpected observation or failure:** The first run passed 50 of 51 release
+  regressions but one fixture cleanup raised `ENOTEMPTY` while removing its
+  private temporary repository.
+- **Evidence:** The failing assertion was cleanup after the expected pre-commit
+  rejection, not the release-policy behavior under test. A complete rerun
+  passed with authoritative exit status zero.
+- **Approaches tried:**
+  - **Attempt:** Treat the first aggregate exit as a benchmark-code failure.
+    - **Outcome:** Rejected.
+    - **Why:** The decisive stack was in temporary-directory removal after the
+      policy assertion, outside every changed benchmark module.
+  - **Attempt:** Rerun the entire canonical unit harness without changing the
+    release fixture.
+    - **Outcome:** Worked.
+    - **Why:** All suites, including the same release regression and the new
+      benchmark tests, completed successfully.
+- **Root cause:** Unconfirmed; the one-time `ENOTEMPTY` indicates a late writer
+  or filesystem cleanup race in the release fixture. There is not enough
+  evidence to assign a code defect after one failure and one clean full rerun.
+- **Resolution:** No release-test behavior was weakened or changed. The final
+  gate uses the successful complete rerun, while the initial failure remains
+  recorded as non-authoritative diagnostic evidence.
+- **Verification:** `npm run test:unit` completed with exit status zero on the
+  full rerun; focused benchmark tests also pass independently.
+- **Prevention/follow-up:** If this cleanup failure recurs, capture the exact
+  remaining directory entries and owning processes before retrying, then add a
+  focused lifecycle regression instead of broad retry logic.
+- **Reusable learning:** Separate an assertion failure from teardown failure,
+  but require a complete clean rerun before treating a one-time cleanup race as
+  non-blocking.
+- **References:** `scripts/release-flow-certificate.test.js`, `test.sh`
+
+### 2026-08-20 — Pre-commit restaging must preserve already staged ignored evidence
+
+- **Status:** Resolved
+- **Task/context:** Commit independently restored benchmark recordings that are
+  intentionally ignored by the repository's general evidence rule.
+- **Unexpected observation or failure:** The pre-commit hook passed every
+  validation command, then rejected the commit while restaging a recording that
+  was already force-added to the index.
+- **Evidence:** Git reported that the recording directory was ignored at the
+  hook's plain `git add "$file"` step; the index already contained exactly 18
+  intentional `.jsonl.br` replacements.
+- **Approaches tried:**
+  - **Attempt:** Bypass the hook or temporarily change the ignore policy.
+    - **Outcome:** Rejected.
+    - **Why:** That would remove validation or broaden the permanent evidence
+      policy just to publish a reviewed exception.
+  - **Attempt:** Restage only current index members with NUL-delimited paths and
+    `git add -f --` after formatting.
+    - **Outcome:** Worked.
+    - **Why:** Force applies only to files already selected in the index, while
+      NUL delimiting also preserves filenames containing spaces.
+- **Root cause:** The hook forgot that an intentionally force-staged ignored
+  file remains ignored when the formatter restaging loop later calls plain
+  `git add`.
+- **Resolution:** Moved formatter restaging into a focused helper that reads the
+  current index safely, rejects partially staged paths before formatting, and
+  force-restages additions, modifications, and deletions only for those indexed
+  paths using literal Git pathspecs. The hook now also propagates helper
+  failures.
+- **Verification:** A temporary-repository regression force-stages an ignored
+  archive with special characters in its name, modifies it, and proves the
+  helper updates its index content without staging unrelated work. Additional
+  cases cover pre-staged deletion, deletion during formatting, partial staging,
+  colon-prefixed pathspec magic, and hook-level restaging failure.
+- **Prevention/follow-up:** Keep ignore exceptions explicit at initial staging;
+  post-validation restaging must operate only on paths already present in the
+  index.
+- **Reusable learning:** `git add -f` is safe for formatter restaging only when
+  its input is derived from the existing index rather than the working tree.
+- **References:** `.husky/pre-commit`, `scripts/restage-precommit-files.js`,
+  `scripts/pre-commit-restage.test.js`
+
+### 2026-08-20 — Detached Git maintenance raced release-fixture cleanup
+
+- **Status:** Resolved
+- **Task/context:** Complete the full non-E2E unit gate after benchmark and
+  pre-commit hardening.
+- **Unexpected observation or failure:** The release-policy assertions passed,
+  but recursive removal of a temporary Git fixture intermittently failed with
+  `ENOTEMPTY`; a second full run reproduced the same lifecycle failure.
+- **Evidence:** The directory left after the failed removal contained only a
+  newly written `repo/.git/objects/info/packs`, identifying a late Git object
+  maintenance writer after the release subprocess had returned.
+- **Approaches tried:**
+  - **Attempt:** Treat the first cleanup failure as a one-time filesystem event
+    after one clean rerun.
+    - **Outcome:** Failed.
+    - **Why:** A later authoritative full run reproduced the same late-writer
+      shape in another release fixture.
+  - **Attempt:** Add generic recursive-delete retries.
+    - **Outcome:** Rejected.
+    - **Why:** Retrying deletion would mask the unowned background process
+      rather than make fixture process ownership deterministic.
+  - **Attempt:** Disable automatic and detached maintenance/GC in both the
+    fixture repository and its bare remote.
+    - **Outcome:** Worked.
+    - **Why:** Release tests do not need optimization, and every Git writer now
+      remains synchronous with the fixture lifecycle.
+- **Root cause:** Git's automatic maintenance/GC policy was inherited by
+  short-lived release repositories, allowing detached object-info work to race
+  the test's synchronous cleanup.
+- **Resolution:** Release-flow fixtures now configure `maintenance.auto=false`,
+  `maintenance.autoDetach=false`, `gc.auto=0`, and `gc.autoDetach=false` on
+  the local repository, bare remote, and every temporary clone created under
+  the fixture root.
+- **Verification:** A focused regression proves all four repository-local
+  settings on the fixture repository, bare remote, and a managed clone; the
+  release-flow suite and complete unit gate pass without teardown residue.
+- **Prevention/follow-up:** Temporary release Git fixtures that recursively
+  delete repositories, remotes, or clones must disable detached maintenance
+  locally unless the test explicitly owns and joins that background lifecycle.
+- **Reusable learning:** A synchronous parent Git command does not prove that
+  auto-maintenance has no detached descendants; control the repository policy,
+  not the delete retry count.
+- **References:** `scripts/release-flow-test-fixture.js`,
+  `scripts/release-flow-certificate.test.js`
+
+### 2026-08-20 — Ignored archives can mask incomplete benchmark publication
+
+- **Status:** Resolved
+- **Task/context:** Publish restored and newly generated benchmark evidence after
+  the local archive-integrity gate passed.
+- **Unexpected observation or failure:** CI reported thirteen broken Brotli
+  references although the same test was green in the development worktree.
+- **Evidence:** Eleven referenced archives existed locally under ignored
+  recording paths but were absent from `git ls-files`: two replacements for
+  deleted gzip diagnostics and nine recordings for newly added result files.
+- **Approaches tried:**
+  - **Attempt:** Narrow the test because older benchmark evidence appeared to
+    be outside the migration scope.
+    - **Outcome:** Rejected after inspecting the exact targets.
+    - **Why:** Every reported target was task-owned and required by a changed or
+      newly added evidence document.
+  - **Attempt:** Require both filesystem existence and Git tracking for every
+    Brotli reference, then force-stage only the missing archives.
+    - **Outcome:** Worked.
+    - **Why:** The local gate now models the clean CI checkout while preserving
+      the repository's intentional broad ignore rule.
+- **Root cause:** `existsSync` treated ignored local archives as publishable
+  evidence, so the pre-commit test could not detect files omitted from the
+  index.
+- **Resolution:** Archive integrity now derives its target inventory from
+  `git ls-files`, rejects empty intent-to-add entries, and fully decodes the
+  staged Git blob; all eleven omitted archives were validated and explicitly
+  force-staged without broadening the ignore policy.
+- **Verification:** The strengthened test failed locally with the same thirteen
+  references as CI before staging and passed after all eleven unique targets
+  became tracked. The two converted diagnostics decode byte-for-byte to their
+  deleted gzip sources, and all eleven Brotli streams pass integrity checks.
+- **Prevention/follow-up:** Evidence-reference tests must assert publication
+  state, not only worktree state, whenever archive paths are intentionally
+  ignored.
+- **Reusable learning:** A clean local filesystem is not proof of a complete
+  commit; ignored dependencies require index-aware referential-integrity tests.
+- **References:** `scripts/benchmark-archive-references.test.js`, GitHub Actions
+  run `32297286225`.

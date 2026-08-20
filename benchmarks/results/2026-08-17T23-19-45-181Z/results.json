@@ -1,0 +1,149 @@
+{
+  "generatedAt": "2026-08-17T23:37:24.115Z",
+  "agents": [
+    "p"
+  ],
+  "models": {
+    "pi": "mini-pc/sokann-qwen-27b-cache",
+    "p": "mini-pc/sokann-qwen-27b-cache"
+  },
+  "versions": {
+    "pi": "0.82.1",
+    "p": "0.4.224"
+  },
+  "startupProbes": {},
+  "runs": 1,
+  "timeoutSeconds": 300,
+  "maxRuntimeSeconds": 2400,
+  "tasks": [
+    {
+      "id": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "timeoutSeconds": 1200
+    }
+  ],
+  "summaries": {
+    "p": {
+      "runs": 1,
+      "passed": 1,
+      "qualityPassed": 1,
+      "qualityScore": 6,
+      "qualityRawScore": 6,
+      "qualityMaxScore": 6,
+      "totalNudges": 0,
+      "totalPenalties": 0,
+      "timedOut": 0,
+      "failed": 0,
+      "averageWallMs": 1056618.391125,
+      "averageInputTokens": 60285,
+      "averageCachedTokens": 2080455,
+      "averageOutputTokens": 18955,
+      "averageTotalTokens": 2159695,
+      "averageToolCalls": 70,
+      "averageToolErrors": 1
+    },
+    "winner": "p"
+  },
+  "results": [
+    {
+      "run": 1,
+      "agent": "p",
+      "task": "monolith-split",
+      "description": "Split a large existing TypeScript module into focused files without changing its public behavior",
+      "status": "passed",
+      "elapsedMs": 1056618.391125,
+      "exitCode": 0,
+      "signal": null,
+      "timedOut": false,
+      "modelAlias": "mini-pc/sokann-qwen-27b-cache",
+      "nudges": 0,
+      "nudgePenalty": 0,
+      "recording": "recordings/p-run-1-monolith-split.jsonl.br",
+      "stderr": "stderr/p-run-1-monolith-split.log",
+      "workspace": "workspaces/p/run-1/monolith-split",
+      "metrics": {
+        "eventCount": 457,
+        "eventTypes": {
+          "message_end": 199,
+          "request_start": 59,
+          "tool_execution_start": 70,
+          "tool_execution_end": 70,
+          "turn_end": 59
+        },
+        "model": {
+          "provider": "mini-pc-11450",
+          "id": "mini-pc/sokann-qwen-27b-cache",
+          "api": "openai-completions"
+        },
+        "usage": {
+          "input": 60285,
+          "output": 18955,
+          "cacheRead": 2080455,
+          "cacheWrite": 0,
+          "totalTokens": 2159695
+        },
+        "turns": 59,
+        "assistantMessages": 59,
+        "toolCalls": 70,
+        "toolErrors": 1,
+        "toolNames": {
+          "update_session_state": 1,
+          "read": 7,
+          "bash": 17,
+          "record_task_verification": 8,
+          "write": 10,
+          "edit": 5,
+          "record_requirement_audit": 21,
+          "finish_work": 1
+        },
+        "stopReasons": {
+          "toolUse": 59
+        },
+        "errors": [],
+        "finalText": "Split src/monolith.ts into three focused modules (parser.ts, query.ts, report.ts) with a small compatibility facade preserving all public exports. Added 42 tests total (3 contract + 29 new module tests). Both npm test and npm run typecheck pass cleanly. Created finish_notes.md.",
+        "rawEventCount": 20806
+      },
+      "quality": {
+        "passed": true,
+        "score": 6,
+        "maxScore": 6,
+        "checks": [
+          {
+            "weight": 1,
+            "name": "README, config, and contract preserved",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "monolith reduced to a compatibility facade",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "parser, query, and report modules exist",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "agent added extracted-module tests",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm test passes",
+            "passed": true
+          },
+          {
+            "weight": 1,
+            "name": "npm run typecheck passes",
+            "passed": true
+          }
+        ],
+        "rawScore": 6,
+        "penalty": 0,
+        "nudges": 0,
+        "finishNotesCreated": true
+      }
+    }
+  ]
+}
