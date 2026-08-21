@@ -618,3 +618,226 @@ Sanitize all evidence and never include credentials, tokens, private keys, custo
   commit; ignored dependencies require index-aware referential-integrity tests.
 - **References:** `scripts/benchmark-archive-references.test.js`, GitHub Actions
   run `32297286225`.
+
+### 2026-08-21 — Bounded project prompts need exact retrievable authority and independently keyed derivations
+
+- **Status:** Resolved
+- **Task/context:** Replace positional AGENTS/CLAUDE prompt truncation with a
+  hash-driven processor, bounded injected block, and separate rule and skill
+  readers.
+- **Unexpected observation or failure:** The old 6,000-character keyword scan
+  retained only 36 of 257 nonblank repository instruction lines and dropped
+  every rule from the version-bump section onward. An initial replacement also
+  called the model for small exact files, permanently cached failed
+  compilations, recompiled when only skills changed, trusted cache-declared
+  skill roots, and could corrupt a surrogate pair at a module boundary.
+- **Evidence:** Direct system-prompt measurement showed an approximately
+  37,000-character prompt and the exact 36/257 retained-line result. Focused
+  adversarial reproductions exercised a forged self-consistent manifest with
+  `baseDir` changed to `/`, two same-result cold-start processes, mixed-input
+  live sessions, a 24,000-byte Unicode boundary, no-auth then working-compiler
+  recovery, oversized resources, and a catalog larger than 512,000 bytes.
+  The first installed local-model compile also ended with sanitized evidence
+  `SyntaxError: Unexpected end of JSON input` while emitting every module
+  trigger.
+- **Approaches tried:**
+  - **Attempt:** Keep a positional keyword excerpt under a fixed limit.
+    - **Outcome:** Did not work
+    - **Why:** Source order, not rule importance, decided which authoritative
+      constraints disappeared.
+  - **Attempt:** Store only a model-generated summary and treat extracted rules
+    as ordinary skills.
+    - **Outcome:** Rejected
+    - **Why:** A summary is lossy authority, and skill discovery semantics do
+      not express mandatory repository instructions.
+  - **Attempt:** Hash the combined AGENTS and skill input and compile on every
+    miss.
+    - **Outcome:** Did not work
+    - **Why:** It disclosed small files unnecessarily and resent unchanged
+      instructions whenever an unrelated skill changed.
+  - **Attempt:** Keep exact rule modules, key the model derivation only by the
+    AGENTS chain, and build the skill catalog deterministically.
+    - **Outcome:** Worked
+    - **Why:** Exact authority stays locally retrievable, small inputs avoid the
+      provider, and skill-only changes do not invalidate model work.
+- **Root cause:** Prompt budgeting, authoritative storage, model derivation,
+  skill discovery, and cache authority were treated as one lossy prompt-format
+  operation instead of separate identities and trust boundaries.
+- **Resolution:** Measure exact injection first; for overflow, preserve every
+  UTF-8-safe exact module and inject only bounded routing. Cache successful
+  compiler output by AGENTS hash, retry failures, paginate catalogs, pin live
+  sessions to immutable versions, preflight read sizes, provide an ordinary-read
+  fallback guide, and deep-compare cached source/module/canonical-skill records
+  with fresh discovery before trusting paths. Record failed compiler attempts
+  by model identity with a bounded backoff so fallback remains recoverable
+  without repeating a slow failure on every startup. Keep model trigger
+  overrides optional because deterministic heading triggers already provide a
+  complete fallback; this leaves the model's bounded output budget for the
+  optimized routing body.
+- **Verification:** Six focused suites pass 33 tests, including cross-process,
+  tamper, recovery, Unicode, pagination, allowlist, and size-limit regressions.
+  The complete non-E2E gate passes 262 Vitest files and 2,274 tests, with all
+  Node and Python segments at zero failures; `npm run check` and
+  `./reinstall.sh` pass. A live first compile produced a 4,929-character block,
+  reconstructed all three sources exactly, and a cached second startup reached
+  the TUI in under five seconds; `read_rules` retrieved the late Version Bump
+  module and completed with `V3_READ_RULES_OK`.
+- **Prevention/follow-up:** Preserve the strict whole-block budget and add a
+  regression for every new cache identity, retrieval route, or provider
+  failure transition. Never let a mutable global pointer invalidate an already
+  prepared session or let cached metadata define filesystem authority.
+- **Reusable learning:** Separate source authority, model-derived routing, and
+  deterministic catalogs by the narrowest relevant hash; bound only the
+  injected representation, never the retrievable authoritative content.
+- **References:** `packages/coding-agent/src/core/project-instructions/`,
+  `packages/coding-agent/test/project-instructions-cache-integrity.test.ts`,
+  `packages/coding-agent/test/project-instructions-recovery.test.ts`,
+  `packages/coding-agent/docs/project-instructions.md`.
+
+### 2026-08-21 — Cache-boundary tests must canonicalize macOS temporary roots
+
+- **Status:** Resolved
+- **Task/context:** Adding direct corruption and lifecycle tests for the project-instruction compilation cache on macOS.
+- **Unexpected observation or failure:** Both direct cache tests failed the workspace-containment guard even though their cache directories were visibly nested beneath the temporary workspace.
+- **Evidence:** The fixtures supplied a `/var/folders/...` workspace root while `realpathSync()` resolved the cache authority through `/private/var/folders/...`; the focused suite passed after the fixture supplied the canonical workspace root used by production.
+- **Approaches tried:**
+  - **Attempt:** Pass the raw `mkdtempSync(tmpdir())` result directly to the low-level cache API.
+    - **Outcome:** Did not work
+    - **Why:** macOS exposes `/var` as a symlink, so string containment against a canonical cache path correctly rejected the noncanonical authority root.
+  - **Attempt:** Canonicalize the temporary workspace with `realpathSync()` before constructing cache options.
+    - **Outcome:** Worked
+    - **Why:** Both sides of the security boundary then used the same filesystem identity without weakening containment checks.
+- **Root cause:** The test bypassed the production processor, which canonicalizes the discovered workspace before calling cache primitives, and therefore omitted a required low-level API precondition.
+- **Resolution:** Direct cache tests now pass a canonical workspace root while retaining the raw temporary path only for cleanup.
+- **Verification:** `project-instructions-compilation-cache.test.ts` passes both successful-record and failure-backoff corruption lifecycles; the changed-line coverage gate passes at 99.01%.
+- **Prevention/follow-up:** Canonicalize both authority roots and candidate paths in direct filesystem-boundary fixtures; never relax containment logic to accommodate a path alias.
+- **Reusable learning:** On macOS, `/var` and `/private/var` can identify the same object but fail lexical containment; security tests must model the production canonicalization boundary.
+- **References:** `packages/coding-agent/test/project-instructions-compilation-cache.test.ts`, `packages/coding-agent/src/core/project-instructions/cache-safety.ts`.
+
+### 2026-08-21 — Atomic directory collisions must validate state, not errno
+
+- **Status:** Resolved
+- **Task/context:** Adversarial review of concurrent content-addressed project-instruction cache installation.
+- **Unexpected observation or failure:** After removing a non-atomic existence preflight, the collision handler accepted `EEXIST` and `ENOTEMPTY`, but Windows can report `EPERM` when renaming a temporary directory onto an existing deterministic version.
+- **Evidence:** A focused regression injected a Windows-style `EPERM` after a valid winner already existed; the old handler threw `Destination exists`, while the state-validating handler reused the winner and returned the same immutable version.
+- **Approaches tried:**
+  - **Attempt:** Enumerate the expected POSIX collision error codes.
+    - **Outcome:** Did not work
+    - **Why:** Rename error codes for an existing destination directory vary by platform.
+  - **Attempt:** On any rename error, accept only a destination that passes the complete immutable-version validation and otherwise rethrow the original error.
+    - **Outcome:** Worked
+    - **Why:** The decision now depends on authoritative state, so it is portable and cannot hide a failed install without a valid deterministic winner.
+- **Root cause:** The collision protocol treated an operating-system errno as the invariant instead of treating the integrity-checked destination as the invariant.
+- **Resolution:** `installVersion()` now validates the deterministic winner after every rename failure and rethrows unless that winner is complete and authoritative.
+- **Verification:** The Windows-style collision regression fails before the fix and passes after it; cache recovery and real cross-process same-result concurrency suites also pass.
+- **Prevention/follow-up:** For cross-platform atomic filesystem protocols, test representative foreign error codes and bind recovery to validated postconditions.
+- **Reusable learning:** An errno explains why an operation failed on one platform; a validated postcondition proves whether a concurrent operation already achieved the intended result.
+- **References:** `packages/coding-agent/test/project-instructions-cache-rename.test.ts`, `packages/coding-agent/src/core/project-instructions/cache.ts`.
+
+### 2026-08-21 — Built-in tools must be discoverable through CLI help
+
+- **Status:** Resolved
+- **Task/context:** Installed-CLI smoke verification for the new `read_rules` and `read_skills` tools.
+- **Unexpected observation or failure:** Both readers were active in sessions and accepted by `--tools`, but `p --help` omitted their names from the built-in tool catalog.
+- **Evidence:** The installed help output ended with the legacy built-ins while the session integration suite reported both readers active; a focused help regression failed on both missing names before the fix.
+- **Approaches tried:**
+  - **Attempt:** Treat the system-prompt routing text as sufficient discoverability.
+    - **Outcome:** Did not work
+    - **Why:** Users constructing an explicit `--tools` allowlist need the exact accepted names before a session starts.
+  - **Attempt:** Add both names and concise capability descriptions to the canonical CLI help output.
+    - **Outcome:** Worked
+    - **Why:** The installed command contract now matches the runtime tool registry.
+- **Root cause:** Tool registration and help text are maintained through separate paths, and the feature initially updated only runtime registration.
+- **Resolution:** `p --help` now advertises `read_rules` and `read_skills` beside the other built-ins.
+- **Verification:** `cli-help-project-instruction-tools.test.ts` fails before the help update and passes after it; the installed help will be rechecked after relinking.
+- **Prevention/follow-up:** Every new built-in tool must add a CLI-help contract assertion alongside runtime registration tests.
+- **Reusable learning:** A callable feature is not fully installed if users cannot discover its exact allowlist name from the product's canonical help surface.
+- **References:** `packages/coding-agent/test/cli-help-project-instruction-tools.test.ts`, `packages/coding-agent/src/cli/args.ts`.
+
+### 2026-08-21 — Benchmark stop gates must define every degradation dimension
+
+- **Status:** Partial
+- **Task/context:** Comparing the compiled project-instruction prompt against the latest same-model `p` result for four benchmark fixtures, with an instruction to stop on the first degradation.
+- **Unexpected observation or failure:** Calculator improved across quality, runtime, tokens, and tool errors, while monolith retained 6/6 quality and used 20.7% fewer tokens but ran 7.3% slower and increased tool errors from one to seven.
+- **Evidence:** Calculator completed in 469.7 seconds versus 649.4 with 939,560 versus 1,171,998 tokens. Monolith completed in 1,133.3 seconds versus 1,056.6 with 1,713,582 versus 2,159,695 tokens; its failed iterations included five shell commands, one edit, and one premature finish attempt.
+- **Approaches tried:**
+  - **Attempt:** Treat only fixture quality and terminal status as degradation criteria.
+    - **Outcome:** Incomplete
+    - **Why:** It would label a materially slower, more error-prone run as unchanged even though the user's stop instruction said any degradation.
+  - **Attempt:** Continue inventory and saga to average out the mixed result.
+    - **Outcome:** Rejected
+    - **Why:** A single run cannot establish causality, and continuing would violate the explicit stop-on-first-degradation cost guard.
+  - **Attempt:** Finish the active monolith task, compare all reported dimensions, then stop before starting inventory.
+    - **Outcome:** Worked
+    - **Why:** It produced a complete comparable result while avoiding roughly 95 minutes of additional baseline runtime.
+- **Root cause:** The benchmark is multidimensional and nondeterministic. Reduced prompt/token volume did not prevent model-level implementation mistakes from dominating wall time in one fixture, so the processor cannot be credited with either the slowdown or a universal speedup from one repetition.
+- **Resolution:** Preserve the calculator and monolith reports, record the mixed evidence in the PR, keep the feature draft, and leave inventory and saga unstarted.
+- **Verification:** Both completed fixtures passed at 6/6; the stop occurred only after monolith's final report confirmed the runtime and tool-error regressions.
+- **Prevention/follow-up:** Before future benchmark gates, name primary quality/status invariants plus secondary runtime, token, and error tolerances. Use repeated runs only when the user authorizes the additional cost needed for a causal performance claim.
+- **Reusable learning:** A lower-token prompt can coexist with a slower agent run; benchmark release gates must compare quality, terminal status, runtime, tokens, and execution errors without attributing one-run variance to the prompt change.
+- **References:** `benchmarks/results/2026-08-21-project-instructions-p-calculator/`, `benchmarks/results/2026-08-21-project-instructions-p-monolith/`.
+
+### 2026-08-21 — Long processes must outlive command-output guards
+
+- **Status:** Resolved
+- **Task/context:** Continue the compiled project-instruction benchmark with the event-sourced inventory fixture and run the repository's full unit gate.
+- **Unexpected observation or failure:** The first task-3 attempt stopped after 120 seconds without producing `results.json`, even though the benchmark command redirected its visible output to a file. The first full-unit invocation later hit the same wrapper guard after all visible suites were green.
+- **Evidence:** The wrapper reported its 120-second/8 MB limit, the benchmark process was gone, and the result directory contained only a partial compressed recording. Detached runners using the same benchmark and unit commands completed normally and produced authoritative zero process exits where applicable.
+- **Approaches tried:**
+  - **Attempt:** Keep the long-running benchmark inside the command-compression wrapper with shell redirection.
+    - **Outcome:** Did not work
+    - **Why:** The wrapper lifecycle still governed the child process and terminated it at its own guard.
+  - **Attempt:** Launch a detached child with file-backed status and output, then poll only the small status file.
+    - **Outcome:** Worked
+    - **Why:** The benchmark lifetime no longer depended on the command-output transport, while progress and exit status remained observable.
+- **Root cause:** Output redirection reduced displayed noise but did not detach process ownership from the wrapper's runtime and output limits.
+- **Resolution:** Preserve the partial attempt as local aborted evidence, rerun through a detached status-file runner, and use only the completed `results.json` for comparison.
+- **Verification:** The restarted inventory run exited zero after 1,790.8 seconds and produced a 95/100 failed quality result with a complete Brotli recording and report. The detached full-unit gate also exited zero with all Node, Vitest, release, hook, and Python segments passing.
+- **Prevention/follow-up:** Run benchmarks or test gates whose expected duration/output exceeds wrapper limits through a detached, status-file-backed launcher; keep active logs uncompressed and store completed recordings with Brotli Q6.
+- **Reusable learning:** Redirecting output does not necessarily detach lifecycle authority; long jobs need an explicit process-lifetime boundary plus a separately polled completion contract.
+- **References:** `benchmarks/results/2026-08-21-project-instructions-p-inventory/`.
+
+### 2026-08-21 — Major-release authorization must be exact and receipt-bound
+
+- **Status:** Resolved
+- **Task/context:** Permit the explicitly approved `5.0.1` release without weakening the certified release transaction for later major versions.
+- **Unexpected observation or failure:** A simple boolean `--allow-major` implementation would have authorized every future major target, exceeding the user's one-target approval. Adversarial review then found that active transaction state remained mutable after token issuance, so a minor-release token could be reused after rewriting its target and certificate metadata.
+- **Evidence:** The first implementation accepted `6.0.0` whenever the boolean option was true. A second regression certified and began `0.5.0`, rewrote active state to `5.0.1`, and successfully invoked the version bump with the original token; a self-rehashed certificate with contradictory authorization also passed inspection. A final adversarial case changed only stored evidence, which left the scalar evidence hash, certificate ID, and token hash unchanged and initially reached version mutation.
+- **Approaches tried:**
+  - **Attempt:** Remove the no-major guard globally.
+    - **Outcome:** Rejected
+    - **Why:** It would permanently broaden release authority beyond the requested target.
+  - **Attempt:** Accept any major target when `--allow-major` is present.
+    - **Outcome:** Rejected
+    - **Why:** A CLI claim alone did not encode the exact scope of the approval.
+  - **Attempt:** Allow only the reviewed `5.0.1` target and bind the authorization state into the audit certificate and persisted release receipt.
+    - **Outcome:** Incomplete
+    - **Why:** The certificate hash covered authorization, but the active token authenticated only its random secret and trusted mutable target fields after certification.
+  - **Attempt:** Revalidate immutable certificate authority on every active transition and bind the token hash to the token, certificate ID, and exact target.
+    - **Outcome:** Worked
+    - **Why:** Rewriting target, authorization, certificate identity, or evidence now invalidates certificate authority or the one-time token before any manifest write or receipt creation.
+- **Root cause:** The former invariant modeled every major release as forbidden, while a generic override modeled authorization too broadly and the first transaction design failed to carry immutable certificate authority through active states.
+- **Resolution:** Add an exact-target `--allow-major` path across release auditing and execution, include the authorization state in certificate identity and receipt schema, reapply target policy and evidence hashing from the certified base revision on every transition, and bind the one-time token to certificate ID plus target.
+- **Verification:** Focused policy, certificate, version-bump, receipt-forgery, active-state mutation, and full release-flow tests prove default rejection, exact `5.0.1` acceptance, unchanged files after forged-state attempts, receipt rejection, tagging, and atomic push.
+- **Prevention/follow-up:** Every future major target requires an explicit policy diff, user authorization, certificate-schema review, and end-to-end release-flow regression.
+- **Reusable learning:** Exceptional release authority should name one exact target and survive every downstream verification boundary; a generic bypass flag is broader than a one-release approval.
+- **References:** `scripts/release-target-policy.js`, `scripts/release-audit-certificate.js`, `scripts/release-certificate-receipt.js`, `scripts/release-flow-certificate.test.js`.
+
+### 2026-08-21 — Single-run prompt benchmarks can improve quality while regressing efficiency
+- **Status:** Partial
+- **Task/context:** Continue the compiled project-instruction benchmark on the durable workflow saga after the user accepted the earlier monolith regression and requested tasks three and four.
+- **Unexpected observation or failure:** Task three fell from 100/100 to 95/100 because generated event hashes omitted payload data, while task four rose from 105/158 to 121/158 but retained its timeout and used 158.3% more tokens with six additional tool errors.
+- **Evidence:** The same-model task-three comparison was 95 versus 100 weighted points. The task-four comparison was 121 versus 105, 2,815,332 versus 1,089,820 tokens, 13 versus 7 tool errors, and approximately 3,600 seconds for both runs.
+- **Approaches tried:**
+ - **Attempt:** Infer a universal regression from task three's single failed invariant.
+  - **Outcome:** Rejected
+  - **Why:** Task four subsequently improved sixteen weighted points and repaired several baseline invariants, showing fixture- and sample-dependent outcomes.
+ - **Attempt:** Infer a universal win from the net score increase across tasks three and four.
+  - **Outcome:** Rejected
+  - **Why:** Both are single samples, task three lost correctness, and task four's token and tool-error costs increased materially.
+- **Root cause:** The benchmark combines stochastic model choices with multiple outcome dimensions. Richer retrieved instructions may change audit behavior and token consumption, but these unpaired single runs cannot isolate that effect from sampling, cache, provider latency, or implementation-path variance.
+- **Resolution:** Preserve both outcomes as mixed evidence and report quality, status, runtime, tokens, and tool errors independently.
+- **Verification:** Completed result files and Brotli recordings exist for both task-three inventory and task-four saga runs, with comparisons against their latest same-model baselines.
+- **Prevention/follow-up:** For a causal decision, run randomized paired A/B trials on the same revision with project-instruction processing enabled and disabled, using at least three to five repetitions per fixture and correctness as a hard primary gate.
+- **Reusable learning:** Aggregate score can improve while a correctness invariant and efficiency regress; never collapse a one-run agent benchmark into a single win/loss claim.
+- **References:** `benchmarks/results/2026-08-21-project-instructions-p-inventory/`, `benchmarks/results/2026-08-21-project-instructions-p-saga/`.

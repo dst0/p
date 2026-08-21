@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { buildSystemPrompt, formatContextFileForPrompt } from "../src/core/system-prompt.ts";
 
 describe("buildSystemPrompt", () => {
@@ -147,6 +148,29 @@ describe("buildSystemPrompt", () => {
     });
     expect(prompt).toContain("<project_context>");
     expect(prompt).toContain("Test Rules");
+  });
+
+  it("uses the prepared project block instead of raw resources in custom prompt mode", () => {
+    const prompt = buildSystemPrompt({
+      cwd: "/test",
+      customPrompt: "Custom prompt",
+      projectInstructions: '<project_instructions mode="compiled">bounded routing</project_instructions>',
+      contextFiles: [{ path: "/test/AGENTS.md", content: "RAW_CONTEXT_SENTINEL" }],
+      skills: [
+        {
+          name: "raw-skill",
+          description: "RAW_SKILL_SENTINEL",
+          filePath: "/test/raw-skill/SKILL.md",
+          baseDir: "/test/raw-skill",
+          sourceInfo: createSyntheticSourceInfo("/test/raw-skill/SKILL.md", { source: "test" }),
+          disableModelInvocation: false,
+        },
+      ],
+    });
+
+    expect(prompt).toContain("bounded routing");
+    expect(prompt).not.toContain("RAW_CONTEXT_SENTINEL");
+    expect(prompt).not.toContain("RAW_SKILL_SENTINEL");
   });
 
   it("handles Windows-style paths in cwd", () => {

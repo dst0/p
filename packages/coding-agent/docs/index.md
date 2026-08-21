@@ -51,6 +51,7 @@ For the full first-run flow, see [Quickstart](quickstart.md).
 - [Keybindings](keybindings.md) - default shortcuts and custom keybindings.
 - [Sessions](sessions.md) - session management, branching, and tree navigation.
 - [Compaction](compaction.md) - context compaction and branch summarization.
+- [Project instructions](project-instructions.md) - hashed AGENTS/CLAUDE compilation, cache layout, and on-demand readers.
 
 ## Customization
 

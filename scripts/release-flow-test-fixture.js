@@ -136,8 +136,12 @@ export function createReleaseFlowFixture() {
   return { root, repoRoot, remoteRoot, fakeBin };
 }
 
-export function runFixtureRelease(fixture) {
-  return spawnSync(process.execPath, [releaseScript, "0.5.0"], {
+export function runFixtureRelease(fixture, targetVersion = "0.5.0", options = {}) {
+  const args = [releaseScript, targetVersion];
+  if (options.allowMajor === true) {
+    args.push("--allow-major");
+  }
+  return spawnSync(process.execPath, args, {
     cwd: fixture.repoRoot,
     encoding: "utf8",
     env: { ...process.env, PATH: `${fixture.fakeBin}:${process.env.PATH}` },

@@ -92,6 +92,8 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "mark_session_progress",
       "process",
       "read",
+      "read_rules",
+      "read_skills",
       "recall_learnings",
       "record_learning",
       "rg",

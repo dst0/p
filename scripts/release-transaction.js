@@ -5,6 +5,7 @@ import { join } from "node:path";
 
 import {
   assertCleanMain,
+  assertReleaseCertificateAuthority,
   inspectReleaseCertificate,
   markReleaseCertificateStale,
   readReleaseAuditState,
@@ -57,8 +58,16 @@ function currentVersion(repoRoot) {
   return JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
 }
 
+function authorizationHash(token, state) {
+  return sha256(`${token}\0${state.certificateId}\0${state.targetVersion}`);
+}
+
 function assertToken(state, token, targetVersion) {
-  if (!token || sha256(token) !== state.tokenHash || state.targetVersion !== targetVersion) {
+  if (
+    !token ||
+    authorizationHash(token, state) !== state.tokenHash ||
+    state.targetVersion !== targetVersion
+  ) {
     throw new Error("Release audit authorization token or target does not match");
   }
 }
@@ -68,6 +77,7 @@ function requireState(repoRoot, token, expectedState, targetVersion, options = {
   if (!state || state.state !== expectedState) {
     throw new Error(`Release audit authorization requires state ${expectedState}`);
   }
+  assertReleaseCertificateAuthority(repoRoot, state);
   assertToken(state, token, targetVersion);
   if (!options.allowHeadChange && git(repoRoot, ["rev-parse", "HEAD"]) !== state.expectedHeadSha) {
     throw new Error("Release HEAD changed outside the certified transaction");
@@ -86,7 +96,7 @@ export function beginRelease(repoRoot, targetVersion) {
   const state = writeReleaseAuditState(repoRoot, {
     ...inspection.state,
     state: "release_in_progress",
-    tokenHash: sha256(token),
+    tokenHash: authorizationHash(token, inspection.state),
     expectedHeadSha: inspection.state.baseSha,
     startedAt: new Date().toISOString(),
   });

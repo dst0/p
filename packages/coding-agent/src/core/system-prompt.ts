@@ -29,6 +29,8 @@ export interface BuildSystemPromptOptions {
   contextFiles?: Array<{ path: string; content: string }>;
   /** Pre-loaded skills. */
   skills?: Skill[];
+  /** Prepared, budget-bounded project instruction block. */
+  projectInstructions?: string;
   /** Completion protocol to instruct the model about. */
   completionMode?: CompletionMode;
 }
@@ -44,6 +46,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     cwd,
     contextFiles: providedContextFiles,
     skills: providedSkills,
+    projectInstructions,
     completionMode,
   } = options;
   const resolvedCwd = cwd;
@@ -74,8 +77,9 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
       prompt += completionSection;
     }
 
-    // Append project context files
-    if (contextFiles.length > 0) {
+    if (projectInstructions) {
+      prompt += `\n\n${projectInstructions}\n`;
+    } else if (contextFiles.length > 0) {
       prompt += "\n\n<project_context>\n\n";
       prompt += "Project-specific instructions and guidelines:\n\n";
       for (const { path: filePath, content } of contextFiles) {
@@ -90,7 +94,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
     // Append skills section (only if read tool is available)
     const customPromptHasRead = !selectedTools || selectedTools.includes("read");
-    if (customPromptHasRead && skills.length > 0) {
+    if (!projectInstructions && customPromptHasRead && skills.length > 0) {
       prompt += formatSkillsForPrompt(skills);
     }
 
@@ -228,8 +232,9 @@ p documentation (read only when the user asks about p itself, its SDK, extension
     prompt += completionSection;
   }
 
-  // Append project context files
-  if (contextFiles.length > 0) {
+  if (projectInstructions) {
+    prompt += `\n\n${projectInstructions}\n`;
+  } else if (contextFiles.length > 0) {
     prompt += "\n\n<project_context>\n\n";
     prompt += "Project-specific instructions and guidelines:\n\n";
     for (const { path: filePath, content } of contextFiles) {
@@ -243,7 +248,7 @@ p documentation (read only when the user asks about p itself, its SDK, extension
   }
 
   // Append skills section (only if read tool is available)
-  if (hasRead && skills.length > 0) {
+  if (!projectInstructions && hasRead && skills.length > 0) {
     prompt += formatSkillsForPrompt(skills);
   }
 

@@ -54,6 +54,24 @@ test("release automatically audits, consumes the certificate, and atomically pus
   }
 });
 
+test("explicit major authorization survives the full certified release flow", () => {
+  const fixture = createReleaseFlowFixture();
+  try {
+    const unauthorized = runFixtureRelease(fixture, "5.0.1");
+    assert.notEqual(unauthorized.status, 0);
+    assert.match(`${unauthorized.stdout}\n${unauthorized.stderr}`, /explicit authorization/);
+
+    const result = runFixtureRelease(fixture, "5.0.1", { allowMajor: true });
+    assert.equal(result.status, 0, `${result.stdout}\n${result.stderr}`);
+    assert.equal(JSON.parse(readFileSync(join(fixture.repoRoot, "package.json"))).version, "5.0.1");
+    const verified = verifyReleaseReceipt(fixture.repoRoot, "v5.0.1");
+    assert.equal(verified.receipt.allowMajor, true);
+    assert.equal(readReleaseAuditState(fixture.repoRoot).state, "released");
+  } finally {
+    rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+
 test("rejects a pre-commit hook that stages an unexpected release file", () => {
   const fixture = createReleaseFlowFixture();
   try {

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Allow the exact 5.0.1 release through an explicit major-version authorization bound to its certificate and transaction token."
+}

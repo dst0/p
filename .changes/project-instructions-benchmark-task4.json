@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Record non-user-facing durable-workflow benchmark evidence for compiled project instructions."
+}

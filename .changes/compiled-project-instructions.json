@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Compile hashed AGENTS and CLAUDE sources into a bounded prompt block with integrity-checked read_rules and read_skills catalogs."
+}

@@ -15,7 +15,7 @@ import {
   computeReleaseAuditEvidenceAtRevision,
 } from "./release-output-verifier.js";
 
-const RECEIPT_SCHEMA_VERSION = 1;
+const RECEIPT_SCHEMA_VERSION = 2;
 
 function git(repoRoot, args, options = {}) {
   try {
@@ -83,6 +83,7 @@ export function persistReleaseReceipt(repoRoot, state, releaseDate) {
     inputHash: state.inputHash,
     evidenceHash: state.evidenceHash,
     evidence: state.evidence,
+    allowMajor: state.allowMajor,
     releaseDate,
   };
   const payloadJson = `${stableJson(payload)}\n`;
@@ -107,6 +108,9 @@ function validateReceiptState(receipt, expectedVersion) {
   }
   if (!receipt.releaseDate) {
     throw new Error("Receipt is missing the deterministic release date");
+  }
+  if (typeof receipt.allowMajor !== "boolean") {
+    throw new Error("Receipt is missing its major-release authorization state");
   }
   if (computeReleaseCertificateId(receipt) !== receipt.certificateId) {
     throw new Error("Receipt certificate id is invalid");
@@ -200,7 +204,7 @@ export function verifyReleaseReceipt(repoRoot, tagName) {
   if (!baseVersion) {
     throw new Error("Certified base package version is missing");
   }
-  assertReleaseTargetVersion(baseVersion, targetVersion);
+  assertReleaseTargetVersion(baseVersion, targetVersion, { allowMajor: receipt.allowMajor });
   assertReleaseOnOriginMain(repoRoot, tagSha);
 
   const expectedMutation = computeExpectedReleaseMutation(repoRoot, receipt.baseSha, targetVersion, receipt.releaseDate);

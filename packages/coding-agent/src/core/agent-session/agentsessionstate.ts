@@ -12,6 +12,10 @@ import type {
 } from "../extensions/index.ts";
 import { type BashExecutionMessage, type CustomMessage, filterSleepToolUseForHistory } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import {
+  createProjectInstructionController,
+  type ProjectInstructionController,
+} from "../project-instructions/index.ts";
 import type { PromptTemplate } from "../prompt-templates.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
@@ -53,6 +57,7 @@ export class AgentSessionState {
   public _extensionRunner!: ExtensionRunner;
   public _turnIndex = 0;
   public _resourceLoader: ResourceLoader;
+  public _projectInstructions: ProjectInstructionController;
   public _customTools: ToolDefinition[];
   public _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
   public _cwd: string;
@@ -95,6 +100,13 @@ export class AgentSessionState {
     this.settingsManager = config.settingsManager;
     this._scopedModels = config.scopedModels ?? [];
     this._resourceLoader = config.resourceLoader;
+    this._projectInstructions =
+      config.projectInstructions ??
+      createProjectInstructionController({
+        cwd: config.cwd,
+        getContextFiles: () => config.resourceLoader.getAgentsFiles().agentsFiles,
+        getSkills: () => config.resourceLoader.getSkills().skills,
+      });
     this._customTools = config.customTools ?? [];
     this._cwd = config.cwd;
     this._modelRegistry = config.modelRegistry;

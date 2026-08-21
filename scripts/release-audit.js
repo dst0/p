@@ -5,10 +5,20 @@ import { execFileSync } from "node:child_process";
 import { certifyReleaseAudit, inspectReleaseCertificate } from "./release-audit-certificate.js";
 import { reconcileReleaseState } from "./release-transaction.js";
 
-const [command, targetVersion] = process.argv.slice(2);
+const [command, targetVersion, ...flags] = process.argv.slice(2);
+const allowMajor = flags.includes("--allow-major");
+const invalidFlags = flags.filter((flag) => flag !== "--allow-major");
 
-if (!command || !["audit", "status", "recover"].includes(command) || (command !== "recover" && !targetVersion)) {
-  console.error("Usage: node scripts/release-audit.js <audit|status> <x.y.z> | recover");
+if (
+  !command ||
+  !["audit", "status", "recover"].includes(command) ||
+  (command !== "recover" && !targetVersion) ||
+  invalidFlags.length > 0 ||
+  (allowMajor && command !== "audit")
+) {
+  console.error(
+    "Usage: node scripts/release-audit.js audit <x.y.z> [--allow-major] | status <x.y.z> | recover",
+  );
   process.exit(1);
 }
 
@@ -19,7 +29,7 @@ try {
     console.log(state ? `Release transaction state: ${state.state}` : "No release transaction exists");
   } else if (command === "audit") {
     execFileSync("git", ["fetch", "origin", "main", "--tags"], { cwd: process.cwd(), stdio: "inherit" });
-    const state = certifyReleaseAudit(process.cwd(), targetVersion);
+    const state = certifyReleaseAudit(process.cwd(), targetVersion, { allowMajor });
     console.log(`Release changelog audit certified for ${state.baseSha} -> ${targetVersion}`);
     console.log(`Certificate: ${state.certificateId}`);
   } else {

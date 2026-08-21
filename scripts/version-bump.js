@@ -42,9 +42,6 @@ function resolveTargetVersion(currentVersion) {
   if (!valid(requestedTarget) || !gt(requestedTarget, currentVersion)) {
     return null;
   }
-  if (Number(requestedTarget.split(".")[0]) !== Number(currentVersion.split(".")[0])) {
-    return null;
-  }
   return requestedTarget;
 }
 
@@ -53,7 +50,7 @@ const rootPackagePath = join(repoRoot, "package.json");
 const rootPackage = readJson(rootPackagePath);
 const targetVersion = resolveTargetVersion(rootPackage.version);
 if (!targetVersion) {
-  console.error("Usage: node scripts/version-bump.js [patch|minor|x.y.z in the current major]");
+  console.error("Usage: node scripts/version-bump.js [patch|minor|x.y.z]");
   process.exit(1);
 }
 

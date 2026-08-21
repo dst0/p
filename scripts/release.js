@@ -3,18 +3,19 @@
 /**
  * Executes a certified, lockstep monorepo release.
  *
- * Usage: node scripts/release.js <minor|patch|x.y.z>
+ * Usage: node scripts/release.js <minor|patch|x.y.z> [--allow-major]
  */
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { gt, inc, valid } from "semver";
+import { inc } from "semver";
 
 import { certifyReleaseAudit, readReleaseAuditState } from "./release-audit-certificate.js";
 import { applyReleaseFragments } from "./release-change-fragments.js";
 import { getChangelogPaths } from "./release-changelog-audit.js";
 import { isAllowedReleaseMutationPath } from "./release-path-policy.js";
+import { assertReleaseTargetVersion } from "./release-target-policy.js";
 import {
   advanceReleaseState,
   beginRelease,
@@ -25,11 +26,14 @@ import {
 } from "./release-transaction.js";
 
 const requestedTarget = process.argv[2];
+const releaseFlags = process.argv.slice(3);
+const allowMajor = releaseFlags.includes("--allow-major");
+const invalidFlags = releaseFlags.filter((flag) => flag !== "--allow-major");
 const bumpTypes = new Set(["minor", "patch"]);
 const changelogHeader = "# Changelog\n\n## [Unreleased]\n\n";
 
-if (!requestedTarget) {
-  console.error("Usage: node scripts/release.js <minor|patch|x.y.z>");
+if (!requestedTarget || invalidFlags.length > 0) {
+  console.error("Usage: node scripts/release.js <minor|patch|x.y.z> [--allow-major]");
   process.exit(1);
 }
 
@@ -57,16 +61,11 @@ function getVersion() {
 
 function resolveTargetVersion() {
   const currentVersion = getVersion();
-  if (bumpTypes.has(requestedTarget)) {
-    return inc(currentVersion, requestedTarget);
-  }
-  if (!valid(requestedTarget) || !gt(requestedTarget, currentVersion)) {
-    throw new Error(`Release target ${requestedTarget} must be a semantic version greater than ${currentVersion}`);
-  }
-  if (Number(requestedTarget.split(".")[0]) !== Number(currentVersion.split(".")[0])) {
-    throw new Error("Major releases are not permitted by repository policy");
-  }
-  return requestedTarget;
+  const targetVersion = bumpTypes.has(requestedTarget)
+    ? inc(currentVersion, requestedTarget)
+    : requestedTarget;
+  assertReleaseTargetVersion(currentVersion, targetVersion, { allowMajor });
+  return targetVersion;
 }
 
 function changedPaths() {
@@ -196,7 +195,7 @@ try {
   assertTagAvailable(targetVersion);
 
   console.log(`Auditing changelogs for origin/main -> ${targetVersion}...`);
-  const certificate = certifyReleaseAudit(process.cwd(), targetVersion);
+  const certificate = certifyReleaseAudit(process.cwd(), targetVersion, { allowMajor });
   const authorization = beginRelease(process.cwd(), targetVersion);
   authorizationToken = authorization.token;
   console.log(`  Certificate: ${certificate.certificateId}\n`);

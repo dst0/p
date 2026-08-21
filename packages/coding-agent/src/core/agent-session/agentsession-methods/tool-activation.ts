@@ -152,6 +152,7 @@ export function do__rebuildSystemPrompt(
     cwd: self._cwd,
     skills: loadedSkills,
     contextFiles: loadedContextFiles,
+    projectInstructions: self._projectInstructions.state.current?.prompt,
     customPrompt: loaderSystemPrompt,
     appendSystemPrompt: appendSystemPrompt || undefined,
     selectedTools: promptToolNames,
