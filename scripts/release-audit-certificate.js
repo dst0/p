@@ -15,7 +15,7 @@ import { createReleaseAuditEvidence } from "./release-audit-evidence.js";
 import { computeReleaseInputHash, releaseInputPaths } from "./release-inputs.js";
 import { assertReleaseTargetVersion } from "./release-target-policy.js";
 
-const SCHEMA_VERSION = 1;
+const SCHEMA_VERSION = 2;
 const STATE_FILE = "p-release-audit-state.json.br";
 const ACTIVE_RELEASE_STATES = new Set([
   "release_in_progress",
@@ -86,9 +86,13 @@ function currentVersion(repoRoot) {
   return JSON.parse(readFileSync(join(repoRoot, "package.json"), "utf8")).version;
 }
 
-function assertTarget(repoRoot, targetVersion) {
+function versionAtRevision(repoRoot, revision) {
+  return JSON.parse(git(repoRoot, ["show", `${revision}:package.json`])).version;
+}
+
+function assertTarget(repoRoot, targetVersion, options) {
   const version = currentVersion(repoRoot);
-  assertReleaseTargetVersion(version, targetVersion);
+  assertReleaseTargetVersion(version, targetVersion, options);
 }
 
 function currentRevision(repoRoot) {
@@ -118,6 +122,7 @@ export function releaseCertificatePayload(state) {
     inputHash: state.inputHash,
     inputPaths: state.inputPaths,
     evidenceHash: state.evidenceHash,
+    allowMajor: state.allowMajor,
   };
 }
 
@@ -127,6 +132,26 @@ export function computeReleaseCertificateId(state) {
 
 export function computeReleaseEvidenceHash(evidence) {
   return sha256(stableJson(evidence));
+}
+
+export function assertReleaseCertificateAuthority(repoRoot, state) {
+  if (state.schemaVersion !== SCHEMA_VERSION) {
+    throw new Error(`Unsupported release audit schema ${state.schemaVersion}`);
+  }
+  if (typeof state.allowMajor !== "boolean") {
+    throw new Error("Release audit certificate is missing its major-release authorization state");
+  }
+  if (computeReleaseCertificateId(state) !== state.certificateId) {
+    throw new Error("Release audit certificate integrity check failed");
+  }
+  if (computeReleaseEvidenceHash(state.evidence) !== state.evidenceHash) {
+    throw new Error("Stored changelog audit evidence was modified");
+  }
+  assertReleaseTargetVersion(
+    versionAtRevision(repoRoot, state.baseSha),
+    state.targetVersion,
+    { allowMajor: state.allowMajor },
+  );
 }
 
 function invalid(reason) {
@@ -146,12 +171,13 @@ export function markReleaseCertificateStale(repoRoot, reason) {
   });
 }
 
-export function certifyReleaseAudit(repoRoot, targetVersion) {
+export function certifyReleaseAudit(repoRoot, targetVersion, options = {}) {
   const previous = readReleaseAuditState(repoRoot);
   if (previous && ACTIVE_RELEASE_STATES.has(previous.state)) {
     throw new Error(`Cannot replace release audit while state is ${previous.state}`);
   }
-  assertTarget(repoRoot, targetVersion);
+  const allowMajor = options.allowMajor === true;
+  assertTarget(repoRoot, targetVersion, { allowMajor });
   const revision = assertCleanMain(repoRoot);
   const evidence = createReleaseAuditEvidence(repoRoot, targetVersion);
   const evidenceHash = computeReleaseEvidenceHash(evidence);
@@ -165,6 +191,7 @@ export function certifyReleaseAudit(repoRoot, targetVersion) {
     inputPaths: releaseInputPaths(repoRoot),
     evidenceHash,
     evidence,
+    allowMajor,
     auditedAt: new Date().toISOString(),
   });
   const certificateId = computeReleaseCertificateId(evidenceReady);
@@ -179,11 +206,13 @@ export function inspectReleaseCertificate(repoRoot, targetVersion) {
   if (state.state !== "certified") {
     return { valid: false, reason: `Release audit state is ${state.state}, not certified` };
   }
-  if (state.schemaVersion !== SCHEMA_VERSION) {
-    return invalid(`Unsupported release audit schema ${state.schemaVersion}`);
-  }
   if (state.targetVersion !== targetVersion) {
     return invalid(`Certificate target ${state.targetVersion} does not match ${targetVersion}`);
+  }
+  try {
+    assertReleaseCertificateAuthority(repoRoot, state);
+  } catch (error) {
+    return invalid(error instanceof Error ? error.message : String(error));
   }
   const revision = currentRevision(repoRoot);
   if (revision.headSha !== state.baseSha || revision.originMainSha !== state.originMainSha || revision.headSha !== revision.originMainSha) {
@@ -192,12 +221,6 @@ export function inspectReleaseCertificate(repoRoot, targetVersion) {
   const inputHash = computeReleaseInputHash(repoRoot);
   if (inputHash !== state.inputHash) {
     return invalid("Release input hash changed after the changelog audit");
-  }
-  if (computeReleaseEvidenceHash(state.evidence) !== state.evidenceHash) {
-    return invalid("Stored changelog audit evidence was modified");
-  }
-  if (computeReleaseCertificateId(state) !== state.certificateId) {
-    return invalid("Release audit certificate integrity check failed");
   }
   return { valid: true, state };
 }

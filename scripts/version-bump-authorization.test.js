@@ -1,11 +1,21 @@
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import test from "node:test";
 
-import { certifyReleaseAudit, readReleaseAuditState } from "./release-audit-certificate.js";
+import {
+  certifyReleaseAudit,
+  readReleaseAuditState,
+} from "./release-audit-certificate.js";
 import { disableDetachedGitMaintenance } from "./git-test-fixture.js";
 import { advanceReleaseState, beginRelease } from "./release-transaction.js";
 import { discoverWorkspacePackagePaths } from "./release-workspaces.js";

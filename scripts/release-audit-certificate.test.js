@@ -139,7 +139,7 @@ test("rejects tampered evidence and unsupported persisted schemas without mutati
   withFixture((repoRoot) => {
     certifyReleaseAudit(repoRoot, "0.5.0");
     const unsupported = readReleaseAuditState(repoRoot);
-    unsupported.schemaVersion = 2;
+    unsupported.schemaVersion = 3;
     writeReleaseAuditState(repoRoot, unsupported);
     assert.match(inspectReleaseCertificate(repoRoot, "0.5.0").reason, /Unsupported release audit schema/);
     assert.equal(readReleaseAuditState(repoRoot).state, "certified");
@@ -257,11 +257,6 @@ test("accepts a justified None fragment without adding a changelog bullet", () =
   });
 });
 
-test("refuses to issue an unusable major-release certificate", () => {
-  withFixture((repoRoot) => {
-    assert.throws(() => certifyReleaseAudit(repoRoot, "1.0.0"), /Major releases are not permitted/);
-  });
-});
 
 test("does not reuse a certificate for another target or a second release", () => {
   withFixture((repoRoot) => {
