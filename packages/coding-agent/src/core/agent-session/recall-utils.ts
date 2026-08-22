@@ -122,18 +122,33 @@ export function getLatestUserText(messages: AgentMessage[]): string {
   return "";
 }
 
-export function scoreRecallCandidate(query: string, candidate: RecallCandidate): number {
-  const normalizedQuery = query.trim().toLowerCase();
+export function scoreRecallCandidateOptimized(
+  normalizedQuery: string,
+  terms: string[],
+  candidate: RecallCandidate,
+): number {
   if (!normalizedQuery) return 0;
   const pointerId = candidate.pointer.id.toLowerCase();
   if (pointerId === normalizedQuery) return 1;
   if (pointerId.includes(normalizedQuery)) return 0.95;
 
   const haystack = `${candidate.pointer.summary}\n${candidate.searchText}`.toLowerCase();
-  const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 1);
   if (terms.length === 0) return haystack.includes(normalizedQuery) ? 0.5 : 0;
-  const matchedTerms = terms.filter((term) => haystack.includes(term)).length;
+
+  let matchedTerms = 0;
+  for (let i = 0; i < terms.length; i++) {
+    if (haystack.includes(terms[i])) {
+      matchedTerms++;
+    }
+  }
   return matchedTerms === 0 ? 0 : matchedTerms / terms.length;
+}
+
+export function scoreRecallCandidate(query: string, candidate: RecallCandidate): number {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) return 0;
+  const terms = normalizedQuery.split(/\s+/).filter((term) => term.length > 1);
+  return scoreRecallCandidateOptimized(normalizedQuery, terms, candidate);
 }
 
 export function formatRecallResult(result: RecallResult): string {
