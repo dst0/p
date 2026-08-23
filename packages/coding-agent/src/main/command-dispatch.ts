@@ -39,7 +39,7 @@ import {
   validateForkFlags,
 } from "./cli-entry.ts";
 import { handleExportCommand } from "./export-command.ts";
-import { createCliRuntimeFactory } from "./runtime-factory.ts";
+import { createCliMetadataServices, createCliRuntimeFactory } from "./runtime-factory.ts";
 import { promptForMissingSessionCwd, resolveCliPaths } from "./runtime-init.ts";
 import { createSessionManager, validateSessionIdFlags } from "./session-setup.ts";
 import type { MainOptions } from "./types.ts";
@@ -158,7 +158,7 @@ export async function main(args: string[], options?: MainOptions) {
   const resolvedPromptTemplatePaths = resolveCliPaths(cwd, parsed.promptTemplates);
   const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
   const authStorage = AuthStorage.create();
-  const createRuntime = createCliRuntimeFactory({
+  const runtimeFactoryOptions = {
     agentDir,
     appMode,
     authStorage,
@@ -171,7 +171,32 @@ export async function main(args: string[], options?: MainOptions) {
     startupSettingsManager,
     trustPromptMode,
     trustStore,
-  });
+  };
+
+  if (parsed.help || parsed.listModels !== undefined) {
+    const { services } = await createCliMetadataServices(runtimeFactoryOptions, {
+      cwd: sessionManager.getCwd(),
+      agentDir,
+    });
+    const { settingsManager, modelRegistry, resourceLoader } = services;
+    configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
+
+    if (parsed.help) {
+      const extensionFlags = resourceLoader
+        .getExtensions()
+        .extensions.flatMap((extension) => Array.from(extension.flags.values()));
+      printHelp(extensionFlags);
+      process.exit(0);
+      return;
+    }
+
+    const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
+    await listModels(modelRegistry, searchPattern);
+    process.exit(0);
+    return;
+  }
+
+  const createRuntime = createCliRuntimeFactory(runtimeFactoryOptions);
   time("createRuntime");
   const runtime = await createAgentSessionRuntime(createRuntime, {
     cwd: sessionManager.getCwd(),
@@ -180,22 +205,8 @@ export async function main(args: string[], options?: MainOptions) {
   });
   time("createAgentSessionRuntime");
   const { services, session, modelFallbackMessage } = runtime;
-  const { settingsManager, modelRegistry, resourceLoader } = services;
+  const { settingsManager } = services;
   configureHttpDispatcher(settingsManager.getHttpIdleTimeoutMs());
-
-  if (parsed.help) {
-    const extensionFlags = resourceLoader
-      .getExtensions()
-      .extensions.flatMap((extension) => Array.from(extension.flags.values()));
-    printHelp(extensionFlags);
-    process.exit(0);
-  }
-
-  if (parsed.listModels !== undefined) {
-    const searchPattern = typeof parsed.listModels === "string" ? parsed.listModels : undefined;
-    await listModels(modelRegistry, searchPattern);
-    process.exit(0);
-  }
 
   // Read piped stdin content (if any) - skip for RPC mode which uses stdin for JSON-RPC
   let stdinContent: string | undefined;

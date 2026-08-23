@@ -1,16 +1,21 @@
 import { hashText } from "./content.ts";
+import { parseProjectInstructionCompilerUsage } from "./compiler-usage.ts";
 import type {
   ProjectInstructionCatalogPageRecord,
+  ProjectInstructionCompilerDiagnostic,
   ProjectInstructionManifest,
   ProjectInstructionRuleRecord,
   ProjectInstructionSkillRecord,
   ProjectInstructionSourceRecord,
 } from "./types.ts";
+import { PROJECT_INSTRUCTION_COMPILER_DIAGNOSTICS } from "./types.ts";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 
 export function parseProjectInstructionManifest(value: unknown): ProjectInstructionManifest | undefined {
   if (!isRecord(value)) return undefined;
+  const compilerUsage =
+    value.compilerUsage === undefined ? undefined : parseProjectInstructionCompilerUsage(value.compilerUsage, true);
   if (
     value.schemaVersion !== 1 ||
     typeof value.compilerVersion !== "string" ||
@@ -26,6 +31,9 @@ export function parseProjectInstructionManifest(value: unknown): ProjectInstruct
     !value.skillsCatalogPages.every((page) => isCatalogPageRecord(page, "skills")) ||
     !isMode(value.mode) ||
     !isCompilerStatus(value.compilerStatus) ||
+    (value.compilerDiagnostic !== undefined && !isCompilerDiagnostic(value.compilerDiagnostic)) ||
+    (value.compilerStatus === "failed") !== (value.compilerDiagnostic !== undefined) ||
+    (value.compilerUsage !== undefined && compilerUsage === undefined) ||
     value.promptFile !== "prompt.md" ||
     value.rulesCatalogFile !== "rules/catalog.md" ||
     value.skillsCatalogFile !== "skills/catalog.md" ||
@@ -51,6 +59,8 @@ export function parseProjectInstructionManifest(value: unknown): ProjectInstruct
     skillsCatalogPages: value.skillsCatalogPages,
     mode: value.mode,
     compilerStatus: value.compilerStatus,
+    compilerDiagnostic: value.compilerDiagnostic,
+    compilerUsage,
     promptFile: value.promptFile,
     rulesCatalogFile: value.rulesCatalogFile,
     skillsCatalogFile: value.skillsCatalogFile,
@@ -72,6 +82,8 @@ export function computeProjectInstructionResultHash(manifest: {
   skillsCatalogPages: ProjectInstructionCatalogPageRecord[];
   mode: string;
   compilerStatus: string;
+  compilerDiagnostic?: ProjectInstructionManifest["compilerDiagnostic"];
+  compilerUsage?: ProjectInstructionManifest["compilerUsage"];
   promptFile: string;
   rulesCatalogFile: string;
   skillsCatalogFile: string;
@@ -91,6 +103,8 @@ export function computeProjectInstructionResultHash(manifest: {
     skillsCatalogPages: manifest.skillsCatalogPages,
     mode: manifest.mode,
     compilerStatus: manifest.compilerStatus,
+    compilerDiagnostic: manifest.compilerDiagnostic,
+    compilerUsage: manifest.compilerUsage,
     promptFile: manifest.promptFile,
     rulesCatalogFile: manifest.rulesCatalogFile,
     skillsCatalogFile: manifest.skillsCatalogFile,
@@ -113,6 +127,7 @@ function isRuleRecord(value: unknown): value is ProjectInstructionRuleRecord {
     value.file === value.link &&
     typeof value.title === "string" &&
     typeof value.trigger === "string" &&
+    typeof value.routable === "boolean" &&
     typeof value.sourcePath === "string" &&
     isHash(value.contentHash)
   );
@@ -159,6 +174,10 @@ function isMode(value: unknown): value is ProjectInstructionManifest["mode"] {
 
 function isCompilerStatus(value: unknown): value is ProjectInstructionManifest["compilerStatus"] {
   return value === "success" || value === "failed" || value === "not-needed" || value === "unavailable";
+}
+
+function isCompilerDiagnostic(value: unknown): value is ProjectInstructionCompilerDiagnostic {
+  return PROJECT_INSTRUCTION_COMPILER_DIAGNOSTICS.some((diagnostic) => diagnostic === value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

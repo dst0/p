@@ -809,6 +809,8 @@ Notes:
 - `registration.models` exposes all registered faux models. `registration.getModel()` returns the first one, and `registration.getModel(id)` returns a specific one.
 - Use `fauxAssistantMessage(...)` for scripted assistant replies. Use `fauxText(...)`, `fauxThinking(...)`, and `fauxToolCall(...)` to build content blocks without filling in low-level fields manually.
 - `registration.unregister()` removes the temporary provider from the global API registry.
+- Set `registerImmediately: false` to construct the fixture without changing the global registry, then call `registration.register()` after surrounding setup succeeds.
+- Set `preserveOnReset: true` only for a live fixture that must remain available through `resetApiProviders()`; cleanup must still call `registration.unregister()`. A different registration cannot silently replace an API already owned by another source.
 - Usage is estimated at roughly 1 token per 4 characters. When `sessionId` is present and `cacheRetention` is not `"none"`, prompt cache reads and writes are simulated automatically.
 - Tool call arguments stream incrementally via `toolcall_delta` chunks.
 - By default, each streamed chunk is emitted on its own microtask. Set `tokensPerSecond` to pace chunk delivery in real time.

@@ -1,7 +1,7 @@
 import type { AgentMessage, QueueMode } from "../types.ts";
 
 export class PendingMessageQueue {
-  private messages: AgentMessage[] = [];
+  private groups: AgentMessage[][] = [];
   public mode: QueueMode;
 
   constructor(mode: QueueMode) {
@@ -9,29 +9,33 @@ export class PendingMessageQueue {
   }
 
   enqueue(message: AgentMessage): void {
-    this.messages.push(message);
+    this.enqueueGroup([message]);
+  }
+
+  enqueueGroup(messages: readonly AgentMessage[]): void {
+    if (messages.length > 0) this.groups.push([...messages]);
   }
 
   hasItems(): boolean {
-    return this.messages.length > 0;
+    return this.groups.length > 0;
   }
 
   drain(): AgentMessage[] {
     if (this.mode === "all") {
-      const drained = this.messages.slice();
-      this.messages = [];
+      const drained = this.groups.flat();
+      this.groups = [];
       return drained;
     }
 
-    const first = this.messages[0];
+    const first = this.groups[0];
     if (!first) {
       return [];
     }
-    this.messages = this.messages.slice(1);
-    return [first];
+    this.groups = this.groups.slice(1);
+    return first;
   }
 
   clear(): void {
-    this.messages = [];
+    this.groups = [];
   }
 }

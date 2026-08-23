@@ -15,50 +15,59 @@ describe("buildSystemPrompt", () => {
   it("includes default guidelines", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain("Guidelines:");
-    expect(prompt).toContain("- Be concise in your responses");
-    expect(prompt).toContain("- Show file paths clearly when working with files");
+    expect(prompt).toContain("- Be concise and show file paths clearly.");
   });
 
-  it("includes testing-related guidelines by default", () => {
+  it("preserves every static default invariant in a compact prompt", () => {
     const prompt = buildSystemPrompt(baseOptions);
-    expect(prompt).toContain(
-      "- When creating or editing files (source code, JSON, JSONL, markdown, configs), always ensure the content terminates with a trailing newline ('\\n') unless explicitly requested otherwise. This preserves clean single-line diffs on future appends and adheres to POSIX line standards.",
-    );
+    const invariantNeedles = [
+      "End created or edited text files",
+      "return R[] directly",
+      "Every exported function, public method, static factory, and lifecycle function",
+      "normal behavior, negative inputs, boundaries, failure/recovery, and invariant preservation",
+      "Develop and verify iteratively",
+      "atomic rollback",
+      "state changes, external mutations, caches, logs, and tracking registries",
+      "pre-operation state",
+      "re-read the original specification line by line",
+      "every requirement",
+      "specific error types, idempotency, boundaries, and corruption/integrity handling",
+      "implemented and asserted by dedicated tests",
+      "JSONL/NDJSON",
+      "raw input ends with '\\n' before splitting",
+      "domain-specific custom errors",
+      "business invariants, validation, or optimistic concurrency",
+      "run the type checker and relevant tests",
+      "full test suite",
+      "100% green",
+      "Fix every type error and test failure",
+      "precise edit calls on failing logic over whole-file write calls",
+      "avoid collateral regressions",
+      "plan the smallest useful target",
+      "Preserve full output outside model context",
+      "Treat exit codes as authoritative",
+      "consult loaded specialized skills",
+    ];
+    for (const needle of invariantNeedles) expect(prompt).toContain(needle);
     expect(prompt).not.toContain("Subagent Exploration");
-    expect(prompt).toContain(
-      "- Collection & Batch Return Signatures (Homogeneous Mapping): When implementing functions that operate on an array or batch of inputs (T[]), the return type must be the direct array of item results (R[]) matching input items 1-to-1, rather than an artificial wrapper object (e.g. return R[] directly, not { results }), preserving standard array iteration and .length properties.",
-    );
-    expect(prompt).toContain(
-      "- Develop and verify iteratively: write focused code, then accompany it with domain tests covering positive paths, negative inputs, boundary conditions, failure/recovery modes, and invariant preservation.",
-    );
-    expect(prompt).toContain(
-      "- API Method Test Exhaustiveness: Every public method, static factory, and function exported by the module must have dedicated unit tests covering normal execution, edge cases, and failure modes. Never leave any public API method or lifecycle function untested in your test suite.",
-    );
-    expect(prompt).toContain(
-      "- Ensure transactional operations guarantee atomic rollback: on any mid-operation failure, all state modifications, external mutations, caches, logs, and tracking registries must revert cleanly to their pre-operation state.",
-    );
-    expect(prompt).toContain(
-      "- Perform an explicit Requirements Traceability Audit before declaring work complete: re-read the original specification line-by-line, verifying that every requirement (happy paths, negative inputs, specific error types, idempotency rules, boundary conditions, and corruption/integrity handling) is implemented and asserted by dedicated tests.",
-    );
-    expect(prompt).toContain(
-      "- Stream & File Framing Integrity: In line-delimited and record-oriented protocols (e.g. JSONL/NDJSON), every valid stream must strictly terminate with a newline. When parsing, assert that the raw input string ends with '\\n' before splitting; reject with the domain validation error if the terminating delimiter is missing or stripped.",
-    );
-    expect(prompt).toContain(
-      "- Domain Error Hierarchy: Instantiate and throw domain-specific custom error types for business invariant, validation, or optimistic concurrency violations, rather than unadorned generic 'new Error()'.",
-    );
-    expect(prompt).toContain(
-      "- Before declaring code complete, run the type checker and test suite to ensure clean compilation and 100% green tests. Fix all type errors and test failures before finishing.",
-    );
-    expect(prompt).toContain(
-      "- When fixing test failures or compiler errors in existing code, prefer precise 'edit' calls targeting the specific failing logic over completely rewriting files with 'write'. Retain verified invariants and avoid collateral regressions.",
-    );
-    expect(prompt).toContain(
-      "- Context Efficiency & Tool Output Discipline: Before running tests, builds, benchmarks, or log-heavy commands, plan the smallest useful target and use available harnesses, quiet reporters, or output wrappers so the model reads only a compact PASS result or a FAIL result with the decisive reason. Preserve full output outside model context when it is needed for diagnosis. Treat the process exit code as authoritative; never infer success from a trailing 'success' or 'done' line.",
-    );
-    expect(prompt).toContain(
-      "- When working on complex testing, architecture, or ecosystem integrations, consult any loaded specialized skills for domain playbooks and reference patterns.",
-    );
     expect(prompt).not.toContain("test-output-discipline");
+    expect(prompt.length).toBeLessThanOrEqual(4_200);
+  });
+
+  it("keeps the full static prompt with every conditional guideline within budget", () => {
+    const prompt = buildSystemPrompt({
+      cwd: "/test",
+      selectedTools: ["read", "bash", "semantic_search", "web_search"],
+      toolSnippets: {
+        read: "Read a file",
+        bash: "Run a shell command",
+        semantic_search: "Search local code",
+        web_search: "Search the web",
+      },
+    });
+    expect(prompt).toContain("Prioritize semantic_search for code discovery");
+    expect(prompt).toContain("Proactive Web Research & Validation: For tasks involving");
+    expect(prompt.length).toBeLessThanOrEqual(4_200);
   });
 
   it("does not demand subagents when no such workflow is part of P", () => {
@@ -95,7 +104,7 @@ describe("buildSystemPrompt", () => {
   it("includes tool-specific guidelines when tools are available", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).toContain(
-      "- If a tool call fails from a recoverable syntax, path, allowlist, or command-choice error, correct the call or use an equivalent available tool and continue.",
+      "- Recover from tool syntax, path, allowlist, or command-choice errors by correcting the call or using an equivalent available tool, then continue.",
     );
   });
 
@@ -105,7 +114,9 @@ describe("buildSystemPrompt", () => {
       selectedTools: ["bash"],
       toolSnippets: { bash: "Run a shell command" },
     });
-    expect(prompt).toContain("- Use bash for file operations like ls, rg, find when dedicated tools are unavailable.");
+    expect(prompt).toContain(
+      "- Use bash for ls, rg, or find only when the corresponding dedicated tool is unavailable.",
+    );
   });
 
   it("does not include bash-only file exploration guideline when dedicated tools present", () => {
@@ -114,7 +125,9 @@ describe("buildSystemPrompt", () => {
       selectedTools: ["bash", "grep"],
       toolSnippets: { bash: "Run a shell command", grep: "Search for patterns" },
     });
-    expect(prompt).not.toContain("Use bash for file operations like ls, rg, find when dedicated tools are unavailable");
+    expect(prompt).not.toContain(
+      "Use bash for ls, rg, or find only when the corresponding dedicated tool is unavailable",
+    );
   });
 
   it("includes p documentation section", () => {
@@ -123,6 +136,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Main documentation:");
     expect(prompt).toContain("Additional docs:");
     expect(prompt).toContain("Examples:");
+    expect(prompt).toMatch(/Before answering p questions or implementing p work/iu);
   });
 
   it("includes date and working directory", () => {

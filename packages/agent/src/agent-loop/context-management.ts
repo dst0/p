@@ -33,6 +33,7 @@ export async function executeToolCallsParallel(
       type: "tool_execution_start",
       toolCallId: toolCall.id,
       toolName: toolCall.name,
+      toolDescription: currentContext.tools?.find((tool) => tool.name === toolCall.name)?.description,
       args: toolCall.arguments,
     });
 

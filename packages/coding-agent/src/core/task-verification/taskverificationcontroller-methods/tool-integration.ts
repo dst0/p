@@ -14,6 +14,13 @@ import {
   normalizeText,
 } from "../tool-classification.ts";
 import type { VerificationResult } from "../types.ts";
+import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
+
+const NON_REQUIREMENT_NUDGE_PATTERN =
+  /^(?:(?:any\s+)?(?:progress|status|update)|so|how(?:'s|\s+is)\s+it\s+going|where\s+are\s+we|what(?:'s|\s+is)\s+the\s+status|(?:please\s+)?(?:continue|proceed|go\s+on|keep\s+going|carry\s+on)|(?:please\s+)?(?:report|show|give\s+me)\s+(?:the\s+)?(?:progress|status|update))\s*[?!.]*$/iu;
+const COMPLETION_NUDGE_PATTERN =
+  /^are\s+you\s+(?:done|finished)(?:\s+with\s+(?:the\s+)?task)?\s+or\s+is\s+there\s+(?:anything|something)\s+left\s*[?!.]*\s*if\s+you\s+are\s+finished\s*,?\s*(?:ensure|make\s+sure)(?:\s+that)?\s+all\s+requirements\s+(?:are\s+)?(?:satisfied|met)(?:\s+and\s+(?:create|write)\s+[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt))?\s*[?!.]*$/iu;
+const NUDGE_DOCUMENT_PATH_PATTERN = /[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt)\b/giu;
 
 export function do_install(self: TaskVerificationController, agent: Agent): void {
   if (self.installed) return;
@@ -60,6 +67,7 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
 
   self.latestUserPrompt = promptText;
   const taskPrompts = self.state.taskPrompts ?? [];
+  if (isNonRequirementNudge(promptText, taskPrompts)) return;
   const persistedId = [...self.sessionManager.getBranch()]
     .reverse()
     .find(
@@ -83,6 +91,18 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
+}
+
+function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text: string }[]): boolean {
+  const normalized = promptText.trim();
+  if (NON_REQUIREMENT_NUDGE_PATTERN.test(normalized)) return true;
+  if (!COMPLETION_NUDGE_PATTERN.test(normalized) || taskPrompts.length === 0) return false;
+  const priorText = taskPrompts
+    .map((prompt) => prompt.text)
+    .join("\n")
+    .toLowerCase();
+  const mentionedPaths = [...normalized.matchAll(NUDGE_DOCUMENT_PATH_PATTERN)].map((match) => match[0].toLowerCase());
+  return mentionedPaths.every((path) => priorText.includes(path));
 }
 
 function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {
@@ -114,9 +134,10 @@ export function do_createToolDefinition(
       "Signal, restart, persistence, recovery, transaction, concurrency, migration, and indexing tasks require runtime reproduction or a failing focused regression test.",
       "Final verification must rerun the exact same reproduction command or focused regression test that established the baseline. Do not substitute static_review or generic npm run check.",
       "Evidence handles from prior mutation revisions become stale after any file edit. Re-run your verification command after editing to produce fresh handles for the current revision.",
+      "Complete all requested file deliverables before final verification; any later write or edit advances the mutation revision and invalidates earlier evidence and readiness.",
       "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
       "After final verification passes, call action 'ready_to_finish' with acceptance_checks and fresh evidence_refs. This opens finalization operations but does not issue a finish token.",
-      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: define only user-authored requirements and record one evidence-backed verdict per model turn until every requirement has been checked.`,
+      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: define only user-authored requirements, then record one complete evidence-backed verdict batch covering every requirement.`,
       "Git commit/push require evidence readiness. Successful finish_work requires the later completion certificate and exact verification_token.",
     ],
     parameters: VerificationSchema,
@@ -151,8 +172,10 @@ export function do_beforeToolCall(
     }
     return undefined;
   }
-  if (!isPotentialMutationTool(toolName, context.args)) return undefined;
-  if (!self.state.taskKind) {
+  if (self.restoreError && canPotentiallyChangeWorkspace(toolName, context.args)) {
+    return self.blocked(`Cannot change the workspace: ${self.restoreError}.`);
+  }
+  if (canPotentiallyChangeWorkspace(toolName, context.args) && !self.state.taskKind) {
     const taskSummary =
       normalizeText(self.latestUserPrompt).slice(0, 500) || "Implement the requested workspace change.";
     self.declareTask({
@@ -161,6 +184,9 @@ export function do_beforeToolCall(
       task_summary: taskSummary,
     });
   }
+  const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
+  if (sourceGate) return sourceGate;
+  if (!isPotentialMutationTool(toolName, context.args)) return undefined;
   if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
     if (isShellTool(toolName)) return undefined;
     if (self.isAuthorizedBaselineTestMutation(toolName, context.args)) return undefined;

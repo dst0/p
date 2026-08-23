@@ -24,7 +24,7 @@ function isExecutable(token: string | undefined, name: string): boolean {
   return token === name || token?.endsWith(`/${name}`) === true;
 }
 
-function tokenizeShellCommands(command: string): string[][] {
+export function tokenizeShellCommands(command: string): string[][] {
   const commands: string[][] = [];
   let words: string[] = [];
   let word = "";

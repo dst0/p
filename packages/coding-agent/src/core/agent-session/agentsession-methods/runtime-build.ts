@@ -2,11 +2,13 @@ import type { AssistantMessage } from "@dst0/p-ai";
 import { isContextOverflow, resetApiProviders } from "@dst0/p-ai";
 import { ExtensionRunner, type ToolDefinition } from "../../extensions/index.ts";
 import { emitSessionShutdownEvent } from "../../extensions/runner.ts";
+import { matchesProjectInstructionRuleBatch } from "../../project-instructions/index.ts";
 import {
   createAllToolDefinitions,
   createFinishWorkToolDefinition,
   createSubmitPlanToolDefinition,
 } from "../../tools/index.ts";
+import { createListSkillsToolDefinition } from "../../tools/list-skills.ts";
 import { createReadRulesToolDefinition } from "../../tools/read-rules.ts";
 import { createReadSkillsToolDefinition } from "../../tools/read-skills.ts";
 import { createToolDefinitionFromAgentTool } from "../../tools/tool-definition-wrapper.ts";
@@ -17,6 +19,8 @@ import {
   TOOL_SEARCH_TOOL_NAME,
   UPDATE_SESSION_STATE_TOOL_NAME,
 } from "../constants.ts";
+import { persistProjectRuleSupersession } from "../project-instruction-integrity.ts";
+import { digestProjectRuleReadContent } from "./tool-hooks.ts";
 
 export function do__buildRuntime(
   self: AgentSession,
@@ -49,10 +53,36 @@ export function do__buildRuntime(
           resolveModel: self.resolveImageModel.bind(self),
         },
       });
+  const readRulesToolDefinition = createReadRulesToolDefinition(self._projectInstructions.state);
+  const executeReadRules = readRulesToolDefinition.execute;
+  readRulesToolDefinition.execute = async (toolCallId, input, signal, onUpdate, context) => {
+    const result = await executeReadRules(toolCallId, input, signal, onUpdate, context);
+    const gate = self._projectRuleGate;
+    const currentInputHash = self._projectInstructions.state.current?.manifest.inputHash;
+    const matchingBatch = gate?.batches.find(
+      (batch) => !batch.satisfied && matchesProjectInstructionRuleBatch(batch.links, input.links),
+    );
+    if (gate && !gate.failure && gate.inputHash === currentInputHash && matchingBatch) {
+      self._projectRuleReadStages.set(toolCallId, {
+        inputHash: gate.inputHash,
+        links: [...matchingBatch.links],
+        contentDigests: digestProjectRuleReadContent(result.content),
+        generation: matchingBatch.generation,
+      });
+    }
+    return result;
+  };
+  const projectInstructionToolDefinitions: Record<string, ToolDefinition> =
+    self._projectInstructionMode === "compiled"
+      ? {
+          list_skills: createListSkillsToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
+          read_rules: readRulesToolDefinition as unknown as ToolDefinition,
+          read_skills: createReadSkillsToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
+        }
+      : {};
   const builtInToolDefinitions: Record<string, ToolDefinition> = {
     ...baseToolDefinitions,
-    read_rules: createReadRulesToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
-    read_skills: createReadSkillsToolDefinition(self._projectInstructions.state) as unknown as ToolDefinition,
+    ...projectInstructionToolDefinitions,
     [UPDATE_SESSION_STATE_TOOL_NAME]: self._createUpdateSessionStateToolDefinition() as unknown as ToolDefinition,
     [MARK_SESSION_PROGRESS_TOOL_NAME]: self._createMarkSessionProgressToolDefinition() as unknown as ToolDefinition,
     submit_plan: createSubmitPlanToolDefinition({
@@ -111,8 +141,7 @@ export function do__buildRuntime(
         "bash",
         "edit",
         "write",
-        "read_rules",
-        "read_skills",
+        ...(self._projectInstructionMode === "compiled" ? ["list_skills", "read_rules", "read_skills"] : []),
         "sleep",
         UPDATE_SESSION_STATE_TOOL_NAME,
         MARK_SESSION_PROGRESS_TOOL_NAME,
@@ -135,7 +164,7 @@ export async function do_reload(self: AgentSession): Promise<void> {
   self.syncQueueModesFromSettings();
   resetApiProviders();
   await self._resourceLoader.reload();
-  await self._projectInstructions.refresh();
+  if (self._projectInstructionMode === "compiled") await self._projectInstructions.refresh();
   self._buildRuntime({
     activeToolNames: self.getActiveToolNames(),
     flagValues: previousFlagValues,
@@ -154,6 +183,17 @@ export async function do_reload(self: AgentSession): Promise<void> {
     });
     await self.extendResourcesFromExtensions("reload");
   }
+  self._baseSystemPrompt = self._rebuildSystemPrompt(self.getActiveToolNames());
+  self.agent.state.systemPrompt = self._baseSystemPrompt;
+  if (self._projectInstructionMode === "compiled") {
+    const prepared = self._projectInstructions.state.current;
+    if (!prepared) throw new Error("Compiled project instructions are unavailable after reload");
+    persistProjectRuleSupersession(self.sessionManager, prepared.manifest.inputHash, "reload");
+  }
+  self._projectRuleGate = undefined;
+  self._projectRuleReadStages.clear();
+  self._queuedProjectRuleGates = new WeakMap();
+  self._processingQueuedProjectRuleTurn = false;
 }
 
 export function do__isNonRetryableProviderLimitError(_self: AgentSession, errorMessage: string): boolean {

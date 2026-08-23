@@ -11,6 +11,7 @@ import {
 import { readRuleLinks } from "../src/core/project-instructions/reader.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -26,11 +27,13 @@ function createWorkspace(): { root: string; agentsPath: string; cacheDir: string
   };
 }
 
-function createCompiler(body = "Keep the authoritative project rules in force."): ProjectInstructionCompiler {
-  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) => ({
-    body,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-  }));
+function createCompiler(): ProjectInstructionCompiler {
+  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+    ),
+  );
 }
 
 function createSkill(root: string, index: number): Skill {
@@ -82,9 +85,10 @@ describe("project instruction processing", () => {
     expect(first.manifest.mode).toBe("exact");
     expect(first.prompt).toContain("Never expose secrets.");
     expect(first.prompt).toContain("read_rules");
+    expect(first.prompt).toContain("list_skills");
     expect(first.prompt).toContain("read_skills");
     expect(first.prompt).toContain("rules/catalog.md");
-    expect(first.prompt).toContain("skills/catalog.md");
+    expect(first.prompt).not.toContain("skills/catalog.md");
     expect(first.prompt.length).toBeLessThan(5_000);
     expect(second.manifest.inputHash).toBe(first.manifest.inputHash);
 
@@ -107,10 +111,12 @@ describe("project instruction processing", () => {
       (_, index) => `## Rule ${index}\n\nAlways preserve invariant ${index}. ${"detail ".repeat(12)}\n`,
     ).join("");
     writeFileSync(workspace.agentsPath, content);
-    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => ({
-      body: `For repository work, call read_rules with ${request.modules[0].link} when its topic applies.`,
-      triggers: Object.fromEntries(request.modules.map((module) => [module.id, `Work involving ${module.title}`])),
-    }));
+    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) =>
+      createProjectInstructionCompilation(
+        request,
+        Object.fromEntries(request.modules.map((module) => [module.id, `Work involving ${module.title}`])),
+      ),
+    );
 
     const prepared = await prepareProjectInstructions({
       cwd: workspace.root,
@@ -150,6 +156,8 @@ describe("project instruction processing", () => {
     });
 
     expect(prepared.manifest.mode).toBe("fallback");
+    expect(prepared.manifest.compilerDiagnostic).toBe("project instruction compiler failed");
+    expect(JSON.stringify(prepared.manifest)).not.toContain("compiler unavailable");
     expect(prepared.prompt.length).toBeLessThan(5_000);
     expect(
       prepared.manifest.rules.map((rule) => readFileSync(join(prepared.versionDir, rule.file), "utf8")).join(""),
@@ -184,10 +192,14 @@ describe("project instruction processing", () => {
     let compilation = 0;
     const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => {
       compilation++;
-      return {
-        body: `Compilation ${compilation}; use read_rules for ${request.modules[0].link}.`,
-        triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-      };
+      const result = createProjectInstructionCompilation(
+        request,
+        Object.fromEntries(
+          request.modules.map((module) => [module.id, `concurrent cache integrity compilation ${compilation}`]),
+        ),
+      );
+      result.usage = { input: 100, output: compilation, cacheRead: 0, cacheWrite: 0, total: 100 + compilation };
+      return result;
     });
     const options = {
       cwd: workspace.root,
@@ -234,7 +246,7 @@ describe("project instruction processing", () => {
     expect(existsSync(join(outside, "instructions"))).toBe(false);
   });
 
-  it("uses catalog-only prompt routing when many skill links cannot fit inline", async () => {
+  it("uses list_skills prompt discovery when many skill links cannot fit inline", async () => {
     const workspace = createWorkspace();
     writeFileSync(workspace.agentsPath, "# Rules\n\nUse relevant skills.\n");
     const skills = Array.from({ length: 120 }, (_, index) => createSkill(workspace.root, index));
@@ -249,7 +261,8 @@ describe("project instruction processing", () => {
 
     expect(prepared.manifest.skills).toHaveLength(120);
     expect(prepared.prompt.length).toBeLessThan(5_000);
-    expect(prepared.prompt).toContain("skills/catalog.md");
+    expect(prepared.prompt).toContain("list_skills");
+    expect(prepared.prompt).not.toContain("skills/catalog.md");
     expect(prepared.prompt).not.toContain(prepared.manifest.skills[119].link);
     const catalog = readFileSync(join(prepared.versionDir, prepared.manifest.skillsCatalogFile), "utf8");
     expect(catalog).toContain(prepared.manifest.skills[119].link);

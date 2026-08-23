@@ -98,6 +98,8 @@ npm run dev --                 # Run p from sources
 For a short same-model comparison between this fork and the upstream agent, see
 [Agent benchmarking](packages/coding-agent/docs/benchmarking.md).
 
+For repository instruction handling, including `compiled`, `legacy`, and `off` modes, bounded `list_skills`/`read_rules`/`read_skills` retrieval, and lifecycle-aware action gating, see [Project instructions](packages/coding-agent/docs/project-instructions.md).
+
 ## Supply-chain hardening
 
 We treat npm dependency changes as reviewed code changes.

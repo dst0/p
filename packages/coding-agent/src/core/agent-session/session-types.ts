@@ -21,7 +21,7 @@ import type {
   ToolDefinition,
 } from "../extensions/index.ts";
 import type { ModelRegistry } from "../model-registry.ts";
-import type { ProjectInstructionController } from "../project-instructions/index.ts";
+import type { ProjectInstructionController, ProjectInstructionDeliveryMode } from "../project-instructions/index.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
@@ -104,6 +104,8 @@ export interface AgentSessionConfig {
   resourceLoader: ResourceLoader;
   /** Prepared instruction cache and refresh lifecycle. */
   projectInstructions?: ProjectInstructionController;
+  /** Project instruction delivery mode. */
+  projectInstructionMode?: ProjectInstructionDeliveryMode;
   /** SDK custom tools registered outside extensions */
   customTools?: ToolDefinition[];
   /** Whether every registered extension/custom tool starts active. */

@@ -9,6 +9,7 @@ import {
   resolveConfigValueUncached,
   resolveHeadersOrThrow,
 } from "../../resolve-config-value.ts";
+import { mergeCompat } from "../helpers.ts";
 import type { ModelRegistry } from "../modelregistry.ts";
 import type { ProviderConfigInput, ResolvedRequestAuth } from "../types.ts";
 
@@ -108,8 +109,10 @@ export function do_isUsingOAuth(self: ModelRegistry, model: Model<Api>): boolean
 
 export function do_registerProvider(self: ModelRegistry, providerName: string, config: ProviderConfigInput): void {
   self.validateProviderConfig(providerName, config);
-  self.applyProviderConfig(providerName, config);
-  self.upsertRegisteredProvider(providerName, config);
+  const effectiveConfig = mergeProviderConfig(self.registeredProviders.get(providerName), config);
+  self.validateProviderConfig(providerName, effectiveConfig);
+  self.applyProviderConfig(providerName, effectiveConfig);
+  self.registeredProviders.set(providerName, effectiveConfig);
 }
 
 export function do_unregisterProvider(self: ModelRegistry, providerName: string): void {
@@ -123,16 +126,51 @@ export function do_upsertRegisteredProvider(
   providerName: string,
   config: ProviderConfigInput,
 ): void {
-  const existing = self.registeredProviders.get(providerName);
-  if (!existing) {
-    self.registeredProviders.set(providerName, config);
-    return;
-  }
-  for (const k of Object.keys(config) as (keyof ProviderConfigInput)[]) {
-    if (config[k] !== undefined) {
-      (existing as Record<string, unknown>)[k] = config[k];
+  self.registeredProviders.set(providerName, mergeProviderConfig(self.registeredProviders.get(providerName), config));
+}
+
+function mergeProviderConfig(
+  existing: ProviderConfigInput | undefined,
+  update: ProviderConfigInput,
+): ProviderConfigInput {
+  if (!existing) return { ...update };
+  const merged = { ...existing };
+  for (const key of Object.keys(update) as (keyof ProviderConfigInput)[]) {
+    if (update[key] !== undefined) {
+      (merged as Record<string, unknown>)[key] = update[key];
     }
   }
+  if (update.models !== undefined && merged.modelMetadata === "inherit-existing") {
+    merged.models = mergeRegisteredModelMetadata(existing, merged, update.models);
+  }
+  return merged;
+}
+
+function mergeRegisteredModelMetadata(
+  existing: ProviderConfigInput,
+  effective: ProviderConfigInput,
+  models: NonNullable<ProviderConfigInput["models"]>,
+): NonNullable<ProviderConfigInput["models"]> {
+  const existingModels = new Map((existing.models ?? []).map((model) => [model.id, model] as const));
+  return models.map((model) => {
+    const previous = existingModels.get(model.id);
+    if (!previous || (previous.api ?? existing.api) !== (model.api ?? effective.api)) return { ...model };
+    return {
+      ...model,
+      reasoning: model.reasoning ?? previous.reasoning,
+      thinkingLevelMap: mergeThinkingLevelMap(previous.thinkingLevelMap, model.thinkingLevelMap),
+      compat: mergeCompat(previous.compat, model.compat),
+    };
+  });
+}
+
+function mergeThinkingLevelMap(
+  existing: Model<Api>["thinkingLevelMap"],
+  replacement: Model<Api>["thinkingLevelMap"],
+): Model<Api>["thinkingLevelMap"] {
+  if (!existing) return replacement;
+  if (!replacement) return existing;
+  return { ...existing, ...replacement };
 }
 
 export function do_validateProviderConfig(
@@ -140,6 +178,14 @@ export function do_validateProviderConfig(
   providerName: string,
   config: ProviderConfigInput,
 ): void {
+  if (
+    config.modelMetadata !== undefined &&
+    config.modelMetadata !== "replace" &&
+    config.modelMetadata !== "inherit-existing"
+  ) {
+    throw new Error(`Provider ${providerName}: invalid "modelMetadata" mode.`);
+  }
+
   if (config.streamSimple && !config.api) {
     throw new Error(`Provider ${providerName}: "api" is required when registering streamSimple.`);
   }
@@ -156,6 +202,9 @@ export function do_validateProviderConfig(
   }
 
   for (const modelDef of config.models) {
+    if (typeof modelDef.id !== "string" || modelDef.id.length === 0) {
+      throw new Error(`Provider ${providerName}: model id must be a non-empty string.`);
+    }
     const api = modelDef.api || config.api;
     if (!api) {
       throw new Error(`Provider ${providerName}, model ${modelDef.id}: no "api" specified.`);

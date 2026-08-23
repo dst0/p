@@ -84,6 +84,8 @@ export class TaskVerificationController {
 
   public readonly mutatedSourceFiles = new Set<string>();
 
+  public readonly requirementSourceTexts = new Map<string, string>();
+
   public state = emptyState();
 
   public latestUserPrompt = "";

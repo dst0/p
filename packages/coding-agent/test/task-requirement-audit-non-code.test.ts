@@ -71,10 +71,14 @@ describe("requirement-audit non-code mutations", () => {
     await nextModelTurn(harness);
     const completed = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Two current static inspections prove the documentation is complete and consistent.",
-      evidence_refs: [first, second],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Two current static inspections prove the documentation is complete and consistent.",
+          evidence_refs: [first, second],
+        },
+      ],
     });
     const token = auditVerificationToken(completed);
     expect(
