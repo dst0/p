@@ -1,7 +1,10 @@
 import { createHash } from "node:crypto";
 import type {
+  IgnoredSourceClause,
   IgnoredSourcePrompt,
+  IgnoredTaskVerificationRequirementSource,
   TaskRequirement,
+  TaskVerificationRequirementSourceRef,
   TaskVerificationSourcePrompt,
   TaskVerificationState,
 } from "./types.ts";
@@ -11,29 +14,74 @@ function sha256(value: unknown): string {
 }
 
 export function sourcePromptsForState(state: TaskVerificationState): TaskVerificationSourcePrompt[] {
-  if (state.taskPrompts && state.taskPrompts.length > 0) return state.taskPrompts;
+  const prompts = state.taskPrompts ?? [];
+  if (prompts.length > 0) return prompts;
   if (state.taskContext) return [{ id: "legacy-task-context", text: state.taskContext }];
   if (state.taskSummary) return [{ id: "task-summary", text: state.taskSummary }];
   return [];
 }
 
-export function computeUserRequirementsHash(prompts: readonly TaskVerificationSourcePrompt[]): string {
-  return sha256(prompts.map((prompt) => ({ id: prompt.id, text: prompt.text })));
+export function computeUserRequirementsHash(
+  prompts: readonly TaskVerificationSourcePrompt[],
+  sourceRefs: readonly TaskVerificationRequirementSourceRef[] = [],
+  ignoredSources: readonly IgnoredTaskVerificationRequirementSource[] = [],
+): string {
+  const promptIdentity = prompts.map((prompt) => ({ id: prompt.id, text: prompt.text }));
+  if (sourceRefs.length === 0 && ignoredSources.length === 0) return sha256(promptIdentity);
+  return sha256({
+    prompts: promptIdentity,
+    requirementSources: sourceRefs.map((source) => ({
+      id: source.id,
+      path: source.path,
+      sha256: source.sha256,
+      byteLength: source.byteLength,
+      referencedByPromptIds: source.referencedByPromptIds,
+      capturedAtMutationRevision: source.capturedAtMutationRevision,
+      origin: source.origin,
+      policyVersion: source.policyVersion,
+    })),
+    ignoredRequirementSources: ignoredSources,
+  });
+}
+
+export function computeStateUserRequirementsHash(state: TaskVerificationState): string {
+  return computeUserRequirementsHash(
+    sourcePromptsForState(state),
+    state.requirementSourceRefs ?? [],
+    state.ignoredRequirementSources ?? [],
+  );
 }
 
 export function computeRequirementSetHash(
   requirements: readonly TaskRequirement[],
   ignoredSourcePrompts: readonly IgnoredSourcePrompt[],
+  ignoredSourceClauses: readonly IgnoredSourceClause[] = [],
 ): string {
-  return sha256({
+  const legacyPayload = {
     requirements: requirements.map((requirement) => ({
       id: requirement.id,
       type: requirement.type,
       text: requirement.text,
       acceptanceCriterion: requirement.acceptanceCriterion,
       sourcePromptIndexes: requirement.sourcePromptIndexes,
+      sourceClauseIds: requirement.sourceClauseIds,
+      highRisk: requirement.highRisk,
+      highRiskSourcePromptIndexes: requirement.highRiskSourcePromptIndexes,
+      proofPolicies: requirement.proofPolicies,
     })),
     ignoredSourcePrompts,
+  };
+  if (ignoredSourceClauses.length === 0) return sha256(legacyPayload);
+  return sha256({
+    ...legacyPayload,
+    ignoredSourceClauses: ignoredSourceClauses.map((clause) => ({
+      sourceClauseId: clause.sourceClauseId,
+      classification: clause.classification,
+      reason: clause.reason,
+      ...(clause.supersededBySourcePromptIndex === undefined
+        ? {}
+        : { supersededBySourcePromptIndex: clause.supersededBySourcePromptIndex }),
+    })),
   });
 }
 

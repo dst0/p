@@ -13,6 +13,7 @@ export function emptyRequirementAudit(): TaskVerificationState["requirementAudit
     status: "pending",
     requirements: [],
     ignoredSourcePrompts: [],
+    ignoredSourceClauses: [],
     nextRequirementIndex: 0,
   };
 }

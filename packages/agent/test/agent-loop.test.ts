@@ -426,7 +426,7 @@ describe("agentLoop with AgentMessage", () => {
     // Should have tool execution events
     const toolStart = events.find((e) => e.type === "tool_execution_start");
     const toolEnd = events.find((e) => e.type === "tool_execution_end");
-    expect(toolStart).toBeDefined();
+    expect(toolStart).toMatchObject({ toolDescription: "Echo tool" });
     expect(toolEnd).toBeDefined();
     if (toolEnd?.type === "tool_execution_end") {
       expect(toolEnd.isError).toBe(false);

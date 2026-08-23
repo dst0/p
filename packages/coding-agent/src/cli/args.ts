@@ -1,13 +1,20 @@
-/**
- * CLI argument parsing and help display
- */
+/** CLI argument parsing and help display. */
 import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
 import chalk from "chalk";
 import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
+import {
+  COMPLETION_MODE_LABELS,
+  isProjectInstructionMode,
+  isValidThinkingLevel,
+  PROJECT_INSTRUCTION_MODES,
+  type ProjectInstructionDeliveryMode,
+  parseCompletionMode,
+  parsePositiveIntegerFlag,
+} from "./argument-values.ts";
 
+export { isValidThinkingLevel } from "./argument-values.ts";
 export type Mode = "text" | "json" | "rpc";
-
 export interface Args {
   provider?: string;
   model?: string;
@@ -17,6 +24,8 @@ export interface Args {
   thinking?: ThinkingLevel;
   maxTokens?: number;
   completionMode?: CompletionMode;
+  projectInstructionMode?: ProjectInstructionDeliveryMode;
+  projectInstructionCompilerModel?: string;
   continue?: boolean;
   resume?: boolean;
   help?: boolean;
@@ -54,34 +63,6 @@ export interface Args {
   unknownFlags: Map<string, boolean | string>;
   diagnostics: Array<{ type: "warning" | "error"; message: string }>;
 }
-
-const VALID_THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
-const COMPLETION_MODE_ALIASES = {
-  implicit: "implicit",
-  explicit: "explicit_finish",
-  explicit_finish: "explicit_finish",
-  hybrid: "hybrid",
-} satisfies Record<string, CompletionMode>;
-const VALID_COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish", "hybrid"] as const;
-
-export function isValidThinkingLevel(level: string): level is ThinkingLevel {
-  return VALID_THINKING_LEVELS.includes(level as ThinkingLevel);
-}
-function parseCompletionMode(mode: string): CompletionMode | undefined {
-  if (mode in COMPLETION_MODE_ALIASES) {
-    return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
-  }
-  return undefined;
-}
-
-function parsePositiveIntegerFlag(value: string): number | undefined {
-  if (!/^[1-9]\d*$/.test(value)) {
-    return undefined;
-  }
-  const parsed = Number(value);
-  return Number.isSafeInteger(parsed) ? parsed : undefined;
-}
-
 export function parseArgs(args: string[]): Args {
   const result: Args = {
     messages: [],
@@ -89,10 +70,8 @@ export function parseArgs(args: string[]): Args {
     unknownFlags: new Map(),
     diagnostics: [],
   };
-
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-
     if (arg === "--help" || arg === "-h") {
       result.help = true;
     } else if (arg === "--version" || arg === "-v") {
@@ -158,7 +137,7 @@ export function parseArgs(args: string[]): Args {
       } else {
         result.diagnostics.push({
           type: "warning",
-          message: `Invalid thinking level "${level}". Valid values: ${VALID_THINKING_LEVELS.join(", ")}`,
+          message: `Invalid thinking level "${level}". Valid values: off, minimal, low, medium, high, xhigh`,
         });
       }
     } else if (arg === "--max-tokens") {
@@ -176,6 +155,26 @@ export function parseArgs(args: string[]): Args {
           result.maxTokens = maxTokens;
         }
       }
+    } else if (arg === "--project-instructions") {
+      const mode = args[i + 1];
+      if (mode && !mode.startsWith("-") && isProjectInstructionMode(mode)) {
+        result.projectInstructionMode = mode;
+        i++;
+      } else {
+        if (mode && !mode.startsWith("-")) i++;
+        result.diagnostics.push({
+          type: "error",
+          message: `--project-instructions requires one of: ${PROJECT_INSTRUCTION_MODES.join(", ")}`,
+        });
+      }
+    } else if (arg === "--project-instruction-compiler-model") {
+      const value = args[i + 1];
+      if (!value || value.startsWith("-")) {
+        result.diagnostics.push({
+          type: "error",
+          message: "--project-instruction-compiler-model requires a provider/id value",
+        });
+      } else result.projectInstructionCompilerModel = args[++i];
     } else if (arg === "--completion-mode" && i + 1 < args.length) {
       const mode = args[++i];
       const completionMode = parseCompletionMode(mode);
@@ -184,7 +183,7 @@ export function parseArgs(args: string[]): Args {
       } else {
         result.diagnostics.push({
           type: "warning",
-          message: `Invalid completion mode "${mode}". Valid values: ${VALID_COMPLETION_MODE_LABELS.join(", ")}`,
+          message: `Invalid completion mode "${mode}". Valid values: ${COMPLETION_MODE_LABELS.join(", ")}`,
         });
       }
     } else if (arg === "--print" || arg === "-p") {
@@ -255,10 +254,8 @@ export function parseArgs(args: string[]): Args {
       result.messages.push(arg);
     }
   }
-
   return result;
 }
-
 export function printHelp(extensionFlags?: ExtensionFlag[]): void {
   const extensionFlagsText =
     extensionFlags && extensionFlags.length > 0
@@ -311,6 +308,8 @@ ${chalk.bold("Options:")}
   --thinking <level>             Set thinking level: off, minimal, low, medium, high, xhigh
   --max-tokens <n>               Limit provider output tokens for each model request
   --completion-mode <mode>       Completion mode: explicit (default), hybrid, implicit
+  --project-instructions <mode>  Project rules: compiled (default), legacy, or off
+  --project-instruction-compiler-model <provider/id>  Dedicated compiler model (default: task model)
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
   --skill <path>                 Load a skill file or directory (can be used multiple times)
@@ -361,7 +360,6 @@ ${chalk.bold("Examples:")}
 
   # Use model with provider prefix (no --provider needed)
   ${APP_NAME} --model openai/gpt-4o "Help me refactor this code"
-
   # Use model with thinking level shorthand
   ${APP_NAME} --model sonnet:high "Solve this complex problem"
 
@@ -437,7 +435,7 @@ ${chalk.bold("Environment Variables:")}
   P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://p.dev/session/)
 
 ${chalk.bold("Built-in Tool Names:")}
-  read         - Read file contents\n  read_rules   - Read integrity-checked project instruction modules\n  read_skills  - Read cataloged skills and skill-relative resources
+  read         - Read file contents\n  list_skills  - Discover cataloged skills in bounded pages\n  read_rules   - Read integrity-checked project instruction modules\n  read_skills  - Read cataloged skills and skill-relative resources
   bash         - Execute bash commands
   edit         - Edit files with find/replace
   write        - Write files (creates/overwrites)

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Add a non-user-facing randomized paired legacy-versus-compiled benchmark harness with correctness gates, fixtures, and retained evidence."
+}

@@ -33,4 +33,48 @@ describe("restored task-verification state validation", () => {
       }),
     ).toBe(false);
   });
+
+  it.each(["id", "path", "snapshotEntryId"] as const)(
+    "rejects duplicate requirement-source %s identities",
+    (property) => {
+      const state = emptyState("validation-task");
+      const first = requirementSourceRef("source-1", "README.md", "snapshot-1");
+      const second = requirementSourceRef("source-2", "SPEC.md", "snapshot-2");
+      second[property] = first[property];
+      state.requirementSourceRefs = [first, second];
+
+      expect(isTaskVerificationState(state)).toBe(false);
+    },
+  );
+
+  it("rejects overlap between frozen and ignored requirement-source paths", () => {
+    const state = emptyState("validation-task");
+    state.requirementSourceRefs = [requirementSourceRef("source-1", "README.md", "snapshot-1")];
+    state.ignoredRequirementSources = [{ path: "README.md", reason: "Conflicting persisted classification." }];
+
+    expect(isTaskVerificationState(state)).toBe(false);
+  });
+
+  it("rejects a malformed requirement-source deauthorization prompt identity", () => {
+    const state = emptyState("validation-task");
+    state.ignoredRequirementSources = [
+      { path: "notes.md", reason: "Directly deauthorized by the user.", deauthorizedByPromptId: 42 as never },
+    ];
+
+    expect(isTaskVerificationState(state)).toBe(false);
+  });
 });
+
+function requirementSourceRef(id: string, path: string, snapshotEntryId: string) {
+  return {
+    id,
+    path,
+    sha256: "a".repeat(64),
+    byteLength: 12,
+    snapshotEntryId,
+    referencedByPromptIds: ["user-1"],
+    capturedAtMutationRevision: 0,
+    origin: "requirement_audit.prepare_definition" as const,
+    policyVersion: 1 as const,
+  };
+}

@@ -18,8 +18,27 @@ import {
   USER_FILE_SIZE_OVERRIDE_PATTERN,
   WRITE_REDIRECT_PATTERN,
 } from "./constants.ts";
-import { containsGitPublishCommand } from "./git-command-classification.ts";
+import { containsGitPublishCommand, tokenizeShellCommands } from "./git-command-classification.ts";
 import type { BaselineMethod, FinalMethod, TaskKind } from "./types.ts";
+
+const CONFIDENTLY_READ_ONLY_SHELL_COMMANDS = new Set([
+  "cat",
+  "cmp",
+  "diff",
+  "file",
+  "grep",
+  "head",
+  "ls",
+  "pwd",
+  "rg",
+  "shasum",
+  "stat",
+  "tail",
+  "test",
+  "wc",
+  "which",
+]);
+const CONFIDENTLY_READ_ONLY_GIT_SUBCOMMANDS = new Set(["diff", "log", "show", "status"]);
 
 export function findOversizedSourceFiles(
   cwd: string,
@@ -215,6 +234,41 @@ export function isPotentialMutationTool(toolName: string, args: unknown): boolea
     return isRecognizedBashMutation(args);
   }
   return false;
+}
+
+export function isConfidentlyReadOnlyShellTool(toolName: string, args: unknown): boolean {
+  if (!isShellTool(toolName)) return false;
+  const command = shellCommand(args);
+  if (!command || /[\n\r`$()<>]/u.test(command)) return false;
+  const commands = tokenizeShellCommands(command);
+  if (commands.length === 0) return false;
+  return commands.every((words) => {
+    const executable = words[0];
+    if (!executable || executable.includes("/") || executable.includes("\\")) return false;
+    const name = executable.toLocaleLowerCase("en-US");
+    if (name === "find" && words.some((word) => /^-(?:delete|exec|execdir|ok|okdir)$/u.test(word))) return false;
+    if (name === "rg" && words.some((word) => word === "--pre" || word.startsWith("--pre="))) return false;
+    if (
+      name === "file" &&
+      words.slice(1).some((word) => word === "--compile" || (/^-[^-]*C/u.test(word) && word !== "-"))
+    ) {
+      return false;
+    }
+    if (name === "diff" && words.slice(1).some((word) => word === "--output" || word.startsWith("--output="))) {
+      return false;
+    }
+    if (name === "git") {
+      const subcommand = words[1]?.toLocaleLowerCase("en-US");
+      const unsafeOption = words
+        .slice(2)
+        .some(
+          (word) =>
+            word === "--output" || word.startsWith("--output=") || word === "--ext-diff" || word === "--textconv",
+        );
+      return subcommand !== undefined && CONFIDENTLY_READ_ONLY_GIT_SUBCOMMANDS.has(subcommand) && !unsafeOption;
+    }
+    return CONFIDENTLY_READ_ONLY_SHELL_COMMANDS.has(name);
+  });
 }
 
 export function pathArgument(args: unknown): string | undefined {

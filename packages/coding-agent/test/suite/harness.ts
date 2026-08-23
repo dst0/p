@@ -2,7 +2,7 @@
  * Local test harness for the new coding-agent test suite.
  */
 
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool, CompletionMode } from "@dst0/p-agent-core";
@@ -56,6 +56,8 @@ export function getAssistantTexts(harness: Harness): string[] {
 }
 
 export interface HarnessOptions {
+  tempRoot?: string;
+  onTempDirCreated?: (tempDir: string) => void;
   models?: FauxModelDefinition[];
   settings?: Partial<Settings>;
   systemPrompt?: string;
@@ -87,18 +89,69 @@ export interface Harness {
   cleanup: () => void;
 }
 
-function createTempDir(): string {
-  const tempDir = join(tmpdir(), `pi-suite-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(tempDir, { recursive: true });
-  return tempDir;
+interface HarnessConstruction {
+  fauxProvider?: FauxProviderRegistration;
+  session?: AgentSession;
+}
+
+function createTempDir(tempRoot: string = tmpdir()): string {
+  return mkdtempSync(join(tempRoot, "pi-suite-"));
+}
+
+function collectHarnessCleanupFailures(construction: HarnessConstruction, tempDir: string): unknown[] {
+  const failures: unknown[] = [];
+  const cleanupSteps = [
+    () => construction.session?.dispose(),
+    () => construction.fauxProvider?.unregister(),
+    () => {
+      if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+    },
+  ];
+  for (const cleanup of cleanupSteps) {
+    try {
+      cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
+}
+
+function attachHarnessCleanupFailures(error: unknown, failures: unknown[]): void {
+  if (!(error instanceof Error) || failures.length === 0) return;
+  const causeDescriptor = Object.getOwnPropertyDescriptor(error, "cause");
+  if ((!causeDescriptor && !Object.isExtensible(error)) || causeDescriptor?.configurable === false) return;
+  const cleanupCause = new AggregateError(failures, "Harness rollback cleanup failed");
+  Object.defineProperty(error, "cause", {
+    configurable: true,
+    value: error.cause === undefined ? cleanupCause : new AggregateError([error.cause, cleanupCause]),
+  });
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
-  const tempDir = createTempDir();
+  const tempDir = createTempDir(options.tempRoot);
+  const construction: HarnessConstruction = {};
+  try {
+    options.onTempDirCreated?.(tempDir);
+    return await buildHarness(options, tempDir, construction);
+  } catch (error) {
+    attachHarnessCleanupFailures(error, collectHarnessCleanupFailures(construction, tempDir));
+    throw error;
+  }
+}
+
+async function buildHarness(
+  options: HarnessOptions,
+  tempDir: string,
+  construction: HarnessConstruction,
+): Promise<Harness> {
   const completionMode = options.completionMode ?? "explicit_finish";
   const fauxProvider: FauxProviderRegistration = registerFauxProvider({
     models: options.models,
+    registerImmediately: false,
+    preserveOnReset: true,
   });
+  construction.fauxProvider = fauxProvider;
   fauxProvider.setResponses([]);
   const model = fauxProvider.getModel();
   const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
@@ -185,11 +238,13 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     extensionRunnerRef,
     completionMode,
   });
+  construction.session = session;
 
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => {
     events.push(event);
   });
+  fauxProvider.register();
 
   return {
     session,
@@ -208,11 +263,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     },
     tempDir,
     cleanup() {
-      session.dispose();
-      fauxProvider.unregister();
-      if (existsSync(tempDir)) {
-        rmSync(tempDir, { recursive: true });
-      }
+      const failures = collectHarnessCleanupFailures(construction, tempDir);
+      if (failures.length > 0) throw new AggregateError(failures, "Harness cleanup failed");
     },
   };
 }

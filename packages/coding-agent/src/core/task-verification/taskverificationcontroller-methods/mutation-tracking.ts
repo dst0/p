@@ -7,7 +7,9 @@ import {
   TEST_PATH_PATTERN,
   TEST_PATTERN,
 } from "../constants.ts";
+import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
 import { baselineRequired } from "../requirement-checks.ts";
+import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
 import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
@@ -34,12 +36,12 @@ export async function do_afterToolCall(
   const effectiveIsError = previousResult?.isError ?? context.isError;
   const content = previousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
-
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
     self.state = emptyState();
     self.evidence.clear();
     self.bashFingerprints.clear();
     self.mutatedSourceFiles.clear();
+    self.requirementSourceTexts.clear();
     self.latestUserPrompt = "";
     self.persistState();
     return previousResult;
@@ -66,7 +68,7 @@ export async function do_afterToolCall(
       mutationRevision: self.state.mutationRevision + 1,
       final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
       readiness: emptyReadiness(),
-      requirementAudit: clearedRequirementAudit(self),
+      requirementAudit: resetRequirementAuditAfterMutation(self.state.requirementAudit),
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
@@ -74,6 +76,19 @@ export async function do_afterToolCall(
   }
 
   if (!isEvidenceTool(context.toolCall.name)) return previousResult;
+  const proofWitnesses = collectProofWitnesses(
+    content,
+    self.state.requirementAudit.requirements,
+    self.state.requirementAudit.requirementSetHash,
+    self.state.mutationRevision,
+  );
+  const proofFrameCount = countProofFrameMarkers(content);
+  const recordedProofCount = proofWitnesses?.length ?? 0;
+  const proofFrameFeedback =
+    proofFrameCount > recordedProofCount
+      ? `Recorded ${recordedProofCount} of ${proofFrameCount} P_PROOF_V1 frames; rejected or duplicate frames were not persisted. Compare every frame with the controller proof template before submitting verdicts.`
+      : undefined;
+  const redactedContent = redactProofFrames(content);
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -81,7 +96,8 @@ export async function do_afterToolCall(
     toolCallId: context.toolCall.id,
     toolName: context.toolCall.name,
     descriptor,
-    outputSummary: summarizeOutput(content),
+    outputSummary: summarizeOutput(redactedContent),
+    ...(proofWitnesses ? { proofWitnesses } : {}),
     isError: effectiveIsError,
     mutationRevision: self.state.mutationRevision,
     timestamp: new Date().toISOString(),
@@ -94,13 +110,14 @@ export async function do_afterToolCall(
 
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
+    proofFrameFeedback,
     invalidation,
     autoFinalized,
     acceptanceAudit,
   ]
     .filter((text): text is string => text !== undefined)
     .join("\n");
-  const newContent = [...content];
+  const newContent = [...redactedContent];
   let lastIndex = -1;
   for (let i = newContent.length - 1; i >= 0; i--) {
     if (newContent[i]!.type === "text") {
@@ -140,24 +157,6 @@ export async function do_afterToolCall(
   return result;
 }
 
-function clearedRequirementAudit(self: TaskVerificationController) {
-  const requirements = self.state.requirementAudit.requirements.map((requirement) => ({
-    id: requirement.id,
-    type: requirement.type,
-    text: requirement.text,
-    acceptanceCriterion: requirement.acceptanceCriterion,
-    sourcePromptIndexes: requirement.sourcePromptIndexes,
-  }));
-  if (requirements.length === 0) return emptyRequirementAudit();
-  return {
-    ...self.state.requirementAudit,
-    status: "pending" as const,
-    requirements,
-    nextRequirementIndex: 0,
-    verifiedMutationRevision: undefined,
-  };
-}
-
 function invalidateAfterFailedVerification(
   self: TaskVerificationController,
   evidence: TaskVerificationEvidence,
@@ -172,7 +171,7 @@ function invalidateAfterFailedVerification(
   self.state = {
     ...self.state,
     readiness: emptyReadiness(),
-    requirementAudit: clearedRequirementAudit(self),
+    requirementAudit: resetRequirementAuditAfterMutation(self.state.requirementAudit),
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
@@ -235,6 +234,8 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
     taskSummary,
     taskContext: self.latestUserPrompt.slice(0, 2_000) || undefined,
     taskPrompts: currentPrompts,
+    requirementSourceRefs: self.state.requirementSourceRefs ?? [],
+    ignoredRequirementSources: self.state.ignoredRequirementSources ?? [],
     baseline: {
       required,
       status: required ? "pending" : "not_required",
@@ -242,6 +243,7 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
       authorizedTestPaths: [],
       testSetupChanged: false,
     },
+    requirementAudit: emptyRequirementAudit(),
     updatedAt: new Date().toISOString(),
   };
   self.restoreError = undefined;

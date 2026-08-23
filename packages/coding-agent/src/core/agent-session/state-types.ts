@@ -54,11 +54,43 @@ export interface RuntimeContextPrompts {
   workingStatePrompt?: string;
   memoryPrompt?: string;
   rulesPrompt?: string;
+  projectRuleLinks?: string[];
+  projectRuleGate?: ProjectRuleGate;
   repoMapPrompt?: string;
   subagentProfilesPrompt?: string;
   subagentDigestPrompt?: string;
   combinedPrompt?: string;
   turnContextPrompt?: string;
+}
+
+export interface ProjectRuleGateBatch {
+  links: string[];
+  satisfied: boolean;
+  generation: number;
+}
+
+export const MAX_PROJECT_RULE_LINKS_PER_TURN = 3;
+
+export interface ProjectRuleGate {
+  inputHash: string;
+  batches: ProjectRuleGateBatch[];
+  activeGeneration: number;
+  candidateLinks?: string[];
+  candidateMerge?: "union";
+  failure?: string;
+}
+
+export interface ProjectRuleReadStage {
+  inputHash: string;
+  links: string[];
+  contentDigests: string[];
+  generation: number;
+}
+
+export interface ProjectRuleTurnContext {
+  prompt?: string;
+  links?: string[];
+  gate?: ProjectRuleGate;
 }
 
 export interface PromptContextPreparation {

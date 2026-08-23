@@ -24,6 +24,14 @@ export function do__refreshToolRegistry(
       }),
     })),
   ].filter((tool) => isAllowedTool(tool.definition.name));
+  const reservedProjectInstructionTool = allCustomTools.find(
+    (tool) =>
+      ["list_skills", "read_rules", "read_skills"].includes(tool.definition.name) &&
+      self._baseToolDefinitions.has(tool.definition.name),
+  );
+  if (reservedProjectInstructionTool) {
+    throw new Error(`${reservedProjectInstructionTool.definition.name} is reserved by compiled project instructions`);
+  }
   const definitionRegistry = new Map<string, ToolDefinitionEntry>(
     Array.from(self._baseToolDefinitions.entries())
       .filter(([name]) => isAllowedTool(name))
@@ -103,5 +111,16 @@ export function do__refreshToolRegistry(
     }
   }
 
-  self.setActiveToolsByName([...new Set(nextActiveToolNames)]);
+  const uniqueActiveToolNames = new Set(nextActiveToolNames);
+  const activatesCustomTool = Array.from(uniqueActiveToolNames).some(
+    (name) => definitionRegistry.get(name)?.sourceInfo.source !== "builtin",
+  );
+  if (self._projectInstructionMode === "compiled" && activatesCustomTool) {
+    if (!toolRegistry.has("read_rules")) {
+      throw new Error("Compiled project instructions require read_rules when custom or extension tools are active");
+    }
+    uniqueActiveToolNames.add("read_rules");
+  }
+
+  self.setActiveToolsByName([...uniqueActiveToolNames]);
 }

@@ -114,6 +114,8 @@ export function buildSessionOptions(
   if (parsed.maxTokens !== undefined) {
     options.maxTokens = parsed.maxTokens;
   }
+  options.projectInstructionMode = parsed.noContextFiles ? "off" : parsed.projectInstructionMode;
+  options.projectInstructionCompilerModel = parsed.projectInstructionCompilerModel;
 
   return { options, cliThinkingFromModel, diagnostics };
 }

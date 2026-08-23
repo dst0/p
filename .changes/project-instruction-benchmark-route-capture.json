@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Count each streamed runtime-context message once in project-instruction benchmark evidence."
+}

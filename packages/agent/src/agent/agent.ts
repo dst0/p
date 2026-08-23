@@ -157,11 +157,11 @@ export class Agent {
     return do_subscribe(this, listener);
   }
 
-  steer(message: AgentMessage): void {
+  steer(message: AgentMessage | readonly AgentMessage[]): void {
     do_steer(this, message);
   }
 
-  followUp(message: AgentMessage): void {
+  followUp(message: AgentMessage | readonly AgentMessage[]): void {
     do_followUp(this, message);
   }
 

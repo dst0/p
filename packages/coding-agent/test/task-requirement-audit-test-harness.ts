@@ -1,5 +1,6 @@
 import { Agent, type AgentEvent } from "@dst0/p-agent-core";
 import { SessionManager } from "../src/core/session-manager.ts";
+import type { TaskRequirement } from "../src/core/task-verification/types.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
 
 export interface RequirementAuditHarness {
@@ -113,6 +114,44 @@ export function auditVerificationToken(text: string): string {
   return match[1];
 }
 
+export function withAuditProofWitnesses(output: string, requirement: TaskRequirement): string {
+  const proofLines = (requirement.proofPolicies ?? []).map(
+    (policy) => `P_PROOF_V1 ${JSON.stringify({ requirementId: requirement.id, policy, facts: proofFacts(policy) })}`,
+  );
+  return [output, ...proofLines].join("\n");
+}
+
+function proofFacts(policy: NonNullable<TaskRequirement["proofPolicies"]>[number]): Record<string, unknown> {
+  if (policy === "preserve_state_on_failure" || policy === "preserve_log_on_failure") {
+    const snapshot = Buffer.from("unchanged snapshot").toString("base64");
+    return { beforeBase64: snapshot, afterFailureBase64: snapshot, failedOutcome: "threw" };
+  }
+  if (policy === "preserve_version_on_failure" || policy === "preserve_position_on_failure") {
+    return {
+      before: 4,
+      afterFailure: 4,
+      afterSuccess: 5,
+      failedOutcome: "threw",
+      successOutcome: "succeeded",
+    };
+  }
+  if (policy === "preserve_command_identity_on_failure") {
+    return {
+      failedIdentity: "same-command-id",
+      retryIdentity: "same-command-id",
+      failedOutcome: "threw",
+      retryOutcome: "succeeded",
+    };
+  }
+  const original = Buffer.from("artifact\n");
+  const candidate = policy === "remove_exact_final_byte" ? original.subarray(0, -1) : Buffer.from("changed\n");
+  return {
+    originalBase64: original.toString("base64"),
+    candidateBase64: candidate.toString("base64"),
+    outcome: "threw",
+  };
+}
+
 export async function completeSingleRequirementAudit(
   controller: TaskVerificationController,
   evidenceRef: string,
@@ -131,10 +170,14 @@ export async function completeSingleRequirementAudit(
   });
   const verdict = await callRequirementAudit(controller, {
     action: "verdict",
-    requirement_id: "R1",
-    passed: true,
-    reason: "Focused current-revision evidence proves the requested behavior.",
-    evidence_refs: [evidenceRef],
+    verdicts: [
+      {
+        requirement_id: "R1",
+        passed: true,
+        reason: "Focused current-revision evidence proves the requested behavior.",
+        evidence_refs: [evidenceRef],
+      },
+    ],
   });
   return auditVerificationToken(verdict);
 }

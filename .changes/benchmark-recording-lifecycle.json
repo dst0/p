@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Rotate live benchmark recordings through private Brotli-Q6 chunks, enforce separate scratch and final-archive disk caps, validate exact terminal receipts, and label paired benchmark candidates."
+}

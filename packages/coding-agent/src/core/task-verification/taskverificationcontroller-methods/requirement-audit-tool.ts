@@ -10,22 +10,27 @@ export function do_createRequirementAuditToolDefinition(
     name: REQUIREMENT_AUDIT_TOOL_NAME,
     label: "Requirement Audit",
     description:
-      "Define authoritative atomic user requirements after evidence readiness, then record exactly one evidence-backed verdict per model turn.",
+      "Freeze explicitly referenced task specifications, define authoritative atomic user requirements, then record one evidence-backed verdict batch.",
     promptSnippet:
-      "Define atomic user requirements and verify them sequentially before a completion certificate can be issued.",
+      "Define atomic user requirements and verify them with one complete verdict batch before a completion certificate can be issued.",
     promptGuidelines: [
-      "Use action 'define' only when ready_to_finish asks for decomposition of the verbatim source prompts.",
+      "Use action 'prepare_definition' before the first matching mutation when the controller lists referenced requirement-source candidates. Select 1-3 relevant paths and classify every remaining candidate with an ignored_paths reason.",
+      "Use action 'define' only after prepare_definition or ready_to_finish asks for decomposition of the displayed sources.",
       "Include only user requirements; do not invent best practices or duplicate repository policy gates.",
+      "Split every high-risk outcome and listed case into its own independently verifiable requirement.",
       "Reference every source prompt by 1-based index or explain why a non-task prompt is ignored.",
+      "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      "Record exactly one verdict per model turn, in controller order, with a reason for both true and false.",
-      "Every passed verdict requires current non-error evidence_refs. Continue through all requirements after failures.",
+      "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
+      "Every verdict needs a reason. Every passed verdict requires current non-error evidence_refs.",
+      "High-risk integrity, security, durability, transaction, and concurrency requirements need a relevant focused test with a positive passing result; generic suites and manual reproductions cannot prove them.",
     ],
     parameters: RequirementAuditSchema,
     executionMode: "sequential",
     execute: async (_id, params) => {
       const result = self.applyRequirementAudit(params);
-      return { content: [{ type: "text", text: result.message }], details: result };
+      const message = result.status === "needs_action" ? self.withGuidance(result.message) : result.message;
+      return { content: [{ type: "text", text: message }], details: result };
     },
   };
 }

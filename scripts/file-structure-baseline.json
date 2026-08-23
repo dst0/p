@@ -317,7 +317,7 @@
   },
   "packages/coding-agent/src/cli/args.ts": {
     "classes": 0,
-    "lines": 454
+    "lines": 452
   },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
     "classes": 2,
@@ -357,7 +357,7 @@
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
-    "lines": 470
+    "lines": 460
   },
   "packages/coding-agent/src/core/skills.ts": {
     "classes": 0,
@@ -725,7 +725,7 @@
   },
   "scripts/benchmark-agents.js": {
     "classes": 0,
-    "lines": 2229
+    "lines": 2075
   },
   "scripts/edit-tool-stats.js": {
     "classes": 0,

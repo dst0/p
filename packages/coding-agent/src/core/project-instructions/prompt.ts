@@ -3,15 +3,19 @@ import {
   PROJECT_INSTRUCTION_CATALOG_PAGE_MAX_BYTES,
   PROJECT_INSTRUCTION_READ_MAX_BYTES,
   PROJECT_INSTRUCTIONS_PROMPT_BUDGET,
+  PROJECT_INSTRUCTIONS_PROMPT_TARGET,
 } from "./limits.ts";
 import { getProjectInstructionFallbackPath } from "./paths.ts";
+import { getMaximumProjectInstructionTurnContextLength } from "./routing.ts";
 import type {
+  PreparedProjectInstructions,
   ProjectInstructionCatalogOutput,
   ProjectInstructionMode,
   ProjectInstructionRuleRecord,
   ProjectInstructionSkillRecord,
   ProjectInstructionSourceInput,
 } from "./types.ts";
+import { inferProjectInstructionRulePhases } from "./work-phases.ts";
 
 export { PROJECT_INSTRUCTIONS_PROMPT_BUDGET } from "./limits.ts";
 
@@ -31,57 +35,64 @@ interface CatalogEntry {
   content: string;
 }
 
+const RULE_CATALOG_GUIDANCE = "Rule catalog: `rules/catalog.md`; use read_rules only with cataloged rules/* links.";
+const LIST_SKILLS_GUIDANCE = "Use list_skills for bounded metadata-only skill discovery.";
+const READ_SKILLS_GUIDANCE = "Use read_skills only with selected cataloged skills/* virtual links.";
+
+export function selectProjectInstructionPromptForTools(
+  prepared: PreparedProjectInstructions,
+  toolNames: readonly string[],
+): string {
+  const activeTools = new Set(toolNames);
+  let prompt = prepared.prompt;
+  if (!activeTools.has("read_rules")) prompt = removeGuidance(prompt, RULE_CATALOG_GUIDANCE);
+  if (!activeTools.has("list_skills")) prompt = removeGuidance(prompt, LIST_SKILLS_GUIDANCE);
+  if (!activeTools.has("read_skills")) prompt = removeGuidance(prompt, READ_SKILLS_GUIDANCE);
+  if (!activeTools.has("read") || activeTools.has("read_rules") || activeTools.has("read_skills")) {
+    prompt = removeGuidance(prompt, fallbackGuidance(prepared.cacheDir, prepared.manifest.inputHash));
+  }
+  return prompt;
+}
+
 export function renderProjectInstructions(options: RenderProjectInstructionsOptions): string | undefined {
-  const ruleRoutes = options.rules.map((rule) => `- ${singleLine(rule.trigger, 150)}: \`${rule.link}\``);
-  const skillRoutes = options.skills.map(
-    (skill) =>
-      `- ${singleLine(skill.description, 120)}: \`${skill.link}\` (source \`${escapeBackticks(skill.filePath)}\`)`,
-  );
   const sourceBody =
     options.mode === "exact"
       ? options.sources
           .map((source) => `### Authoritative source: \`${escapeBackticks(source.path)}\`\n\n${source.content}`)
           .join("\n\n")
-      : options.body?.trim() || fallbackBody(options.rules);
-  const fallbackPath = getProjectInstructionFallbackPath(options.cacheDir, options.inputHash);
-
-  const build = (rules: string[], skills: string[], body: string): string => {
-    const lines = [
-      `<project_instructions agents_sha256="${options.agentsHash}" mode="${options.mode}">`,
+      : options.body?.trim()
+        ? options.body
+        : fallbackBody(options.rules);
+  const build = (body: string): string => {
+    return [
+      `<project_instructions agents_sha256="${options.agentsHash}" input_sha256="${options.inputHash}" mode="${options.mode}">`,
       "AGENTS/CLAUDE sources are authoritative. Extracted rules are instruction modules, not user skills.",
-      "Before matching work, call read_rules with the relevant relative link and follow every returned module.",
-      "Rule catalog: `rules/catalog.md`. If no route matches below, read the catalog before project work.",
-      "For matching specialized guidance, call read_skills with its relative link before acting.",
-      "Skill catalog: `skills/catalog.md`; relative resources keep the same skill-link prefix.",
-      `If either reader is unavailable, ordinary-read \`${escapeBackticks(fallbackPath)}\` for authoritative source and physical catalog paths.`,
-      "",
+      "Apply these always-on constraints:",
       body,
-    ];
-    if (rules.length > 0) lines.push("", "Rule routes:", ...rules);
-    if (skills.length > 0) lines.push("", "Skill routes:", ...skills);
-    lines.push("</project_instructions>");
-    return lines.join("\n");
+      ...(options.mode === "exact"
+        ? [
+            "Per-turn links are candidates. The first potentially mutating action supplies the sole authoritative 1-3-link read_rules batch.",
+          ]
+        : []),
+      RULE_CATALOG_GUIDANCE,
+      LIST_SKILLS_GUIDANCE,
+      READ_SKILLS_GUIDANCE,
+      fallbackGuidance(options.cacheDir, options.inputHash),
+      "</project_instructions>",
+    ].join("\n");
   };
+  if (build("").length > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) {
+    throw new Error("Project instruction routing metadata exceeds the prompt budget");
+  }
 
-  if (options.mode === "exact" && build([], [], sourceBody).length > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) {
+  const exactPrompt = build(sourceBody);
+  if (options.mode === "exact" && exactPrompt.length > PROJECT_INSTRUCTIONS_PROMPT_TARGET) {
     return undefined;
   }
-  const boundedBody = fitBody(sourceBody, build);
-  const selectedRules: string[] = [];
-  const selectedSkills: string[] = [];
-  let prompt = build(selectedRules, selectedSkills, boundedBody);
-  for (const route of ruleRoutes) {
-    const candidate = build([...selectedRules, route], selectedSkills, boundedBody);
-    if (candidate.length > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) break;
-    selectedRules.push(route);
-    prompt = candidate;
-  }
-  for (const route of skillRoutes) {
-    const candidate = build(selectedRules, [...selectedSkills, route], boundedBody);
-    if (candidate.length > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) break;
-    selectedSkills.push(route);
-    prompt = candidate;
-  }
+  if (options.mode === "exact") return exactPrompt;
+  const prompt = build(sourceBody);
+  const routeReserve = getMaximumProjectInstructionTurnContextLength(options.rules, options.inputHash);
+  if (prompt.length + routeReserve > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) return undefined;
   return prompt;
 }
 
@@ -89,15 +100,19 @@ export function renderRulesCatalog(rules: ProjectInstructionRuleRecord[]): Proje
   return renderCatalog(
     "rules",
     "Project instruction modules",
-    "These are exact slices of authoritative AGENTS/CLAUDE sources. Read every module whose trigger matches.",
-    rules.map((rule) => ({
-      title: rule.title,
-      content: [
-        `- \`${rule.link}\``,
-        `  - Trigger: ${singleLine(rule.trigger, 300)}`,
-        `  - Source: ${rule.sourcePath}`,
-      ].join("\n"),
-    })),
+    "These are exact slices of authoritative AGENTS/CLAUDE sources. Lifecycle phases are additive; semantic triggers remain authoritative.",
+    rules.map((rule) => {
+      const phases = inferProjectInstructionRulePhases(rule);
+      return {
+        title: rule.title,
+        content: [
+          `- \`${rule.link}\``,
+          `  - Trigger: ${singleLine(rule.trigger, 300)}`,
+          `  - Phases: ${phases.length > 0 ? phases.join(", ") : "semantic-only"}`,
+          `  - Source: ${rule.sourcePath}`,
+        ].join("\n"),
+      };
+    }),
   );
 }
 
@@ -172,29 +187,18 @@ function paginateEntries(entries: CatalogEntry[], pageEntryBudget: number): Cata
   return pages;
 }
 
-function fitBody(sourceBody: string, build: (rules: string[], skills: string[], body: string) => string): string {
-  const empty = build([], [], "");
-  if (empty.length > PROJECT_INSTRUCTIONS_PROMPT_BUDGET) {
-    throw new Error("Project instruction routing metadata exceeds the prompt budget");
-  }
-  const allowance = PROJECT_INSTRUCTIONS_PROMPT_BUDGET - empty.length;
-  if (sourceBody.length <= allowance) return sourceBody;
-  const marker = "\n[optimized body truncated; use the rule catalog]";
-  return `${safeSlice(sourceBody, Math.max(0, allowance - marker.length)).trimEnd()}${marker}`;
-}
-
-function safeSlice(value: string, maxCodeUnits: number): string {
-  let end = Math.min(value.length, maxCodeUnits);
-  if (end > 0 && end < value.length && /[\uD800-\uDBFF]/u.test(value[end - 1])) end--;
-  return value.slice(0, end);
-}
-
 function fallbackBody(rules: ProjectInstructionRuleRecord[]): string {
   if (rules.length === 0) return "No project rule modules were discovered.";
-  return [
-    "Apply the authoritative project rules. Retrieve exact modules before acting on their topics.",
-    ...rules.slice(0, 12).map((rule) => `- ${singleLine(rule.trigger, 120)}: read \`${rule.link}\`.`),
-  ].join("\n");
+  return "No optimized always-on body is available. Exact rule modules remain authoritative.";
+}
+
+function fallbackGuidance(cacheDir: string, inputHash: string): string {
+  const fallbackPath = getProjectInstructionFallbackPath(cacheDir, inputHash);
+  return `Only when neither logical reader is active, ordinary-read \`${escapeBackticks(fallbackPath)}\` for authoritative source and physical catalog paths; never pass this path to read_rules or read_skills.`;
+}
+
+function removeGuidance(prompt: string, guidance: string): string {
+  return prompt.replace(`\n${guidance}`, "");
 }
 
 function singleLine(value: string, maxChars: number): string {

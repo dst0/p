@@ -22,6 +22,7 @@ import { persistSubagentDigest, type SubagentDigest, type SubagentName } from ".
 import { createTokenBreakdown, type TokenBreakdown } from "../../token-accounting.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { estimateToolResultTokens } from "../message-utils.ts";
+import { filterProjectInstructionHistory } from "../project-instruction-integrity.ts";
 import type { PromptContextPreparation } from "../state-types.ts";
 
 export function do__preparePromptContext(
@@ -30,23 +31,26 @@ export function do__preparePromptContext(
   systemPrompt = self.systemPrompt,
   options: { recordWorkingState?: boolean } = {},
 ): PromptContextPreparation {
+  const compatibleMessages = filterProjectInstructionHistory(messages, self._projectInstructionMode);
   const settings = self._getEffectiveCompactionSettings();
   const latestCompactionTimestamp = self._getLatestCompactionTimestamp();
   if (!settings.enabled) {
-    const estimate = estimateContextTokens(messages, systemPrompt, { sinceTimestamp: latestCompactionTimestamp });
+    const estimate = estimateContextTokens(compatibleMessages, systemPrompt, {
+      sinceTimestamp: latestCompactionTimestamp,
+    });
     return {
-      messages,
+      messages: compatibleMessages,
       estimate,
       budgetEstimate: estimate,
       source: estimate.lastUsageIndex === null ? "estimated" : "provider_usage",
-      toolRawTokens: estimateToolResultTokens(messages),
+      toolRawTokens: estimateToolResultTokens(compatibleMessages),
     };
   }
 
-  const initialEstimate = estimateContextTokens(messages, systemPrompt, { useProviderUsage: false });
+  const initialEstimate = estimateContextTokens(compatibleMessages, systemPrompt, { useProviderUsage: false });
   const pressureEstimate = initialEstimate;
   const preparedMessages = self._withWorkingStatePromptInsertions(
-    messages,
+    compatibleMessages,
     self._lastRuntimePromptComponents.workingStatePrompt,
     { ...options, minimumAnchorTimestamp: latestCompactionTimestamp },
   );

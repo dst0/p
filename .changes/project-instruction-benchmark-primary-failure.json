@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Preserve failed paired-benchmark samples and report their primary run status without weakening model identity checks."
+}
