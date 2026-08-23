@@ -1,13 +1,5 @@
 #!/usr/bin/env node
-
-import {
-	existsSync,
-	mkdirSync,
-	readdirSync,
-	readFileSync,
-	rmSync,
-	writeFileSync,
-} from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
@@ -22,23 +14,15 @@ import { createBenchmarkAuthOutputGuard } from "./benchmark-auth-output-guard.js
 import { consumeBenchmarkAuthSource } from "./benchmark-auth-source.js";
 import { didAgentTurnFail } from "./benchmark-agent-turn-policy.js";
 import { benchmarkModels, modelAliasForAgent } from "./benchmark-model-attribution.js";
-import {
-	captureOverflowEvidence,
-	createBenchmarkTurnAggregate,
-} from "./benchmark-output-capture.js";
+import { captureOverflowEvidence, createBenchmarkTurnAggregate } from "./benchmark-output-capture.js";
 import { parsePRecording } from "./benchmark-p-recording.js";
 import { captureRecordedProjectInstructionEvidence, configureProjectInstructionProbe } from "./benchmark-project-instruction-evidence.js";
+import { bindProjectInstructionTurnAuthority, createProjectInstructionTurnChallenge } from "./benchmark-project-instruction-turn-authority.js";
+import { sendCommittedProjectInstructionOuterAuthority, writeProjectInstructionResultPublication } from "./benchmark-project-instruction-outer-authority.js";
 import { sanitizeBenchmarkEvidence } from "./benchmark-result-sanitization.js";
-import {
-	benchmarkStderrLogName,
-	writeBenchmarkStderrLog,
-} from "./benchmark-stderr-log.js";
+import { benchmarkStderrLogName, writeBenchmarkStderrLog } from "./benchmark-stderr-log.js";
 import { createBenchmarkWorkspace, sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
-import {
-	copyKiloRuntimeEvidence,
-	listKiloRuntimeDataEvidence,
-	listKiloRuntimeStateEvidence,
-} from "./benchmark-runtime-evidence.js";
+import { copyKiloRuntimeEvidence, listKiloRuntimeDataEvidence, listKiloRuntimeStateEvidence } from "./benchmark-runtime-evidence.js";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
 const defaultModelsFile = join(homedir(), ".p", "agent", "models.json");
@@ -142,6 +126,7 @@ function parseArgs(argv) {
 				arg === "--model"
 				|| arg === "--p-cli"
 				|| arg === "--project-instruction-probe"
+			|| arg === "--project-instruction-proof-receipt"
 			|| arg === "--agents"
 			|| arg === "--models-file"
 			|| arg === "--pi-version"
@@ -163,6 +148,7 @@ function parseArgs(argv) {
 			if (arg === "--model") options.model = value;
 			if (arg === "--p-cli") options.pCli = resolve(value);
 			if (arg === "--project-instruction-probe") options.projectInstructionProbe = resolve(value);
+			if (arg === "--project-instruction-proof-receipt") options.projectInstructionProofReceipt = value;
 			if (arg === "--agents") options.agents = value.split(",").map((agent) => agent.trim()).filter(Boolean);
 			if (arg === "--models-file") options.modelsFile = resolve(value);
 			if (arg === "--pi-version") options.piVersion = value;
@@ -229,13 +215,9 @@ function parseArgs(argv) {
 	}
 	return options;
 }
-function timestampLabel() {
-	return new Date().toISOString().replaceAll(/[:.]/g, "-");
-}
 function ensureDir(path) {
 	mkdirSync(path, { recursive: true });
 }
-
 function listFiles(root, current = root) {
 	const files = [];
 	for (const entry of readdirSync(current, { withFileTypes: true })) {
@@ -248,18 +230,15 @@ function listFiles(root, current = root) {
 	}
 	return files.sort();
 }
-
 function readText(path) {
 	return existsSync(path) ? readFileSync(path, "utf8") : undefined;
 }
-
 function taskResult(passed, checks) {
   const weightedChecks = checks.map((check) => ({ weight: 1, ...check }));
   const score = weightedChecks.reduce((total, check) => total + (check.passed ? check.weight : 0), 0);
   const maxScore = weightedChecks.reduce((total, check) => total + check.weight, 0);
   return { passed, score, maxScore, checks: weightedChecks };
 }
-
 function parseNamedNodeTests(output, prefix) {
   const results = new Map();
   const pattern = new RegExp(`^\\s*(not ok|ok)\\s+\\d+\\s+-\\s+\\[${prefix}:([^\\]]+)\\]`, "gmu");
@@ -268,7 +247,6 @@ function parseNamedNodeTests(output, prefix) {
   }
   return results;
 }
-
 const fixturePackageJson = `{
   "name": "typescript-fixture",
   "private": true,
@@ -285,7 +263,6 @@ const fixturePackageJson = `{
   }
 }
 `;
-
 const fixtureTsconfig = `{
   "compilerOptions": {
     "target": "ES2022",
@@ -300,13 +277,11 @@ const fixtureTsconfig = `{
   "include": ["src/**/*.ts", "test/**/*.ts"]
 }
 `;
-
 const workflowFixtureDir = join(repoRoot, "benchmarks", "fixtures", "durable-workflow");
 const workflowRequirements = readFileSync(join(workflowFixtureDir, "requirements.md"), "utf8");
 const workflowContract = readFileSync(join(workflowFixtureDir, "contract.test.ts"), "utf8");
 const workflowHiddenVerification = readFileSync(join(workflowFixtureDir, "hidden.test.ts"), "utf8");
 const workflowHiddenRubric = JSON.parse(readFileSync(join(workflowFixtureDir, "rubric.json"), "utf8"));
-
 const calculatorContract = `import * as assert from "node:assert/strict";
 import { test } from "node:test";
 import { evaluate } from "../src/calculator.ts";
@@ -332,7 +307,6 @@ test("rejects incomplete expressions", () => {
   assert.throws(() => evaluate("2 +"), /unexpected|invalid|expression/i);
 });
 `;
-
 const monolithSource = `export type TaskStatus = "todo" | "doing" | "done";
 export type SortKey = "id" | "title" | "estimate";
 
@@ -1321,7 +1295,7 @@ function commandFor(agent, options, task, configDir, workspace, isContinue = fal
 	env.P_CODING_AGENT_DIR = configDir;
 	env.PI_CODING_AGENT_DIR = configDir;
 	if (agent === "p" && options.projectInstructions) env.HOME = configDir;
-	if (agent === "p") configureProjectInstructionProbe(commonArgs, env, options, workspace);
+	if (agent === "p") configureProjectInstructionProbe(commonArgs, env, options, workspace, options.projectInstructionProofReceipt);
 	commonArgs.push(prompt);
 	env.P_SKIP_VERSION_CHECK = "1";
 	env.PI_SKIP_VERSION_CHECK = "1";
@@ -1418,6 +1392,8 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 	const startedAt = performance.now();
 	const combined = createBenchmarkTurnAggregate(options.outputLimits);
 	let totalRawEventCount = 0;
+	const baseSystemModeProofs = [];
+	let proofExpectedTurnCount = 0;
 	let lastCode = 0;
 	let lastSignal = null;
 	let lastError;
@@ -1445,13 +1421,24 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 				break;
 			}
 
-			const command = commandFor(agent, options, task, configDir, workspace, isContinue, currentPrompt);
+			const turnOrdinal = nudges + 1;
+			const challenge = agent === "p" && options.projectInstructions
+				? createProjectInstructionTurnChallenge(options.projectInstructionProofReceipt, turnOrdinal, currentPrompt)
+				: undefined;
+			const turnOptions = challenge ? { ...options, projectInstructionProofReceipt: challenge.receiptSha256 } : options;
+			if (challenge) proofExpectedTurnCount += 1;
+			const command = commandFor(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
 			const turnResult = await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
-				...options,
+				...turnOptions,
 				eventOrdinalBase: totalRawEventCount,
-				turn: nudges + 1,
+				turn: turnOrdinal,
 			});
 			totalRawEventCount += turnResult.rawEventCount;
+			if (challenge) {
+				const proof = bindProjectInstructionTurnAuthority(turnResult.projectInstructionProof, challenge, turnResult.userTurns);
+				if (!proof) throw new Error(`project instruction startup proof is missing or invalid for turn ${turnOrdinal}`);
+				baseSystemModeProofs.push(proof);
+			}
 			lastCode = turnResult.code;
 			lastSignal = turnResult.signal;
 			lastError = turnResult.error;
@@ -1508,6 +1495,9 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 		rawEventCount: totalRawEventCount,
 		runtimeContexts: combined.runtimeContexts,
 		userTurns: combined.userTurns,
+		proofReceiptSha256: options.projectInstructionProofReceipt,
+		proofExpectedTurnCount,
+		baseSystemModeProofs,
 		elapsedMs: performance.now() - startedAt,
 		nudges,
 	};
@@ -1924,7 +1914,7 @@ async function main() {
 	}
 	const benchmarkTasks = options.task ? tasks.filter((task) => task.id === options.task) : tasks;
 	if (benchmarkTasks.length === 0) throw new Error(`Unknown task: ${options.task}`);
-	const output = options.output ?? join(repoRoot, "benchmarks", "results", timestampLabel());
+	const output = options.output ?? join(repoRoot, "benchmarks", "results", new Date().toISOString().replaceAll(/[:.]/g, "-"));
 	ensureDir(output);
 	ensureDir(join(output, "recordings"));
 	ensureDir(join(output, "stderr"));
@@ -1939,7 +1929,8 @@ async function main() {
 	if (options.agents.includes("agy")) console.log(`AGY model: ${options.agyModel}`);
 	console.log(`Versions: ${options.agents.map((agent) => `${agent} ${versions[agent]}`).join(", ")}`);
 	console.log(`Sequential order: ${options.agents.join(" -> ")}`);
-	const authOutputGuard = createBenchmarkAuthOutputGuard([defaultAuthFile]); let agentDirs;
+	const authOutputGuard = createBenchmarkAuthOutputGuard([defaultAuthFile]); let agentDirs; let projectInstructionOuterAuthority;
+	const resultPath = join(output, "results.json");
 	try {
 		agentDirs = createBenchmarkAgentDirectories({ ...options, authFile: defaultAuthFile });
 		for (const agent of ["pi", "p"]) authOutputGuard.capture(join(agentDirs.dirs[agent], "auth.json"));
@@ -2058,7 +2049,9 @@ async function main() {
 		repoRoot,
 		home: homedir(),
 	});
-		writeFileSync(join(output, "results.json"), `${JSON.stringify(sanitizedResultDocument, null, 2)}\n`, "utf8");
+		projectInstructionOuterAuthority = writeProjectInstructionResultPublication(
+			resultPath, sanitizedResultDocument, options.projectInstructions,
+		);
 		console.log(`Report: ${join(output, "report.md")}`);
 		if (!results.some((result) => result.status !== "skipped")) process.exitCode = 1;
 	} finally {
@@ -2067,6 +2060,11 @@ async function main() {
 		} finally {
 			try { agentDirs?.dispose(); } finally { authOutputGuard.sanitizeTree(output); }
 		}
+	}
+	if (projectInstructionOuterAuthority) {
+		await sendCommittedProjectInstructionOuterAuthority(
+			options.projectInstructionProofReceipt, projectInstructionOuterAuthority,
+		);
 	}
 }
 main().catch((error) => {

@@ -231,7 +231,7 @@ export function createCellLivenessMonitor(options) {
   };
 }
 
-export function runBenchmarkChild(executable, args, options) {
+export function runBenchmarkChild(executable, args, options, ipcCapture) {
   return new Promise((resolveResult) => {
     let settled = false;
     const settle = (result) => {
@@ -240,7 +240,15 @@ export function runBenchmarkChild(executable, args, options) {
       resolveResult(result);
     };
     const child = spawn(executable, args, options);
+    if (ipcCapture) child.on("message", (message) => ipcCapture.accept(message));
     child.once("error", (error) => settle({ status: undefined, signal: undefined, error }));
-    child.once("close", (status, signal) => settle({ status, signal, error: undefined }));
+    child.once("close", (status, signal) =>
+      settle({
+        status,
+        signal,
+        error: undefined,
+        projectInstructionAuthority: ipcCapture?.finish(),
+      }),
+    );
   });
 }

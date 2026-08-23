@@ -51,6 +51,13 @@ export function projectBaseSystemModeProof(proof) {
   if (!injectedHashes || !expectedHashes) return undefined;
   return {
     requestedMode: text(proof?.requestedMode),
+    receiptSha256: text(proof?.receiptSha256),
+    turnOrdinal: number(proof?.turnOrdinal),
+    userEventOrdinal: number(proof?.userEventOrdinal),
+    userSha256: text(proof?.userSha256),
+    userBytes: number(proof?.userBytes),
+    expectedPromptSha256: text(proof?.expectedPromptSha256),
+    expectedPromptBytes: number(proof?.expectedPromptBytes),
     sourceSha256: text(proof?.sourceSha256),
     systemPromptSha256: text(proof?.systemPromptSha256),
     systemPromptBytes: number(proof?.systemPromptBytes),
@@ -185,6 +192,8 @@ export function projectProjectInstructionEvidence(evidence) {
   return {
     requestedMode: text(evidence?.requestedMode),
     sourceSha256: text(evidence?.sourceSha256),
+    proofReceiptSha256: text(evidence?.proofReceiptSha256),
+    proofExpectedTurnCount: number(evidence?.proofExpectedTurnCount),
     postRunCacheStateSha256: text(evidence?.postRunCacheStateSha256),
     baseSystemModeProofs: Array.isArray(evidence?.baseSystemModeProofs)
       ? evidence.baseSystemModeProofs.flatMap((proof) => {

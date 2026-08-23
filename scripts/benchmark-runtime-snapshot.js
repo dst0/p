@@ -17,6 +17,7 @@ import ts from "typescript";
 
 const runtimePackages = ["ai", "tui", "agent", "code-index", "coding-agent", "site"];
 const BENCHMARK_RUNNER = join("scripts", "benchmark-agents.js");
+const BENCHMARK_PROJECT_INSTRUCTION_PROBE = join("scripts", "benchmark-project-instruction-probe.js");
 const BENCHMARK_SEED_HELPER = join("scripts", "benchmark-project-instruction-seed.js");
 const BENCHMARK_ORCHESTRATOR = join("scripts", "benchmark-project-instructions.js");
 
@@ -35,11 +36,6 @@ export function createRuntimeSnapshot(repoRoot, temporaryParent) {
     cpSync(join(repoRoot, "node_modules"), join(snapshot, "node_modules"), copyOptions);
     cpSync(join(repoRoot, "package.json"), join(snapshot, "package.json"), copyOptions);
     cpSync(join(repoRoot, "package-lock.json"), join(snapshot, "package-lock.json"), copyOptions);
-    cpSync(
-      join(repoRoot, "scripts", "benchmark-project-instruction-probe.js"),
-      join(snapshot, "benchmark-project-instruction-probe.js"),
-      copyOptions,
-    );
     snapshotBenchmarkRunnerClosure(repoRoot, snapshot, copyOptions);
     cpSync(
       join(repoRoot, "benchmarks", "fixtures", "durable-workflow"),
@@ -69,10 +65,15 @@ export function benchmarkSeedHelperPath(snapshot) {
   return join(snapshot, BENCHMARK_SEED_HELPER);
 }
 
+export function benchmarkProjectInstructionProbePath(snapshot) {
+  return join(snapshot, BENCHMARK_PROJECT_INSTRUCTION_PROBE);
+}
+
 export function snapshotBenchmarkRunnerClosure(repoRoot, snapshot, copyOptions = {}) {
   const scriptsRoot = join(repoRoot, "scripts");
   const pending = [
     join(repoRoot, BENCHMARK_RUNNER),
+    join(repoRoot, BENCHMARK_PROJECT_INSTRUCTION_PROBE),
     join(repoRoot, BENCHMARK_SEED_HELPER),
     join(repoRoot, BENCHMARK_ORCHESTRATOR),
   ];

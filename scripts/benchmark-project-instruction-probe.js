@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
-import { appendFileSync, mkdirSync } from "node:fs";
-import { dirname } from "node:path";
 import { parseCompiledProjectInstructionMarker } from "./benchmark-project-instruction-marker.js";
+import {
+  consumeProjectInstructionProofEnvironment,
+  sendProjectInstructionProof,
+} from "./benchmark-project-instruction-proof-ipc.js";
 
 const LEGACY_MARKER = /<project_context>|<project_instructions path="/u;
 const PROJECT_INSTRUCTION_PREFLIGHT_EXIT_CODE = 86;
@@ -9,6 +11,18 @@ const MAX_FULL_LEGACY_CONTEXT_CHARS = 6000;
 const MAX_COMPACT_LEGACY_CONTEXT_CHARS = 6000;
 const LEGACY_RULE_KEYWORD_PATTERN =
   /\b(always|ask|before|block|cannot|commands?|do not|don't|must|never|no \w+|only|required|rules?|run|should|test|use \w+|verify)\b|^\s*(No |Prefer |Avoid |For |Use )/i;
+
+function hardStopProjectInstructionPreflight(runtime, message) {
+  if (runtime.connected === true && typeof runtime.disconnect === "function") {
+    try {
+      runtime.disconnect();
+    } catch {
+      // Exiting the benchmark process remains the fail-closed boundary.
+    }
+  }
+  runtime.stderr.write(`[project-instruction-preflight] ${message}\n`);
+  runtime.exit(PROJECT_INSTRUCTION_PREFLIGHT_EXIT_CODE);
+}
 
 function hashText(value) {
   return createHash("sha256").update(value).digest("hex");
@@ -36,9 +50,12 @@ export function formatLegacyContextFileForProof(filePath, content) {
   return `${compacted.slice(0, MAX_COMPACT_LEGACY_CONTEXT_CHARS - 80).trimEnd()}\n[compacted rules truncated to prompt budget]`;
 }
 
-function legacySourceProof(systemPrompt, contextFiles, expectedSourceSha256) {
+function legacySourceProof(systemPrompt, contextFiles, expectedSourceSha256, expectedSourcePath) {
   const matchingSources = contextFiles.filter(
-    (file) => typeof file?.content === "string" && hashText(file.content) === expectedSourceSha256,
+    (file) =>
+      typeof file?.content === "string" &&
+      hashText(file.content) === expectedSourceSha256 &&
+      (expectedSourcePath === undefined || file.path === expectedSourcePath),
   );
   const injectedBlockHashes = [];
   const expectedBlockHashes = [];
@@ -72,7 +89,7 @@ function hasExpectedLegacyInjection(proof) {
   return expected.length > 0 && expected.some((hash) => injected.includes(hash));
 }
 
-export function createBaseSystemModeProof(event, requestedMode, expectedSourceSha256) {
+export function createBaseSystemModeProof(event, requestedMode, expectedSourceSha256, expectedSourcePath) {
   const systemPrompt = typeof event?.systemPrompt === "string" ? event.systemPrompt : "";
   const options = event?.systemPromptOptions ?? {};
   const contextFiles = Array.isArray(options.contextFiles) ? options.contextFiles : [];
@@ -90,7 +107,7 @@ export function createBaseSystemModeProof(event, requestedMode, expectedSourceSh
     compiledArtifactMode: compiled?.mode,
     compiledInstructionsSha256: projectInstructions ? hashText(projectInstructions) : undefined,
     compiledInstructionsInjected: projectInstructions ? systemPrompt.includes(projectInstructions) : false,
-    ...legacySourceProof(systemPrompt, contextFiles, expectedSourceSha256),
+    ...legacySourceProof(systemPrompt, contextFiles, expectedSourceSha256, expectedSourcePath),
   };
 }
 
@@ -117,19 +134,20 @@ export function projectInstructionPreflightFailure(proof) {
   return undefined;
 }
 
-export default function projectInstructionBenchmarkProbe(p) {
-  const evidencePath = process.env.P_BENCHMARK_PROJECT_INSTRUCTION_PROOF;
-  const requestedMode = process.env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE;
-  const sourceSha256 = process.env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_SHA256;
-  if (!evidencePath || !requestedMode || !sourceSha256) return;
-  mkdirSync(dirname(evidencePath), { recursive: true });
-  p.on("before_agent_start", (event) => {
-    const proof = createBaseSystemModeProof(event, requestedMode, sourceSha256);
-    appendFileSync(evidencePath, `${JSON.stringify(proof)}\n`, { encoding: "utf8", mode: 0o600 });
+export default function projectInstructionBenchmarkProbe(p, runtime = process) {
+  const config = consumeProjectInstructionProofEnvironment(runtime.env);
+  if (!config) return;
+  p.on("before_agent_start", async (event) => {
+    const proof = createBaseSystemModeProof(event, config.requestedMode, config.sourceSha256, config.sourcePath);
+    try {
+      await sendProjectInstructionProof(config, proof, runtime);
+    } catch {
+      hardStopProjectInstructionPreflight(runtime, "startup-proof IPC delivery failed");
+      return;
+    }
     const failure = projectInstructionPreflightFailure(proof);
     if (failure) {
-      console.error(`[project-instruction-preflight] ${failure}`);
-      process.exit(PROJECT_INSTRUCTION_PREFLIGHT_EXIT_CODE);
+      hardStopProjectInstructionPreflight(runtime, failure);
     }
   });
 }

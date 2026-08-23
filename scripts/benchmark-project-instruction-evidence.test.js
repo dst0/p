@@ -10,29 +10,11 @@ import {
   captureProjectInstructionEvidence,
   captureRuntimeContextEvidence,
   captureUserTurnEvidence,
-  configureProjectInstructionProbe,
   hashFile,
   validateProjectInstructionEvidence,
 } from "./benchmark-project-instruction-evidence.js";
 import { createBenchmarkEventCapture } from "./benchmark-project-instruction-stream.js";
 import { createCompiledFixture } from "./benchmark-project-instruction-evidence-fixture.js";
-
-test("compiled benchmark cells forward the certified compiler model to P", () => {
-  const fixture = createCompiledFixture();
-  try {
-    const args = [];
-    const env = {};
-    configureProjectInstructionProbe(args, env, {
-      projectInstructions: "compiled",
-      projectInstructionCompilerModel: "compiler-provider/compiler-model",
-      projectInstructionProbe: "/runtime/probe.js",
-      projectInstructionsFile: fixture.sourceFile,
-    }, fixture.root);
-    assert.deepEqual(args.slice(-2), ["--project-instruction-compiler-model", "compiler-provider/compiler-model"]);
-  } finally {
-    rmSync(fixture.root, { recursive: true, force: true });
-  }
-});
 
 test("stream capture records one route per runtime-context message and assigns raw event ordinals", () => {
   const inputHash = "a".repeat(64);

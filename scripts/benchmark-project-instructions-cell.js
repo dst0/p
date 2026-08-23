@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { buildBenchmarkArgs } from "./benchmark-project-instructions-core.js";
 import { attachPairedBenchmarkLiveness } from "./benchmark-project-instructions-failure.js";
 import { createCellLivenessMonitor, runBenchmarkChild } from "./benchmark-project-instructions-liveness.js";
-import { readBenchmarkChildResult } from "./benchmark-project-instructions-child-result.js";
+import { BenchmarkChildResultError, readBenchmarkChildResult } from "./benchmark-project-instructions-child-result.js";
 import { createValidatedPairedSample } from "./benchmark-project-instructions-sample.js";
 import { benchmarkRunnerPath, hashRuntimeSnapshot } from "./benchmark-runtime-snapshot.js";
 import * as privateInputs from "./benchmark-private-input-snapshots.js";
@@ -14,6 +14,8 @@ import {
   materializeBenchmarkProjectInstructions,
   verifyBenchmarkProjectInstructionMaterialization,
 } from "./benchmark-project-instruction-seed-runner.js";
+import { createProjectInstructionProofReceipt } from "./benchmark-project-instruction-proof-ipc.js";
+import { createProjectInstructionOuterAuthorityCapture } from "./benchmark-project-instruction-outer-authority.js";
 
 const defaultOperations = {
   verifyPrivateInputs: privateInputs.verifyBenchmarkPrivateInputSnapshots,
@@ -29,6 +31,7 @@ const defaultOperations = {
   readResult: readBenchmarkChildResult,
   createSample: createValidatedPairedSample,
   settleEvidence: settlePairedCellEvidence,
+  createProofReceipt: createProjectInstructionProofReceipt,
 };
 
 function finalizationOptions(outcome, capture) {
@@ -49,6 +52,8 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
   let liveness;
   let monitor;
   let capture;
+  let proofReceipt;
+  let authorityCapture;
   try {
     if (!operations.verifyPrivateInputs(options.privateSnapshots)) {
       throw new Error("ephemeral private benchmark inputs changed before the benchmark cell");
@@ -66,7 +71,15 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
     if (operations.hashRuntime(runtimeSnapshot) !== runtimeSha256) {
       throw new Error("immutable P runtime changed during project-instruction preseed");
     }
-    const args = operations.buildArgs(options, pair, mode, scratchOutput, context.remainingSeconds);
+    proofReceipt = operations.createProofReceipt({
+      runtimeSha256,
+      run: pair.run,
+      task: pair.task,
+      mode,
+      sourceSha256: options.sourceSha256,
+    });
+    authorityCapture = createProjectInstructionOuterAuthorityCapture(proofReceipt.sha256);
+    const args = operations.buildArgs(options, pair, mode, scratchOutput, context.remainingSeconds, proofReceipt);
     const finalRecordingPath = join(scratchOutput, "recordings", `p-run-1-${pair.task}.jsonl.br`);
     const recordingPaths = benchmarkRecordingPaths(finalRecordingPath);
     monitor = operations.createMonitor({
@@ -79,11 +92,16 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
       evidenceRoot: context.output,
       label: `run ${pair.run} ${pair.task}/${mode}`,
     });
-    const child = await operations.runChild(process.execPath, [operations.resolveRunner(runtimeSnapshot), ...args], {
-      cwd: context.repoRoot,
-      env: operations.buildEnvironment(options.privateSnapshots),
-      stdio: "inherit",
-    });
+    const child = await operations.runChild(
+      process.execPath,
+      [operations.resolveRunner(runtimeSnapshot), ...args],
+      {
+        cwd: context.repoRoot,
+        env: operations.buildEnvironment(options.privateSnapshots),
+        stdio: ["inherit", "inherit", "inherit", "ipc"],
+      },
+      authorityCapture,
+    );
     if (child.error) throw new Error("child benchmark failed to start", { cause: child.error });
     if (child.status !== 0) throw new Error(`child benchmark exited ${child.status ?? "without a status"}`);
     if (operations.hashRuntime(runtimeSnapshot) !== runtimeSha256) {
@@ -93,9 +111,18 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
       throw new Error("ephemeral private benchmark inputs changed during the benchmark cell");
     }
     if (seedMaterialization) operations.verifyMaterialization(seedMaterialization);
-    const parsed = operations.readResult(join(scratchOutput, "results.json"));
+    const authority = child.projectInstructionAuthority;
+    if (!authority) {
+      throw new BenchmarkChildResultError("missing_outer_authority", "child benchmark outer proof authority is missing");
+    }
+    const parsed = operations.readResult(join(scratchOutput, "results.json"), authority.resultSha256);
     capture = { recordingCapture: parsed.recordingCapture, captureOverflow: parsed.captureOverflow };
-    const sample = operations.createSample(parsed, { ...context, seedMaterialization });
+    const sample = operations.createSample(parsed, {
+      ...context,
+      seedMaterialization,
+      proofReceiptSha256: proofReceipt.sha256,
+      projectInstructionAuthority: authority,
+    });
     livenessFinalized = true;
     liveness = await monitor.finalize(finalizationOptions("process_completed", capture));
     if (liveness.semanticEvidenceAvailable !== true || liveness.semanticEvidenceComplete !== true) {

@@ -209,3 +209,18 @@ test("raw probe, stderr, and metric captures each fail at an explicit bound", as
     assert.ok(result.elapsedMs < 2_000);
   }
 });
+
+test("project-instruction turns use IPC once and do not expose it to grandchildren", async () => {
+  const receipt = "a".repeat(64);
+  const source = `
+    const { spawnSync } = require("node:child_process");
+    process.send({ schemaVersion: 1, kind: "project-instruction-startup-proof", receiptSha256: ${JSON.stringify(receipt)}, proof: { requestedMode: "compiled", sourceSha256: "b".repeat(64), systemPromptSha256: "c".repeat(64), systemPromptBytes: 10, hasLegacyMarker: false, hasCompiledMarker: true, compiledInstructionsInjected: true, sourceLoaded: true, legacySourceInjected: false, legacyInjectedBlockHashes: [], legacyExpectedBlockHashes: [] } });
+    process.disconnect();
+    const grandchild = spawnSync(process.execPath, ["-e", "process.stdout.write(String(typeof process.send))"], { encoding: "utf8" });
+    process.stderr.write(grandchild.stdout);
+    process.stdout.write(JSON.stringify({ type: "result" }) + "\\n");
+  `;
+  const result = await runFailedTurn(source, { projectInstructionProofReceipt: receipt });
+  assert.equal(result.projectInstructionProof?.requestedMode, "compiled");
+  assert.equal(result.stderr, "undefined");
+});

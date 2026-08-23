@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { lstatSync, readFileSync, rmSync } from "node:fs";
+import { lstatSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   captureVerifiedCompiledCache,
@@ -109,6 +109,8 @@ export function captureProjectInstructionEvidence(options) {
   return {
     requestedMode: options.mode,
     sourceSha256,
+    proofReceiptSha256: options.proofReceiptSha256,
+    proofExpectedTurnCount: options.proofExpectedTurnCount,
     postRunCacheStateSha256: hashBenchmarkProjectInstructionCacheState(
       options.mode,
       sourceSha256,
@@ -132,38 +134,30 @@ export function captureProjectInstructionEvidence(options) {
   };
 }
 
-export function readBaseSystemModeProofs(path) {
-  try {
-    return readFileSync(path, "utf8")
-      .split(/\r?\n/u)
-      .filter((line) => line.trim().length > 0)
-      .map((line) => JSON.parse(line));
-  } catch {
-    return [];
-  }
-}
-
 export function captureRecordedProjectInstructionEvidence(workspace, mode, sourceFile, runResult, metrics) {
-  const proofFile = join(workspace, ".benchmark-project-instruction-system.jsonl");
-  const evidence = captureProjectInstructionEvidence({
+  return captureProjectInstructionEvidence({
     workspace,
     mode,
     sourceFile,
-    baseSystemModeProofs: readBaseSystemModeProofs(proofFile),
+    proofReceiptSha256: runResult.proofReceiptSha256,
+    proofExpectedTurnCount: runResult.proofExpectedTurnCount,
+    baseSystemModeProofs: runResult.baseSystemModeProofs,
     runtimeContexts: runResult.runtimeContexts,
     userTurns: runResult.userTurns,
     readRulesBatches: metrics.readRulesBatches,
     phaseRelevantToolCalls: metrics.phaseRelevantToolCalls,
   });
-  rmSync(proofFile, { force: true });
-  return evidence;
 }
 
-export function configureProjectInstructionProbe(args, env, options, workspace) {
+export function configureProjectInstructionProbe(args, env, options, workspace, receiptSha256) {
   if (!options.projectInstructions) return;
+  if (!/^[a-f0-9]{64}$/u.test(receiptSha256)) {
+    throw new Error("Project instruction startup-proof receipt is required before each benchmark turn");
+  }
   args.push("--extension", options.projectInstructionProbe, "--project-instructions", options.projectInstructions);
   if (options.projectInstructionCompilerModel) args.push("--project-instruction-compiler-model", options.projectInstructionCompilerModel);
-  env.P_BENCHMARK_PROJECT_INSTRUCTION_PROOF = join(workspace, ".benchmark-project-instruction-system.jsonl");
+  env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT = receiptSha256;
   env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE = options.projectInstructions;
   env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_SHA256 = hashFile(options.projectInstructionsFile);
+  env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_PATH = join(workspace, "AGENTS.md");
 }
