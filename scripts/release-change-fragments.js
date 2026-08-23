@@ -11,6 +11,8 @@ import {
 } from "./release-changelog-audit.js";
 
 const CONFIG_PATH = ".changes/config.json";
+const FRAGMENT_POLICY_PATH = "scripts/release-change-fragments.js";
+const NONE_REASON_ENFORCEMENT_MARKER = "release-none-reason-enforcement-v2";
 const FRAGMENT_TYPES = new Set(["Added", "Changed", "Fixed", "Removed", "Breaking Changes", "None"]);
 const CHANGELOG_PREFIX = "# Changelog\n\n## [Unreleased]\n";
 
@@ -22,7 +24,7 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function parseFragment(path, content) {
+function parseFragment(path, content, allowLegacyNoneSummary = false) {
   let fragment;
   try {
     fragment = JSON.parse(content);
@@ -43,10 +45,11 @@ function parseFragment(path, content) {
     throw new Error(`${path}: release-note fragment type is invalid`);
   }
   if (fragment.type === "None") {
-    if (typeof fragment.reason !== "string" || fragment.reason.trim().length < 10) {
+    const justification = fragment.reason ?? (allowLegacyNoneSummary ? fragment.summary : undefined);
+    if (typeof justification !== "string" || justification.trim().length < 10) {
       throw new Error(`${path}: None fragments require a specific reason`);
     }
-    if (/[\u0000-\u001f\u007f]/.test(fragment.reason)) {
+    if (/[\u0000-\u001f\u007f]/.test(justification)) {
       throw new Error(`${path}: None fragment reason must be single-line text`);
     }
   } else if (typeof fragment.summary !== "string" || fragment.summary.trim().length < 10) {
@@ -87,9 +90,6 @@ function policyCommit(repoRoot) {
     }
     return commit;
   }
-  if (commits.length === 0) {
-    throw new Error(`${CONFIG_PATH} must be committed before release audit certification`);
-  }
   throw new Error(`${CONFIG_PATH} must be committed before release audit certification`);
 }
 
@@ -117,8 +117,44 @@ function isAncestor(repoRoot, ancestor, descendant) {
   }
 }
 
+function noneReasonEnforcementCutoff(repoRoot) {
+  const commit = git(repoRoot, [
+    "log",
+    "--first-parent",
+    "--reverse",
+    "--format=%H",
+    `-S${NONE_REASON_ENFORCEMENT_MARKER}`,
+    "--",
+    FRAGMENT_POLICY_PATH,
+  ]).split("\n")[0];
+  if (commit) {
+    return git(repoRoot, ["rev-parse", `${commit}^`]);
+  }
+  try {
+    if (readFileSync(join(repoRoot, FRAGMENT_POLICY_PATH), "utf8").includes(NONE_REASON_ENFORCEMENT_MARKER)) {
+      return git(repoRoot, ["rev-parse", "HEAD"]);
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+
+function contentAtRevision(repoRoot, revision, path) {
+  try {
+    return execFileSync("git", ["show", `${revision}:${path}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return undefined;
+  }
+}
+
 export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseTag(repoRoot)) {
   const startCommit = policyCommit(repoRoot);
+  const noneReasonCutoff = noneReasonEnforcementCutoff(repoRoot);
   const parent = git(repoRoot, ["rev-parse", `${startCommit}^`]);
   const policyPredatesBase = isAncestor(repoRoot, startCommit, baseTag);
   const rangeStart = policyPredatesBase ? baseTag : parent;
@@ -143,8 +179,9 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
         path !== CONFIG_PATH &&
         existsAtRevision(repoRoot, commit, path),
     );
+    const allowLegacyNoneSummary = noneReasonCutoff !== undefined && isAncestor(repoRoot, commit, noneReasonCutoff);
     const fragments = fragmentPaths.map((path) =>
-      parseFragment(path, git(repoRoot, ["show", `${commit}:${path}`])),
+      parseFragment(path, git(repoRoot, ["show", `${commit}:${path}`]), allowLegacyNoneSummary),
     );
     for (const fragment of fragments) {
       if (introducedFragments.has(fragment.id)) {
@@ -190,12 +227,15 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
 
 export function getCurrentChangeFragments(repoRoot) {
   const changesRoot = join(repoRoot, ".changes");
+  const noneReasonCutoff = noneReasonEnforcementCutoff(repoRoot);
   return readdirSync(changesRoot)
     .filter((name) => name.endsWith(".json") && name !== "config.json")
     .sort()
     .map((name) => {
       const path = `.changes/${name}`;
-      return parseFragment(path, readFileSync(join(repoRoot, path), "utf8"));
+      const content = readFileSync(join(repoRoot, path), "utf8");
+      const legacyContent = noneReasonCutoff && contentAtRevision(repoRoot, noneReasonCutoff, path);
+      return parseFragment(path, content, legacyContent === content);
     });
 }
 

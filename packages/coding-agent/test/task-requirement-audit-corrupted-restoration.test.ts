@@ -29,6 +29,45 @@ describe("requirement-audit corrupted restoration", () => {
     expect(restored.controller.currentState.mutationRevision).toBe(0);
   });
 
+  it("rejects a legacy partial-verdict cursor because batched audits persist atomically", async () => {
+    const harness = createRequirementAuditHarness();
+    const { evidenceRef } = await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The first behavior is complete",
+          acceptance_criterion: "Focused evidence proves the first behavior",
+          source_prompt_indexes: [1],
+        },
+        {
+          type: "verification",
+          text: "The second behavior is complete",
+          acceptance_criterion: "Focused evidence proves the second behavior",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    const state = harness.controller.currentState;
+    state.requirementAudit.nextRequirementIndex = 1;
+    state.requirementAudit.requirements[0]!.verdict = {
+      passed: true,
+      reason: "Legacy partial verdict",
+      evidenceRefs: [evidenceRef],
+      mutationRevision: state.mutationRevision,
+    };
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, state);
+
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    expect(await callTaskVerification(restored.controller, { action: "status" })).toContain(
+      "latest persisted task-verification state is invalid",
+    );
+    expect(restored.controller.currentState.requirementAudit.status).toBe("pending");
+  });
+
   it("does not fall back to an older completion certificate when the latest state is invalid", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);
@@ -48,10 +87,14 @@ describe("requirement-audit corrupted restoration", () => {
     await nextModelTurn(harness);
     const completion = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Current focused evidence proves the complete requirement.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Current focused evidence proves the complete requirement.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
     const staleToken = auditVerificationToken(completion);
     harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {

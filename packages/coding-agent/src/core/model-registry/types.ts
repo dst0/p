@@ -51,6 +51,8 @@ export interface ProviderConfigInput {
   baseUrl?: string;
   apiKey?: string;
   api?: Api;
+  compat?: Model<Api>["compat"];
+  modelMetadata?: "replace" | "inherit-existing";
   streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
   headers?: Record<string, string>;
   authHeader?: boolean;

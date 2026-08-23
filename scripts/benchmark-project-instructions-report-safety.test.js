@@ -1,0 +1,56 @@
+import assert from "node:assert/strict";
+import { test } from "node:test";
+import { marked } from "marked";
+import { markdownCodeSpan } from "./benchmark-markdown.js";
+import { createUnavailableCellLiveness } from "./benchmark-project-instructions-liveness.js";
+import { renderPairedReport } from "./benchmark-project-instructions-core.js";
+
+const payload = "alpha```beta ~~struck~~ https://example.test/path\n\n## forged-heading\n<script>forged()</script>\n| extra | cell |";
+
+test("paired report safely renders every dynamic prose, code-span, and table value", () => {
+  const liveness = {
+    ...createUnavailableCellLiveness(),
+    progressEvidence: `progress/${payload}.jsonl.br`,
+  };
+  const report = renderPairedReport({
+    generatedAt: payload,
+    model: payload,
+    compilerModel: payload,
+    binarySha256: payload,
+    seed: payload,
+    runs: 3,
+    tasks: [payload],
+    schedule: [{ run: 1, task: payload, modes: [payload, payload] }],
+    samples: [
+      {
+        run: 1,
+        task: payload,
+        mode: payload,
+        status: payload,
+        quality: { rawScore: 1, maxScore: 2 },
+        metrics: { usage: { totalTokens: 3 } },
+        elapsedMs: 4,
+        liveness,
+      },
+    ],
+    completed: false,
+    gate: {
+      passed: false,
+      failure: { run: 1, task: payload, mode: payload, kind: payload, reason: payload, liveness },
+    },
+  });
+  const tokens = marked.lexer(report);
+  const headings = tokens.filter((token) => token.type === "heading").map((token) => token.text);
+  const tables = tokens.filter((token) => token.type === "table");
+  const html = marked.parse(report);
+  assert.deepEqual(headings, ["Project-instruction paired benchmark", "Randomized pair order", "Samples"]);
+  assert.deepEqual(tables.map((table) => table.header.length), [4, 9]);
+  assert.ok(tables.every((table) => table.rows.every((row) => row.length === table.header.length)));
+  assert.doesNotMatch(html, /<script>|forged\(\)<\/script>/iu);
+  assert.doesNotMatch(html, /<a\s|<del>/iu);
+  assert.doesNotMatch(report, /^## forged-heading$/mu);
+});
+
+test("empty dynamic code values render as an actual empty code element", () => {
+  assert.equal(marked.parseInline(markdownCodeSpan("")), "<code></code>");
+});

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep non-user-facing paired benchmark seed caches stable when temporary workspace paths cross filesystem aliases."
+}

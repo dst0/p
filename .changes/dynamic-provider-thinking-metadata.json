@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve exact-match dynamic provider reasoning controls across repeated registration and refresh, and reject invalid model IDs before registry mutation."
+}

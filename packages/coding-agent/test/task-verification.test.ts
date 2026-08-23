@@ -385,7 +385,7 @@ describe("task verification controller", () => {
     await callVerificationTool(controller, {
       action: "declare_task",
       task_kind: "feature",
-      task_summary: "Add transactional inventory persistence with a manifest",
+      task_summary: "Preserve transactional inventory manifest boundaries",
     });
     await afterTool(agent, "edit", {
       path: "src/inventory.ts",
@@ -401,8 +401,8 @@ describe("task verification controller", () => {
     const focusedOutput = await afterTool(
       agent,
       "bash",
-      { command: "npm test -- test/inventory-boundaries.test.ts" },
-      { text: "focused boundary tests passed" },
+      { command: "npm test -- test/inventory-transactional-manifest-boundaries-preserved.test.ts" },
+      { text: "Test Files 1 passed (1) Tests 3 passed (3)" },
     );
     expect(focusedOutput).toContain("Focused semantic verification passed");
     expect(controller.currentState.final).toMatchObject({
@@ -721,7 +721,7 @@ describe("task verification controller", () => {
     await callVerificationTool(baselineController, {
       action: "declare_task",
       task_kind: "bug_fix",
-      task_summary: "Fix exact replay recovery after compaction",
+      task_summary: "Recover exact replay state after compaction",
     });
     await callVerificationTool(baselineController, {
       action: "authorize_baseline_test",
@@ -731,7 +731,7 @@ describe("task verification controller", () => {
       path: "test/exact-replay.test.ts",
       edits: [{ oldText: "old", newText: "failing" }],
     });
-    const replayCommand = "vitest --run test/exact-replay.test.ts";
+    const replayCommand = "vitest --run test/exact-replay.test.ts -t 'recovers exact replay state after compaction'";
     const baselineHandle = evidenceHandle(
       await afterTool(baselineAgent, "bash", { command: replayCommand }, { isError: true, text: "expected failure" }),
     );
@@ -748,7 +748,7 @@ describe("task verification controller", () => {
       edits: [{ oldText: "old", newText: "new" }],
     });
     const unrelatedHandle = evidenceHandle(
-      await afterTool(baselineAgent, "bash", { command: "vitest --run test/unrelated.test.ts" }, { text: "passed" }),
+      await afterTool(baselineAgent, "bash", { command: "vitest -t unrelated" }, { text: "Tests 1 passed (1)" }),
     );
 
     const restored = createTaskVerificationController(sessionManager);
@@ -761,7 +761,7 @@ describe("task verification controller", () => {
     const restoredAgent = new Agent();
     restored.install(restoredAgent);
     const replayHandle = evidenceHandle(
-      await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "passed" }),
+      await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "Tests 2 passed (2)" }),
     );
     const afterReplay = await callVerificationTool(restored, { action: "status" });
     expect(replayHandle).toBeTruthy();

@@ -7,13 +7,18 @@ import {
   TASK_VERIFICATION_TOOL_NAME,
   TEST_PATTERN,
 } from "../constants.ts";
-import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import {
+  referencedRequirementCandidates,
+  requirementSourceSelectionMatches,
+} from "../referenced-requirement-sources.ts";
+import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
-import { formatRequirementPrompt } from "./requirement-audit.ts";
+import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
 
 export function do_formatNextRequirement(self: TaskVerificationController): string {
   if (!self.state.taskKind || !self.state.taskSummary) {
@@ -22,6 +27,34 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
       "Continue with inspection or baseline checks; the controller will classify the task before the first mutation.",
       `Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override that classification before mutation.`,
     ].join("\n");
+  }
+
+  const prompts = sourcePromptsForState(self.state);
+  const sourceCandidates = referencedRequirementCandidates(prompts);
+  if (sourceCandidates.length > 0) {
+    const references = self.state.requirementSourceRefs ?? [];
+    const ignored = self.state.ignoredRequirementSources ?? [];
+    if (!requirementSourceSelectionMatches(prompts, references, ignored)) {
+      return [
+        "NEXT REQUIRED ACTION: freeze referenced task specifications before baseline setup or implementation.",
+        `Candidates: ${sourceCandidates.map((candidate) => candidate.path).join(", ")}.`,
+        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} once with action "prepare_definition", 0-3 relevant selected_paths, and reasons for every ignored_paths item.`,
+      ].join("\n");
+    }
+    const audit = self.state.requirementAudit;
+    const frozenDefinition =
+      audit.requirements.length > 0 &&
+      audit.userRequirementsHash === computeStateUserRequirementsHash(self.state) &&
+      typeof audit.requirementSetHash === "string";
+    if (references.length > 0 && !frozenDefinition) {
+      const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+      return typeof sources === "string"
+        ? `NEXT REQUIRED ACTION: ${sources}`
+        : [
+            `NEXT REQUIRED ACTION: define atomic referenced requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
+            formatRequirementDefinitionPrompt(sources),
+          ].join("\n");
+    }
   }
 
   if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
@@ -131,27 +164,21 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
     if (readiness.status === "evidence_ready" && readiness.verifiedMutationRevision === self.state.mutationRevision) {
       const audit = self.state.requirementAudit;
       if (audit.status === "awaiting_definition") {
+        const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
         return [
           `NEXT REQUIRED ACTION: define atomic user requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-          formatRequirementDefinitionPrompt(sourcePromptsForState(self.state)),
+          typeof sources === "string" ? sources : formatRequirementDefinitionPrompt(sources),
         ].join("\n");
       }
       if (audit.status === "verifying") {
-        const requirement = audit.requirements[audit.nextRequirementIndex];
-        if (requirement) {
-          return `NEXT REQUIRED ACTION:\n${formatRequirementPrompt(
-            requirement,
-            audit.nextRequirementIndex,
-            audit.requirements.length,
-          )}`;
-        }
+        return `NEXT REQUIRED ACTION:\n${formatRequirementBatchPrompt(audit.requirements)}`;
       }
       if (audit.status === "failed") {
         const failed = audit.requirements.filter((requirement) => requirement.verdict?.passed === false);
         return [
           `NEXT REQUIRED ACTION: complete all ${failed.length} failed user requirement(s).`,
           ...failed.map((requirement) => `${requirement.id}: ${requirement.text} — ${requirement.verdict?.reason}`),
-          `Then call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to re-run every verdict.`,
+          `Then call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to re-run the complete verdict batch.`,
         ].join("\n");
       }
     }

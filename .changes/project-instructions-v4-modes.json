@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Added",
+  "summary": "Add compiled, legacy, and off project-instruction modes with dedicated compiler-model selection, lifecycle-aware rule retrieval, and evidence-gated verification."
+}

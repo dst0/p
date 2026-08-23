@@ -70,7 +70,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
     return session;
   }
 
-  it("keeps extension tools active when built-in defaults are disabled", async () => {
+  it("keeps extension tools and the compiled rule reader active when built-in defaults are disabled", async () => {
     const session = await createSession({ noTools: "builtin" });
 
     expect(
@@ -89,6 +89,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "generate_image",
       "grep",
       "keep_context",
+      "list_skills",
       "ls",
       "mark_session_progress",
       "process",
@@ -107,8 +108,13 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "update_session_state",
       "write",
     ]);
-    expect(session.getActiveToolNames()).toEqual(["dynamic_tool"]);
+    expect(session.getActiveToolNames()).toEqual(["dynamic_tool", "read_rules"]);
+    const activeRuleReader = session.agent.state.tools.find((tool) => tool.name === "read_rules");
+    expect(activeRuleReader).toBeDefined();
+    expect(activeRuleReader?.execute).toBeTypeOf("function");
+    expect(session.getToolDefinition("read_rules")?.execute).toBeTypeOf("function");
     expect(session.systemPrompt).toContain("- dynamic_tool: Run dynamic test behavior");
+    expect(session.systemPrompt).toContain("- read_rules: Read exact project instruction modules by catalog link");
     expect(session.systemPrompt).not.toContain("- read:");
     expect(session.systemPrompt).not.toContain("- bash:");
     session.dispose();

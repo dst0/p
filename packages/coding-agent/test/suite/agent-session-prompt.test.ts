@@ -20,6 +20,7 @@ import type { InputEvent } from "../../src/core/extensions/index.ts";
 import type { PromptTemplate } from "../../src/core/prompt-templates.ts";
 import type { CustomMessageEntry, SessionMessageEntry } from "../../src/core/session-manager.ts";
 import { createSyntheticSourceInfo } from "../../src/core/source-info.ts";
+import { installCacheRoutingProjectInstructions } from "../project-instruction-compiler-fixture.ts";
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness as createBaseHarness, getMessageText, type Harness, type HarnessOptions } from "./harness.ts";
 
@@ -345,18 +346,16 @@ describe("AgentSession prompt characterization", () => {
     expect(assistantMessages[2]?.usage.cacheRead).toBeGreaterThan(0);
     expect(assistantMessages[2]?.usage.input).toBeLessThan(assistantMessages[2]?.usage.totalTokens ?? 0);
   });
-
   it("persists volatile runtime context in history so prompt cache survives changing rule matches", async () => {
     const harness = await createPromptHarness();
     harnesses.push(harness);
-    writeFileSync(
-      join(harness.tempDir, "AGENTS.md"),
-      [
-        "# Project Rules",
-        "- Must preserve alpha cache detail when the request mentions alpha.",
-        "- Must preserve beta cache detail when the request mentions beta.",
-      ].join("\n"),
-    );
+    const agentsContent = [
+      "## Alpha cache detail",
+      `Must preserve alpha cache detail when the request mentions alpha. ${"alpha detail ".repeat(180)}`,
+      "## Beta cache detail",
+      `Must preserve beta cache detail when the request mentions beta. ${"beta detail ".repeat(180)}`,
+    ].join("\n\n");
+    await installCacheRoutingProjectInstructions(harness.session, harness.tempDir, agentsContent);
     const prompts: string[] = [];
     const systemPrompts: string[] = [];
     harness.setResponses([
@@ -384,6 +383,7 @@ describe("AgentSession prompt characterization", () => {
     expect(systemPrompts).toHaveLength(3);
     expect(systemPrompts[1]).toBe(systemPrompts[0]);
     expect(systemPrompts[2]).toBe(systemPrompts[0]);
+    expect(systemPrompts[0]).toContain('mode="compiled"');
     expect(prompts[0]).toContain("alpha cache detail");
     expect(prompts[1]).toContain("beta cache detail");
     expect(prompts[1].startsWith(prompts[0])).toBe(true);

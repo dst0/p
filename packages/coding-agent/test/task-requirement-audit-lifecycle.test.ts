@@ -37,10 +37,14 @@ async function defineAndPass(
   await nextModelTurn(harness);
   return callRequirementAudit(harness.controller, {
     action: "verdict",
-    requirement_id: "R1",
-    passed: true,
-    reason: "Current focused evidence proves the complete requirement.",
-    evidence_refs: [evidenceRef],
+    verdicts: [
+      {
+        requirement_id: "R1",
+        passed: true,
+        reason: "Current focused evidence proves the complete requirement.",
+        evidence_refs: [evidenceRef],
+      },
+    ],
   });
 }
 
@@ -86,20 +90,24 @@ describe("requirement-audit lifecycle", () => {
       unresolved_failures: [],
     });
     expect(readiness).toContain("Reusing the existing 1-item requirement set");
-    expect(readiness).toContain("Verify requirement R1");
+    expect(readiness).toContain("Verify all 1 requirements");
 
     await nextModelTurn(harness);
     const completed = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Fresh revision-two evidence proves the stable requirement.",
-      evidence_refs: [freshEvidence],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Fresh revision-two evidence proves the stable requirement.",
+          evidence_refs: [freshEvidence],
+        },
+      ],
     });
     expect(auditVerificationToken(completed)).not.toBe(firstToken);
   });
 
-  it("restores the exact next requirement and clears task-scoped evidence only after successful finish_work", async () => {
+  it("restores the complete pending batch and clears task-scoped evidence only after successful finish_work", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
@@ -116,29 +124,31 @@ describe("requirement-audit lifecycle", () => {
       ],
       ignored_source_prompts: [],
     });
-    await nextModelTurn(harness);
-    await callRequirementAudit(harness.controller, {
-      action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "The gate behavior is proven.",
-      evidence_refs: [evidenceRef],
-    });
-
     const restored = createRequirementAuditHarness(harness.sessionManager);
     expect(restored.controller.currentState.requirementAudit).toMatchObject({
       status: "verifying",
-      nextRequirementIndex: 1,
+      nextRequirementIndex: 0,
     });
     expect(await callTaskVerification(restored.controller, { action: "status" })).toContain(
-      "Verify requirement R2 (2/2)",
+      "Verify all 2 requirements",
     );
+    await nextModelTurn(restored);
     const completed = await callRequirementAudit(restored.controller, {
       action: "verdict",
-      requirement_id: "R2",
-      passed: true,
-      reason: "The restored evidence handle proves the focused regression.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "The restored evidence handle proves the gate behavior.",
+          evidence_refs: [evidenceRef],
+        },
+        {
+          requirement_id: "R2",
+          passed: true,
+          reason: "The restored evidence handle proves the focused regression.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
     const token = auditVerificationToken(completed);
     const completedTaskId = restored.controller.currentState.taskId;
@@ -195,7 +205,7 @@ describe("requirement-audit lifecycle", () => {
     expect(harness.controller.currentState.readiness?.userRequirementsHash).not.toBe(firstHash);
   });
 
-  it("keeps an active audit usable when focused evidence is collected between requirement verdicts", async () => {
+  it("keeps an active audit usable when focused evidence is collected before the verdict batch", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
@@ -230,12 +240,22 @@ describe("requirement-audit lifecycle", () => {
     await nextModelTurn(harness);
     const verdict = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Fresh focused evidence proves the first requirement.",
-      evidence_refs: [freshEvidence],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Fresh focused evidence proves the first requirement.",
+          evidence_refs: [freshEvidence],
+        },
+        {
+          requirement_id: "R2",
+          passed: true,
+          reason: "Fresh focused evidence proves the second requirement.",
+          evidence_refs: [freshEvidence],
+        },
+      ],
     });
-    expect(verdict).toContain("Verify requirement R2 (2/2)");
+    expect(verdict).toContain("Requirement audit passed: 2/2");
   });
 
   it("invalidates an issued token when a later focused verification fails", async () => {

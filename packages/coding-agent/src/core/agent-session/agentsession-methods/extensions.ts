@@ -67,7 +67,7 @@ export async function do_extendResourcesFromExtensions(
   };
 
   self._resourceLoader.extendResources(extensionPaths);
-  await self._projectInstructions.refresh();
+  if (self._projectInstructionMode === "compiled") await self._projectInstructions.refresh();
   self._baseSystemPrompt = self._rebuildSystemPrompt(self.getActiveToolNames());
   self.agent.state.systemPrompt = self._baseSystemPrompt;
 }

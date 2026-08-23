@@ -230,13 +230,13 @@ describe("requirement-audit completion regressions", () => {
     expect(harness.controller.currentState.taskPrompts).toHaveLength(1);
   });
 
-  it("bounds authoritative decomposition to 32 atomic requirements", async () => {
+  it("bounds authoritative decomposition to 64 atomic requirements", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
     const result = await callRequirementAudit(harness.controller, {
       action: "define",
-      requirements: Array.from({ length: 33 }, (_unused, index) => ({
+      requirements: Array.from({ length: 65 }, (_unused, index) => ({
         type: "behavior",
         text: `Atomic behavior ${index + 1}`,
         acceptance_criterion: `Behavior ${index + 1} is independently verified`,
@@ -245,7 +245,7 @@ describe("requirement-audit completion regressions", () => {
       ignored_source_prompts: [],
     });
 
-    expect(result).toContain("at most 32 atomic requirements");
+    expect(result).toContain("at most 64 atomic requirements");
     expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
   });
 
@@ -268,10 +268,14 @@ describe("requirement-audit completion regressions", () => {
     await nextModelTurn(harness);
     await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Current focused evidence proves the complete requirement.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Current focused evidence proves the complete requirement.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
 
     const finishArgs: { status: "success"; summary: string; verification_token?: string } = {

@@ -115,6 +115,7 @@ beforeEach(() => {
       maxTokens: 100,
       model: { provider: "provider" },
       noTools: false,
+      projectInstructionCompilerModel: "compiler-provider/compiler-model",
       scopedModels: [],
       thinkingLevel: "high",
       tools: [],
@@ -144,6 +145,9 @@ describe("CLI runtime factory", () => {
     expect(serviceMocks.createProjectTrustContext).toHaveBeenCalledWith(expect.objectContaining({ hasUI: true }));
     expect(serviceMocks.resolveModelScope).toHaveBeenCalledWith(["provider/model"], expect.anything());
     expect(options.authStorage.setRuntimeApiKey).toHaveBeenCalledWith("provider", "runtime-key");
+    expect(serviceMocks.createAgentSessionFromServices).toHaveBeenCalledWith(
+      expect.objectContaining({ projectInstructionCompilerModel: "compiler-provider/compiler-model" }),
+    );
     expect(
       (runtimeState.created as { session: { setThinkingLevel: ReturnType<typeof vi.fn> } }).session.setThinkingLevel,
     ).toHaveBeenCalledWith("high");

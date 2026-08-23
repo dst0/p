@@ -4,7 +4,7 @@ import { readSkillLinks } from "../project-instructions/reader.ts";
 import type { ProjectInstructionState } from "../project-instructions/types.ts";
 
 const readSkillsSchema = Type.Object({
-  links: Type.Array(Type.String({ description: "Relative skill or skill-resource link from the injected catalog" }), {
+  links: Type.Array(Type.String({ description: "Cataloged skills/* virtual link", pattern: "^skills/.+$" }), {
     minItems: 1,
     maxItems: 32,
   }),
@@ -23,7 +23,7 @@ export function createReadSkillsToolDefinition(
     name: "read_skills",
     label: "read_skills",
     description:
-      "Read cataloged skills and their relative resources through traversal-safe virtual links. Rejects unknown, stale, absolute, and escaping paths.",
+      "Read skills/catalog.md or cataloged skills/* resources through traversal-safe virtual links. Rejects unknown, stale, absolute, and escaping paths.",
     promptSnippet: "Read a matching skill or its relative resource by catalog link",
     parameters: readSkillsSchema,
     async execute(_toolCallId, input: ReadSkillsToolInput) {

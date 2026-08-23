@@ -5,12 +5,24 @@ import { filterSleepToolUseForHistory } from "../../messages.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
 import { isInternalCompletionProtocolRepairMessage } from "../message-utils.ts";
+import { MAX_PROJECT_RULE_LINKS_PER_TURN, type ProjectRuleGate } from "../state-types.ts";
 
 export async function handleAgentEvent(self: AgentSession, event: AgentEvent): Promise<void> {
+  if (event.type === "turn_start" || event.type === "agent_end") {
+    self._processingQueuedProjectRuleTurn = false;
+  }
   const isInternalRepairEvent =
     (event.type === "message_start" || event.type === "message_end") &&
     isInternalCompletionProtocolRepairMessage(event.message);
   if (event.type === "message_start" && event.message.role === "user") {
+    if (self._queuedProjectRuleGates.has(event.message)) {
+      const queuedGate = self._queuedProjectRuleGates.get(event.message);
+      self._queuedProjectRuleGates.delete(event.message);
+      self._projectRuleGate = mergeProjectRuleGates(self._projectRuleGate, queuedGate, {
+        preserveCurrentCandidates: true,
+      });
+    }
+    self._processingQueuedProjectRuleTurn = true;
     self._overflowRecoveryAttempts = 0;
     const messageText = self._getUserMessageText(event.message);
     if (messageText) {
@@ -102,4 +114,63 @@ export async function handleAgentEvent(self: AgentSession, event: AgentEvent): P
     });
     self._retryAttempt = 0;
   }
+}
+
+export function mergeProjectRuleGates(
+  current: ProjectRuleGate | undefined,
+  incoming: ProjectRuleGate | undefined,
+  options: { preserveCurrentCandidates?: boolean } = {},
+): ProjectRuleGate | undefined {
+  if (!incoming) return current;
+  if (!current) return incoming;
+  const preserveCurrentCandidates = options.preserveCurrentCandidates || (incoming.candidateLinks?.length ?? 0) === 0;
+  const pendingCurrentBatches = current.batches.filter((batch) => !batch.satisfied);
+  if (pendingCurrentBatches.length === 0 && !current.failure) {
+    if (!preserveCurrentCandidates) return incoming;
+    if (current.inputHash !== incoming.inputHash) {
+      return changedProjectRuleGate(incoming, pendingCurrentBatches);
+    }
+    const candidateLinks = mergeQueuedProjectRuleCandidates(current, incoming, pendingCurrentBatches);
+    return { ...incoming, candidateLinks };
+  }
+  if (current.inputHash !== incoming.inputHash) {
+    return changedProjectRuleGate(incoming, pendingCurrentBatches);
+  }
+  return {
+    inputHash: current.inputHash,
+    batches: [...pendingCurrentBatches, ...incoming.batches],
+    activeGeneration: incoming.activeGeneration,
+    candidateLinks: preserveCurrentCandidates
+      ? mergeQueuedProjectRuleCandidates(current, incoming, pendingCurrentBatches)
+      : projectRuleCandidatesNotCovered(incoming.candidateLinks ?? [], pendingCurrentBatches),
+    failure: current.failure ?? incoming.failure,
+  };
+}
+
+function mergeQueuedProjectRuleCandidates(
+  current: ProjectRuleGate,
+  incoming: ProjectRuleGate,
+  coveredBatches: ProjectRuleGate["batches"],
+): string[] {
+  const candidates = [...new Set([...(current.candidateLinks ?? []), ...(incoming.candidateLinks ?? [])])];
+  return projectRuleCandidatesNotCovered(candidates, coveredBatches);
+}
+
+function projectRuleCandidatesNotCovered(candidates: string[], coveredBatches: ProjectRuleGate["batches"]): string[] {
+  const coveredLinks = new Set(coveredBatches.flatMap((batch) => batch.links));
+  return candidates.filter((link) => !coveredLinks.has(link)).slice(0, MAX_PROJECT_RULE_LINKS_PER_TURN);
+}
+
+function changedProjectRuleGate(
+  incoming: ProjectRuleGate,
+  pendingCurrentBatches: ProjectRuleGate["batches"],
+): ProjectRuleGate {
+  return {
+    inputHash: incoming.inputHash,
+    batches: [...pendingCurrentBatches, ...incoming.batches],
+    activeGeneration: incoming.activeGeneration,
+    candidateLinks: incoming.candidateLinks,
+    failure:
+      "Project instruction routes changed while queued requests were being combined. Reload before mutating work.",
+  };
 }

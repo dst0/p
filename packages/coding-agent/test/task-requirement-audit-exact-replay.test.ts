@@ -86,10 +86,14 @@ describe("requirement-audit exact baseline replay", () => {
     await nextModelTurn(harness);
     const verdict = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "The repeated exact replay proves the regression remains fixed.",
-      evidence_refs: [finalEvidence],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "The repeated exact replay proves the regression remains fixed.",
+          evidence_refs: [finalEvidence],
+        },
+      ],
     });
     expect(auditVerificationToken(verdict)).toBeTruthy();
   });

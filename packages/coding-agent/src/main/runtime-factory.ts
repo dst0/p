@@ -3,6 +3,7 @@ import { createProjectTrustContext } from "../cli/project-trust.ts";
 import type { CreateAgentSessionRuntimeFactory } from "../core/agent-session-runtime.ts";
 import {
   type AgentSessionRuntimeDiagnostic,
+  type AgentSessionServices,
   createAgentSessionFromServices,
   createAgentSessionServices,
 } from "../core/agent-session-services.ts";
@@ -30,11 +31,24 @@ interface CliRuntimeFactoryOptions {
   trustStore: ProjectTrustStore;
 }
 
-export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): CreateAgentSessionRuntimeFactory {
+interface CliRuntimeServicesInput {
+  cwd: string;
+  agentDir: string;
+  isInitialRuntime: boolean;
+  projectTrustContext?: Parameters<CreateAgentSessionRuntimeFactory>[0]["projectTrustContext"];
+}
+
+interface CliRuntimeServicesResult {
+  services: AgentSessionServices;
+  diagnostics: AgentSessionRuntimeDiagnostic[];
+}
+
+function createCliRuntimeServicesFactory(
+  options: CliRuntimeFactoryOptions,
+): (input: CliRuntimeServicesInput) => Promise<CliRuntimeServicesResult> {
   const projectTrustByCwd = new Map<string, boolean>();
 
-  return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
-    const isInitialRuntime = sessionStartEvent === undefined;
+  return async ({ cwd, agentDir, isInitialRuntime, projectTrustContext }) => {
     const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
     const cachedProjectTrust = projectTrustByCwd.get(cwd);
     const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
@@ -93,7 +107,7 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
         extensionFactories: options.extensionFactories,
       },
     });
-    const { settingsManager, modelRegistry, resourceLoader } = services;
+    const { settingsManager, resourceLoader } = services;
     const diagnostics: AgentSessionRuntimeDiagnostic[] = [
       ...projectTrustDiagnostics,
       ...services.diagnostics,
@@ -103,6 +117,29 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
         message: `Failed to load extension "${path}": ${error}`,
       })),
     ];
+
+    return { services, diagnostics };
+  };
+}
+
+export async function createCliMetadataServices(
+  options: CliRuntimeFactoryOptions,
+  input: Omit<CliRuntimeServicesInput, "isInitialRuntime">,
+): Promise<CliRuntimeServicesResult> {
+  return createCliRuntimeServicesFactory(options)({ ...input, isInitialRuntime: true });
+}
+
+export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): CreateAgentSessionRuntimeFactory {
+  const createRuntimeServices = createCliRuntimeServicesFactory(options);
+
+  return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
+    const { services, diagnostics } = await createRuntimeServices({
+      cwd,
+      agentDir,
+      isInitialRuntime: sessionStartEvent === undefined,
+      projectTrustContext,
+    });
+    const { settingsManager, modelRegistry } = services;
 
     const modelPatterns = options.parsed.models ?? settingsManager.getEnabledModels();
     const scopedModels =
@@ -147,6 +184,8 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
       completionMode: sessionOptions.completionMode,
       completionLimits: sessionOptions.completionLimits,
       maxTokens: sessionOptions.maxTokens,
+      projectInstructionMode: sessionOptions.projectInstructionMode,
+      projectInstructionCompilerModel: sessionOptions.projectInstructionCompilerModel,
     });
     const cliThinkingOverride = options.parsed.thinking !== undefined || cliThinkingFromModel;
     if (created.session.model && cliThinkingOverride) {
