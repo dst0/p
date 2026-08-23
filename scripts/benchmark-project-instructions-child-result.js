@@ -1,4 +1,8 @@
-import { existsSync, readFileSync } from "node:fs";
+import { constants, closeSync, fstatSync, openSync, readSync } from "node:fs";
+import { TextDecoder } from "node:util";
+import { hashProjectInstructionResult } from "./benchmark-project-instruction-outer-authority.js";
+
+export const MAX_PROJECT_INSTRUCTION_RESULT_BYTES = 64 * 1024 * 1024;
 
 export class BenchmarkChildResultError extends Error {
   constructor(code, message) {
@@ -77,11 +81,71 @@ function validRecordingCapture(recordingCapture, captureOverflow) {
   return !rawOverflow && !storageOverflow && !archiveOverflow;
 }
 
-export function readBenchmarkChildResult(path) {
-  if (!existsSync(path)) invalid("missing_results", "child benchmark results are missing");
+function readBoundedResult(descriptor) {
+  const chunks = [];
+  let totalBytes = 0;
+  while (totalBytes <= MAX_PROJECT_INSTRUCTION_RESULT_BYTES) {
+    const remaining = MAX_PROJECT_INSTRUCTION_RESULT_BYTES + 1 - totalBytes;
+    const chunk = Buffer.allocUnsafe(Math.min(64 * 1024, remaining));
+    const bytesRead = readSync(descriptor, chunk, 0, chunk.length, null);
+    if (bytesRead === 0) break;
+    chunks.push(chunk.subarray(0, bytesRead));
+    totalBytes += bytesRead;
+  }
+  if (totalBytes > MAX_PROJECT_INSTRUCTION_RESULT_BYTES) {
+    invalid("oversized_results", "child benchmark results exceed the hard size ceiling");
+  }
+  return Buffer.concat(chunks, totalBytes);
+}
+
+function readCommittedResult(path, expectedSha256) {
+  let descriptor;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error?.code === "ENOENT") invalid("missing_results", "child benchmark results are missing");
+    invalid("invalid_result_file", "child benchmark results must be a regular non-linked file");
+  }
+  try {
+    const before = fstatSync(descriptor);
+    if (!before.isFile() || before.nlink !== 1) {
+      invalid("invalid_result_file", "child benchmark results must be a regular non-linked file");
+    }
+    if (before.size > MAX_PROJECT_INSTRUCTION_RESULT_BYTES) {
+      invalid("oversized_results", "child benchmark results exceed the hard size ceiling");
+    }
+    const contents = readBoundedResult(descriptor);
+    const after = fstatSync(descriptor);
+    if (
+      !after.isFile() ||
+      after.nlink !== 1 ||
+      before.dev !== after.dev ||
+      before.ino !== after.ino ||
+      before.size !== after.size
+    ) {
+      invalid("invalid_result_file", "child benchmark results changed while being read");
+    }
+    const sha256 = hashProjectInstructionResult(contents);
+    if (expectedSha256 !== undefined && sha256 !== expectedSha256) {
+      invalid("invalid_result_commitment", "child benchmark results do not match the outer result commitment");
+    }
+    let decoded;
+    try {
+      decoded = new TextDecoder("utf-8", { fatal: true }).decode(contents);
+    } catch {
+      invalid("malformed_results", "child benchmark results are not valid UTF-8");
+    }
+    return { contents: decoded, sha256 };
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+export function readBenchmarkChildResult(path, expectedSha256) {
+  const committed = readCommittedResult(path, expectedSha256);
   let document;
   try {
-    document = JSON.parse(readFileSync(path, "utf8"));
+    document = JSON.parse(committed.contents);
   } catch {
     invalid("malformed_results", "child benchmark results JSON is malformed");
   }
@@ -100,5 +164,6 @@ export function readBenchmarkChildResult(path) {
     result,
     recordingCapture: result.recordingCapture,
     captureOverflow: result.captureOverflow,
+    resultSha256: committed.sha256,
   };
 }

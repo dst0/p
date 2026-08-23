@@ -13,6 +13,10 @@ import {
 import { createCompiledFixture } from "./benchmark-project-instruction-evidence-fixture.js";
 import { projectProjectInstructionEvidence } from "./benchmark-project-instruction-evidence-projection.js";
 import { createValidatedPairedSample } from "./benchmark-project-instructions-sample.js";
+import {
+  bindProjectInstructionTurnAuthority,
+  createProjectInstructionTurnChallenge,
+} from "./benchmark-project-instruction-turn-authority.js";
 
 test("captured project-instruction evidence exact-picks nested public fields", () => {
   const fixture = createCompiledFixture();
@@ -157,6 +161,7 @@ test("validated parent samples replace contaminated child instruction evidence",
     const sourceFile = join(root, "source-AGENTS.md");
     const source = "# Rules\nAlways verify.";
     const sourceSha256 = createHash("sha256").update(source).digest("hex");
+    const proofReceiptSha256 = "f".repeat(64);
     mkdirSync(workspace, { recursive: true });
     writeFileSync(workspaceAgents, source);
     writeFileSync(sourceFile, source);
@@ -170,17 +175,26 @@ test("validated parent samples replace contaminated child instruction evidence",
       { type: "message_start", message: { role: "user", content: "inspect the fixture" } },
       1,
     );
+    const challenge = createProjectInstructionTurnChallenge(proofReceiptSha256, 1, "inspect the fixture");
+    const boundProof = bindProjectInstructionTurnAuthority(proof, challenge, [turn]);
     const evidence = captureProjectInstructionEvidence({
       workspace,
       mode: "legacy",
       sourceFile,
-      baseSystemModeProofs: [{ ...proof, rawResponse: { source: privateMarker } }],
+      proofReceiptSha256,
+      proofExpectedTurnCount: 1,
+      baseSystemModeProofs: [{
+        ...boundProof,
+        rawResponse: { source: privateMarker },
+      }],
       runtimeContexts: [],
       userTurns: [turn],
       readRulesBatches: [],
       phaseRelevantToolCalls: [],
     });
     evidence.rawResponse = { provider: privateMarker };
+    const projectedEvidence = projectProjectInstructionEvidence(evidence);
+    const resultSha256 = "e".repeat(64);
     const sample = createValidatedPairedSample(
       {
         document: {
@@ -222,6 +236,7 @@ test("validated parent samples replace contaminated child instruction evidence",
           provider: privateMarker,
           args: { rawResponse: privateMarker },
         },
+        resultSha256,
       },
       {
         options: { model: "provider/model", sourceSha256 },
@@ -229,6 +244,13 @@ test("validated parent samples replace contaminated child instruction evidence",
         mode: "legacy",
         scratchOutput,
         runtimeSha256: "runtime-sha",
+        proofReceiptSha256,
+        projectInstructionAuthority: {
+          expectedTurnCount: 1,
+          baseSystemModeProofs: projectedEvidence.baseSystemModeProofs,
+          userTurns: projectedEvidence.userTurns,
+          resultSha256,
+        },
       },
     );
     const serialized = JSON.stringify(sample);

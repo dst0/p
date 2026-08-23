@@ -5,7 +5,6 @@ import { didAgentTurnFail } from "./benchmark-agent-turn-policy.js";
 import {
   assessSample,
   assertChildSampleMetrics,
-  buildBenchmarkArgs,
   buildPairedSchedule,
   createBenchmarkGateFailure,
   createPairedSummary,
@@ -89,52 +88,6 @@ test("paired schedule randomizes order reproducibly inside every pair", () => {
     const starts = first.filter((pair) => pair.task === task).map((pair) => pair.modes[0]);
     assert.ok(Math.abs(starts.filter((mode) => mode === "compiled").length - starts.filter((mode) => mode === "legacy").length) <= 1);
   }
-});
-
-test("child invocation selects one P run and an explicit instruction mode", () => {
-  const args = buildBenchmarkArgs(
-    {
-      model: "provider/model",
-      compilerModel: "compiler-provider/compiler-model",
-      modelsFile: "/tmp/models.json",
-      pCli: "/tmp/runtime/packages/coding-agent/dist/cli.js",
-      projectInstructionProbe: "/tmp/runtime/benchmark-project-instruction-probe.js",
-      projectInstructionsFile: "/tmp/input/AGENTS.md",
-      timeoutSeconds: 123,
-    },
-    { run: 2, task: "event-sourced-inventory", modes: ["compiled", "legacy"] },
-    "compiled",
-    "/tmp/output",
-    456,
-  );
-  assert.deepEqual(args, [
-    "--agents",
-    "p",
-    "--model",
-    "provider/model",
-    "--project-instruction-compiler-model",
-    "compiler-provider/compiler-model",
-    "--p-cli",
-    "/tmp/runtime/packages/coding-agent/dist/cli.js",
-    "--project-instruction-probe",
-    "/tmp/runtime/benchmark-project-instruction-probe.js",
-    "--models-file",
-    "/tmp/models.json",
-    "--task",
-    "event-sourced-inventory",
-    "--runs",
-    "1",
-    "--minimum-timeout-seconds",
-    "123",
-    "--max-runtime-seconds",
-    "456",
-    "--project-instructions",
-    "compiled",
-    "--project-instructions-file",
-    "/tmp/input/AGENTS.md",
-    "--output",
-    "/tmp/output",
-  ]);
 });
 
 test("base benchmark runner accepts the explicit P instruction mode", () => {

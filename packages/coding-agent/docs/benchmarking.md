@@ -15,7 +15,7 @@ matter:
 - `event-sourced-inventory` — build a transactional event-sourced inventory
   engine with optimistic concurrency, idempotent commands, atomic batches,
   hash-chained JSONL replay, tamper detection, and hidden acceptance checks.
-  This fixture allows 30 minutes per agent.
+  This fixture allows 40 minutes per agent.
 - `durable-workflow-saga` — build a deterministic workflow and saga engine
   with DAG scheduling, fenced leases, retries, compensation, and
   tamper-evident recovery. This fixture allows 60 minutes per agent.
@@ -139,8 +139,8 @@ P_BENCHMARK_CANDIDATE_VERSION=5.0.1-rc.1 npm run benchmark:project-instructions 
   --models-file ~/.p/agent/models.json \
   --task event-sourced-inventory \
   --runs 3 \
-  --timeout-seconds 1200 \
-  --max-runtime-seconds 10800 \
+  --timeout-seconds 2400 \
+  --max-runtime-seconds 18000 \
   --output benchmarks/results/<timestamp>-v5.0.1-rc.1-project-instructions-paired
 ```
 
@@ -214,6 +214,25 @@ terminal failures and are never retried by the watchdog. A failed compiler's
 allowlisted, hash-bound diagnostic is evaluated before positive token and
 quality metrics, so a zero-token startup failure retains its safe cause instead
 of being reported as generic incomplete metrics.
+
+Every launched P turn receives a distinct receipt bound to the cell receipt,
+turn ordinal, and the parent-known exact prompt hash and byte length. The probe
+consumes and removes the complete reserved environment namespace, returns one
+bounded canonical proof through the turn's private IPC channel, waits for the
+send callback, and disconnects before agent work. Delivery failure best-effort
+disconnects and exits with the preflight code; extension error handling cannot
+resume the model. The runner requires exactly one matching proof and one matching
+user event for every launched turn, so missing, reordered, or replayed turns fail
+immediately.
+
+The inner runner commits the sanitized `results.json` bytes in memory before an
+exclusive mode-`0600` publication, then sends the turn authority and exact digest
+through a separate outer IPC channel that is not inherited by P or model-tool
+descendants. The outer harness rejects missing, duplicate, malformed, or oversized
+authority before accessing the result, opens the result without following links,
+performs a bounded exact-byte hash check and fatal UTF-8 decode, and reconciles the
+proof arrays with the outer message. Child-writable files and exposed receipt
+identities therefore cannot authorize their own prompt or result evidence.
 
 The paired result directory contains a top-level `results.json` and `report.md`.
 Individual raw recordings, diagnostics, and final workspaces live below

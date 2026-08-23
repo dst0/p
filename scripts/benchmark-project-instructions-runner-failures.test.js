@@ -14,7 +14,9 @@ import { settlePairedCellEvidence } from "./benchmark-paired-resources.js";
 const pair = { run: 1, task: "typescript-calculator", modes: ["legacy", "compiled"] };
 
 function writeExitZeroChild(path, scratchOutput, resultText) {
+  const receiptSha256 = "c".repeat(64);
   const source = [
+    'import { createHash } from "node:crypto";',
     'import { mkdirSync, writeFileSync } from "node:fs";',
     'import { brotliCompressSync } from "node:zlib";',
     `const scratch = ${JSON.stringify(scratchOutput)};`,
@@ -24,6 +26,8 @@ function writeExitZeroChild(path, scratchOutput, resultText) {
     resultText === undefined
       ? ""
       : `writeFileSync(${JSON.stringify(join(scratchOutput, "results.json"))}, ${JSON.stringify(resultText)});`,
+    `const resultText = ${JSON.stringify(resultText ?? "")};`,
+    `process.send({ schemaVersion: 1, kind: "project-instruction-outer-authority", cellReceiptSha256: ${JSON.stringify(receiptSha256)}, authority: { expectedTurnCount: 1, baseSystemModeProofs: [{}], userTurns: [{}], resultSha256: createHash("sha256").update(resultText).digest("hex") } }, () => process.disconnect());`,
   ].join("\n");
   writeFileSync(path, `${source}\n`);
 }
@@ -48,17 +52,18 @@ async function runInvalidExitZeroChild(resultText) {
         scratchOutput,
         remainingSeconds: 60,
         runtimeSnapshot: root,
-        runtimeSha256: "runtime-sha",
+        runtimeSha256: "b".repeat(64),
         progressPath,
         output,
       },
       {
         verifyPrivateInputs: () => true,
         assertLegacyUnseeded: () => {},
-        hashRuntime: () => "runtime-sha",
+        hashRuntime: () => "b".repeat(64),
         buildArgs: () => [],
         resolveRunner: () => childPath,
         buildEnvironment: () => process.env,
+        createProofReceipt: () => ({ sha256: "c".repeat(64) }),
       },
     );
   } catch (caught) {
@@ -111,7 +116,7 @@ test("malformed child diagnostics cannot forge a report heading", async () => {
     const report = renderPairedReport({
       generatedAt: "2026-08-23T00:00:00.000Z",
       model: "provider/model",
-      binarySha256: "runtime-sha",
+      binarySha256: "b".repeat(64),
       seed: "seed",
       runs: 3,
       tasks: [pair.task],
@@ -138,12 +143,15 @@ test("exit-zero child with valid metadata but active-only recording is untrusted
   writeFileSync(
     childPath,
     [
+      'import { createHash } from "node:crypto";',
       'import { mkdirSync, writeFileSync } from "node:fs";',
       `const scratch = ${JSON.stringify(scratchOutput)};`,
+      'const result = JSON.stringify({ results: [{ recordingCapture: { format: "chunked-brotli-v1", archiveBytes: 1, archiveLimitBytes: 64, bytes: 19, limitBytes: 64, partial: false, storageBytes: 19, storageLimitBytes: 64 } }] });',
       'mkdirSync(`${scratch}/recordings/p-run-1-typescript-calculator.jsonl.chunks`, { recursive: true });',
       'writeFileSync(`${scratch}/diagnostic.txt`, "must be discarded\\n");',
       'writeFileSync(`${scratch}/recordings/p-run-1-typescript-calculator.jsonl.chunks/active.jsonl.active`, "{\\\"type\\\":\\\"session\\\"}\\n");',
-      'writeFileSync(`${scratch}/results.json`, JSON.stringify({ results: [{ recordingCapture: { format: "chunked-brotli-v1", archiveBytes: 1, archiveLimitBytes: 64, bytes: 19, limitBytes: 64, partial: false, storageBytes: 19, storageLimitBytes: 64 } }] }));',
+      'writeFileSync(`${scratch}/results.json`, result);',
+      'process.send({ schemaVersion: 1, kind: "project-instruction-outer-authority", cellReceiptSha256: "c".repeat(64), authority: { expectedTurnCount: 1, baseSystemModeProofs: [{}], userTurns: [{}], resultSha256: createHash("sha256").update(result).digest("hex") } }, () => process.disconnect());',
     ].join("\n"),
   );
   let trusted;
@@ -158,17 +166,18 @@ test("exit-zero child with valid metadata but active-only recording is untrusted
         scratchOutput,
         remainingSeconds: 60,
         runtimeSnapshot: root,
-        runtimeSha256: "runtime-sha",
+        runtimeSha256: "b".repeat(64),
         progressPath,
         output,
       },
       {
         verifyPrivateInputs: () => true,
         assertLegacyUnseeded: () => {},
-        hashRuntime: () => "runtime-sha",
+        hashRuntime: () => "b".repeat(64),
         buildArgs: () => [],
         resolveRunner: () => childPath,
         buildEnvironment: () => process.env,
+        createProofReceipt: () => ({ sha256: "c".repeat(64) }),
         createSample: () => ({
           status: "passed",
           quality: { passed: true, rawScore: 1, maxScore: 1, checks: [{ passed: true }] },
@@ -209,7 +218,7 @@ test("cell-output collision writes hard-stop evidence instead of leaving RUNNING
       candidateVersion: "5.0.1-rc.1",
       generatedAt: "2026-08-23T00:00:00.000Z",
       model: "provider/model",
-      binarySha256: "runtime-sha",
+      binarySha256: "b".repeat(64),
       seed: "seed",
       runs: 3,
       tasks: [pair.task],
@@ -220,8 +229,8 @@ test("cell-output collision writes hard-stop evidence instead of leaving RUNNING
     };
     let exitCode;
     await runPairedBenchmarkSchedule(
-      { options: {}, output, scratchRoot: join(root, "scratch"), runtimeSnapshot: root, runtimeSha256: "runtime-sha", schedule: [pair], document, deadline: Date.now() + 60_000 },
-      { hashRuntime: () => "runtime-sha", setExitCode: (value) => { exitCode = value; } },
+      { options: {}, output, scratchRoot: join(root, "scratch"), runtimeSnapshot: root, runtimeSha256: "b".repeat(64), schedule: [pair], document, deadline: Date.now() + 60_000 },
+      { hashRuntime: () => "b".repeat(64), setExitCode: (value) => { exitCode = value; } },
     );
     const persisted = JSON.parse(readFileSync(join(output, "results.json"), "utf8"));
     const report = readFileSync(join(output, "report.md"), "utf8");

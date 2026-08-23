@@ -11,7 +11,11 @@ import {
 import { createClassifiedBenchmarkGateFailure } from "./benchmark-project-instructions-failure.js";
 import { printPairedBenchmarkHelp } from "./benchmark-project-instructions-help.js";
 import { hashFile } from "./benchmark-project-instruction-evidence.js";
-import { assertEmptyOutputDirectory, hashRuntimeSnapshot } from "./benchmark-runtime-snapshot.js";
+import {
+  assertEmptyOutputDirectory,
+  benchmarkProjectInstructionProbePath,
+  hashRuntimeSnapshot,
+} from "./benchmark-runtime-snapshot.js";
 import * as privateInputs from "./benchmark-private-input-snapshots.js";
 import { createBenchmarkAuthOutputGuard } from "./benchmark-auth-output-guard.js";
 import { resolveBenchmarkCandidateOutput, parseBenchmarkCandidateVersion } from "./benchmark-candidate-version.js";
@@ -58,7 +62,7 @@ export async function runProjectInstructionsBenchmark({
     const { runtimeSnapshot, scratchRoot, privateSnapshots } = resources;
     authOutputGuard = createAuthOutputGuard([authSource, privateSnapshots.auth.path]);
     options.pCli = join(runtimeSnapshot, codingAgentCli);
-    options.projectInstructionProbe = join(runtimeSnapshot, "benchmark-project-instruction-probe.js");
+    options.projectInstructionProbe = benchmarkProjectInstructionProbePath(runtimeSnapshot);
     options.projectInstructionsFile = projectInstructionsFile;
     options.privateSnapshots = privateSnapshots;
     options.authOutputGuard = authOutputGuard;
