@@ -1,0 +1,25 @@
+# 2026-08-21 — Major-release authorization must be exact and receipt-bound
+
+- **Status:** Resolved
+- **Task/context:** Permit the explicitly approved `5.0.1` release without weakening the certified release transaction for later major versions.
+- **Unexpected observation or failure:** A simple boolean `--allow-major` implementation would have authorized every future major target, exceeding the user's one-target approval. Adversarial review then found that active transaction state remained mutable after token issuance, so a minor-release token could be reused after rewriting its target and certificate metadata.
+- **Evidence:** The first implementation accepted `6.0.0` whenever the boolean option was true. A second regression certified and began `0.5.0`, rewrote active state to `5.0.1`, and successfully invoked the version bump with the original token; a self-rehashed certificate with contradictory authorization also passed inspection. A final adversarial case changed only stored evidence, which left the scalar evidence hash, certificate ID, and token hash unchanged and initially reached version mutation.
+- **Approaches tried:**
+  - **Attempt:** Remove the no-major guard globally.
+    - **Outcome:** Rejected
+    - **Why:** It would permanently broaden release authority beyond the requested target.
+  - **Attempt:** Accept any major target when `--allow-major` is present.
+    - **Outcome:** Rejected
+    - **Why:** A CLI claim alone did not encode the exact scope of the approval.
+  - **Attempt:** Allow only the reviewed `5.0.1` target and bind the authorization state into the audit certificate and persisted release receipt.
+    - **Outcome:** Incomplete
+    - **Why:** The certificate hash covered authorization, but the active token authenticated only its random secret and trusted mutable target fields after certification.
+  - **Attempt:** Revalidate immutable certificate authority on every active transition and bind the token hash to the token, certificate ID, and exact target.
+    - **Outcome:** Worked
+    - **Why:** Rewriting target, authorization, certificate identity, or evidence now invalidates certificate authority or the one-time token before any manifest write or receipt creation.
+- **Root cause:** The former invariant modeled every major release as forbidden, while a generic override modeled authorization too broadly and the first transaction design failed to carry immutable certificate authority through active states.
+- **Resolution:** Add an exact-target `--allow-major` path across release auditing and execution, include the authorization state in certificate identity and receipt schema, reapply target policy and evidence hashing from the certified base revision on every transition, and bind the one-time token to certificate ID plus target.
+- **Verification:** Focused policy, certificate, version-bump, receipt-forgery, active-state mutation, and full release-flow tests prove default rejection, exact `5.0.1` acceptance, unchanged files after forged-state attempts, receipt rejection, tagging, and atomic push.
+- **Prevention/follow-up:** Every future major target requires an explicit policy diff, user authorization, certificate-schema review, and end-to-end release-flow regression.
+- **Reusable learning:** Exceptional release authority should name one exact target and survive every downstream verification boundary; a generic bypass flag is broader than a one-release approval.
+- **References:** `scripts/release-target-policy.js`, `scripts/release-audit-certificate.js`, `scripts/release-certificate-receipt.js`, `scripts/release-flow-certificate.test.js`.

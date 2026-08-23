@@ -263,17 +263,17 @@ Before executing any semantic refactoring (TypeScript/JavaScript, HTML, Rust), t
 
 ## Mandatory Learning Log
 
-- Maintain the repository-wide append-only journal at `docs/learnings.md`.
-- Add an entry in the same change whenever work reveals a resolved bug or regression, failed or misleading experiment, unexpected behavior, setup or environment trap, non-obvious constraint, important workaround, or rejected approach with reusable rationale.
+- Maintain the repository-wide append-only learning collection in `docs/leanings/`.
+- Create exactly one Markdown file per learning in the same change whenever work reveals a resolved bug or regression, failed or misleading experiment, unexpected behavior, setup or environment trap, non-obvious constraint, important workaround, or rejected approach with reusable rationale.
 - Routine successful work does not need an entry unless it produces a reusable insight.
-- Use the exact entry structure documented in `docs/learnings.md`. Include the task/context, observation or failure, evidence, approaches tried and their outcomes, root cause, resolution, verification, prevention or follow-up, and the reusable learning.
+- Follow the filename convention and exact entry structure documented in `docs/leanings/README.md`. Include the task/context, observation or failure, evidence, approaches tried and their outcomes, root cause, resolution, verification, prevention or follow-up, and the reusable learning.
 - Mark uncertainty honestly. If root cause or resolution is incomplete, record the entry as `Partial` or `Open` and state what evidence is still missing.
-- Keep the journal append-only by default: do not delete or rewrite older entries merely to make the history cleaner.
+- Keep learning files append-only by default: do not delete or rewrite older files merely to make the history cleaner. Put later discoveries in a new file that links the earlier learning.
 - Exception for confirmed falsehoods: when authoritative evidence proves that an entry itself was fabricated, hallucinated, or factually false, correct or remove the false content so future agents do not reuse it.
-- A confirmed-falsehood correction must never be silent. Mark the entry `Corrected` and add a dated correction note stating what was wrong, the authoritative evidence used, and what was changed. Do not repeat removed sensitive content.
-- If the evidence is incomplete or disputed, do not rewrite the original entry; add a dated `Partial` or `Open` follow-up instead.
+- A confirmed-falsehood correction must never be silent. Mark the affected file `Corrected` and add a dated correction note stating what was wrong, the authoritative evidence used, and what was changed. Do not repeat removed sensitive content.
+- If the evidence is incomplete or disputed, do not rewrite the original file; add a dated `Partial` or `Open` learning file that links it.
 - Link relevant issues, commits, logs, or regression tests when safe and useful.
-- Never place credentials, tokens, private keys, customer data, sensitive payloads, or unsanitized production evidence in the journal.
+- Never place credentials, tokens, private keys, customer data, sensitive payloads, or unsanitized production evidence in learning files.
 
 <!-- destinationworks-universal-agent-baseline:v1 -->
 ## Universal Delivery Baseline (v1)
@@ -293,11 +293,11 @@ These rules are the portable minimum for Destination Works repositories. Reposit
 
 ### Durable learning capture
 
-- Maintain `docs/learnings.md` as the repository-wide learning journal. Add an entry in the same work that reveals a material resolved bug/regression, failed or misleading experiment, unexpected behavior, setup/environment trap, non-obvious constraint, important workaround, or rejected approach with reusable rationale; routine successful work needs no entry.
-- Record the task/context, observable symptom, sanitized decisive evidence, approaches tried and why each worked or failed, root cause or honest uncertainty, resolution, verification, prevention/follow-up, reusable rule, and safe references. Use `Resolved`, `Partial`, or `Open` status truthfully.
-- Keep entries append-only by default. Correct prior understanding with a new linked entry rather than rewriting history.
-- Exception: when authoritative evidence proves an existing statement was fabricated, hallucinated, or factually false, correct or remove the false content so it cannot mislead future work. Mark the entry `Corrected` and add a dated note stating what was wrong, the authoritative evidence, and what changed; never use this exception for disputed interpretation, ordinary staleness, or changed external conditions.
-- Promote the shortest prevention rule into the appropriate canonical instructions, setup guide, architecture contract, or operator runbook in the same change. Do not leave durable knowledge only in chat, commit history, a PR, or the journal.
+- Maintain `docs/leanings/` as the repository-wide append-only learning collection. Create exactly one dated Markdown file per material learning in the same work; routine successful work needs no record.
+- Follow `docs/leanings/README.md` for filenames and record structure. Capture context, observable symptoms, sanitized decisive evidence, approaches and outcomes, root cause or honest uncertainty, resolution, verification, prevention/follow-up, reusable rule, and safe references. Use `Resolved`, `Partial`, `Open`, or `Corrected` truthfully.
+- Keep published learning files append-only by default. Put later discoveries in a new linked file rather than rewriting history.
+- Exception: when authoritative evidence proves an existing statement was fabricated, hallucinated, or factually false, correct or remove the false content in the affected file, mark it `Corrected`, and add a dated note with the authoritative evidence and exact correction. Never use this exception for disputed interpretation, ordinary staleness, or changed external conditions.
+- Promote the shortest prevention rule into the appropriate canonical instructions, setup guide, architecture contract, or operator runbook in the same change. Do not leave durable knowledge only in chat, commit history, a PR, or the learning collection.
 - Never record secrets, credentials, private keys, customer data, sensitive payloads, device codes, or unsanitized production evidence.
 
 ### Validation and test quality
