@@ -4,10 +4,7 @@ import { resolve } from "node:path";
 import { renderBenchmarkCompilerFailureTelemetry } from "./benchmark-project-instruction-failure.js";
 import { renderGateFailureLiveness } from "./benchmark-project-instructions-report-liveness.js";
 import { escapeMarkdownTableCell, escapeMarkdownText, markdownCodeSpan } from "./benchmark-markdown.js";
-import {
-  assessSample,
-  describeCaptureOverflow,
-} from "./benchmark-project-instructions-assessment.js";
+import { assessSample, describeCaptureOverflow } from "./benchmark-project-instructions-assessment.js";
 export { createBenchmarkGateFailure } from "./benchmark-project-instruction-failure.js";
 export { assessSample } from "./benchmark-project-instructions-assessment.js";
 
@@ -106,8 +103,7 @@ export function buildPairedSchedule(tasks, runs, seed) {
     }),
   ).flat();
 }
-
-export function buildBenchmarkArgs(options, pair, mode, output, remainingSeconds) {
+export function buildBenchmarkArgs(options, pair, mode, output, remainingSeconds, proofReceipt) {
   const args = [
     "--agents",
     "p",
@@ -117,6 +113,8 @@ export function buildBenchmarkArgs(options, pair, mode, output, remainingSeconds
     options.pCli,
     "--project-instruction-probe",
     options.projectInstructionProbe,
+    "--project-instruction-proof-receipt",
+    proofReceipt.sha256,
   ];
   if (mode === "compiled") args.splice(4, 0, "--project-instruction-compiler-model", options.compilerModel);
   if (options.modelsFile) args.push("--models-file", options.modelsFile);

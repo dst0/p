@@ -10,6 +10,7 @@ import {
 } from "./benchmark-output-capture.js";
 import { createBenchmarkEventCapture } from "./benchmark-project-instruction-stream.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
+import { createProjectInstructionProofIpcCapture } from "./benchmark-project-instruction-proof-ipc.js";
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -25,11 +26,15 @@ export function runBenchmarkAgentTurn(
   return new Promise((resolveResult) => {
     const limits = resolveBenchmarkOutputLimits(options.outputLimits);
     const startedAt = performance.now();
+    const proofCapture = options.projectInstructionProofReceipt
+      ? createProjectInstructionProofIpcCapture(options.projectInstructionProofReceipt)
+      : undefined;
     const child = spawn(command.executable, command.args, {
       cwd: command.cwd,
       env: sanitizeBenchmarkGitEnvironment(command.env),
-      stdio: ["ignore", "pipe", "pipe"],
+      stdio: proofCapture ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
     });
+    if (proofCapture) child.on("message", (message) => proofCapture.accept(message));
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
     const rawStdout = options.collectRawStdout
@@ -129,6 +134,7 @@ export function runBenchmarkAgentTurn(
         userTurns: eventCapture.userTurns,
         rawStdout: rawStdout?.value(),
         recordingCapture: recording.capture,
+        projectInstructionProof: proofCapture?.finish(),
         elapsedMs: performance.now() - startedAt,
       });
     });

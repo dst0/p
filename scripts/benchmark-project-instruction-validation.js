@@ -1,5 +1,6 @@
 import { assertSeededManifestEvidence } from "./benchmark-project-instruction-seed-record.js";
 import { hashBenchmarkProjectInstructionCacheState } from "./benchmark-project-instruction-cache.js";
+import { validateProjectInstructionTurnAuthoritySequence } from "./benchmark-project-instruction-turn-authority.js";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 
@@ -27,11 +28,18 @@ function authoritativeBatchLinks(turnLinks, actionLinks) {
   ].slice(0, 3);
 }
 
-function validateBaseProofs(proofs, mode, sourceSha256, cache, userTurnCount) {
-  if (!Array.isArray(proofs) || proofs.length === 0 || proofs.length !== userTurnCount) {
+function validateBaseProofs(proofs, mode, sourceSha256, cache, userTurns, trustedReceiptSha256, expectedTurnCount) {
+  if (!Array.isArray(proofs) || proofs.length === 0 || proofs.length !== userTurns.length) {
     return "base-system mode proof is missing for one or more user turns";
   }
-  for (const proof of proofs) {
+  if (
+    trustedReceiptSha256 !== undefined &&
+    !validateProjectInstructionTurnAuthoritySequence(proofs, trustedReceiptSha256, expectedTurnCount, userTurns)
+  ) {
+    return "base-system proof receipt, turn, or user-event binding is invalid";
+  }
+  for (let index = 0; index < proofs.length; index += 1) {
+    const proof = proofs[index];
     if (
       proof.requestedMode !== mode ||
       proof.sourceSha256 !== sourceSha256 ||
@@ -203,12 +211,18 @@ function validateRoutedTurns(evidence, cache) {
   return undefined;
 }
 
-export function validateProjectInstructionEvidence(evidence, expectedMode, expectedSourceSha256, seeded) {
+export function validateProjectInstructionEvidence(evidence, expectedMode, expectedSourceSha256, seeded, trustedReceiptSha256) {
   if (evidence?.requestedMode !== expectedMode) {
     return { passed: false, reason: `requested mode ${evidence?.requestedMode ?? "missing"}; expected ${expectedMode}` };
   }
   if (evidence.sourceSha256 !== expectedSourceSha256) {
     return { passed: false, reason: "fixture source SHA-256 does not match the immutable input" };
+  }
+  if (
+    trustedReceiptSha256 !== undefined &&
+    (!HASH_PATTERN.test(trustedReceiptSha256) || evidence.proofReceiptSha256 !== trustedReceiptSha256)
+  ) {
+    return { passed: false, reason: "base-system proof receipt identity is invalid" };
   }
   if (
     expectedMode !== "compiled" &&
@@ -225,13 +239,15 @@ export function validateProjectInstructionEvidence(evidence, expectedMode, expec
   }
   const cache = evidence.cache;
   if (expectedMode === "compiled" && !cache) return { passed: false, reason: "compiled cache evidence is missing" };
-  const userTurnCount = Array.isArray(evidence.userTurns) ? evidence.userTurns.length : 0;
+  const userTurns = Array.isArray(evidence.userTurns) ? evidence.userTurns : [];
   const proofFailure = validateBaseProofs(
     evidence.baseSystemModeProofs,
     expectedMode,
     expectedSourceSha256,
     cache,
-    userTurnCount,
+    userTurns,
+    trustedReceiptSha256,
+    evidence.proofExpectedTurnCount,
   );
   if (proofFailure) return { passed: false, reason: proofFailure };
   if (expectedMode === "legacy" || expectedMode === "off") return { passed: true };

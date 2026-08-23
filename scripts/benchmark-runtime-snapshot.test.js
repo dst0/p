@@ -17,6 +17,7 @@ import { test } from "node:test";
 import { fileURLToPath } from "node:url";
 import {
   assertEmptyOutputDirectory,
+  benchmarkProjectInstructionProbePath,
   benchmarkRunnerPath,
   benchmarkSeedHelperPath,
   createRuntimeSnapshot,
@@ -25,6 +26,7 @@ import {
 } from "./benchmark-runtime-snapshot.js";
 
 const runtimePackages = ["ai", "tui", "agent", "code-index", "coding-agent", "site"];
+const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 
 function writeDurableWorkflowFixture(root) {
   const fixture = join(root, "benchmarks", "fixtures", "durable-workflow");
@@ -47,7 +49,13 @@ test("runtime snapshot is independent from its source and detects snapshot mutat
     writeFileSync(join(root, "node_modules", "dependency", "index.js"), "export const value = 1;\n");
     mkdirSync(join(root, "scripts"), { recursive: true });
     writeBenchmarkOrchestrator(root);
-    writeFileSync(join(root, "scripts", "benchmark-project-instruction-probe.js"), "export default () => {};\n");
+    for (const file of [
+      "benchmark-project-instruction-probe.js",
+      "benchmark-project-instruction-marker.js",
+      "benchmark-project-instruction-proof-ipc.js",
+    ]) {
+      writeFileSync(join(root, "scripts", file), readFileSync(join(repoRoot, "scripts", file)));
+    }
     writeFileSync(join(root, "scripts", "benchmark-project-instruction-seed.js"), "process.stdout.write('seed snapshot');\n");
     writeFileSync(join(root, "scripts", "benchmark-runner-helper.js"), 'export const value = "snapshot";\n');
     writeFileSync(
@@ -63,10 +71,7 @@ test("runtime snapshot is independent from its source and detects snapshot mutat
     writeFileSync(join(root, "package-lock.json"), "{}\n");
     writeDurableWorkflowFixture(root);
     const snapshot = createRuntimeSnapshot(root, snapshotParent);
-    assert.equal(
-      readFileSync(join(snapshot, "benchmark-project-instruction-probe.js"), "utf8"),
-      "export default () => {};\n",
-    );
+    assert.equal(existsSync(benchmarkProjectInstructionProbePath(snapshot)), true);
     assert.equal(
       readFileSync(join(snapshot, "scripts", "benchmark-runner-helper.js"), "utf8"),
       'export const value = "snapshot";\n',
@@ -79,6 +84,7 @@ test("runtime snapshot is independent from its source and detects snapshot mutat
     writeFileSync(join(root, "packages", "coding-agent", "dist", "index.js"), "changed source\n");
     writeFileSync(join(root, "scripts", "benchmark-runner-helper.js"), 'export const value = "live";\n');
     writeFileSync(join(root, "scripts", "benchmark-project-instruction-seed.js"), "process.stdout.write('seed live');\n");
+    writeFileSync(join(root, "scripts", "benchmark-project-instruction-marker.js"), 'throw new Error("live marker loaded");\n');
     writeFileSync(join(root, "benchmarks", "fixtures", "durable-workflow", "requirements.md"), "live\n");
     assert.equal(hashRuntimeSnapshot(snapshot, process.execPath), before);
     assert.equal(benchmarkRunnerPath(snapshot), join(snapshot, "scripts", "benchmark-agents.js"));
@@ -90,6 +96,11 @@ test("runtime snapshot is independent from its source and detects snapshot mutat
     assert.equal(execution.stdout, "snapshot");
     const seedExecution = spawnSync(process.execPath, [benchmarkSeedHelperPath(snapshot)], { encoding: "utf8" });
     assert.equal(seedExecution.stdout, "seed snapshot");
+    const probeExecution = spawnSync(process.execPath, [benchmarkProjectInstructionProbePath(snapshot)], {
+      encoding: "utf8",
+    });
+    assert.equal(probeExecution.status, 0, probeExecution.stderr);
+    assert.equal(probeExecution.stdout, "");
     writeFileSync(join(snapshot, "scripts", "benchmark-runner-helper.js"), 'export const value = "changed";\n');
     assert.notEqual(hashRuntimeSnapshot(snapshot, process.execPath), before);
     writeFileSync(join(snapshot, "packages", "coding-agent", "dist", "index.js"), "changed snapshot\n");
@@ -178,7 +189,7 @@ test("runtime snapshot executes workspace dependencies from the immutable snapsh
     );
 
     writeFileSync(join(root, "packages", "coding-agent", "dist", "index.js"), 'export const value = "live";\n');
-    const execution = spawnSync(process.execPath, [join(snapshot, "benchmark-project-instruction-probe.js")], {
+    const execution = spawnSync(process.execPath, [benchmarkProjectInstructionProbePath(snapshot)], {
       encoding: "utf8",
     });
     assert.equal(execution.status, 0, execution.stderr);
@@ -207,12 +218,14 @@ test("paired output must be absent or empty", () => {
 test("the real benchmark runner and its local import closure can be snapshotted", () => {
   const snapshot = mkdtempSync(join(tmpdir(), "benchmark-real-runner-copy-"));
   try {
-    snapshotBenchmarkRunnerClosure(fileURLToPath(new URL("..", import.meta.url)), snapshot);
+    snapshotBenchmarkRunnerClosure(repoRoot, snapshot);
     for (const file of [
       "benchmark-agents.js",
       "benchmark-agent-private-directories.js",
       "benchmark-auth-source.js",
       "benchmark-project-instruction-cache.js",
+      "benchmark-project-instruction-marker.js",
+      "benchmark-project-instruction-probe.js",
       "benchmark-p-recording.js",
       "benchmark-project-instruction-routing.js",
       "benchmark-project-instruction-seed.js",
@@ -233,7 +246,6 @@ test("the real benchmark runner and its local import closure can be snapshotted"
 });
 
 test("the real snapshotted seed helper executes through the macOS temporary-path alias", () => {
-  const repoRoot = fileURLToPath(new URL("..", import.meta.url));
   const snapshot = createRuntimeSnapshot(repoRoot, tmpdir());
   try {
     const execution = spawnSync(process.execPath, [benchmarkSeedHelperPath(snapshot)], { encoding: "utf8" });

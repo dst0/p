@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
@@ -7,6 +7,7 @@ import {
   BenchmarkChildResultError,
   readBenchmarkChildResult,
 } from "./benchmark-project-instructions-child-result.js";
+import { hashProjectInstructionResult } from "./benchmark-project-instruction-outer-authority.js";
 
 function readFixture(result) {
   const directory = mkdtempSync(join(tmpdir(), "p-child-result-capture-"));
@@ -96,4 +97,71 @@ test("strict child-result parsing requires bounded final-archive metadata", () =
     () => readFixture({ recordingCapture: capture }),
     (error) => error instanceof BenchmarkChildResultError && error.code === "invalid_capture_metadata",
   );
+});
+
+test("child-result parsing rejects symlinks and bytes outside the outer commitment", () => {
+  const root = mkdtempSync(join(tmpdir(), "p-child-result-authority-"));
+  try {
+    const target = join(root, "target.json");
+    const path = join(root, "results.json");
+    const contents = `${JSON.stringify({ results: [{ recordingCapture: recordingCapture() }] })}\n`;
+    writeFileSync(target, contents);
+    symlinkSync(target, path);
+    assert.throws(
+      () => readBenchmarkChildResult(path, hashProjectInstructionResult(contents)),
+      (error) => error instanceof BenchmarkChildResultError && error.code === "invalid_result_file",
+    );
+    rmSync(path);
+    writeFileSync(path, contents);
+    assert.throws(
+      () => readBenchmarkChildResult(path, "f".repeat(64)),
+      (error) => error instanceof BenchmarkChildResultError && error.code === "invalid_result_commitment",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("child-result parsing rejects oversized result bytes before reading", () => {
+  const root = mkdtempSync(join(tmpdir(), "p-child-result-oversized-"));
+  try {
+    const path = join(root, "results.json");
+    writeFileSync(path, "x".repeat(64 * 1024 * 1024 + 1));
+    assert.throws(
+      () => readBenchmarkChildResult(path),
+      (error) => error instanceof BenchmarkChildResultError && error.code === "oversized_results",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("child-result commitment hashes exact bytes and rejects invalid UTF-8", () => {
+  const root = mkdtempSync(join(tmpdir(), "p-child-result-utf8-"));
+  try {
+    const path = join(root, "results.json");
+    const published = `${JSON.stringify({
+      results: [{ note: "�", recordingCapture: recordingCapture() }],
+    })}\n`;
+    const bytes = Buffer.from(published);
+    const replacement = Buffer.from("�");
+    const offset = bytes.indexOf(replacement);
+    assert.ok(offset >= 0);
+    const invalidBytes = Buffer.concat([
+      bytes.subarray(0, offset),
+      Buffer.from([0xff]),
+      bytes.subarray(offset + replacement.length),
+    ]);
+    writeFileSync(path, invalidBytes);
+    assert.throws(
+      () => readBenchmarkChildResult(path, hashProjectInstructionResult(published)),
+      (error) => error instanceof BenchmarkChildResultError && error.code === "invalid_result_commitment",
+    );
+    assert.throws(
+      () => readBenchmarkChildResult(path, hashProjectInstructionResult(invalidBytes)),
+      (error) => error instanceof BenchmarkChildResultError && error.code === "malformed_results",
+    );
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
 });

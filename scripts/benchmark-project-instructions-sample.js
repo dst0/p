@@ -9,6 +9,7 @@ import {
 } from "./benchmark-project-instructions-core.js";
 import { BenchmarkChildResultError } from "./benchmark-project-instructions-child-result.js";
 import { projectPairedChildSample } from "./benchmark-project-instructions-sample-projection.js";
+import { applyProjectInstructionOuterAuthority } from "./benchmark-project-instruction-outer-authority.js";
 
 function invalid(code, message) {
   throw new BenchmarkChildResultError(code, message);
@@ -16,6 +17,9 @@ function invalid(code, message) {
 
 export function createValidatedPairedSample(parsed, context) {
   const { document, result } = parsed;
+  if (!/^[a-f0-9]{64}$/u.test(context.proofReceiptSha256)) {
+    invalid("invalid_proof_receipt", "parent benchmark startup-proof receipt is invalid");
+  }
   try {
     assertNoStartupProbeCaptureOverflow(document.startupProbes);
   } catch {
@@ -38,7 +42,16 @@ export function createValidatedPairedSample(parsed, context) {
   if (!existsSync(workspaceAgents) || hashFile(workspaceAgents) !== context.options.sourceSha256) {
     invalid("invalid_fixture", "child benchmark fixture identity is invalid");
   }
-  const projectInstructionEvidence = projectProjectInstructionEvidence(result.projectInstructionEvidence);
+  let projectInstructionEvidence = projectProjectInstructionEvidence(result.projectInstructionEvidence);
+  try {
+    projectInstructionEvidence = applyProjectInstructionOuterAuthority(
+      projectInstructionEvidence,
+      context.projectInstructionAuthority,
+      parsed.resultSha256,
+    );
+  } catch {
+    invalid("invalid_outer_authority", "child benchmark proof evidence does not match outer authority");
+  }
   const instructionAssessment = validateProjectInstructionEvidence(
     projectInstructionEvidence,
     context.mode,
@@ -46,6 +59,7 @@ export function createValidatedPairedSample(parsed, context) {
     context.mode === "compiled"
       ? { receipt: context.seedMaterialization.receipt, certificate: context.options.seed.certificate }
       : undefined,
+    context.proofReceiptSha256,
   );
   if (!instructionAssessment.passed) {
     invalid("invalid_instruction_evidence", "child benchmark project-instruction evidence is invalid");
@@ -63,6 +77,11 @@ export function createValidatedPairedSample(parsed, context) {
     runtimeSha256: context.runtimeSha256,
     resolvedModel,
     tokenAccounting: { session: publicResult.metrics.usage },
+    projectInstructionProofReceipt: {
+      sha256: context.proofReceiptSha256,
+      expectedTurnCount: context.projectInstructionAuthority.expectedTurnCount,
+      resultSha256: context.projectInstructionAuthority.resultSha256,
+    },
     seedEvidence:
       context.mode === "compiled"
         ? {
