@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { renderBenchmarkCompilerFailureTelemetry } from "./benchmark-project-instruction-failure.js";
-import { renderGateFailureLiveness } from "./benchmark-project-instructions-report-liveness.js";
+import { formatRequirementDefinitionCount, renderGateFailureLiveness } from "./benchmark-project-instructions-report-liveness.js";
 import { escapeMarkdownTableCell, escapeMarkdownText, markdownCodeSpan } from "./benchmark-markdown.js";
 import { assessSample, describeCaptureOverflow } from "./benchmark-project-instructions-assessment.js";
 export { createBenchmarkGateFailure } from "./benchmark-project-instruction-failure.js";
@@ -248,15 +248,16 @@ export function createPairedSummary(samples, gatePassed) {
     byTask,
   };
 }
-
 function formatNumber(value) {
   return Number.isFinite(value) ? Math.round(value).toLocaleString("en-US") : "n/a";
 }
 function formatPercent(value) {
   return Number.isFinite(value) ? `${value.toFixed(1)}%` : "n/a";
 }
-
 export function renderPairedReport(document) {
+  const runStatus =
+    document.runStatus ??
+    (document.completed && document.gate.passed ? "completed" : document.gate.passed ? "running" : "failed");
   let report = "# Project-instruction paired benchmark\n\n";
   report += `Generated: ${escapeMarkdownText(document.generatedAt)}\n\nTask model: ${markdownCodeSpan(document.model)}\n\nCompiler model: ${markdownCodeSpan(document.compilerModel ?? document.model)}\n\n`;
   report += `P runtime-closure SHA-256: ${markdownCodeSpan(document.binarySha256)}\n\nSeed: ${markdownCodeSpan(document.seed)}\n\n`;
@@ -266,12 +267,13 @@ export function renderPairedReport(document) {
   if (document.compilerPreparation) {
     report += `One-time certified compiler preparation: **${formatNumber(document.compilerPreparation.usage.total)} tokens**, **${formatNumber(document.compilerPreparation.elapsedMs)} ms**.\n\n`;
   }
-  if (document.completed && document.gate.passed) {
+  if (runStatus === "completed" && document.completed && document.gate.passed) {
     report += "Correctness gate: **PASSED**. Every sample completed and passed every quality check.\n\n";
-  } else if (document.gate.passed) {
+  } else if (runStatus === "running") {
     report += "Correctness gate: **RUNNING**. Performance conclusions remain suppressed until every sample passes.\n\n";
   } else {
-    report += `Correctness gate: **HARD STOP** at run ${formatNumber(document.gate.failure.run)}, task ${markdownCodeSpan(document.gate.failure.task)}, mode ${markdownCodeSpan(document.gate.failure.mode)} (${escapeMarkdownText(document.gate.failure.kind ?? "unclassified")}): ${escapeMarkdownText(document.gate.failure.reason)}.\n\nNo token or runtime comparison is reported because correctness did not pass.\n\n`;
+    const status = runStatus === "interrupted" ? "INTERRUPTED" : "HARD STOP";
+    report += `Correctness gate: **${status}** at run ${formatNumber(document.gate.failure.run)}, task ${markdownCodeSpan(document.gate.failure.task)}, mode ${markdownCodeSpan(document.gate.failure.mode)} (${escapeMarkdownText(document.gate.failure.kind ?? "unclassified")}): ${escapeMarkdownText(document.gate.failure.reason)}.\n\nNo token or runtime comparison is reported because correctness did not pass.\n\n`;
     report += renderGateFailureLiveness(document.gate.failure.liveness);
     report += renderBenchmarkCompilerFailureTelemetry(document.gate.failure.compilerFailure);
   }
@@ -280,7 +282,7 @@ export function renderPairedReport(document) {
   report += "\n## Samples\n\n| Run | Task | Mode | Status | Quality | Session tokens | Runtime | First mutation | Requirement definitions |\n| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n";
   for (const sample of document.samples) {
     const score = formatNumber(sample.quality.rawScore ?? sample.quality.score);
-    report += `| ${formatNumber(sample.run)} | ${escapeMarkdownTableCell(sample.task)} | ${escapeMarkdownTableCell(sample.mode)} | ${escapeMarkdownTableCell(sample.status)} | ${score}/${formatNumber(sample.quality.maxScore)} | ${formatNumber(sample.metrics.usage.totalTokens)} | ${formatNumber(sample.elapsedMs)} ms | ${formatNumber(sample.liveness?.firstMutationElapsedMs)} ms | ${formatNumber(sample.liveness?.requirementDefinitionAttemptCount)} |\n`;
+    report += `| ${formatNumber(sample.run)} | ${escapeMarkdownTableCell(sample.task)} | ${escapeMarkdownTableCell(sample.mode)} | ${escapeMarkdownTableCell(sample.status)} | ${score}/${formatNumber(sample.quality.maxScore)} | ${formatNumber(sample.metrics.usage.totalTokens)} | ${formatNumber(sample.elapsedMs)} ms | ${formatNumber(sample.liveness?.firstMutationElapsedMs)} ms | ${formatRequirementDefinitionCount(sample.liveness)} |\n`;
   }
   if (!document.summary) return report;
   report += "\n## Performance after correctness\n\n";

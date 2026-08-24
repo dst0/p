@@ -129,12 +129,12 @@ test("materializer rejects stale compiler, model-contract identity, and source w
   }
 });
 
-test("one immutable certificate seeds repeated compiled cells while legacy remains unseeded", () => {
+test("one immutable certificate seeds repeated compiled cells while legacy remains unseeded", async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-seed-repeated-"));
   try {
     const fixture = createFixture(root);
     const seedSha256 = sha256(readFileSync(fixture.seedPath));
-    const receipts = Array.from({ length: 3 }, (_, index) =>
+    const receipts = await Promise.all(Array.from({ length: 3 }, (_, index) =>
       materializeBenchmarkProjectInstructions({
         runtimeSnapshot: new URL("..", import.meta.url).pathname,
         sourceFile: fixture.sourcePath,
@@ -146,7 +146,7 @@ test("one immutable certificate seeds repeated compiled cells while legacy remai
           certificate: fixture.certificate,
         },
       }),
-    );
+    ));
     assert.equal(new Set(receipts.map(({ receipt }) => receipt.certificationHash)).size, 1);
     assert.deepEqual(receipts.map(({ receipt }) => receipt.providerCompilerInvocations), [0, 0, 0]);
     receipts.forEach(verifyBenchmarkProjectInstructionMaterialization);
@@ -162,7 +162,7 @@ test("one immutable certificate seeds repeated compiled cells while legacy remai
   }
 });
 
-test("cold certification surfaces only an allowlisted startup diagnostic", () => {
+test("cold certification surfaces only an allowlisted startup diagnostic", async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-seed-diagnostic-"));
   try {
     const runtimeSnapshot = join(root, "runtime");
@@ -181,9 +181,8 @@ test("cold certification surfaces only an allowlisted startup diagnostic", () =>
       join(runtimeSnapshot, "scripts", "benchmark-project-instruction-seed.js"),
       'process.stderr.write("private compiler detail"); process.stdout.write(\'{"status":"failed","diagnostic":"project instruction compiler output validation failed","compilerFailure":{"attemptCount":2,"failureKinds":["envelope","constraint-set"],"usage":{"input":10,"output":2,"cacheRead":0,"cacheWrite":0,"total":12},"elapsedMs":123}}\\n\'); process.exit(86);\n',
     );
-    assert.throws(
-      () =>
-        certifyBenchmarkProjectInstructions({
+    await assert.rejects(
+      certifyBenchmarkProjectInstructions({
           scratchRoot,
           runtimeSnapshot,
           runtimeSha256: "c".repeat(64),
@@ -216,7 +215,7 @@ test("cold certification surfaces only an allowlisted startup diagnostic", () =>
   }
 });
 
-test("cold certification rejects spoofed or overbroad failure telemetry", () => {
+test("cold certification rejects spoofed or overbroad failure telemetry", async () => {
   const variants = [
     { status: "success", diagnostic: "project instruction compiler output validation failed" },
     { status: "failed", diagnostic: "project instruction compiler output validation failed" },
@@ -272,8 +271,8 @@ test("cold certification rejects spoofed or overbroad failure telemetry", () => 
         join(runtimeSnapshot, "scripts", "benchmark-project-instruction-seed.js"),
         `process.stdout.write(${JSON.stringify(`${JSON.stringify(payload)}\n`)}); process.exit(86);\n`,
       );
-      assert.throws(
-        () => certifyBenchmarkProjectInstructions({
+      await assert.rejects(
+        certifyBenchmarkProjectInstructions({
           scratchRoot,
           runtimeSnapshot,
           runtimeSha256: "c".repeat(64),

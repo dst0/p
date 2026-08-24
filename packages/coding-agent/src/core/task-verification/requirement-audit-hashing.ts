@@ -9,6 +9,8 @@ import type {
   TaskVerificationState,
 } from "./types.ts";
 
+export const REQUIREMENT_DEFINITION_POLICY_VERSION = 2;
+
 function sha256(value: unknown): string {
   return createHash("sha256").update(JSON.stringify(value)).digest("hex");
 }
@@ -30,6 +32,7 @@ export function computeUserRequirementsHash(
   if (sourceRefs.length === 0 && ignoredSources.length === 0) return sha256(promptIdentity);
   return sha256({
     prompts: promptIdentity,
+    ...(sourceRefs.length > 0 ? { requirementDefinitionPolicyVersion: REQUIREMENT_DEFINITION_POLICY_VERSION } : {}),
     requirementSources: sourceRefs.map((source) => ({
       id: source.id,
       path: source.path,
@@ -65,6 +68,7 @@ export function computeRequirementSetHash(
       acceptanceCriterion: requirement.acceptanceCriterion,
       sourcePromptIndexes: requirement.sourcePromptIndexes,
       sourceClauseIds: requirement.sourceClauseIds,
+      sourceFacetIds: requirement.sourceFacetIds,
       highRisk: requirement.highRisk,
       highRiskSourcePromptIndexes: requirement.highRiskSourcePromptIndexes,
       proofPolicies: requirement.proofPolicies,

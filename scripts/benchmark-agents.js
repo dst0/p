@@ -22,7 +22,9 @@ import { sendCommittedProjectInstructionOuterAuthority, writeProjectInstructionR
 import { sanitizeBenchmarkEvidence } from "./benchmark-result-sanitization.js";
 import { benchmarkStderrLogName, writeBenchmarkStderrLog } from "./benchmark-stderr-log.js";
 import { createBenchmarkWorkspace, sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
-import { copyKiloRuntimeEvidence, listKiloRuntimeDataEvidence, listKiloRuntimeStateEvidence } from "./benchmark-runtime-evidence.js";
+import { runBenchmarkSignalAwareMain, throwIfBenchmarkInterrupted } from "./benchmark-interruption.js";
+import { abortBenchmarkRecording, finalizeBenchmarkAgentResources } from "./benchmark-agent-resources-finalization.js";
+import { benchmarkStartupProbeFailure, finalizeBenchmarkStartupEvidence, finalizeKiloStartupEvidence } from "./benchmark-startup-probe-finalization.js";
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const codingAgentCli = join(repoRoot, "packages", "coding-agent", "dist", "cli.js");
 const defaultModelsFile = join(homedir(), ".p", "agent", "models.json");
@@ -1383,8 +1385,7 @@ async function runCommand(command, timeoutMs, recordingPath, options = {}) {
 		await recording.finalize();
 		return result;
 	} catch (error) {
-		await recording.abort();
-		throw error;
+		await abortBenchmarkRecording(recording, error);
 	}
 }
 
@@ -1411,6 +1412,7 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 		let currentPrompt = task.prompt;
 
 		while (true) {
+			throwIfBenchmarkInterrupted(options.signal);
 			const elapsedSoFar = performance.now() - startedAt;
 			const remainingTaskMs = taskTimeoutMs - elapsedSoFar;
 			const remainingOverallMs = overallDeadline - performance.now();
@@ -1430,6 +1432,7 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 			const command = commandFor(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
 			const turnResult = await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
 				...turnOptions,
+				signal: options.signal,
 				eventOrdinalBase: totalRawEventCount,
 				turn: turnOrdinal,
 			});
@@ -1479,8 +1482,7 @@ async function runAgentTask(agent, options, task, configDir, workspace, recordin
 		}
 		await recording.finalize();
 	} catch (error) {
-		await recording.abort();
-		throw error;
+		await abortBenchmarkRecording(recording, error);
 	}
 
 	return {
@@ -1614,6 +1616,7 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 		timeoutSeconds: options.kiloStartupTimeoutSeconds,
 		diagnostics: join("diagnostics", "kilo-startup"),
 	};
+	let probeFailure;
 	try {
 		const resolutionRecording = "model-resolution.log.br";
 		const resolutionStderrStem = "model-resolution.stderr";
@@ -1621,7 +1624,7 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 			commandForKiloModelResolution(options, configDir, workspace),
 			Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
 			join(diagnosticsDir, resolutionRecording),
-			{ collectRawStdout: true },
+			{ collectRawStdout: true, signal: options.signal },
 		);
 		const resolutionStderr = writeBenchmarkStderrLog(
 			diagnosticsDir,
@@ -1649,7 +1652,7 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 			commandFor("kilo", options, { prompt: `Reply exactly: ${marker}` }, configDir, workspace),
 			Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
 			join(diagnosticsDir, requestRecording),
-			{ stopOnMarker: marker },
+			{ stopOnMarker: marker, signal: options.signal },
 		);
 		const requestStderr = writeBenchmarkStderrLog(diagnosticsDir, requestStderrStem, requestResult.stderr);
 		const metrics = parseRecording(requestResult.stdout, "kilo");
@@ -1667,18 +1670,9 @@ async function runKiloStartupProbe(options, configDir, output, deadline) {
 		evidence.status = "passed";
 		return evidence;
 	} catch (error) {
-		evidence.status = "failed";
-		evidence.error = error instanceof Error ? error.message : String(error);
-		throw new Error(`${evidence.error}; evidence: ${diagnosticsDir}`);
+		throw (probeFailure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir));
 	} finally {
-		const dataRoot = join(configDir, "data");
-		const stateRoot = join(configDir, "state");
-		evidence.runtimeFiles = {
-			data: listKiloRuntimeDataEvidence(dataRoot),
-			state: listKiloRuntimeStateEvidence(stateRoot),
-		};
-		copyKiloRuntimeEvidence(dataRoot, stateRoot, diagnosticsDir);
-		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+		finalizeKiloStartupEvidence(configDir, diagnosticsDir, evidence, probeFailure);
 	}
 }
 
@@ -1697,11 +1691,12 @@ async function runAgyStartupProbe(options, configDir, output, deadline) {
 		recording,
 		stderr,
 	};
+	let probeFailure;
 	try {
 		const result = await runCommand(
 			commandFor("agy", options, { prompt: `Reply exactly: ${marker}`, timeoutSeconds: 60 }, configDir, workspace),
 			Math.min(60_000, Math.max(1, deadline - performance.now())),
-			join(diagnosticsDir, recording),
+			join(diagnosticsDir, recording), { signal: options.signal },
 		);
 		writeBenchmarkStderrLog(diagnosticsDir, stderrStem, result.stderr);
 		const metrics = parseRecording(result.stdout, "agy");
@@ -1720,11 +1715,9 @@ async function runAgyStartupProbe(options, configDir, output, deadline) {
 		evidence.status = "passed";
 		return evidence;
 	} catch (error) {
-		evidence.status = "failed";
-		evidence.error = error instanceof Error ? error.message : String(error);
-		throw new Error(`${evidence.error}; evidence: ${diagnosticsDir}`);
+		throw (probeFailure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir));
 	} finally {
-		writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+		finalizeBenchmarkStartupEvidence(diagnosticsDir, evidence, probeFailure);
 	}
 }
 
@@ -1872,8 +1865,8 @@ function formatNumber(value) {
 	return Math.round(value).toLocaleString("en-US");
 }
 
-async function main() {
-	const options = parseArgs(process.argv.slice(2));
+async function main(signal) {
+	const options = Object.assign(parseArgs(process.argv.slice(2)), { signal });
 	if (options.help) {
 		printHelp();
 		return;
@@ -2055,11 +2048,7 @@ async function main() {
 		console.log(`Report: ${join(output, "report.md")}`);
 		if (!results.some((result) => result.status !== "skipped")) process.exitCode = 1;
 	} finally {
-		try {
-			if (agentDirs) for (const agent of ["pi", "p"]) authOutputGuard.capture(join(agentDirs.dirs[agent], "auth.json"));
-		} finally {
-			try { agentDirs?.dispose(); } finally { authOutputGuard.sanitizeTree(output); }
-		}
+		finalizeBenchmarkAgentResources(agentDirs, authOutputGuard, output, options.signal);
 	}
 	if (projectInstructionOuterAuthority) {
 		await sendCommittedProjectInstructionOuterAuthority(
@@ -2067,7 +2056,4 @@ async function main() {
 		);
 	}
 }
-main().catch((error) => {
-	console.error(error instanceof Error ? error.message : String(error));
-	process.exitCode = 1;
-});
+await runBenchmarkSignalAwareMain(main);

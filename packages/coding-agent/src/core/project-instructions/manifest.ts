@@ -1,5 +1,5 @@
-import { hashText } from "./content.ts";
 import { parseProjectInstructionCompilerUsage } from "./compiler-usage.ts";
+import { hashText } from "./content.ts";
 import type {
   ProjectInstructionCatalogPageRecord,
   ProjectInstructionCompilerDiagnostic,
@@ -128,6 +128,7 @@ function isRuleRecord(value: unknown): value is ProjectInstructionRuleRecord {
     typeof value.title === "string" &&
     typeof value.trigger === "string" &&
     typeof value.routable === "boolean" &&
+    (value.requires === undefined || isStringArray(value.requires)) &&
     typeof value.sourcePath === "string" &&
     isHash(value.contentHash)
   );
@@ -182,4 +183,8 @@ function isCompilerDiagnostic(value: unknown): value is ProjectInstructionCompil
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function isStringArray(value: unknown): value is string[] {
+  return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }

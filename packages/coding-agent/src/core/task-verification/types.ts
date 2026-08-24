@@ -71,6 +71,7 @@ export interface TaskRequirement {
   acceptanceCriterion: string;
   sourcePromptIndexes: number[];
   sourceClauseIds?: string[];
+  sourceFacetIds?: string[];
   highRisk?: boolean;
   highRiskSourcePromptIndexes?: number[];
   proofPolicies?: RequirementProofPolicy[];

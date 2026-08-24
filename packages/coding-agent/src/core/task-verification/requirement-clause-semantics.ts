@@ -1,10 +1,14 @@
 import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
+import {
+  requirementClauseConceptNames,
+  uncoveredRequirementClauseConceptNames,
+} from "./requirement-clause-concepts.ts";
 
 const NORMATIVE_PATTERN =
   /\b(?:all|always|any|are|cannot|contains?|every|exactly|export|fail|has|have|is|must|never|no|only|preserve|reject|render|required?|requires?|returns?|shall|should|starts?|throw|validate|write)\b/iu;
 const EXAMPLE_PATTERN = /\b(?:e\.g\.|example|for example|illustrat\w*|sample)\b/iu;
 const INFORMATIONAL_PATTERN =
-  /^(?:background|context|overview)\s*:?\s*$|\b(?:are|is)\s+(?:below|the following)\b|\b(?:details?|information|material|paragraph|section|text)\s+(?:are|is)\s+(?:background|context|overview)(?:\s+(?:context|information|material))?\b/iu;
+  /^(?:background|context|overview)(?:\s+(?:context|information|material))?[.:]?\s*$|\b(?:are|is)\s+(?:below|the following)\b|\b(?:details?|information|material|paragraph|section|text)\s+(?:are|is)\s+(?:background|context|overview)(?:\s+(?:context|information|material))?\b/iu;
 const CONFLICT_PATTERN =
   /\b(?:but|do\s+not|don't|dont|instead|no\s+longer|not|override|rather\s+than|replace|supersed)\b/iu;
 const EXPLICIT_REPLACEMENT_PATTERN =
@@ -25,24 +29,6 @@ const NEGATED_REMOVE_PATTERN =
   /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:discard|drop|omit|remove|replace)\w*\b/iu;
 const NEGATED_REQUIRE_PATTERN =
   /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:need|require)\w*\b/iu;
-const CRITICAL_CONCEPTS = [
-  { name: "command identity", pattern: /\b(?:command[-\s]?ids?|idempoten\w*)\b/iu },
-  { name: "state", pattern: /\bstate\b/iu },
-  { name: "event log", pattern: /\b(?:event[-\s]?logs?|history|logs?)\b/iu },
-  { name: "version", pattern: /\bversions?\b/iu },
-  { name: "position", pattern: /\bpositions?\b/iu },
-  { name: "hash", pattern: /\bhash(?:es|ed|ing)?\b/iu },
-  { name: "manifest", pattern: /\bmanifest\b/iu },
-  { name: "lease fencing", pattern: /\b(?:fenc\w*|leases?|tokens?)\b/iu },
-  { name: "retry", pattern: /\b(?:attempts?|backoff|retr(?:y|ies|ied|ying))\b/iu },
-  { name: "compensation", pattern: /\bcompensat\w*\b/iu },
-  { name: "time", pattern: /\b(?:clock|time|timing)\b/iu },
-  { name: "deep copy", pattern: /\bdeep[-\s]+cop(?:y|ies)\b/iu },
-  { name: "transition", pattern: /\btransitions?\b/iu },
-  { name: "dependency graph", pattern: /\b(?:cycles?|dag|dependencies|dependency)\b/iu },
-  { name: "truncation", pattern: /\btruncat\w*\b/iu },
-  { name: "tampering", pattern: /\b(?:corrupt\w*|tamper\w*)\b/iu },
-] as const;
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -79,8 +65,10 @@ export function ignoredClauseClassificationError(
   classification: "informational" | "example" | "superseded" | "unsafe_instruction",
 ): string | undefined {
   if (classification === "informational") {
-    if (clause.kind === "heading" || !isNormativeSourceClause(clause)) return undefined;
-    return `Source clause ${clause.id} is normative and cannot be ignored as informational.`;
+    if (clause.kind === "heading" || INFORMATIONAL_PATTERN.test(clause.text)) return undefined;
+    return isNormativeSourceClause(clause)
+      ? `Source clause ${clause.id} is normative and cannot be ignored as informational.`
+      : `Source clause ${clause.id} is not structurally informational.`;
   }
   if (classification === "example") {
     if (clause.kind === "code" || EXAMPLE_PATTERN.test(clause.text)) return undefined;
@@ -100,12 +88,19 @@ export function clauseRequirementRelevanceError(
   if (hasPolarityConflict(clause.text, requirement)) {
     return `Source clause ${clause.id} has behavioral polarity that the mapped requirement reverses.`;
   }
-  const clauseTokens = semanticTokens(clause.text);
-  const requirementTokens = semanticTokens(requirement);
+  if (!preservesPrimaryIdentifier(clause.text, requirement)) {
+    return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
+  }
+  if (!preservesMappedCommandIdentity(clause.text, requirement)) {
+    return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
+  }
+  const clauseTokens = semanticTokens(clause.text, true);
+  const requirementTokens = semanticTokens(requirement, true);
   const overlap = [...clauseTokens].filter((token) => requirementTokens.has(token)).length;
-  const minimum = Math.min(2, clauseTokens.size);
+  const comparisonSize = Math.min(clauseTokens.size, requirementTokens.size);
+  const minimum = Math.min(2, comparisonSize);
   const enoughConcepts =
-    clauseTokens.size === 0 || (overlap >= minimum && (clauseTokens.size > 8 || overlap / clauseTokens.size >= 0.4));
+    clauseTokens.size === 0 || (comparisonSize > 0 && overlap >= minimum && overlap / comparisonSize >= 0.4);
   if (!enoughConcepts) {
     return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
   }
@@ -118,10 +113,14 @@ export function sourceClauseConceptCoverageError(
 ): string | undefined {
   if (!isNormativeSourceClause(clause)) return undefined;
   const aggregate = mappedRequirementTexts.join("\n");
-  const missing = CRITICAL_CONCEPTS.find(
-    (concept) => concept.pattern.test(clause.text) && !concept.pattern.test(aggregate),
-  );
-  return missing ? `Source clause ${clause.id} has an uncovered normative concept: ${missing.name}.` : undefined;
+  const missing = uncoveredRequirementClauseConceptNames(clause.text, aggregate);
+  return missing.length > 0
+    ? `Source clause ${clause.id} has uncovered normative concepts: ${missing.join(", ")}. Map each missing concept with source-exact wording in a separate atomic requirement when it is independently observable.`
+    : undefined;
+}
+
+export function sourceClauseRequiredConcepts(clause: RequirementSourceClause): string[] {
+  return isNormativeSourceClause(clause) ? requirementClauseConceptNames(clause.text) : [];
 }
 
 export function directPromptSupersedesClause(directPrompt: string, clause: RequirementSourceClause): boolean {
@@ -199,9 +198,63 @@ function startsWithImperative(value: string): boolean {
   );
 }
 
-function semanticTokens(value: string): Set<string> {
-  const tokens = value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
+function semanticTokens(value: string, splitIdentifierBoundaries = false): Set<string> {
+  const tokenizable = splitIdentifierBoundaries ? withIdentifierBoundaries(value) : value;
+  const tokens = tokenizable.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
   return new Set(tokens.map(normalizeToken).filter((token) => token.length >= 3 && !STOP_WORDS.has(token)));
+}
+
+function preservesPrimaryIdentifier(clause: string, requirement: string): boolean {
+  const requirementTokens = new Set(
+    (
+      withIdentifierBoundaries(requirement)
+        .toLowerCase()
+        .match(/[\p{L}\p{N}]+/gu) ?? []
+    ).map(normalizeToken),
+  );
+  const identifier = primaryIdentifierParts(clause);
+  return !identifier || identifier.map(normalizeToken).every((part) => requirementTokens.has(part));
+}
+
+function preservesMappedCommandIdentity(clause: string, requirement: string): boolean {
+  const commands = [...clause.matchAll(/`([^`\r\n]+)`/gu)]
+    .map((match) => match[1]!.trim())
+    .filter((candidate) => /^(?:bun|cargo|go|node|npm|pnpm|yarn)\s+\S/iu.test(candidate))
+    .map(normalizeCommandIdentity);
+  if (commands.length === 0) return true;
+  const normalizedRequirement = normalizeCommandIdentity(requirement);
+  return commands.some((command) => normalizedRequirement.includes(command));
+}
+
+function normalizeCommandIdentity(value: string): string {
+  return (value.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []).join(" ");
+}
+
+function primaryIdentifierParts(value: string): string[] | undefined {
+  for (const match of value.matchAll(/`([^`\r\n]+)`/gu)) {
+    const candidate = match[1]!;
+    if (/^[_\p{L}][-_\p{L}\p{N}]*$/u.test(candidate)) return identifierParts(candidate);
+  }
+  for (const token of value.match(/[\p{L}\p{N}]+/gu) ?? []) {
+    const parts = identifierParts(token);
+    if (parts.length > 1) return parts;
+  }
+  return undefined;
+}
+
+function identifierParts(value: string): string[] {
+  return (
+    withIdentifierBoundaries(value)
+      .toLowerCase()
+      .match(/[\p{L}\p{N}]+/gu) ?? []
+  );
+}
+
+function withIdentifierBoundaries(value: string): string {
+  return value
+    .replace(/\b(\p{Lu}{2,})s\b/gu, "$1")
+    .replace(/(\p{Lu})(\p{Lu}\p{Ll})/gu, "$1 $2")
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2");
 }
 
 function normalizeToken(token: string): string {

@@ -11,6 +11,8 @@ import {
 import { createBenchmarkEventCapture } from "./benchmark-project-instruction-stream.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
 import { createProjectInstructionProofIpcCapture } from "./benchmark-project-instruction-proof-ipc.js";
+import { attachBenchmarkCleanupError, benchmarkInterruptionFromSignal } from "./benchmark-interruption.js";
+import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "./benchmark-process-control.js";
 
 function errorMessage(error) {
   return error instanceof Error ? error.message : String(error);
@@ -23,17 +25,17 @@ export function runBenchmarkAgentTurn(
   metricEventTypes,
   options = {},
 ) {
-  return new Promise((resolveResult) => {
+  return new Promise((resolveResult, rejectResult) => {
     const limits = resolveBenchmarkOutputLimits(options.outputLimits);
     const startedAt = performance.now();
     const proofCapture = options.projectInstructionProofReceipt
       ? createProjectInstructionProofIpcCapture(options.projectInstructionProofReceipt)
       : undefined;
-    const child = spawn(command.executable, command.args, {
+    const child = spawn(command.executable, command.args, benchmarkProcessGroupOptions({
       cwd: command.cwd,
       env: sanitizeBenchmarkGitEnvironment(command.env),
       stdio: proofCapture ? ["ignore", "pipe", "pipe", "ipc"] : ["ignore", "pipe", "pipe"],
-    });
+    }));
     if (proofCapture) child.on("message", (message) => proofCapture.accept(message));
     const stdoutDecoder = new StringDecoder("utf8");
     const stderrDecoder = new StringDecoder("utf8");
@@ -52,8 +54,10 @@ export function runBenchmarkAgentTurn(
     let timedOut = false;
     let stoppedByMarker = false;
     let childError;
-    let killTimer;
+    let terminationPromise;
     let captureOverflow;
+    let interruption;
+    const terminateTree = options.terminateProcessTree ?? terminateBenchmarkProcessTree;
 
     const terminate = (error, reason) => {
       if (error) {
@@ -62,9 +66,16 @@ export function runBenchmarkAgentTurn(
       }
       if (reason === "timeout") timedOut = true;
       if (reason === "marker") stoppedByMarker = true;
-      child.kill("SIGTERM");
-      const killGraceMs = error ? (options.failureKillGraceMs ?? 250) : 5000;
-      killTimer ??= setTimeout(() => child.kill("SIGKILL"), killGraceMs);
+      const killGraceMs = reason === "interruption"
+        ? (options.interruptionKillGraceMs ?? options.failureKillGraceMs ?? 5_000)
+        : error ? (options.failureKillGraceMs ?? 250) : 5_000;
+      terminationPromise ??= Promise.resolve()
+        .then(() => terminateTree(child, killGraceMs))
+        .catch((terminationError) => ({ terminationError }));
+    };
+    const interrupt = () => {
+      interruption ??= benchmarkInterruptionFromSignal(options.signal);
+      terminate(undefined, "interruption");
     };
     const timer = setTimeout(() => terminate(undefined, "timeout"), timeoutMs);
     const removeFailureHandler = recording.onFailure((error) => terminate(error, "recording"));
@@ -107,11 +118,23 @@ export function runBenchmarkAgentTurn(
     child.once("error", (error) => {
       childError = errorMessage(error);
     });
-    child.once("close", (code, signal) => {
+    child.once("close", async (code, signal) => {
       child.stdout.unpipe(recording.stream);
       clearTimeout(timer);
-      if (killTimer) clearTimeout(killTimer);
+      const termination = terminationPromise ? await terminationPromise : true;
+      const terminationError = typeof termination === "object" ? termination.terminationError : undefined;
+      const treeStopped = typeof termination === "boolean" ? termination : false;
       removeFailureHandler();
+      options.signal?.removeEventListener("abort", interrupt);
+      if (terminationError) {
+        if (interruption) attachBenchmarkCleanupError(interruption, terminationError);
+        else failure ??= errorMessage(terminationError);
+      }
+      if (interruption) {
+        if (!terminationError && !treeStopped) attachBenchmarkCleanupError(interruption, new Error("benchmark process tree did not terminate"));
+        rejectResult(interruption);
+        return;
+      }
       try {
         processText(stdoutDecoder.end());
         if (!failure && !stoppedByMarker) eventCapture.process(stdoutBuffer);
@@ -138,5 +161,7 @@ export function runBenchmarkAgentTurn(
         elapsedMs: performance.now() - startedAt,
       });
     });
+    options.signal?.addEventListener("abort", interrupt, { once: true });
+    if (options.signal?.aborted) interrupt();
   });
 }
