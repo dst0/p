@@ -167,6 +167,14 @@ export const RequirementAuditSchema = Type.Object({
   requirement_repairs: Type.Optional(Type.Array(RequirementDefinitionRepairSchema, { minItems: 1, maxItems: 16 })),
   ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
   ignored_source_clauses: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
+  ignored_source_prompt_upserts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
+  ignored_source_prompt_removals: Type.Optional(
+    Type.Array(Type.Integer({ minimum: 1 }), { maxItems: 64, uniqueItems: true }),
+  ),
+  ignored_source_clause_upserts: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
+  ignored_source_clause_removals: Type.Optional(
+    Type.Array(Type.String({ minLength: 1 }), { maxItems: 128, uniqueItems: true }),
+  ),
   verdicts: Type.Optional(Type.Array(RequirementVerdictSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT })),
 });
 
