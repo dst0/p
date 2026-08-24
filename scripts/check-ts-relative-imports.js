@@ -24,6 +24,10 @@ function isRelativeJavaScriptSpecifier(specifier) {
 	return /^\.\.?\//.test(specifier) && /\.js(?:[?#].*)?$/.test(specifier);
 }
 
+function isApprovedBenchmarkBuildSpecifier(file, specifier) {
+	return file.startsWith("benchmarks/") && /^(?:\.\.\/)+packages\/[^/]+\/dist\/.+\.js(?:[?#].*)?$/.test(specifier);
+}
+
 function getImportTypeSpecifier(node) {
 	if (!ts.isLiteralTypeNode(node.argument)) return undefined;
 	if (!ts.isStringLiteralLike(node.argument.literal)) return undefined;
@@ -33,6 +37,8 @@ function getImportTypeSpecifier(node) {
 const failures = [];
 
 collectTypescriptFiles(".");
+collectTypescriptFiles("benchmarks/src");
+collectTypescriptFiles("benchmarks/test");
 
 for (const file of files.sort()) {
 	const sourceText = readFileSync(file, "utf8");
@@ -40,6 +46,7 @@ for (const file of files.sort()) {
 
 	function checkSpecifier(node) {
 		if (!isRelativeJavaScriptSpecifier(node.text)) return;
+		if (isApprovedBenchmarkBuildSpecifier(file, node.text)) return;
 		const { line, character } = sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile));
 		failures.push(`${file}:${line + 1}:${character + 1}: ${node.text}`);
 	}
