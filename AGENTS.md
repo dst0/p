@@ -47,6 +47,7 @@
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
 - Do not run `npm run test:unit` inside a wrapper with a fixed deadline shorter than the suite. `test.sh` temporarily moves `~/.p/agent/auth.json`; after any interrupted run, verify the primary and `.bak` paths and restore the intact mode-`0600` backup only when the primary is absent.
+- Run `./test.sh` directly with output redirected to a temporary active log; do not route it through lean-ctx's bounded CLI wrapper. Compress the closed log with Brotli Q6 after the process exits.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
 
 ## Test Quality & Adversarial Review

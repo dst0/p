@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
+  MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
   MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
   RequirementDefinitionSchema,
 } from "../src/core/task-verification/constants.ts";
@@ -32,6 +34,9 @@ describe("requirement definition stagnation recovery", () => {
     expect(guidelines).toContain("source_prompt_indexes");
     expect(guidelines).toContain("direct");
     expect(guidelines).toContain("source_clause_ids");
+    expect(guidelines).toContain(`at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements`);
+    expect(guidelines).toContain(`capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements`);
+    expect(guidelines).not.toContain("at most 16 replacements");
   });
 
   it("emits actionable direct-only diagnostic for offending referenced index 2", () => {
@@ -77,7 +82,7 @@ describe("requirement definition stagnation recovery", () => {
     expect(initialDraft).toBeDefined();
 
     const oversize = await callRequirementAudit(harness.controller, oversizeRepair(initialDraft!.revision));
-    expect(oversize).toContain("17 total replacements");
+    expect(oversize).toContain("33 total replacements");
     expect(oversize).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(initialDraft!.revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toEqual(
@@ -106,13 +111,13 @@ describe("requirement definition stagnation recovery", () => {
 
   it("executes live mixed sequence until three non-improving repairs authorize a fresh definition", async () => {
     const harness = await preparedHarness();
-    const init = await callRequirementAudit(harness.controller, invalidDef([1]));
+    const init = await callRequirementAudit(harness.controller, invalidDef([1, 2]));
     expect(init).toContain("next_required_action: repair_definition");
     const rev1 = currentRevision(harness);
     await nextModelTurn(harness);
 
     const oversize = await callRequirementAudit(harness.controller, oversizeRepair(rev1));
-    expect(oversize).toContain("17 total replacements");
+    expect(oversize).toContain("33 total replacements");
     expect(oversize).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(rev1);
     await nextModelTurn(harness);
@@ -225,17 +230,15 @@ function oversizeRepair(revision: string): RequirementAuditInput {
   return {
     action: "repair_definition",
     definition_revision: revision,
-    requirement_repairs: [
-      {
-        requirement_index: 1,
-        replacements: Array.from({ length: 17 }, (_v, i) => ({
-          type: "behavior" as const,
-          text: `Item ${i + 1}`,
-          acceptance_criterion: `Criterion ${i + 1}`,
-          source_prompt_indexes: [1],
-        })),
-      },
-    ],
+    requirement_repairs: [16, 17].map((count, requirementIndex) => ({
+      requirement_index: requirementIndex + 1,
+      replacements: Array.from({ length: count }, (_v, i) => ({
+        type: "behavior" as const,
+        text: `Item ${requirementIndex * 16 + i + 1}`,
+        acceptance_criterion: `Criterion ${requirementIndex * 16 + i + 1}`,
+        source_prompt_indexes: [1],
+      })),
+    })),
   };
 }
 
