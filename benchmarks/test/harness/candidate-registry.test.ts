@@ -101,22 +101,53 @@ test("candidate registry permits reruns only for the identical immutable runtime
   });
 });
 
-test("changed runtimes require the strictly next candidate without skips or rollback", () => {
+test("changed runtimes allow gaps but reject rollback and older candidates", () => {
   withRepository((repoRoot) => {
     registerBenchmarkCandidate(repoRoot, "5.0.1-rc.1", FINGERPRINT_A);
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.3", FINGERPRINT_B);
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.3", FINGERPRINT_B);
     assert.throws(
-      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.3", FINGERPRINT_B),
-      /next candidate must be 5\.0\.1-rc\.2/u,
+      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.2", FINGERPRINT_C),
+      /must be greater than 5\.0\.1-rc\.3/u,
     );
-    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.2", FINGERPRINT_B);
     assert.throws(
       () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.1", FINGERPRINT_C),
       /already belongs to a different runtime/u,
     );
     assert.throws(
-      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.4", FINGERPRINT_C),
-      /next candidate must be 5\.0\.1-rc\.3/u,
+      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.4", FINGERPRINT_B),
+      /already registered as 5\.0\.1-rc\.3/u,
     );
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.14", FINGERPRINT_C);
+    assert.throws(
+      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.10", "d".repeat(64)),
+      /must be greater than 5\.0\.1-rc\.14/u,
+    );
+    const registryPath = join(repoRoot, ".pdev", "benchmark-candidate-registry.json");
+    assert.deepEqual(JSON.parse(readFileSync(registryPath, "utf8")), {
+      schemaVersion: 1,
+      candidates: [
+        { candidateVersion: "5.0.1-rc.1", runtimeSha256: FINGERPRINT_A },
+        { candidateVersion: "5.0.1-rc.3", runtimeSha256: FINGERPRINT_B },
+        { candidateVersion: "5.0.1-rc.14", runtimeSha256: FINGERPRINT_C },
+      ],
+    });
+  });
+});
+
+test("candidate registry allows initial candidate to start with a gap and advance with subsequent gaps", () => {
+  withRepository((repoRoot) => {
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.10", FINGERPRINT_A);
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.15", FINGERPRINT_B);
+    registerBenchmarkCandidate(repoRoot, "5.0.1-rc.15", FINGERPRINT_B);
+    const registryPath = join(repoRoot, ".pdev", "benchmark-candidate-registry.json");
+    assert.deepEqual(JSON.parse(readFileSync(registryPath, "utf8")), {
+      schemaVersion: 1,
+      candidates: [
+        { candidateVersion: "5.0.1-rc.10", runtimeSha256: FINGERPRINT_A },
+        { candidateVersion: "5.0.1-rc.15", runtimeSha256: FINGERPRINT_B },
+      ],
+    });
   });
 });
 
@@ -136,6 +167,34 @@ test("candidate registry fails closed for malformed state and concurrent ownersh
     assert.throws(
       () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.1", FINGERPRINT_A),
       /Invalid candidate registry/u,
+    );
+    writeFileSync(
+      join(privateDirectory, "benchmark-candidate-registry.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        candidates: [
+          { candidateVersion: "5.0.1-rc.3", runtimeSha256: FINGERPRINT_A },
+          { candidateVersion: "5.0.1-rc.2", runtimeSha256: FINGERPRINT_B },
+        ],
+      })}\n`,
+    );
+    assert.throws(
+      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.4", FINGERPRINT_C),
+      /Invalid candidate registry: candidate versions must be strictly increasing/u,
+    );
+    writeFileSync(
+      join(privateDirectory, "benchmark-candidate-registry.json"),
+      `${JSON.stringify({
+        schemaVersion: 1,
+        candidates: [
+          { candidateVersion: "5.0.1-rc.2", runtimeSha256: FINGERPRINT_A },
+          { candidateVersion: "5.0.1-rc.2", runtimeSha256: FINGERPRINT_B },
+        ],
+      })}\n`,
+    );
+    assert.throws(
+      () => registerBenchmarkCandidate(repoRoot, "5.0.1-rc.4", FINGERPRINT_C),
+      /Invalid candidate registry: candidate versions must be strictly increasing/u,
     );
   });
   withRepository((repoRoot) => {

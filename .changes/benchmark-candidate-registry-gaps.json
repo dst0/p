@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Allow strictly increasing benchmark candidate versions with gaps in the candidate registry while rejecting rollbacks and duplicate bindings."
+}
