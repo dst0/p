@@ -46,7 +46,7 @@ export function validateRequirementFacetMappings(
   }
   if (validFacetIds.length > 1) {
     diagnostics.push(
-      `Requirement ${requirementIndex + 1} maps multiple high-risk source facets; use one facet per requirement.`,
+      `Requirement ${requirementIndex + 1} maps multiple source facets; use one facet per atomic requirement.`,
     );
   }
   const mappedFacetClauseIds = new Set(validFacetIds.map((facetId) => index.facetsById.get(facetId)!.sourceClauseId));

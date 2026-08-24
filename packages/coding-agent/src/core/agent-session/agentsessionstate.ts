@@ -72,6 +72,7 @@ export class AgentSessionState {
   public _processingQueuedProjectRuleTurn = false;
   public _customTools: ToolDefinition[];
   public _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
+  public _projectRuleSafeToolDefinitions = new Set<ToolDefinition>();
   public _cwd: string;
   public _extensionRunnerRef?: {
     current?: ExtensionRunner;

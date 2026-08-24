@@ -1,5 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { formatRequirementDefinitionPrompt } from "../src/core/task-verification/requirement-definition-prompt.ts";
+import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "../src/core/task-verification/referenced-requirement-sources.ts";
+import {
+  formatRequirementDefinitionPrompt,
+  renderRequirementDefinitionPrompt,
+} from "../src/core/task-verification/requirement-definition-prompt.ts";
+import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
 import {
   type RequirementSourceClauseCatalogEntry,
   requirementSourceClauseCatalog,
@@ -211,5 +216,77 @@ describe("requirement definition prompt", () => {
     ].join("\n");
 
     expect(Buffer.byteLength(currentPayload, "utf8")).toBeLessThan(Buffer.byteLength(priorPayload, "utf8"));
+  });
+
+  it("falls back to the bounded full-definition prompt when recovery would exceed the ceiling", () => {
+    const source: TaskVerificationSourcePrompt = {
+      id: "near-limit-spec",
+      kind: "referenced_file",
+      path: "LIMIT.md",
+      sha256: "d".repeat(64),
+      text: "",
+    };
+    let normalPrompt = "";
+    let boundedText = "";
+    for (let count = 1; count <= 200; count++) {
+      source.text += `- Preserve field${count} exactly.\n`;
+      const candidate = renderRequirementDefinitionPrompt([source]);
+      if (candidate.normalPromptExceedsLimit) break;
+      normalPrompt = candidate.text;
+      boundedText = source.text;
+    }
+    source.text = boundedText;
+    const draft = {
+      revision: "bounded-revision",
+      diagnostics: "Requirement 1 must map the referenced source.",
+      repairLineageBaselineRequirementCount: 96,
+      input: {
+        action: "define" as const,
+        requirements: Array.from({ length: 96 }, (_value, index) => ({
+          type: "behavior" as const,
+          text: `Preserve rejected field ${index + 1} exactly ${"x".repeat(120)}`,
+          acceptance_criterion: `Rejected field ${index + 1} remains exact after recovery ${"y".repeat(120)}`,
+          source_prompt_indexes: [1],
+        })),
+      },
+    } satisfies RejectedRequirementDefinitionDraft;
+
+    const recovery = formatRequirementDefinitionPrompt([source], draft);
+
+    expect(recovery).toBe(normalPrompt);
+    expect(Buffer.byteLength(recovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+    expect(recovery).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
+  });
+
+  it("blocks direct-only definition and recovery prompts that cannot fit the ceiling", () => {
+    const source = { id: "prompt-1", text: `Preserve all cases. ${"x".repeat(40_000)}` };
+    const draft = {
+      revision: "oversized-direct-revision",
+      diagnostics: "Requirement 1 is incomplete.",
+      repairLineageBaselineRequirementCount: 1,
+      input: {
+        action: "define" as const,
+        requirements: [
+          {
+            type: "behavior" as const,
+            text: "Preserve all cases.",
+            acceptance_criterion: "Every named case is preserved.",
+            source_prompt_indexes: [1],
+          },
+        ],
+      },
+    } satisfies RejectedRequirementDefinitionDraft;
+
+    for (const rendered of [
+      formatRequirementDefinitionPrompt([source]),
+      formatRequirementDefinitionPrompt([source], draft),
+    ]) {
+      expect(Buffer.byteLength(rendered)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+      expect(rendered).toContain("AUTHORITATIVE SOURCE EXCEEDS THE DEFINITION LIMIT");
+      expect(rendered).toContain("Do not define or implement a partial subset");
+      expect(rendered).toContain("start a fresh task or session");
+      expect(rendered).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
+      expect(rendered).not.toContain("x".repeat(100));
+    }
   });
 });

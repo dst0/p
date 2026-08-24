@@ -104,7 +104,7 @@ describe("requirement definition facet hardening", () => {
     requirement.source_facet_ids.push("S2-C1-F2");
 
     expect(validate([requirement]).diagnostics.join("\n")).toContain(
-      "maps multiple high-risk source facets; use one facet per requirement",
+      "maps multiple source facets; use one facet per atomic requirement",
     );
   });
 

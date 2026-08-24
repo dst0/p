@@ -1,5 +1,12 @@
 import type { ToolDefinition } from "../../extensions/types.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, RequirementAuditSchema } from "../constants.ts";
+import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
+import {
+  formatRejectedDefinitionRepairGuidance,
+  rejectedRequirementDefinitionDraft,
+  repairRejectedRequirementDefinition,
+  requirementRepairChangesArity,
+} from "../requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import type { VerificationResult } from "../types.ts";
 
@@ -21,6 +28,8 @@ export function do_createRequirementAuditToolDefinition(
       "Reference every source prompt by 1-based index or explain why a non-task prompt is ignored.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
+      "After a rejected definition, use action 'repair_definition' with its definition_revision and the smallest useful subset of indexed replacements or splits; at most 16 replacements are allowed per call and cumulative lineage growth is capped at 16 requirements before a fresh define batch is required.",
+      "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
       "Every verdict needs a reason. Every passed verdict requires current non-error evidence_refs.",
       "High-risk integrity, security, durability, transaction, and concurrency requirements need a relevant focused test with a positive passing result; generic suites and manual reproductions cannot prove them.",
@@ -28,16 +37,54 @@ export function do_createRequirementAuditToolDefinition(
     parameters: RequirementAuditSchema,
     executionMode: "sequential",
     execute: async (_id, params) => {
-      const result = self.applyRequirementAudit(params);
+      const foreignFieldError = requirementAuditForeignFieldError(params);
+      if (foreignFieldError) {
+        const result = self.rejected(foreignFieldError);
+        return { content: [{ type: "text", text: result.message }], details: result };
+      }
+      if (
+        params.action === "repair_definition" &&
+        self.requirementRepairStatusRevision !== undefined &&
+        self.requirementRepairStatusRevision === self.rejectedRequirementDefinitionDraft?.revision
+      ) {
+        const result = self.rejected(
+          'Requirement indexes changed after the last rejected repair. Call record_task_verification with action "status" before another repair_definition call.',
+        );
+        return { content: [{ type: "text", text: result.message }], details: result };
+      }
+      const changesArity = params.action === "repair_definition" && requirementRepairChangesArity(params);
+      const previousRejectedDraft = self.rejectedRequirementDefinitionDraft;
+      const repaired =
+        params.action === "repair_definition"
+          ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params)
+          : params;
+      const result = typeof repaired === "string" ? self.rejected(repaired) : self.applyRequirementAudit(repaired);
+      if (
+        result.status === "needs_action" &&
+        result.state.requirementAudit?.status === "awaiting_definition" &&
+        typeof repaired !== "string"
+      ) {
+        self.rejectedRequirementDefinitionDraft = rejectedRequirementDefinitionDraft(
+          repaired,
+          result.message,
+          params.action === "repair_definition" ? previousRejectedDraft : undefined,
+        );
+        if (changesArity) {
+          self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft?.revision;
+        }
+      } else if (result.status === "updated") {
+        self.rejectedRequirementDefinitionDraft = undefined;
+        self.requirementRepairStatusRevision = undefined;
+      }
       const message =
         result.status !== "needs_action"
           ? result.message
-          : params.action === "define"
-            ? [
+          : params.action === "define" || params.action === "repair_definition"
+            ? formatRejectedDefinitionRepairGuidance(
                 result.message,
-                "Correct every diagnostic and resubmit the complete definition batch; rejection stored no partial definition.",
-                'The original requirement-source catalog remains authoritative. If compaction hid it, call record_task_verification with action "status" to restore the current definition instructions before resubmitting.',
-              ].join("\n\n")
+                self.rejectedRequirementDefinitionDraft,
+                self.requirementRepairStatusRevision === self.rejectedRequirementDefinitionDraft?.revision,
+              )
             : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },

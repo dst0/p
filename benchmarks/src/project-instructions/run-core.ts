@@ -56,6 +56,8 @@ export type PairedSample = {
     firstMutationElapsedMs?: number | null;
     requirementDefinitionAttemptCount?: number | null;
     observedRequirementDefinitionAttemptCount?: number;
+    requirementDefinitionRepairAttemptCount?: number | null;
+    observedRequirementDefinitionRepairAttemptCount?: number;
     semanticEvidenceAvailable?: unknown;
     semanticEvidenceComplete?: unknown;
   };

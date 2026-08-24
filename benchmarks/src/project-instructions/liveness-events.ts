@@ -1,4 +1,5 @@
 import { describeBenchmarkProjectInstructionAction, inferBenchmarkProjectInstructionActionPhases } from "./routing.ts";
+import type { RequirementRepairTelemetry } from "./run-repair-telemetry.ts";
 
 export type SemanticTool = { phase: string; settledPhase: string };
 
@@ -10,8 +11,11 @@ export type SemanticEventState = {
   semanticEventCount: number;
   mutationCount: number;
   requirementDefinitionAttemptCount: number;
+  requirementDefinitionRepairAttemptCount: number;
   seenToolEvents: Set<string>;
   activeTools: Map<string, SemanticTool>;
+  requirementRepairTelemetry: RequirementRepairTelemetry;
+  onProgress?: (event: string, extra?: Record<string, unknown>) => void;
 };
 
 export function processSemanticLine(state: SemanticEventState, line: string): void {
@@ -26,6 +30,8 @@ export function processSemanticLine(state: SemanticEventState, line: string): vo
     const key = String(event.toolCallId ?? event.benchmarkEventOrdinal ?? "");
     const completed = state.activeTools.get(key);
     if (!completed) return;
+    const telemetry = state.requirementRepairTelemetry.end(event, key, Math.max(0, state.now() - state.startedAt));
+    if (telemetry) state.onProgress?.(telemetry.event, telemetry as unknown as Record<string, unknown>);
     state.activeTools.delete(key);
     state.phase = [...state.activeTools.values()].at(-1)?.phase ?? completed.settledPhase;
     return;
@@ -38,11 +44,14 @@ export function processSemanticLine(state: SemanticEventState, line: string): vo
     state.seenToolEvents.add(key);
   }
   state.semanticEventCount += 1;
+  state.requirementRepairTelemetry.start(event, key, Math.max(0, state.now() - state.startedAt));
   if (event.toolName === "record_requirement_audit") {
     const defining = isRecord(event.args) && event.args.action === "define";
+    const repairing = isRecord(event.args) && event.args.action === "repair_definition";
     if (defining) state.requirementDefinitionAttemptCount += 1;
-    const phase = defining ? "requirement_definition" : "verification";
-    state.activeTools.set(key, { phase, settledPhase: defining ? "planning" : "idle" });
+    if (repairing) state.requirementDefinitionRepairAttemptCount += 1;
+    const phase = defining || repairing ? "requirement_definition" : "verification";
+    state.activeTools.set(key, { phase, settledPhase: defining || repairing ? "planning" : "idle" });
     state.phase = phase;
     return;
   }

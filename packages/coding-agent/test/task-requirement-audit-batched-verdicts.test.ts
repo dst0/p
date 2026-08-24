@@ -123,7 +123,7 @@ describe("batched requirement-audit verdicts", () => {
       reason: "Legacy single-verdict input must fail closed.",
       evidence_refs: [evidenceRef],
     });
-    expect(legacyShape).toContain("Missing verdicts: R1, R2");
+    expect(legacyShape).toContain("verdict does not accept field(s): requirement_id, passed, reason, evidence_refs.");
 
     await nextModelTurn(harness);
     const unsupportedPass = await callRequirementAudit(harness.controller, {

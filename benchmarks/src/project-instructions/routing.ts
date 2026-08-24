@@ -80,9 +80,10 @@ export function describeBenchmarkProjectInstructionAction(
 ): { phases: string[]; queries: string[] } | undefined {
   const routedDescription = KNOWN_BUILTIN_TOOLS.has(toolName) ? undefined : toolDescription;
   const phases = inferBenchmarkProjectInstructionActionPhases(toolName, args, routedDescription);
+  const trustedStatus = isRecord(args) && toolName === "record_task_verification" && args.action === "status";
   const mayMutate = isShellTool(toolName)
     ? !isBenchmarkProjectInstructionReadOnlyShellTool(toolName, args)
-    : isDirectMutationTool(toolName) || !TRUSTED_SAFE_TOOLS.has(toolName);
+    : isDirectMutationTool(toolName) || (!TRUSTED_SAFE_TOOLS.has(toolName) && !trustedStatus);
   if (!mayMutate) return undefined;
   const prefix = `${toolName}\n`;
   const serialized = safeJson(args);
@@ -274,6 +275,10 @@ function shellCommand(args: unknown): string {
 function isRecognizedBashMutation(args: unknown): boolean {
   const command = shellCommand(args);
   return BASH_MUTATION_PATTERN.test(command) || WRITE_REDIRECT_PATTERN.test(command);
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function safeJson(value: unknown): string {

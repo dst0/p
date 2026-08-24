@@ -107,7 +107,7 @@ describe("requirement-audit lifecycle", () => {
     expect(auditVerificationToken(completed)).not.toBe(firstToken);
   });
 
-  it("restores the complete pending batch and clears task-scoped evidence only after successful finish_work", async () => {
+  it("restores the pending batch and clears task-scoped evidence and repair recovery after successful finish", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
@@ -153,6 +153,13 @@ describe("requirement-audit lifecycle", () => {
     const token = auditVerificationToken(completed);
     const completedTaskId = restored.controller.currentState.taskId;
     expect(restored.controller.evidence.size).toBeGreaterThan(0);
+    restored.controller.rejectedRequirementDefinitionDraft = {
+      revision: "stale-recovery",
+      diagnostics: "stale diagnostics",
+      repairLineageBaselineRequirementCount: 0,
+      input: { action: "define", requirements: [] },
+    };
+    restored.controller.requirementRepairStatusRevision = "stale-recovery";
 
     await recordAuditToolResult(restored.agent, "finish_work", {
       status: "success",
@@ -163,6 +170,9 @@ describe("requirement-audit lifecycle", () => {
     expect(restored.controller.currentState.mutationRevision).toBe(0);
     expect(restored.controller.currentState.taskPrompts).toEqual([]);
     expect(restored.controller.evidence.size).toBe(0);
+    expect(restored.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+    expect(restored.controller.requirementRepairStatusRevision).toBeUndefined();
+    expect(await callTaskVerification(restored.controller, { action: "status" })).not.toContain("stale-recovery");
 
     const rehydrated = createRequirementAuditHarness(harness.sessionManager);
     expect(rehydrated.controller.currentState.taskId).toBe(restored.controller.currentState.taskId);

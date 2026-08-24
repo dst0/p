@@ -6,21 +6,29 @@ import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository
 import type { SemanticEventState, SemanticTool } from "./liveness-events.ts";
 import { processSemanticLine } from "./liveness-events.ts";
 import { createSemanticRecordingFollower } from "./run-recording-follower.ts";
+import { createRequirementRepairTelemetry } from "./run-repair-telemetry.ts";
+
+export { runBenchmarkChild } from "./run-child-process.ts";
+
 export const CELL_HEARTBEAT_INTERVAL_MS = 50_000;
 const CELL_OBSERVATION_INTERVAL_MS = 1_000;
 const INTERNAL_PATH_PREFIXES = [".pdev/", ".pdev\\"];
+
 export type CellLiveness = {
   heartbeatIntervalMs: number;
   heartbeatCount: number;
   firstMutationElapsedMs: number | null;
   requirementDefinitionAttemptCount: number | null;
   observedRequirementDefinitionAttemptCount: number;
+  requirementDefinitionRepairAttemptCount: number | null;
+  observedRequirementDefinitionRepairAttemptCount: number;
   semanticSequence: number;
   mutationCount: number;
   semanticEvidenceAvailable: boolean;
   semanticEvidenceComplete: boolean;
   progressEvidence: string | null;
 };
+
 type SemanticCapture = {
   format?: string;
   archiveBytes?: number;
@@ -31,6 +39,7 @@ type SemanticCapture = {
   storageBytes?: number;
   storageLimitBytes?: number;
 };
+
 type CaptureOverflow = {
   kind?: string;
   captureName?: string;
@@ -40,6 +49,7 @@ type CaptureOverflow = {
   observedCountAtLeast?: number;
   turn?: number;
 };
+
 type MonitorFinalizeOptions = {
   recordingCapture?: SemanticCapture;
   captureOverflow?: CaptureOverflow;
@@ -47,6 +57,7 @@ type MonitorFinalizeOptions = {
   requireSemanticEvidence?: boolean;
   outcome: "process_completed" | "interrupted" | string;
 };
+
 type MonitorOptions = {
   now?: () => number;
   progressPath: string;
@@ -63,19 +74,13 @@ type MonitorOptions = {
   observationIntervalMs?: number;
   heartbeatIntervalMs?: number;
 };
+
 type MonitorState = SemanticEventState & {
-  now: () => number;
-  startedAt: number;
   progressPath: string;
   progressEvidence: string;
   inspectWorkspace: () => number | undefined;
-  phase: string;
   changedPathCount?: number;
-  firstMutationElapsedMs?: number;
   heartbeatCount: number;
-  semanticEventCount: number;
-  mutationCount: number;
-  requirementDefinitionAttemptCount: number;
   semanticEvidenceAvailable: boolean;
   semanticEvidenceComplete: boolean;
   finalized: boolean;
@@ -88,6 +93,8 @@ export function createUnavailableCellLiveness(): CellLiveness {
     firstMutationElapsedMs: null,
     requirementDefinitionAttemptCount: null,
     observedRequirementDefinitionAttemptCount: 0,
+    requirementDefinitionRepairAttemptCount: null,
+    observedRequirementDefinitionRepairAttemptCount: 0,
     semanticSequence: 0,
     mutationCount: 0,
     semanticEvidenceAvailable: false,
@@ -95,6 +102,7 @@ export function createUnavailableCellLiveness(): CellLiveness {
     progressEvidence: null,
   };
 }
+
 function changedWorkspacePathCount(workspace: string | undefined): number | undefined {
   if (typeof workspace !== "string" || !existsSync(workspace)) return undefined;
   const result = spawnSync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
@@ -111,6 +119,7 @@ function changedWorkspacePathCount(workspace: string | undefined): number | unde
     .map((entry) => entry.slice(3))
     .filter((path) => !INTERNAL_PATH_PREFIXES.some((prefix) => path.startsWith(prefix))).length;
 }
+
 function progressRecord(state: MonitorState, event: string, extra: Record<string, unknown> = {}) {
   return {
     schemaVersion: 1,
@@ -126,12 +135,18 @@ function progressRecord(state: MonitorState, event: string, extra: Record<string
     semanticEvidenceComplete: state.semanticEvidenceComplete,
     requirementDefinitionAttemptCount: state.semanticEvidenceComplete ? state.requirementDefinitionAttemptCount : null,
     observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+    requirementDefinitionRepairAttemptCount: state.semanticEvidenceComplete
+      ? state.requirementDefinitionRepairAttemptCount
+      : null,
+    observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
     ...extra,
   };
 }
+
 function appendProgress(state: MonitorState, event: string, extra?: Record<string, unknown>): void {
   appendFileSync(state.progressPath, `${JSON.stringify(progressRecord(state, event, extra))}\n`, "utf8");
 }
+
 function semanticCaptureIsPartial(
   recordingCapture: SemanticCapture | undefined,
   captureOverflow: CaptureOverflow | undefined,
@@ -143,6 +158,7 @@ function semanticCaptureIsPartial(
       recordingCapture === undefined)
   );
 }
+
 export function createCellLivenessMonitor(options: MonitorOptions): {
   observe(): void;
   heartbeat(): void;
@@ -161,15 +177,16 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
     semanticEventCount: 0,
     mutationCount: 0,
     requirementDefinitionAttemptCount: 0,
+    requirementDefinitionRepairAttemptCount: 0,
     semanticEvidenceAvailable: false,
     semanticEvidenceComplete: false,
     seenToolEvents: new Set<string>(),
     activeTools: new Map<string, SemanticTool>(),
+    requirementRepairTelemetry: createRequirementRepairTelemetry(),
+    onProgress: (event, extra) => appendProgress(state, event, extra),
     finalized: false,
   };
-  const hasSemanticRecording = Boolean(
-    options.activeRecordingPath || options.chunkDirectory || options.finalRecordingPath,
-  );
+  const hasRecording = Boolean(options.activeRecordingPath || options.chunkDirectory || options.finalRecordingPath);
   const recordingFollower = createSemanticRecordingFollower({
     activeRecordingPath: options.activeRecordingPath,
     chunkDirectory: options.chunkDirectory,
@@ -180,8 +197,10 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
       state.semanticEventCount = 0;
       state.mutationCount = 0;
       state.requirementDefinitionAttemptCount = 0;
+      state.requirementDefinitionRepairAttemptCount = 0;
       state.seenToolEvents.clear();
       state.activeTools.clear();
+      state.requirementRepairTelemetry.resetReplayState();
     },
   });
   mkdirSync(dirname(state.progressPath), { recursive: true });
@@ -190,9 +209,9 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
   const observe = () => {
     const observation = recordingFollower.observe();
     state.semanticEvidenceAvailable = observation.available;
-    const count = hasSemanticRecording ? undefined : state.inspectWorkspace();
+    const count = hasRecording ? undefined : state.inspectWorkspace();
     if (count !== undefined) state.changedPathCount = count;
-    if (hasSemanticRecording) {
+    if (hasRecording) {
       if (state.semanticEvidenceAvailable && state.phase === "starting") state.phase = "discovery";
     } else if (typeof count === "number" && count > 0) {
       state.phase = "implementation";
@@ -205,13 +224,12 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
     observe();
     state.heartbeatCount += 1;
     appendProgress(state, "heartbeat");
-    const definitionAttempts = state.semanticEvidenceAvailable ? state.requirementDefinitionAttemptCount : "n/a";
+    const defAttempts = state.semanticEvidenceAvailable ? state.requirementDefinitionAttemptCount : "n/a";
     console.log(
-      `[progress] ${options.label ?? "benchmark cell"}: ${state.phase}, ${Math.round((state.now() - state.startedAt) / 1000)}s elapsed, ${state.mutationCount} potentially-mutating starts, ${definitionAttempts} definition attempts, ${state.semanticEventCount} semantic events`,
+      `[progress] ${options.label ?? "benchmark cell"}: ${state.phase}, ${Math.round((state.now() - state.startedAt) / 1000)}s elapsed, ${state.mutationCount} potentially-mutating starts, ${defAttempts} full definitions, ${state.requirementDefinitionRepairAttemptCount} repairs, ${state.semanticEventCount} semantic events`,
     );
   };
-  const schedule =
-    options.schedule ?? ((callback: () => void, intervalMs: number) => setInterval(callback, intervalMs));
+  const schedule = options.schedule ?? setInterval;
   const cancel = options.cancel ?? ((timer: unknown) => clearInterval(timer as ReturnType<typeof setInterval>));
   const observationTimer = schedule(observe, options.observationIntervalMs ?? CELL_OBSERVATION_INTERVAL_MS);
   const heartbeatTimer = schedule(heartbeat, options.heartbeatIntervalMs ?? CELL_HEARTBEAT_INTERVAL_MS);
@@ -236,20 +254,23 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
       ) {
         state.semanticEvidenceComplete = false;
       }
-      const requiredEvidenceFailed =
+      const requiredFailed =
         finalOptions.requireSemanticEvidence === true &&
         (!state.semanticEvidenceAvailable || !state.semanticEvidenceComplete);
       state.phase =
-        finalOptions.outcome === "process_completed" && !requiredEvidenceFailed
+        finalOptions.outcome === "process_completed" && !requiredFailed
           ? "completed"
           : finalOptions.outcome === "interrupted"
             ? "interrupted"
             : "failed";
       const definitionAttempts = state.semanticEvidenceComplete ? state.requirementDefinitionAttemptCount : null;
+      const repairAttempts = state.semanticEvidenceComplete ? state.requirementDefinitionRepairAttemptCount : null;
       appendProgress(state, state.phase, {
         outcome: finalOptions.outcome,
         requirementDefinitionAttemptCount: definitionAttempts,
         observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+        requirementDefinitionRepairAttemptCount: repairAttempts,
+        observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
       });
       const compressedPath = `${state.progressPath}.br`;
       replacePrivateBrotliText(compressedPath, readFileSync(state.progressPath, "utf8"));
@@ -262,6 +283,8 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
         firstMutationElapsedMs: state.firstMutationElapsedMs ?? null,
         requirementDefinitionAttemptCount: definitionAttempts,
         observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+        requirementDefinitionRepairAttemptCount: repairAttempts,
+        observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
         semanticSequence: state.semanticEventCount,
         mutationCount: state.mutationCount,
         semanticEvidenceAvailable: state.semanticEvidenceAvailable,

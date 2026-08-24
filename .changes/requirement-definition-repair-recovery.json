@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve bounded sparse requirement-definition recovery across status checks and report repair progress accurately."
+}

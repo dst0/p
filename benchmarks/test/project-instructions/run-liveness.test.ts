@@ -12,6 +12,14 @@ import {
 import { runBenchmarkChild } from "../../src/project-instructions/run-child-process.ts";
 import { CELL_HEARTBEAT_INTERVAL_MS, createCellLivenessMonitor } from "../../src/project-instructions/run-liveness.ts";
 
+function readDecompressedJsonLines(path: string) {
+  return brotliDecompressSync(readFileSync(path))
+    .toString("utf8")
+    .trim()
+    .split("\n")
+    .map((line) => JSON.parse(line));
+}
+
 test("cell liveness records bounded semantic heartbeats without paths or payloads", async () => {
   const directory = mkdtempSync(join(tmpdir(), "p-paired-liveness-"));
   try {
@@ -43,11 +51,7 @@ test("cell liveness records bounded semantic heartbeats without paths or payload
     assert.equal(evidence.observedRequirementDefinitionAttemptCount, 0);
     assert.equal(evidence.heartbeatCount, 1);
     assert.match(evidence.progressEvidence ?? "", /\.jsonl\.br$/u);
-    const records = brotliDecompressSync(readFileSync(`${progressPath}.br`))
-      .toString("utf8")
-      .trim()
-      .split("\n")
-      .map((line) => JSON.parse(line));
+    const records = readDecompressedJsonLines(`${progressPath}.br`);
     assert.deepEqual(
       records.map((record) => record.event),
       ["started", "heartbeat", "completed"],
@@ -118,15 +122,27 @@ test("active recording preserves semantic mutation after the worktree is committ
       },
       {
         type: "tool_execution_start",
-        toolCallId: "define-2",
+        toolCallId: "repair-1",
         toolName: "record_requirement_audit",
-        args: { action: "define" },
+        args: { action: "repair_definition" },
       },
       {
         type: "tool_execution_end",
-        toolCallId: "define-2",
+        toolCallId: "repair-1",
         toolName: "record_requirement_audit",
-        args: { action: "define" },
+        args: { action: "repair_definition" },
+      },
+      {
+        type: "tool_execution_start",
+        toolCallId: "repair-2",
+        toolName: "record_requirement_audit",
+        args: { action: "repair_definition" },
+      },
+      {
+        type: "tool_execution_start",
+        toolCallId: "status-1",
+        toolName: "record_task_verification",
+        args: { action: "status" },
       },
       {
         type: "tool_execution_start",
@@ -155,9 +171,11 @@ test("active recording preserves semantic mutation after the worktree is committ
       recordingCapture: { bytes: 1_024, limitBytes: 2_048, partial: false },
     });
     assert.equal(evidence.firstMutationElapsedMs, 1_234);
-    assert.equal(evidence.requirementDefinitionAttemptCount, 2);
-    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 2);
-    assert.equal(evidence.semanticSequence, 4);
+    assert.equal(evidence.requirementDefinitionAttemptCount, 1);
+    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 1);
+    assert.equal(evidence.requirementDefinitionRepairAttemptCount, 2);
+    assert.equal(evidence.observedRequirementDefinitionRepairAttemptCount, 2);
+    assert.equal(evidence.semanticSequence, 6);
     assert.equal(evidence.semanticEvidenceAvailable, true);
     assert.equal(evidence.mutationCount, 1);
   } finally {
@@ -205,19 +223,8 @@ test("a capped finalized recording never reports lower-bound definition counts a
   const directory = mkdtempSync(join(tmpdir(), "p-paired-partial-recording-"));
   try {
     const finalRecordingPath = join(directory, "recording.jsonl.br");
-    writeFileSync(
-      finalRecordingPath,
-      brotliCompressSync(
-        Buffer.from(
-          `${JSON.stringify({
-            type: "tool_execution_start",
-            toolCallId: "partial-define",
-            toolName: "record_requirement_audit",
-            args: { action: "define" },
-          })}\n`,
-        ),
-      ),
-    );
+    const payload = `${JSON.stringify({ type: "tool_execution_start", toolCallId: "partial-define", toolName: "record_requirement_audit", args: { action: "define" } })}\n`;
+    writeFileSync(finalRecordingPath, brotliCompressSync(Buffer.from(payload)));
     const monitor = createCellLivenessMonitor({
       progressPath: join(directory, "progress.jsonl"),
       finalRecordingPath,
@@ -249,19 +256,8 @@ test("failed finalized recordings remain incomplete when capture metadata is mis
   const directory = mkdtempSync(join(tmpdir(), "p-paired-unknown-recording-"));
   try {
     const finalRecordingPath = join(directory, "recording.jsonl.br");
-    writeFileSync(
-      finalRecordingPath,
-      brotliCompressSync(
-        Buffer.from(
-          `${JSON.stringify({
-            type: "tool_execution_start",
-            toolCallId: "unknown-define",
-            toolName: "record_requirement_audit",
-            args: { action: "define" },
-          })}\n`,
-        ),
-      ),
-    );
+    const payload = `${JSON.stringify({ type: "tool_execution_start", toolCallId: "unknown-define", toolName: "record_requirement_audit", args: { action: "define" } })}\n`;
+    writeFileSync(finalRecordingPath, brotliCompressSync(Buffer.from(payload)));
     const variants: Array<[string, string | undefined, string]> = [
       ["missing", undefined, "failed"],
       ["malformed", "{not-json\n", "failed"],
@@ -270,14 +266,12 @@ test("failed finalized recordings remain incomplete when capture metadata is mis
     for (const [variant, captureResult, outcome] of variants) {
       const captureResultPath = join(directory, `${variant}-results.json`);
       if (captureResult !== undefined) writeFileSync(captureResultPath, captureResult);
-      const monitorOptions = {
+      const monitor = createCellLivenessMonitor({
         progressPath: join(directory, `${variant}-progress.jsonl`),
         finalRecordingPath,
-        captureResultPath,
         schedule: () => ({ fake: true }),
         cancel: () => {},
-      };
-      const monitor = createCellLivenessMonitor(monitorOptions);
+      });
       const summary = await monitor.finalize({ outcome });
       assert.equal(summary.semanticEvidenceAvailable, true, variant);
       assert.equal(summary.semanticEvidenceComplete, false, variant);

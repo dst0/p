@@ -8,6 +8,7 @@ import type {
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { RequirementAuditSchema, VerificationSchema } from "./constants.ts";
+import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
 import { emptyState } from "./state-factories.ts";
 import {
   do_blocked,
@@ -85,6 +86,10 @@ export class TaskVerificationController {
   public readonly mutatedSourceFiles = new Set<string>();
 
   public readonly requirementSourceTexts = new Map<string, string>();
+
+  public rejectedRequirementDefinitionDraft?: RejectedRequirementDefinitionDraft;
+
+  public requirementRepairStatusRevision?: string;
 
   public state = emptyState();
 

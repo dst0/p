@@ -39,6 +39,7 @@ test("failed reports render liveness for every gate-failure class", () => {
     const report = renderPairedReport(failedDocument(failure));
     assert.match(report, /Gate liveness:/u, reason);
     assert.match(report, /Requirement definitions: n\/a/u, reason);
+    assert.match(report, /sparse repairs: n\/a/u, reason);
     assert.match(report, /Semantic evidence available: no; complete: no/u, reason);
     assert.match(report, /Progress evidence: n\/a/u, reason);
   }
@@ -54,6 +55,7 @@ test("failed reports expose collected lower-bound evidence without claiming comp
     semanticEvidenceAvailable: true,
     semanticEvidenceComplete: false,
     observedRequirementDefinitionAttemptCount: 2,
+    observedRequirementDefinitionRepairAttemptCount: 3,
     progressEvidence: "progress/run-1-typescript-calculator-compiled.jsonl.br",
   };
   const failure = createClassifiedBenchmarkGateFailure(pair, "compiled", "child benchmark exited 9", {
@@ -61,6 +63,7 @@ test("failed reports expose collected lower-bound evidence without claiming comp
   });
   const report = renderPairedReport(failedDocument(failure));
   assert.match(report, /Requirement definitions: at least 2/u);
+  assert.match(report, /sparse repairs: at least 3/u);
   assert.match(report, /Semantic evidence available: yes; complete: no/u);
   assert.match(report, /Progress evidence: `progress\/run-1-typescript-calculator-compiled\.jsonl\.br`/u);
 });

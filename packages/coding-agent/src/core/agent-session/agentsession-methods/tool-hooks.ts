@@ -6,6 +6,7 @@ import {
   matchesProjectInstructionRuleBatch,
   type PreparedProjectInstructions,
 } from "../../project-instructions/index.ts";
+import { TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
 import {
   isConfidentlyReadOnlyShellTool,
   isPotentialMutationTool,
@@ -154,14 +155,12 @@ export function do__installAgentToolHooks(self: AgentSession): void {
     }
   };
 }
-
 export function digestProjectRuleReadContent(content: readonly (TextContent | ImageContent)[]): string[] {
   return content.map((item) => {
     const payload = item.type === "text" ? `text\0${item.text}` : `image\0${item.mimeType}\0${item.data}`;
     return createHash("sha256").update(payload).digest("hex");
   });
 }
-
 async function settleProjectRuleRead(
   self: AgentSession,
   toolName: string,
@@ -235,7 +234,9 @@ async function getProjectRuleBlockReason(
   }
   const mayMutate =
     isPotentialMutationTool(toolName, args) ||
-    (!isTrustedProjectRuleReadOnlyShellTool(self, toolName, args) && !isTrustedProjectRuleSafeTool(self, toolName));
+    (!isTrustedProjectRuleReadOnlyShellTool(self, toolName, args) &&
+      !isTrustedProjectRuleSafeTool(self, toolName) &&
+      !isTrustedVerificationStatusTool(self, toolName, args));
   if (!mayMutate) return undefined;
   let refreshed: PreparedProjectInstructions;
   try {
@@ -276,6 +277,12 @@ async function getProjectRuleBlockReason(
 function isTrustedProjectRuleSafeTool(self: AgentSession, toolName: string): boolean {
   if (!PROJECT_RULE_GATE_SAFE_TOOLS.has(toolName)) return false;
   return isTrustedBaseTool(self, toolName);
+}
+
+function isTrustedVerificationStatusTool(self: AgentSession, toolName: string, args: unknown): boolean {
+  if (toolName !== TASK_VERIFICATION_TOOL_NAME || !isRecord(args) || args.action !== "status") return false;
+  const entry = self._toolDefinitions.get(toolName);
+  return entry !== undefined && self._projectRuleSafeToolDefinitions.has(entry.definition);
 }
 
 function isTrustedProjectRuleReadOnlyShellTool(self: AgentSession, toolName: string, args: unknown): boolean {

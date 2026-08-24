@@ -5,7 +5,10 @@ import {
   prepareReferencedRequirementSources,
 } from "../referenced-requirement-sources.ts";
 import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
-import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import {
+  formatRequirementDefinitionPrompt,
+  renderRequirementDefinitionPrompt,
+} from "../requirement-definition-prompt.ts";
 import { persistRequirementSourceSnapshots } from "../requirement-source-storage.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -62,8 +65,8 @@ export function do_prepareRequirementDefinition(
   );
   if (typeof prospectiveSources === "string") return self.rejected(prospectiveSources);
   if (prospectiveSources.length > prompts.length) {
-    const definitionPrompt = formatRequirementDefinitionPrompt(prospectiveSources);
-    if (Buffer.byteLength(definitionPrompt) > MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
+    const definitionPrompt = renderRequirementDefinitionPrompt(prospectiveSources);
+    if (definitionPrompt.normalPromptExceedsLimit) {
       return self.rejected(
         `The rendered requirement-definition prompt exceeds ${MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES} bytes. Select smaller sources or ask the user to narrow the specification.`,
       );
@@ -75,6 +78,8 @@ export function do_prepareRequirementDefinition(
   const selectedTexts = new Map<string, string>();
   for (const reference of reusable) selectedTexts.set(reference.id, self.requirementSourceTexts.get(reference.id)!);
   for (const source of selection.sources) selectedTexts.set(source.id, source.text);
+  self.rejectedRequirementDefinitionDraft = undefined;
+  self.requirementRepairStatusRevision = undefined;
   self.requirementSourceTexts.clear();
   for (const [id, text] of selectedTexts) self.requirementSourceTexts.set(id, text);
   self.state = {

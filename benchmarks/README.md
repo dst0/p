@@ -65,8 +65,15 @@ live progress file contains elapsed time, coarse semantic phase, semantic and
 potentially-mutating-action counts, first mutation-tool timing, and evidence
 availability/completeness; it is Brotli-Q6 compressed after the cell closes.
 The requirement-definition count includes exactly the starts of
-`record_requirement_audit` with `action: "define"`. Review progress at least
-once per minute during long cells.
+`record_requirement_audit` with `action: "define"`; sparse repairs are counted
+separately. Settled definition/repair events add sanitized draft sizes, repair
+arity, diagnostic totals and class histograms, per-cell keyed HMAC-SHA-256 diagnostic
+fingerprints, and comparable resolved/persisting/introduced counts. Settled
+status events distinguish active rejected-batch recovery from a full-definition
+restart. Source text, diagnostic text, repair payloads, and revision values are
+never stored in progress evidence. Review progress at least once per minute
+during long cells, and do not treat a single increase in raw diagnostic
+instances as degradation: atomic splits can expose more specific obligations.
 
 Captures are explicitly bounded: by default, raw recordings are limited to
 512 MiB, lines to 1 MiB, per-turn metric output to 16 MiB and 65,536 events,
