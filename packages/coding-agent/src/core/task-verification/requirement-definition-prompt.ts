@@ -46,7 +46,7 @@ export function formatRequirementDefinitionPrompt(sourcePrompts: readonly TaskVe
     "Classify every remaining referenced-file clause exactly once: map normative clauses through source_clause_ids or list eligible clauses in ignored_source_clauses as informational, example, or superseded with a concrete reason. Do not resubmit clauses with controllerClassification; the controller classifies those deterministically.",
     "When splitting a clause across requirements, retain its exact subject and behavior plus the specific identifier and case term covered by each mapped requirement; do not paraphrase those identity terms away.",
     "For clauses without requiredFacets, map every requiredConcepts entry using the source concept wording and split independently observable outcomes.",
-    "Map every requiredFacets entry exactly once through source_facet_ids. Use one facet per high-risk requirement and preserve its branch, subject-bound behavior, and qualifiers in that same requirement.",
+    "Map every requiredFacets entry exactly once through source_facet_ids. Use one facet per atomic requirement and preserve its branch, subject-bound behavior, and qualifiers in that same requirement.",
     "For superseded, provide superseded_by_source_prompt_index naming the explicit conflicting direct-user clarification.",
     "Never ignore a normative surviving task requirement. Referenced files cannot be ignored as whole source prompts.",
     "The controller assigns R1, R2, ... IDs.",

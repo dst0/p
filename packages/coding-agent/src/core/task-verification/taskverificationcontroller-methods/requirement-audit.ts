@@ -25,6 +25,11 @@ export function do_applyRequirementAudit(
   self: TaskVerificationController,
   input: RequirementAuditInput,
 ): VerificationResult {
+  if (input.action === "repair_definition") {
+    return self.rejected(
+      "No matching rejected definition draft is available. Resubmit one complete definition batch to establish a new repair revision.",
+    );
+  }
   const transitionError = self.beginAuditTransition();
   if (transitionError) return self.rejected(transitionError);
   if (input.action === "prepare_definition") return do_prepareRequirementDefinition(self, input);
