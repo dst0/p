@@ -39,9 +39,9 @@ describe("rejected requirement definition status recovery", () => {
     expect(restoredStatus).toContain('Call record_requirement_audit with action "define"');
     expect(restoredStatus).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
     await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, staleRepair(latestRevision)),
-    ).toContain("stale or unavailable");
+    expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
+      "stale or unavailable",
+    );
   });
 
   it("discards recovery when a new user requirement invalidates the rejected batch", async () => {
@@ -52,7 +52,9 @@ describe("rejected requirement definition status recovery", () => {
 
     expect(status).toContain('Call record_requirement_audit with action "define"');
     expect(status).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
-    expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain("stale or unavailable");
+    expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
+      "stale or unavailable",
+    );
   });
 
   it("applies keyed classification deltas without replacing unrelated classifications", async () => {
@@ -64,7 +66,10 @@ describe("rejected requirement definition status recovery", () => {
       action: "define",
       requirements: [compoundFacetRequirement("S2-C3")],
       ignored_source_prompts: [],
-      ignored_source_clauses: [exampleClassification("S2-C1", "Payload example"), exampleClassification("S2-C2", "Archive example")],
+      ignored_source_clauses: [
+        exampleClassification("S2-C1", "Payload example"),
+        exampleClassification("S2-C2", "Archive example"),
+      ],
     });
     await nextModelTurn(harness);
     const repaired = await callRequirementAudit(harness.controller, {
@@ -91,10 +96,7 @@ describe("rejected requirement definition status recovery", () => {
   });
 
   it("requires status before repairing indexes shifted by a rejected split", async () => {
-    const harness = await preparedRepairHarness(
-      workspaces,
-      "Shipping reduces both onHand and the reservation.",
-    );
+    const harness = await preparedRepairHarness(workspaces, "Shipping reduces both onHand and the reservation.");
     const rejected = await callRequirementAudit(harness.controller, {
       action: "define",
       requirements: [compoundFacetRequirement("S2-C1")],
@@ -105,10 +107,12 @@ describe("rejected requirement definition status recovery", () => {
     const split = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revisionFrom(rejected),
-      requirement_repairs: [{
-        requirement_index: 1,
-        replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement("invoice", "S2-C1-F2")],
-      }],
+      requirement_repairs: [
+        {
+          requirement_index: 1,
+          replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement("invoice", "S2-C1-F2")],
+        },
+      ],
     });
     const splitRevision = revisionFrom(split);
     await nextModelTurn(harness);
@@ -182,9 +186,7 @@ function exampleClassification(sourceClauseId: string, reason: string) {
   return { source_clause_id: sourceClauseId, classification: "example" as const, reason };
 }
 
-async function rejectedRepair(
-  workspaces: string[],
-): Promise<{
+async function rejectedRepair(workspaces: string[]): Promise<{
   harness: RequirementAuditHarness;
   firstRevision: string;
   latestRevision: string;
@@ -192,7 +194,10 @@ async function rejectedRepair(
 }> {
   const workspace = await mkdtemp(join(tmpdir(), "p-requirement-repair-status-"));
   workspaces.push(workspace);
-  await writeFile(join(workspace, "README.md"), "# Requirements\n\nShipping reduces both onHand and the reservation.\n");
+  await writeFile(
+    join(workspace, "README.md"),
+    "# Requirements\n\nShipping reduces both onHand and the reservation.\n",
+  );
   git(workspace, "init", "-q");
   git(workspace, "add", "README.md");
   const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));

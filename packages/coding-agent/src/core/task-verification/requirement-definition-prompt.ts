@@ -1,10 +1,10 @@
 import { REQUIREMENT_AUDIT_TOOL_NAME } from "./constants.ts";
+import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "./referenced-requirement-sources.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
+import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
 import { requirementSourceClauseCatalog } from "./requirement-source-clauses.ts";
 import { requirementSourceFacets } from "./requirement-source-facets.ts";
-import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
-import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "./referenced-requirement-sources.ts";
 import type { TaskVerificationSourcePrompt } from "./types.ts";
 
 const SOURCE_CLAUSE_CATALOG_COLUMNS = [
@@ -115,7 +115,7 @@ export function renderRequirementDefinitionPrompt(
     ...catalogLines,
     "Each requirement needs type, text, and acceptance_criterion. Use source_prompt_indexes for direct prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
     `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "define", requirements, ignored_source_prompts, and ignored_source_clauses.`,
-    "If the definition is rejected, correct every numbered diagnostic together; rejection is atomic and stores no partial definition.",
+    "If the definition is rejected, use bounded sparse repair calls that make measurable progress; each merged candidate is revalidated atomically and stores no partial authoritative definition.",
     "Do not submit a verdict in the same model turn.",
   ].join("\n");
   const normalPromptExceedsLimit = Buffer.byteLength(normalPrompt) > MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES;
@@ -174,8 +174,8 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
       ignored_source_prompts: draft.input.ignored_source_prompts ?? [],
       ignored_source_clauses: draft.input.ignored_source_clauses ?? [],
     }),
-    `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and only the requirement_repairs or classification changes needed for every diagnostic.`,
-    "Omitted requirements and classifications are retained. Do not restart with action define and do not call status again.",
+    `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and the smallest high-leverage subset of requirement_repairs or classification changes. You do not need to eliminate every diagnostic in one repair call.`,
+    "Omitted requirements and classifications are retained. Do not restart with action define unless a repair result explicitly says the lineage growth budget is exhausted, and do not call status again unless instructed.",
     "Do not submit a verdict in the same model turn.",
   ];
 }

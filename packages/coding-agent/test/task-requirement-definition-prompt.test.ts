@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
+import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "../src/core/task-verification/referenced-requirement-sources.ts";
 import {
   formatRequirementDefinitionPrompt,
   renderRequirementDefinitionPrompt,
 } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
-import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "../src/core/task-verification/referenced-requirement-sources.ts";
 import {
   type RequirementSourceClauseCatalogEntry,
   requirementSourceClauseCatalog,
@@ -239,6 +239,7 @@ describe("requirement definition prompt", () => {
     const draft = {
       revision: "bounded-revision",
       diagnostics: "Requirement 1 must map the referenced source.",
+      repairLineageBaselineRequirementCount: 96,
       input: {
         action: "define" as const,
         requirements: Array.from({ length: 96 }, (_value, index) => ({
@@ -262,6 +263,7 @@ describe("requirement definition prompt", () => {
     const draft = {
       revision: "oversized-direct-revision",
       diagnostics: "Requirement 1 is incomplete.",
+      repairLineageBaselineRequirementCount: 1,
       input: {
         action: "define" as const,
         requirements: [

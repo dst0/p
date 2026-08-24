@@ -6,6 +6,12 @@ export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
 
 export const MAX_REQUIREMENT_COUNT = 96;
 
+export const MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS = 16;
+
+export const MAX_REQUIREMENT_REPAIR_ENTRIES = 16;
+
+export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
+
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
 
@@ -113,7 +119,10 @@ export const RequirementDefinitionSchema = Type.Object({
 
 export const RequirementDefinitionRepairSchema = Type.Object({
   requirement_index: Type.Integer({ minimum: 1, maximum: MAX_REQUIREMENT_COUNT }),
-  replacements: Type.Array(RequirementDefinitionSchema, { maxItems: MAX_REQUIREMENT_COUNT }),
+  replacements: Type.Array(RequirementDefinitionSchema, {
+    description: `Atomic replacements for this indexed item only; all repair entries together are limited to ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements.`,
+    maxItems: MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
+  }),
 });
 
 export const IgnoredSourcePromptSchema = Type.Object({
@@ -164,7 +173,13 @@ export const RequirementAuditSchema = Type.Object({
     Type.Array(RequirementDefinitionSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT }),
   ),
   definition_revision: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
-  requirement_repairs: Type.Optional(Type.Array(RequirementDefinitionRepairSchema, { minItems: 1, maxItems: 16 })),
+  requirement_repairs: Type.Optional(
+    Type.Array(RequirementDefinitionRepairSchema, {
+      description: `Sparse indexed changes; omitted requirements are retained and lineage growth beyond ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements requires a fresh define batch.`,
+      minItems: 1,
+      maxItems: MAX_REQUIREMENT_REPAIR_ENTRIES,
+    }),
+  ),
   ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
   ignored_source_clauses: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
   ignored_source_prompt_upserts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),

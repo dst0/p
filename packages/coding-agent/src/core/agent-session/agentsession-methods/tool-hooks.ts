@@ -6,11 +6,11 @@ import {
   matchesProjectInstructionRuleBatch,
   type PreparedProjectInstructions,
 } from "../../project-instructions/index.ts";
+import { TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
 import {
   isConfidentlyReadOnlyShellTool,
   isPotentialMutationTool,
 } from "../../task-verification/tool-classification.ts";
-import { TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { MARK_SESSION_PROGRESS_TOOL_NAME, UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
 import { getFinishWorkStatus, isRecord } from "../message-utils.ts";

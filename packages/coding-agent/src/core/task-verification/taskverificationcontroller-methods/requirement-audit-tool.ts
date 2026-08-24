@@ -28,7 +28,7 @@ export function do_createRequirementAuditToolDefinition(
       "Reference every source prompt by 1-based index or explain why a non-task prompt is ignored.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      "After a rejected definition, use action 'repair_definition' with its definition_revision and requirement_repairs for small replacements or splits; the controller still validates one complete merged batch atomically.",
+      "After a rejected definition, use action 'repair_definition' with its definition_revision and the smallest useful subset of indexed replacements or splits; at most 16 replacements are allowed per call and cumulative lineage growth is capped at 16 requirements before a fresh define batch is required.",
       "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
       "Every verdict needs a reason. Every passed verdict requires current non-error evidence_refs.",
@@ -53,6 +53,7 @@ export function do_createRequirementAuditToolDefinition(
         return { content: [{ type: "text", text: result.message }], details: result };
       }
       const changesArity = params.action === "repair_definition" && requirementRepairChangesArity(params);
+      const previousRejectedDraft = self.rejectedRequirementDefinitionDraft;
       const repaired =
         params.action === "repair_definition"
           ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params)
@@ -63,7 +64,11 @@ export function do_createRequirementAuditToolDefinition(
         result.state.requirementAudit?.status === "awaiting_definition" &&
         typeof repaired !== "string"
       ) {
-        self.rejectedRequirementDefinitionDraft = rejectedRequirementDefinitionDraft(repaired, result.message);
+        self.rejectedRequirementDefinitionDraft = rejectedRequirementDefinitionDraft(
+          repaired,
+          result.message,
+          params.action === "repair_definition" ? previousRejectedDraft : undefined,
+        );
         if (changesArity) {
           self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft?.revision;
         }
