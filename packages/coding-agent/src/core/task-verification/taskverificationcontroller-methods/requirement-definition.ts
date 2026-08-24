@@ -1,5 +1,9 @@
 import { MAX_REQUIREMENT_COUNT } from "../constants.ts";
-import { computeRequirementSetHash, computeStateUserRequirementsHash } from "../requirement-audit-hashing.ts";
+import {
+  computeRequirementSetHash,
+  computeStateUserRequirementsHash,
+  requirementDefinitionMatchesState,
+} from "../requirement-audit-hashing.ts";
 import {
   formatRequirementDefinitionDiagnostics,
   validateRequirementDefinition,
@@ -17,7 +21,7 @@ export function do_defineRequirements(
 ): VerificationResult {
   const contextError = definitionContextError(self);
   if (contextError) return self.rejected(contextError);
-  if (self.state.requirementAudit.status !== "awaiting_definition") {
+  if (self.state.requirementAudit.status !== "awaiting_definition" && requirementDefinitionMatchesState(self.state)) {
     return self.rejected("Requirement definitions are already fixed for this user-requirements hash.");
   }
 
@@ -30,7 +34,10 @@ export function do_defineRequirements(
   }
   const validation = validateRequirementDefinition(prompts, input);
   if (!validation.definition) {
-    return self.rejected(formatRequirementDefinitionDiagnostics(validation.diagnostics));
+    return {
+      ...self.rejected(formatRequirementDefinitionDiagnostics(validation.diagnostics)),
+      requirementDefinitionDiagnosticCount: validation.diagnostics.length,
+    };
   }
   const { requirements, ignoredSourcePrompts, ignoredSourceClauses } = validation.definition;
 

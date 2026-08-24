@@ -5,7 +5,7 @@ import {
   referencedRequirementCandidates,
   requirementSourceSelectionMatches,
 } from "../referenced-requirement-sources.ts";
-import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { requirementDefinitionMatchesState, sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
@@ -49,11 +49,9 @@ export function requirementSourceMutationGate(
     );
   }
 
-  const audit = self.state.requirementAudit;
   const frozenDefinition =
-    audit.requirements.length > 0 &&
-    audit.userRequirementsHash === computeStateUserRequirementsHash(self.state) &&
-    typeof audit.requirementSetHash === "string";
+    requirementDefinitionMatchesState(self.state) &&
+    typeof requirementDefinitionSources(self.state, self.requirementSourceTexts) !== "string";
   const currentRevisionReferences = references.filter(
     (reference) => reference.capturedAtMutationRevision === self.state.mutationRevision,
   );

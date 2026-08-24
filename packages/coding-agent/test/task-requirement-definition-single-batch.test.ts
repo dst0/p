@@ -197,7 +197,12 @@ describe("single-batch requirement definition", () => {
       applyRequirementAudit: (input: RequirementAuditInput): VerificationResult => {
         received.push(input);
         return received.length === 1
-          ? { status: "needs_action", message: "Requirement 2 is compound.", state }
+          ? {
+              status: "needs_action",
+              message: "Requirement 2 is compound.",
+              state,
+              requirementDefinitionDiagnosticCount: 1,
+            }
           : { status: "updated", message: "Defined 3 atomic requirements.", state };
       },
     } as unknown as TaskVerificationController;

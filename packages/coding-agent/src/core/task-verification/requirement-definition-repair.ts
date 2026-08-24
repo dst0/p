@@ -24,6 +24,7 @@ export type FreshDefinitionReason =
   | "empty_definition"
   | "lineage_growth"
   | "non_improving_fresh_definition"
+  | "regressive_repair"
   | "recovery_prompt_limit"
   | "stagnant_repair";
 export type RejectedDefinitionTransition = "repair" | "fresh_definition";
@@ -73,9 +74,10 @@ export function rejectedRequirementDefinitionDraft(
   diagnostics: string = "",
   previousDraft?: RejectedRequirementDefinitionDraft,
   transition: RejectedDefinitionTransition = "repair",
+  diagnosticCount: number = definitionDiagnosticCount(diagnostics),
 ): RejectedRequirementDefinitionDraft | undefined {
   if (input.action !== "define" || !input.requirements) return undefined;
-  const currentDiagnosticCount = definitionDiagnosticCount(diagnostics);
+  const currentDiagnosticCount = diagnosticCount;
   const previousBestDiagnosticCount = previousDraft?.bestDiagnosticCount ?? currentDiagnosticCount;
   const diagnosticCountImproved = previousDraft !== undefined && currentDiagnosticCount < previousBestDiagnosticCount;
   const draft: RejectedRequirementDefinitionDraft = {
@@ -110,9 +112,16 @@ export function rejectedRequirementDefinitionDraft(
   return draft;
 }
 
-function definitionDiagnosticCount(diagnostics: string): number {
+export function definitionDiagnosticCount(diagnostics: string): number {
   const count = diagnostics.match(/^Requirement definition has (\d+) deterministic validation errors(?:\s|:)/u)?.[1];
   return count ? Number(count) : diagnostics.trim() ? 1 : 0;
+}
+
+export function rejectedRepairDoesNotWorsenHistoricalMinimum(
+  draft: RejectedRequirementDefinitionDraft,
+  diagnosticCount: number | undefined,
+): boolean {
+  return diagnosticCount !== undefined && diagnosticCount <= draft.bestDiagnosticCount;
 }
 
 export function repairRejectedRequirementDefinition(
@@ -275,6 +284,8 @@ function freshDefinitionReasonText(reason: FreshDefinitionReason): string {
       return "the active rejected definition exhausted its cumulative lineage growth budget";
     case "non_improving_fresh_definition":
       return "the fresh definition did not improve the historical diagnostic minimum";
+    case "regressive_repair":
+      return "the rejected repair increased deterministic diagnostics above the historical minimum";
     case "recovery_prompt_limit":
       return "the active rejected batch cannot be rendered within the recovery prompt limit";
     case "stagnant_repair":

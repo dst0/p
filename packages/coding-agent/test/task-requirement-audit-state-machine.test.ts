@@ -160,13 +160,13 @@ describe("requirement-audit state machine", () => {
       ignored_source_prompts: [],
     });
     expect(prematureDefinition).toContain("Only one requirement-audit transition");
+    expect(defineHarness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
 
     await nextModelTurn(defineHarness);
-    const revision = defineHarness.controller.rejectedRequirementDefinitionDraft?.revision;
     const defined = await callRequirementAudit(defineHarness.controller, {
-      action: "repair_definition",
-      definition_revision: revision,
-      requirement_repairs: [{ requirement_index: 1, replacements: [definitions()[0]] }],
+      action: "define",
+      requirements: [definitions()[0]],
+      ignored_source_prompts: [],
     });
     expect(defined).toContain("Verify all 1 requirements");
     const prematureVerdict = await callRequirementAudit(defineHarness.controller, {

@@ -2,11 +2,14 @@ import type { ToolDefinition } from "../../extensions/types.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, RequirementAuditSchema } from "../constants.ts";
 import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
 import {
+  authorizeRejectedDraftFreshDefinition,
   COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
+  definitionDiagnosticCount,
   formatRejectedDefinitionRepairGuidance,
   recordUnproductiveRejectedDefinitionRepair,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftRequiresFreshDefinition,
+  rejectedRepairDoesNotWorsenHistoricalMinimum,
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
   requirementRepairChangesArity,
@@ -86,10 +89,40 @@ export function do_createRequirementAuditToolDefinition(
         recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
       }
       const result = typeof repaired === "string" ? self.rejected(repaired) : self.applyRequirementAudit(repaired);
+      const candidateDiagnosticCount = result.requirementDefinitionDiagnosticCount;
+      if (
+        params.action === "repair_definition" &&
+        previousRejectedDraft &&
+        typeof repaired !== "string" &&
+        result.status === "needs_action" &&
+        result.state.requirementAudit?.status === "awaiting_definition" &&
+        !rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount)
+      ) {
+        recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
+        if (candidateDiagnosticCount !== undefined) {
+          authorizeRejectedDraftFreshDefinition(previousRejectedDraft, "regressive_repair");
+        }
+        const activeDiagnosticCount = definitionDiagnosticCount(previousRejectedDraft.diagnostics);
+        const retainedMessage =
+          candidateDiagnosticCount === undefined
+            ? [
+                "Repair was not adopted because the controller rejection did not include structured requirement-definition diagnostics. The previous draft and definition_revision were retained.",
+                "Active-draft diagnostics:",
+                previousRejectedDraft.diagnostics,
+              ].join("\n\n")
+            : [
+                `Repair was not adopted because it produced ${candidateDiagnosticCount} deterministic diagnostic(s); the active draft has ${activeDiagnosticCount} and the historical best is ${previousRejectedDraft.bestDiagnosticCount}. The previous draft and definition_revision were retained.`,
+                "Active-draft diagnostics:",
+                previousRejectedDraft.diagnostics,
+              ].join("\n\n");
+        const message = formatRejectedDefinitionRepairGuidance(retainedMessage, previousRejectedDraft);
+        return { content: [{ type: "text", text: message }], details: result };
+      }
       if (
         result.status === "needs_action" &&
         result.state.requirementAudit?.status === "awaiting_definition" &&
-        typeof repaired !== "string"
+        typeof repaired !== "string" &&
+        candidateDiagnosticCount !== undefined
       ) {
         const authorizedFreshDefinition =
           params.action === "define" && rejectedDraftRequiresFreshDefinition(previousRejectedDraft);
@@ -98,6 +131,7 @@ export function do_createRequirementAuditToolDefinition(
           result.message,
           params.action === "repair_definition" || authorizedFreshDefinition ? previousRejectedDraft : undefined,
           authorizedFreshDefinition ? "fresh_definition" : "repair",
+          candidateDiagnosticCount,
         );
         if (changesArity) {
           self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft?.revision;
