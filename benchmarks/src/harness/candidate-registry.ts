@@ -74,7 +74,9 @@ function validateRegistry(value: unknown): BenchmarkCandidateRegistry {
     } catch {
       invalidRegistry(`candidate ${index + 1} has an invalid version`);
     }
-    if (candidateNumber(version) !== index + 1) invalidRegistry("candidate versions must be contiguous from rc.1");
+    if (index > 0 && candidateNumber(version) <= candidateNumber(candidates[index - 1].candidateVersion)) {
+      invalidRegistry("candidate versions must be strictly increasing");
+    }
     if (typeof entry.runtimeSha256 !== "string" || !FINGERPRINT_PATTERN.test(entry.runtimeSha256)) {
       invalidRegistry(`candidate ${index + 1} has an invalid runtime hash`);
     }
@@ -165,8 +167,12 @@ export function registerBenchmarkCandidate(
     if (registeredRuntime) {
       throw new Error(`Benchmark runtime is already registered as ${registeredRuntime.candidateVersion}`);
     }
-    const expectedCandidate = `5.0.1-rc.${registry.candidates.length + 1}`;
-    if (candidate !== expectedCandidate) throw new Error(`Benchmark next candidate must be ${expectedCandidate}`);
+    if (registry.candidates.length > 0) {
+      const lastCandidate = registry.candidates[registry.candidates.length - 1];
+      if (candidateNumber(candidate) <= candidateNumber(lastCandidate.candidateVersion)) {
+        throw new Error(`Benchmark next candidate must be greater than ${lastCandidate.candidateVersion}`);
+      }
+    }
     const binding = { candidateVersion: candidate, runtimeSha256 };
     registry.candidates.push(binding);
     writeRegistry(privateDirectory, registryPath, registry);
