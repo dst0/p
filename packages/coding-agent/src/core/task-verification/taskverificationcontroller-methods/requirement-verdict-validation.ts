@@ -4,6 +4,7 @@ import type { TaskVerificationController } from "../taskverificationcontroller.t
 import { normalizeStrings, normalizeText } from "../tool-classification.ts";
 import type { TaskRequirement, TaskRequirementVerdict, TaskVerificationEvidence } from "../types.ts";
 import { isFocusedEvidence } from "./focused-requirement-evidence.ts";
+import { formatFocusedSelectorContract, formatRequirementProofWitnessTemplates } from "./requirement-audit-prompt.ts";
 
 interface SubmittedRequirementVerdict {
   passed: boolean;
@@ -40,14 +41,20 @@ export function validateRequirementVerdict(
       evidenceHasProofWitnesses(item, requirement, self.state.requirementAudit.requirementSetHash),
     )
   ) {
-    return `${requirement.id} requires valid P_PROOF_V1 runtime witnesses for: ${requirement.proofPolicies.join(", ")}.`;
+    return [
+      `${requirement.id} requires valid P_PROOF_V1 runtime witnesses for: ${requirement.proofPolicies.join(", ")}.`,
+      formatFocusedSelectorContract(requirement),
+      "Add each witness emission inside the exact named focused test case, then rerun with a selector satisfying this contract.",
+      "A standalone proof script or separate command is invalid.",
+      `Required witness lines:\n${formatRequirementProofWitnessTemplates(requirement)}`,
+    ].join(" ");
   }
   if (
     input.passed &&
     isHighRiskRequirement(requirement) &&
     !evidence.some((item) => isFocusedEvidence(self, item, requirement))
   ) {
-    return `${requirement.id} requires focused executable evidence that ran and matches this high-risk invariant; a generic or unrelated test is insufficient.`;
+    return `${requirement.id} requires focused executable evidence that ran and matches this high-risk invariant; a generic or unrelated test is insufficient. ${formatFocusedSelectorContract(requirement)} Run only that full case name with the test runner's case selector (for example, --test-name-pattern="..." or -t "..."), then resubmit the complete verdict batch.`;
   }
   return { passed: input.passed, reason, evidenceRefs, mutationRevision: self.state.mutationRevision };
 }

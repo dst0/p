@@ -36,7 +36,11 @@ describe("requirement definition diagnostics", () => {
     git(workspace, "add", "SPEC.md");
 
     const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));
-    await sendAuditUserPrompt(harness, "Implement every requirement in SPEC.md.", 100);
+    await sendAuditUserPrompt(
+      harness,
+      "Direct product requirement: implement each specification clause; SPEC.md supplies the detailed acceptance cases.",
+      100,
+    );
     await callTaskVerification(harness.controller, {
       action: "declare_task",
       task_kind: "feature",
@@ -58,21 +62,21 @@ describe("requirement definition diagnostics", () => {
           type: "constraint",
           text: "Replay rejects invalid logs",
           acceptance_criterion: "Replay rejects malformed and truncated logs",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C1"],
         },
         {
           type: "behavior",
           text: "Delete every cached archive",
           acceptance_criterion: "No cached archive remains on disk",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C2"],
         },
         {
           type: "behavior",
           text: "Accept invalid access tokens",
           acceptance_criterion: "The service allows invalid access tokens",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C3"],
         },
       ],
@@ -110,14 +114,14 @@ describe("requirement definition diagnostics", () => {
           type: "constraint",
           text: "Replay rejects invalid logs",
           acceptance_criterion: "Replay rejects malformed and truncated logs",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C1"],
         },
         {
           type: "behavior",
           text: "Accept invalid access tokens",
           acceptance_criterion: "The service allows invalid access tokens",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C2"],
         },
       ],
@@ -143,14 +147,14 @@ describe("requirement definition diagnostics", () => {
               type: "constraint",
               text: "Replay rejects malformed logs",
               acceptance_criterion: "Replay rejects a malformed log",
-              source_prompt_indexes: [1, 2],
+              source_prompt_indexes: [1],
               source_clause_ids: ["S2-C1"],
             },
             {
               type: "constraint",
               text: "Replay rejects truncated logs",
               acceptance_criterion: "Replay rejects a truncated log",
-              source_prompt_indexes: [1, 2],
+              source_prompt_indexes: [1],
               source_clause_ids: ["S2-C1"],
             },
           ],
@@ -162,7 +166,7 @@ describe("requirement definition diagnostics", () => {
               type: "behavior",
               text: "Reject invalid access tokens",
               acceptance_criterion: "The service rejects invalid access tokens",
-              source_prompt_indexes: [1, 2],
+              source_prompt_indexes: [1],
               source_clause_ids: ["S2-C2"],
             },
           ],
@@ -189,14 +193,14 @@ describe("requirement definition diagnostics", () => {
           type: "constraint",
           text: "   ",
           acceptance_criterion: "   ",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C1"],
         },
         {
           type: "behavior",
           text: "Accept invalid access tokens",
           acceptance_criterion: "The service allows invalid access tokens",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C2"],
         },
       ],
@@ -222,14 +226,14 @@ describe("requirement definition diagnostics", () => {
           type: "behavior",
           text: "Accept invalid access tokens",
           acceptance_criterion: "The service allows invalid access tokens",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C1"],
         },
         {
           type: "behavior",
           text: "Create an unrelated archive",
           acceptance_criterion: "The unrelated archive exists",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C1"],
         },
       ],
@@ -252,7 +256,11 @@ async function preparedHarness(workspaces: string[], lines: string[]) {
   git(workspace, "init", "-q");
   git(workspace, "add", "SPEC.md");
   const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));
-  await sendAuditUserPrompt(harness, "Implement every requirement in SPEC.md.", 100);
+  await sendAuditUserPrompt(
+    harness,
+    "Direct product requirement: implement each specification clause; SPEC.md supplies the detailed acceptance cases.",
+    100,
+  );
   await callTaskVerification(harness.controller, {
     action: "declare_task",
     task_kind: "feature",

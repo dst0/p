@@ -206,13 +206,6 @@ describe("rejected requirement definition repair protocol", () => {
     expect(
       await execute(tool, {
         action: "repair_definition",
-        definition_revision: revision1,
-        requirement_repairs: [{ requirement_index: 1, replacements: [] }],
-      }),
-    ).toContain("stale or unavailable");
-    expect(
-      await execute(tool, {
-        action: "repair_definition",
         definition_revision: revision2,
         requirement_repairs: [{ requirement_index: 3, replacements: [requirement("Shipping decreases reservation")] }],
       }),
@@ -254,7 +247,6 @@ function requirement(text: string) {
     type: "behavior" as const,
     text,
     acceptance_criterion: `${text} by the command quantity`,
-    source_prompt_indexes: [2],
     source_clause_ids: ["S2-C1"],
   };
 }

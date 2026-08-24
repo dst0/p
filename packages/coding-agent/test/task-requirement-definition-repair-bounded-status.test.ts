@@ -81,7 +81,7 @@ function compoundRequirement() {
     type: "behavior" as const,
     text: "Shipping reduces both onHand and the reservation",
     acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
-    source_prompt_indexes: [1, 2],
+    source_prompt_indexes: [1],
     source_clause_ids: ["S2-C1"],
     source_facet_ids: ["S2-C1-F1", "S2-C1-F2"],
   };
@@ -92,7 +92,7 @@ function facetRequirement(object: string, sourceFacetId: string) {
     type: "behavior" as const,
     text: `Shipping reduces ${object}`,
     acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
-    source_prompt_indexes: [1, 2],
+    source_prompt_indexes: [1],
     source_clause_ids: ["S2-C1"],
     source_facet_ids: [sourceFacetId],
   };

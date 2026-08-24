@@ -1,16 +1,13 @@
 import { Type } from "typebox";
 
 export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
-
 export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
 
 export const MAX_REQUIREMENT_COUNT = 96;
-
 export const MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS = 16;
-
 export const MAX_REQUIREMENT_REPAIR_ENTRIES = 16;
-
 export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
+export const MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS = 3;
 
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
@@ -112,9 +109,27 @@ export const RequirementDefinitionSchema = Type.Object({
   type: RequirementTypeSchema,
   text: Type.String({ minLength: 1 }),
   acceptance_criterion: Type.String({ minLength: 1 }),
-  source_prompt_indexes: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 })),
-  source_clause_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 128 })),
-  source_facet_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 32 })),
+  source_prompt_indexes: Type.Optional(
+    Type.Array(Type.Integer({ minimum: 1 }), {
+      description:
+        "1-based indexes of direct user prompts only; referenced-file provenance is supplied with source_clause_ids or source_facet_ids and derived by the controller.",
+      minItems: 1,
+    }),
+  ),
+  source_clause_ids: Type.Optional(
+    Type.Array(Type.String({ minLength: 1 }), {
+      description: "Referenced-file source clause identifiers; prompt indexes are derived by the controller.",
+      minItems: 1,
+      maxItems: 128,
+    }),
+  ),
+  source_facet_ids: Type.Optional(
+    Type.Array(Type.String({ minLength: 1 }), {
+      description: "Referenced-file source facet identifiers; prompt indexes are derived by the controller.",
+      minItems: 1,
+      maxItems: 32,
+    }),
+  ),
 });
 
 export const RequirementDefinitionRepairSchema = Type.Object({

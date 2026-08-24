@@ -157,10 +157,11 @@ describe("requirement-audit lifecycle", () => {
       revision: "stale-recovery",
       diagnostics: "stale diagnostics",
       repairLineageBaselineRequirementCount: 0,
+      bestDiagnosticCount: 1,
+      unproductiveRepairAttempts: 0,
       input: { action: "define", requirements: [] },
     };
     restored.controller.requirementRepairStatusRevision = "stale-recovery";
-
     await recordAuditToolResult(restored.agent, "finish_work", {
       status: "success",
       summary: "Requirement audit complete",

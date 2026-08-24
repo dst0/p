@@ -4,10 +4,8 @@ import type { TaskVerificationController } from "../taskverificationcontroller.t
 import { isShellTool } from "../tool-classification.ts";
 import type { TaskRequirement, TaskVerificationEvidence } from "../types.ts";
 import { evidenceMatchesRequirement } from "./focused-evidence-relevance.ts";
-import { focusedShellInvocationWords } from "./focused-shell-command.ts";
+import { focusedTestInvocation, type TestCommandInvocation } from "./test-command-invocation.ts";
 
-const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/u;
-const ENV_OPTIONS_WITH_VALUE = new Set(["-a", "--argv0", "-C", "--chdir", "-u", "--unset"]);
 const TEST_NAME_OPTIONS = new Set(["-k", "-t", "-run", "--grep", "--test-name-pattern", "--testNamePattern"]);
 const TEST_PATH_OPTIONS = new Set(["--runTestsByPath"]);
 const TEST_BOOLEAN_OPTIONS = new Set([
@@ -31,11 +29,6 @@ const POSITIVE_TEST_RESULT_PATTERN =
   /(?:^|\s)---\s+PASS:|\btest result:\s+ok\b[\s\S]*\b[1-9]\d*\s+passed\b|\btests?\s*:?\s*[1-9]\d*\s+passed\b|\b[1-9]\d*\s+(?:tests?\s+)?passed\b|\bpass\s+[1-9]\d*\b/iu;
 const FAILED_TEST_RESULT_PATTERN =
   /(?:^|\s)---\s+FAIL:|(?:^|\n)\s*(?:FAIL\b|not ok\b)|\btest result:\s+FAILED\b|\b(?:test files?|tests?)\s*:?\s*[1-9]\d*\s+failed\b|\bfailed tests?\s*:?\s*[1-9]\d*\b|\b[1-9]\d*\s+(?:tests?\s+)?failed\b|\bfail(?:ed)?\s*:?\s*[1-9]\d*\b|\b(?:AssertionError|Unhandled Error):/iu;
-
-interface TestInvocation {
-  args: string[];
-  allowsBareName: boolean;
-}
 
 export function isFocusedEvidence(
   self: TaskVerificationController,
@@ -63,103 +56,11 @@ function hasPositivePassingTestResult(output: string): boolean {
 }
 
 export function focusedTestSelectors(command: string, depth = 0): string[] | undefined {
-  const words = focusedInvocationWords(command);
-  if (words === undefined) return undefined;
-  const nested = leanContextCommand(words);
-  if (nested !== undefined) return depth < 2 ? focusedTestSelectors(nested, depth + 1) : undefined;
-  const invocation = testInvocation(words);
+  const invocation = focusedTestInvocation(command, depth);
   return invocation === undefined ? undefined : getFocusedTestSelectors(invocation);
 }
 
-function focusedInvocationWords(command: string): string[] | undefined {
-  const words = focusedShellInvocationWords(command);
-  return words === undefined ? undefined : unwrapShellWrappers(words);
-}
-
-function unwrapShellWrappers(words: readonly string[]): string[] {
-  let index = 0;
-  while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
-  while (index < words.length) {
-    const executable = words[index]?.split("/").pop();
-    if (executable === "command") {
-      index += 1;
-      while (words[index]?.startsWith("-") && words[index] !== "--") index += 1;
-      if (words[index] === "--") index += 1;
-    } else if (executable === "env") {
-      index += 1;
-      while (index < words.length) {
-        const word = words[index]!;
-        if (word === "--") {
-          index += 1;
-          break;
-        }
-        if (ENV_OPTIONS_WITH_VALUE.has(word)) index += 2;
-        else if (word.startsWith("-") || SHELL_ASSIGNMENT_PATTERN.test(word)) index += 1;
-        else break;
-      }
-    } else {
-      break;
-    }
-    while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
-  }
-  return words.slice(index);
-}
-
-function leanContextCommand(words: readonly string[]): string | undefined {
-  if (words[0]?.split("/").pop() !== "lean-ctx") return undefined;
-  const commandIndex = words.findIndex((word) => word === "-c" || word === "--command");
-  return commandIndex >= 0 ? words[commandIndex + 1] : undefined;
-}
-
-function testInvocation(words: readonly string[]): TestInvocation | undefined {
-  const executable = words[0]?.split("/").pop();
-  if (executable === "vitest" || executable === "jest" || executable === "pytest" || executable === "test.sh") {
-    return { args: testRunnerArgs(words.slice(1)), allowsBareName: false };
-  }
-  if (executable === "cargo" || executable === "go") {
-    return words[1] === "test" ? { args: words.slice(2), allowsBareName: executable === "cargo" } : undefined;
-  }
-  if (executable === "bun" || executable === "yarn" || executable === "pnpm") {
-    if (words[1] === "test") return { args: packageRunnerArgs(words.slice(2)), allowsBareName: false };
-    if (words[1] === "run" && words[2]?.startsWith("test")) {
-      return { args: packageRunnerArgs(words.slice(3)), allowsBareName: false };
-    }
-    return undefined;
-  }
-  if (executable === "npm") {
-    if (words[1] === "test") return { args: packageRunnerArgs(words.slice(2)), allowsBareName: false };
-    if (words[1] === "run" && words[2]?.startsWith("test")) {
-      return { args: packageRunnerArgs(words.slice(3)), allowsBareName: false };
-    }
-    if (words[1] === "exec" && ["vitest", "jest"].includes(words[2] ?? "")) {
-      return { args: testRunnerArgs(packageRunnerArgs(words.slice(3))), allowsBareName: false };
-    }
-    return undefined;
-  }
-  if (executable === "npx" && ["vitest", "jest"].includes(words[1] ?? "")) {
-    return { args: testRunnerArgs(words.slice(2)), allowsBareName: false };
-  }
-  if (executable === "python" || executable === "python3") {
-    const moduleIndex = words.findIndex((word, index) => index > 0 && word === "-m" && words[index + 1] === "pytest");
-    return moduleIndex >= 0 ? { args: words.slice(moduleIndex + 2), allowsBareName: false } : undefined;
-  }
-  if (executable !== "node") return undefined;
-  const nodeTestIndex = words.indexOf("--test");
-  if (nodeTestIndex >= 0) return { args: words.slice(nodeTestIndex + 1), allowsBareName: false };
-  const cliIndex = words.findIndex((word) => /(?:^|\/)(?:vitest|jest)(?:\/|\.js$)/u.test(word));
-  return cliIndex >= 0 ? { args: testRunnerArgs(words.slice(cliIndex + 1)), allowsBareName: false } : undefined;
-}
-
-function packageRunnerArgs(args: readonly string[]): string[] {
-  return args[0] === "--" ? args.slice(1) : [...args];
-}
-
-function testRunnerArgs(args: readonly string[]): string[] {
-  const normalized = packageRunnerArgs(args);
-  return normalized[0] === "run" ? normalized.slice(1) : normalized;
-}
-
-function getFocusedTestSelectors(invocation: TestInvocation): string[] | undefined {
+function getFocusedTestSelectors(invocation: TestCommandInvocation): string[] | undefined {
   const { args } = invocation;
   if (
     args.some(
