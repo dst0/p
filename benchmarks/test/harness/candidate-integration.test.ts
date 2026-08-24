@@ -158,3 +158,21 @@ test("main binds the real runtime hash before certification and reuses it across
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test("default root derives the repository root and locates the coding-agent cli entrypoint", async () => {
+  const checkedPaths: string[] = [];
+  await assert.rejects(
+    runProjectInstructionsBenchmark({
+      argv: ["--model", "provider/model", "--output", "/tmp/v5.0.1-rc.1-dry-run"],
+      environment: { P_BENCHMARK_CANDIDATE_VERSION: "5.0.1-rc.1" },
+      dependencies: {
+        pathExists: (targetPath) => {
+          checkedPaths.push(String(targetPath));
+          return false;
+        },
+      },
+    }),
+    /P must be built before benchmarking/u,
+  );
+  assert.equal(checkedPaths[0], join(repoRoot, "packages", "coding-agent", "dist", "cli.js"));
+});
