@@ -4,7 +4,7 @@ export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
 
 export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
 
-export const MAX_REQUIREMENT_COUNT = 64;
+export const MAX_REQUIREMENT_COUNT = 96;
 
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
@@ -106,8 +106,9 @@ export const RequirementDefinitionSchema = Type.Object({
   type: RequirementTypeSchema,
   text: Type.String({ minLength: 1 }),
   acceptance_criterion: Type.String({ minLength: 1 }),
-  source_prompt_indexes: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
+  source_prompt_indexes: Type.Optional(Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 })),
   source_clause_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 128 })),
+  source_facet_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 32 })),
 });
 
 export const IgnoredSourcePromptSchema = Type.Object({

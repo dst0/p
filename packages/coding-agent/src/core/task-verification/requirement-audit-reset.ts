@@ -9,6 +9,7 @@ export function resetRequirementAuditAfterMutation(audit: TaskRequirementAuditSt
     acceptanceCriterion: requirement.acceptanceCriterion,
     sourcePromptIndexes: requirement.sourcePromptIndexes,
     sourceClauseIds: requirement.sourceClauseIds,
+    sourceFacetIds: requirement.sourceFacetIds,
     highRisk: requirement.highRisk,
     highRiskSourcePromptIndexes: requirement.highRiskSourcePromptIndexes,
     proofPolicies: requirement.proofPolicies,

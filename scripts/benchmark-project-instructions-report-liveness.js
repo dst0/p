@@ -1,7 +1,11 @@
 import { escapeMarkdownText, markdownCodeSpan } from "./benchmark-markdown.js";
 
-function formatDefinitionCount(value) {
-  return Number.isSafeInteger(value) && value >= 0 ? value.toLocaleString("en-US") : "n/a";
+export function formatRequirementDefinitionCount(liveness) {
+  if (Number.isSafeInteger(liveness?.requirementDefinitionAttemptCount) && liveness.requirementDefinitionAttemptCount >= 0) {
+    return liveness.requirementDefinitionAttemptCount.toLocaleString("en-US");
+  }
+  const observed = liveness?.observedRequirementDefinitionAttemptCount;
+  return Number.isSafeInteger(observed) && observed > 0 ? `at least ${observed.toLocaleString("en-US")}` : "n/a";
 }
 
 function formatBoolean(value) {
@@ -18,7 +22,7 @@ function formatProgressEvidence(value) {
 export function renderGateFailureLiveness(liveness) {
   if (!liveness) return "";
   return (
-    `${escapeMarkdownText("Gate liveness")}: Requirement definitions: ${formatDefinitionCount(liveness.requirementDefinitionAttemptCount)}; ` +
+    `${escapeMarkdownText("Gate liveness")}: Requirement definitions: ${formatRequirementDefinitionCount(liveness)}; ` +
     `Semantic evidence available: ${formatBoolean(liveness.semanticEvidenceAvailable)}; ` +
     `complete: ${formatBoolean(liveness.semanticEvidenceComplete)}; ` +
     `Progress evidence: ${formatProgressEvidence(liveness.progressEvidence)}.\n\n`

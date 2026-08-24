@@ -208,7 +208,7 @@ test("exit-zero child with valid metadata but active-only recording is untrusted
   }
 });
 
-test("cell-output collision writes hard-stop evidence instead of leaving RUNNING", async () => {
+test("cell-output collision leaves a terminal hard stop for global publication", async () => {
   const root = mkdtempSync(join(tmpdir(), "p-paired-cell-collision-"));
   try {
     const output = join(root, "output");
@@ -232,13 +232,13 @@ test("cell-output collision writes hard-stop evidence instead of leaving RUNNING
       { options: {}, output, scratchRoot: join(root, "scratch"), runtimeSnapshot: root, runtimeSha256: "b".repeat(64), schedule: [pair], document, deadline: Date.now() + 60_000 },
       { hashRuntime: () => "b".repeat(64), setExitCode: (value) => { exitCode = value; } },
     );
-    const persisted = JSON.parse(readFileSync(join(output, "results.json"), "utf8"));
-    const report = readFileSync(join(output, "report.md"), "utf8");
     assert.equal(exitCode, 2);
-    assert.equal(persisted.gate.passed, false);
-    assert.equal(persisted.gate.failure.reason, "benchmark cell output already exists");
-    assert.match(report, /HARD STOP/u);
-    assert.doesNotMatch(report, /Correctness gate: \*\*RUNNING\*\*/u);
+    assert.equal(document.runStatus, "failed");
+    assert.equal(document.completed, false);
+    assert.equal(document.gate.passed, false);
+    assert.equal(document.gate.failure.reason, "benchmark cell output already exists");
+    assert.equal(existsSync(join(output, "results.json")), false);
+    assert.equal(existsSync(join(output, "report.md")), false);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

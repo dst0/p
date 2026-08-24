@@ -51,7 +51,7 @@ flowchart TD
     Exact -->|no| Compiler["Compiler v4<br/>scope-calibrated sparse always-on IDs<br/>at most one bounded feedback retry<br/>route tables and links rejected"]
     Compiler -->|valid| CompiledArtifact["Artifact mode: compiled"]
     Compiler -->|unavailable, invalid, or failed| Fallback["Artifact mode: fallback<br/>fail closed for mutations"]
-    ExactArtifact --> Persist["Atomically write manifest, prompt,<br/>exact modules, catalogs, and pointer"]
+    ExactArtifact --> Persist["Atomically write manifest, prompt,<br/>modules, dependency graph, catalogs, and pointer"]
     CompiledArtifact --> Persist
     Fallback --> Persist
     Persist --> Pin
@@ -81,8 +81,9 @@ flowchart TD
     ActionMatch -->|none| Act["Allow the action"]
     ActionMatch -->|matches| Cap["Reserve the primary concrete action route,<br/>then add turn candidates and remaining action routes<br/>(1-3 total)"]
     Cap --> Gate["Persist the sole authoritative batch<br/>and block the action"]
-    Gate --> Batch["One batched read_rules call<br/>with the complete authoritative set"]
-    Batch --> ExactGate{"Exact set?<br/>No missing, extra, or duplicate links"}
+    Gate --> Batch["One batched read_rules call<br/>with the complete authoritative route set"]
+    Batch --> Dependencies["Resolve manifest-declared transitive prerequisites<br/>dependency-first, deduplicated, cycle-checked, and bounded"]
+    Dependencies --> ExactGate{"Exact explicit route set?<br/>No missing, extra, or duplicate links"}
     ExactGate -->|no| Gate
     ExactGate -->|yes| Integrity{"Pinned input and fresh sources?<br/>Canonical path, symlink, size, and content hashes valid?"}
     Integrity -->|no| Reload["Keep the action blocked; require /reload or legacy mode"]
@@ -127,7 +128,7 @@ The complete injected resultâ€”including the base block and any per-turn routeâ€
 Extracted AGENTS/CLAUDE sections are instruction modules, not ordinary user skills. Their separate readers keep those semantics explicit:
 
 - `list_skills({ query?, cursor? })` discovers visible skills without reading skill contents. Empty or omitted queries browse by stable virtual link; non-empty queries rank matching names and descriptions deterministically. Each fixed page returns at most ten `{ name, description, link }` records and an opaque next cursor when another page exists. Cursors use a per-session secret and are bound to the pinned input hash, normalized query, and page offset, so forgery, session restart, catalog changes, and query mismatches fail instead of silently paging through different data.
-- `read_rules({ links: [...] })` reads `rules/catalog.md`, its explicitly manifest-bound catalog pages, or exact module links advertised by the catalog.
+- `read_rules({ links: [...] })` reads `rules/catalog.md`, its explicitly manifest-bound catalog pages, or exact module links advertised by the catalog. A module read automatically expands its manifest-bound transitive `requires` graph in dependency-first order. Explicit route selection remains capped at one to three links; expansion is deduplicated, cycle-checked, and independently bounded by module and byte ceilings.
 - `read_skills({ links: [...] })` reads `skills/catalog.md`, its manifest-bound pages, a listed virtual `skills/<id>/SKILL.md` link, or a relative resource confined beneath that skill's canonical directory.
 
 `list_skills` returns no absolute source paths, hashes, or skill bodies, and reuses the same pinned-state freshness checks as the readers. Both readers accept only catalog-relative links. Their provider-facing schemas use fully anchored, nonempty `rules/*` and `skills/*` namespaces, rejecting empty roots, cross-namespace links, and physical-fallback links before execution. Rule modules, catalog pages, and skill roots must be cataloged; skill-relative resources are root-scoped rather than individually enumerated. The readers reject absolute paths, traversal, stale sources, oversized responses, cache tampering, and symlink escapes. File size is checked before response allocation, and one call is capped at 512,000 bytes.
@@ -139,6 +140,8 @@ The skill catalog maps virtual links to the discovered source skill directories 
 By default, compiled delivery uses the active task model for a cold compilation. CLI callers can pin an independent exact `provider/id` with `--project-instruction-compiler-model`; SDK callers can set `projectInstructionCompilerModel`. The dedicated model is authenticated and resolved independently, persisted across resume, and remains pinned when the task model changes. Benchmarking can therefore hold the task model constant while selecting a more reliable compiler. Without a dedicated selection, changing the active model refreshes the model-keyed compiled artifact before the switch returns.
 
 Cold compilation forces reasoning off, zero temperature, and a bounded output. A reasoning-capable OpenAI-compatible compiler model must advertise a verified explicit disable format in its model compatibility metadata; otherwise compilation fails before a provider call instead of risking a response consumed by hidden or visible reasoning. For llama.cpp/Qwen deployments that honor chat-template controls, `compat.thinkingFormat: "qwen-chat-template"` sends `chat_template_kwargs.enable_thinking: false`. Configure that only after verifying the live endpoint actually honors the field.
+
+Dynamic provider extensions that refresh a configured compiler model must preserve its authoritative reasoning metadata. Register the discovered model list with `modelMetadata: "inherit-existing"`, or supply the exact `reasoning`, `thinkingLevelMap`, and `compat` fields again. Default replacement semantics intentionally discard omitted metadata, and the compiler then fails closed instead of inferring thinking behavior from a model name. See [Custom providers](custom-provider.md#register-new-provider).
 
 SDK callers can instead pass `projectInstructionCompiler` to `createAgentSession()` to replace the model compiler completely. The override receives the full source chain and deterministic module and constraint IDs and must return exhaustive classifications, exact always-on witnesses, and grounded triggers. Set `projectInstructionCompilerIdentity` to reuse its successful cache across sessions; anonymous custom compilers are isolated so one implementation cannot silently reuse another implementation's artifact. A custom compiler and a dedicated compiler-model reference are mutually exclusive.
 

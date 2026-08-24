@@ -41,7 +41,7 @@ export function compoundHighRiskRequirementError(text: string, acceptanceCriteri
   const coordinatedCaseCount = acceptanceCriterion
     .split(CASE_COORDINATOR_PATTERN)
     .filter((segment) => HIGH_RISK_CASE_FAMILIES.some((pattern) => pattern.test(segment))).length;
-  const sentenceCount = acceptanceCriterion.split(/[.!?]+/u).filter((part) => part.trim().length > 0).length;
+  const sentenceCount = acceptanceCriterion.split(/[.!?]+(?=\s|$)/u).filter((part) => part.trim().length > 0).length;
   const rollbackObservableCount = FAILURE_PRESERVATION_PATTERN.test(combined)
     ? ROLLBACK_OBSERVABLES.filter((pattern) => pattern.test(combined)).length
     : 0;

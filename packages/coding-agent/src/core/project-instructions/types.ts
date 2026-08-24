@@ -52,6 +52,7 @@ export interface ProjectInstructionRuleRecord {
   title: string;
   trigger: string;
   routable: boolean;
+  requires?: string[];
   sourcePath: string;
   contentHash: string;
 }
@@ -128,6 +129,7 @@ export interface ProjectInstructionCompilerResult {
   triggers: Record<string, string>;
   classifications: ProjectInstructionClassifications;
   alwaysOn: Record<string, string>;
+  requires?: Record<string, string[]>;
   usage?: ProjectInstructionCompilerUsage;
 }
 

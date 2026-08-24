@@ -258,13 +258,7 @@ describe("project instruction compiler scope calibration", () => {
       "response-control": "Keep every response concise.\n",
       "secrets-topic-control": "# Secrets\nNever expose credentials.\n",
     });
-    expect(Object.keys(result.triggers)).toEqual([
-      "rotation",
-      "heading-rotation",
-      "token-budget",
-      "report",
-      "triage",
-    ]);
+    expect(Object.keys(result.triggers)).toEqual(["rotation", "heading-rotation", "token-budget", "report", "triage"]);
     const sourceTerms = new Set(tokenizeProjectInstructionActivity("Credential rotation credentials log tokens"));
     expect(
       tokenizeProjectInstructionActivity(result.triggers.rotation ?? "").some((term) => sourceTerms.has(term)),

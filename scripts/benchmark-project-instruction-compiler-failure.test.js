@@ -24,7 +24,7 @@ function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
 
-function certificationError(payload, stderr = "") {
+async function certificationError(payload, stderr = "") {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-compiler-failure-"));
   try {
     const runtimeSnapshot = join(root, "runtime");
@@ -46,7 +46,7 @@ function certificationError(payload, stderr = "") {
       )}); process.exit(86);\n`,
     );
     try {
-      certifyBenchmarkProjectInstructions({
+      await certifyBenchmarkProjectInstructions({
         scratchRoot,
         runtimeSnapshot,
         runtimeSha256: "c".repeat(64),
@@ -84,8 +84,8 @@ function failedDocument(failure) {
   };
 }
 
-test("branded normalized compiler telemetry survives the gate and report without private output", () => {
-  const error = certificationError(
+test("branded normalized compiler telemetry survives the gate and report without private output", async () => {
+  const error = await certificationError(
     {
       status: "failed",
       diagnostic: "project instruction compiler output validation failed",
@@ -115,7 +115,7 @@ test("branded normalized compiler telemetry survives the gate and report without
   assert.doesNotMatch(report, /private compiler stderr|sk-private-auth-token/u);
 });
 
-test("unbranded, spoofed, and unsafe compiler telemetry never reaches evidence or reports", () => {
+test("unbranded, spoofed, and unsafe compiler telemetry never reaches evidence or reports", async () => {
   const spoofed = Object.assign(new Error("project instruction compiler output validation failed"), {
     compilerFailure: SAFE_TELEMETRY,
   });
@@ -127,7 +127,7 @@ test("unbranded, spoofed, and unsafe compiler telemetry never reaches evidence o
   );
   assert.equal(Object.hasOwn(spoofedFailure, "compilerFailure"), false);
 
-  const unknownKindError = certificationError({
+  const unknownKindError = await certificationError({
     status: "failed",
     diagnostic: "project instruction compiler output validation failed",
     compilerFailure: {
@@ -149,7 +149,7 @@ test("unbranded, spoofed, and unsafe compiler telemetry never reaches evidence o
     /Authorization|private-auth-shaped-kind/u,
   );
 
-  const unsafeError = certificationError({
+  const unsafeError = await certificationError({
     status: "failed",
     diagnostic: "project instruction compiler output validation failed",
     compilerFailure: { ...SAFE_TELEMETRY, raw: "private payload" },
@@ -169,8 +169,8 @@ for (const diagnostic of [
   "project instruction compiler model does not support thinking off",
   "project instruction compiler model lacks explicit thinking-disable compatibility",
 ]) {
-  test(`cold certification preserves the production diagnostic: ${diagnostic}`, () => {
-    const error = certificationError({ status: "failed", diagnostic });
+  test(`cold certification preserves the production diagnostic: ${diagnostic}`, async () => {
+    const error = await certificationError({ status: "failed", diagnostic });
     assert.equal(error.message, diagnostic);
     assert.equal(getBenchmarkCompilerFailureTelemetry(error), undefined);
   });

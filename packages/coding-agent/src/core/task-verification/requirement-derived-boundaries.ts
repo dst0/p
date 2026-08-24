@@ -1,5 +1,6 @@
 import { requirementSourceClauses } from "./requirement-source-clauses.ts";
-import type { TaskRequirement, TaskVerificationSourcePrompt } from "./types.ts";
+import { type RequirementSourceFacet, requirementSourceFacets } from "./requirement-source-facets.ts";
+import type { RequirementProofPolicy, TaskRequirement, TaskVerificationSourcePrompt } from "./types.ts";
 
 const NEWLINE_TERMINATED_PATTERN = /\bnewline[-\s]?terminat\w*\b/iu;
 const UNIVERSAL_TRUNCATION_PATTERN = /\b(?:any|all|every)\s+(?:\w+\s+){0,3}truncat\w*\b/iu;
@@ -33,6 +34,9 @@ export function deriveRequirementProofPolicies(
   inactiveSourceClauseIds: ReadonlySet<string> = new Set(),
 ): TaskRequirement[] | string {
   const clauses = requirementSourceClauses(sources).filter((clause) => !inactiveSourceClauseIds.has(clause.id));
+  const facetsById = new Map(
+    clauses.flatMap((clause) => requirementSourceFacets(clause).map((facet) => [facet.id, facet] as const)),
+  );
   const policies = new Map(
     requirements.map((requirement) => [requirement.id, new Set(requirement.proofPolicies ?? [])]),
   );
@@ -70,7 +74,7 @@ export function deriveRequirementProofPolicies(
       );
     });
     if (!terminalRequirement) {
-      return "A newline-terminated artifact that rejects truncation requires one complete truncation requirement covering exact final-byte removal of the terminal newline; preserve any universal qualifier from the source.";
+      return "A newline-terminated artifact that rejects truncation requires one complete truncation requirement covering exact final byte removal of the terminal newline; preserve any universal qualifier from the source.";
     }
     policies.get(terminalRequirement.id)!.add("remove_exact_final_byte");
   }
@@ -93,6 +97,14 @@ export function deriveRequirementProofPolicies(
     if (CORRUPTED_ARTIFACT_PATTERN.test(mappedText) && CORRUPTED_ARTIFACT_PATTERN.test(text)) {
       policies.get(requirement.id)!.add("change_artifact_bytes");
     }
+    const mappedFacets = (requirement.sourceFacetIds ?? []).flatMap((facetId) => {
+      const facet = facetsById.get(facetId);
+      return facet ? [facet] : [];
+    });
+    if (mappedFacets.length > 0) {
+      addFacetFailureProofPolicies(mappedFacets, policies.get(requirement.id)!);
+      continue;
+    }
     const hasFailurePreservation =
       (FAILURE_PATTERN.test(semanticText) && PRESERVATION_PATTERN.test(semanticText)) ||
       ATOMIC_FAILURE_PRESERVATION_PATTERN.test(semanticText);
@@ -111,6 +123,22 @@ export function deriveRequirementProofPolicies(
     const proofPolicies = [...policies.get(requirement.id)!];
     return proofPolicies.length > 0 ? { ...requirement, proofPolicies } : requirement;
   });
+}
+
+function addFacetFailureProofPolicies(
+  facets: readonly RequirementSourceFacet[],
+  policies: Set<RequirementProofPolicy>,
+): void {
+  const concepts = new Set(
+    facets.filter((facet) => facet.kind === "failure_preservation").flatMap((facet) => facet.requiredConcepts),
+  );
+  if (concepts.has("state")) policies.add("preserve_state_on_failure");
+  if (concepts.has("event log")) policies.add("preserve_log_on_failure");
+  if (concepts.has("version")) policies.add("preserve_version_on_failure");
+  if (concepts.has("position")) policies.add("preserve_position_on_failure");
+  if (concepts.has("command ID") || concepts.has("idempotency record")) {
+    policies.add("preserve_command_identity_on_failure");
+  }
 }
 
 function hasSharedArtifactDomain(truncationClause: string, serializationClauses: readonly { text: string }[]): boolean {

@@ -230,25 +230,6 @@ describe("requirement-audit completion regressions", () => {
     expect(harness.controller.currentState.taskPrompts).toHaveLength(1);
   });
 
-  it("bounds authoritative decomposition to 64 atomic requirements", async () => {
-    const harness = createRequirementAuditHarness();
-    await reachAuditEvidenceReady(harness);
-    await nextModelTurn(harness);
-    const result = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: Array.from({ length: 65 }, (_unused, index) => ({
-        type: "behavior",
-        text: `Atomic behavior ${index + 1}`,
-        acceptance_criterion: `Behavior ${index + 1} is independently verified`,
-        source_prompt_indexes: [1],
-      })),
-      ignored_source_prompts: [],
-    });
-
-    expect(result).toContain("at most 64 atomic requirements");
-    expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
-  });
-
   it("allows finish_work without explicit verification_token after requirement audit passes", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);

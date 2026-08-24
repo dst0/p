@@ -50,13 +50,34 @@ test("failed reports expose collected lower-bound evidence without claiming comp
     mutationCount: 2,
     semanticEvidenceAvailable: true,
     semanticEvidenceComplete: false,
+    observedRequirementDefinitionAttemptCount: 2,
     progressEvidence: "progress/run-1-typescript-calculator-compiled.jsonl.br",
   };
   const failure = createClassifiedBenchmarkGateFailure(pair, "compiled", "child benchmark exited 9", {
     liveness,
   });
   const report = renderPairedReport(failedDocument(failure));
-  assert.match(report, /Requirement definitions: n\/a/u);
+  assert.match(report, /Requirement definitions: at least 2/u);
   assert.match(report, /Semantic evidence available: yes; complete: no/u);
   assert.match(report, /Progress evidence: `progress\/run-1-typescript-calculator-compiled\.jsonl\.br`/u);
+});
+
+test("sample rows distinguish exact and observed lower-bound definition counts", () => {
+  const liveness = {
+    ...createUnavailableCellLiveness(),
+    semanticEvidenceAvailable: true,
+    semanticEvidenceComplete: false,
+    observedRequirementDefinitionAttemptCount: 3,
+  };
+  const document = failedDocument(createClassifiedBenchmarkGateFailure(pair, "compiled", "quality gate failed"));
+  document.samples.push({
+    ...pair,
+    mode: "compiled",
+    status: "failed",
+    elapsedMs: 1,
+    metrics: { usage: { totalTokens: 1 } },
+    quality: { rawScore: 0, maxScore: 1 },
+    liveness,
+  });
+  assert.match(renderPairedReport(document), /\| at least 3 \|/u);
 });

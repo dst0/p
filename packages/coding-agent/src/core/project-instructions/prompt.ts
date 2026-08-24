@@ -108,6 +108,7 @@ export function renderRulesCatalog(rules: ProjectInstructionRuleRecord[]): Proje
         content: [
           `- \`${rule.link}\``,
           `  - Trigger: ${singleLine(rule.trigger, 300)}`,
+          `  - Requires: ${rule.requires?.length ? rule.requires.join(", ") : "none"}`,
           `  - Phases: ${phases.length > 0 ? phases.join(", ") : "semantic-only"}`,
           `  - Source: ${rule.sourcePath}`,
         ].join("\n"),

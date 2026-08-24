@@ -39,10 +39,11 @@ test("cell liveness records bounded semantic heartbeats without paths or payload
     elapsedMs = 5_000;
     changedPathCount = 1;
     monitor.heartbeat();
-    const evidence = await monitor.finalize({ outcome: "process_completed", requirementDefinitionAttemptCount: 2 });
+    const evidence = await monitor.finalize({ outcome: "process_completed" });
 
     assert.equal(evidence.firstMutationElapsedMs, 2_000);
-    assert.equal(evidence.requirementDefinitionAttemptCount, 2);
+    assert.equal(evidence.requirementDefinitionAttemptCount, null);
+    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 0);
     assert.equal(evidence.heartbeatCount, 1);
     assert.match(evidence.progressEvidence, /\.jsonl\.br$/u);
     const records = brotliDecompressSync(readFileSync(`${progressPath}.br`))
@@ -54,7 +55,8 @@ test("cell liveness records bounded semantic heartbeats without paths or payload
     assert.equal(records[1].phase, "implementation");
     assert.equal(records[1].firstMutationElapsedMs, 2_000);
     assert.equal(records[1].changedPathCount, 1);
-    assert.equal(records[2].requirementDefinitionAttemptCount, 2);
+    assert.equal(records[2].requirementDefinitionAttemptCount, null);
+    assert.equal(records[2].observedRequirementDefinitionAttemptCount, 0);
     assert.doesNotMatch(JSON.stringify(records), /Authorization|prompt|args|path/u);
   } finally {
     rmSync(directory, { recursive: true, force: true });
@@ -154,9 +156,10 @@ test("active recording preserves semantic mutation after the worktree is committ
     });
     assert.equal(evidence.firstMutationElapsedMs, 1_234);
     assert.equal(evidence.requirementDefinitionAttemptCount, 2);
+    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 2);
     assert.equal(evidence.semanticSequence, 4);
     assert.equal(evidence.semanticEvidenceAvailable, true);
-    assert.equal(evidence.mutationCount, 4);
+    assert.equal(evidence.mutationCount, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -189,6 +192,7 @@ test("semantic recording payloads never enter compressed progress evidence", asy
     assert.equal(summary.semanticEvidenceAvailable, true);
     assert.equal(summary.semanticEvidenceComplete, false);
     assert.equal(summary.requirementDefinitionAttemptCount, null);
+    assert.equal(summary.observedRequirementDefinitionAttemptCount, 0);
     const evidence = brotliDecompressSync(readFileSync(`${progressPath}.br`)).toString("utf8");
     assert.doesNotMatch(evidence, /Authorization|private-value|secret\.txt|\/private\/workspace|"args"/u);
     assert.match(evidence, /"mutationCount":1/u);
@@ -235,6 +239,7 @@ test("a capped finalized recording never reports lower-bound definition counts a
     assert.equal(summary.semanticEvidenceAvailable, true);
     assert.equal(summary.semanticEvidenceComplete, false);
     assert.equal(summary.requirementDefinitionAttemptCount, null);
+    assert.equal(summary.observedRequirementDefinitionAttemptCount, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }
@@ -275,6 +280,7 @@ test("failed finalized recordings remain incomplete when capture metadata is mis
       assert.equal(summary.semanticEvidenceAvailable, true, variant);
       assert.equal(summary.semanticEvidenceComplete, false, variant);
       assert.equal(summary.requirementDefinitionAttemptCount, null, variant);
+      assert.equal(summary.observedRequirementDefinitionAttemptCount, 1, variant);
     }
   } finally {
     rmSync(directory, { recursive: true, force: true });

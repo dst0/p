@@ -14,8 +14,8 @@ import {
   getCompilationFailurePath,
   getCompilerIdentity,
 } from "./compilation-cache-paths.ts";
-import { hashText } from "./content.ts";
 import { parseProjectInstructionCompilerUsage } from "./compiler-usage.ts";
+import { hashText } from "./content.ts";
 import type { ProjectInstructionCompilerResult } from "./types.ts";
 
 export {
@@ -25,7 +25,7 @@ export {
 } from "./compilation-failure-cache.ts";
 
 interface CompilationCacheRecord {
-  schemaVersion: 3;
+  schemaVersion: 4;
   agentsHash: string;
   compilerVersion: string;
   compilerIdentity: string;
@@ -34,6 +34,7 @@ interface CompilationCacheRecord {
   triggers: Record<string, string>;
   classifications: ProjectInstructionCompilerResult["classifications"];
   alwaysOn: Record<string, string>;
+  requires: Record<string, string[]>;
   usage?: ProjectInstructionCompilerResult["usage"];
 }
 
@@ -55,6 +56,7 @@ export function loadCachedCompilation(options: CompilationCacheOptions): Project
       triggers: record.triggers,
       classifications: record.classifications,
       alwaysOn: record.alwaysOn,
+      ...(Object.keys(record.requires).length > 0 ? { requires: record.requires } : {}),
       usage: record.usage,
     };
   } catch {
@@ -66,13 +68,12 @@ export function persistCompilation(options: CompilationCacheOptions, result: Pro
   assertCacheDirectorySafe(options.cacheDir, options.workspaceRoot, true);
   const directory = join(options.cacheDir, "compilations");
   ensurePrivateDirectory(directory);
-  const usage =
-    result.usage === undefined ? undefined : parseProjectInstructionCompilerUsage(result.usage, false);
+  const usage = result.usage === undefined ? undefined : parseProjectInstructionCompilerUsage(result.usage, false);
   if (result.usage !== undefined && usage === undefined) {
     throw new Error("Project instruction compiler returned invalid usage");
   }
   const recordWithoutHash = {
-    schemaVersion: 3 as const,
+    schemaVersion: 4 as const,
     agentsHash: options.agentsHash,
     compilerVersion: options.compilerVersion,
     compilerIdentity: getCompilerIdentity(options),
@@ -80,6 +81,7 @@ export function persistCompilation(options: CompilationCacheOptions, result: Pro
     triggers: result.triggers,
     classifications: result.classifications,
     alwaysOn: result.alwaysOn,
+    requires: result.requires ?? {},
     usage,
   };
   const record: CompilationCacheRecord = {
@@ -109,6 +111,7 @@ function computeResultHash(record: Omit<CompilationCacheRecord, "resultHash">): 
       triggers: record.triggers,
       classifications: record.classifications,
       alwaysOn: record.alwaysOn,
+      requires: record.requires,
       usage: record.usage,
     }),
   );
@@ -119,7 +122,7 @@ function parseRecord(value: unknown): CompilationCacheRecord | undefined {
   const record = value as Record<string, unknown>;
   const usage = record.usage === undefined ? undefined : parseProjectInstructionCompilerUsage(record.usage, true);
   if (
-    record.schemaVersion !== 3 ||
+    record.schemaVersion !== 4 ||
     typeof record.agentsHash !== "string" ||
     typeof record.compilerVersion !== "string" ||
     typeof record.compilerIdentity !== "string" ||
@@ -128,12 +131,13 @@ function parseRecord(value: unknown): CompilationCacheRecord | undefined {
     !isStringRecord(record.triggers) ||
     !isClassifications(record.classifications) ||
     !isStringRecord(record.alwaysOn) ||
+    !isStringArrayRecord(record.requires) ||
     (record.usage !== undefined && usage === undefined)
   ) {
     return undefined;
   }
   return {
-    schemaVersion: 3,
+    schemaVersion: 4,
     agentsHash: record.agentsHash,
     compilerVersion: record.compilerVersion,
     compilerIdentity: record.compilerIdentity,
@@ -142,6 +146,7 @@ function parseRecord(value: unknown): CompilationCacheRecord | undefined {
     triggers: record.triggers,
     classifications: record.classifications,
     alwaysOn: record.alwaysOn,
+    requires: record.requires,
     usage,
   };
 }
@@ -152,6 +157,17 @@ function isStringRecord(value: unknown): value is Record<string, string> {
     value !== null &&
     !Array.isArray(value) &&
     Object.values(value).every((entry) => typeof entry === "string")
+  );
+}
+
+function isStringArrayRecord(value: unknown): value is Record<string, string[]> {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    !Array.isArray(value) &&
+    Object.values(value).every(
+      (entry) => Array.isArray(entry) && entry.every((dependency) => typeof dependency === "string"),
+    )
   );
 }
 

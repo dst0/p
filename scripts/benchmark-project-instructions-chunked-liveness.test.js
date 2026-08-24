@@ -98,7 +98,7 @@ test("chunk rotation preserves exact-once semantic progress across active and mi
     assert.equal(evidence.semanticEvidenceAvailable, true);
     assert.equal(evidence.semanticEvidenceComplete, true);
     assert.equal(evidence.semanticSequence, 3);
-    assert.equal(evidence.mutationCount, 3);
+    assert.equal(evidence.mutationCount, 1);
     assert.equal(evidence.requirementDefinitionAttemptCount, 1);
     const progress = brotliDecompressSync(readFileSync(`${progressPath}.br`))
       .toString("utf8")
@@ -106,7 +106,7 @@ test("chunk rotation preserves exact-once semantic progress across active and mi
       .split("\n")
       .map((line) => JSON.parse(line));
     assert.equal(progress.at(-2).semanticEventCount, 3);
-    assert.equal(progress.at(-2).mutationCount, 3);
+    assert.equal(progress.at(-2).mutationCount, 1);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

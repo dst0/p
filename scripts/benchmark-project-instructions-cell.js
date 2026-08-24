@@ -16,6 +16,11 @@ import {
 } from "./benchmark-project-instruction-seed-runner.js";
 import { createProjectInstructionProofReceipt } from "./benchmark-project-instruction-proof-ipc.js";
 import { createProjectInstructionOuterAuthorityCapture } from "./benchmark-project-instruction-outer-authority.js";
+import {
+  attachBenchmarkCleanupError,
+  isBenchmarkInterruptedError,
+  throwIfBenchmarkInterrupted,
+} from "./benchmark-interruption.js";
 
 const defaultOperations = {
   verifyPrivateInputs: privateInputs.verifyBenchmarkPrivateInputSnapshots,
@@ -54,23 +59,27 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
   let capture;
   let proofReceipt;
   let authorityCapture;
+  let pendingError;
   try {
+    throwIfBenchmarkInterrupted(context.signal);
     if (!operations.verifyPrivateInputs(options.privateSnapshots)) {
       throw new Error("ephemeral private benchmark inputs changed before the benchmark cell");
     }
     const seedMaterialization =
       mode === "compiled"
-        ? operations.materializeCompiled({
+        ? await operations.materializeCompiled({
             runtimeSnapshot,
             sourceFile: options.projectInstructionsFile,
             scratchOutput,
             task: pair.task,
             seed: options.seed,
+            signal: context.signal,
           })
         : (operations.assertLegacyUnseeded(scratchOutput, pair.task), undefined);
     if (operations.hashRuntime(runtimeSnapshot) !== runtimeSha256) {
       throw new Error("immutable P runtime changed during project-instruction preseed");
     }
+    throwIfBenchmarkInterrupted(context.signal);
     proofReceipt = operations.createProofReceipt({
       runtimeSha256,
       run: pair.run,
@@ -101,7 +110,9 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
         stdio: ["inherit", "inherit", "inherit", "ipc"],
       },
       authorityCapture,
+      { signal: context.signal },
     );
+    if (child.interruption) throw child.interruption;
     if (child.error) throw new Error("child benchmark failed to start", { cause: child.error });
     if (child.status !== 0) throw new Error(`child benchmark exited ${child.status ?? "without a status"}`);
     if (operations.hashRuntime(runtimeSnapshot) !== runtimeSha256) {
@@ -134,16 +145,28 @@ export async function runPairedBenchmarkCell(context, operationOverrides = {}) {
   } catch (error) {
     if (monitor && !livenessFinalized) {
       livenessFinalized = true;
-      liveness = await monitor.finalize(finalizationOptions("failed", capture));
+      const outcome = isBenchmarkInterruptedError(error) ? "interrupted" : "failed";
+      try {
+        liveness = await monitor.finalize(finalizationOptions(outcome, capture));
+      } catch (cleanupError) {
+        if (isBenchmarkInterruptedError(error)) attachBenchmarkCleanupError(error, cleanupError);
+        else throw cleanupError;
+      }
     }
-    throw liveness ? attachPairedBenchmarkLiveness(error, liveness) : error;
+    pendingError = liveness ? attachPairedBenchmarkLiveness(error, liveness) : error;
+    throw pendingError;
   } finally {
-    operations.settleEvidence(
-      options.authOutputGuard,
-      options.authFiles,
-      scratchOutput,
-      context.cellOutput,
-      trustedChildCompletion,
-    );
+    try {
+      operations.settleEvidence(
+        options.authOutputGuard,
+        options.authFiles,
+        scratchOutput,
+        context.cellOutput,
+        trustedChildCompletion,
+      );
+    } catch (cleanupError) {
+      if (isBenchmarkInterruptedError(pendingError)) throw attachBenchmarkCleanupError(pendingError, cleanupError);
+      throw cleanupError;
+    }
   }
 }

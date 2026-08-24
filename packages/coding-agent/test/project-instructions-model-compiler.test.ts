@@ -163,7 +163,7 @@ describe("project instruction model compiler", () => {
     ).resolves.toMatchObject({ body: "No source constraints apply to every task." });
     expect(completeSimpleMock).toHaveBeenCalledOnce();
     const context = completeSimpleMock.mock.calls[0][1];
-    expect(context.systemPrompt).toContain('one top-level field named "alwaysOn"');
+    expect(context.systemPrompt).toContain('optional "requires" top-level fields');
     expect(context.systemPrompt).toContain("Most input constraints should be omitted");
     expect(context.systemPrompt).toContain('"After code changes, run tests." is routed');
     expect(context.systemPrompt).toContain('"Protect secrets in every response." is always-on');
