@@ -103,6 +103,7 @@ describe("requirement definition cross-cycle stagnation", () => {
         status: "needs_action",
         message: diagnostics(attempt === 5 ? 2 : 3),
         state: harness.controller.currentState,
+        requirementDefinitionDiagnosticCount: attempt === 5 ? 2 : 3,
       };
     });
     await callRequirementAudit(harness.controller, invalidDefinition());

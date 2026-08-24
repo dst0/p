@@ -4,19 +4,19 @@ import { rejectedDraftFreshDefinitionReason } from "../src/core/task-verificatio
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
 import {
+  beforeAuditTool,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
   nextModelTurn,
   type RequirementAuditHarness,
   reachAuditEvidenceReady,
-  recordAuditToolResult,
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("rejected requirement definition next-action authorization", () => {
   it("keeps fresh define blocked after aggregate overflow while allowing bounded repair", async () => {
     const harness = await preparedHarness();
-    const apply = rejectingApplySpy(harness);
+    const apply = rejectingApplySpy(harness, [3, 2]);
     await callRequirementAudit(harness.controller, definition(39));
     const original = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
     expect(original).toBeDefined();
@@ -63,7 +63,7 @@ describe("rejected requirement definition next-action authorization", () => {
 
   it("keeps non-improving fresh definitions define-only after cumulative lineage overflow", async () => {
     const harness = await preparedHarness();
-    const apply = rejectingApplySpy(harness);
+    const apply = rejectingApplySpy(harness, [5, 4, 3, 3, 3]);
     await callRequirementAudit(harness.controller, definition(10));
     expect(apply).toHaveBeenCalledTimes(1);
     await nextModelTurn(harness);
@@ -89,7 +89,7 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(lineageOverflow).toContain("next_required_action: define");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...overflowDraft,
-      unproductiveRepairAttempts: 3,
+      unproductiveRepairAttempts: 1,
     });
     const authorizedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
     expect(apply).toHaveBeenCalledTimes(3);
@@ -188,29 +188,21 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(await callRequirementAudit(harness.controller, definition(2))).toContain("fresh define is not authorized");
   });
 
-  it("invalidates a rejected draft when a later workspace mutation changes the audit subject", async () => {
+  it("blocks workspace mutation while a rejected definition has a required next action", async () => {
     const harness = await preparedHarness();
     rejectingApplySpy(harness);
     await callRequirementAudit(harness.controller, definition(3));
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeDefined();
+    const rejectedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
 
-    await recordAuditToolResult(
-      harness.agent,
-      "edit",
-      { path: "src/inventory.ts", oldText: "before", newText: "after" },
-      { text: "Updated the inventory implementation." },
-    );
+    const gate = await beforeAuditTool(harness.agent, "edit", {
+      path: "src/inventory.ts",
+      oldText: "before",
+      newText: "after",
+    });
 
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
-    expect(harness.controller.requirementRepairStatusRevision).toBeUndefined();
-    expect(
-      await callTaskVerification(harness.controller, {
-        action: "record_final",
-        method: "focused_test",
-        command: "vitest --run test/inventory.test.ts",
-        observations: "Focused inventory test passed after the later mutation.",
-      }),
-    ).not.toContain("next_required_action:");
+    expect(gate?.block).toBe(true);
+    expect(gate?.reason).toContain("next_required_action: repair_definition");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rejectedDraft);
   });
 
   it("keeps an equally rejected recovery retry define-only", async () => {
@@ -248,13 +240,17 @@ async function preparedHarness(): Promise<RequirementAuditHarness> {
   return harness;
 }
 
-function rejectingApplySpy(harness: RequirementAuditHarness) {
-  let rejection = 0;
-  return vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation(() => ({
-    status: "needs_action",
-    message: `Definition rejected ${++rejection}.`,
-    state: harness.controller.currentState,
-  }));
+function rejectingApplySpy(harness: RequirementAuditHarness, diagnosticCounts: number[] = [1]) {
+  let rejectionIndex = 0;
+  return vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation(() => {
+    const diagnosticCount = diagnosticCounts[rejectionIndex++] ?? diagnosticCounts.at(-1)!;
+    return {
+      status: "needs_action",
+      message: `Requirement definition has ${diagnosticCount} deterministic validation errors:\n1. Rejected.`,
+      state: harness.controller.currentState,
+      requirementDefinitionDiagnosticCount: diagnosticCount,
+    };
+  });
 }
 
 function definition(count: number): RequirementAuditInput {

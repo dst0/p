@@ -183,6 +183,9 @@ export function do_beforeToolCall(
   if (self.restoreError && canPotentiallyChangeWorkspace(toolName, context.args)) {
     return self.blocked(`Cannot change the workspace: ${self.restoreError}.`);
   }
+  if (self.rejectedRequirementDefinitionDraft && canPotentiallyChangeWorkspace(toolName, context.args)) {
+    return self.blocked(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
+  }
   if (canPotentiallyChangeWorkspace(toolName, context.args) && !self.state.taskKind) {
     const taskSummary =
       normalizeText(self.latestUserPrompt).slice(0, 500) || "Implement the requested workspace change.";

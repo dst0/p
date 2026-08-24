@@ -57,7 +57,7 @@ describe("rejected requirement definition status recovery", () => {
     );
   });
 
-  it("applies keyed classification deltas without replacing unrelated classifications", async () => {
+  it("applies keyed upserts and retains classifications when a removal regresses diagnostics", async () => {
     const harness = await preparedRepairHarness(
       workspaces,
       ["Example payload.", "Example archive.", "Shipping reduces both onHand and the reservation."].join("\n"),
@@ -84,14 +84,16 @@ describe("rejected requirement definition status recovery", () => {
       exampleClassification("S2-C2", "Archive example"),
     ]);
     await nextModelTurn(harness);
-    await callRequirementAudit(harness.controller, {
+    const regressedRemoval = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revisionFrom(repaired),
       requirement_repairs: [{ requirement_index: 1, replacements: [compoundFacetRequirement("S2-C3")] }],
       ignored_source_clause_removals: ["S2-C2"],
     });
+    expect(regressedRemoval).toContain("Repair was not adopted");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.ignored_source_clauses).toEqual([
       exampleClassification("S2-C1", "Updated payload example"),
+      exampleClassification("S2-C2", "Archive example"),
     ]);
   });
 
