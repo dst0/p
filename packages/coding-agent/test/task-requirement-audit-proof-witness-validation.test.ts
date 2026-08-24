@@ -16,20 +16,18 @@ import {
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("requirement proof witness validation", () => {
-  it("accepts changed rejected artifacts and rejects no-op corruption", () => {
+  it("accepts changed artifacts independently of validation mechanism and rejects no-op changes", () => {
     const requirement = proofRequirement("change_artifact_bytes");
     expect(
       witnesses(requirement, {
         originalBase64: bytes("artifact"),
         candidateBase64: bytes("artifact"),
-        outcome: "threw",
       }),
     ).toBeUndefined();
     expect(
       witnesses(requirement, {
         originalBase64: bytes("artifact"),
         candidateBase64: bytes("artifacX"),
-        outcome: "threw",
       }),
     ).toHaveLength(1);
   });

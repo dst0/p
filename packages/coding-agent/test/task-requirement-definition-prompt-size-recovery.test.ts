@@ -101,6 +101,8 @@ function largeDraft(revision: string, baseline: number): RejectedRequirementDefi
     revision,
     diagnostics: "Requirement 1 must map the referenced source.",
     repairLineageBaselineRequirementCount: baseline,
+    bestDiagnosticCount: 1,
+    unproductiveRepairAttempts: 0,
     input: {
       action: "define",
       requirements: Array.from({ length: 96 }, (_value, index) => ({
@@ -118,6 +120,8 @@ function singleDraft(revision: string, diagnostics: string): RejectedRequirement
     revision,
     diagnostics,
     repairLineageBaselineRequirementCount: 1,
+    bestDiagnosticCount: diagnostics.trim() ? 1 : 0,
+    unproductiveRepairAttempts: 0,
     input: {
       action: "define",
       requirements: [

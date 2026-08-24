@@ -148,7 +148,7 @@ function validateFacts(policy: RequirementProofPolicy, facts: Record<string, unk
   }
   if (policy === "change_artifact_bytes") {
     const pair = artifactPair(facts);
-    return pair !== undefined && facts.outcome === "threw" && !pair.original.equals(pair.candidate);
+    return pair !== undefined && !pair.original.equals(pair.candidate);
   }
   if (policy === "preserve_state_on_failure" || policy === "preserve_log_on_failure") {
     const before = decodeBoundedBase64(facts.beforeBase64);

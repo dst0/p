@@ -15,6 +15,7 @@ import {
   normalizeText,
 } from "../tool-classification.ts";
 import type { VerificationResult } from "../types.ts";
+import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
 
 const NON_REQUIREMENT_NUDGE_PATTERN =
@@ -193,6 +194,8 @@ export function do_beforeToolCall(
   }
   const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
   if (sourceGate) return sourceGate;
+  const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
+  if (proofCommandGate) return proofCommandGate;
   if (!isPotentialMutationTool(toolName, context.args)) return undefined;
   if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
     if (isShellTool(toolName)) return undefined;

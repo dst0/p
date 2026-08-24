@@ -45,7 +45,10 @@ describe("requirement definition repair lineage budget", () => {
 
     const result = await execute(tool, repairInput(original!, [7, 7, 7, 7, 7, 7, 6]));
     expect(result).toContain("requirement_repairs contains 48 total replacements; sparse repair permits at most 16.");
-    expect(controller.rejectedRequirementDefinitionDraft).toEqual(original);
+    expect(controller.rejectedRequirementDefinitionDraft).toEqual({
+      ...original,
+      unproductiveRepairAttempts: 1,
+    });
     expect(controller.rejectedRequirementDefinitionDraft?.revision).toBe(original?.revision);
     expect(applyCount()).toBe(1);
     expect(controller.requirementRepairStatusRevision).toBeUndefined();

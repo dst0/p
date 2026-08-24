@@ -88,7 +88,7 @@ async function definedHarness(workspaces: string[]) {
         type: "behavior",
         text: "Render the greeting in uppercase",
         acceptance_criterion: "The rendered greeting equals uppercase text",
-        source_prompt_indexes: [1, 2],
+        source_prompt_indexes: [1],
         source_clause_ids: ["S2-C1"],
       },
     ],

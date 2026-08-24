@@ -95,6 +95,35 @@ describe("requirement audit action fields", () => {
     expect(harness.controller.currentState).toEqual(state);
     expect(harness.controller.lastAuditTransitionTurn).toBe(transition);
   });
+
+  it("bounds repeated foreign-field repairs without rotating the rejected draft", async () => {
+    const harness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [{ ...requirement(), source_prompt_indexes: [99] }],
+      ignored_source_prompts: [],
+      ignored_source_clauses: [],
+    });
+    const draft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
+    expect(draft).toBeDefined();
+    const foreignRepair = {
+      action: "repair_definition",
+      definition_revision: draft!.revision,
+      requirement_repairs: [{ requirement_index: 1, replacements: [requirement()] }],
+      requirements: [requirement()],
+    };
+
+    await nextModelTurn(harness);
+    expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain(
+      "next_required_action: repair_definition",
+    );
+    await nextModelTurn(harness);
+    expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain("next_required_action: define");
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(draft!.revision);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input).toEqual(draft!.input);
+  });
 });
 
 function controllerHarness(hasActiveRejectedDraft: boolean = false) {
@@ -114,6 +143,8 @@ function controllerHarness(hasActiveRejectedDraft: boolean = false) {
           revision: "revision",
           diagnostics: "",
           repairLineageBaselineRequirementCount: 1,
+          bestDiagnosticCount: 0,
+          unproductiveRepairAttempts: 0,
           input: {
             action: "define",
             requirements: [requirement()],
