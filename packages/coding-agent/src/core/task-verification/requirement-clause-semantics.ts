@@ -1,8 +1,8 @@
-import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 import {
   requirementClauseConceptNames,
   uncoveredRequirementClauseConceptNames,
 } from "./requirement-clause-concepts.ts";
+import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 
 const NORMATIVE_PATTERN =
   /\b(?:all|always|any|are|cannot|contains?|every|exactly|export|fail|has|have|is|must|never|no|only|preserve|reject|render|required?|requires?|returns?|shall|should|starts?|throw|validate|write)\b/iu;
