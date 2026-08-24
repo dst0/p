@@ -1,0 +1,22 @@
+# 2026-08-24 — Dynamic model discovery must preserve compiler compatibility
+
+- **Status:** Open
+- **Task/context:** Installed compiled-project-instruction smoke testing with a dedicated local Qwen compiler model after reinstalling p.
+- **Unexpected observation or failure:** The configured model declared `compat.thinkingFormat: "qwen-chat-template"`, but normal startup reported that the compiler model lacked explicit thinking-disable compatibility. Disabling extensions changed the failure identity and allowed the compiler transport to reach the model, proving that the installed binary and persisted model entry were not stale.
+- **Evidence:** The persisted `models.json` entry has `reasoning: true` and the Qwen chat-template compatibility marker. The enabled model-discovery extension registers the same provider and model ID with sparse discovered metadata, omits `compat`, and does not request metadata inheritance. The first allowlisted failure sidecar therefore carried a reasoning-control identity with no format; the no-extension identity included the configured format. Direct controlled-TTY probes showed the model responding under normal and thinking-off transport without exposing credentials.
+- **Approaches tried:**
+  - **Attempt:** Weaken the compiler check or infer Qwen compatibility from the model ID.
+    - **Outcome:** Did not work
+    - **Why:** A name does not prove that the live endpoint honors a thinking-disable field; inference would make a safety boundary fail open.
+  - **Attempt:** Run the installed core without extensions and compare compiler identities.
+    - **Outcome:** Worked
+    - **Why:** It isolated registry replacement from provider and binary behavior while retaining the configured model metadata.
+  - **Attempt:** Preserve exact configured metadata when dynamic discovery refreshes provider membership.
+    - **Outcome:** Partial
+    - **Why:** p already supports `modelMetadata: "inherit-existing"`, but the separately installed discovery extension has not yet opted into it.
+- **Root cause:** Dynamic provider registration uses intentional replacement semantics by default. The discovery extension replaced the configured model with a sparse model definition, so `compat.thinkingFormat` disappeared before the dedicated compiler model was resolved.
+- **Resolution:** Keep p fail closed and document that model-list discovery extensions must use `modelMetadata: "inherit-existing"` or resupply exact reasoning metadata. Core and benchmark smoke runs use extension isolation until the separately maintained discovery extension adopts that contract.
+- **Verification:** The installed binary exposes the three instruction modes and dedicated compiler-model flag. Controlled normal-thinking and thinking-off probes both reached the exact compiler model and produced a response. An isolated source above the exact-injection budget then compiled to a 4.5k turn prompt, selected three relevant links, completed one batched `read_rules` call, and returned `SMOKE_OK` without file mutation. The paired benchmarks and an external extension update remain required.
+- **Prevention/follow-up:** Add `modelMetadata: "inherit-existing"` plus a regression to the external discovery extension, then rerun normal installed smoke with extensions enabled. Keep compiler identity bound to reasoning-control metadata so correcting this configuration bypasses stale failure caches automatically.
+- **Reusable learning:** Dynamic model discovery that replaces provider membership must explicitly preserve authoritative reasoning metadata; never reconstruct thinking safety from provider or model naming conventions.
+- **References:** `packages/coding-agent/src/core/model-registry/modelregistry-methods/provider-config.ts`, `packages/coding-agent/src/core/project-instructions/compiler-reasoning-control.ts`, `packages/coding-agent/test/model-registry-dynamic-thinking-metadata.test.ts`, `packages/coding-agent/docs/project-instructions.md`, `/Users/dst/dev/pi-model-discovery-extension/index.ts`.

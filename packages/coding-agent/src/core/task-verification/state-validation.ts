@@ -95,6 +95,7 @@ function isRequirement(value: unknown): value is TaskRequirement {
     Array.isArray(value.sourcePromptIndexes) &&
     value.sourcePromptIndexes.every((index) => isNonnegativeInteger(index) && index > 0) &&
     (value.sourceClauseIds === undefined || isStringArray(value.sourceClauseIds)) &&
+    (value.sourceFacetIds === undefined || isStringArray(value.sourceFacetIds)) &&
     (value.highRisk === undefined || typeof value.highRisk === "boolean") &&
     (value.highRiskSourcePromptIndexes === undefined ||
       (Array.isArray(value.highRiskSourcePromptIndexes) &&

@@ -20,6 +20,7 @@ import {
   hashText,
   splitInstructionSources,
 } from "./content.ts";
+import { validateProjectInstructionRuleDependencies } from "./dependency-graph.ts";
 import { computeProjectInstructionResultHash } from "./manifest.ts";
 import { renderProjectInstructions, renderRulesCatalog, renderSkillsCatalog } from "./prompt.ts";
 import type {
@@ -32,7 +33,7 @@ import type {
   ProjectInstructionRuleRecord,
 } from "./types.ts";
 
-export const PROJECT_INSTRUCTION_COMPILER_VERSION = "project-instructions-v4-exact-source-v14-scope-repair-evidence";
+export const PROJECT_INSTRUCTION_COMPILER_VERSION = "project-instructions-v4-exact-source-v15-module-dependencies";
 
 export async function prepareProjectInstructions(
   options: PrepareProjectInstructionsOptions,
@@ -220,7 +221,8 @@ function buildRuleRecords(
   constraints: ReturnType<typeof buildProjectInstructionConstraints>,
   compilation?: ProjectInstructionCompilerResult,
 ): ProjectInstructionRuleRecord[] {
-  return modules.map((module) => ({
+  const linkById = new Map(modules.map((module) => [module.id, module.link]));
+  const rules = modules.map((module) => ({
     id: module.id,
     link: module.link,
     file: module.link,
@@ -232,9 +234,16 @@ function buildRuleRecords(
         (constraint) =>
           constraint.moduleId === module.id && compilation.classifications.constraints[constraint.id] === "routed",
       ),
+    requires: (compilation?.requires?.[module.id] ?? []).map((dependencyId) => {
+      const link = linkById.get(dependencyId);
+      if (!link) throw new Error(`Project instruction compiler returned missing module dependency ${dependencyId}`);
+      return link;
+    }),
     sourcePath: module.sourcePath,
     contentHash: hashText(module.content),
   }));
+  validateProjectInstructionRuleDependencies(rules);
+  return rules;
 }
 
 function fallbackTrigger(title: string): string {

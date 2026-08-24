@@ -80,7 +80,7 @@ describe("requirement definition diagnostic boundaries", () => {
     expect(validation.definition?.requirements).toHaveLength(1);
   });
 
-  it("does not retain a requirement whose source prompt list is empty", () => {
+  it("derives the referenced prompt index when the explicit list is empty", () => {
     const validation = validateRequirementDefinition(sourcePrompts("Preserve the event log on failed writes."), {
       action: "define",
       requirements: [
@@ -96,11 +96,11 @@ describe("requirement definition diagnostic boundaries", () => {
       ignored_source_clauses: [],
     });
 
-    expect(validation.definition).toBeUndefined();
-    expect(validation.diagnostics).toEqual(["Requirement 1 references an invalid source_prompt_index."]);
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.definition?.requirements[0]?.sourcePromptIndexes).toEqual([2]);
   });
 
-  it("does not duplicate a missing mapped prompt index as global unclassified noise", () => {
+  it("merges direct prompt indexes with indexes derived from mapped clauses", () => {
     const validation = validateRequirementDefinition(sourcePrompts("Reject invalid access tokens."), {
       action: "define",
       requirements: [
@@ -116,8 +116,8 @@ describe("requirement definition diagnostic boundaries", () => {
       ignored_source_clauses: [],
     });
 
-    expect(validation.definition).toBeUndefined();
-    expect(validation.diagnostics).toEqual(["Requirement 1 maps source clause S2-C1 without its source_prompt_index."]);
+    expect(validation.diagnostics).toEqual([]);
+    expect(validation.definition?.requirements[0]?.sourcePromptIndexes).toEqual([1, 2]);
   });
 });
 

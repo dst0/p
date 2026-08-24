@@ -1,11 +1,12 @@
 import assert from "node:assert/strict";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { brotliDecompressSync } from "node:zlib";
 
 import { runBenchmarkAgentTurn } from "./benchmark-agent-turn.js";
+import { BenchmarkInterruptedError } from "./benchmark-interruption.js";
 import { createBenchmarkRecording } from "./benchmark-recording-lifecycle.js";
 
 const metricEventTypes = new Set(["result"]);
@@ -223,4 +224,57 @@ test("project-instruction turns use IPC once and do not expose it to grandchildr
   const result = await runFailedTurn(source, { projectInstructionProofReceipt: receipt });
   assert.equal(result.projectInstructionProof?.requestedMode, "compiled");
   assert.equal(result.stderr, "undefined");
+});
+
+test("cooperative interruption kills a resistant agent child before recording cleanup", async () => {
+  const root = mkdtempSync(join(tmpdir(), "p-benchmark-turn-interrupt-"));
+  const finalPath = join(root, "turn.jsonl.br");
+  const recording = createBenchmarkRecording(finalPath);
+  const controller = new AbortController();
+  const startedAt = Date.now();
+  setTimeout(() => controller.abort(new BenchmarkInterruptedError("SIGINT")), 50);
+  try {
+    await assert.rejects(
+      runBenchmarkAgentTurn(
+        command('process.on("SIGTERM", () => {}); setInterval(() => process.stdout.write("{}\\n"), 10);'),
+        10_000,
+        recording,
+        metricEventTypes,
+        { signal: controller.signal, failureKillGraceMs: 50 },
+      ),
+      (error) => error instanceof BenchmarkInterruptedError && error.signalName === "SIGINT",
+    );
+    await recording.abort();
+    assert.equal(existsSync(recording.activePath), false);
+    assert.equal(existsSync(finalPath), false);
+    assert.ok(Date.now() - startedAt < 2_000);
+  } finally {
+    await recording.abort();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("termination rejection stays secondary to an agent-turn interruption", async () => {
+  const root = mkdtempSync(join(tmpdir(), "p-benchmark-turn-termination-rejection-"));
+  const recording = createBenchmarkRecording(join(root, "turn.jsonl.br"));
+  const controller = new AbortController();
+  const interruption = new BenchmarkInterruptedError("SIGTERM");
+  const cleanupError = new Error("kill cleanup failed");
+  try {
+    const result = runBenchmarkAgentTurn(
+      command("setTimeout(() => process.exit(0), 50)"),
+      10_000,
+      recording,
+      metricEventTypes,
+      { signal: controller.signal, terminateProcessTree: async () => { throw cleanupError; } },
+    );
+    controller.abort(interruption);
+    await assert.rejects(
+      result,
+      (error) => error === interruption && error.cleanupErrors?.[0] === cleanupError,
+    );
+  } finally {
+    await recording.abort();
+    rmSync(root, { recursive: true, force: true });
+  }
 });

@@ -1,12 +1,15 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { spawnSync } from "node:child_process";
 import { BENCHMARK_PROJECT_INSTRUCTION_COMPILER_DIAGNOSTICS } from "./benchmark-project-instruction-diagnostics.js";
 import { createBenchmarkAgentDirectories } from "./benchmark-agent-private-directories.js";
 import { benchmarkSeedHelperPath } from "./benchmark-runtime-snapshot.js";
 import { assertSeededManifestEvidence } from "./benchmark-project-instruction-seed-record.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
+import { runBenchmarkSeedHelper } from "./benchmark-seed-helper-process.js";
+import { attachBenchmarkCleanupError, isBenchmarkInterruptedError } from "./benchmark-interruption.js";
+
+export { runBenchmarkSeedHelper } from "./benchmark-seed-helper-process.js";
 
 const SAFE_DIAGNOSTICS = new Set(BENCHMARK_PROJECT_INSTRUCTION_COMPILER_DIAGNOSTICS);
 const SAFE_FAILURE_KINDS = new Set([
@@ -18,7 +21,7 @@ const SAFE_FAILURE_KINDS = new Set([
 ]);
 const BENCHMARK_SEED_FAILURES = new WeakMap();
 
-export function certifyBenchmarkProjectInstructions(options) {
+export async function certifyBenchmarkProjectInstructions(options) {
   const seedRoot = join(options.scratchRoot, "certified-project-instructions");
   mkdirSync(seedRoot, { recursive: true, mode: 0o700 });
   const seedPath = join(seedRoot, "seed.json");
@@ -28,9 +31,10 @@ export function certifyBenchmarkProjectInstructions(options) {
     options.scratchRoot,
   );
   const authPath = join(agentDirectories.dirs.p, "auth.json");
+  let primaryError;
   try {
     options.authOutputGuard.capture(authPath);
-    runHelper(
+    await runHelper(
       benchmarkSeedHelperPath(options.runtimeSnapshot),
       [
         "certify",
@@ -50,24 +54,41 @@ export function certifyBenchmarkProjectInstructions(options) {
         certificatePath,
       ],
       900_000,
+      options,
     );
     options.authOutputGuard.capture(authPath);
     const certificate = JSON.parse(readFileSync(certificatePath, "utf8"));
     assertCertificate(certificate, options);
     return { seedPath, certificatePath, certificate };
+  } catch (error) {
+    primaryError = error;
+    throw error;
   } finally {
+    const cleanupErrors = [];
     try {
       options.authOutputGuard.capture(authPath);
-    } finally {
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    try {
       agentDirectories.dispose();
+    } catch (error) {
+      cleanupErrors.push(error);
+    }
+    if (cleanupErrors.length > 0) {
+      if (isBenchmarkInterruptedError(primaryError)) {
+        for (const error of cleanupErrors) attachBenchmarkCleanupError(primaryError, error);
+        throw primaryError;
+      }
+      throw new AggregateError(cleanupErrors, "Project instruction certification cleanup failed");
     }
   }
 }
 
-export function materializeBenchmarkProjectInstructions(options) {
+export async function materializeBenchmarkProjectInstructions(options) {
   const workspace = join(options.scratchOutput, "workspaces", "p", "run-1", options.task);
   const receiptPath = join(options.scratchOutput, "project-instruction-seed-receipt.json");
-  runHelper(
+  await runHelper(
     benchmarkSeedHelperPath(options.runtimeSnapshot),
     [
       "materialize",
@@ -83,6 +104,7 @@ export function materializeBenchmarkProjectInstructions(options) {
       receiptPath,
     ],
     60_000,
+    options,
   );
   const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
   assertSeededManifestEvidence(
@@ -108,16 +130,14 @@ export function assertLegacyCellUnseeded(scratchOutput, task) {
   if (existsSync(projectState)) throw new Error("Legacy benchmark cell unexpectedly contains seeded project state");
 }
 
-function runHelper(helper, args, timeout) {
+async function runHelper(helper, args, timeout, control) {
   const env = { ...sanitizeBenchmarkGitEnvironment(), NO_COLOR: "1" };
   delete env.P_BENCHMARK_AUTH_FILE;
-  const result = spawnSync(process.execPath, [helper, ...args], {
+  const result = await runBenchmarkSeedHelper(helper, args, timeout, {
     env,
-    encoding: "utf8",
-    timeout,
-    stdio: ["ignore", "pipe", "pipe"],
+    signal: control.signal,
+    killGraceMs: control.interruptionKillGraceMs,
   });
-  if (result.error) throw result.error;
   if (result.status === 0) return;
   const failure = safeFailure(result.stdout);
   const error = new Error(failure?.diagnostic ?? `project instruction seed helper exited ${result.status ?? "without a status"}`);

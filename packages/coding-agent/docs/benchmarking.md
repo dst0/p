@@ -181,7 +181,20 @@ immediately. The partial evidence remains on disk, but the report suppresses
 token and runtime comparisons. Only a completely green experiment reports
 per-mode median session tokens and agent runtime, per-task medians, and median
 within-pair compiled-versus-legacy percentage deltas. Negative deltas favor
-compiled mode.
+compiled mode. Persisted evidence has an explicit `running`, `completed`,
+`failed`, or `interrupted` lifecycle state. The correctness gate starts false
+and becomes true only after every scheduled sample passes; an incomplete or
+interrupted run can therefore never retain an optimistic passing sentinel.
+
+SIGINT and SIGTERM propagate cooperatively through the outer harness, active
+cell, benchmark runner, and agent turn. Each layer sends SIGTERM, escalates to
+SIGKILL after a bounded grace period when necessary, and waits for child close
+before finalizing evidence and removing owned private roots. Interruption writes
+terminal sanitized evidence, preserves the conventional signal exit code, and
+suppresses performance conclusions like every other non-complete run. The
+terminal document is published only after global resource finalization and
+records `cleanup.status` as `completed` or `failed`; a cleanup failure revokes
+an otherwise passing gate without exposing the underlying private diagnostic.
 
 While a cell is active, the harness writes a small uncompressed
 `progress/*.jsonl` stream and prints a sanitized heartbeat every 50 seconds.
@@ -194,9 +207,16 @@ available and complete. It never contains prompt text, tool arguments,
 credential material, or absolute paths. Inspect this stream at least once per
 minute during live runs to catch a cell stalled in discovery or implementation.
 The file is closed and compressed independently with Brotli Q6 when the cell
-ends. The requirement-definition attempt count is exact: it counts deduplicated
-tool starts whose name is `record_requirement_audit` and whose arguments have
-`action: "define"`. Hard-stop failures are classified as `process`, `status`,
+ends, including failure and interruption. With complete semantic evidence,
+the requirement-definition attempt count is exact: it counts deduplicated tool
+starts whose name is `record_requirement_audit` and whose arguments have
+`action: "define"`. If recording evidence is incomplete, the exact count stays
+`null`; the separately reported observed count is only a lower bound and the
+report renders it as `at least N`.
+Definition has its own `requirement_definition` phase and settles back to
+planning; it is not a mutation and cannot set the first-mutation timestamp.
+Tool-end events settle active semantic phases so progress does not remain stuck
+on a completed action. Hard-stop failures are classified as `process`, `status`,
 `correctness`, `provider`, or `infrastructure` without changing the correctness
 gate or exposing raw provider output.
 

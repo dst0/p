@@ -1,14 +1,33 @@
 import { describe, expect, it } from "vitest";
 import { formatRequirementDefinitionPrompt } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import {
-  type RequirementSourceClauseLocation,
+  type RequirementSourceClauseCatalogEntry,
+  requirementSourceClauseCatalog,
   requirementSourceClauseLocations,
   requirementSourceClauses,
 } from "../src/core/task-verification/requirement-source-clauses.ts";
 import type { TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
 
+type PromptCatalogEntry = RequirementSourceClauseCatalogEntry & {
+  controllerClassification?: "informational" | "unsafe_instruction";
+  requiredConcepts?: string[];
+  requiredFacets?: unknown[];
+};
+
+function parsePromptCatalog(lines: readonly string[], catalogStart: number): PromptCatalogEntry[] {
+  const section = lines.slice(catalogStart + 1, lines.indexOf("", catalogStart));
+  const schema = JSON.parse(section[0]!) as { columns: string[] };
+  return section.slice(1).map((line) => {
+    const row = JSON.parse(line) as unknown[];
+    const entry = Object.fromEntries(schema.columns.map((column, index) => [column, row[index]]));
+    return Object.fromEntries(
+      Object.entries(entry).filter(([, value]) => value !== null),
+    ) as unknown as PromptCatalogEntry;
+  });
+}
+
 describe("requirement definition prompt", () => {
-  it("injects exact referenced text once with clause locations and source metadata", () => {
+  it("injects source identity with a self-describing clause catalog and no duplicate source blob", () => {
     const directPrompt = "Implement the inventory contract exactly.\nPreserve the supplied source identity.";
     const referencedText = [
       "# Inventory invariants",
@@ -35,12 +54,11 @@ describe("requirement definition prompt", () => {
     const rendered = formatRequirementDefinitionPrompt(sources);
     const lines = rendered.split("\n");
     const metadataStart = lines.indexOf("<<<LOCAL_SPEC_DATA");
-    const matrixStart = lines.indexOf("HASH-BOUND REFERENCED-SOURCE CLAUSE LOCATION INDEX");
-    const locations = lines
-      .slice(matrixStart + 1, lines.indexOf("", matrixStart))
-      .map((line) => JSON.parse(line) as RequirementSourceClauseLocation);
+    const catalogStart = lines.indexOf("HASH-BOUND REFERENCED-SOURCE CLAUSE CATALOG");
+    const catalogSchema = JSON.parse(lines[catalogStart + 1]!) as { columns: string[] };
+    const catalog = parsePromptCatalog(lines, catalogStart);
     const expectedClauses = requirementSourceClauses(sources);
-    const expectedLocations = requirementSourceClauseLocations(sources);
+    const expectedCatalog = requirementSourceClauseCatalog(sources);
 
     expect(rendered.split(directPrompt)).toHaveLength(2);
     expect(JSON.parse(lines[metadataStart + 1]!)).toEqual({
@@ -49,10 +67,44 @@ describe("requirement definition prompt", () => {
       id: "inventory-spec-v1",
       path: "README.md",
       sha256: "a".repeat(64),
-      text: referencedText,
     });
-    expect(locations).toEqual(expectedLocations);
-    for (const clause of expectedClauses) expect(rendered).not.toContain(JSON.stringify(clause));
+    expect(rendered).not.toContain(JSON.stringify(referencedText));
+    expect(catalogSchema.columns).toEqual([
+      "id",
+      "sourcePromptIndex",
+      "kind",
+      "text",
+      "normativeHint",
+      "requiredConcepts",
+      "requiredFacets",
+      "line",
+      "part",
+      "controllerClassification",
+    ]);
+    expect(
+      catalog.map(
+        ({
+          controllerClassification: _classification,
+          requiredConcepts: _concepts,
+          requiredFacets: _facets,
+          ...clause
+        }) => clause,
+      ),
+    ).toEqual(expectedCatalog);
+    expect(catalog.map((clause) => clause.requiredConcepts)).toEqual([
+      undefined,
+      ["version", "position"],
+      ["event log", "truncation"],
+      undefined,
+    ]);
+    expect(catalog.map((clause) => clause.requiredFacets)).toEqual([undefined, undefined, undefined, undefined]);
+    expect(catalog.map((clause) => clause.controllerClassification)).toEqual([
+      "informational",
+      undefined,
+      undefined,
+      undefined,
+    ]);
+    for (const clause of expectedClauses) expect(catalog).toContainEqual(expect.objectContaining(clause));
     expect(expectedClauses.map((clause) => clause.id)).toEqual(["S2-C1", "S2-C2", "S2-C3", "S2-C4"]);
     expect(expectedClauses.map((clause) => clause.text)).toEqual([
       "Inventory invariants",
@@ -64,7 +116,7 @@ describe("requirement definition prompt", () => {
     expect(expectedClauses.map((clause) => clause.normativeHint)).toEqual([undefined, true, true, undefined]);
   });
 
-  it("preserves exact structured source bytes once while indexing duplicate and split clauses", () => {
+  it("indexes duplicate and split structured clauses without replaying the source blob", () => {
     const referencedText = [
       "# Top",
       "## Nested",
@@ -91,10 +143,11 @@ describe("requirement definition prompt", () => {
     const rendered = formatRequirementDefinitionPrompt(sources);
     const lines = rendered.split("\n");
     const dataStart = lines.indexOf("<<<LOCAL_SPEC_DATA");
-    const data = JSON.parse(lines[dataStart + 1]!) as { text: string };
+    const data = JSON.parse(lines[dataStart + 1]!) as { id: string; text?: string };
 
-    expect(data.text).toBe(referencedText);
-    expect(rendered.split(JSON.stringify(referencedText))).toHaveLength(2);
+    expect(data).toEqual(expect.objectContaining({ id: "structured-spec" }));
+    expect(data.text).toBeUndefined();
+    expect(rendered).not.toContain(JSON.stringify(referencedText));
     expect(requirementSourceClauseLocations(sources)).toEqual([
       { id: "S1-C1", sourcePromptIndex: 1, line: 1, part: 1 },
       { id: "S1-C2", sourcePromptIndex: 1, line: 2, part: 1 },
@@ -115,10 +168,48 @@ describe("requirement definition prompt", () => {
     expect(rendered).toContain(
       "Preserve universal qualifiers such as any, every, and all while splitting each named boundary or case into its own requirement.",
     );
-    expect(rendered).toContain("state, log, version, position, and command-ID non-consumption guarantees");
+    expect(rendered).toContain("state, log, version, position, command-ID, and idempotency-record guarantees");
+    expect(rendered).toContain("For clauses without requiredFacets, map every requiredConcepts entry");
     expect(rendered).not.toContain("version/position");
     expect(rendered).toContain(
-      "Each requirement needs type, text, acceptance_criterion, and source_prompt_indexes; referenced clauses also need source_clause_ids.",
+      "Each requirement needs type, text, and acceptance_criterion. Use source_prompt_indexes for direct prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
     );
+  });
+
+  it("keeps dense referenced-source payload below the prior blob-plus-location representation", () => {
+    const referencedText = [
+      "# Dense contract",
+      ...Array.from({ length: 60 }, (_value, index) => `- Preserve item${index + 1} version exactly.`),
+    ].join("\n");
+    const sources: TaskVerificationSourcePrompt[] = [
+      {
+        id: "dense-spec",
+        kind: "referenced_file",
+        path: "DENSE.md",
+        sha256: "c".repeat(64),
+        text: referencedText,
+      },
+    ];
+
+    const lines = formatRequirementDefinitionPrompt(sources).split("\n");
+    const metadataStart = lines.indexOf("<<<LOCAL_SPEC_DATA");
+    const catalogStart = lines.indexOf("HASH-BOUND REFERENCED-SOURCE CLAUSE CATALOG");
+    const currentPayload = [
+      lines[metadataStart + 1],
+      ...lines.slice(catalogStart + 1, lines.indexOf("", catalogStart)),
+    ].join("\n");
+    const priorPayload = [
+      JSON.stringify({
+        sourceIndex: 1,
+        kind: "referenced_file",
+        id: "dense-spec",
+        path: "DENSE.md",
+        sha256: "c".repeat(64),
+        text: referencedText,
+      }),
+      ...requirementSourceClauseLocations(sources).map((location) => JSON.stringify(location)),
+    ].join("\n");
+
+    expect(Buffer.byteLength(currentPayload, "utf8")).toBeLessThan(Buffer.byteLength(priorPayload, "utf8"));
   });
 });

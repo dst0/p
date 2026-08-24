@@ -8,11 +8,15 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, relative } from "node:path";
-import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
-import { describeBenchmarkProjectInstructionAction } from "./benchmark-project-instruction-routing.js";
+import { attachBenchmarkCleanupError, benchmarkInterruptionFromSignal } from "./benchmark-interruption.js";
+import { replacePrivateBrotliText } from "./benchmark-private-brotli.js";
+import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "./benchmark-process-control.js";
+import {
+  describeBenchmarkProjectInstructionAction,
+  inferBenchmarkProjectInstructionActionPhases,
+} from "./benchmark-project-instruction-routing.js";
 import { createSemanticRecordingFollower } from "./benchmark-project-instructions-recording-follower.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
-
 export const CELL_HEARTBEAT_INTERVAL_MS = 50_000;
 const CELL_OBSERVATION_INTERVAL_MS = 1_000;
 const INTERNAL_PATH_PREFIXES = [".pdev/", ".pdev\\"];
@@ -22,6 +26,7 @@ export function createUnavailableCellLiveness() {
     heartbeatCount: 0,
     firstMutationElapsedMs: null,
     requirementDefinitionAttemptCount: null,
+    observedRequirementDefinitionAttemptCount: 0,
     semanticSequence: 0,
     mutationCount: 0,
     semanticEvidenceAvailable: false,
@@ -58,22 +63,21 @@ function progressRecord(state, event, extra = {}) {
     mutationCount: state.mutationCount,
     semanticEvidenceAvailable: state.semanticEvidenceAvailable,
     semanticEvidenceComplete: state.semanticEvidenceComplete,
-    requirementDefinitionAttemptCount: state.semanticEvidenceAvailable
+    requirementDefinitionAttemptCount: state.semanticEvidenceComplete
       ? state.requirementDefinitionAttemptCount
-      : undefined,
+      : null,
+    observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
     ...extra,
   };
 }
 function appendProgress(state, event, extra) {
   appendFileSync(state.progressPath, `${JSON.stringify(progressRecord(state, event, extra))}\n`, "utf8");
 }
-
 function semanticPhase(phases) {
-  return ["delivery", "closure", "verification", "testing", "implementation", "discovery"].find((phase) =>
+  return ["delivery", "closure", "verification", "testing", "implementation", "planning", "discovery", "intake"].find((phase) =>
     phases.includes(phase),
   );
 }
-
 function processSemanticLine(state, line) {
   let event;
   try {
@@ -81,24 +85,44 @@ function processSemanticLine(state, line) {
   } catch {
     return;
   }
+  if (event.type === "tool_execution_end") {
+    const key = String(event.toolCallId ?? event.benchmarkEventOrdinal ?? "");
+    const completed = state.activeTools.get(key);
+    if (!completed) return;
+    state.activeTools.delete(key);
+    state.phase = [...state.activeTools.values()].at(-1)?.phase ?? completed.settledPhase;
+    return;
+  }
   if (event.type !== "tool_execution_start" || typeof event.toolName !== "string") return;
   const identity = event.toolCallId ?? event.benchmarkEventOrdinal;
+  const key = String(identity ?? `anonymous-${state.semanticEventCount}`);
   if (identity !== undefined) {
-    const key = String(identity);
     if (state.seenToolEvents.has(key)) return;
     state.seenToolEvents.add(key);
   }
   state.semanticEventCount += 1;
-  if (event.toolName === "record_requirement_audit" && event.args?.action === "define") {
-    state.requirementDefinitionAttemptCount += 1;
+  if (event.toolName === "record_requirement_audit") {
+    const defining = event.args?.action === "define";
+    if (defining) state.requirementDefinitionAttemptCount += 1;
+    const phase = defining ? "requirement_definition" : "verification";
+    state.activeTools.set(key, { phase, settledPhase: defining ? "planning" : "idle" });
+    state.phase = phase;
+    return;
   }
   const action = describeBenchmarkProjectInstructionAction(event.toolName, event.args, event.toolDescription);
-  if (!action) return;
+  if (!action) {
+    const phase = semanticPhase(
+      inferBenchmarkProjectInstructionActionPhases(event.toolName, event.args, event.toolDescription),
+    );
+    state.activeTools.set(key, { phase: phase ?? "action", settledPhase: "idle" });
+    if (phase) state.phase = phase;
+    return;
+  }
   state.mutationCount += 1;
   state.firstMutationElapsedMs ??= Math.max(0, state.now() - state.startedAt);
   state.phase = semanticPhase(action.phases) ?? "action";
+  state.activeTools.set(key, { phase: state.phase, settledPhase: "idle" });
 }
-
 function semanticCaptureIsPartial(recordingCapture, captureOverflow) {
   if (recordingCapture?.partial === true) return true;
   return (
@@ -107,7 +131,6 @@ function semanticCaptureIsPartial(recordingCapture, captureOverflow) {
       recordingCapture === undefined)
   );
 }
-
 export function createCellLivenessMonitor(options) {
   const state = {
     now: options.now ?? Date.now,
@@ -125,6 +148,7 @@ export function createCellLivenessMonitor(options) {
     semanticEvidenceAvailable: false,
     semanticEvidenceComplete: false,
     seenToolEvents: new Set(),
+    activeTools: new Map(),
     finalized: false,
   };
   const hasSemanticRecording = Boolean(
@@ -141,11 +165,12 @@ export function createCellLivenessMonitor(options) {
       state.mutationCount = 0;
       state.requirementDefinitionAttemptCount = 0;
       state.seenToolEvents.clear();
+      state.activeTools.clear();
     },
   });
   mkdirSync(dirname(state.progressPath), { recursive: true });
+  writeFileSync(state.progressPath, "", { encoding: "utf8", flag: "wx", mode: 0o600 });
   appendProgress(state, "started");
-
   const observe = () => {
     const observation = recordingFollower.observe();
     state.semanticEvidenceAvailable = observation.available;
@@ -173,7 +198,6 @@ export function createCellLivenessMonitor(options) {
   const cancel = options.cancel ?? clearInterval;
   const observationTimer = schedule(observe, options.observationIntervalMs ?? CELL_OBSERVATION_INTERVAL_MS);
   const heartbeatTimer = schedule(heartbeat, options.heartbeatIntervalMs ?? CELL_HEARTBEAT_INTERVAL_MS);
-
   return {
     observe,
     heartbeat,
@@ -198,21 +222,20 @@ export function createCellLivenessMonitor(options) {
       const requiredEvidenceFailed =
         finalOptions.requireSemanticEvidence === true &&
         (!state.semanticEvidenceAvailable || !state.semanticEvidenceComplete);
-      state.phase = finalOptions.outcome === "process_completed" && !requiredEvidenceFailed ? "completed" : "failed";
-      const definitionAttempts = state.semanticEvidenceComplete
-        ? state.requirementDefinitionAttemptCount
-        : (finalOptions.requirementDefinitionAttemptCount ?? null);
+      state.phase =
+        finalOptions.outcome === "process_completed" && !requiredEvidenceFailed
+          ? "completed"
+          : finalOptions.outcome === "interrupted"
+            ? "interrupted"
+            : "failed";
+      const definitionAttempts = state.semanticEvidenceComplete ? state.requirementDefinitionAttemptCount : null;
       appendProgress(state, state.phase, {
         outcome: finalOptions.outcome,
         requirementDefinitionAttemptCount: definitionAttempts,
+        observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
       });
       const compressedPath = `${state.progressPath}.br`;
-      writeFileSync(
-        compressedPath,
-        brotliCompressSync(readFileSync(state.progressPath), {
-          params: { [zlibConstants.BROTLI_PARAM_QUALITY]: 6 },
-        }),
-      );
+      replacePrivateBrotliText(compressedPath, readFileSync(state.progressPath, "utf8"));
       rmSync(state.progressPath);
       state.finalized = true;
       return {
@@ -221,6 +244,7 @@ export function createCellLivenessMonitor(options) {
         heartbeatCount: state.heartbeatCount,
         firstMutationElapsedMs: state.firstMutationElapsedMs ?? null,
         requirementDefinitionAttemptCount: definitionAttempts,
+        observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
         semanticSequence: state.semanticEventCount,
         mutationCount: state.mutationCount,
         semanticEvidenceAvailable: state.semanticEvidenceAvailable,
@@ -230,25 +254,47 @@ export function createCellLivenessMonitor(options) {
     },
   };
 }
-
-export function runBenchmarkChild(executable, args, options, ipcCapture) {
+export function runBenchmarkChild(executable, args, options, ipcCapture, control = {}) {
   return new Promise((resolveResult) => {
     let settled = false;
+    let spawnError;
+    let interruption;
+    let terminationPromise;
+    const terminateTree = control.terminateProcessTree ?? terminateBenchmarkProcessTree;
     const settle = (result) => {
       if (settled) return;
       settled = true;
+      control.signal?.removeEventListener("abort", interrupt);
       resolveResult(result);
     };
-    const child = spawn(executable, args, options);
+    const child = (control.spawn ?? spawn)(executable, args, benchmarkProcessGroupOptions(options));
+    const interrupt = () => {
+      interruption ??= benchmarkInterruptionFromSignal(control.signal);
+      terminationPromise ??= Promise.resolve()
+        .then(() => terminateTree(child, control.killGraceMs ?? 5_000))
+        .catch((error) => ({ error }));
+    };
     if (ipcCapture) child.on("message", (message) => ipcCapture.accept(message));
-    child.once("error", (error) => settle({ status: undefined, signal: undefined, error }));
-    child.once("close", (status, signal) =>
+    child.once("error", (error) => {
+      spawnError = error;
+    });
+    child.once("close", async (status, signal) => {
+      const termination = terminationPromise ? await terminationPromise : true;
+      const terminationError = typeof termination === "object" ? termination.error : undefined;
+      const treeStopped = typeof termination === "boolean" ? termination : false;
+      if (interruption && terminationError) attachBenchmarkCleanupError(interruption, terminationError);
+      else if (interruption && !treeStopped) {
+        attachBenchmarkCleanupError(interruption, new Error("benchmark process tree did not terminate"));
+      }
       settle({
         status,
         signal,
-        error: undefined,
+        error: spawnError ?? terminationError ?? (treeStopped || interruption ? undefined : new Error("benchmark process tree did not terminate")),
+        interruption,
         projectInstructionAuthority: ipcCapture?.finish(),
-      }),
-    );
+      });
+    });
+    control.signal?.addEventListener("abort", interrupt, { once: true });
+    if (control.signal?.aborted) interrupt();
   });
 }

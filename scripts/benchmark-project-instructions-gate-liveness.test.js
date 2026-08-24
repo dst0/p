@@ -12,6 +12,7 @@ const expectedLivenessKeys = [
   "heartbeatCount",
   "heartbeatIntervalMs",
   "mutationCount",
+  "observedRequirementDefinitionAttemptCount",
   "progressEvidence",
   "requirementDefinitionAttemptCount",
   "semanticEvidenceAvailable",
@@ -38,6 +39,7 @@ test("every pre-cell and assessed gate failure carries the uniform unavailable l
     const persisted = JSON.parse(JSON.stringify(failure));
     assert.deepEqual(Object.keys(persisted.liveness).toSorted(), expectedLivenessKeys, reason);
     assert.equal(persisted.liveness.requirementDefinitionAttemptCount, null, reason);
+    assert.equal(persisted.liveness.observedRequirementDefinitionAttemptCount, 0, reason);
   }
 });
 

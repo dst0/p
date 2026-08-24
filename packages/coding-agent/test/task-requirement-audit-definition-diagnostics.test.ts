@@ -85,9 +85,8 @@ describe("requirement definition diagnostics", () => {
       "Requirement 2: Source clause S2-C2 does not semantically support the mapped requirement",
       "Requirement 3: Source clause S2-C3 has behavioral polarity that the mapped requirement reverses",
       "unclassified source_clause_ids: S2-C4",
-      "Source clause S2-C2 has an uncovered normative concept: event log",
     ];
-    expect(rejected).toContain("Requirement definition has 5 deterministic validation errors:");
+    expect(rejected).toContain("Requirement definition has 4 deterministic validation errors:");
     for (const diagnostic of orderedDiagnostics) expect(rejected).toContain(diagnostic);
     expect(orderedDiagnostics.map((diagnostic) => rejected.indexOf(diagnostic))).toEqual(
       [...orderedDiagnostics].map((diagnostic) => rejected.indexOf(diagnostic)).sort((left, right) => left - right),
@@ -198,7 +197,7 @@ describe("requirement definition diagnostics", () => {
     expect(rejected).toContain("Requirement 1 needs concrete text and acceptance_criterion");
     expect(rejected).toContain("Source clause S2-C2 has behavioral polarity");
     expect(rejected).not.toContain("Source clause S2-C1 does not semantically support");
-    expect(rejected).not.toContain("Source clause S2-C1 has an uncovered normative concept");
+    expect(rejected).not.toContain("Source clause S2-C1 has uncovered normative concepts");
     expect(rejected).not.toContain("unclassified source_clause_ids: S2-C1");
     expect(rejected).toContain("unclassified source_clause_ids: S2-C3");
   });

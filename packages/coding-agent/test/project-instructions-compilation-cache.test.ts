@@ -166,10 +166,11 @@ describe("project instruction compilation cache recovery", () => {
       body: "Always preserve cache evidence.",
       triggers: {},
       classifications: {
-        modules: { rule: "always-on" as const },
+        modules: { foundation: "always-on" as const, rule: "always-on" as const },
         constraints: { "constraint-1": "always-on" as const },
       },
       alwaysOn: { "constraint-1": "Always preserve cache evidence." },
+      requires: { rule: ["foundation"] },
       usage: { input: 30, output: 6, cacheRead: 3, cacheWrite: 2, total: 41 },
     };
     persistCompilation(options, result);

@@ -173,7 +173,13 @@ function parseCompilerResult(
   let materialized: ProjectInstructionCompilerResult;
   try {
     const triggers = deriveProjectInstructionTriggers(classifications, request.modules, request.constraints);
-    materialized = materializeProjectInstructionCompilerResult(classifications, triggers, request.constraints, usage);
+    materialized = materializeProjectInstructionCompilerResult(
+      classifications,
+      triggers,
+      request.constraints,
+      usage,
+      parsed.requires,
+    );
   } catch {
     throw createProjectInstructionCompilerOutputError("grounding-semantic");
   }
@@ -227,18 +233,29 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isSparseCompilerEnvelope(value: unknown): value is { alwaysOn: string[] } {
+function isSparseCompilerEnvelope(
+  value: unknown,
+): value is { alwaysOn: string[]; requires?: Record<string, string[]> } {
   return (
     isRecord(value) &&
-    hasExactKeys(value, ["alwaysOn"]) &&
+    hasOnlyKeys(value, ["alwaysOn", "requires"]) &&
     Array.isArray(value.alwaysOn) &&
-    value.alwaysOn.every((id) => typeof id === "string")
+    value.alwaysOn.every((id) => typeof id === "string") &&
+    (value.requires === undefined || isStringArrayRecord(value.requires))
   );
 }
 
-function hasExactKeys(record: Record<string, unknown>, expected: string[]): boolean {
+function hasOnlyKeys(record: Record<string, unknown>, expected: string[]): boolean {
   const actual = Object.keys(record);
-  return actual.length === expected.length && expected.every((key) => Object.hasOwn(record, key));
+  return Object.hasOwn(record, "alwaysOn") && actual.every((key) => expected.includes(key));
+}
+
+function isStringArrayRecord(value: unknown): value is Record<string, string[]> {
+  return isRecord(value) && Object.values(value).every((entry) => Array.isArray(entry) && entry.every(isString));
+}
+
+function isString(value: unknown): value is string {
+  return typeof value === "string";
 }
 
 function deriveClassifications(

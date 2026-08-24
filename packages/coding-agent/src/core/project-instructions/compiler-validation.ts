@@ -1,11 +1,12 @@
 import { requiresConservativeAlwaysOn } from "./compiler-scope.ts";
-import { parseProjectInstructionCompilerUsage } from "./compiler-usage.ts";
 import {
   getProjectInstructionConstraintSourceText,
   materializeProjectInstructionAlwaysOn,
   materializeProjectInstructionBody,
   normalizeProjectInstructionSourceUnit,
 } from "./compiler-source-units.ts";
+import { parseProjectInstructionCompilerUsage } from "./compiler-usage.ts";
+import { normalizeProjectInstructionModuleDependencies } from "./dependency-graph.ts";
 import { PROJECT_INSTRUCTION_COMPILER_BODY_MAX_CHARS } from "./limits.ts";
 import type {
   ProjectInstructionClassifications,
@@ -103,6 +104,14 @@ export function validateProjectInstructionCompilerResult(
   assertExactKeys(result.classifications.constraints, constraintIds, "constraint classifications");
   assertModuleClassifications(result.classifications, modules, constraints);
   const triggers = validateTriggers(result.triggers, moduleIds);
+  const requires = normalizeProjectInstructionModuleDependencies(result.requires, modules);
+  for (const moduleId of Object.keys(requires)) {
+    const hasRoutedConstraint = constraints.some(
+      (constraint) =>
+        constraint.moduleId === moduleId && result.classifications.constraints[constraint.id] === "routed",
+    );
+    if (!hasRoutedConstraint) throw new Error(`Project instruction dependency owner is not routable: ${moduleId}`);
+  }
   for (const constraint of constraints) {
     if (requiresConservativeAlwaysOn(constraint) && result.classifications.constraints[constraint.id] !== "always-on") {
       throw new Error(`Project instruction compiler routed an explicit always-on constraint: ${constraint.id}`);
@@ -140,6 +149,7 @@ export function validateProjectInstructionCompilerResult(
       constraints: { ...result.classifications.constraints },
     },
     alwaysOn,
+    ...(Object.keys(requires).length > 0 ? { requires } : {}),
     usage: validateCompilerUsage(result.usage),
   };
 }
@@ -149,6 +159,7 @@ export function materializeProjectInstructionCompilerResult(
   triggers: Record<string, string>,
   constraints: ProjectInstructionConstraintInput[],
   usage?: ProjectInstructionCompilerResult["usage"],
+  requires?: ProjectInstructionCompilerResult["requires"],
 ): ProjectInstructionCompilerResult {
   const alwaysOn = materializeProjectInstructionAlwaysOn(classifications, constraints);
   const alwaysOnEntries = Object.entries(alwaysOn);
@@ -157,6 +168,7 @@ export function materializeProjectInstructionCompilerResult(
     triggers,
     classifications,
     alwaysOn,
+    ...(requires && Object.keys(requires).length > 0 ? { requires } : {}),
     usage,
   };
 }

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Make the internal paired-benchmark harness publish terminal interruption evidence and clean up descendant processes without changing shipped product behavior."
+}

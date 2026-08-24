@@ -123,6 +123,35 @@ describe("project instruction sparse compiler output", () => {
     expect(completeSimpleMock).toHaveBeenCalledTimes(2);
   });
 
+  it("accepts stable module-id dependencies outside the always-on body", async () => {
+    const request = requestFixture();
+    completeSimpleMock.mockResolvedValue(
+      response({ alwaysOn: [], requires: { "module-one": ["module-two", "module-two"] } }),
+    );
+
+    const result = await compileProjectInstructionsWithModel(request, { model });
+
+    expect(result.requires).toEqual({ "module-one": ["module-two"] });
+    expect(result.body).not.toContain("module-one");
+    expect(result.body).not.toContain("module-two");
+  });
+
+  it.each([{ "module-one": ["missing-module"] }, { "module-one": ["module-two"], "module-two": ["module-one"] }])(
+    "rejects missing and cyclic module dependencies",
+    async (requires) => {
+      completeSimpleMock.mockResolvedValue(response({ alwaysOn: [], requires }));
+
+      await expect(compileProjectInstructionsWithModel(requestFixture(), { model })).rejects.toThrow(/validation/iu);
+      expect(completeSimpleMock).toHaveBeenCalledTimes(2);
+    },
+  );
+
+  it("rejects dependencies declared by modules with no routed constraints", async () => {
+    completeSimpleMock.mockResolvedValue(response({ alwaysOn: [], requires: { "module-two": ["module-one"] } }));
+
+    await expect(compileProjectInstructionsWithModel(requestFixture(), { model })).rejects.toThrow(/validation/iu);
+  });
+
   it("keeps a production-shaped full input together and omits positional wire ordinals", async () => {
     const counts = [0, ...Array.from({ length: 15 }, () => 8), 7, 7, 47];
     const modules = counts.map((_, index) => ({
@@ -190,6 +219,7 @@ describe("project instruction sparse compiler output", () => {
       { alwaysOn: {} },
       { alwaysOn: [1] },
       { alwaysOn: ["constraint-a"], body: "invented" },
+      { alwaysOn: [], requires: { "module-one": "module-two" } },
       { alwaysOn: ["constraint-a", "constraint-a"] },
       { alwaysOn: ["unknown-constraint"] },
     ];

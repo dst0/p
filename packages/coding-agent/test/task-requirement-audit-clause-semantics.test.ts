@@ -143,6 +143,7 @@ describe("referenced requirement clause semantics", () => {
     const missingIndex = await define(harness, supersededDefinition());
     expect(missingIndex).toMatch(/superseded.*direct user prompt index/iu);
 
+    await nextModelTurn(harness);
     const unrelatedPrompt = await define(harness, supersededDefinition(1));
     expect(unrelatedPrompt).toMatch(/direct user prompt.*(?:conflict|supersed)|does not conflict/iu);
 

@@ -5,7 +5,7 @@ import { createPairedSummary, renderPairedReport } from "./benchmark-project-ins
 
 export function writePairedBenchmarkEvidence(output, document) {
   document.candidateVersion = parseBenchmarkCandidateVersion(document.candidateVersion);
-  document.summary = createPairedSummary(document.samples, document.gate.passed && document.completed);
+  document.summary = createPairedSummary(document.samples, document.gate.passed && document.completed) ?? null;
   writeFileSync(join(output, "results.json"), `${JSON.stringify(document, null, 2)}\n`, "utf8");
   writeFileSync(join(output, "report.md"), renderPairedReport(document), "utf8");
 }

@@ -29,7 +29,12 @@ export function do_createRequirementAuditToolDefinition(
     executionMode: "sequential",
     execute: async (_id, params) => {
       const result = self.applyRequirementAudit(params);
-      const message = result.status === "needs_action" ? self.withGuidance(result.message) : result.message;
+      const message =
+        result.status !== "needs_action"
+          ? result.message
+          : params.action === "define"
+            ? `${result.message}\n\nCorrect every diagnostic and resubmit the complete definition batch; rejection stored no partial definition.`
+            : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },
   };

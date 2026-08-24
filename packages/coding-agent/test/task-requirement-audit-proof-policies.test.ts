@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { computeRequirementSetHash } from "../src/core/task-verification/requirement-audit-hashing.ts";
 import { sourceClauseConceptCoverageError } from "../src/core/task-verification/requirement-clause-semantics.ts";
-import { compoundHighRiskRequirementError } from "../src/core/task-verification/requirement-definition-atomicity.ts";
 import { deriveRequirementProofPolicies } from "../src/core/task-verification/requirement-derived-boundaries.ts";
 import { selectorsMatchProofPolicies } from "../src/core/task-verification/requirement-proof-evidence.ts";
 import { collectProofWitnesses } from "../src/core/task-verification/requirement-proof-witnesses.ts";
@@ -61,7 +60,7 @@ describe("controller-derived requirement proof policies", () => {
     };
 
     expect(deriveRequirementProofPolicies(sources, [serializationRequirement(), narrowed])).toMatch(
-      /exact final-byte removal.*terminal newline/iu,
+      /exact final[- ]byte removal.*terminal newline/iu,
     );
   });
 
@@ -132,15 +131,6 @@ describe("controller-derived requirement proof policies", () => {
     ).toBeUndefined();
   });
 
-  it("rejects rollback observables hidden together in requirement text", () => {
-    expect(
-      compoundHighRiskRequirementError(
-        "Atomic failed batch restores state, event log, version, position, and command IDs",
-        "The batch is all-or-nothing",
-      ),
-    ).toContain("split each high-risk outcome");
-  });
-
   it("derives rollback proof from mapped source semantics when the atomic requirement is concise", () => {
     const rollbackSources: TaskVerificationSourcePrompt[] = [
       {
@@ -192,15 +182,6 @@ describe("controller-derived requirement proof policies", () => {
     expect((result as TaskRequirement[])[0]?.proofPolicies).toBeUndefined();
   });
 
-  it("rejects one rollback criterion spanning multiple independent observables", () => {
-    expect(
-      compoundHighRiskRequirementError(
-        "Atomic failed batch rollback",
-        "A failed batch rolls back state, event log, version, position, and command IDs",
-      ),
-    ).toContain("split each high-risk outcome");
-  });
-
   it("requires every high-risk concept in a broad normative clause to survive its split requirements", () => {
     const clause = requirementSourceClauses([
       {
@@ -211,7 +192,7 @@ describe("controller-derived requirement proof policies", () => {
     ])[0]!;
 
     expect(sourceClauseConceptCoverageError(clause, ["fromLog rejects non-sequential positions"])).toContain(
-      "uncovered normative concept: command identity",
+      "uncovered normative concepts: command ID, version, hash, manifest",
     );
   });
 

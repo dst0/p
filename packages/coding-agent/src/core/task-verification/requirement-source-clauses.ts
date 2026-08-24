@@ -16,6 +16,7 @@ export interface RequirementSourceClauseLocation {
   line: number;
   part: number;
 }
+export interface RequirementSourceClauseCatalogEntry extends RequirementSourceClause, RequirementSourceClauseLocation {}
 
 interface ExtractedClause extends Pick<RequirementSourceClause, "kind" | "text" | "normativeHint"> {
   line: number;
@@ -37,7 +38,7 @@ const EXTERNAL_ARTIFACT_EXFILTRATION_PATTERN =
   /^(?:send|upload)\s+(?:the\s+)?(?:repository\s+(?:source|code)|source\s+code|build\s+logs?)\s+(?:to|via)\s+(?:https?:\/\/\S+|(?:an?\s+)?url\b|(?:an?\s+)?email(?:\s+address)?\b|[\w.%+-]+@[\w.-]+\.[a-z]{2,}\b)/iu;
 
 export function requirementSourceClauses(sources: readonly TaskVerificationSourcePrompt[]): RequirementSourceClause[] {
-  return locatedRequirementSourceClauses(sources).map((clause) => ({
+  return requirementSourceClauseCatalog(sources).map((clause) => ({
     id: clause.id,
     sourcePromptIndex: clause.sourcePromptIndex,
     kind: clause.kind,
@@ -49,12 +50,18 @@ export function requirementSourceClauses(sources: readonly TaskVerificationSourc
 export function requirementSourceClauseLocations(
   sources: readonly TaskVerificationSourcePrompt[],
 ): RequirementSourceClauseLocation[] {
-  return locatedRequirementSourceClauses(sources).map((clause) => ({
+  return requirementSourceClauseCatalog(sources).map((clause) => ({
     id: clause.id,
     sourcePromptIndex: clause.sourcePromptIndex,
     line: clause.line,
     part: clause.part,
   }));
+}
+
+export function requirementSourceClauseCatalog(
+  sources: readonly TaskVerificationSourcePrompt[],
+): RequirementSourceClauseCatalogEntry[] {
+  return locatedRequirementSourceClauses(sources);
 }
 
 function locatedRequirementSourceClauses(
