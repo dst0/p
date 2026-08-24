@@ -4,9 +4,9 @@ import { controllerIgnoredSourceClause } from "./requirement-clause-controller-c
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
 import {
   authorizeRejectedDraftFreshDefinition,
+  type RejectedRequirementDefinitionDraft,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftRequiresFreshDefinition,
-  type RejectedRequirementDefinitionDraft,
 } from "./requirement-definition-repair.ts";
 import { requirementSourceClauseCatalog } from "./requirement-source-clauses.ts";
 import { requirementSourceFacets } from "./requirement-source-facets.ts";

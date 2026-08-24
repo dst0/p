@@ -2,8 +2,8 @@ import type { Agent, AgentMessage, BeforeToolCallContext, BeforeToolCallResult }
 import type { ToolDefinition } from "../../extensions/types.ts";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME, VerificationSchema } from "../constants.ts";
-import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import { rejectedDefinitionNextActionGuardMessage } from "../requirement-definition-repair.ts";
+import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
@@ -147,9 +147,7 @@ export function do_createToolDefinition(
     executionMode: "sequential",
     execute: async (_id, params) => {
       if (params.action !== "status" && self.rejectedRequirementDefinitionDraft) {
-        const result = self.rejected(
-          rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft),
-        );
+        const result = self.rejected(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
         return { content: [{ type: "text", text: result.message }], details: result };
       }
       const result = self.applyInput(params);

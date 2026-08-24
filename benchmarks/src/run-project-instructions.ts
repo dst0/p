@@ -31,7 +31,7 @@ import { runPairedBenchmarkSchedule } from "./project-instructions/run-schedule.
 import { certifyBenchmarkProjectInstructions } from "./project-instructions/seed-runner.ts";
 
 const scriptPath = fileURLToPath(import.meta.url);
-const repoRoot = resolve(dirname(scriptPath), "..");
+const repoRoot = resolve(dirname(scriptPath), "..", "..");
 const codingAgentCli = join("packages", "coding-agent", "dist", "cli.js");
 const timestampLabel = () => new Date().toISOString().replaceAll(/[:.]/gu, "-");
 const cleanupDiagnostic = "Benchmark resource finalization failed";

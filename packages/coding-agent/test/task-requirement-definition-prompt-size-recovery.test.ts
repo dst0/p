@@ -5,9 +5,9 @@ import {
   renderRequirementDefinitionPrompt,
 } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import {
+  type RejectedRequirementDefinitionDraft,
   rejectedDraftFreshDefinitionReason,
   repairRejectedRequirementDefinition,
-  type RejectedRequirementDefinitionDraft,
 } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
 
