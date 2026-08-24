@@ -22,6 +22,15 @@ npm run benchmark:agents -- --model qwen36-35b-iq2m-mtp --agents kilo --kilo-mod
 
 The benchmark runs each selected agent sequentially against four TypeScript fixtures in isolated temporary workspaces:
 
+The harness is an internal, strictly checked TypeScript project:
+
+- `src/run-agents.ts` and `src/run-project-instructions.ts` are thin executable entrypoints.
+- `src/agents/` owns agent-turn policy and lifecycle behavior.
+- `src/harness/` owns shared execution, recording, security, reporting, and immutable-runtime infrastructure.
+- `src/project-instructions/` owns the paired project-instruction protocol.
+- `src/workloads/` owns task metadata and verification; `fixtures/` contains only static task inputs.
+- `test/` mirrors those runtime boundaries, while `results/` remains append-only benchmark evidence and is never part of a runtime snapshot.
+
 ### Fixtures
 
 1. **typescript-calculator** — Build an interactive CLI calculator with a syntax parser, AST, and REPL shell. Tests verify CLI acceptance, unit tests, and type checking.
@@ -79,7 +88,7 @@ through the same verified compression lifecycle for diagnosis.
 
 ### Pi / P
 
-Uses `~/.p/agent/models.json` (or `--models-file`). The paired project-instruction benchmark snapshots it once into private ephemeral storage, verifies its hash for every cell, records only presence, the hash, and resolved model identity, and deletes the snapshot. An absent source is preserved as one explicit private nonexistent path, so a live file appearing later cannot change the run. It also snapshots present or absent `~/.p/agent/auth.json`; each cell receives a private writable copy while auth content, paths, and hashes stay out of results, and every copy is deleted on exit. The paired harness snapshots and hashes its `benchmark-agents.js` entrypoint, complete local import closure, and external durable-workflow fixture/quality files; every cell executes only that copied runner. The model alias must resolve to an accessible provider.
+Uses `~/.p/agent/models.json` (or `--models-file`). The paired project-instruction benchmark snapshots it once into private ephemeral storage, verifies its hash for every cell, records only presence, the hash, and resolved model identity, and deletes the snapshot. An absent source is preserved as one explicit private nonexistent path, so a live file appearing later cannot change the run. It also snapshots present or absent `~/.p/agent/auth.json`; each cell receives a private writable copy while auth content, paths, and hashes stay out of results, and every copy is deleted on exit. The paired harness snapshots and hashes both TypeScript entrypoints, their complete local import closure, and the exact benchmark fixtures; every cell executes only that copied runtime. Tests and historical results are excluded from the snapshot. The model alias must resolve to an accessible provider.
 
 Before retaining a cell, the paired harness redacts initial or refreshed auth
 paths, values, and hashes from plain-text and Brotli recordings, diagnostics,
@@ -113,7 +122,7 @@ fixture lockfile when reproducing a quality check.
 
 ## Requirements
 
-- Node.js 24+
+- Node.js 22.19+
 - Pi CLI installed (`npm install -g @anthropic/pi`)
 - P CLI built locally (this repository)
 - Kilo Code CLI installed (optional)

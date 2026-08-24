@@ -67,9 +67,15 @@ describe("requirement definition repair lineage budget", () => {
 
   it("enforces the schema repair-entry limit during direct execution", () => {
     const draft = initialDraft(20);
-    expect(repairRejectedRequirementDefinition(draft, repairInput(draft, Array.from({ length: 17 }, () => 0)))).toBe(
-      "requirement_repairs contains 17 entries; sparse repair permits at most 16.",
-    );
+    expect(
+      repairRejectedRequirementDefinition(
+        draft,
+        repairInput(
+          draft,
+          Array.from({ length: 17 }, () => 0),
+        ),
+      ),
+    ).toBe("requirement_repairs contains 17 entries; sparse repair permits at most 16.");
   });
 
   it("bounds cumulative net growth against the immutable original lineage baseline", () => {
@@ -119,9 +125,7 @@ describe("requirement definition repair lineage budget", () => {
         definition_revision: draft.revision,
         requirement_repairs: [{ requirement_index: 1, replacements: [requirement(1_000), explosiveRequirement] }],
       }),
-    ).toBe(
-      `repair would create 97 requirements; maximum is ${MAX_REQUIREMENT_COUNT}.`,
-    );
+    ).toBe(`repair would create 97 requirements; maximum is ${MAX_REQUIREMENT_COUNT}.`);
   });
 
   it("starts a fresh lineage baseline for a new full definition", () => {

@@ -1,0 +1,22 @@
+# 2026-08-24 — Runtime snapshots follow value imports only
+
+- **Status:** Resolved
+- **Task/context:** Moving the benchmark runtime from flat JavaScript scripts into a strict TypeScript project while preserving immutable candidate fingerprints.
+- **Unexpected observation or failure:** The first TypeScript closure walk followed an erased `import type` into `packages/coding-agent/src` and rejected a valid runtime snapshot. Separately, moving files outside `scripts/` would have silently removed them from formatter, import, and file-structure checks unless every check root moved with them.
+- **Evidence:** Focused snapshot tests failed on `packages/coding-agent/src/core/project-instructions/types.ts`; repository inspection showed the old closure accepted only `scripts/*.js`, while the static checks scanned or ignored directories by hard-coded path.
+- **Approaches tried:**
+  - **Attempt:** Treat every relative TypeScript import as a runtime dependency.
+    - **Outcome:** Did not work
+    - **Why:** Type-only declarations are erased and must not expand the executable closure.
+  - **Attempt:** Preserve old script paths with compatibility wrappers.
+    - **Outcome:** Rejected
+    - **Why:** Wrappers would retain duplicate architecture and obscure the actual fingerprint boundary.
+  - **Attempt:** Bind the closure and checks explicitly to `benchmarks/src` and `benchmarks/test`, excluding type-only edges and non-runtime trees.
+    - **Outcome:** Worked
+    - **Why:** The implementation now models executable value dependencies and repository policy boundaries directly.
+- **Root cause:** Runtime identity and repository checks encoded architectural ownership implicitly through the old `scripts/` path and JavaScript import syntax.
+- **Resolution:** The snapshot walks value imports under `benchmarks/src`, permits only approved built `packages/*/dist/*.js` edges, copies exact fixtures, and excludes tests/results. Biome, strict typecheck, relative-import checks, and file-structure checks explicitly include the new project.
+- **Verification:** Snapshot closure/fingerprint tests pass 9/9, including type-only exclusion, value-edge rejection, TypeScript execution, live-source isolation, valid workspace symlinks, direct tamper detection, and macOS temporary-path alias behavior.
+- **Prevention/follow-up:** Any source-root migration must inventory and update execution paths, child-process entrypoints, static-check roots, ignore rules, snapshot seeds, and fingerprint tests atomically.
+- **Reusable learning:** File moves across architectural roots are policy and runtime-identity changes; rebind every path-sensitive guard, and compute TypeScript runtime closure from value edges only.
+- **References:** `benchmarks/src/harness/runtime-snapshot.ts`, `benchmarks/test/harness/runtime-snapshot.test.ts`, `benchmarks/test/harness/runtime-snapshot-execution.test.ts`, `scripts/check-file-structure.js`, `scripts/check-ts-relative-imports.js`.
