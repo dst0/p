@@ -65,6 +65,11 @@ describe("focused requirement evidence with a workspace directory prefix", () =>
     );
 
     expect(result).toContain("R1 requires focused executable evidence");
+    expect(result).toContain("test runner's case selector");
+    expect(result).toContain("--test-name-pattern");
+    expect(result).toContain("selector itself must name the observable outcome");
+    expect(result).toContain(requirement.acceptance_criterion);
+    expect(result).toContain("shorter prefix is insufficient");
   });
 
   it("rejects a computed directory prefix", async () => {

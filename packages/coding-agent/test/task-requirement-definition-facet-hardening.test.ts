@@ -114,7 +114,7 @@ describe("requirement definition facet hardening", () => {
         type: "constraint",
         text: "Batches contain idempotency records and state across all SKUs",
         acceptance_criterion: "Every batch exposes idempotency records and observable state across every SKU",
-        source_prompt_indexes: [1, 2],
+        source_prompt_indexes: [1],
         source_clause_ids: ["S2-C1"],
       },
     ]);
@@ -208,7 +208,7 @@ function facetRequirement(text: string, acceptanceCriterion: string, facetId: st
     type: "constraint" as const,
     text,
     acceptance_criterion: acceptanceCriterion,
-    source_prompt_indexes: [1, 2],
+    source_prompt_indexes: [1],
     source_clause_ids: ["S2-C1"],
     source_facet_ids: [facetId],
   };

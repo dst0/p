@@ -96,47 +96,73 @@ describe("rejected requirement definition status recovery", () => {
   });
 
   it("requires status before repairing indexes shifted by a rejected split", async () => {
-    const harness = await preparedRepairHarness(workspaces, "Shipping reduces both onHand and the reservation.");
-    const rejected = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: [compoundFacetRequirement("S2-C1")],
-      ignored_source_prompts: [],
-      ignored_source_clauses: [],
-    });
-    await nextModelTurn(harness);
-    const split = await callRequirementAudit(harness.controller, {
-      action: "repair_definition",
-      definition_revision: revisionFrom(rejected),
-      requirement_repairs: [
-        {
-          requirement_index: 1,
-          replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement("invoice", "S2-C1-F2")],
-        },
-      ],
-    });
-    const splitRevision = revisionFrom(split);
+    const { harness, splitRevision } = await rejectedSplit(workspaces);
     await nextModelTurn(harness);
     const splitDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
-    const blocked = await callRequirementAudit(harness.controller, {
-      action: "repair_definition",
-      definition_revision: splitRevision,
-      requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
-    });
+    const blocked = await callRequirementAudit(harness.controller, shiftedRepair(splitRevision));
 
     expect(blocked).toContain('record_task_verification with action "status"');
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(splitDraft);
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
+      ...splitDraft,
+      unproductiveRepairAttempts: 2,
+    });
     const status = await callTaskVerification(harness.controller, { action: "status" });
     expect(status).toContain('"requirement_columns":["index","type","text"');
     expect(status).toContain("Shipping reduces invoice");
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "repair_definition",
-        definition_revision: splitRevision,
-        requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
-      }),
-    ).toContain("Defined 2 atomic requirement");
+    expect(await callRequirementAudit(harness.controller, shiftedRepair(splitRevision))).toContain(
+      "Defined 2 atomic requirement",
+    );
+  });
+
+  it("bounds repeated repairs that ignore the required status refresh", async () => {
+    const { harness, splitRevision } = await rejectedSplit(workspaces);
+    const splitDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
+
+    await nextModelTurn(harness);
+    expect(await callRequirementAudit(harness.controller, shiftedRepair(splitRevision))).toContain(
+      'record_task_verification with action "status"',
+    );
+    await nextModelTurn(harness);
+    const escaped = await callRequirementAudit(harness.controller, shiftedRepair(splitRevision));
+    expect(escaped).toContain("next_required_action: define");
+    expect(escaped).toContain("consecutive repair attempts were unproductive");
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(splitDraft?.revision);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input).toEqual(splitDraft?.input);
   });
 });
+
+async function rejectedSplit(workspaces: string[]): Promise<{
+  harness: RequirementAuditHarness;
+  splitRevision: string;
+}> {
+  const harness = await preparedRepairHarness(workspaces, "Shipping reduces both onHand and the reservation.");
+  const rejected = await callRequirementAudit(harness.controller, {
+    action: "define",
+    requirements: [compoundFacetRequirement("S2-C1")],
+    ignored_source_prompts: [],
+    ignored_source_clauses: [],
+  });
+  await nextModelTurn(harness);
+  const split = await callRequirementAudit(harness.controller, {
+    action: "repair_definition",
+    definition_revision: revisionFrom(rejected),
+    requirement_repairs: [
+      {
+        requirement_index: 1,
+        replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement("invoice", "S2-C1-F2")],
+      },
+    ],
+  });
+  return { harness, splitRevision: revisionFrom(split) };
+}
+
+function shiftedRepair(definitionRevision: string) {
+  return {
+    action: "repair_definition" as const,
+    definition_revision: definitionRevision,
+    requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
+  };
+}
 
 async function preparedRepairHarness(workspaces: string[], source: string): Promise<RequirementAuditHarness> {
   const workspace = await mkdtemp(join(tmpdir(), "p-requirement-repair-sequence-"));
@@ -165,7 +191,7 @@ function compoundFacetRequirement(sourceClauseId: string) {
     type: "behavior" as const,
     text: "Shipping reduces both onHand and the reservation",
     acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
-    source_prompt_indexes: [1, 2],
+    source_prompt_indexes: [1],
     source_clause_ids: [sourceClauseId],
     source_facet_ids: [`${sourceClauseId}-F1`, `${sourceClauseId}-F2`],
   };
@@ -176,7 +202,7 @@ function facetRequirement(object: string, sourceFacetId: string) {
     type: "behavior" as const,
     text: `Shipping reduces ${object}`,
     acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
-    source_prompt_indexes: [1, 2],
+    source_prompt_indexes: [1],
     source_clause_ids: [sourceFacetId.replace(/-F\d+$/u, "")],
     source_facet_ids: [sourceFacetId],
   };

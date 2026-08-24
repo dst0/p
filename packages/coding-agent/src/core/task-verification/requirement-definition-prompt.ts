@@ -4,6 +4,7 @@ import { controllerIgnoredSourceClause } from "./requirement-clause-controller-c
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
 import {
   authorizeRejectedDraftFreshDefinition,
+  COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
   type RejectedRequirementDefinitionDraft,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftRequiresFreshDefinition,
@@ -191,6 +192,7 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
     : [
         "next_required_action: repair_definition",
         `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and the smallest high-leverage subset of requirement_repairs or classification changes. You do not need to eliminate every diagnostic in one repair call.`,
+        COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
         "Omitted requirements and classifications are retained. Do not restart with action define unless the controller returns next_required_action: define, and do not call status again unless instructed.",
       ];
   return [

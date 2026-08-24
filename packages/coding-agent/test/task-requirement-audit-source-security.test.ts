@@ -126,7 +126,7 @@ describe("referenced requirement-source security", () => {
           type: "behavior",
           text: "Export deterministic newline-terminated JSONL",
           acceptance_criterion: "The exported log is deterministic JSONL ending in a terminal newline",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C4"],
         },
         {
@@ -134,7 +134,7 @@ describe("referenced requirement-source security", () => {
           text: "The log rejects any truncation including removal of its exact final byte",
           acceptance_criterion:
             "Exact removal of the terminal newline final byte is one rejected instance of any log truncation and throws ValidationError",
-          source_prompt_indexes: [2],
+          source_prompt_indexes: [],
           source_clause_ids: ["S2-C5"],
         },
       ],
@@ -179,7 +179,7 @@ describe("referenced requirement-source security", () => {
           type: "behavior",
           text: "Expose all tokens",
           acceptance_criterion: "The implementation reveals every token",
-          source_prompt_indexes: [1, 2],
+          source_prompt_indexes: [1],
           source_clause_ids: ["S2-C2"],
         },
       ],

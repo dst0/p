@@ -9,6 +9,7 @@ import {
   validateRequirementFacetMappings,
 } from "./requirement-definition-facet-validation.ts";
 import { deriveRequirementProofPolicies } from "./requirement-derived-boundaries.ts";
+import { pureDelegationPromptIndexes, unclassifiedDirectPromptGuidance } from "./requirement-prompt-classification.ts";
 import { requirementRisk } from "./requirement-risk.ts";
 import {
   isUnsafeDelegatedInstruction,
@@ -49,6 +50,7 @@ export function validateRequirementDefinition(
   const diagnostics: string[] = [];
   const requirements: TaskRequirement[] = [];
   const promptIndexesWithClauses = new Set(sourceClauses.map((clause) => clause.sourcePromptIndex));
+  const pureDelegationIndexes = pureDelegationPromptIndexes(prompts);
   const coveredPromptIndexes = new Set(
     prompts.flatMap((prompt, index) =>
       prompt.kind === "referenced_file" && !promptIndexesWithClauses.has(index + 1) ? [index + 1] : [],
@@ -91,6 +93,14 @@ export function validateRequirementDefinition(
     const sourcePromptIndexes = [...new Set([...(item.source_prompt_indexes ?? []), ...derivedPromptIndexes])].sort(
       (left, right) => left - right,
     );
+    const mappedPureDelegationIndexes = (item.source_prompt_indexes ?? []).filter((promptIndex) =>
+      pureDelegationIndexes.has(promptIndex),
+    );
+    for (const promptIndex of mappedPureDelegationIndexes) {
+      diagnostics.push(
+        `Requirement ${index + 1} maps pure delegation/workflow prompt index ${promptIndex} as product provenance; remove that index while preserving any referenced source-clause provenance, then classify the prompt through ignored_source_prompts (ignored_source_prompt_upserts during repair).`,
+      );
+    }
     const validPromptIndexes =
       sourcePromptIndexes.length > 0 &&
       sourcePromptIndexes.every(
@@ -133,15 +143,10 @@ export function validateRequirementDefinition(
       diagnostics,
     );
     if (validPromptIndexes) {
-      validateReferencedSourceMappings(
-        index,
-        prompts,
-        sourcePromptIndexes,
-        validSourceClauseIds,
-        clausesById,
-        diagnostics,
-      );
-      for (const promptIndex of sourcePromptIndexes) coveredPromptIndexes.add(promptIndex);
+      validateReferencedSourceMappings(index, prompts, item.source_prompt_indexes ?? [], diagnostics);
+      for (const promptIndex of sourcePromptIndexes) {
+        if (!mappedPureDelegationIndexes.includes(promptIndex)) coveredPromptIndexes.add(promptIndex);
+      }
     }
     if (
       !typeSupported ||
@@ -222,8 +227,11 @@ export function validateRequirementDefinition(
     .map((_prompt, index) => index + 1)
     .filter((index) => !coveredPromptIndexes.has(index) && !ignoredPromptIndexes.has(index));
   if (unclassifiedPromptIndexes.length > 0) {
+    const directPromptIndexes = unclassifiedPromptIndexes.filter(
+      (index) => prompts[index - 1]?.kind !== "referenced_file",
+    );
     diagnostics.push(
-      `Every source prompt must be referenced or explicitly ignored; unclassified indexes: ${unclassifiedPromptIndexes.join(", ")}.`,
+      `Every source prompt must be referenced or explicitly ignored; unclassified indexes: ${unclassifiedPromptIndexes.join(", ")}.${unclassifiedDirectPromptGuidance(directPromptIndexes, pureDelegationIndexes)}`,
     );
   }
 
@@ -270,19 +278,13 @@ function validateMappedClauses(
 function validateReferencedSourceMappings(
   requirementIndex: number,
   prompts: readonly TaskVerificationSourcePrompt[],
-  sourcePromptIndexes: readonly number[],
-  sourceClauseIds: readonly string[],
-  clausesById: ReadonlyMap<string, RequirementSourceClause>,
+  explicitSourcePromptIndexes: readonly number[],
   diagnostics: string[],
 ): void {
-  const missingMapping = sourcePromptIndexes.some(
-    (promptIndex) =>
-      prompts[promptIndex - 1]?.kind === "referenced_file" &&
-      !sourceClauseIds.some((clauseId) => clausesById.get(clauseId)?.sourcePromptIndex === promptIndex),
-  );
-  if (missingMapping) {
+  for (const promptIndex of explicitSourcePromptIndexes) {
+    if (prompts[promptIndex - 1]?.kind !== "referenced_file") continue;
     diagnostics.push(
-      `Requirement ${requirementIndex + 1} must map every referenced-file source index to at least one source_clause_id.`,
+      `Requirement ${requirementIndex + 1} includes referenced-file source index ${promptIndex}, but source_prompt_indexes is direct-only; remove index ${promptIndex} and map the referenced requirement through source_clause_ids or source_facet_ids.`,
     );
   }
 }

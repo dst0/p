@@ -9,7 +9,60 @@ const SERIALIZATION_PATTERN = /\b(?:export\w*|jsonl|logs?|manifests?|records?|se
 const TERMINAL_BOUNDARY_PATTERN =
   /\b(?:(?:exact|final|last|terminal)\s+(?:byte|character|newline)|(?:byte|character|newline)\s+(?:at\s+)?(?:the\s+)?(?:end|final|last|terminal))\b/iu;
 const UNIVERSAL_PATTERN = /\b(?:all|any|every)\b/iu;
-const CORRUPTED_ARTIFACT_PATTERN = /\b(?:alter\w*|bit[-\s]?flip\w*|corrupt\w*|mutat\w*|tamper\w*)\b/iu;
+const ARTIFACT_CHANGE_DOMAINS = new Set([
+  "artifact",
+  "artifacts",
+  "byte",
+  "bytes",
+  "candidate",
+  "candidates",
+  "data",
+  "file",
+  "files",
+  "log",
+  "logs",
+  "manifest",
+  "manifests",
+  "metadata",
+  "packet",
+  "packets",
+  "payload",
+  "payloads",
+  "record",
+  "records",
+  "stream",
+  "streams",
+]);
+const ARTIFACT_CHANGE_PREFIXES = ["alter", "chang", "modif", "mutat"] as const;
+const PROOF_HANDLER_PREFIXES = [
+  "accept",
+  "block",
+  "check",
+  "detect",
+  "deny",
+  "flag",
+  "handle",
+  "invalid",
+  "quarantin",
+  "refus",
+  "reject",
+  "report",
+  "return",
+  "skip",
+  "throw",
+  "validat",
+] as const;
+const PROOF_OUTCOME_PREFIXES = [...PROOF_HANDLER_PREFIXES, "differ", "fail"] as const;
+const PROOF_INTENT_BOUNDARIES = new Set(["and", "before", "but", "or", "without"]);
+const FORWARD_PROOF_INTENT_BOUNDARIES = new Set(["after", "if", "unless", "when", "while"]);
+const GOVERNED_ARTIFACT_CHANGE_NOUN_PATTERN =
+  /\b(?:avoid|prevent)\s+(?:the\s+)?(?:(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?)\s+)?(?:alteration|change|corruption|modification|mutation|tampering)(?:\s*,?\s*(?:and|nor|or)\s+(?:alteration|change|corruption|modification|mutation|tampering))*(?:\s+of\s+(?:the\s+)?(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?))?\b/giu;
+const NEGATED_ACTIVE_CHANGE_PATTERN =
+  /\b(?:avoid|cannot|(?:do(?:es)?|must|shall|should|will)\s+not|never|prevent|without)\s+(?:be(?:ing)?\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*)(?:\s+(?:and|nor|or)\s+(?:be(?:ing)?\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*))*(?:\s+(?:(?:the|with)\s+)?(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|them|values?))?\b/giu;
+const NEGATED_PASSIVE_CHANGE_PATTERN =
+  /\b(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?)\s+(?:is|are|was|were)\s+not\s+(?:being\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*)(?:\s+(?:and|nor|or)\s+(?:being\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*))*\b/giu;
+const NO_ARTIFACT_CHANGE_PATTERN =
+  /\bno\s+(?:(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?)\s+)?(?:alteration|change|corruption|modification|mutation|tampering)(?:\s+(?:and|nor|or)\s+(?:alteration|change|corruption|modification|mutation|tampering))*\b/giu;
 const FAILURE_PATTERN = /\b(?:error|fail\w*|invalid|reject\w*|rollback|stale|throw\w*)\b/iu;
 const PRESERVATION_PATTERN =
   /\b(?:all[-\s]?or[-\s]?nothing|does\s+not\s+(?:advance|append|change|consume)|no\s+partial\s+mutation|preserv\w*|remain\w*|restor\w*|rollback|unchanged)\b/iu;
@@ -94,7 +147,7 @@ export function deriveRequirementProofPolicies(
       .join("\n");
     const mappedText = [mappedDirectText, mappedReferencedText].join("\n");
     const semanticText = mappedReferencedText ? `${mappedReferencedText}\n${text}` : text;
-    if (CORRUPTED_ARTIFACT_PATTERN.test(mappedText) && CORRUPTED_ARTIFACT_PATTERN.test(text)) {
+    if (hasArtifactChangeSemantics(mappedText) && hasArtifactChangeSemantics(text)) {
       policies.get(requirement.id)!.add("change_artifact_bytes");
     }
     const mappedFacets = (requirement.sourceFacetIds ?? []).flatMap((facetId) => {
@@ -149,4 +202,58 @@ function hasSharedArtifactDomain(truncationClause: string, serializationClauses:
 
 function hasRecognizedArtifactDomain(value: string): boolean {
   return ARTIFACT_DOMAIN_PATTERNS.some((domain) => domain.test(value));
+}
+
+function hasArtifactChangeSemantics(value: string): boolean {
+  return value.split(/[.!?;\n]+/u).some((clause) => {
+    const positiveClause = clause
+      .replace(GOVERNED_ARTIFACT_CHANGE_NOUN_PATTERN, " ")
+      .replace(NEGATED_ACTIVE_CHANGE_PATTERN, " ")
+      .replace(NEGATED_PASSIVE_CHANGE_PATTERN, " ")
+      .replace(NO_ARTIFACT_CHANGE_PATTERN, " ");
+    return hasBoundArtifactChangeProofIntent(positiveClause);
+  });
+}
+
+function hasBoundArtifactChangeProofIntent(value: string): boolean {
+  const tokens = value.toLocaleLowerCase("en-US").match(/[a-z0-9]+/gu) ?? [];
+  return tokens.some(
+    (token, index) =>
+      isArtifactChangeToken(tokens, token, index) &&
+      (hasNearbyProofIntent(tokens, index, -1, PROOF_HANDLER_PREFIXES) ||
+        hasNearbyProofIntent(tokens, index, 1, PROOF_OUTCOME_PREFIXES)),
+  );
+}
+
+function isArtifactChangeToken(tokens: readonly string[], token: string, index: number): boolean {
+  if (
+    token.startsWith("corrupt") ||
+    token.startsWith("tamper") ||
+    token === "bitflip" ||
+    (token === "bit" && tokens[index + 1]?.startsWith("flip"))
+  ) {
+    return true;
+  }
+  if (!ARTIFACT_CHANGE_PREFIXES.some((prefix) => token.startsWith(prefix))) return false;
+  return tokens.slice(Math.max(0, index - 2), index + 3).some((candidate) => ARTIFACT_CHANGE_DOMAINS.has(candidate));
+}
+
+function hasNearbyProofIntent(
+  tokens: readonly string[],
+  changeIndex: number,
+  direction: -1 | 1,
+  prefixes: readonly string[],
+): boolean {
+  for (let distance = 1; distance <= 6; distance += 1) {
+    const token = tokens[changeIndex + distance * direction];
+    if (
+      !token ||
+      PROOF_INTENT_BOUNDARIES.has(token) ||
+      (direction === 1 && FORWARD_PROOF_INTENT_BOUNDARIES.has(token))
+    ) {
+      return false;
+    }
+    if (prefixes.some((prefix) => token.startsWith(prefix)) || token.endsWith("error")) return true;
+  }
+  return false;
 }

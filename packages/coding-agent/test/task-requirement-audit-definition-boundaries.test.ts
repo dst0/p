@@ -24,6 +24,7 @@ describe("requirement definition diagnostic boundaries", () => {
     const clauseCount = 128;
     const prompts = sourcePrompts(
       Array.from({ length: clauseCount }, (_unused, index) => `- Reject invalid payload case ${index + 1}.`).join("\n"),
+      "Direct product requirement: create the unrelated archive; SPEC.md supplies rejection-case context.",
     );
     const sourceClauseIds = Array.from({ length: clauseCount }, (_unused, index) => `S2-C${index + 1}`);
     const input: RequirementAuditInput = {
@@ -32,7 +33,7 @@ describe("requirement definition diagnostic boundaries", () => {
         type: "behavior" as const,
         text: "Create the unrelated archive",
         acceptance_criterion: `Archive slot ${index + 1} exists`,
-        source_prompt_indexes: [1, 2],
+        source_prompt_indexes: [1],
         source_clause_ids: sourceClauseIds,
       })),
       ignored_source_prompts: [],
@@ -101,29 +102,38 @@ describe("requirement definition diagnostic boundaries", () => {
   });
 
   it("merges direct prompt indexes with indexes derived from mapped clauses", () => {
-    const validation = validateRequirementDefinition(sourcePrompts("Reject invalid access tokens."), {
-      action: "define",
-      requirements: [
-        {
-          type: "behavior",
-          text: "Reject invalid access tokens",
-          acceptance_criterion: "Invalid access tokens are rejected",
-          source_prompt_indexes: [1],
-          source_clause_ids: ["S2-C1"],
-        },
-      ],
-      ignored_source_prompts: [],
-      ignored_source_clauses: [],
-    });
+    const validation = validateRequirementDefinition(
+      sourcePrompts(
+        "Reject invalid access tokens.",
+        "Direct product requirement: reject invalid access tokens; SPEC.md supplies the detailed acceptance case.",
+      ),
+      {
+        action: "define",
+        requirements: [
+          {
+            type: "behavior",
+            text: "Reject invalid access tokens",
+            acceptance_criterion: "Invalid access tokens are rejected",
+            source_prompt_indexes: [1],
+            source_clause_ids: ["S2-C1"],
+          },
+        ],
+        ignored_source_prompts: [],
+        ignored_source_clauses: [],
+      },
+    );
 
     expect(validation.diagnostics).toEqual([]);
     expect(validation.definition?.requirements[0]?.sourcePromptIndexes).toEqual([1, 2]);
   });
 });
 
-function sourcePrompts(referencedText: string): TaskVerificationSourcePrompt[] {
+function sourcePrompts(
+  referencedText: string,
+  directText = "Implement every requirement in SPEC.md.",
+): TaskVerificationSourcePrompt[] {
   return [
-    { id: "prompt-1", kind: "user_prompt", text: "Implement every requirement in SPEC.md." },
+    { id: "prompt-1", kind: "user_prompt", text: directText },
     {
       id: "source-1",
       kind: "referenced_file",

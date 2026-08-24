@@ -87,6 +87,7 @@ function splitTopLevelShell(command: string): ShellShape | undefined {
       continue;
     }
     if (character === "`" || (character === "$" && next === "(")) return undefined;
+    if (character === "#" && (index === 0 || /\s/u.test(command[index - 1]!))) return undefined;
     if (character === "<" || character === ">" || character === "(" || character === ")") return undefined;
     if (character === "\n" || character === "\r") {
       if (!addConnector("newline", index, 1)) return undefined;
