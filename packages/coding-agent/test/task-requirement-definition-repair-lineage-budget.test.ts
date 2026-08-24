@@ -30,7 +30,7 @@ describe("requirement definition repair lineage budget", () => {
     const replacementCounts = [7, 7, 7, 7, 7, 7, 6];
     const result = repairRejectedRequirementDefinition(draft, repairInput(draft, replacementCounts));
 
-    expect(result).toBe("requirement_repairs contains 48 total replacements; sparse repair permits at most 16.");
+    expect(result).toBe("requirement_repairs contains 48 total replacements; sparse repair permits at most 32.");
     expect(draft).toEqual(before);
     expect(draft.revision).toBe(before.revision);
   });
@@ -44,7 +44,7 @@ describe("requirement definition repair lineage budget", () => {
     expect(applyCount()).toBe(1);
 
     const result = await execute(tool, repairInput(original!, [7, 7, 7, 7, 7, 7, 6]));
-    expect(result).toContain("requirement_repairs contains 48 total replacements; sparse repair permits at most 16.");
+    expect(result).toContain("requirement_repairs contains 48 total replacements; sparse repair permits at most 32.");
     expect(controller.rejectedRequirementDefinitionDraft).toEqual({
       ...original,
       unproductiveRepairAttempts: 1,
@@ -54,18 +54,28 @@ describe("requirement definition repair lineage budget", () => {
     expect(controller.requirementRepairStatusRevision).toBeUndefined();
   });
 
-  it("accepts 16 aggregate replacements and rejects 17", () => {
+  it("accepts 32 aggregate replacements and rejects 33", () => {
     const draft = initialDraft(20);
-    const accepted = acceptedRepair(draft, [16]);
-
-    expect(accepted.requirements).toHaveLength(35);
-    expect(accepted.requirements?.[0]?.text).toBe("Requirement 1000");
-    expect(accepted.requirements?.[15]?.text).toBe("Requirement 1015");
-    expect(accepted.requirements?.[16]?.text).toBe("Requirement 2");
-    expect(accepted.requirements?.at(-1)?.text).toBe("Requirement 20");
-    expect(repairRejectedRequirementDefinition(draft, repairInput(draft, [8, 9]))).toBe(
-      "requirement_repairs contains 17 total replacements; sparse repair permits at most 16.",
+    const accepted = acceptedRepair(
+      draft,
+      Array.from({ length: 16 }, () => 2),
     );
+
+    expect(accepted.requirements).toHaveLength(36);
+    expect(accepted.requirements?.[0]?.text).toBe("Requirement 1000");
+    expect(accepted.requirements?.[31]?.text).toBe("Requirement 1031");
+    expect(accepted.requirements?.[32]?.text).toBe("Requirement 17");
+    expect(accepted.requirements?.at(-1)?.text).toBe("Requirement 20");
+    expect(repairRejectedRequirementDefinition(draft, repairInput(draft, [3, ...Array(15).fill(2)]))).toBe(
+      "requirement_repairs contains 33 total replacements; sparse repair permits at most 32.",
+    );
+  });
+
+  it("accepts the rc34 20-replacement repair when net lineage growth is only seven", () => {
+    const draft = initialDraft(42);
+    const repaired = acceptedRepair(draft, [2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1]);
+
+    expect(repaired.requirements).toHaveLength(49);
   });
 
   it("enforces the schema repair-entry limit during direct execution", () => {
