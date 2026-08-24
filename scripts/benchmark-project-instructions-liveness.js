@@ -1,4 +1,4 @@
-import { spawn, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import {
   appendFileSync,
   existsSync,
@@ -8,15 +8,14 @@ import {
   writeFileSync,
 } from "node:fs";
 import { dirname, relative } from "node:path";
-import { attachBenchmarkCleanupError, benchmarkInterruptionFromSignal } from "./benchmark-interruption.js";
 import { replacePrivateBrotliText } from "./benchmark-private-brotli.js";
-import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "./benchmark-process-control.js";
 import {
   describeBenchmarkProjectInstructionAction,
   inferBenchmarkProjectInstructionActionPhases,
 } from "./benchmark-project-instruction-routing.js";
 import { createSemanticRecordingFollower } from "./benchmark-project-instructions-recording-follower.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
+export { runBenchmarkChild } from "./benchmark-project-instructions-child-process.js";
 export const CELL_HEARTBEAT_INTERVAL_MS = 50_000;
 const CELL_OBSERVATION_INTERVAL_MS = 1_000;
 const INTERNAL_PATH_PREFIXES = [".pdev/", ".pdev\\"];
@@ -27,6 +26,8 @@ export function createUnavailableCellLiveness() {
     firstMutationElapsedMs: null,
     requirementDefinitionAttemptCount: null,
     observedRequirementDefinitionAttemptCount: 0,
+    requirementDefinitionRepairAttemptCount: null,
+    observedRequirementDefinitionRepairAttemptCount: 0,
     semanticSequence: 0,
     mutationCount: 0,
     semanticEvidenceAvailable: false,
@@ -67,6 +68,10 @@ function progressRecord(state, event, extra = {}) {
       ? state.requirementDefinitionAttemptCount
       : null,
     observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+    requirementDefinitionRepairAttemptCount: state.semanticEvidenceComplete
+      ? state.requirementDefinitionRepairAttemptCount
+      : null,
+    observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
     ...extra,
   };
 }
@@ -103,9 +108,11 @@ function processSemanticLine(state, line) {
   state.semanticEventCount += 1;
   if (event.toolName === "record_requirement_audit") {
     const defining = event.args?.action === "define";
+    const repairing = event.args?.action === "repair_definition";
     if (defining) state.requirementDefinitionAttemptCount += 1;
-    const phase = defining ? "requirement_definition" : "verification";
-    state.activeTools.set(key, { phase, settledPhase: defining ? "planning" : "idle" });
+    if (repairing) state.requirementDefinitionRepairAttemptCount += 1;
+    const phase = defining || repairing ? "requirement_definition" : "verification";
+    state.activeTools.set(key, { phase, settledPhase: defining || repairing ? "planning" : "idle" });
     state.phase = phase;
     return;
   }
@@ -145,6 +152,7 @@ export function createCellLivenessMonitor(options) {
     semanticEventCount: 0,
     mutationCount: 0,
     requirementDefinitionAttemptCount: 0,
+    requirementDefinitionRepairAttemptCount: 0,
     semanticEvidenceAvailable: false,
     semanticEvidenceComplete: false,
     seenToolEvents: new Set(),
@@ -164,6 +172,7 @@ export function createCellLivenessMonitor(options) {
       state.semanticEventCount = 0;
       state.mutationCount = 0;
       state.requirementDefinitionAttemptCount = 0;
+      state.requirementDefinitionRepairAttemptCount = 0;
       state.seenToolEvents.clear();
       state.activeTools.clear();
     },
@@ -191,7 +200,7 @@ export function createCellLivenessMonitor(options) {
     appendProgress(state, "heartbeat");
     const definitionAttempts = state.semanticEvidenceAvailable ? state.requirementDefinitionAttemptCount : "n/a";
     console.log(
-      `[progress] ${options.label ?? "benchmark cell"}: ${state.phase}, ${Math.round((state.now() - state.startedAt) / 1000)}s elapsed, ${state.mutationCount} potentially-mutating starts, ${definitionAttempts} definition attempts, ${state.semanticEventCount} semantic events`,
+      `[progress] ${options.label ?? "benchmark cell"}: ${state.phase}, ${Math.round((state.now() - state.startedAt) / 1000)}s elapsed, ${state.mutationCount} potentially-mutating starts, ${definitionAttempts} full definitions, ${state.requirementDefinitionRepairAttemptCount} repairs, ${state.semanticEventCount} semantic events`,
     );
   };
   const schedule = options.schedule ?? setInterval;
@@ -229,10 +238,13 @@ export function createCellLivenessMonitor(options) {
             ? "interrupted"
             : "failed";
       const definitionAttempts = state.semanticEvidenceComplete ? state.requirementDefinitionAttemptCount : null;
+      const repairAttempts = state.semanticEvidenceComplete ? state.requirementDefinitionRepairAttemptCount : null;
       appendProgress(state, state.phase, {
         outcome: finalOptions.outcome,
         requirementDefinitionAttemptCount: definitionAttempts,
         observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+        requirementDefinitionRepairAttemptCount: repairAttempts,
+        observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
       });
       const compressedPath = `${state.progressPath}.br`;
       replacePrivateBrotliText(compressedPath, readFileSync(state.progressPath, "utf8"));
@@ -245,6 +257,8 @@ export function createCellLivenessMonitor(options) {
         firstMutationElapsedMs: state.firstMutationElapsedMs ?? null,
         requirementDefinitionAttemptCount: definitionAttempts,
         observedRequirementDefinitionAttemptCount: state.requirementDefinitionAttemptCount,
+        requirementDefinitionRepairAttemptCount: repairAttempts,
+        observedRequirementDefinitionRepairAttemptCount: state.requirementDefinitionRepairAttemptCount,
         semanticSequence: state.semanticEventCount,
         mutationCount: state.mutationCount,
         semanticEvidenceAvailable: state.semanticEvidenceAvailable,
@@ -253,48 +267,4 @@ export function createCellLivenessMonitor(options) {
       };
     },
   };
-}
-export function runBenchmarkChild(executable, args, options, ipcCapture, control = {}) {
-  return new Promise((resolveResult) => {
-    let settled = false;
-    let spawnError;
-    let interruption;
-    let terminationPromise;
-    const terminateTree = control.terminateProcessTree ?? terminateBenchmarkProcessTree;
-    const settle = (result) => {
-      if (settled) return;
-      settled = true;
-      control.signal?.removeEventListener("abort", interrupt);
-      resolveResult(result);
-    };
-    const child = (control.spawn ?? spawn)(executable, args, benchmarkProcessGroupOptions(options));
-    const interrupt = () => {
-      interruption ??= benchmarkInterruptionFromSignal(control.signal);
-      terminationPromise ??= Promise.resolve()
-        .then(() => terminateTree(child, control.killGraceMs ?? 5_000))
-        .catch((error) => ({ error }));
-    };
-    if (ipcCapture) child.on("message", (message) => ipcCapture.accept(message));
-    child.once("error", (error) => {
-      spawnError = error;
-    });
-    child.once("close", async (status, signal) => {
-      const termination = terminationPromise ? await terminationPromise : true;
-      const terminationError = typeof termination === "object" ? termination.error : undefined;
-      const treeStopped = typeof termination === "boolean" ? termination : false;
-      if (interruption && terminationError) attachBenchmarkCleanupError(interruption, terminationError);
-      else if (interruption && !treeStopped) {
-        attachBenchmarkCleanupError(interruption, new Error("benchmark process tree did not terminate"));
-      }
-      settle({
-        status,
-        signal,
-        error: spawnError ?? terminationError ?? (treeStopped || interruption ? undefined : new Error("benchmark process tree did not terminate")),
-        interruption,
-        projectInstructionAuthority: ipcCapture?.finish(),
-      });
-    });
-    control.signal?.addEventListener("abort", interrupt, { once: true });
-    if (control.signal?.aborted) interrupt();
-  });
 }

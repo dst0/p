@@ -3,15 +3,18 @@ import type { RequirementAuditInput } from "./types.ts";
 
 export interface RejectedRequirementDefinitionDraft {
   revision: string;
+  diagnostics: string;
   input: RequirementAuditInput;
 }
 
 export function rejectedRequirementDefinitionDraft(
   input: RequirementAuditInput,
+  diagnostics: string = "",
 ): RejectedRequirementDefinitionDraft | undefined {
   if (input.action !== "define" || !input.requirements) return undefined;
   return {
     revision: randomUUID(),
+    diagnostics,
     input: {
       action: "define",
       requirements: structuredClone(input.requirements),
@@ -62,7 +65,7 @@ export function formatRejectedDefinitionRepairGuidance(
     ...(draft
       ? [
           `definition_revision: ${draft.revision}`,
-          'For small corrections, call action "repair_definition" with this revision and requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; omitted items and classifications are retained.',
+          'Continue corrections with action "repair_definition", this revision, and requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; omitted items and classifications are retained.',
           "The rejected draft is non-authoritative. The controller reconstructs and validates the complete batch before accepting any requirement or permitting mutation.",
         ]
       : [

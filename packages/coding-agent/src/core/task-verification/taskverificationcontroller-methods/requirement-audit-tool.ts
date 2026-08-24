@@ -2,7 +2,6 @@ import type { ToolDefinition } from "../../extensions/types.ts";
 import { REQUIREMENT_AUDIT_TOOL_NAME, RequirementAuditSchema } from "../constants.ts";
 import {
   formatRejectedDefinitionRepairGuidance,
-  type RejectedRequirementDefinitionDraft,
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
 } from "../requirement-definition-repair.ts";
@@ -12,7 +11,6 @@ import type { VerificationResult } from "../types.ts";
 export function do_createRequirementAuditToolDefinition(
   self: TaskVerificationController,
 ): ToolDefinition<typeof RequirementAuditSchema, VerificationResult> {
-  let rejectedDraft: RejectedRequirementDefinitionDraft | undefined;
   return {
     name: REQUIREMENT_AUDIT_TOOL_NAME,
     label: "Requirement Audit",
@@ -37,22 +35,24 @@ export function do_createRequirementAuditToolDefinition(
     executionMode: "sequential",
     execute: async (_id, params) => {
       const repaired =
-        params.action === "repair_definition" ? repairRejectedRequirementDefinition(rejectedDraft, params) : params;
+        params.action === "repair_definition"
+          ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params)
+          : params;
       const result = typeof repaired === "string" ? self.rejected(repaired) : self.applyRequirementAudit(repaired);
       if (
         result.status === "needs_action" &&
         result.state.requirementAudit?.status === "awaiting_definition" &&
         typeof repaired !== "string"
       ) {
-        rejectedDraft = rejectedRequirementDefinitionDraft(repaired);
+        self.rejectedRequirementDefinitionDraft = rejectedRequirementDefinitionDraft(repaired, result.message);
       } else if (result.status === "updated") {
-        rejectedDraft = undefined;
+        self.rejectedRequirementDefinitionDraft = undefined;
       }
       const message =
         result.status !== "needs_action"
           ? result.message
           : params.action === "define" || params.action === "repair_definition"
-            ? formatRejectedDefinitionRepairGuidance(result.message, rejectedDraft)
+            ? formatRejectedDefinitionRepairGuidance(result.message, self.rejectedRequirementDefinitionDraft)
             : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },
