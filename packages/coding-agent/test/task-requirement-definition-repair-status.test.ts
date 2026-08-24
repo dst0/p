@@ -54,7 +54,133 @@ describe("rejected requirement definition status recovery", () => {
     expect(status).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
     expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain("stale or unavailable");
   });
+
+  it("applies keyed classification deltas without replacing unrelated classifications", async () => {
+    const harness = await preparedRepairHarness(
+      workspaces,
+      ["Example payload.", "Example archive.", "Shipping reduces both onHand and the reservation."].join("\n"),
+    );
+    const rejected = await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [compoundFacetRequirement("S2-C3")],
+      ignored_source_prompts: [],
+      ignored_source_clauses: [exampleClassification("S2-C1", "Payload example"), exampleClassification("S2-C2", "Archive example")],
+    });
+    await nextModelTurn(harness);
+    const repaired = await callRequirementAudit(harness.controller, {
+      action: "repair_definition",
+      definition_revision: revisionFrom(rejected),
+      requirement_repairs: [{ requirement_index: 1, replacements: [compoundFacetRequirement("S2-C3")] }],
+      ignored_source_clause_upserts: [exampleClassification("S2-C1", "Updated payload example")],
+    });
+
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.ignored_source_clauses).toEqual([
+      exampleClassification("S2-C1", "Updated payload example"),
+      exampleClassification("S2-C2", "Archive example"),
+    ]);
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "repair_definition",
+      definition_revision: revisionFrom(repaired),
+      requirement_repairs: [{ requirement_index: 1, replacements: [compoundFacetRequirement("S2-C3")] }],
+      ignored_source_clause_removals: ["S2-C2"],
+    });
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.ignored_source_clauses).toEqual([
+      exampleClassification("S2-C1", "Updated payload example"),
+    ]);
+  });
+
+  it("requires status before repairing indexes shifted by a rejected split", async () => {
+    const harness = await preparedRepairHarness(
+      workspaces,
+      "Shipping reduces both onHand and the reservation.",
+    );
+    const rejected = await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [compoundFacetRequirement("S2-C1")],
+      ignored_source_prompts: [],
+      ignored_source_clauses: [],
+    });
+    await nextModelTurn(harness);
+    const split = await callRequirementAudit(harness.controller, {
+      action: "repair_definition",
+      definition_revision: revisionFrom(rejected),
+      requirement_repairs: [{
+        requirement_index: 1,
+        replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement("invoice", "S2-C1-F2")],
+      }],
+    });
+    const splitRevision = revisionFrom(split);
+    await nextModelTurn(harness);
+    const splitDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
+    const blocked = await callRequirementAudit(harness.controller, {
+      action: "repair_definition",
+      definition_revision: splitRevision,
+      requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
+    });
+
+    expect(blocked).toContain('record_task_verification with action "status"');
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(splitDraft);
+    const status = await callTaskVerification(harness.controller, { action: "status" });
+    expect(status).toContain('"requirement_columns":["index","type","text"');
+    expect(status).toContain("Shipping reduces invoice");
+    expect(
+      await callRequirementAudit(harness.controller, {
+        action: "repair_definition",
+        definition_revision: splitRevision,
+        requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
+      }),
+    ).toContain("Defined 2 atomic requirement");
+  });
 });
+
+async function preparedRepairHarness(workspaces: string[], source: string): Promise<RequirementAuditHarness> {
+  const workspace = await mkdtemp(join(tmpdir(), "p-requirement-repair-sequence-"));
+  workspaces.push(workspace);
+  await writeFile(join(workspace, "README.md"), `${source}\n`);
+  git(workspace, "init", "-q");
+  git(workspace, "add", "README.md");
+  const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));
+  await sendAuditUserPrompt(harness, "Implement the behavior specified by README.md.", 100);
+  await callTaskVerification(harness.controller, {
+    action: "declare_task",
+    task_kind: "feature",
+    task_summary: "Implement the behavior specified by README.md",
+  });
+  await callRequirementAudit(harness.controller, {
+    action: "prepare_definition",
+    selected_paths: ["README.md"],
+    ignored_paths: [],
+  });
+  await nextModelTurn(harness);
+  return harness;
+}
+
+function compoundFacetRequirement(sourceClauseId: string) {
+  return {
+    type: "behavior" as const,
+    text: "Shipping reduces both onHand and the reservation",
+    acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
+    source_prompt_indexes: [1, 2],
+    source_clause_ids: [sourceClauseId],
+    source_facet_ids: [`${sourceClauseId}-F1`, `${sourceClauseId}-F2`],
+  };
+}
+
+function facetRequirement(object: string, sourceFacetId: string) {
+  return {
+    type: "behavior" as const,
+    text: `Shipping reduces ${object}`,
+    acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
+    source_prompt_indexes: [1, 2],
+    source_clause_ids: [sourceFacetId.replace(/-F\d+$/u, "")],
+    source_facet_ids: [sourceFacetId],
+  };
+}
+
+function exampleClassification(sourceClauseId: string, reason: string) {
+  return { source_clause_id: sourceClauseId, classification: "example" as const, reason };
+}
 
 async function rejectedRepair(
   workspaces: string[],

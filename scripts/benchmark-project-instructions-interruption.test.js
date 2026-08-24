@@ -158,16 +158,18 @@ test("liveness treats requirement definition as planning rather than mutation", 
     monitor.heartbeat();
     await monitor.finalize({ outcome: "failed" });
     const records = brotliDecompressSync(readFileSync(`${progressPath}.br`)).toString("utf8").trim().split("\n").map(JSON.parse);
-    assert.equal(records[1].phase, "requirement_definition");
-    assert.equal(records[1].requirementDefinitionAttemptCount, null);
-    assert.equal(records[1].observedRequirementDefinitionAttemptCount, 1);
-    assert.equal(records[1].mutationCount, 0);
-    assert.equal(records[1].firstMutationElapsedMs ?? null, null);
-    assert.equal(records[2].phase, "planning");
-    assert.equal(records[3].phase, "implementation");
-    assert.equal(records[3].mutationCount, 1);
-    assert.equal(records[3].firstMutationElapsedMs, 2_000);
-    assert.equal(records[4].phase, "idle");
+    const heartbeats = records.filter((record) => record.event === "heartbeat");
+    assert.equal(heartbeats[0].phase, "requirement_definition");
+    assert.equal(heartbeats[0].requirementDefinitionAttemptCount, null);
+    assert.equal(heartbeats[0].observedRequirementDefinitionAttemptCount, 1);
+    assert.equal(heartbeats[0].mutationCount, 0);
+    assert.equal(heartbeats[0].firstMutationElapsedMs ?? null, null);
+    assert.equal(heartbeats[1].phase, "planning");
+    assert.equal(heartbeats[2].phase, "implementation");
+    assert.equal(heartbeats[2].mutationCount, 1);
+    assert.equal(heartbeats[2].firstMutationElapsedMs, 2_000);
+    assert.equal(heartbeats[3].phase, "idle");
+    assert.equal(records.filter((record) => record.event === "requirement_definition_settled").length, 1);
     assert.equal(existsSync(progressPath), false);
     assert.equal(statSync(`${progressPath}.br`).mode & 0o777, 0o600);
   } finally {

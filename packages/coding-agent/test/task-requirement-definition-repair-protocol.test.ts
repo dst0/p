@@ -71,13 +71,13 @@ describe("rejected requirement definition repair protocol", () => {
     ).toContain("invalid rejected-batch indexes: 3");
   });
 
-  it("supports deletion and explicit classification replacement", () => {
+  it("supports deletion and keyed classification replacement", () => {
     const draft = rejectedRequirementDefinitionDraft(definition())!;
     const repaired = repairRejectedRequirementDefinition(draft, {
       action: "repair_definition",
       definition_revision: draft.revision,
       requirement_repairs: [{ requirement_index: 2, replacements: [] }],
-      ignored_source_prompts: [{ source_prompt_index: 1, reason: "Updated classification" }],
+      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
     });
 
     expect(typeof repaired).not.toBe("string");
@@ -85,6 +85,44 @@ describe("rejected requirement definition repair protocol", () => {
     expect(repaired.requirements).toEqual([requirement("Receiving increases onHand")]);
     expect(repaired.ignored_source_prompts).toEqual([{ source_prompt_index: 1, reason: "Updated classification" }]);
     expect(repaired.ignored_source_clauses).toEqual([]);
+
+    const removed = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft.revision,
+      requirement_repairs: [{ requirement_index: 2, replacements: [] }],
+      ignored_source_prompt_removals: [1],
+    });
+    expect(typeof removed).not.toBe("string");
+    if (typeof removed === "string") throw new Error(removed);
+    expect(removed.ignored_source_prompts).toEqual([]);
+  });
+
+  it("fails closed for ambiguous classification repair payloads", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+    const base = { action: "repair_definition" as const, definition_revision: draft.revision };
+
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompts: [{ source_prompt_index: 1, reason: "Legacy snapshot" }],
+      }),
+    ).toContain("complete define snapshots");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompt_upserts: [
+          { source_prompt_index: 1, reason: "First" },
+          { source_prompt_index: 1, reason: "Second" },
+        ],
+      }),
+    ).toContain("duplicate keys: 1");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Replacement" }],
+        ignored_source_prompt_removals: [1],
+      }),
+    ).toContain("both upserted and removed: 1");
   });
 
   it("does not consume the audit transition gate when no rejected draft exists", () => {
@@ -116,7 +154,18 @@ describe("rejected requirement definition repair protocol", () => {
     ).toBe(true);
   });
 
-  it("rotates repair revisions after revalidation and rejects the stale predecessor", async () => {
+  it("rejects repair-only classification deltas on define", async () => {
+    const { controller } = createRequirementAuditHarness();
+    const result = await execute(do_createRequirementAuditToolDefinition(controller), {
+      ...definition(),
+      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Ambiguous delta" }],
+    });
+
+    expect(result).toContain("does not accept field(s): ignored_source_prompt_upserts");
+    expect(controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+  });
+
+  it("rotates repair revisions and requires status before using the new indexes", async () => {
     const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
     const received: RequirementAuditInput[] = [];
     const rejection = (message: string): VerificationResult => ({ status: "needs_action", message, state });
@@ -151,8 +200,16 @@ describe("rejected requirement definition repair protocol", () => {
         definition_revision: revision1,
         requirement_repairs: [{ requirement_index: 1, replacements: [] }],
       }),
-    ).toContain("stale or unavailable");
+    ).toContain('record_task_verification with action "status"');
     expect(received).toHaveLength(2);
+    controller.requirementRepairStatusRevision = undefined;
+    expect(
+      await execute(tool, {
+        action: "repair_definition",
+        definition_revision: revision1,
+        requirement_repairs: [{ requirement_index: 1, replacements: [] }],
+      }),
+    ).toContain("stale or unavailable");
     expect(
       await execute(tool, {
         action: "repair_definition",

@@ -7,6 +7,9 @@ export interface RejectedRequirementDefinitionDraft {
   input: RequirementAuditInput;
 }
 
+type IgnoredPromptInput = NonNullable<RequirementAuditInput["ignored_source_prompts"]>[number];
+type IgnoredClauseInput = NonNullable<RequirementAuditInput["ignored_source_clauses"]>[number];
+
 export function rejectedRequirementDefinitionDraft(
   input: RequirementAuditInput,
   diagnostics: string = "",
@@ -31,7 +34,19 @@ export function repairRejectedRequirementDefinition(
   if (!draft || repair.definition_revision !== draft.revision) {
     return "The definition_revision is stale or unavailable. Resubmit one complete definition batch.";
   }
+  if (repair.ignored_source_prompts || repair.ignored_source_clauses) {
+    return "repair_definition requires keyed ignored-source upserts/removals; legacy ignored_source_prompts and ignored_source_clauses are complete define snapshots.";
+  }
   const repairs = repair.requirement_repairs ?? [];
+  if (
+    repairs.length === 0 &&
+    (repair.ignored_source_prompt_upserts?.length ?? 0) === 0 &&
+    (repair.ignored_source_prompt_removals?.length ?? 0) === 0 &&
+    (repair.ignored_source_clause_upserts?.length ?? 0) === 0 &&
+    (repair.ignored_source_clause_removals?.length ?? 0) === 0
+  ) {
+    return "repair_definition requires at least one requirement repair or keyed classification change.";
+  }
   const duplicateIndexes = repairs
     .map((item) => item.requirement_index)
     .filter((index, offset, indexes) => indexes.indexOf(index) !== offset);
@@ -46,26 +61,86 @@ export function repairRejectedRequirementDefinition(
     return `requirement_repairs references invalid rejected-batch indexes: ${invalidIndexes.join(", ")}.`;
   }
   const repairsByIndex = new Map(repairs.map((item) => [item.requirement_index, item.replacements]));
+  const ignoredSourcePrompts = mergeKeyedClassifications(
+    draft.input.ignored_source_prompts ?? [],
+    repair.ignored_source_prompt_upserts ?? [],
+    repair.ignored_source_prompt_removals ?? [],
+    (item) => item.source_prompt_index,
+    "source prompt",
+  );
+  if (typeof ignoredSourcePrompts === "string") return ignoredSourcePrompts;
+  const ignoredSourceClauses = mergeKeyedClassifications(
+    draft.input.ignored_source_clauses ?? [],
+    repair.ignored_source_clause_upserts ?? [],
+    repair.ignored_source_clause_removals ?? [],
+    (item) => item.source_clause_id,
+    "source clause",
+  );
+  if (typeof ignoredSourceClauses === "string") return ignoredSourceClauses;
   return {
     action: "define",
     requirements: requirements.flatMap((requirement, offset) =>
       structuredClone(repairsByIndex.get(offset + 1) ?? [requirement]),
     ),
-    ignored_source_prompts: structuredClone(repair.ignored_source_prompts ?? draft.input.ignored_source_prompts ?? []),
-    ignored_source_clauses: structuredClone(repair.ignored_source_clauses ?? draft.input.ignored_source_clauses ?? []),
+    ignored_source_prompts: ignoredSourcePrompts,
+    ignored_source_clauses: ignoredSourceClauses,
   };
+}
+
+export function requirementRepairChangesArity(repair: RequirementAuditInput): boolean {
+  return (repair.requirement_repairs ?? []).some((item) => item.replacements.length !== 1);
+}
+
+function mergeKeyedClassifications<T extends IgnoredPromptInput | IgnoredClauseInput, K extends string | number>(
+  current: readonly T[],
+  upserts: readonly T[],
+  removals: readonly K[],
+  keyOf: (item: T) => K,
+  label: string,
+): T[] | string {
+  const upsertKeys = upserts.map(keyOf);
+  const duplicateKeys = upsertKeys.filter((key, offset) => upsertKeys.indexOf(key) !== offset);
+  if (duplicateKeys.length > 0) return `Ignored ${label} upserts contain duplicate keys: ${[...new Set(duplicateKeys)].join(", ")}.`;
+  const removalKeys = new Set(removals);
+  const conflicts = upsertKeys.filter((key) => removalKeys.has(key));
+  if (conflicts.length > 0) return `Ignored ${label} keys cannot be both upserted and removed: ${conflicts.join(", ")}.`;
+  const upsertByKey = new Map(upserts.map((item) => [keyOf(item), item]));
+  const emitted = new Set<K>();
+  const merged: T[] = [];
+  for (const item of current) {
+    const key = keyOf(item);
+    if (removalKeys.has(key)) continue;
+    const replacement = upsertByKey.get(key);
+    if (replacement) {
+      if (!emitted.has(key)) merged.push(structuredClone(replacement));
+      emitted.add(key);
+    } else {
+      merged.push(structuredClone(item));
+    }
+  }
+  for (const item of upserts) {
+    const key = keyOf(item);
+    if (!emitted.has(key)) merged.push(structuredClone(item));
+  }
+  return merged;
 }
 
 export function formatRejectedDefinitionRepairGuidance(
   message: string,
   draft: RejectedRequirementDefinitionDraft | undefined,
+  statusRequired: boolean = false,
 ): string {
   return [
     message,
     ...(draft
       ? [
           `definition_revision: ${draft.revision}`,
-          'Continue corrections with action "repair_definition", this revision, and requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; omitted items and classifications are retained.',
+          ...(statusRequired
+            ? ['Indexes changed. Call record_task_verification with action "status" before another repair_definition call.']
+            : [
+                'Continue corrections with action "repair_definition", this revision, and requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements.',
+              ]),
+          "Omitted requirements and keyed classification changes are retained. Repair classifications only with ignored_source_prompt_upserts/removals and ignored_source_clause_upserts/removals; legacy ignored-source arrays are complete define snapshots.",
           "The rejected draft is non-authoritative. The controller reconstructs and validates the complete batch before accepting any requirement or permitting mutation.",
         ]
       : [

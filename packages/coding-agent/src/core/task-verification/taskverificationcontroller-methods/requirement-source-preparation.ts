@@ -79,6 +79,7 @@ export function do_prepareRequirementDefinition(
   for (const reference of reusable) selectedTexts.set(reference.id, self.requirementSourceTexts.get(reference.id)!);
   for (const source of selection.sources) selectedTexts.set(source.id, source.text);
   self.rejectedRequirementDefinitionDraft = undefined;
+  self.requirementRepairStatusRevision = undefined;
   self.requirementSourceTexts.clear();
   for (const [id, text] of selectedTexts) self.requirementSourceTexts.set(id, text);
   self.state = {

@@ -9,6 +9,7 @@ import {
 } from "../constants.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
 import { baselineRequired } from "../requirement-checks.ts";
+import { renderedRejectedDefinitionRevision } from "../requirement-definition-prompt.ts";
 import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
 import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -27,7 +28,6 @@ import {
   summarizeOutput,
 } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
-
 export async function do_afterToolCall(
   self: TaskVerificationController,
   context: AfterToolCallContext,
@@ -37,6 +37,7 @@ export async function do_afterToolCall(
   const content = previousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
+    self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft = undefined;
     self.state = emptyState();
     self.evidence.clear();
     self.bashFingerprints.clear();
@@ -209,11 +210,16 @@ export function do_applyInput(self: TaskVerificationController, input: Verificat
       return self.recordFinal(input);
     case "ready_to_finish":
       return self.readyToFinish(input);
-    case "status":
-      return self.updated(self.formatStatus(), false);
+    case "status": {
+      const requiredRevision = self.requirementRepairStatusRevision;
+      const status = self.formatStatus();
+      if (requiredRevision && renderedRejectedDefinitionRevision(status, requiredRevision)) {
+        self.requirementRepairStatusRevision = undefined;
+      }
+      return self.updated(status, false);
+    }
   }
 }
-
 export function do_declareTask(self: TaskVerificationController, input: VerificationInput): VerificationResult {
   if (!isTaskKind(input.task_kind) || !normalizeText(input.task_summary)) {
     return self.rejected("declare_task requires task_kind and a concrete task_summary.");
@@ -229,6 +235,7 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
       ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
       : [];
   self.rejectedRequirementDefinitionDraft = undefined;
+  self.requirementRepairStatusRevision = undefined;
   self.state = {
     ...emptyState(self.state.taskId),
     taskKind: input.task_kind,

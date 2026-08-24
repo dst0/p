@@ -14,6 +14,7 @@ import {
   inferBenchmarkProjectInstructionActionPhases,
 } from "./benchmark-project-instruction-routing.js";
 import { createSemanticRecordingFollower } from "./benchmark-project-instructions-recording-follower.js";
+import { createRequirementRepairTelemetry } from "./benchmark-project-instructions-repair-telemetry.js";
 import { sanitizeBenchmarkGitEnvironment } from "./benchmark-workspace-repository.js";
 export { runBenchmarkChild } from "./benchmark-project-instructions-child-process.js";
 export const CELL_HEARTBEAT_INTERVAL_MS = 50_000;
@@ -94,6 +95,12 @@ function processSemanticLine(state, line) {
     const key = String(event.toolCallId ?? event.benchmarkEventOrdinal ?? "");
     const completed = state.activeTools.get(key);
     if (!completed) return;
+    const telemetry = state.requirementRepairTelemetry.end(
+      event,
+      key,
+      Math.max(0, state.now() - state.startedAt),
+    );
+    if (telemetry) appendProgress(state, telemetry.event, telemetry);
     state.activeTools.delete(key);
     state.phase = [...state.activeTools.values()].at(-1)?.phase ?? completed.settledPhase;
     return;
@@ -106,6 +113,7 @@ function processSemanticLine(state, line) {
     state.seenToolEvents.add(key);
   }
   state.semanticEventCount += 1;
+  state.requirementRepairTelemetry.start(event, key, Math.max(0, state.now() - state.startedAt));
   if (event.toolName === "record_requirement_audit") {
     const defining = event.args?.action === "define";
     const repairing = event.args?.action === "repair_definition";
@@ -157,6 +165,7 @@ export function createCellLivenessMonitor(options) {
     semanticEvidenceComplete: false,
     seenToolEvents: new Set(),
     activeTools: new Map(),
+    requirementRepairTelemetry: createRequirementRepairTelemetry(),
     finalized: false,
   };
   const hasSemanticRecording = Boolean(
@@ -175,6 +184,7 @@ export function createCellLivenessMonitor(options) {
       state.requirementDefinitionRepairAttemptCount = 0;
       state.seenToolEvents.clear();
       state.activeTools.clear();
+      state.requirementRepairTelemetry.resetReplayState();
     },
   });
   mkdirSync(dirname(state.progressPath), { recursive: true });
