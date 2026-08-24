@@ -55,10 +55,16 @@ describe("indexing-version runtime dependencies", () => {
 
   it("changes computeIndexingVersion when apple-coreai-generation-path.js changes", () => {
     const root = createMockProjectRoot();
-    fs.writeFileSync(path.join(root, "scripts", "apple-coreai-generation-path.js"), "export const scriptVersion = 1;\n");
+    fs.writeFileSync(
+      path.join(root, "scripts", "apple-coreai-generation-path.js"),
+      "export const scriptVersion = 1;\n",
+    );
     const versionBefore = computeIndexingVersion(root);
 
-    fs.writeFileSync(path.join(root, "scripts", "apple-coreai-generation-path.js"), "export const scriptVersion = 2;\n");
+    fs.writeFileSync(
+      path.join(root, "scripts", "apple-coreai-generation-path.js"),
+      "export const scriptVersion = 2;\n",
+    );
 
     const versionAfter = computeIndexingVersion(root);
     expect(versionAfter).not.toBe(versionBefore);

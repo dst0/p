@@ -8,9 +8,9 @@ import {
   callTaskVerification,
   createRequirementAuditHarness,
   nextModelTurn,
+  type RequirementAuditHarness,
   reachAuditEvidenceReady,
   recordAuditToolResult,
-  type RequirementAuditHarness,
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("rejected requirement definition next-action authorization", () => {
@@ -92,9 +92,9 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(overflowDraft);
     expect(apply).toHaveBeenCalledTimes(3);
 
-    expect(
-      await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1])),
-    ).toContain("fresh define is required");
+    expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
+      "fresh define is required",
+    );
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(overflowDraft);
     expect(apply).toHaveBeenCalledTimes(3);
 

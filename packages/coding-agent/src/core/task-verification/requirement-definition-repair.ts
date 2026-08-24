@@ -35,9 +35,7 @@ export function rejectedDraftFreshDefinitionReason(
   return draft === undefined ? undefined : freshDefinitionReasons.get(draft);
 }
 
-export function rejectedDraftRequiresFreshDefinition(
-  draft: RejectedRequirementDefinitionDraft | undefined,
-): boolean {
+export function rejectedDraftRequiresFreshDefinition(draft: RejectedRequirementDefinitionDraft | undefined): boolean {
   return rejectedDraftFreshDefinitionReason(draft) !== undefined;
 }
 
@@ -206,14 +204,14 @@ export function formatRejectedDefinitionRepairGuidance(
                 `A fresh complete definition is required because ${freshDefinitionReasonText(rejectedDraftFreshDefinitionReason(draft)!)}. Sparse repair is no longer authorized for this rejected draft.`,
               ]
             : statusRequired
-            ? [
-                'Indexes changed. Call record_task_verification with action "status" before another repair_definition call.',
-              ]
-            : [
-                "next_required_action: repair_definition",
-                `Continue corrections with action "repair_definition", this revision, and a bounded subset of requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; one call permits at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements total and one lineage may grow by at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements.`,
-                'Prioritize the smallest high-leverage subset; the complete merged batch is revalidated, so one repair call does not need to eliminate every remaining diagnostic. A fresh action "define" batch is forbidden unless the controller explicitly returns next_required_action: define.',
-              ]),
+              ? [
+                  'Indexes changed. Call record_task_verification with action "status" before another repair_definition call.',
+                ]
+              : [
+                  "next_required_action: repair_definition",
+                  `Continue corrections with action "repair_definition", this revision, and a bounded subset of requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; one call permits at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements total and one lineage may grow by at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements.`,
+                  'Prioritize the smallest high-leverage subset; the complete merged batch is revalidated, so one repair call does not need to eliminate every remaining diagnostic. A fresh action "define" batch is forbidden unless the controller explicitly returns next_required_action: define.',
+                ]),
           "Omitted requirements and keyed classification changes are retained. Repair classifications only with ignored_source_prompt_upserts/removals and ignored_source_clause_upserts/removals; legacy ignored-source arrays are complete define snapshots.",
           "The rejected draft is non-authoritative. The controller reconstructs and validates the complete batch before accepting any requirement or permitting mutation.",
         ]

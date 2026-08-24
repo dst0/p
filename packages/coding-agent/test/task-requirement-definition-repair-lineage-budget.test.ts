@@ -154,10 +154,7 @@ describe("requirement definition repair lineage budget", () => {
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
 
     controller.requirementRepairStatusRevision = undefined;
-    const overflow = await execute(
-      tool,
-      repairInput(controller.rejectedRequirementDefinitionDraft!, [10]),
-    );
+    const overflow = await execute(tool, repairInput(controller.rejectedRequirementDefinitionDraft!, [10]));
     expect(overflow).toContain("cumulative net growth permits at most 16");
     expect(overflow).toContain("next_required_action: define");
 

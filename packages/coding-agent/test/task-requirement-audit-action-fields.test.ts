@@ -110,7 +110,7 @@ function controllerHarness(hasActiveRejectedDraft: boolean = false) {
     applyRequirementAudit,
     lastAuditTransitionTurn: -1,
     rejectedRequirementDefinitionDraft: hasActiveRejectedDraft
-      ? {
+      ? ({
           revision: "revision",
           diagnostics: "",
           repairLineageBaselineRequirementCount: 1,
@@ -120,7 +120,7 @@ function controllerHarness(hasActiveRejectedDraft: boolean = false) {
             ignored_source_prompts: [],
             ignored_source_clauses: [],
           },
-        } satisfies RejectedRequirementDefinitionDraft
+        } satisfies RejectedRequirementDefinitionDraft)
       : undefined,
     rejected: (message: string): VerificationResult => ({ status: "needs_action", message, state }),
   } as unknown as TaskVerificationController;

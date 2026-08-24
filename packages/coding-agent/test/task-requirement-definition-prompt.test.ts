@@ -212,5 +212,4 @@ describe("requirement definition prompt", () => {
 
     expect(Buffer.byteLength(currentPayload, "utf8")).toBeLessThan(Buffer.byteLength(priorPayload, "utf8"));
   });
-
 });
