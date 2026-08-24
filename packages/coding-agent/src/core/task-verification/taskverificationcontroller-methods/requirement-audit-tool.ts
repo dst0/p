@@ -1,5 +1,10 @@
 import type { ToolDefinition } from "../../extensions/types.ts";
-import { REQUIREMENT_AUDIT_TOOL_NAME, RequirementAuditSchema } from "../constants.ts";
+import {
+  MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
+  MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
+  REQUIREMENT_AUDIT_TOOL_NAME,
+  RequirementAuditSchema,
+} from "../constants.ts";
 import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
 import {
   authorizeRejectedDraftFreshDefinition,
@@ -35,7 +40,7 @@ export function do_createRequirementAuditToolDefinition(
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      "After a rejected definition, use action 'repair_definition' with its definition_revision and the smallest useful subset of indexed replacements or splits; at most 16 replacements are allowed per call and cumulative lineage growth is capped at 16 requirements before a fresh define batch is required.",
+      `After a rejected definition, use action 'repair_definition' with its definition_revision and the smallest useful subset of indexed replacements or splits; at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements are allowed per call and cumulative lineage growth is capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements before a fresh define batch is required.`,
       COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
       "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",

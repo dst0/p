@@ -23,8 +23,8 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(apply).toHaveBeenCalledTimes(1);
     await nextModelTurn(harness);
 
-    const aggregateOverflow = await callRequirementAudit(harness.controller, repair(original!.revision, [8, 9]));
-    expect(aggregateOverflow).toContain("17 total replacements");
+    const aggregateOverflow = await callRequirementAudit(harness.controller, repair(original!.revision, [16, 17]));
+    expect(aggregateOverflow).toContain("33 total replacements");
     expect(aggregateOverflow).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...original,
