@@ -68,6 +68,7 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
   self.latestUserPrompt = promptText;
   const taskPrompts = self.state.taskPrompts ?? [];
   if (isNonRequirementNudge(promptText, taskPrompts)) return;
+  self.rejectedRequirementDefinitionDraft = undefined;
   const persistedId = [...self.sessionManager.getBranch()]
     .reverse()
     .find(

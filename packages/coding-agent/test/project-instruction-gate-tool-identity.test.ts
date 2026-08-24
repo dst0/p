@@ -4,6 +4,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification/constants.ts";
 import {
   cleanupProjectInstructionModeWorkspaces,
   createProjectInstructionModeWorkspace,
@@ -102,6 +103,43 @@ describe("compiled project-instruction tool identity gate", () => {
       expect(turn.projectRuleLinks?.length).toBeGreaterThan(0);
       await expect(
         session.agent.beforeToolCall?.(projectInstructionToolHookInput("bash", { command: "cat requirements.md" })),
+      ).resolves.toMatchObject({ block: true });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("trusts only the identity-bound internal verification status action", async () => {
+    const workspace = createProjectInstructionModeWorkspace();
+    const verificationTool = {
+      name: TASK_VERIFICATION_TOOL_NAME,
+      label: "Task verification",
+      description: "Inspect or update task verification state",
+      parameters: Type.Object({ action: Type.String() }),
+      execute: async () => ({ content: [{ type: "text" as const, text: "status" }], details: {} }),
+    };
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-verification-status"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      projectInstructionCompiler: workspace.compiler,
+      customTools: [verificationTool],
+    });
+    try {
+      session._projectRuleSafeToolDefinitions.add(verificationTool);
+      const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
+      expect(turn.projectRuleLinks?.length).toBeGreaterThan(0);
+      await expect(
+        session.agent.beforeToolCall?.(
+          projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "status" }),
+        ),
+      ).resolves.toBeUndefined();
+      await expect(
+        session.agent.beforeToolCall?.(
+          projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "ready_to_finish" }),
+        ),
       ).resolves.toMatchObject({ block: true });
     } finally {
       session.dispose();
