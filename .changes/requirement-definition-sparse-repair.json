@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Converge atomic requirement definitions with deterministic coordinated facets and sparse fail-closed repairs."
+}
