@@ -89,6 +89,8 @@ export class TaskVerificationController {
 
   public rejectedRequirementDefinitionDraft?: RejectedRequirementDefinitionDraft;
 
+  public requirementRepairStatusRevision?: string;
+
   public state = emptyState();
 
   public latestUserPrompt = "";

@@ -20,6 +20,13 @@ const SOURCE_CLAUSE_CATALOG_COLUMNS = [
   "controllerClassification",
 ] as const;
 
+export const ACTIVE_REJECTED_DEFINITION_MARKER = "ACTIVE REJECTED DEFINITION BATCH — NON-AUTHORITATIVE RECOVERY";
+
+export function renderedRejectedDefinitionRevision(text: string, revision: string): boolean {
+  const lines = new Set(text.split("\n"));
+  return lines.has(ACTIVE_REJECTED_DEFINITION_MARKER) && lines.has(`definition_revision: ${revision}`);
+}
+
 export function formatRequirementDefinitionPrompt(
   sourcePrompts: readonly TaskVerificationSourcePrompt[],
   rejectedDraft?: RejectedRequirementDefinitionDraft,
@@ -156,7 +163,7 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
     requirement.source_facet_ids ?? null,
   ]);
   return [
-    "ACTIVE REJECTED DEFINITION BATCH — NON-AUTHORITATIVE RECOVERY",
+    ACTIVE_REJECTED_DEFINITION_MARKER,
     `definition_revision: ${draft.revision}`,
     "Latest deterministic diagnostics:",
     draft.diagnostics,
