@@ -276,7 +276,7 @@ async function main() {
 				venvPython,
 			});
 			if (devicePlan.installAppleCoreAi) {
-				installAppleCoreAiRuntime({
+				await installAppleCoreAiRuntime({
 					agentDirectory: AGENT_DIR,
 					codeIndexDirectory: CODE_INDEX_DIR,
 					python: findCompatiblePython({ allowInstall: true, requiredMinor: 12 }),

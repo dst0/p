@@ -14,19 +14,16 @@ from typing import Any
 os.environ.setdefault("USE_OS_COREAI", "1")
 
 import numpy as np
-from coreai.runtime import (
-    AIModel,
-    ComputeUnitKind,
-    NDArray,
-    Profiler,
-    SpecializationOptions,
-)
+from coreai.runtime import AIModel, ComputeUnitKind, NDArray, Profiler, SpecializationOptions
 from transformers import AutoTokenizer
 
+from apple_coreai_artifact_locator import (
+    CANONICAL_MODEL_ID,
+    resolve_coreai_artifact,
+)
 from apple_coreai_windowing import iter_token_windows, pool_window_vectors
 
-
-MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
+MODEL_ID = CANONICAL_MODEL_ID
 HEAD_DIMENSION = 128
 ROPE_THETA = 1_000_000.0
 WORKER_WINDOW_BUDGET = 1024
@@ -36,8 +33,20 @@ GC_WINDOW_INTERVAL = 64
 class AppleCoreAIWorker:
     """Own the Core AI model, verify ANE residency, and serve embedding requests."""
 
-    def __init__(self, artifact_root: Path) -> None:
-        self.artifact_root = artifact_root
+    def __init__(
+        self,
+        artifact_root: Path | None = None,
+        artifact_directory: Path | None = None,
+    ) -> None:
+        if (artifact_root is None and artifact_directory is None) or (
+            artifact_root is not None and artifact_directory is not None
+        ):
+            raise ValueError("Exactly one of artifact_root or artifact_directory must be provided")
+        self.artifact_root = Path(artifact_root).resolve() if artifact_root is not None else None
+        self.explicit_artifact_dir = (
+            Path(artifact_directory) if artifact_directory is not None else None
+        )
+        self.artifact_dir: Path | None = None
         self.request_batch_size = 8
         self.compiled_batch_size = 1
         self.sequence_length = 64
@@ -51,14 +60,18 @@ class AppleCoreAIWorker:
         self.rope_cos, self.rope_sin = self._make_rope()
         self.causal_mask = self._make_causal_mask()
 
+    def _resolve_artifact(self) -> Path:
+        artifact, batch_size, sequence_length = resolve_coreai_artifact(
+            artifact_root=self.artifact_root,
+            artifact_directory=self.explicit_artifact_dir,
+        )
+        self.compiled_batch_size = batch_size
+        self.sequence_length = sequence_length
+        self.artifact_dir = artifact
+        return artifact
+
     async def initialize(self) -> None:
-        marker = json.loads((self.artifact_root / "current.json").read_text())
-        artifact = self.artifact_root / marker["artifactVersion"]
-        metadata = json.loads((artifact / "artifact.json").read_text())
-        self.compiled_batch_size = int(metadata["batchSize"])
-        if self.compiled_batch_size != 1:
-            raise RuntimeError("Core AI fast-path asset must use a compiled batch size of 1")
-        self.sequence_length = int(metadata["sequenceLength"])
+        artifact = self._resolve_artifact()
         self.rope_cos, self.rope_sin = self._make_rope()
         self.causal_mask = self._make_causal_mask()
         self.embedding_table = np.load(artifact / "embedding-table.npy", mmap_mode="r")
@@ -71,7 +84,7 @@ class AppleCoreAIWorker:
             events.append({"event": str(event.event_id), "metadata": event.metadata})
             return len(events)
 
-        def end(_event, _interval_id):
+        def end(_event, _index):
             return None
 
         options = SpecializationOptions.from_preferred_compute_unit_kind(
@@ -204,6 +217,12 @@ class AppleCoreAIWorker:
                 }
             print(json.dumps(response), flush=True)
 
+    async def probe(self) -> dict[str, Any]:
+        await self.initialize()
+        response = self._health_response("probe")
+        print(json.dumps(response), flush=True)
+        return response
+
     def _health_response(self, request_id: Any) -> dict[str, Any]:
         return {
             "id": request_id,
@@ -261,9 +280,16 @@ class AppleCoreAIWorker:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--artifact-root", type=Path, required=True)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument("--artifact-root", type=Path, help="Path to artifact root")
+    group.add_argument("--artifact-directory", type=Path, help="Path to exact candidate artifact")
+    parser.add_argument("--probe", action="store_true", help="Run one-shot health and ANE residency probe and exit")
     args = parser.parse_args()
-    asyncio.run(AppleCoreAIWorker(args.artifact_root).serve())
+    worker = AppleCoreAIWorker(artifact_root=args.artifact_root, artifact_directory=args.artifact_directory)
+    if args.probe:
+        asyncio.run(worker.probe())
+    else:
+        asyncio.run(worker.serve())
 
 
 if __name__ == "__main__":
