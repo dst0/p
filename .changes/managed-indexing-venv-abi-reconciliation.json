@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Reconcile managed code indexing venv major.minor Python ABI before marker reuse or creation, removing only mismatched or broken venv directories to prevent ABI corruption."
+}
