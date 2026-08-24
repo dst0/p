@@ -193,69 +193,76 @@ test("validated parent samples replace contaminated child instruction evidence",
       phaseRelevantToolCalls: [],
     });
     evidence.rawResponse = { provider: privateMarker };
-    const projectedEvidence = projectProjectInstructionEvidence(evidence);
+    const parsedEvidence = JSON.parse(JSON.stringify(evidence));
     const resultSha256 = "e".repeat(64);
-    const sample = createValidatedPairedSample(
-      {
-        document: {
-          startupProbes: {},
-          projectInstructions: "legacy",
-          runs: 1,
-          agents: ["p"],
-          models: { p: "provider/model" },
-        },
-        result: {
-          run: 1,
-          agent: "p",
-          task,
-          status: "failed",
-          elapsedMs: 1,
-          metrics: {
-            usage: {
-              input: 1,
-              output: 1,
-              cacheRead: 0,
-              cacheWrite: 0,
-              totalTokens: 2,
-              args: privateMarker,
-            },
-            model: { provider: "provider", id: "model", api: "test", source: privateMarker },
-            rawResponse: privateMarker,
+    const parsed = {
+      document: {
+        startupProbes: {},
+        projectInstructions: "legacy",
+        runs: 1,
+        agents: ["p"],
+        models: { p: "provider/model" },
+      },
+      result: {
+        run: 1,
+        agent: "p",
+        task,
+        status: "failed",
+        elapsedMs: 1,
+        metrics: {
+          usage: {
+            input: 1,
+            output: 1,
+            cacheRead: 0,
+            cacheWrite: 0,
+            totalTokens: 2,
+            args: privateMarker,
           },
-          quality: {
-            passed: false,
-            score: 0,
-            maxScore: 1,
-            rawScore: 0,
-            checks: [{ name: "fixture", passed: false, weight: 1, source: privateMarker }],
-            rawResponse: privateMarker,
-          },
-          projectInstructionEvidence: evidence,
+          model: { provider: "provider", id: "model", api: "test", source: privateMarker },
           rawResponse: privateMarker,
-          source: { provider: privateMarker },
-          provider: privateMarker,
-          args: { rawResponse: privateMarker },
         },
-        resultSha256,
-      },
-      {
-        options: { model: "provider/model", sourceSha256 },
-        pair: { run: 2, task },
-        mode: "legacy",
-        scratchOutput,
-        runtimeSha256: "runtime-sha",
-        proofReceiptSha256,
-        projectInstructionAuthority: {
-          expectedTurnCount: 1,
-          baseSystemModeProofs: projectedEvidence.baseSystemModeProofs,
-          userTurns: projectedEvidence.userTurns,
-          resultSha256,
+        quality: {
+          passed: false,
+          score: 0,
+          maxScore: 1,
+          rawScore: 0,
+          checks: [{ name: "fixture", passed: false, weight: 1, source: privateMarker }],
+          rawResponse: privateMarker,
         },
+        projectInstructionEvidence: parsedEvidence,
+        rawResponse: privateMarker,
+        source: { provider: privateMarker },
+        provider: privateMarker,
+        args: { rawResponse: privateMarker },
       },
-    );
+      resultSha256,
+    };
+    const projectInstructionAuthority = JSON.parse(JSON.stringify({
+      expectedTurnCount: 1,
+      baseSystemModeProofs: evidence.baseSystemModeProofs,
+      userTurns: evidence.userTurns,
+      resultSha256,
+    }));
+    const context = {
+      options: { model: "provider/model", sourceSha256 },
+      pair: { run: 2, task },
+      mode: "legacy",
+      scratchOutput,
+      runtimeSha256: "runtime-sha",
+      proofReceiptSha256,
+      projectInstructionAuthority,
+    };
+    const sample = createValidatedPairedSample(parsed, context);
     const serialized = JSON.stringify(sample);
     assert.equal(serialized.includes(privateMarker), false);
     assert.equal(serialized.includes("rawResponse"), false);
+    assert.throws(
+      () => createValidatedPairedSample(parsed, {
+        ...context,
+        projectInstructionAuthority: { ...projectInstructionAuthority, userTurns: [{ eventOrdinal: 999 }] },
+      }),
+      /outer authority/iu,
+    );
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

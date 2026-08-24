@@ -171,6 +171,8 @@ describe("single-batch requirement definition", () => {
     expect(defineContent?.type).toBe("text");
     if (defineContent?.type !== "text") throw new Error("Expected a text definition result.");
     expect(defineContent.text).toContain("resubmit the complete definition batch");
+    expect(defineContent.text).toContain("original requirement-source catalog remains authoritative");
+    expect(defineContent.text).toContain('record_task_verification with action "status"');
     expect(defineContent.text).not.toContain("FULL DEFINITION PROMPT REPLAY");
 
     const prepareResult = await tool.execute(

@@ -104,6 +104,8 @@ describe("referenced requirement documents", () => {
       ],
     });
     expect(definition).toContain("Defined 2 atomic requirement");
+    expect(definition).toContain("ready_to_finish blocks mutated source files over 250 physical lines");
+    expect(definition).toContain("unless the user explicitly overrides the file-size limit");
     expect(definition).toContain("remove exactly the final byte");
     expect(harness.controller.currentState.requirementAudit.requirements[1]?.proofPolicies).toEqual([
       "remove_exact_final_byte",
