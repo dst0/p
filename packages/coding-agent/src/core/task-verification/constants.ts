@@ -111,6 +111,11 @@ export const RequirementDefinitionSchema = Type.Object({
   source_facet_ids: Type.Optional(Type.Array(Type.String({ minLength: 1 }), { minItems: 1, maxItems: 32 })),
 });
 
+export const RequirementDefinitionRepairSchema = Type.Object({
+  requirement_index: Type.Integer({ minimum: 1, maximum: MAX_REQUIREMENT_COUNT }),
+  replacements: Type.Array(RequirementDefinitionSchema, { maxItems: MAX_REQUIREMENT_COUNT }),
+});
+
 export const IgnoredSourcePromptSchema = Type.Object({
   source_prompt_index: Type.Integer({ minimum: 1 }),
   reason: Type.String({ minLength: 1 }),
@@ -136,7 +141,12 @@ export const RequirementVerdictSchema = Type.Object({
 });
 
 export const RequirementAuditSchema = Type.Object({
-  action: Type.Union([Type.Literal("prepare_definition"), Type.Literal("define"), Type.Literal("verdict")]),
+  action: Type.Union([
+    Type.Literal("prepare_definition"),
+    Type.Literal("define"),
+    Type.Literal("repair_definition"),
+    Type.Literal("verdict"),
+  ]),
   selected_paths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 3 })),
   adopt_changed_paths: Type.Optional(
     Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 3, uniqueItems: true }),
@@ -153,6 +163,8 @@ export const RequirementAuditSchema = Type.Object({
   requirements: Type.Optional(
     Type.Array(RequirementDefinitionSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT }),
   ),
+  definition_revision: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+  requirement_repairs: Type.Optional(Type.Array(RequirementDefinitionRepairSchema, { minItems: 1, maxItems: 16 })),
   ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
   ignored_source_clauses: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
   verdicts: Type.Optional(Type.Array(RequirementVerdictSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT })),

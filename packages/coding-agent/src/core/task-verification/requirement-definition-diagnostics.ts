@@ -11,7 +11,7 @@ const REPAIR_CLASS_PATTERNS = [
   ["invalid_prompt_index", /references an invalid source_prompt_index\./u],
   ["invalid_clause_id", /references an invalid source_clause_id\./u],
   ["invalid_facet_id", /references an invalid source_facet_id\./u],
-  ["multiple_facets", /maps multiple high-risk source facets/u],
+  ["multiple_facets", /maps multiple source facets/u],
   ["missing_facet_mapping", /maps faceted source clauses without source_facet_ids:/u],
   ["unsafe_mapped_clause", /is an unsafe delegated instruction/u],
   ["clause_prompt_mismatch", /maps source clause .* without its source_prompt_index\./u],

@@ -187,4 +187,80 @@ describe("single-batch requirement definition", () => {
     if (prepareContent?.type !== "text") throw new Error("Expected a text preparation result.");
     expect(prepareContent.text).toBe("FULL DEFINITION PROMPT REPLAY");
   });
+
+  it("repairs a rejected definition sparsely while validating one complete merged batch", async () => {
+    const state = {
+      requirementAudit: { status: "awaiting_definition" },
+    } as TaskVerificationState;
+    const received: RequirementAuditInput[] = [];
+    const controller = {
+      applyRequirementAudit: (input: RequirementAuditInput): VerificationResult => {
+        received.push(input);
+        return received.length === 1
+          ? { status: "needs_action", message: "Requirement 2 is compound.", state }
+          : { status: "updated", message: "Defined 3 atomic requirements.", state };
+      },
+    } as unknown as TaskVerificationController;
+    const tool = do_createRequirementAuditToolDefinition(controller);
+    const extensionContext = {} as ExtensionContext;
+    const initial = await tool.execute(
+      "define-1",
+      {
+        action: "define",
+        requirements: [
+          requirement("Receiving increases onHand"),
+          requirement("Shipping reduces onHand and the reservation"),
+        ],
+        ignored_source_prompts: [],
+        ignored_source_clauses: [],
+      },
+      undefined,
+      undefined,
+      extensionContext,
+    );
+    const initialContent = initial.content[0];
+    expect(initialContent?.type).toBe("text");
+    if (initialContent?.type !== "text") throw new Error("Expected a text definition result.");
+    const revision = initialContent.text.match(/definition_revision: ([0-9a-f-]+)/u)?.[1];
+    expect(revision).toBeDefined();
+
+    const repaired = await tool.execute(
+      "repair-1",
+      {
+        action: "repair_definition",
+        definition_revision: revision!,
+        requirement_repairs: [
+          {
+            requirement_index: 2,
+            replacements: [requirement("Shipping reduces onHand"), requirement("Shipping reduces the reservation")],
+          },
+        ],
+      },
+      undefined,
+      undefined,
+      extensionContext,
+    );
+
+    expect(repaired.content[0]).toEqual({ type: "text", text: "Defined 3 atomic requirements." });
+    expect(received).toHaveLength(2);
+    expect(received[1]).toEqual({
+      action: "define",
+      requirements: [
+        requirement("Receiving increases onHand"),
+        requirement("Shipping reduces onHand"),
+        requirement("Shipping reduces the reservation"),
+      ],
+      ignored_source_prompts: [],
+      ignored_source_clauses: [],
+    });
+  });
 });
+
+function requirement(text: string) {
+  return {
+    type: "behavior" as const,
+    text,
+    acceptance_criterion: `${text} by the command quantity`,
+    source_prompt_indexes: [1],
+  };
+}

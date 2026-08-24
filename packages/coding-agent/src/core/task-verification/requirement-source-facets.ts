@@ -4,8 +4,8 @@ export interface RequirementSourceFacet {
   id: string;
   sourceClauseId: string;
   text: string;
-  kind: "success_outcome" | "failure_preservation";
-  branch: "success" | "failure";
+  kind: "behavior_outcome" | "success_outcome" | "failure_preservation";
+  branch: "behavior" | "success" | "failure";
   requiredConcepts: string[];
   behaviorAnchors: string[];
   qualifiers: string[];
@@ -18,10 +18,12 @@ const ORDERED_COMMIT = /^all\s+(?<subjects>[\s\S]+?)\s+(?<behavior>commit(?:s|te
 const STATE_PRESERVATION = /^no\s+observable\s+state\s+changes?$/iu;
 const COMMAND_SUBJECT = /^commands?$/iu;
 const IDEMPOTENCY_SUBJECT = /^idempotency\s+records?$/iu;
+const COORDINATED_BEHAVIOR =
+  /^(?<subject>[\s\S]+?)\s+(?<behavior>increas(?:e|es|ed|ing)|reduc(?:e|es|ed|ing))\s+both\s+(?<first>(?:the\s+)?(?:`[^`\r\n]+`|[^,;.!?]+?))\s+and\s+(?<second>(?:the\s+)?(?:`[^`\r\n]+`|[^,;.!?]+?))(?<suffix>\s+(?:after|before|by|for|upon|when|with)\b[\s\S]*?)?[.!]?$/iu;
 
 export function requirementSourceFacets(clause: RequirementSourceClause): RequirementSourceFacet[] {
   const alternative = clause.text.trim().match(EXPLICIT_ATOMIC_ALTERNATIVE);
-  if (!alternative?.groups) return [];
+  if (!alternative?.groups) return coordinatedBehaviorFacets(clause);
   const success = alternative.groups.success!.trim().match(ORDERED_COMMIT);
   const failure = alternative.groups.failure!.trim();
   if (!success?.groups || !STATE_PRESERVATION.test(failure)) return [];
@@ -75,6 +77,42 @@ export function requirementSourceFacets(clause: RequirementSourceClause): Requir
       "derived_atomicity",
     ),
   ];
+}
+
+function coordinatedBehaviorFacets(clause: RequirementSourceClause): RequirementSourceFacet[] {
+  const coordinated = clause.text.trim().match(COORDINATED_BEHAVIOR);
+  if (!coordinated?.groups) return [];
+  const subject = coordinated.groups.subject!.trim();
+  const behavior = coordinated.groups.behavior!.trim();
+  const qualifier = coordinated.groups.suffix?.trim();
+  return [
+    coordinatedFacet(clause, 1, subject, behavior, coordinated.groups.first!, qualifier),
+    coordinatedFacet(clause, 2, subject, behavior, coordinated.groups.second!, qualifier),
+  ];
+}
+
+function coordinatedFacet(
+  clause: RequirementSourceClause,
+  offset: number,
+  subject: string,
+  behavior: string,
+  object: string,
+  qualifier: string | undefined,
+): RequirementSourceFacet {
+  const concept = object
+    .replace(/^the\s+/iu, "")
+    .replaceAll("`", "")
+    .trim();
+  return facet(
+    clause,
+    offset,
+    `${subject} ${behavior} ${object}${qualifier ? ` ${qualifier}` : ""}.`,
+    "behavior_outcome",
+    "behavior",
+    [concept],
+    [`source_behavior:${behavior}`],
+    qualifier ? [qualifier] : [],
+  );
 }
 
 export function requirementFacetConstraintError(
@@ -134,10 +172,12 @@ function qualifierSuffix(qualifiers: readonly string[]): string {
 function conceptCovered(concept: string, requirement: string): boolean {
   if (concept === "command") return /\bcommands?\b(?![-\s]+ids?\b)/iu.test(requirement);
   if (concept === "idempotency record") return /\bidempoten\w*\s+records?\b/iu.test(requirement);
-  return concept === "state" ? /\bstate\b/iu.test(requirement) : false;
+  if (concept === "state") return /\bstate\b/iu.test(requirement);
+  return normalizedTokens(concept).every((token) => normalizedTokens(requirement).includes(token));
 }
 
 function branchCovered(branch: RequirementSourceFacet["branch"], requirement: string): boolean {
+  if (branch === "behavior") return true;
   if (branch === "failure") {
     return /\b(?:fail(?:ed|ing|ure|s)?|no[-\s]?commit\s+branch|does\s+not\s+commit)\b/iu.test(requirement);
   }
@@ -161,6 +201,9 @@ function facetPropositionCovered(facet: RequirementSourceFacet, requirement: str
 }
 
 function boundBehaviorCovered(facet: RequirementSourceFacet, anchor: string, requirement: string): boolean {
+  if (anchor.startsWith("source_behavior:")) {
+    return normalizedTokens(requirement).includes(normalizedWords(anchor.slice("source_behavior:".length)));
+  }
   if (anchor === "commit_in_order") {
     const subject = facet.requiredConcepts[0];
     if (subject === "command") {
@@ -182,11 +225,29 @@ function boundBehaviorCovered(facet: RequirementSourceFacet, anchor: string, req
   );
 }
 
+function normalizedWords(value: string): string {
+  return value
+    .replace(/([\p{Ll}\p{N}])(\p{Lu})/gu, "$1 $2")
+    .toLowerCase()
+    .replace(/\b(increases?|increased|increasing)\b/gu, "increase")
+    .replace(/\b(reduces?|reduced|reducing)\b/gu, "reduce")
+    .replace(/[^\p{L}\p{N}]+/gu, " ")
+    .trim();
+}
+
+function normalizedTokens(value: string): string[] {
+  return normalizedWords(value).split(" ").filter(Boolean);
+}
+
 function qualifierCovered(facet: RequirementSourceFacet, qualifier: string, requirement: string): boolean {
   if (qualifier === "all SKUs") {
     const universal = facet.branch === "failure" ? "all|any|each|every" : "all|each|every";
     return new RegExp(`\\b(?:${universal})\\s+SKUs?\\b`, "iu").test(requirement);
   }
   if (qualifier === "all commands") return /\b(?:all|each|every)\s+commands?\b/iu.test(requirement);
-  return /\b(?:all|each|every)\s+idempotency\s+records?\b/iu.test(requirement);
+  if (qualifier === "all idempotency records") {
+    return /\b(?:all|each|every)\s+idempotency\s+records?\b/iu.test(requirement);
+  }
+  const requirementTokens = normalizedTokens(requirement);
+  return normalizedTokens(qualifier).every((token) => requirementTokens.includes(token));
 }
