@@ -48,8 +48,8 @@ export async function do_afterToolCall(
     return previousResult;
   }
 
-  const mutationDetected = await self.detectMutation(context, effectiveIsError);
-  if (mutationDetected) {
+  if (await self.detectMutation(context, effectiveIsError)) {
+    self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft = undefined;
     const filePath = pathArgument(context.args);
     if (filePath) {
       const relPath = relative(self.sessionManager.getCwd(), resolve(self.sessionManager.getCwd(), filePath));

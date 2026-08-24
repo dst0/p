@@ -139,12 +139,12 @@ describe("referenced requirement clause semantics", () => {
 
   it("requires superseded clauses to name a genuinely conflicting direct user prompt", async () => {
     const content = "Render the greeting in lowercase.\nPreserve original punctuation.\n";
-    const harness = await preparedHarness(workspaces, content);
-    const missingIndex = await define(harness, supersededDefinition());
+    const missingIndexHarness = await preparedHarness(workspaces, content);
+    const missingIndex = await define(missingIndexHarness, supersededDefinition());
     expect(missingIndex).toMatch(/superseded.*direct user prompt index/iu);
 
-    await nextModelTurn(harness);
-    const unrelatedPrompt = await define(harness, supersededDefinition(1));
+    const unrelatedPromptHarness = await preparedHarness(workspaces, content);
+    const unrelatedPrompt = await define(unrelatedPromptHarness, supersededDefinition(1));
     expect(unrelatedPrompt).toMatch(/direct user prompt.*(?:conflict|supersed)|does not conflict/iu);
 
     const overridden = await preparedHarness(

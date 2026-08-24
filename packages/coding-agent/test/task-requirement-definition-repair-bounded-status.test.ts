@@ -20,7 +20,7 @@ describe("rejected requirement definition bounded status recovery", () => {
     await Promise.all(workspaces.splice(0).map((workspace) => rm(workspace, { recursive: true, force: true })));
   });
 
-  it("keeps the repair barrier armed when bounded status omits the active indexed batch", async () => {
+  it("switches oversized status recovery to a controller-authorized full definition", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "p-requirement-repair-bounded-status-"));
     workspaces.push(workspace);
     await writeFile(join(workspace, "README.md"), "Shipping reduces both onHand and the reservation.\n");
@@ -62,8 +62,9 @@ describe("rejected requirement definition bounded status recovery", () => {
     const splitRevision = revisionFrom(split);
 
     const status = await callTaskVerification(harness.controller, { action: "status" });
-    expect(status).not.toContain(ACTIVE_REJECTED_DEFINITION_MARKER);
-    expect(harness.controller.requirementRepairStatusRevision).toBe(splitRevision);
+    expect(status).toContain(ACTIVE_REJECTED_DEFINITION_MARKER);
+    expect(status).toContain("next_required_action: define");
+    expect(harness.controller.requirementRepairStatusRevision).toBeUndefined();
     await nextModelTurn(harness);
     expect(
       await callRequirementAudit(harness.controller, {
@@ -71,7 +72,7 @@ describe("rejected requirement definition bounded status recovery", () => {
         definition_revision: splitRevision,
         requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
       }),
-    ).toContain('record_task_verification with action "status"');
+    ).toContain("recovery prompt limit");
   });
 });
 

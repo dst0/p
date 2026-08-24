@@ -150,6 +150,17 @@ describe("requirement definition repair lineage budget", () => {
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
     expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(10);
 
+    expect(await execute(tool, definition(3))).toContain("next_required_action: repair_definition");
+    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
+
+    controller.requirementRepairStatusRevision = undefined;
+    const overflow = await execute(
+      tool,
+      repairInput(controller.rejectedRequirementDefinitionDraft!, [10]),
+    );
+    expect(overflow).toContain("cumulative net growth permits at most 16");
+    expect(overflow).toContain("next_required_action: define");
+
     await execute(tool, definition(3));
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(3);
     expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(3);

@@ -17,13 +17,44 @@ export interface RejectedRequirementDefinitionDraft {
 type IgnoredPromptInput = NonNullable<RequirementAuditInput["ignored_source_prompts"]>[number];
 type IgnoredClauseInput = NonNullable<RequirementAuditInput["ignored_source_clauses"]>[number];
 
+export type FreshDefinitionReason = "empty_definition" | "lineage_growth" | "recovery_prompt_limit";
+
+// Authorization belongs to one ephemeral draft identity and must not survive structured cloning or draft rotation.
+const freshDefinitionReasons = new WeakMap<RejectedRequirementDefinitionDraft, FreshDefinitionReason>();
+
+export function authorizeRejectedDraftFreshDefinition(
+  draft: RejectedRequirementDefinitionDraft,
+  reason: FreshDefinitionReason,
+): void {
+  if (!freshDefinitionReasons.has(draft)) freshDefinitionReasons.set(draft, reason);
+}
+
+export function rejectedDraftFreshDefinitionReason(
+  draft: RejectedRequirementDefinitionDraft | undefined,
+): FreshDefinitionReason | undefined {
+  return draft === undefined ? undefined : freshDefinitionReasons.get(draft);
+}
+
+export function rejectedDraftRequiresFreshDefinition(
+  draft: RejectedRequirementDefinitionDraft | undefined,
+): boolean {
+  return rejectedDraftFreshDefinitionReason(draft) !== undefined;
+}
+
+export function rejectedDefinitionNextActionGuardMessage(draft: RejectedRequirementDefinitionDraft): string {
+  const reason = rejectedDraftFreshDefinitionReason(draft);
+  return reason
+    ? `next_required_action: define\nA fresh define is required because ${freshDefinitionReasonText(reason)}. Resubmit one complete action "define" batch.`
+    : 'next_required_action: repair_definition\nA fresh define is not authorized while the active rejected definition remains repairable. Use action "repair_definition" with the current definition_revision.';
+}
+
 export function rejectedRequirementDefinitionDraft(
   input: RequirementAuditInput,
   diagnostics: string = "",
   previousDraft?: RejectedRequirementDefinitionDraft,
 ): RejectedRequirementDefinitionDraft | undefined {
   if (input.action !== "define" || !input.requirements) return undefined;
-  return {
+  const draft: RejectedRequirementDefinitionDraft = {
     revision: randomUUID(),
     diagnostics,
     repairLineageBaselineRequirementCount:
@@ -35,6 +66,8 @@ export function rejectedRequirementDefinitionDraft(
       ignored_source_clauses: structuredClone(input.ignored_source_clauses ?? []),
     },
   };
+  if (input.requirements.length === 0) authorizeRejectedDraftFreshDefinition(draft, "empty_definition");
+  return draft;
 }
 
 export function repairRejectedRequirementDefinition(
@@ -78,11 +111,15 @@ export function repairRejectedRequirementDefinition(
     return `requirement_repairs contains ${replacementCount} total replacements; sparse repair permits at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS}.`;
   }
   const mergedRequirementCount = requirements.length + replacementCount - repairs.length;
+  if (mergedRequirementCount === 0) {
+    return "repair_definition cannot remove every requirement; preserve at least one item in the active rejected draft.";
+  }
   if (mergedRequirementCount > MAX_REQUIREMENT_COUNT) {
     return `repair would create ${mergedRequirementCount} requirements; maximum is ${MAX_REQUIREMENT_COUNT}.`;
   }
   const lineageLimit = draft.repairLineageBaselineRequirementCount + MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH;
   if (mergedRequirementCount > lineageLimit) {
+    authorizeRejectedDraftFreshDefinition(draft, "lineage_growth");
     return `repair lineage would grow from ${draft.repairLineageBaselineRequirementCount} to ${mergedRequirementCount} requirements; cumulative net growth permits at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH}.`;
   }
   const repairsByIndex = new Map(repairs.map((item) => [item.requirement_index, item.replacements]));
@@ -163,13 +200,19 @@ export function formatRejectedDefinitionRepairGuidance(
     ...(draft
       ? [
           `definition_revision: ${draft.revision}`,
-          ...(statusRequired
+          ...(rejectedDraftFreshDefinitionReason(draft)
+            ? [
+                "next_required_action: define",
+                `A fresh complete definition is required because ${freshDefinitionReasonText(rejectedDraftFreshDefinitionReason(draft)!)}. Sparse repair is no longer authorized for this rejected draft.`,
+              ]
+            : statusRequired
             ? [
                 'Indexes changed. Call record_task_verification with action "status" before another repair_definition call.',
               ]
             : [
+                "next_required_action: repair_definition",
                 `Continue corrections with action "repair_definition", this revision, and a bounded subset of requirement_repairs. Each repair atomically replaces one 1-based rejected-batch item with zero or more replacements; one call permits at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements total and one lineage may grow by at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements.`,
-                'Prioritize the smallest high-leverage subset; the complete merged batch is revalidated, so one repair call does not need to eliminate every remaining diagnostic. If the controller reports that the lineage growth budget is exhausted, resubmit one complete action "define" batch.',
+                'Prioritize the smallest high-leverage subset; the complete merged batch is revalidated, so one repair call does not need to eliminate every remaining diagnostic. A fresh action "define" batch is forbidden unless the controller explicitly returns next_required_action: define.',
               ]),
           "Omitted requirements and keyed classification changes are retained. Repair classifications only with ignored_source_prompt_upserts/removals and ignored_source_clause_upserts/removals; legacy ignored-source arrays are complete define snapshots.",
           "The rejected draft is non-authoritative. The controller reconstructs and validates the complete batch before accepting any requirement or permitting mutation.",
@@ -179,4 +222,15 @@ export function formatRejectedDefinitionRepairGuidance(
         ]),
     'The original requirement-source catalog remains authoritative. If compaction hid it, call record_task_verification with action "status" to restore the current definition instructions.',
   ].join("\n\n");
+}
+
+function freshDefinitionReasonText(reason: FreshDefinitionReason): string {
+  switch (reason) {
+    case "empty_definition":
+      return "the rejected batch contains no indexed requirement that sparse repair can target";
+    case "lineage_growth":
+      return "the active rejected definition exhausted its cumulative lineage growth budget";
+    case "recovery_prompt_limit":
+      return "the active rejected batch cannot be rendered within the recovery prompt limit";
+  }
 }

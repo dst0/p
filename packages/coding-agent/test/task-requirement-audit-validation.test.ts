@@ -50,8 +50,6 @@ describe("requirement-audit validation", () => {
   });
 
   it("rejects malformed and conflicting definitions before freezing the requirement set", async () => {
-    const harness = createRequirementAuditHarness();
-    await reachAuditEvidenceReady(harness);
     const cases = [
       {
         input: { requirements: [requirement({ type: "unsupported" })], ignored_source_prompts: [] },
@@ -82,22 +80,26 @@ describe("requirement-audit validation", () => {
     ];
 
     for (const { input, expected } of cases) {
+      const harness = createRequirementAuditHarness();
+      await reachAuditEvidenceReady(harness);
       await nextModelTurn(harness);
       expect(await callRequirementAudit(harness.controller, { action: "define", ...input })).toContain(expected);
       expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
     }
 
-    await nextModelTurn(harness);
+    const validHarness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(validHarness);
+    await nextModelTurn(validHarness);
     expect(
-      await callRequirementAudit(harness.controller, {
+      await callRequirementAudit(validHarness.controller, {
         action: "define",
         requirements: [requirement()],
         ignored_source_prompts: [],
       }),
     ).toContain("Defined 1 atomic requirement");
-    await nextModelTurn(harness);
+    await nextModelTurn(validHarness);
     expect(
-      await callRequirementAudit(harness.controller, {
+      await callRequirementAudit(validHarness.controller, {
         action: "define",
         requirements: [requirement()],
         ignored_source_prompts: [],
@@ -106,8 +108,6 @@ describe("requirement-audit validation", () => {
   });
 
   it("rejects compound high-risk definitions while accepting one rollback outcome", async () => {
-    const harness = createRequirementAuditHarness();
-    await reachAuditEvidenceReady(harness);
     const compoundCriteria = [
       "A duplicate commandId returns the original result without appending an event; reuse for a different command throws ValidationError",
       "Import rejects empty, malformed, tampered, truncated logs; validates positions, versions, hash chain, and event transitions",
@@ -120,6 +120,8 @@ describe("requirement-audit validation", () => {
       "A failed batch rolls back state, log entries, and idempotency records to the pre-batch snapshot",
     ];
     for (const acceptanceCriterion of compoundCriteria) {
+      const harness = createRequirementAuditHarness();
+      await reachAuditEvidenceReady(harness);
       await nextModelTurn(harness);
       const rejected = await callRequirementAudit(harness.controller, {
         action: "define",
@@ -135,8 +137,10 @@ describe("requirement-audit validation", () => {
       expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
     }
 
-    await nextModelTurn(harness);
-    const accepted = await callRequirementAudit(harness.controller, {
+    const acceptedHarness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(acceptedHarness);
+    await nextModelTurn(acceptedHarness);
+    const accepted = await callRequirementAudit(acceptedHarness.controller, {
       action: "define",
       requirements: [
         requirement({

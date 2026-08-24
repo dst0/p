@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
 import type {
@@ -62,7 +63,8 @@ describe("requirement audit action fields", () => {
     for (const action of Object.keys(ACTION_FIELDS) as RequirementAuditInput["action"][]) {
       const fields = ACTION_FIELDS[action].map((field) => [field, FIELD_VALUES[field as keyof typeof FIELD_VALUES]]);
       const input = { action, ...Object.fromEntries(fields) } as RequirementAuditInput;
-      const { controller, applyRequirementAudit } = controllerHarness();
+      // repair_definition requires an active rejected draft to repair; sibling actions require no pending rejected draft.
+      const { controller, applyRequirementAudit } = controllerHarness(action === "repair_definition");
       await execute(do_createRequirementAuditToolDefinition(controller), input);
       expect(applyRequirementAudit, action).toHaveBeenCalledOnce();
     }
@@ -95,7 +97,7 @@ describe("requirement audit action fields", () => {
   });
 });
 
-function controllerHarness() {
+function controllerHarness(hasActiveRejectedDraft: boolean = false) {
   const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
   const applyRequirementAudit = vi.fn(
     (_input: RequirementAuditInput): VerificationResult => ({
@@ -107,16 +109,19 @@ function controllerHarness() {
   const controller = {
     applyRequirementAudit,
     lastAuditTransitionTurn: -1,
-    rejectedRequirementDefinitionDraft: {
-      revision: "revision",
-      diagnostics: "",
-      input: {
-        action: "define",
-        requirements: [requirement()],
-        ignored_source_prompts: [],
-        ignored_source_clauses: [],
-      },
-    },
+    rejectedRequirementDefinitionDraft: hasActiveRejectedDraft
+      ? {
+          revision: "revision",
+          diagnostics: "",
+          repairLineageBaselineRequirementCount: 1,
+          input: {
+            action: "define",
+            requirements: [requirement()],
+            ignored_source_prompts: [],
+            ignored_source_clauses: [],
+          },
+        } satisfies RejectedRequirementDefinitionDraft
+      : undefined,
     rejected: (message: string): VerificationResult => ({ status: "needs_action", message, state }),
   } as unknown as TaskVerificationController;
   return { controller, applyRequirementAudit };
