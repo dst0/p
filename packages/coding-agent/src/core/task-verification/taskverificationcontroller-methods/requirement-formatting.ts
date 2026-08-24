@@ -52,7 +52,7 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         ? `NEXT REQUIRED ACTION: ${sources}`
         : [
             `NEXT REQUIRED ACTION: define atomic referenced requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-            formatRequirementDefinitionPrompt(sources),
+            formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
           ].join("\n");
     }
   }
@@ -167,7 +167,9 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
         return [
           `NEXT REQUIRED ACTION: define atomic user requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-          typeof sources === "string" ? sources : formatRequirementDefinitionPrompt(sources),
+          typeof sources === "string"
+            ? sources
+            : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
         ].join("\n");
       }
       if (audit.status === "verifying") {

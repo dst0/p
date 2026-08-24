@@ -70,9 +70,10 @@ export function inferBenchmarkProjectInstructionActionPhases(toolName, args, too
 export function describeBenchmarkProjectInstructionAction(toolName, args, toolDescription) {
   const routedDescription = KNOWN_BUILTIN_TOOLS.has(toolName) ? undefined : toolDescription;
   const phases = inferBenchmarkProjectInstructionActionPhases(toolName, args, routedDescription);
+  const trustedStatus = toolName === "record_task_verification" && args?.action === "status";
   const mayMutate = isShellTool(toolName)
     ? !isBenchmarkProjectInstructionReadOnlyShellTool(toolName, args)
-    : isDirectMutationTool(toolName) || !TRUSTED_SAFE_TOOLS.has(toolName);
+    : isDirectMutationTool(toolName) || (!TRUSTED_SAFE_TOOLS.has(toolName) && !trustedStatus);
   if (!mayMutate) return undefined;
   const prefix = `${toolName}\n`;
   const serialized = safeJson(args);

@@ -62,14 +62,12 @@ test("cell liveness records bounded semantic heartbeats without paths or payload
     rmSync(directory, { recursive: true, force: true });
   }
 });
-
 test("async child execution preserves process status without buffering output", async () => {
   const result = await runBenchmarkChild(process.execPath, ["-e", "process.exit(7)"], { stdio: "ignore" });
   assert.equal(result.status, 7);
   assert.equal(result.signal, null);
   assert.equal(result.error, undefined);
 });
-
 test("active recording preserves semantic mutation after the worktree is committed or reverted", async () => {
   const directory = mkdtempSync(join(tmpdir(), "p-paired-active-recording-"));
   try {
@@ -118,15 +116,27 @@ test("active recording preserves semantic mutation after the worktree is committ
       },
       {
         type: "tool_execution_start",
-        toolCallId: "define-2",
+        toolCallId: "repair-1",
         toolName: "record_requirement_audit",
-        args: { action: "define" },
+        args: { action: "repair_definition" },
       },
       {
         type: "tool_execution_end",
-        toolCallId: "define-2",
+        toolCallId: "repair-1",
         toolName: "record_requirement_audit",
-        args: { action: "define" },
+        args: { action: "repair_definition" },
+      },
+      {
+        type: "tool_execution_start",
+        toolCallId: "repair-2",
+        toolName: "record_requirement_audit",
+        args: { action: "repair_definition" },
+      },
+      {
+        type: "tool_execution_start",
+        toolCallId: "status-1",
+        toolName: "record_task_verification",
+        args: { action: "status" },
       },
       {
         type: "tool_execution_start",
@@ -155,9 +165,11 @@ test("active recording preserves semantic mutation after the worktree is committ
       recordingCapture: { bytes: 1_024, limitBytes: 2_048, partial: false },
     });
     assert.equal(evidence.firstMutationElapsedMs, 1_234);
-    assert.equal(evidence.requirementDefinitionAttemptCount, 2);
-    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 2);
-    assert.equal(evidence.semanticSequence, 4);
+    assert.equal(evidence.requirementDefinitionAttemptCount, 1);
+    assert.equal(evidence.observedRequirementDefinitionAttemptCount, 1);
+    assert.equal(evidence.requirementDefinitionRepairAttemptCount, 2);
+    assert.equal(evidence.observedRequirementDefinitionRepairAttemptCount, 2);
+    assert.equal(evidence.semanticSequence, 6);
     assert.equal(evidence.semanticEvidenceAvailable, true);
     assert.equal(evidence.mutationCount, 1);
   } finally {

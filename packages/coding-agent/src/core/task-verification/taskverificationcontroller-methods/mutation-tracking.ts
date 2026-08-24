@@ -228,6 +228,7 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
     : self.latestUserPrompt.trim()
       ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
       : [];
+  self.rejectedRequirementDefinitionDraft = undefined;
   self.state = {
     ...emptyState(self.state.taskId),
     taskKind: input.task_kind,
