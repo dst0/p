@@ -49,10 +49,15 @@ describe("rejected requirement definition bounded status recovery", () => {
     const split = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revisionFrom(rejected),
-      requirement_repairs: [{
-        requirement_index: 1,
-        replacements: [facetRequirement("onHand", "S2-C1-F1"), facetRequirement(`invoice-${"x".repeat(34_000)}`, "S2-C1-F2")],
-      }],
+      requirement_repairs: [
+        {
+          requirement_index: 1,
+          replacements: [
+            facetRequirement("onHand", "S2-C1-F1"),
+            facetRequirement(`invoice-${"x".repeat(34_000)}`, "S2-C1-F2"),
+          ],
+        },
+      ],
     });
     const splitRevision = revisionFrom(split);
 

@@ -97,11 +97,13 @@ describe("requirement audit action fields", () => {
 
 function controllerHarness() {
   const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
-  const applyRequirementAudit = vi.fn((_input: RequirementAuditInput): VerificationResult => ({
-    status: "updated",
-    message: "Applied.",
-    state,
-  }));
+  const applyRequirementAudit = vi.fn(
+    (_input: RequirementAuditInput): VerificationResult => ({
+      status: "updated",
+      message: "Applied.",
+      state,
+    }),
+  );
   const controller = {
     applyRequirementAudit,
     lastAuditTransitionTurn: -1,
