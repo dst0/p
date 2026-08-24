@@ -1,0 +1,25 @@
+# 2026-08-25 — Rejected repairs must retain the best draft
+
+- **Status:** Resolved
+- **Task/context:** Validate the project-instruction and task-verification candidate with a randomized paired event-sourced-inventory benchmark.
+- **Unexpected observation or failure:** The first legacy cell expanded a rejected requirement draft from 39 to 45 and then 51 items while deterministic diagnostics moved from 28 to 21 and back to 28. Continuing the remaining benchmark cells would have exercised a known regressive controller state.
+- **Evidence:** Candidate `5.0.1-rc.31` was interrupted after one full definition and three repair attempts. The closed Brotli Q6 progress stream records the accepted 45-item, 21-diagnostic draft followed by an attempted 51-item, 28-diagnostic candidate; no later benchmark cell ran.
+- **Approaches tried:**
+  - **Attempt:** Let three non-improving repairs rotate the active draft before authorizing recovery.
+    - **Outcome:** Did not work
+    - **Why:** The retry bound prevented an infinite loop but still discarded the best complete candidate and made subsequent indexes and diagnostics worse.
+  - **Attempt:** Require every accepted repair to strictly reduce the diagnostic count.
+    - **Outcome:** Did not work
+    - **Why:** Valid multi-step classification repairs can move laterally at the same count, and a single diagnostic is emitted without the plural count header.
+  - **Attempt:** Cap growth relative to the current diagnostic count.
+    - **Outcome:** Rejected
+    - **Why:** Diagnostic count is not proportional to required atomic splits; such a cap would reject valid one-to-many decomposition.
+  - **Attempt:** Treat repairs transactionally, permit bounded equal-count moves, and reject any higher-count candidate while retaining the best draft.
+    - **Outcome:** Worked
+    - **Why:** Deterministic regressions pass, and a clean live AI-unit converged through a two-error then one-error repair sequence without replacing a better draft or entering a contradictory state.
+- **Root cause:** `bestDiagnosticCount` preserved only a scalar minimum. Every structurally valid repaired input still became the active rejected draft, even when its diagnostic count exceeded that minimum. A later mutation could also clear the rejected draft and bypass its required recovery action.
+- **Resolution:** A repair may replace the active rejected draft only when its diagnostic count does not exceed the historical minimum. Higher-count candidates are reported but discarded, the previous input, diagnostics, and revision remain active, and a `regressive_repair` recovery reason immediately requires a complete fresh definition. Potential workspace mutations are blocked while any rejected-definition action remains active.
+- **Verification:** A realistic 39/28 to 45/21 to attempted 51/28 controller regression, single-error lateral repair, status recovery, mutation blocking, and existing repair protocol tests pass. The full requirement-verification slice passes 55 files and 408 tests. Candidate `5.0.1-rc.34` completed a clean live AI-unit with seven accepted requirements, one 7/7 verdict batch, and 11/11 independent fixture tests.
+- **Prevention/follow-up:** Keep candidate promotion monotonic in deterministic diagnostic count, test ordinary and single-error output shapes, and inspect live repair telemetry before running every multi-repetition benchmark.
+- **Reusable learning:** Retry limits bound time, but transactional best-state retention prevents bounded retries from walking backward.
+- **References:** `packages/coding-agent/test/task-requirement-definition-monotonic-repair.test.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `benchmarks/results/2026-08-25-v5.0.1-rc.31-task3-definition-canary-v1/report.md`, `/private/tmp/p-rc34-artifact-ai-unit.pwwjXE/live.log.br`

@@ -11,7 +11,7 @@ import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.t
 import { baselineRequired } from "../requirement-checks.ts";
 import { renderedRejectedDefinitionRevision } from "../requirement-definition-prompt.ts";
 import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
-import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
+import { emptyReadiness, emptyState } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
@@ -28,6 +28,7 @@ import {
   summarizeOutput,
 } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import { requirementAuditAfterTaskDeclaration } from "./task-declaration-requirement-audit.ts";
 export async function do_afterToolCall(
   self: TaskVerificationController,
   context: AfterToolCallContext,
@@ -224,9 +225,8 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
   if (!isTaskKind(input.task_kind) || !normalizeText(input.task_summary)) {
     return self.rejected("declare_task requires task_kind and a concrete task_summary.");
   }
-  if (self.state.mutationRevision > 0) {
+  if (self.state.mutationRevision > 0)
     return self.rejected("Cannot replace the task declaration after mutation; finish the current task first.");
-  }
   const taskSummary = normalizeText(input.task_summary);
   const required = baselineRequired(input.task_kind, `${self.latestUserPrompt}\n${taskSummary}`);
   const currentPrompts = self.state.taskPrompts?.length
@@ -251,10 +251,10 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
       authorizedTestPaths: [],
       testSetupChanged: false,
     },
-    requirementAudit: emptyRequirementAudit(),
+    requirementAudit: requirementAuditAfterTaskDeclaration(self, taskSummary, currentPrompts),
     updatedAt: new Date().toISOString(),
   };
-  self.restoreError = undefined;
+  if (!self.restoreError?.startsWith("requirement-source snapshot")) self.restoreError = undefined;
   self.persistState();
   return self.updated(
     required

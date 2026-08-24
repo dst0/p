@@ -173,7 +173,10 @@ describe("rejected requirement definition repair protocol", () => {
       applyRequirementAudit: (input: RequirementAuditInput) => {
         received.push(input);
         return received.length < 3
-          ? rejection(`Rejected attempt ${received.length}.`)
+          ? {
+              ...rejection("Requirement definition has 2 deterministic validation errors:\n1. Rejected."),
+              requirementDefinitionDiagnosticCount: 2,
+            }
           : { status: "updated", message: "Accepted.", state };
       },
       rejected: rejection,

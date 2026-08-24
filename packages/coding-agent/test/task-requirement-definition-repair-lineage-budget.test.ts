@@ -225,8 +225,17 @@ function lineageBaseline(draft: RejectedRequirementDefinitionDraft): number | un
 function rejectingController(): TaskVerificationController {
   const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
   const rejected = (message: string): VerificationResult => ({ status: "needs_action", message, state });
+  let diagnosticCount = 5;
   return {
-    applyRequirementAudit: (_input: RequirementAuditInput) => rejected("Definition rejected."),
+    applyRequirementAudit: (_input: RequirementAuditInput) => {
+      const currentDiagnosticCount = diagnosticCount--;
+      return {
+        ...rejected(
+          `Requirement definition has ${currentDiagnosticCount} deterministic validation errors:\n1. Rejected.`,
+        ),
+        requirementDefinitionDiagnosticCount: currentDiagnosticCount,
+      };
+    },
     rejected,
   } as unknown as TaskVerificationController;
 }
@@ -251,7 +260,7 @@ function instrumentedRejectingController(): {
   const controller = {
     applyRequirementAudit: (_input: RequirementAuditInput) => {
       calls += 1;
-      return rejected("Definition rejected.");
+      return { ...rejected("Definition rejected."), requirementDefinitionDiagnosticCount: 1 };
     },
     rejected,
   } as unknown as TaskVerificationController;

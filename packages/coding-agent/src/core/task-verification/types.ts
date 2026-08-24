@@ -182,4 +182,5 @@ export interface VerificationResult {
   status: "updated" | "needs_action";
   message: string;
   state: TaskVerificationState;
+  requirementDefinitionDiagnosticCount?: number;
 }

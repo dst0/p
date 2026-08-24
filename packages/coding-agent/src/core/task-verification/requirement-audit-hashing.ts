@@ -89,6 +89,16 @@ export function computeRequirementSetHash(
   });
 }
 
+export function requirementDefinitionMatchesState(state: TaskVerificationState): boolean {
+  const audit = state.requirementAudit;
+  return (
+    audit.requirements.length > 0 &&
+    audit.userRequirementsHash === computeStateUserRequirementsHash(state) &&
+    audit.requirementSetHash ===
+      computeRequirementSetHash(audit.requirements, audit.ignoredSourcePrompts, audit.ignoredSourceClauses)
+  );
+}
+
 export function computeCertificateHash(
   taskId: string,
   mutationRevision: number,
