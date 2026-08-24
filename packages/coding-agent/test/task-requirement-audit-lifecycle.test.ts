@@ -156,6 +156,7 @@ describe("requirement-audit lifecycle", () => {
     restored.controller.rejectedRequirementDefinitionDraft = {
       revision: "stale-recovery",
       diagnostics: "stale diagnostics",
+      repairLineageBaselineRequirementCount: 0,
       input: { action: "define", requirements: [] },
     };
     restored.controller.requirementRepairStatusRevision = "stale-recovery";
