@@ -131,33 +131,43 @@ describe("requirement definition diagnostics", () => {
     expect(JSON.stringify(harness.sessionManager.getBranch())).toBe(branchBefore);
 
     await nextModelTurn(harness);
+    const revision = harness.controller.rejectedRequirementDefinitionDraft?.revision;
     const accepted = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: [
+      action: "repair_definition",
+      definition_revision: revision,
+      requirement_repairs: [
         {
-          type: "constraint",
-          text: "Replay rejects malformed logs",
-          acceptance_criterion: "Replay rejects a malformed log",
-          source_prompt_indexes: [1, 2],
-          source_clause_ids: ["S2-C1"],
+          requirement_index: 1,
+          replacements: [
+            {
+              type: "constraint",
+              text: "Replay rejects malformed logs",
+              acceptance_criterion: "Replay rejects a malformed log",
+              source_prompt_indexes: [1, 2],
+              source_clause_ids: ["S2-C1"],
+            },
+            {
+              type: "constraint",
+              text: "Replay rejects truncated logs",
+              acceptance_criterion: "Replay rejects a truncated log",
+              source_prompt_indexes: [1, 2],
+              source_clause_ids: ["S2-C1"],
+            },
+          ],
         },
         {
-          type: "constraint",
-          text: "Replay rejects truncated logs",
-          acceptance_criterion: "Replay rejects a truncated log",
-          source_prompt_indexes: [1, 2],
-          source_clause_ids: ["S2-C1"],
-        },
-        {
-          type: "behavior",
-          text: "Reject invalid access tokens",
-          acceptance_criterion: "The service rejects invalid access tokens",
-          source_prompt_indexes: [1, 2],
-          source_clause_ids: ["S2-C2"],
+          requirement_index: 2,
+          replacements: [
+            {
+              type: "behavior",
+              text: "Reject invalid access tokens",
+              acceptance_criterion: "The service rejects invalid access tokens",
+              source_prompt_indexes: [1, 2],
+              source_clause_ids: ["S2-C2"],
+            },
+          ],
         },
       ],
-      ignored_source_prompts: [],
-      ignored_source_clauses: [],
     });
     expect(accepted).toContain("Defined 3 atomic requirement(s)");
     expect(harness.controller.currentState.requirementAudit.status).toBe("verifying");

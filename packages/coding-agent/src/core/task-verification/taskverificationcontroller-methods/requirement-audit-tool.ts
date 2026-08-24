@@ -3,6 +3,8 @@ import { REQUIREMENT_AUDIT_TOOL_NAME, RequirementAuditSchema } from "../constant
 import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
 import {
   formatRejectedDefinitionRepairGuidance,
+  rejectedDefinitionNextActionGuardMessage,
+  rejectedDraftRequiresFreshDefinition,
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
   requirementRepairChangesArity,
@@ -40,6 +42,12 @@ export function do_createRequirementAuditToolDefinition(
       const foreignFieldError = requirementAuditForeignFieldError(params);
       if (foreignFieldError) {
         const result = self.rejected(foreignFieldError);
+        return { content: [{ type: "text", text: result.message }], details: result };
+      }
+      const activeDraft = self.rejectedRequirementDefinitionDraft;
+      const requiredAction = rejectedDraftRequiresFreshDefinition(activeDraft) ? "define" : "repair_definition";
+      if (activeDraft && params.action !== requiredAction) {
+        const result = self.rejected(rejectedDefinitionNextActionGuardMessage(activeDraft));
         return { content: [{ type: "text", text: result.message }], details: result };
       }
       if (
