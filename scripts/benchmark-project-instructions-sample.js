@@ -42,16 +42,16 @@ export function createValidatedPairedSample(parsed, context) {
   if (!existsSync(workspaceAgents) || hashFile(workspaceAgents) !== context.options.sourceSha256) {
     invalid("invalid_fixture", "child benchmark fixture identity is invalid");
   }
-  let projectInstructionEvidence = projectProjectInstructionEvidence(result.projectInstructionEvidence);
   try {
-    projectInstructionEvidence = applyProjectInstructionOuterAuthority(
-      projectInstructionEvidence,
+    applyProjectInstructionOuterAuthority(
+      result.projectInstructionEvidence,
       context.projectInstructionAuthority,
       parsed.resultSha256,
     );
   } catch {
     invalid("invalid_outer_authority", "child benchmark proof evidence does not match outer authority");
   }
+  let projectInstructionEvidence = projectProjectInstructionEvidence(result.projectInstructionEvidence);
   const instructionAssessment = validateProjectInstructionEvidence(
     projectInstructionEvidence,
     context.mode,

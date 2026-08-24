@@ -56,6 +56,7 @@ export function do_defineRequirements(
     self.state.mutationRevision === 0
       ? [
           `Defined ${requirements.length} atomic requirement(s) before production mutation. Implementation may proceed.`,
+          "Structural preflight: ready_to_finish blocks mutated source files over 250 physical lines unless the user explicitly overrides the file-size limit. Plan focused modules before implementation and complete any required split before final verification.",
           proofPlan,
         ]
           .filter((line): line is string => line !== undefined)

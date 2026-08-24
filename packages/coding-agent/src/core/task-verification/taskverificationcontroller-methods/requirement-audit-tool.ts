@@ -33,7 +33,11 @@ export function do_createRequirementAuditToolDefinition(
         result.status !== "needs_action"
           ? result.message
           : params.action === "define"
-            ? `${result.message}\n\nCorrect every diagnostic and resubmit the complete definition batch; rejection stored no partial definition.`
+            ? [
+                result.message,
+                "Correct every diagnostic and resubmit the complete definition batch; rejection stored no partial definition.",
+                'The original requirement-source catalog remains authoritative. If compaction hid it, call record_task_verification with action "status" to restore the current definition instructions before resubmitting.',
+              ].join("\n\n")
             : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },
