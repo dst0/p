@@ -2,7 +2,12 @@ import { REQUIREMENT_AUDIT_TOOL_NAME } from "./constants.ts";
 import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "./referenced-requirement-sources.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
-import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
+import {
+  authorizeRejectedDraftFreshDefinition,
+  rejectedDefinitionNextActionGuardMessage,
+  rejectedDraftRequiresFreshDefinition,
+  type RejectedRequirementDefinitionDraft,
+} from "./requirement-definition-repair.ts";
 import { requirementSourceClauseCatalog } from "./requirement-source-clauses.ts";
 import { requirementSourceFacets } from "./requirement-source-facets.ts";
 import type { TaskVerificationSourcePrompt } from "./types.ts";
@@ -134,11 +139,30 @@ export function renderRequirementDefinitionPrompt(
     ...catalogLines,
     ...formatRejectedDefinitionRecovery(rejectedDraft),
   ].join("\n");
+  if (Buffer.byteLength(recoveryPrompt) <= MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
+    return { text: recoveryPrompt, normalPromptExceedsLimit };
+  }
+  if (normalPromptExceedsLimit) return { text: boundedNormalPrompt, normalPromptExceedsLimit };
+  const authorizedRecoveryPrompt = [
+    ACTIVE_REJECTED_DEFINITION_MARKER,
+    `definition_revision: ${rejectedDraft.revision}`,
+    "next_required_action: define",
+    "The rejected batch cannot fit in this prompt. Rebuild it completely from the authoritative catalog.",
+    ...normalPrompt.split("\n").slice(2),
+  ].join("\n");
+  if (Buffer.byteLength(authorizedRecoveryPrompt) > MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
+    return {
+      text: [
+        "REQUIREMENT AUDIT — RECOVERY EXCEEDS THE DEFINITION LIMIT",
+        "Do not define or repair from incomplete recovery context.",
+        "Ask the user to start a fresh task or session so the controller can rebuild the complete definition source.",
+      ].join("\n"),
+      normalPromptExceedsLimit,
+    };
+  }
+  authorizeRejectedDraftFreshDefinition(rejectedDraft, "recovery_prompt_limit");
   return {
-    text:
-      Buffer.byteLength(recoveryPrompt) <= MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES
-        ? recoveryPrompt
-        : boundedNormalPrompt,
+    text: authorizedRecoveryPrompt,
     normalPromptExceedsLimit,
   };
 }
@@ -162,6 +186,13 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
     requirement.source_clause_ids ?? null,
     requirement.source_facet_ids ?? null,
   ]);
+  const nextAction = rejectedDraftRequiresFreshDefinition(draft)
+    ? rejectedDefinitionNextActionGuardMessage(draft).split("\n")
+    : [
+        "next_required_action: repair_definition",
+        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and the smallest high-leverage subset of requirement_repairs or classification changes. You do not need to eliminate every diagnostic in one repair call.`,
+        "Omitted requirements and classifications are retained. Do not restart with action define unless the controller returns next_required_action: define, and do not call status again unless instructed.",
+      ];
   return [
     ACTIVE_REJECTED_DEFINITION_MARKER,
     `definition_revision: ${draft.revision}`,
@@ -174,8 +205,7 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
       ignored_source_prompts: draft.input.ignored_source_prompts ?? [],
       ignored_source_clauses: draft.input.ignored_source_clauses ?? [],
     }),
-    `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and the smallest high-leverage subset of requirement_repairs or classification changes. You do not need to eliminate every diagnostic in one repair call.`,
-    "Omitted requirements and classifications are retained. Do not restart with action define unless a repair result explicitly says the lineage growth budget is exhausted, and do not call status again unless instructed.",
+    ...nextAction,
     "Do not submit a verdict in the same model turn.",
   ];
 }

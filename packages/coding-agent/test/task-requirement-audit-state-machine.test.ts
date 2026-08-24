@@ -141,33 +141,35 @@ describe("requirement-audit state machine", () => {
     expect(incomplete).toContain("unclassified indexes: 2");
 
     await nextModelTurn(harness);
+    const revision = harness.controller.rejectedRequirementDefinitionDraft?.revision;
     const complete = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: [definitions()[0]],
-      ignored_source_prompts: [{ source_prompt_index: 2, reason: "Status question, not a task requirement" }],
+      action: "repair_definition",
+      definition_revision: revision,
+      ignored_source_prompt_upserts: [{ source_prompt_index: 2, reason: "Status question, not a task requirement" }],
     });
     expect(complete).toContain("Defined 1 atomic requirement");
     expect(harness.controller.currentState.requirementAudit.requirements[0]?.id).toBe("R1");
   });
 
   it("rejects precomputed audit transitions from the same assistant turn", async () => {
-    const harness = createRequirementAuditHarness();
-    const { evidenceRef } = await reachAuditEvidenceReady(harness);
-    const prematureDefinition = await callRequirementAudit(harness.controller, {
+    const defineHarness = createRequirementAuditHarness();
+    const { evidenceRef } = await reachAuditEvidenceReady(defineHarness);
+    const prematureDefinition = await callRequirementAudit(defineHarness.controller, {
       action: "define",
       requirements: [definitions()[0]],
       ignored_source_prompts: [],
     });
     expect(prematureDefinition).toContain("Only one requirement-audit transition");
 
-    await nextModelTurn(harness);
-    const defined = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: [definitions()[0]],
-      ignored_source_prompts: [],
+    await nextModelTurn(defineHarness);
+    const revision = defineHarness.controller.rejectedRequirementDefinitionDraft?.revision;
+    const defined = await callRequirementAudit(defineHarness.controller, {
+      action: "repair_definition",
+      definition_revision: revision,
+      requirement_repairs: [{ requirement_index: 1, replacements: [definitions()[0]] }],
     });
     expect(defined).toContain("Verify all 1 requirements");
-    const prematureVerdict = await callRequirementAudit(harness.controller, {
+    const prematureVerdict = await callRequirementAudit(defineHarness.controller, {
       action: "verdict",
       verdicts: [
         {
@@ -179,7 +181,7 @@ describe("requirement-audit state machine", () => {
       ],
     });
     expect(prematureVerdict).toContain("Only one requirement-audit transition");
-    expect(harness.controller.currentState.requirementAudit.requirements[0]?.verdict).toBeUndefined();
+    expect(defineHarness.controller.currentState.requirementAudit.requirements[0]?.verdict).toBeUndefined();
   });
 
   it("rejects a token when certificate fields or the canonical requirement set are corrupted", async () => {
