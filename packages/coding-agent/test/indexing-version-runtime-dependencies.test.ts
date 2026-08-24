@@ -53,10 +53,33 @@ describe("indexing-version runtime dependencies", () => {
     expect(versionAfter.length).toBe(64);
   });
 
+  it("changes computeIndexingVersion when apple-coreai-generation-path.js changes", () => {
+    const root = createMockProjectRoot();
+    fs.writeFileSync(path.join(root, "scripts", "apple-coreai-generation-path.js"), "export const scriptVersion = 1;\n");
+    const versionBefore = computeIndexingVersion(root);
+
+    fs.writeFileSync(path.join(root, "scripts", "apple-coreai-generation-path.js"), "export const scriptVersion = 2;\n");
+
+    const versionAfter = computeIndexingVersion(root);
+    expect(versionAfter).not.toBe(versionBefore);
+    expect(typeof versionAfter).toBe("string");
+    expect(versionAfter.length).toBe(64);
+  });
+
   it("includes scripts/bounded-process-command.js in real project version computation", () => {
     const projectRoot = path.resolve(import.meta.dirname, "../..", "..");
     const boundedPath = path.join(projectRoot, "scripts", "bounded-process-command.js");
     expect(fs.existsSync(boundedPath)).toBe(true);
+
+    const realVersion = computeIndexingVersion(projectRoot);
+    expect(typeof realVersion).toBe("string");
+    expect(realVersion.length).toBe(64);
+  });
+
+  it("includes scripts/apple-coreai-generation-path.js in real project version computation", () => {
+    const projectRoot = path.resolve(import.meta.dirname, "../..", "..");
+    const helperPath = path.join(projectRoot, "scripts", "apple-coreai-generation-path.js");
+    expect(fs.existsSync(helperPath)).toBe(true);
 
     const realVersion = computeIndexingVersion(projectRoot);
     expect(typeof realVersion).toBe("string");
