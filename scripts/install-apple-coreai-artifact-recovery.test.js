@@ -19,8 +19,10 @@ function writeValidMetadata(dir) {
 }
 
 test("healthy current pointer probe reuse with no build or pointer write", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
-  const currentJson = path.join(tempDir, "current.json");
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  const currentJson = path.join(artifactRoot, "current.json");
   const initialContent = JSON.stringify({ artifactVersion: APPLE_CORE_AI_MANIFEST.artifactVersion }, null, 2);
   fs.writeFileSync(currentJson, initialContent);
   const initialStat = fs.statSync(currentJson);
@@ -34,11 +36,11 @@ test("healthy current pointer probe reuse with no build or pointer write", async
 
   try {
     const result = await ensureAppleCoreAiArtifact({
-      artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+      artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
     });
 
-    assert.equal(result.artifactRoot, tempDir);
-    assert.deepEqual(calls, [{ target: { artifactRoot: tempDir }, type: "probe" }]);
+    assert.equal(result.artifactRoot, artifactRoot);
+    assert.deepEqual(calls, [{ target: { artifactRoot }, type: "probe" }]);
     assert.equal(fs.readFileSync(currentJson, "utf8"), initialContent);
     assert.equal(fs.statSync(currentJson).mtimeMs, initialStat.mtimeMs);
   } finally {
@@ -47,7 +49,8 @@ test("healthy current pointer probe reuse with no build or pointer write", async
 });
 
 test("missing or failed current probe builds candidate, probes candidate, and promotes", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
   const events = [];
 
   const buildCandidate = async (_py, _dir, root, generation) => {
@@ -64,17 +67,17 @@ test("missing or failed current probe builds candidate, probes candidate, and pr
 
   try {
     const result = await ensureAppleCoreAiArtifact({
-      artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+      artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
     });
 
-    assert.equal(result.artifactRoot, tempDir);
+    assert.equal(result.artifactRoot, artifactRoot);
     assert.equal(events.length, 2);
     assert.equal(events[0].type, "build");
     assert.equal(events[1].type, "probe");
     const candidateGen = events[0].generation;
-    assert.equal(events[1].target.artifactDirectory, path.join(tempDir, candidateGen));
+    assert.equal(events[1].target.artifactDirectory, path.join(artifactRoot, candidateGen));
 
-    const current = JSON.parse(fs.readFileSync(path.join(tempDir, "current.json"), "utf8"));
+    const current = JSON.parse(fs.readFileSync(path.join(artifactRoot, "current.json"), "utf8"));
     assert.equal(current.artifactDirectory, candidateGen);
     assert.equal(current.artifactVersion, APPLE_CORE_AI_MANIFEST.artifactVersion);
   } finally {
@@ -83,8 +86,10 @@ test("missing or failed current probe builds candidate, probes candidate, and pr
 });
 
 test("event order: current probe -> candidate build -> candidate probe -> pointer promotion", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
-  const currentJson = path.join(tempDir, "current.json");
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  const currentJson = path.join(artifactRoot, "current.json");
   fs.writeFileSync(currentJson, JSON.stringify({ artifactVersion: "old-version" }));
 
   const events = [];
@@ -107,7 +112,7 @@ test("event order: current probe -> candidate build -> candidate probe -> pointe
 
   try {
     await ensureAppleCoreAiArtifact({
-      artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+      artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
     });
 
     assert.deepEqual(events, ["probe-current", "build", "probe-candidate"]);
@@ -120,12 +125,14 @@ test("event order: current probe -> candidate build -> candidate probe -> pointe
 });
 
 test("candidate build failure leaves old pointer and generation intact without deleting candidate", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
-  const currentJson = path.join(tempDir, "current.json");
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  const currentJson = path.join(artifactRoot, "current.json");
   const oldContent = JSON.stringify({ artifactVersion: "old-v1" }, null, 2);
   fs.writeFileSync(currentJson, oldContent);
 
-  const oldGenDir = path.join(tempDir, "old-v1");
+  const oldGenDir = path.join(artifactRoot, "old-v1");
   fs.mkdirSync(oldGenDir, { recursive: true });
   fs.writeFileSync(path.join(oldGenDir, "data.bin"), "old-bytes");
 
@@ -142,7 +149,7 @@ test("candidate build failure leaves old pointer and generation intact without d
   try {
     await assert.rejects(
       () => ensureAppleCoreAiArtifact({
-        artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+        artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
       }),
       /Disk full during export/,
     );
@@ -157,12 +164,14 @@ test("candidate build failure leaves old pointer and generation intact without d
 });
 
 test("candidate-probe failure never promotes and removes only its owned candidate", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
-  const currentJson = path.join(tempDir, "current.json");
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  const currentJson = path.join(artifactRoot, "current.json");
   const oldContent = JSON.stringify({ artifactVersion: "old-v1" }, null, 2);
   fs.writeFileSync(currentJson, oldContent);
 
-  const oldGenDir = path.join(tempDir, "old-v1");
+  const oldGenDir = path.join(artifactRoot, "old-v1");
   fs.mkdirSync(oldGenDir, { recursive: true });
   fs.writeFileSync(path.join(oldGenDir, "data.bin"), "old-bytes");
 
@@ -181,7 +190,7 @@ test("candidate-probe failure never promotes and removes only its owned candidat
   try {
     await assert.rejects(
       () => ensureAppleCoreAiArtifact({
-        artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+        artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
       }),
       /Candidate residency check failed/,
     );
@@ -195,8 +204,10 @@ test("candidate-probe failure never promotes and removes only its owned candidat
 });
 
 test("pointer promotion failure retains candidate without deleting either generation", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
-  const currentJson = path.join(tempDir, "current.json");
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
+  fs.mkdirSync(artifactRoot, { recursive: true });
+  const currentJson = path.join(artifactRoot, "current.json");
   const oldContent = JSON.stringify({ artifactVersion: "old-v1" }, null, 2);
   fs.writeFileSync(currentJson, oldContent);
 
@@ -218,7 +229,7 @@ test("pointer promotion failure retains candidate without deleting either genera
   try {
     await assert.rejects(
       () => ensureAppleCoreAiArtifact({
-        artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+        artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
       }),
       /EPERM: rename failed/,
     );
@@ -233,7 +244,8 @@ test("pointer promotion failure retains candidate without deleting either genera
 });
 
 test("concurrent interleaved ensures end on an existing successfully probed generation", async () => {
-  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), "coreai-recovery-"));
+  const tempDir = fs.mkdtempSync(path.join(fs.realpathSync(os.tmpdir()), "coreai-recovery-"));
+  const artifactRoot = path.join(tempDir, "indexing-service", "apple-coreai");
   const probedGenerations = new Set();
 
   const buildCandidate = async (_py, _dir, root, generation) => {
@@ -254,19 +266,19 @@ test("concurrent interleaved ensures end on an existing successfully probed gene
   try {
     const [resA, resB] = await Promise.all([
       ensureAppleCoreAiArtifact({
-        artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+        artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
       }),
       ensureAppleCoreAiArtifact({
-        artifactRoot: tempDir, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
+        artifactRoot, buildCandidate, codeIndexDirectory: "/tmp/mock-code-index", probeWorker, venvPython: "/tmp/mock-python",
       }),
     ]);
 
-    assert.equal(resA.artifactRoot, tempDir);
-    assert.equal(resB.artifactRoot, tempDir);
+    assert.equal(resA.artifactRoot, artifactRoot);
+    assert.equal(resB.artifactRoot, artifactRoot);
 
-    const current = JSON.parse(fs.readFileSync(path.join(tempDir, "current.json"), "utf8"));
+    const current = JSON.parse(fs.readFileSync(path.join(artifactRoot, "current.json"), "utf8"));
     assert.ok(probedGenerations.has(current.artifactDirectory), "Final pointer must name a probed generation");
-    assert.ok(fs.existsSync(path.join(tempDir, current.artifactDirectory)), "Named generation must exist on disk");
+    assert.ok(fs.existsSync(path.join(artifactRoot, current.artifactDirectory)), "Named generation must exist on disk");
   } finally {
     fs.rmSync(tempDir, { force: true, recursive: true });
   }

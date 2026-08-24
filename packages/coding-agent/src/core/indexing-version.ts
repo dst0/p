@@ -35,6 +35,7 @@ function collectIndexingFiles(projectRoot: string): string[] {
   if (isDirectory(indexingDaemon)) collectRecursiveFiles(indexingDaemon, files, [".js", ".ts"]);
 
   const installerNames = [
+    "apple-coreai-generation-path.js",
     "bounded-process-command.js",
     "build-indexing-tray.js",
     "compute-indexing-version.js",

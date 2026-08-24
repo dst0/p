@@ -2,11 +2,18 @@ import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
 
+import {
+  CANONICAL_COREAI_ARTIFACT_VERSION,
+  validateArtifactRoot,
+  validateGenerationPath,
+} from "./apple-coreai-generation-path.js";
 import { runBoundedProcessCommand, sanitizeDiagnostics } from "./bounded-process-command.js";
 import { captureCommand, runCommand } from "./npu-install-utils.js";
 
+export { validateArtifactRoot, validateGenerationPath };
+
 export const APPLE_CORE_AI_MANIFEST = Object.freeze({
-  artifactVersion: "qwen3-embedding-0.6b-ane-b1-s64-v1",
+  artifactVersion: CANONICAL_COREAI_ARTIFACT_VERSION,
   coreAiCoreVersion: "1.0.0b2",
   coreAiModelsCommit: "16777134f3d6df44abffa142d04c2284f83d6b53",
   coreAiModelsSha256: "c2b5051d6687f373e252ced98ef0f072f9f1405718a44cf083368f1d6ced90b2",
@@ -45,6 +52,7 @@ export function validateCoreAiProbeHealth(probe) {
 }
 
 export async function buildAppleCoreAiCandidate(python, codeIndexDirectory, artifactRoot, generation) {
+  const artifactDirectory = validateGenerationPath(artifactRoot, generation);
   const result = await runBoundedProcessCommand(
     python,
     [path.join(codeIndexDirectory, "apple_coreai_artifact.py"), "--output-root", artifactRoot, "--generation", generation],
@@ -54,12 +62,7 @@ export async function buildAppleCoreAiCandidate(python, codeIndexDirectory, arti
     const raw = (result.stderr ?? "").trim() || (result.stdout ?? "").trim() || `process exited with code ${result.status}`;
     throw new Error(`Core AI candidate build failed: ${sanitizeDiagnostics(raw)}`);
   }
-  try {
-    return JSON.parse(result.stdout.trim());
-  } catch (error) {
-    const diag = sanitizeDiagnostics(error instanceof Error ? error.message : String(error));
-    throw new Error(`Invalid Core AI candidate build output: invalid JSON (${diag})`);
-  }
+  return { artifactDirectory, generation };
 }
 
 export async function probeAppleCoreAiWorker(python, codeIndexDirectory, target, options = {}) {
@@ -91,19 +94,7 @@ export async function probeAppleCoreAiWorker(python, codeIndexDirectory, target,
 }
 
 export function promoteCurrentPointerAtomic(artifactRoot, generation) {
-  if (typeof generation !== "string" || !generation) {
-    throw new Error("Generation must be a non-empty string");
-  }
-  const prefix = `${APPLE_CORE_AI_MANIFEST.artifactVersion}-`;
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-  if (!generation.startsWith(prefix) || !uuidRegex.test(generation.slice(prefix.length))) {
-    throw new Error(`Invalid generation format: "${generation}"`);
-  }
-
-  const targetDir = path.join(artifactRoot, generation);
-  if (path.dirname(path.resolve(targetDir)) !== path.resolve(artifactRoot)) {
-    throw new Error(`Target generation is not a direct child of artifactRoot: ${generation}`);
-  }
+  const targetDir = validateGenerationPath(artifactRoot, generation);
   let targetStat;
   try {
     targetStat = fs.lstatSync(targetDir);
@@ -196,6 +187,7 @@ export async function ensureAppleCoreAiArtifact(options) {
     probeWorker = probeAppleCoreAiWorker,
   } = options;
 
+  validateArtifactRoot(artifactRoot);
   fs.mkdirSync(artifactRoot, { recursive: true });
   const currentPointerPath = path.join(artifactRoot, "current.json");
 
