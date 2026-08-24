@@ -723,10 +723,6 @@
     "classes": 2,
     "lines": 874
   },
-  "scripts/benchmark-agents.js": {
-    "classes": 0,
-    "lines": 2059
-  },
   "scripts/edit-tool-stats.js": {
     "classes": 0,
     "lines": 834
