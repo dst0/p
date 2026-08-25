@@ -10,7 +10,9 @@ export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
 export const MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS = 3;
 
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
-  /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
+  /(?:\b(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:without|with\s+no)\s+(?:a\s+)?(?:file[- ]size|line(?:-count)?)\s+limit\b|\b(?:do\s+not|don't)\s+split\s+(?:this|the)\s+file\b|(?:явно\s+)?(?:игнорируй|отмени)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|без\s+ограничени[яй]\s+(?:на\s+)?(?:размер|число\s+строк)|не\s+разбива(?:й|ть)\s+(?:этот\s+)?файл)/i;
+export const USER_FILE_SIZE_OVERRIDE_DENIAL_PATTERN =
+  /(?:\b(?:do\s+not|don't|never)\s+(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:do\s+not|don't|never)\s+(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:revoke|cancel|withdraw)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+(?:override|exception|waiver)\b|\b(?:enforce|restore|reinstate|respect|keep)\s+(?:the\s+)?(?:normal\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|(?:не\s+игнорируй|не\s+отменяй|соблюдай|верни)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|(?:отзови|отменяю)\s+(?:исключение|разрешение)\s+(?:для\s+)?(?:размера|числа\s+строк))/i;
 
 export const CHECKED_SOURCE_EXTENSIONS = new Set([
   ".ts",

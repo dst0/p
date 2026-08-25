@@ -1,11 +1,10 @@
 import { readdirSync, readFileSync, statSync } from "node:fs";
-import { extname, isAbsolute, join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import type { AfterToolCallContext } from "@dst0/p-agent-core";
 import {
   BASELINE_METHODS,
   BASH_MUTATION_PATTERN,
   BUG_PATTERN,
-  CHECKED_SOURCE_EXTENSIONS,
   DOCS_PATTERN,
   EXCLUDED_DIRS,
   FINAL_METHODS,
@@ -15,10 +14,10 @@ import {
   KNOWN_STATIC_TOOLS,
   REFACTOR_PATTERN,
   TASK_KINDS,
-  USER_FILE_SIZE_OVERRIDE_PATTERN,
   WRITE_REDIRECT_PATTERN,
 } from "./constants.ts";
 import { containsGitPublishCommand, tokenizeShellCommands } from "./git-command-classification.ts";
+import { isCheckedSourcePath, physicalLineCount } from "./source-file-classification.ts";
 import type { BaselineMethod, FinalMethod, TaskKind } from "./types.ts";
 
 const CONFIDENTLY_READ_ONLY_SHELL_COMMANDS = new Set([
@@ -42,50 +41,23 @@ const CONFIDENTLY_READ_ONLY_GIT_SUBCOMMANDS = new Set(["diff", "log", "show", "s
 
 export function findOversizedSourceFiles(
   cwd: string,
-  taskText: string,
+  fileSizeLimitOverridden: boolean,
   mutatedFilePaths?: readonly string[],
   maxLines = 250,
 ): Array<{ path: string; lineCount: number }> {
-  if (USER_FILE_SIZE_OVERRIDE_PATTERN.test(taskText)) {
-    return [];
-  }
+  if (fileSizeLimitOverridden) return [];
 
   const oversizedFiles: Array<{ path: string; lineCount: number }> = [];
 
-  const isExcludedPath = (fullPath: string, entry: string): boolean => {
-    const rel = relative(cwd, fullPath).replace(/\\/g, "/");
-    const parts = rel.split("/");
-    for (let i = 0; i < parts.length; i++) {
-      if (EXCLUDED_DIRS.has(parts[i]!)) return true;
-    }
-    if (
-      entry.endsWith(".test.ts") ||
-      entry.endsWith(".test.js") ||
-      entry.endsWith(".test.tsx") ||
-      entry.endsWith(".test.jsx") ||
-      entry.endsWith(".spec.ts") ||
-      entry.endsWith(".spec.js") ||
-      entry.endsWith("_test.go") ||
-      entry.startsWith("test_") ||
-      entry.endsWith(".generated.ts") ||
-      entry.endsWith(".d.ts")
-    ) {
-      return true;
-    }
-    return false;
-  };
-
   const checkFile = (fullPath: string) => {
     const entry = fullPath.split(/[/\\]/).pop() || "";
-    const ext = extname(entry).toLowerCase();
-    if (!CHECKED_SOURCE_EXTENSIONS.has(ext)) return;
-    if (isExcludedPath(fullPath, entry)) return;
+    const relPath = relative(cwd, fullPath) || entry;
+    if (!isCheckedSourcePath(relPath)) return;
 
     try {
       const content = readFileSync(fullPath, "utf-8");
-      const lineCount = content.split("\n").length;
+      const lineCount = physicalLineCount(content);
       if (lineCount > maxLines) {
-        const relPath = relative(cwd, fullPath) || entry;
         oversizedFiles.push({ path: relPath, lineCount });
       }
     } catch {

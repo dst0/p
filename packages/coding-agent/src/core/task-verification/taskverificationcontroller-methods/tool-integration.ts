@@ -27,6 +27,7 @@ import {
 import type { VerificationResult } from "../types.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
+import { captureSourceWorkspaceSnapshot } from "./source-workspace-snapshot.ts";
 import {
   captureTestVerificationStart,
   releaseTestMutationReservation,
@@ -72,17 +73,23 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     }
     if (isShellTool(context.toolCall.name) && !isPublishCommand(context.toolCall.name, context.args)) {
       captureTestVerificationStart(self, context);
-      const [fingerprint, testSnapshot] = await Promise.all([
+      const [fingerprint, testSnapshot, sourceSnapshot] = await Promise.all([
         captureWorkspaceFingerprint(self.sessionManager.getCwd()),
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
+        mutationAttempt ? captureSourceWorkspaceSnapshot(self.sessionManager.getCwd()) : undefined,
       ]);
       self.bashFingerprints.set(context.toolCall.id, fingerprint);
       self.workspaceTestSnapshots.set(context.toolCall.id, testSnapshot);
+      if (mutationAttempt) {
+        self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
+      }
     } else if (mutationAttempt && (!isDirectMutationTool(context.toolCall.name) || !pathArgument(context.args))) {
-      self.workspaceTestSnapshots.set(
-        context.toolCall.id,
-        await captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
-      );
+      const [testSnapshot, sourceSnapshot] = await Promise.all([
+        captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
+        captureSourceWorkspaceSnapshot(self.sessionManager.getCwd()),
+      ]);
+      self.workspaceTestSnapshots.set(context.toolCall.id, testSnapshot);
+      self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
     }
     return previousResult;
   };
@@ -117,6 +124,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       self.testMutationReservations.clear();
       self.testVerificationStarts.clear();
       self.workspaceTestSnapshots.clear();
+      self.workspaceSourceSnapshots.clear();
       self.activeMutationAttempts.clear();
       self.bashFingerprints.clear();
       self.modelTurn += 1;

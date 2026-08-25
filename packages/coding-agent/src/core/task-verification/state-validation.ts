@@ -2,6 +2,7 @@ import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "
 import { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 import { areProofWitnesses } from "./requirement-proof-witnesses.ts";
 import { ignoredRequirementSourceIsValid, sourceIdentitiesAreUnique } from "./requirement-source-state-validation.ts";
+import { isMutatedSourcePaths } from "./source-path-state.ts";
 import { isUnverifiedTestPaths } from "./test-authoring-state-validation.ts";
 import type {
   IgnoredSourceClause,
@@ -36,7 +37,6 @@ function isRequirementSourceRef(value: unknown): value is TaskVerificationRequir
 function isString(value: unknown): value is string {
   return typeof value === "string";
 }
-
 function isNonemptyString(value: unknown): value is string {
   return isString(value) && value.length > 0;
 }
@@ -44,15 +44,12 @@ function isNonemptyString(value: unknown): value is string {
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
-
 function isOptionalString(value: unknown): boolean {
   return value === undefined || isString(value);
 }
-
 function isNonnegativeInteger(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
 }
-
 function isOptionalNonnegativeInteger(value: unknown): boolean {
   return value === undefined || isNonnegativeInteger(value);
 }
@@ -271,6 +268,8 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
         value.ignoredRequirementSources.every(ignoredRequirementSourceIsValid))) &&
     isUnverifiedTestPaths(value.unverifiedTestPaths) &&
     (value.unverifiedTestPathOverflow === undefined || typeof value.unverifiedTestPathOverflow === "boolean") &&
+    isMutatedSourcePaths(value.mutatedSourcePaths) &&
+    (value.mutatedSourcePathOverflow === undefined || typeof value.mutatedSourcePathOverflow === "boolean") &&
     sourceIdentitiesAreUnique(value.requirementSourceRefs ?? [], value.ignoredRequirementSources ?? []) &&
     isNonnegativeInteger(value.mutationRevision) &&
     isBaseline(value.baseline) &&
@@ -294,6 +293,7 @@ export function isTaskVerificationEvidence(value: unknown): value is TaskVerific
     value.passedTestNames === undefined &&
     areProofWitnesses(value.proofWitnesses) &&
     typeof value.isError === "boolean" &&
+    (value.nativeIsError === undefined || typeof value.nativeIsError === "boolean") &&
     isNonnegativeInteger(value.mutationRevision) &&
     isString(value.timestamp)
   );

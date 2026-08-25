@@ -1064,17 +1064,12 @@ describe("task verification controller", () => {
     const lines = Array.from({ length: 260 }, (_, i) => `export const val${i} = ${i};`).join("\n");
     await writeFile(sourceFile, lines, "utf-8");
 
-    const oversized = findOversizedSourceFiles(tmpDir, "Build feature", ["src/large_module.ts"], 250);
+    const oversized = findOversizedSourceFiles(tmpDir, false, ["src/large_module.ts"], 250);
     expect(oversized.length).toBe(1);
     expect(oversized[0]?.path).toBe("src/large_module.ts");
     expect(oversized[0]?.lineCount).toBe(260);
 
-    const overridden = findOversizedSourceFiles(
-      tmpDir,
-      "Build single file without limits",
-      ["src/large_module.ts"],
-      250,
-    );
+    const overridden = findOversizedSourceFiles(tmpDir, true, ["src/large_module.ts"], 250);
     expect(overridden.length).toBe(0);
 
     await rm(tmpDir, { recursive: true, force: true });

@@ -123,6 +123,10 @@ export interface TaskVerificationState {
   unverifiedTestPaths?: string[];
   /** A pathless mutation changed more test files than can be tracked individually. */
   unverifiedTestPathOverflow?: boolean;
+  /** Bounded source paths changed by the current task. */
+  mutatedSourcePaths?: string[];
+  /** Source mutation scope exceeded bounds or could not be observed safely. */
+  mutatedSourcePathOverflow?: boolean;
   mutationRevision: number;
   baseline: {
     required: boolean;
@@ -166,6 +170,7 @@ export interface TaskVerificationEvidence {
   outputSummary: string;
   proofWitnesses?: TaskVerificationProofWitness[];
   isError: boolean;
+  nativeIsError?: boolean;
   mutationRevision: number;
   timestamp: string;
 }

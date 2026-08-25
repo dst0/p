@@ -19,6 +19,7 @@ import type {
   VerificationInput,
   VerificationResult,
 } from "../types.ts";
+import { userFileSizeOverrideIsAuthorized } from "../user-file-size-override.ts";
 import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
 
 export function do_readyToFinish(self: TaskVerificationController, input: VerificationInput): VerificationResult {
@@ -103,10 +104,16 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
     );
   }
 
+  const fileSizeLimitOverridden = userFileSizeOverrideIsAuthorized(self.state, self.latestUserPrompt);
+  if (self.state.mutatedSourcePathOverflow && !fileSizeLimitOverridden) {
+    return self.rejected(
+      "ready_to_finish is blocked because mutated source paths exceeded the bounded tracking scope or a source snapshot failed. Explicit user authorization to override the file-size constraint is required.",
+    );
+  }
   const oversizedFiles = findOversizedSourceFiles(
     self.sessionManager.getCwd(),
-    taskText,
-    Array.from(self.mutatedSourceFiles),
+    fileSizeLimitOverridden,
+    self.state.mutatedSourcePaths ?? [],
     250,
   );
   if (oversizedFiles.length > 0) {

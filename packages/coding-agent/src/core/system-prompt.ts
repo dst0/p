@@ -192,7 +192,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "When fixing tests or compiler errors, prefer precise edit calls on failing logic over whole-file write calls; preserve verified invariants and avoid collateral regressions.",
   );
   addGuideline(
-    "Output Discipline: Before tests, builds, benchmarks, or log-heavy commands, plan the smallest useful target and use compact output. Preserve full output outside model context when needed. Treat exit codes as authoritative: run verification directly; never append `; echo $?` or trailing success that masks status.",
+    "Output Discipline: plan the smallest useful target and use compact output. Preserve full output outside model context when needed. Treat exit codes as authoritative: use throwing assertions; never use `console.assert` for verification, never append `; echo $?`, and never add trailing success that masks status.",
   );
   addGuideline(
     "For complex testing, architecture, or ecosystem integrations, consult loaded specialized skills for domain playbooks and reference patterns.",
