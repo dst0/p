@@ -34,7 +34,7 @@ export function do_createRequirementAuditToolDefinition(
       "Define atomic user requirements and verify them with one complete verdict batch before a completion certificate can be issued.",
     promptGuidelines: [
       "Use action 'prepare_definition' before the first matching mutation when the controller lists referenced requirement-source candidates. Select 1-3 relevant paths and classify every remaining candidate with an ignored_paths reason.",
-      "Use action 'define' only after prepare_definition or ready_to_finish asks for decomposition of the displayed sources.",
+      "Use action 'define' only when ready_to_finish asks for decomposition of the displayed sources; source preparation deliberately defers this model work until completion.",
       "Include only user requirements; do not invent best practices or duplicate repository policy gates.",
       "Split every high-risk outcome and listed case into its own independently verifiable requirement.",
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",

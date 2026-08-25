@@ -1,5 +1,6 @@
 import { Agent, type AgentEvent } from "@dst0/p-agent-core";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { computeStateUserRequirementsHash } from "../src/core/task-verification/requirement-audit-hashing.ts";
 import type { TaskRequirement } from "../src/core/task-verification/types.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
 
@@ -80,6 +81,32 @@ export async function callRequirementAudit(
   );
 }
 
+export function activateRequirementDefinitionAfterEvidenceForTest(controller: TaskVerificationController): void {
+  const userRequirementsHash = computeStateUserRequirementsHash(controller.state);
+  controller.state.final = {
+    status: "passed",
+    method: "focused_test",
+    evidenceRefs: ["verification-evidence-test"],
+    unresolvedFailures: [],
+    verifiedMutationRevision: controller.state.mutationRevision,
+  };
+  controller.state.readiness = {
+    status: "evidence_ready",
+    acceptanceChecks: [{ criterion: "focused test evidence", evidenceRefs: ["verification-evidence-test"] }],
+    verifiedMutationRevision: controller.state.mutationRevision,
+    userRequirementsHash,
+  };
+  controller.state.requirementAudit = {
+    status: "awaiting_definition",
+    requirements: [],
+    ignoredSourcePrompts: [],
+    ignoredSourceClauses: [],
+    nextRequirementIndex: 0,
+    userRequirementsHash,
+  };
+  controller.persistState();
+}
+
 function toolCall(name: string, args: Record<string, unknown>) {
   return { type: "toolCall" as const, id: `${name}-${Math.random()}`, name, arguments: args };
 }
@@ -100,6 +127,13 @@ export async function recordAuditToolResult(
     context: {} as never,
   });
   return result?.content ? resultText({ content: result.content }) : "";
+}
+
+export async function recordProductionMutationForTest(harness: RequirementAuditHarness): Promise<void> {
+  await recordAuditToolResult(harness.agent, "write", {
+    path: "src/inventory.ts",
+    content: "export const inventory = true;\n",
+  });
 }
 
 export function auditEvidenceHandle(text: string): string {

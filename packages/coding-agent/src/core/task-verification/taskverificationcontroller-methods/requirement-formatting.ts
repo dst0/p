@@ -11,7 +11,7 @@ import {
   referencedRequirementCandidates,
   requirementSourceSelectionMatches,
 } from "../referenced-requirement-sources.ts";
-import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { requirementDefinitionSources } from "../requirement-source-storage.ts";
@@ -40,20 +40,6 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         `Candidates: ${sourceCandidates.map((candidate) => candidate.path).join(", ")}.`,
         `Call ${REQUIREMENT_AUDIT_TOOL_NAME} once with action "prepare_definition", 0-3 relevant selected_paths, and reasons for every ignored_paths item.`,
       ].join("\n");
-    }
-    const audit = self.state.requirementAudit;
-    const frozenDefinition =
-      audit.requirements.length > 0 &&
-      audit.userRequirementsHash === computeStateUserRequirementsHash(self.state) &&
-      typeof audit.requirementSetHash === "string";
-    if (references.length > 0 && !frozenDefinition) {
-      const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
-      return typeof sources === "string"
-        ? `NEXT REQUIRED ACTION: ${sources}`
-        : [
-            `NEXT REQUIRED ACTION: define atomic referenced requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-            formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
-          ].join("\n");
     }
   }
 
@@ -135,6 +121,16 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         : "Use a runtime reproduction, a failing focused regression test, or two independent static inspection handles.",
       `For a regression test, first call ${TASK_VERIFICATION_TOOL_NAME} with {"action":"authorize_baseline_test","test_paths":["exact/repository-relative.test.ts"]}.`,
       "For runtime reproduction, run the concrete scenario now; its bash result will receive an evidence handle. Then call action status again.",
+    ].join("\n");
+  }
+
+  if (self.rejectedRequirementDefinitionDraft) {
+    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+    return [
+      `NEXT REQUIRED ACTION: continue the active rejected requirement definition through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
+      typeof sources === "string"
+        ? sources
+        : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
     ].join("\n");
   }
 

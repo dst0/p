@@ -17,22 +17,16 @@ export function auditContextError(self: TaskVerificationController): string | un
 
 export function definitionContextError(self: TaskVerificationController): string | undefined {
   const references = self.state.requirementSourceRefs ?? [];
-  if (references.length === 0) {
-    if (!self.state.taskKind || !self.state.taskSummary || self.state.mutationRevision !== 0) {
-      return auditContextError(self);
-    }
-    return "Pre-mutation definition requires prepared referenced requirement sources.";
-  }
+  if (references.length === 0) return auditContextError(self);
   if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
-  const currentRevisionReferences = references.filter(
-    (reference) => reference.capturedAtMutationRevision === self.state.mutationRevision,
-  );
+  const referencesToValidate =
+    self.state.requirementAudit.requirements.length === 0
+      ? references
+      : references.filter((reference) => reference.capturedAtMutationRevision === self.state.mutationRevision);
   if (
-    currentRevisionReferences.some(
-      (reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference),
-    )
+    referencesToValidate.some((reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference))
   ) {
     return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";
   }
-  return undefined;
+  return auditContextError(self);
 }

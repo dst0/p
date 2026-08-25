@@ -5,11 +5,13 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
   nextModelTurn,
   type RequirementAuditHarness,
+  recordProductionMutationForTest,
   sendAuditUserPrompt,
 } from "./task-requirement-audit-test-harness.ts";
 
@@ -22,9 +24,7 @@ describe("rejected requirement definition status recovery", () => {
 
   it("recovers the latest sparse-repair revision instead of restarting a full definition", async () => {
     const { harness, firstRevision, latestRevision, latestDiagnostics } = await rejectedRepair(workspaces);
-
     const status = await callTaskVerification(harness.controller, { action: "status" });
-
     expect(latestRevision).not.toBe(firstRevision);
     expect(status).toContain(`definition_revision: ${latestRevision}`);
     expect(status).toContain('action "repair_definition"');
@@ -46,11 +46,10 @@ describe("rejected requirement definition status recovery", () => {
 
   it("discards recovery when a new user requirement invalidates the rejected batch", async () => {
     const { harness, latestRevision } = await rejectedRepair(workspaces);
-
     await sendAuditUserPrompt(harness, "Also preserve the exact event position.", 200);
     const status = await callTaskVerification(harness.controller, { action: "status" });
 
-    expect(status).toContain('Call record_requirement_audit with action "define"');
+    expect(status).toContain('action "ready_to_finish"');
     expect(status).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
     expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
       "stale or unavailable",
@@ -184,6 +183,8 @@ async function preparedRepairHarness(workspaces: string[], source: string): Prom
     selected_paths: ["README.md"],
     ignored_paths: [],
   });
+  await recordProductionMutationForTest(harness);
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   return harness;
 }
@@ -240,6 +241,8 @@ async function rejectedRepair(workspaces: string[]): Promise<{
     selected_paths: ["README.md"],
     ignored_paths: [],
   });
+  await recordProductionMutationForTest(harness);
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   const rejected = await callRequirementAudit(harness.controller, {
     action: "define",

@@ -5,10 +5,7 @@ import {
   prepareReferencedRequirementSources,
 } from "../referenced-requirement-sources.ts";
 import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
-import {
-  formatRequirementDefinitionPrompt,
-  renderRequirementDefinitionPrompt,
-} from "../requirement-definition-prompt.ts";
+import { renderRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { persistRequirementSourceSnapshots } from "../requirement-source-storage.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -104,9 +101,7 @@ export function do_prepareRequirementDefinition(
     [
       `Prepared ${references.length} immutable requirement-source snapshot(s) (${persisted.length} new, ${reusable.length} reused).`,
       `Ignored ${selection.ignoredSources.length} classified candidate(s).`,
-      "Define the complete clause-to-requirement matrix in the next model turn.",
-      "",
-      formatRequirementDefinitionPrompt(prospectiveSources),
+      "Implementation may proceed. The complete clause-to-requirement matrix is deferred until evidence readiness passes at completion.",
     ].join("\n"),
     false,
   );
