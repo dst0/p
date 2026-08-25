@@ -1,5 +1,5 @@
 import { execFile } from "node:child_process";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
@@ -119,6 +119,50 @@ describe("task verification workspace enforcement", () => {
       );
       expect(controller.currentState.mutationRevision).toBe(1);
       expect(controller.currentState.final.status).toBe("pending");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("checks oversized source files produced by a shell mutation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "p-verification-pathless-size-"));
+    try {
+      await mkdir(join(cwd, "src"));
+      const agent = new Agent();
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      controller.install(agent);
+      await callVerificationTool(controller, {
+        action: "declare_task",
+        task_kind: "docs",
+        task_summary: "Generate source and verify its behavior",
+      });
+      await runHookedTool(
+        agent,
+        "bash",
+        { command: "touch src/generated.ts" },
+        {
+          between: async () => writeFile(join(cwd, "src/generated.ts"), "export const value = 1;\n".repeat(251)),
+        },
+      );
+      const evidence = evidenceHandle(
+        await runHookedTool(agent, "bash", { command: "node verify.js" }, { text: "verified behavior" }),
+      );
+      await callVerificationTool(controller, {
+        action: "record_final",
+        final_method: "manual_reproduction",
+        final_status: "passed",
+        expected_behavior: "Generated source behaves correctly",
+        observed_behavior: "Verification passed",
+        evidence_refs: [evidence],
+        unresolved_failures: [],
+      });
+
+      const ready = await callVerificationTool(controller, {
+        action: "ready_to_finish",
+        acceptance_checks: [{ criterion: "Generated source behaves correctly", evidence_refs: [evidence] }],
+        unresolved_failures: [],
+      });
+      expect(ready.text).toContain("exceed the 250-line file size limit");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

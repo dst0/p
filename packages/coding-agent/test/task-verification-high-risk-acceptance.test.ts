@@ -31,6 +31,9 @@ describe("task verification high-risk acceptance guidance", () => {
     );
 
     expect(broadOutput).toContain("HIGH-RISK ACCEPTANCE AUDIT REQUIRED");
+    expect(broadOutput).toContain("Add and run one focused test at a time");
+    expect(broadOutput).toContain("Fix a failing focused test before creating another test file");
+    expect(broadOutput).toContain("Defer optional test breadth until requested final checks are green");
   });
 
   it("preserves legacy task context for high-risk guidance after restoration", async () => {

@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { containsGitPublishCommand } from "../src/core/task-verification/git-command-classification.ts";
+import {
+  containsGitPublishCommand,
+  isSafePublishCommandSequence,
+} from "../src/core/task-verification/git-command-classification.ts";
 
 describe("task-verification Git publication classification", () => {
   it("recognizes escaped shell words used by Git publication commands", () => {
@@ -16,5 +19,22 @@ describe("task-verification Git publication classification", () => {
     expect(containsGitPublishCommand("env")).toBe(false);
     expect(containsGitPublishCommand("git --no-pager")).toBe(false);
     expect(containsGitPublishCommand("git -C /tmp/review status --short")).toBe(false);
+  });
+
+  it("accepts only publish operations and safe directory changes in a publish sequence", () => {
+    expect(isSafePublishCommandSequence("git push origin HEAD")).toBe(true);
+    expect(isSafePublishCommandSequence("cd /tmp/review && git commit -m 'verified' && git push")).toBe(true);
+    expect(isSafePublishCommandSequence("env -S 'git push origin HEAD'")).toBe(true);
+    expect(isSafePublishCommandSequence("node generator.js && git push")).toBe(false);
+    expect(isSafePublishCommandSequence("git add . && git commit -m changed")).toBe(false);
+    expect(isSafePublishCommandSequence("git push > publish.log")).toBe(false);
+    expect(isSafePublishCommandSequence("git push $(node generator.js)")).toBe(false);
+  });
+
+  it("classifies nested shell publication without trusting nested mutations", () => {
+    expect(containsGitPublishCommand("bash -c 'git push origin HEAD'")).toBe(true);
+    expect(isSafePublishCommandSequence("bash -c 'git push origin HEAD'")).toBe(true);
+    expect(containsGitPublishCommand("sh -c 'node generator.js && git push'")).toBe(true);
+    expect(isSafePublishCommandSequence("sh -c 'node generator.js && git push'")).toBe(false);
   });
 });
