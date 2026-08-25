@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
@@ -40,6 +41,7 @@ describe("delegated prompt definition repair", () => {
       selected_paths: ["SPEC.md"],
       ignored_paths: [],
     });
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
 
     const rejected = await callRequirementAudit(harness.controller, {

@@ -5,8 +5,7 @@ import {
   referencedRequirementCandidates,
   requirementSourceSelectionMatches,
 } from "../referenced-requirement-sources.ts";
-import { requirementDefinitionMatchesState, sourcePromptsForState } from "../requirement-audit-hashing.ts";
-import { requirementDefinitionSources } from "../requirement-source-storage.ts";
+import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   isConfidentlyReadOnlyShellTool,
@@ -49,28 +48,18 @@ export function requirementSourceMutationGate(
     );
   }
 
-  const frozenDefinition =
-    requirementDefinitionMatchesState(self.state) &&
-    typeof requirementDefinitionSources(self.state, self.requirementSourceTexts) !== "string";
-  const currentRevisionReferences = references.filter(
-    (reference) => reference.capturedAtMutationRevision === self.state.mutationRevision,
-  );
+  const referencesToValidate =
+    self.state.requirementAudit.requirements.length === 0
+      ? references
+      : references.filter((reference) => reference.capturedAtMutationRevision === self.state.mutationRevision);
   if (
-    currentRevisionReferences.some(
-      (reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference),
-    )
+    referencesToValidate.some((reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference))
   ) {
     return self.blocked(
       "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.",
     );
   }
-  if (frozenDefinition) return undefined;
-
-  const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
-  if (typeof sources === "string") return self.blocked(sources);
-  return self.blocked(
-    'Define the prepared referenced requirements before any baseline setup or implementation mutation. Use one record_requirement_audit call with action "define" in the next model turn.',
-  );
+  return undefined;
 }
 
 export function canPotentiallyChangeWorkspace(toolName: string, args: unknown): boolean {

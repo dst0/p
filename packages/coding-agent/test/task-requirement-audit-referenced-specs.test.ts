@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { TASK_VERIFICATION_STATE_CUSTOM_TYPE } from "../src/core/task-verification.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   beforeAuditTool,
   callRequirementAudit,
   callTaskVerification,
@@ -47,7 +48,7 @@ describe("referenced requirement documents", () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it("prepares an immutable referenced spec and requires its complete definition before mutation", async () => {
+  it("prepares an immutable referenced spec and permits mutation before its complete definition", async () => {
     const beforeRead = await beforeAuditTool(harness.agent, "edit", {
       path: "src/store.ts",
       edits: [{ oldText: "old", newText: "new" }],
@@ -62,18 +63,17 @@ describe("referenced requirement documents", () => {
       ignored_paths: [],
     });
     expect(prepared).toContain("Prepared 1 immutable requirement-source snapshot");
-    expect(prepared).toContain("Any log truncation must throw ValidationError.");
-    expect(prepared).toContain("S2-C3");
+    expect(prepared).toContain("Implementation may proceed");
+    expect(prepared).not.toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
     expect(JSON.stringify(harness.controller.currentState)).not.toContain("Any log truncation");
 
     const afterRead = await beforeAuditTool(harness.agent, "edit", {
       path: "src/store.ts",
       edits: [{ oldText: "old", newText: "new" }],
     });
-    expect(afterRead?.block).toBe(true);
-    expect(afterRead?.reason).toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
-    expect(afterRead?.reason).toContain("Any log truncation must throw ValidationError.");
+    expect(afterRead?.block).not.toBe(true);
 
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const definition = await callRequirementAudit(harness.controller, {
       action: "define",
@@ -104,8 +104,6 @@ describe("referenced requirement documents", () => {
       ],
     });
     expect(definition).toContain("Defined 2 atomic requirement");
-    expect(definition).toContain("ready_to_finish blocks mutated source files over 250 physical lines");
-    expect(definition).toContain("unless the user explicitly overrides the file-size limit");
     expect(definition).toContain("remove exactly the final byte");
     expect(harness.controller.currentState.requirementAudit.requirements[1]?.proofPolicies).toEqual([
       "remove_exact_final_byte",
@@ -126,6 +124,7 @@ describe("referenced requirement documents", () => {
       selected_paths: ["README.md"],
       ignored_paths: [],
     });
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const definition = await callRequirementAudit(harness.controller, {
       action: "define",
@@ -167,6 +166,7 @@ describe("referenced requirement documents", () => {
       ignored_paths: [],
     });
     await writeFile(join(workspace, "README.md"), "# Changed\n\nDifferent requirement.\n");
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const definition = await callRequirementAudit(harness.controller, {
       action: "define",
@@ -206,6 +206,7 @@ describe("referenced requirement documents", () => {
       selected_paths: ["README.md"],
       ignored_paths: [],
     });
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     await callRequirementAudit(harness.controller, {
       action: "define",

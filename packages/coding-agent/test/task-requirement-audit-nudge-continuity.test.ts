@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
@@ -80,6 +81,7 @@ async function definedHarness(workspaces: string[]) {
     selected_paths: ["SPEC.md"],
     ignored_paths: [{ path: "finish_notes.md", reason: "This is an output deliverable, not an input specification." }],
   });
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   const defined = await callRequirementAudit(harness.controller, {
     action: "define",

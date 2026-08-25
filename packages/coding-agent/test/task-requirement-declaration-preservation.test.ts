@@ -9,6 +9,7 @@ import {
   computeStateUserRequirementsHash,
 } from "../src/core/task-verification/requirement-audit-hashing.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   auditEvidenceHandle,
   beforeAuditTool,
   callRequirementAudit,
@@ -146,7 +147,7 @@ describe("task declaration requirement preservation", () => {
     }
   });
 
-  it("does not treat a stale requirement-set hash as a frozen definition", async () => {
+  it("defers a stale requirement-set replacement without blocking implementation", async () => {
     const fixture = await acceptedReferencedDefinition();
     try {
       fixture.harness.controller.state.requirementAudit.requirementSetHash = "stale-requirement-set-hash";
@@ -165,7 +166,9 @@ describe("task declaration requirement preservation", () => {
       });
 
       expect(gate?.block).toBe(true);
-      expect(gate?.reason).toContain("Define the prepared referenced requirements");
+      expect(gate?.reason).toContain("baseline evidence");
+      expect(gate?.reason).not.toContain("Define the prepared referenced requirements");
+      activateRequirementDefinitionAfterEvidenceForTest(fixture.harness.controller);
       await nextModelTurn(fixture.harness);
       expect(await callRequirementAudit(fixture.harness.controller, definitionInput())).toContain(
         "Defined 1 atomic requirement",
@@ -222,6 +225,7 @@ async function acceptedReferencedDefinition(): Promise<{ harness: RequirementAud
       ignored_paths: [],
     }),
   ).toContain("Prepared 1 immutable requirement-source snapshot");
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   expect(await callRequirementAudit(harness.controller, definitionInput())).toContain("Defined 1 atomic requirement");
   return { harness, cwd };

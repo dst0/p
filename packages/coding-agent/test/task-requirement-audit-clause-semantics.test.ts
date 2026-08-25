@@ -10,6 +10,7 @@ import {
   requirementSourceClauses,
 } from "../src/core/task-verification/requirement-source-clauses.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
@@ -235,6 +236,7 @@ async function preparedHarness(
     ignored_paths: [],
   });
   expect(prepared).toContain("Prepared 1 immutable requirement-source snapshot");
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   return harness;
 }

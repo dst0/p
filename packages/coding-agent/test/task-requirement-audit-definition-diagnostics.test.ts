@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
@@ -53,6 +54,7 @@ describe("requirement definition diagnostics", () => {
         ignored_paths: [],
       }),
     ).toContain("Prepared 1 immutable requirement-source snapshot");
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
 
     const rejected = await callRequirementAudit(harness.controller, {
@@ -273,6 +275,7 @@ async function preparedHarness(workspaces: string[], lines: string[]) {
       ignored_paths: [],
     }),
   ).toContain("Prepared 1 immutable requirement-source snapshot");
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   return harness;
 }

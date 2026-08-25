@@ -6,10 +6,12 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { ACTIVE_REJECTED_DEFINITION_MARKER } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
   nextModelTurn,
+  recordProductionMutationForTest,
   sendAuditUserPrompt,
 } from "./task-requirement-audit-test-harness.ts";
 
@@ -38,6 +40,8 @@ describe("rejected requirement definition bounded status recovery", () => {
       selected_paths: ["README.md"],
       ignored_paths: [],
     });
+    await recordProductionMutationForTest(harness);
+    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const rejected = await callRequirementAudit(harness.controller, {
       action: "define",
