@@ -119,6 +119,10 @@ export interface TaskVerificationState {
   requirementSourceRefs?: TaskVerificationRequirementSourceRef[];
   /** Explicit model classifications for prompt-derived candidates not selected as task requirements. */
   ignoredRequirementSources?: IgnoredTaskVerificationRequirementSource[];
+  /** Distinct changed test paths awaiting a trustworthy successful test command. */
+  unverifiedTestPaths?: string[];
+  /** A pathless mutation changed more test files than can be tracked individually. */
+  unverifiedTestPathOverflow?: boolean;
   mutationRevision: number;
   baseline: {
     required: boolean;

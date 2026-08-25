@@ -2,6 +2,7 @@ import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "
 import { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 import { areProofWitnesses } from "./requirement-proof-witnesses.ts";
 import { ignoredRequirementSourceIsValid, sourceIdentitiesAreUnique } from "./requirement-source-state-validation.ts";
+import { isUnverifiedTestPaths } from "./test-authoring-state-validation.ts";
 import type {
   IgnoredSourceClause,
   IgnoredSourcePrompt,
@@ -268,6 +269,8 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     (value.ignoredRequirementSources === undefined ||
       (Array.isArray(value.ignoredRequirementSources) &&
         value.ignoredRequirementSources.every(ignoredRequirementSourceIsValid))) &&
+    isUnverifiedTestPaths(value.unverifiedTestPaths) &&
+    (value.unverifiedTestPathOverflow === undefined || typeof value.unverifiedTestPathOverflow === "boolean") &&
     sourceIdentitiesAreUnique(value.requirementSourceRefs ?? [], value.ignoredRequirementSources ?? []) &&
     isNonnegativeInteger(value.mutationRevision) &&
     isBaseline(value.baseline) &&

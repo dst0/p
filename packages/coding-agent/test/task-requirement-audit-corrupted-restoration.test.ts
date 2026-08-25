@@ -11,6 +11,27 @@ import {
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("requirement-audit corrupted restoration", () => {
+  it("rejects unsafe or unbounded persisted test-authoring debt", () => {
+    const harness = createRequirementAuditHarness();
+    const state = harness.controller.currentState;
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      ...state,
+      unverifiedTestPaths: ["../outside.test.ts"],
+    });
+
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    expect(restored.controller.restoreError).toContain("latest persisted task-verification state is invalid");
+
+    const oversized = createRequirementAuditHarness();
+    oversized.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      ...oversized.controller.currentState,
+      unverifiedTestPaths: ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts", "test/d.test.ts"],
+    });
+    expect(createRequirementAuditHarness(oversized.sessionManager).controller.restoreError).toContain(
+      "latest persisted task-verification state is invalid",
+    );
+  });
+
   it("rejects a structurally incomplete latest state without crashing status", async () => {
     const harness = createRequirementAuditHarness();
     harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {

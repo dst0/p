@@ -125,7 +125,10 @@ export function do_highRiskAcceptanceAudit(
   if (!HIGH_RISK_PATTERN.test(taskText)) return undefined;
   return [
     "HIGH-RISK ACCEPTANCE AUDIT REQUIRED before completion: a broad suite passed, but it does not prove every explicit guarantee.",
-    "Re-read the original task and run focused adversarial tests for each absolute or negative requirement.",
+    "Re-read the original task and identify any uncovered absolute or negative requirement.",
+    "Add and run one focused test at a time for each uncovered requirement.",
+    "Fix a failing focused test before creating another test file; do not batch unverified tests.",
+    "Defer optional test breadth until requested final checks are green and required deliverables are complete.",
     "Preserve exact public API return shapes without invented wrappers; use lossless identities containing every relevant input and option.",
     "Test the literal smallest boundary mutation (for a newline-terminated serialization, remove exactly one final byte rather than a whole line or record).",
     "After failed atomic operations, retry every attempted identity with both identical and changed payloads to prove complete rollback.",

@@ -4,6 +4,7 @@ import { focusedShellInvocationWords } from "./focused-shell-command.ts";
 export interface TestCommandInvocation {
   args: string[];
   allowsBareName: boolean;
+  scopeNarrowed?: boolean;
 }
 
 const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/u;
@@ -22,6 +23,7 @@ const PACKAGE_OPTIONS_WITH_VALUE = new Set([
   "--workspace",
 ]);
 const NPX_OPTIONS_WITH_VALUE = new Set(["-c", "--call", "-p", "--package"]);
+const PACKAGE_SCOPE_OPTIONS = new Set(["-C", "-F", "-w", "--cwd", "--dir", "--filter", "--prefix", "--workspace"]);
 const TIME_OPTIONS_WITH_VALUE = new Set(["-f", "-o", "--format", "--output"]);
 const TIMEOUT_OPTIONS_WITH_VALUE = new Set(["-k", "-s", "--kill-after", "--signal"]);
 const MAX_WRAPPER_DEPTH = 4;
@@ -168,12 +170,17 @@ function directTestInvocation(words: readonly string[]): TestCommandInvocation |
 function packageManagerTestInvocation(executable: string, words: readonly string[]): TestCommandInvocation | undefined {
   const index = packageSubcommandIndex(words, PACKAGE_OPTIONS_WITH_VALUE);
   const command = words[index];
-  if (command === "test") return { args: packageRunnerArgs(words.slice(index + 1)), allowsBareName: false };
+  const scopeNarrowed = words
+    .slice(1, index)
+    .some((word) => [...PACKAGE_SCOPE_OPTIONS].some((option) => word === option || word.startsWith(`${option}=`)));
+  if (command === "test") {
+    return { args: packageRunnerArgs(words.slice(index + 1)), allowsBareName: false, scopeNarrowed };
+  }
   if (command === "run" && words[index + 1]?.startsWith("test")) {
-    return { args: packageRunnerArgs(words.slice(index + 2)), allowsBareName: false };
+    return { args: packageRunnerArgs(words.slice(index + 2)), allowsBareName: false, scopeNarrowed };
   }
   if (executable === "npm" && command === "exec" && ["vitest", "jest"].includes(words[index + 1] ?? "")) {
-    return { args: testRunnerArgs(packageRunnerArgs(words.slice(index + 2))), allowsBareName: false };
+    return { args: testRunnerArgs(packageRunnerArgs(words.slice(index + 2))), allowsBareName: false, scopeNarrowed };
   }
   return undefined;
 }

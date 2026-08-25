@@ -230,10 +230,7 @@ export function isRecognizedBashMutation(args: unknown): boolean {
 
 export function isPotentialMutationTool(toolName: string, args: unknown): boolean {
   if (isDirectMutationTool(toolName)) return true;
-  if (isShellTool(toolName) && !isPublishCommand(toolName, args)) {
-    return isRecognizedBashMutation(args);
-  }
-  return false;
+  return isShellTool(toolName) && isRecognizedBashMutation(args);
 }
 
 export function isConfidentlyReadOnlyShellTool(toolName: string, args: unknown): boolean {

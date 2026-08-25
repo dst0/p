@@ -171,7 +171,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "For homogeneous 1-to-1 batch functions over T[], return R[] directly, not a wrapper such as { results: R[] }.",
   );
   addGuideline(
-    "Develop and verify iteratively with focused domain tests. Every exported function, public method, static factory, and lifecycle function needs dedicated unit coverage for normal behavior, negative inputs, boundaries, failure/recovery, and invariant preservation.",
+    "After any required baseline, implement the smallest complete production slice. Run each new or changed test immediately; fix it before writing another. Budget work so required coverage, requested final checks, and deliverables finish before optional expansion. Cover each exported function, public method, static factory, and lifecycle function for normal, negative, boundary, failure/recovery, and invariant cases.",
   );
   addGuideline(
     "Transactional operations require atomic rollback: on any mid-operation failure, revert state changes, external mutations, caches, logs, and tracking registries to their pre-operation state.",
