@@ -2,7 +2,9 @@ import type { TestCommandInvocation } from "./test-command-invocation.ts";
 
 export interface TestInvocationSelection {
   broad: boolean;
+  pathGlobs: string[];
   pathSelectors: string[];
+  testNames: string[];
   vacuous: boolean;
 }
 
@@ -32,6 +34,7 @@ const FAILED_TEST_RESULT_PATTERN =
 
 export function testInvocationSelection(invocation: TestCommandInvocation): TestInvocationSelection {
   const testNames: string[] = [];
+  const pathGlobs: string[] = [];
   const pathSelectors: string[] = [];
   const bareSelectors: string[] = [];
   let positionalOnly = false;
@@ -43,7 +46,9 @@ export function testInvocationSelection(invocation: TestCommandInvocation): Test
       continue;
     }
     if (!positionalOnly) {
-      if (matchesOption(token, VACUOUS_TEST_OPTIONS)) return { broad: false, pathSelectors: [], vacuous: true };
+      if (matchesOption(token, VACUOUS_TEST_OPTIONS)) {
+        return { broad: false, pathGlobs: [], pathSelectors: [], testNames: [], vacuous: true };
+      }
       const nameValue = optionValue(token, invocation.args[index + 1], TEST_NAME_OPTIONS);
       if (nameValue !== undefined) {
         if (!isConcreteTestNameSelector(nameValue)) unresolved = true;
@@ -67,15 +72,51 @@ export function testInvocationSelection(invocation: TestCommandInvocation): Test
       }
     }
     if (isFocusedTestFile(token)) pathSelectors.push(normalizeSelectorPath(token));
+    else if (isSafeTestFileGlob(token)) pathGlobs.push(normalizeSelectorPath(token));
     else if (invocation.allowsBareName && /^[A-Za-z_][A-Za-z0-9_:.-]+$/u.test(token)) bareSelectors.push(token);
     else unresolved = true;
   }
   const focusedSelectors = testNames.length > 0 ? testNames : bareSelectors;
   return {
-    broad: !unresolved && focusedSelectors.length === 0 && pathSelectors.length === 0,
+    broad: !unresolved && focusedSelectors.length === 0 && pathSelectors.length === 0 && pathGlobs.length === 0,
+    pathGlobs,
     pathSelectors,
+    testNames: focusedSelectors,
     vacuous: unresolved,
   };
+}
+
+export function testInvocationCovers(covering: TestCommandInvocation, covered: TestCommandInvocation): boolean {
+  const coveringSelection = testInvocationSelection(covering);
+  const coveredSelection = testInvocationSelection(covered);
+  if (covering.ecosystem !== covered.ecosystem) return false;
+  if (!sameOrderedStrings(covering.workingDirectories, covered.workingDirectories)) return false;
+  if (coveringSelection.vacuous || coveredSelection.vacuous) return false;
+  if (coveringSelection.broad) return true;
+  if (
+    coveringSelection.testNames.length > 0 &&
+    !sameSelectors(coveringSelection.testNames, coveredSelection.testNames)
+  ) {
+    return false;
+  }
+  if (coveredSelection.pathSelectors.length === 0 || coveredSelection.pathGlobs.length > 0) return false;
+  return coveredSelection.pathSelectors.every(
+    (path) =>
+      coveringSelection.pathSelectors.includes(path) ||
+      coveringSelection.pathGlobs.some((glob) => testPathMatchesGlob(path, glob)),
+  );
+}
+
+function sameOrderedStrings(left: readonly string[], right: readonly string[]): boolean {
+  return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function sameSelectors(left: readonly string[], right: readonly string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((selector) => right.includes(selector)) &&
+    right.every((selector) => left.includes(selector))
+  );
 }
 
 export function focusedRequirementSelectors(invocation: TestCommandInvocation): string[] | undefined {
@@ -199,7 +240,37 @@ function literalSelectorAlternatives(selector: string): string[] {
 }
 
 function isFocusedTestFile(value: string): boolean {
-  return FOCUSED_TEST_FILE_PATTERN.test(value.replace(/:[0-9]+(?::[0-9]+)?$/u, ""));
+  const normalized = value.replace(/:[0-9]+(?::[0-9]+)?$/u, "");
+  return !/[*?[\]{}!]/u.test(normalized) && FOCUSED_TEST_FILE_PATTERN.test(normalized);
+}
+
+function isSafeTestFileGlob(value: string): boolean {
+  const normalized = normalizeSelectorPath(value);
+  return (
+    normalized.includes("*") &&
+    !/[?[\]{}!]/u.test(normalized) &&
+    !normalized.split("/").includes("..") &&
+    /(?:^|\/)(?:tests?|__tests__)\//u.test(normalized) &&
+    isFocusedTestFile(normalized.replaceAll("*", "x"))
+  );
+}
+
+function testPathMatchesGlob(path: string, glob: string): boolean {
+  let pattern = "^";
+  for (let index = 0; index < glob.length; index++) {
+    const character = glob[index]!;
+    if (character !== "*") {
+      pattern += /[\\^$.*+?()[\]{}|]/u.test(character) ? `\\${character}` : character;
+      continue;
+    }
+    if (glob[index + 1] === "*") {
+      pattern += ".*";
+      index += 1;
+    } else {
+      pattern += "[^/]*";
+    }
+  }
+  return new RegExp(`${pattern}$`, "u").test(path);
 }
 
 function normalizeSelectorPath(value: string): string {
