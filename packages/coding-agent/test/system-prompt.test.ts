@@ -49,6 +49,7 @@ describe("buildSystemPrompt", () => {
       "plan the smallest useful target",
       "Preserve full output outside model context",
       "Treat exit codes as authoritative",
+      "never append `; echo $?`",
       "consult loaded specialized skills",
     ];
     for (const needle of invariantNeedles) expect(prompt).toContain(needle);

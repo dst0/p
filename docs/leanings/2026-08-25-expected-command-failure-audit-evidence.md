@@ -1,0 +1,22 @@
+# 2026-08-25 — Expected command failures cannot pass requirement audit
+
+- **Status:** Open
+- **Task/context:** A live AI-unit exercised stale verification-failure supersession in `packages/coding-agent` by requiring two exact shell commands to fail before a broader test command passed.
+- **Unexpected observation or failure:** Evidence readiness correctly cleared the failed focused test after the covering suite passed, but the agent could not finish because the requirement audit rejected the failed command evidence for requirements whose observable outcome was that those commands fail.
+- **Evidence:** The live canary reached `evidence_ready` with no unresolved failures. Its atomic requirement verdict was then repeatedly rejected with `failed evidence cannot support a passed requirement verdict` for the two expected-failure requirements. The closed sanitized trace is stored outside the repository as `/private/tmp/p-rc39-ai-unit-v2.b3OOuH/live.log.br`.
+- **Approaches tried:**
+  - **Attempt:** Use the native failed tool executions as evidence that each exact command failed.
+    - **Outcome:** Did not work
+    - **Why:** `validateRequirementVerdict` rejects every `isError` evidence item attached to a passed verdict without considering whether failure is the required outcome.
+  - **Attempt:** Let the agent resubmit the atomic verdict after readiness passed.
+    - **Outcome:** Did not work
+    - **Why:** Repeated submissions cannot change the blanket evidence-validity rule.
+  - **Attempt:** Broaden the current stale-failure fix to infer expected failures from natural-language requirement text.
+    - **Outcome:** Rejected
+    - **Why:** Text heuristics could let unrelated broken tests support passed behavior requirements; a sound design needs explicit, source-bound expected-outcome metadata.
+- **Root cause:** Requirement evidence currently equates successful proof with a successful tool result. It has no typed representation for a requirement whose expected observable outcome is a non-zero command result.
+- **Resolution:** The canary was stopped after it proved the stale-failure controller behavior. No unsound exception was added to the current fix.
+- **Verification:** The trace shows both required commands failed at the tool level, the covering Node test passed, readiness reported no unresolved failures, and only the later requirement-verdict validation blocked completion.
+- **Prevention/follow-up:** Prefer a successful test harness that asserts an expected child-command failure. If raw expected command failures become a supported workflow, add explicit source-bound expected-outcome semantics and validate exact command identity before permitting failed execution evidence. Cover false-positive cases where crashes, assertion failures, or unrelated command failures must remain invalid evidence.
+- **Reusable learning:** Never infer that failed evidence proves an expected-failure requirement from prose alone; represent the expected outcome explicitly and bind it to the exact observed operation.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-verdict-validation.ts`

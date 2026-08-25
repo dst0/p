@@ -1,10 +1,14 @@
 import { tokenizeShellCommands } from "../git-command-classification.ts";
-import { focusedShellInvocationWords } from "./focused-shell-command.ts";
+import { focusedShellInvocation } from "./focused-shell-command.ts";
+
+export type TestEcosystem = "go" | "javascript" | "project" | "python" | "rust";
 
 export interface TestCommandInvocation {
   args: string[];
   allowsBareName: boolean;
+  ecosystem: TestEcosystem;
   scopeNarrowed?: boolean;
+  workingDirectories: string[];
 }
 
 const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/u;
@@ -29,8 +33,14 @@ const TIMEOUT_OPTIONS_WITH_VALUE = new Set(["-k", "-s", "--kill-after", "--signa
 const MAX_WRAPPER_DEPTH = 4;
 
 export function focusedTestInvocation(command: string, depth = 0): TestCommandInvocation | undefined {
-  const words = focusedShellInvocationWords(command);
-  return words === undefined ? undefined : invocationFromWords(words, depth);
+  const shellInvocation = focusedShellInvocation(command);
+  if (shellInvocation === undefined) return undefined;
+  const invocation = invocationFromWords(shellInvocation.words, depth);
+  if (invocation === undefined || shellInvocation.workingDirectory === undefined) return invocation;
+  return {
+    ...invocation,
+    workingDirectories: [shellInvocation.workingDirectory, ...invocation.workingDirectories],
+  };
 }
 
 export function commandContainsTestInvocation(command: string, depth = 0): boolean {
@@ -142,10 +152,18 @@ function commandAfterOptions(words: readonly string[], optionsWithValue: Readonl
 function directTestInvocation(words: readonly string[]): TestCommandInvocation | undefined {
   const executable = words[0]?.split("/").pop();
   if (executable === "vitest" || executable === "jest" || executable === "pytest" || executable === "test.sh") {
-    return { args: testRunnerArgs(words.slice(1)), allowsBareName: false };
+    const ecosystem = executable === "pytest" ? "python" : executable === "test.sh" ? "project" : "javascript";
+    return { args: testRunnerArgs(words.slice(1)), allowsBareName: false, ecosystem, workingDirectories: [] };
   }
   if (executable === "cargo" || executable === "go") {
-    return words[1] === "test" ? { args: words.slice(2), allowsBareName: executable === "cargo" } : undefined;
+    return words[1] === "test"
+      ? {
+          args: words.slice(2),
+          allowsBareName: executable === "cargo",
+          ecosystem: executable === "cargo" ? "rust" : "go",
+          workingDirectories: [],
+        }
+      : undefined;
   }
   if (executable === "bun" || executable === "yarn" || executable === "pnpm" || executable === "npm") {
     return packageManagerTestInvocation(executable, words);
@@ -153,18 +171,39 @@ function directTestInvocation(words: readonly string[]): TestCommandInvocation |
   if (executable === "npx") {
     const index = packageSubcommandIndex(words, NPX_OPTIONS_WITH_VALUE);
     return ["vitest", "jest"].includes(words[index] ?? "")
-      ? { args: testRunnerArgs(words.slice(index + 1)), allowsBareName: false }
+      ? {
+          args: testRunnerArgs(words.slice(index + 1)),
+          allowsBareName: false,
+          ecosystem: "javascript",
+          workingDirectories: [],
+        }
       : undefined;
   }
   if (executable === "python" || executable === "python3") {
     const moduleIndex = words.findIndex((word, index) => index > 0 && word === "-m" && words[index + 1] === "pytest");
-    return moduleIndex >= 0 ? { args: words.slice(moduleIndex + 2), allowsBareName: false } : undefined;
+    return moduleIndex >= 0
+      ? { args: words.slice(moduleIndex + 2), allowsBareName: false, ecosystem: "python", workingDirectories: [] }
+      : undefined;
   }
   if (executable !== "node") return undefined;
   const nodeTestIndex = words.indexOf("--test");
-  if (nodeTestIndex >= 0) return { args: words.slice(nodeTestIndex + 1), allowsBareName: false };
+  if (nodeTestIndex >= 0) {
+    return {
+      args: words.slice(nodeTestIndex + 1),
+      allowsBareName: false,
+      ecosystem: "javascript",
+      workingDirectories: [],
+    };
+  }
   const cliIndex = words.findIndex((word) => /(?:^|\/)(?:vitest|jest)(?:\/|\.js$)/u.test(word));
-  return cliIndex >= 0 ? { args: testRunnerArgs(words.slice(cliIndex + 1)), allowsBareName: false } : undefined;
+  return cliIndex >= 0
+    ? {
+        args: testRunnerArgs(words.slice(cliIndex + 1)),
+        allowsBareName: false,
+        ecosystem: "javascript",
+        workingDirectories: [],
+      }
+    : undefined;
 }
 
 function packageManagerTestInvocation(executable: string, words: readonly string[]): TestCommandInvocation | undefined {
@@ -174,13 +213,31 @@ function packageManagerTestInvocation(executable: string, words: readonly string
     .slice(1, index)
     .some((word) => [...PACKAGE_SCOPE_OPTIONS].some((option) => word === option || word.startsWith(`${option}=`)));
   if (command === "test") {
-    return { args: packageRunnerArgs(words.slice(index + 1)), allowsBareName: false, scopeNarrowed };
+    return {
+      args: packageRunnerArgs(words.slice(index + 1)),
+      allowsBareName: false,
+      ecosystem: "javascript",
+      scopeNarrowed,
+      workingDirectories: [],
+    };
   }
   if (command === "run" && words[index + 1]?.startsWith("test")) {
-    return { args: packageRunnerArgs(words.slice(index + 2)), allowsBareName: false, scopeNarrowed };
+    return {
+      args: packageRunnerArgs(words.slice(index + 2)),
+      allowsBareName: false,
+      ecosystem: "javascript",
+      scopeNarrowed,
+      workingDirectories: [],
+    };
   }
   if (executable === "npm" && command === "exec" && ["vitest", "jest"].includes(words[index + 1] ?? "")) {
-    return { args: testRunnerArgs(packageRunnerArgs(words.slice(index + 2))), allowsBareName: false, scopeNarrowed };
+    return {
+      args: testRunnerArgs(packageRunnerArgs(words.slice(index + 2))),
+      allowsBareName: false,
+      ecosystem: "javascript",
+      scopeNarrowed,
+      workingDirectories: [],
+    };
   }
   return undefined;
 }
