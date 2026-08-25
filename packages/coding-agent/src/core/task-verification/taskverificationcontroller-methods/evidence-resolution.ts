@@ -1,11 +1,9 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import {
-  GENERIC_CHECK_PATTERN,
   REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import {
   computeCertificateHash,
@@ -16,8 +14,9 @@ import { requirementDefinitionSources, restoreRequirementSourceTexts } from "../
 import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
 import { isTaskVerificationEvidence, isTaskVerificationState } from "../state-validation.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import { isShellTool, normalizeStrings } from "../tool-classification.ts";
+import { normalizeStrings } from "../tool-classification.ts";
 import type { TaskVerificationEvidence } from "../types.ts";
+import { resolveLatestFailedVerificationEvidence } from "./failed-verification-resolution.ts";
 import { isFocusedEvidence, isHighRiskRequirement } from "./requirement-verdict-validation.ts";
 
 export function do_resolveEvidence(
@@ -62,17 +61,7 @@ export function do_taskText(self: TaskVerificationController): string {
 }
 
 export function do_latestFailedVerificationEvidence(self: TaskVerificationController): TaskVerificationEvidence[] {
-  const latestByCommand = new Map<string, TaskVerificationEvidence>();
-  for (const item of self.evidence.values()) {
-    if (
-      item.mutationRevision === self.state.mutationRevision &&
-      isShellTool(item.toolName) &&
-      (TEST_PATTERN.test(item.descriptor) || GENERIC_CHECK_PATTERN.test(item.descriptor))
-    ) {
-      latestByCommand.set(item.descriptor, item);
-    }
-  }
-  return [...latestByCommand.values()].filter((item) => item.isError);
+  return resolveLatestFailedVerificationEvidence(self.evidence.values(), self.state.mutationRevision);
 }
 
 export function do_finalVerificationError(self: TaskVerificationController, action: string): string | undefined {

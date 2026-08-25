@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Resolve stale verification failures by parsed test scope and keep verification commands' real exit status authoritative."
+}

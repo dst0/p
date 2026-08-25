@@ -7,6 +7,11 @@ interface ShellShape {
   segments: string[];
 }
 
+export interface FocusedShellInvocation {
+  words: string[];
+  workingDirectory?: string;
+}
+
 const NON_LITERAL_DIRECTORY_CHARACTERS = new Set([
   "$",
   "`",
@@ -26,14 +31,22 @@ const NON_LITERAL_DIRECTORY_CHARACTERS = new Set([
 ]);
 
 export function focusedShellInvocationWords(command: string): string[] | undefined {
+  return focusedShellInvocation(command)?.words;
+}
+
+export function focusedShellInvocation(command: string): FocusedShellInvocation | undefined {
   const withoutRedirection = command.replace(/\s+2>&1\s*$/u, "");
   const shape = splitTopLevelShell(withoutRedirection);
   if (shape === undefined) return undefined;
-  if (shape.connectors.length === 0) return singleInvocationWords(shape.segments[0]!);
+  if (shape.connectors.length === 0) {
+    const words = singleInvocationWords(shape.segments[0]!);
+    return words === undefined ? undefined : { words };
+  }
   if (shape.connectors.length !== 1 || shape.connectors[0] !== "&&") return undefined;
   const directoryWords = singleInvocationWords(shape.segments[0]!);
-  if (directoryWords === undefined || !isLiteralDirectoryChange(directoryWords)) return undefined;
-  return singleInvocationWords(shape.segments[1]!);
+  const workingDirectory = directoryWords === undefined ? undefined : literalDirectoryChange(directoryWords);
+  const words = singleInvocationWords(shape.segments[1]!);
+  return workingDirectory === undefined || words === undefined ? undefined : { words, workingDirectory };
 }
 
 function singleInvocationWords(command: string): string[] | undefined {
@@ -41,12 +54,12 @@ function singleInvocationWords(command: string): string[] | undefined {
   return invocations.length === 1 ? invocations[0] : undefined;
 }
 
-function isLiteralDirectoryChange(words: readonly string[]): boolean {
-  if (words[0]?.split("/").pop() !== "cd") return false;
+function literalDirectoryChange(words: readonly string[]): string | undefined {
+  if (words[0]?.split("/").pop() !== "cd") return undefined;
   const pathIndex = words[1] === "--" ? 2 : 1;
   const path = words[pathIndex];
-  if (!path || words.length !== pathIndex + 1 || path.startsWith("-") || path.startsWith("~")) return false;
-  return ![...path].some((character) => NON_LITERAL_DIRECTORY_CHARACTERS.has(character));
+  if (!path || words.length !== pathIndex + 1 || path.startsWith("-") || path.startsWith("~")) return undefined;
+  return [...path].some((character) => NON_LITERAL_DIRECTORY_CHARACTERS.has(character)) ? undefined : path;
 }
 
 function splitTopLevelShell(command: string): ShellShape | undefined {

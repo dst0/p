@@ -1,7 +1,7 @@
 import { relative, resolve } from "node:path";
 import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
-import { GENERIC_CHECK_PATTERN, TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, TEST_PATTERN } from "../constants.ts";
+import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
 import { tokenizeShellCommands } from "../git-command-classification.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
 import { baselineRequired } from "../requirement-checks.ts";
@@ -24,6 +24,7 @@ import {
   summarizeOutput,
 } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import { isVerificationCommand } from "./failed-verification-resolution.ts";
 import { requirementAuditAfterTaskDeclaration } from "./task-declaration-requirement-audit.ts";
 import {
   appendTestMutationGuidance,
@@ -187,11 +188,7 @@ function invalidateAfterFailedVerification(
   self: TaskVerificationController,
   evidence: TaskVerificationEvidence,
 ): string | undefined {
-  if (
-    !evidence.isError ||
-    !isShellTool(evidence.toolName) ||
-    (!TEST_PATTERN.test(evidence.descriptor) && !GENERIC_CHECK_PATTERN.test(evidence.descriptor))
-  ) {
+  if (!evidence.isError || !isShellTool(evidence.toolName) || !isVerificationCommand(evidence.descriptor)) {
     return undefined;
   }
   self.state = {
