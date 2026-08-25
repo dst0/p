@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Persist source-size gates across mutations and restore, require authoritative user overrides, and reject zero-exit runtime assertion failures as verification evidence."
+}

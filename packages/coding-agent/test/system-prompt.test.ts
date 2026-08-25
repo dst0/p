@@ -50,6 +50,7 @@ describe("buildSystemPrompt", () => {
       "Preserve full output outside model context",
       "Treat exit codes as authoritative",
       "never append `; echo $?`",
+      "never use `console.assert` for verification",
       "consult loaded specialized skills",
     ];
     for (const needle of invariantNeedles) expect(prompt).toContain(needle);

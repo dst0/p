@@ -136,14 +136,15 @@ describe("task verification workspace enforcement", () => {
         task_kind: "docs",
         task_summary: "Generate source and verify its behavior",
       });
-      await runHookedTool(
+      const mutationResult = await runHookedTool(
         agent,
         "bash",
-        { command: "touch src/generated.ts" },
+        { command: "node scripts/generate.js" },
         {
           between: async () => writeFile(join(cwd, "src/generated.ts"), "export const value = 1;\n".repeat(251)),
         },
       );
+      expect(mutationResult).toContain("src/generated.ts: 251 lines (limit: 250)");
       const evidence = evidenceHandle(
         await runHookedTool(agent, "bash", { command: "node verify.js" }, { text: "verified behavior" }),
       );
@@ -163,6 +164,54 @@ describe("task verification workspace enforcement", () => {
         unresolved_failures: [],
       });
       expect(ready.text).toContain("exceed the 250-line file size limit");
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("reports oversized source files immediately after mutation", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "p-verification-immediate-size-"));
+    try {
+      await mkdir(join(cwd, "src"));
+      const agent = new Agent();
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      controller.install(agent);
+      await callVerificationTool(controller, {
+        action: "declare_task",
+        task_kind: "feature",
+        task_summary: "Implement a focused source module",
+      });
+
+      const allowed = await runHookedTool(
+        agent,
+        "write",
+        { path: "src/engine.ts", content: "export const value = 1;\n".repeat(250) },
+        {
+          between: async () => writeFile(join(cwd, "src/engine.ts"), "export const value = 1;\n".repeat(250)),
+        },
+      );
+      expect(allowed ?? "").not.toContain("Source-size guard");
+
+      const oversized = await runHookedTool(
+        agent,
+        "write",
+        { path: "src/engine.ts", content: "export const value = 1;\n".repeat(251) },
+        {
+          between: async () => writeFile(join(cwd, "src/engine.ts"), "export const value = 1;\n".repeat(251)),
+        },
+      );
+      expect(oversized).toContain("src/engine.ts: 251 lines (limit: 250)");
+      expect(oversized).toContain("Split oversized source files before broad verification");
+
+      const repaired = await runHookedTool(
+        agent,
+        "write",
+        { path: "src/engine.ts", content: "export const value = 1;\n".repeat(250) },
+        {
+          between: async () => writeFile(join(cwd, "src/engine.ts"), "export const value = 1;\n".repeat(250)),
+        },
+      );
+      expect(repaired ?? "").not.toContain("Source-size guard");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

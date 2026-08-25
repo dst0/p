@@ -26,6 +26,8 @@ export function emptyState(taskId: string = randomUUID()): TaskVerificationState
     taskPrompts: [],
     unverifiedTestPaths: [],
     unverifiedTestPathOverflow: false,
+    mutatedSourcePaths: [],
+    mutatedSourcePathOverflow: false,
     baseline: {
       required: false,
       status: "not_required",

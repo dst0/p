@@ -215,6 +215,8 @@ export function do_restore(self: TaskVerificationController): void {
       taskPrompts: latestStateData.taskPrompts ?? [],
       unverifiedTestPaths: latestStateData.unverifiedTestPaths ?? [],
       unverifiedTestPathOverflow: latestStateData.unverifiedTestPathOverflow ?? false,
+      mutatedSourcePaths: latestStateData.mutatedSourcePaths ?? [],
+      mutatedSourcePathOverflow: latestStateData.mutatedSourcePathOverflow ?? false,
       readiness: latestStateData.readiness ?? emptyReadiness(),
       requirementAudit: latestStateData.requirementAudit ?? emptyRequirementAudit(),
     };

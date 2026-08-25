@@ -1,8 +1,6 @@
-import { relative, resolve } from "node:path";
 import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
-import { tokenizeShellCommands } from "../git-command-classification.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
 import { baselineRequired } from "../requirement-checks.ts";
 import { renderedRejectedDefinitionRevision } from "../requirement-definition-prompt.ts";
@@ -19,12 +17,17 @@ import {
   isShellTool,
   isTaskKind,
   normalizeText,
-  pathArgument,
-  shellCommand,
   summarizeOutput,
 } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
 import { isVerificationCommand } from "./failed-verification-resolution.ts";
+import { isZeroExitRuntimeAssertionFailure } from "./runtime-assertion-failure.ts";
+import {
+  mutationSourcePaths,
+  recordSourceMutationPaths,
+  settleSourceWorkspaceMutation,
+} from "./source-mutation-tracking.ts";
+import { mutationSourceSizeGuidance } from "./source-size-guidance.ts";
 import { requirementAuditAfterTaskDeclaration } from "./task-declaration-requirement-audit.ts";
 import {
   appendTestMutationGuidance,
@@ -38,6 +41,7 @@ export async function do_afterToolCall(
   context: AfterToolCallContext,
   previousResult: AfterToolCallResult | undefined,
 ): Promise<AfterToolCallResult | undefined> {
+  const nativeIsError = context.isError;
   const effectiveIsError = previousResult?.isError ?? context.isError;
   const content = previousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
@@ -46,10 +50,10 @@ export async function do_afterToolCall(
     self.state = emptyState();
     self.evidence.clear();
     self.bashFingerprints.clear();
-    self.mutatedSourceFiles.clear();
     self.testMutationReservations.clear();
     self.testVerificationStarts.clear();
     self.workspaceTestSnapshots.clear();
+    self.workspaceSourceSnapshots.clear();
     self.activeMutationAttempts.clear();
     self.requirementSourceTexts.clear();
     self.latestUserPrompt = "";
@@ -58,11 +62,23 @@ export async function do_afterToolCall(
   }
   const initialMutation = await self.detectMutation(context, effectiveIsError);
   const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
-  const detectedMutation = initialMutation || testAuthoring.workspaceMutated;
+  const sourceMutation = await settleSourceWorkspaceMutation(self, context);
+  const detectedMutation =
+    initialMutation ||
+    testAuthoring.workspaceMutated ||
+    sourceMutation.paths.length > 0 ||
+    sourceMutation.trackingFailed;
   const testMutationGuidance = testAuthoring.guidance;
   if (detectedMutation) {
     self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft = undefined;
-    for (const filePath of mutationSourcePaths(self, context)) self.mutatedSourceFiles.add(filePath);
+    recordSourceMutationPaths(
+      self,
+      [...mutationSourcePaths(self, context), ...sourceMutation.paths],
+      sourceMutation.trackingFailed,
+    );
+    const mutationGuidance = [testMutationGuidance, mutationSourceSizeGuidance(self)]
+      .filter((message): message is string => message !== undefined && message.length > 0)
+      .join("\n");
     if (self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
       self.state = {
         ...self.state,
@@ -70,7 +86,7 @@ export async function do_afterToolCall(
         updatedAt: new Date().toISOString(),
       };
       self.persistState();
-      return appendTestMutationGuidance(context, previousResult, testMutationGuidance);
+      return appendTestMutationGuidance(context, previousResult, mutationGuidance);
     }
     self.state = {
       ...self.state,
@@ -81,7 +97,7 @@ export async function do_afterToolCall(
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
-    return appendTestMutationGuidance(context, previousResult, testMutationGuidance);
+    return appendTestMutationGuidance(context, previousResult, mutationGuidance);
   }
   if (!isEvidenceTool(context.toolCall.name)) return previousResult;
   const proofWitnesses = collectProofWitnesses(
@@ -101,6 +117,7 @@ export async function do_afterToolCall(
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
+  const runtimeAssertionFailed = isZeroExitRuntimeAssertionFailure(context, fullOutput, nativeIsError);
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -110,7 +127,8 @@ export async function do_afterToolCall(
     descriptor,
     outputSummary: summarizeOutput(redactedContent),
     ...(proofWitnesses ? { proofWitnesses } : {}),
-    isError: effectiveIsError,
+    isError: effectiveIsError || runtimeAssertionFailed,
+    nativeIsError,
     mutationRevision: self.state.mutationRevision,
     timestamp: new Date().toISOString(),
   };
@@ -123,6 +141,9 @@ export async function do_afterToolCall(
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
     proofFrameFeedback,
+    runtimeAssertionFailed
+      ? "Runtime assertion failure detected despite a zero process exit; this evidence is failed. Use throwing assertions so the command exits non-zero."
+      : undefined,
     testBatchVerification,
     invalidation,
     autoFinalized,
@@ -161,28 +182,12 @@ export async function do_afterToolCall(
   }
   const result: AfterToolCallResult = {
     content: newContent,
-    isError: effectiveIsError,
+    isError: evidence.isError,
   };
   if (previousResult?.details !== undefined) result.details = previousResult.details;
   else if (context.result.details !== undefined) result.details = context.result.details;
   if (previousResult?.terminate !== undefined) result.terminate = previousResult.terminate;
   return result;
-}
-function mutationSourcePaths(self: TaskVerificationController, context: AfterToolCallContext): string[] {
-  const directPath = pathArgument(context.args);
-  const candidates = directPath
-    ? [directPath]
-    : isShellTool(context.toolCall.name)
-      ? tokenizeShellCommands(shellCommand(context.args)).flat()
-      : [];
-  const cwd = self.sessionManager.getCwd();
-  return [
-    ...new Set(
-      candidates
-        .map((candidate) => relative(cwd, resolve(cwd, candidate)).replaceAll("\\", "/"))
-        .filter((candidate) => candidate !== ".." && !candidate.startsWith("../")),
-    ),
-  ];
 }
 function invalidateAfterFailedVerification(
   self: TaskVerificationController,
