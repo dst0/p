@@ -1,0 +1,22 @@
+# 2026-08-26 — Late source-size gates cause risky deadline refactors
+
+- **Status:** Resolved
+- **Task/context:** Validate project-instruction mode changes with the event-sourced inventory paired benchmark.
+- **Unexpected observation or failure:** The first legacy cell reached green visible tests with an oversized source file, learned about the 250-line limit only at `ready_to_finish`, and began a broad split near the runtime deadline. The split dropped domain validation, and the cell timed out immediately after its final test exposed six failures.
+- **Evidence:** Candidate `5.0.1-rc.39` stopped after run 1 with status `timed_out`, quality `81/100`, 42 mutations, and zero requirement definitions. The final test output failed oversell, release, and shipment invariants after `src/engine.ts` was split from 519 lines into smaller modules.
+- **Approaches tried:**
+  - **Attempt:** Enforce the source-size limit only during completion readiness.
+    - **Outcome:** Did not work
+    - **Why:** The feedback arrived after implementation and verification, turning a routine early design constraint into a deadline refactor.
+  - **Attempt:** Reject oversized writes outright.
+    - **Outcome:** Rejected
+    - **Why:** Coordinated refactors can temporarily exceed a limit, so blocking mutations could prevent the repair itself.
+  - **Attempt:** Append immediate advisory feedback after every mutation while retaining the final hard gate.
+    - **Outcome:** Worked
+    - **Why:** The agent sees the exact oversized paths and limit early, while edits needed to split them remain available.
+- **Root cause:** Source-size enforcement existed only at the final readiness transition instead of the mutation feedback loop. Mutation tracking also inferred paths from shell tokens, so an opaque generator command could change a source file without registering its path.
+- **Resolution:** Mutation results now report every currently oversized mutated source file and instruct the agent to split before broad verification. Bounded before/after source snapshots identify files changed by opaque shell commands, while `ready_to_finish` remains fail-closed.
+- **Verification:** `task-verification-workspace.test.ts` proves immediate direct-write feedback, an exact 250-line pass and 251-line warning, warning removal after repair, and final enforcement for a source file created by an opaque `node scripts/generate.js` command.
+- **Prevention/follow-up:** Keep structural constraints visible during implementation and retain a separate final hard gate. Re-run the paired benchmark only after installed-binary AI-unit evidence passes.
+- **Reusable learning:** A constraint discovered only at finalization becomes a risky refactor; surface it immediately after the mutation that creates it.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/source-size-guidance.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/source-workspace-snapshot.ts`, `packages/coding-agent/test/task-verification-workspace.test.ts`, `benchmarks/results/2026-08-25T21-08-52-174Z-v5.0.1-rc.39-project-instructions-paired/report.md`

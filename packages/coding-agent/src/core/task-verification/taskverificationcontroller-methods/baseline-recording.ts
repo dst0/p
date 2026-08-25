@@ -76,11 +76,12 @@ export function do_recordBaseline(self: TaskVerificationController, input: Verif
         (item) =>
           isShellTool(item.toolName) &&
           item.isError &&
+          (item.nativeIsError ?? item.isError) &&
           TEST_PATTERN.test(item.descriptor) &&
           FOCUSED_TEST_PATTERN.test(item.descriptor),
       )
     ) {
-      return self.rejected("failing_regression_test requires a failing focused-test evidence handle.");
+      return self.rejected("failing_regression_test requires a native failing focused-test evidence handle.");
     }
   }
 

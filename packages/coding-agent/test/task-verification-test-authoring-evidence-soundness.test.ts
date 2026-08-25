@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { hasPositivePassingTestResult } from "../src/core/task-verification/taskverificationcontroller-methods/test-invocation-selection.ts";
 import type { TaskVerificationController } from "../src/core/task-verification.ts";
 import { createRequirementAuditHarness } from "./task-requirement-audit-test-harness.ts";
 
@@ -88,5 +89,18 @@ describe("task verification test-authoring evidence soundness", () => {
     await writeTest(harness, "write-generic", "test/a.test.ts");
     await testRun(harness, "generic", "vitest test/a.test.ts", "compiler pass 1 completed");
     expect(pending(harness.controller)).toEqual(["test/a.test.ts"]);
+  });
+
+  it("does not clear test debt when console.assert reports a failure with a zero exit", async () => {
+    const harness = createRequirementAuditHarness();
+    await writeTest(harness, "write-console-assert", "test/a.test.ts");
+    await testRun(
+      harness,
+      "console-assert",
+      "node --test test/a.test.ts",
+      "Assertion failed: expected invariant\nℹ pass 1\nℹ fail 0",
+    );
+    expect(pending(harness.controller)).toEqual(["test/a.test.ts"]);
+    expect(hasPositivePassingTestResult("Assertion failed: expected invariant\nℹ pass 1\nℹ fail 0")).toBe(false);
   });
 });

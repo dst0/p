@@ -58,6 +58,7 @@ import {
   do_baselineReplayInstruction,
   do_formatNextRequirement,
 } from "./taskverificationcontroller-methods/requirement-formatting.ts";
+import type { SourceWorkspaceSnapshot } from "./taskverificationcontroller-methods/source-workspace-snapshot.ts";
 import type { TestWorkspaceSnapshot } from "./taskverificationcontroller-methods/test-workspace-snapshot.ts";
 import {
   do_beforeToolCall,
@@ -84,8 +85,6 @@ export class TaskVerificationController {
 
   public readonly bashFingerprints = new Map<string, string | undefined>();
 
-  public readonly mutatedSourceFiles = new Set<string>();
-
   public readonly testMutationReservations = new Map<string, string[]>();
 
   public readonly testVerificationStarts = new Map<
@@ -94,6 +93,8 @@ export class TaskVerificationController {
   >();
 
   public readonly workspaceTestSnapshots = new Map<string, TestWorkspaceSnapshot | undefined>();
+
+  public readonly workspaceSourceSnapshots = new Map<string, SourceWorkspaceSnapshot | undefined>();
 
   public readonly activeMutationAttempts = new Set<string>();
 

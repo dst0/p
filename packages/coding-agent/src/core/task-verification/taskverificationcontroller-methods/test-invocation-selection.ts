@@ -31,6 +31,7 @@ const POSITIVE_TEST_RESULT_PATTERN =
   /(?:^|\s)---\s+PASS:|\btest result:\s+ok\b[\s\S]*\b[1-9]\d*\s+passed\b|\btests?\s*:?\s*[1-9]\d*\s+passed\b|\b[1-9]\d*\s+(?:tests?\s+)?passed\b|(?:^|\s)(?:#|ℹ)\s*pass\s+[1-9]\d*\b/iu;
 const FAILED_TEST_RESULT_PATTERN =
   /(?:^|\s)---\s+FAIL:|(?:^|\n)\s*(?:FAIL\b|not ok\b)|\btest result:\s+FAILED\b|\b(?:test files?|tests?)\s*:?\s*[1-9]\d*\s+failed\b|\bfailed tests?\s*:?\s*[1-9]\d*\b|\b[1-9]\d*\s+(?:tests?\s+)?failed\b|(?:^|\s)ℹ\s*fail\s+[1-9]\d*\b|\bfail(?:ed)?\s*:?\s*[1-9]\d*\b|\b(?:AssertionError|Unhandled Error):/iu;
+const RUNTIME_ASSERTION_FAILURE_PATTERN = /(?:^|\n)\s*Assertion failed(?:\s*:|\s*$)/iu;
 
 export function testInvocationSelection(invocation: TestCommandInvocation): TestInvocationSelection {
   const testNames: string[] = [];
@@ -133,7 +134,15 @@ export function hasPositivePassingTestResult(output: string): boolean {
     /\btest (?:files?|suites?)\s*:?\s*\d+\s+passed(?:\s*\(\d+\))?/giu,
     "",
   );
-  return POSITIVE_TEST_RESULT_PATTERN.test(withoutContainerSummaries) && !FAILED_TEST_RESULT_PATTERN.test(output);
+  return (
+    POSITIVE_TEST_RESULT_PATTERN.test(withoutContainerSummaries) &&
+    !FAILED_TEST_RESULT_PATTERN.test(output) &&
+    !hasRuntimeAssertionFailure(output)
+  );
+}
+
+export function hasRuntimeAssertionFailure(output: string): boolean {
+  return RUNTIME_ASSERTION_FAILURE_PATTERN.test(output);
 }
 
 function detailedSelection(invocation: TestCommandInvocation): {

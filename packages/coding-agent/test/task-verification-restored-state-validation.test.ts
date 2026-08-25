@@ -19,6 +19,12 @@ describe("restored task-verification state validation", () => {
     ).toBe(false);
   });
 
+  it("rejects malformed persisted source-size tracking", () => {
+    const state = emptyState("validation-task");
+    expect(isTaskVerificationState({ ...state, mutatedSourcePaths: ["../outside.ts"] })).toBe(false);
+    expect(isTaskVerificationState({ ...state, mutatedSourcePathOverflow: "yes" })).toBe(false);
+  });
+
   it("rejects evidence readiness without acceptance evidence", () => {
     const state = emptyState("validation-task");
     expect(

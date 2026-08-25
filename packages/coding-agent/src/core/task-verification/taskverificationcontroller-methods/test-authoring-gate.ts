@@ -45,6 +45,7 @@ export function releaseTestMutationReservation(self: TaskVerificationController,
   self.testMutationReservations.delete(toolCallId);
   self.testVerificationStarts.delete(toolCallId);
   self.workspaceTestSnapshots.delete(toolCallId);
+  self.workspaceSourceSnapshots.delete(toolCallId);
   self.activeMutationAttempts.delete(toolCallId);
   self.bashFingerprints.delete(toolCallId);
 }
