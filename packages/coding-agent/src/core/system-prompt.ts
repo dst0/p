@@ -164,7 +164,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const hasWebResearch = tools.some((toolName) => /(?:web|browser|fetch|curl)/iu.test(toolName));
   if (hasWebResearch) {
     addGuideline(
-      "Proactive Web Research & Validation: For tasks involving unfamiliar packages, complex protocols, ambiguous architectures, or an uncertain approach, research official docs, ecosystem standards, real examples, and library error modes instead of guessing.",
+      "Proactive Web Research & Validation: For unfamiliar packages, protocols, architectures, or uncertain approaches, research official docs, real examples, and library error modes.",
     );
   }
   addGuideline(
@@ -180,7 +180,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     "Before completion, re-read the original specification line by line and audit every requirement: verify happy paths, negative inputs, specific error types, idempotency, boundaries, and corruption/integrity handling are implemented and asserted by dedicated tests.",
   );
   addGuideline(
-    "For line-delimited or record protocols such as JSONL/NDJSON, require a terminal newline; verify raw input ends with '\\n' before splitting and reject a missing delimiter with the domain validation error.",
+    "For exact record formats (JSONL/NDJSON), validate framing before trimming: if terminal '\\n' is required, verify raw input ends with '\\n' before splitting and prove validPayload.slice(0, -1) throws the domain validation error.",
   );
   addGuideline(
     "Use domain-specific custom errors, not generic Error, for business invariants, validation, or optimistic concurrency violations.",

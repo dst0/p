@@ -165,7 +165,7 @@ describe("rejected requirement definition repair protocol", () => {
     expect(controller.rejectedRequirementDefinitionDraft).toBeUndefined();
   });
 
-  it("rotates repair revisions and requires status before using the new indexes", async () => {
+  it("rotates revisions and returns an rc40-sized current batch without a status roundtrip", async () => {
     const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
     const received: RequirementAuditInput[] = [];
     const rejection = (message: string): VerificationResult => ({ status: "needs_action", message, state });
@@ -182,7 +182,7 @@ describe("rejected requirement definition repair protocol", () => {
       rejected: rejection,
     } as unknown as TaskVerificationController;
     const tool = do_createRequirementAuditToolDefinition(controller);
-    const initial = await execute(tool, definition());
+    const initial = await execute(tool, largeDefinition());
     const revision1 = revisionFrom(initial);
     const firstRepair = await execute(tool, {
       action: "repair_definition",
@@ -195,22 +195,32 @@ describe("rejected requirement definition repair protocol", () => {
       ],
     });
     const revision2 = revisionFrom(firstRepair);
+    const batch = currentBatchFrom(firstRepair);
+    const shiftedIndex = batch.requirements.find((row) => row[2] === "Shipping reduces the reservation")?.[0];
 
     expect(revision2).not.toBe(revision1);
+    expect(batch.requirements).toHaveLength(35);
+    expect(shiftedIndex).toBe(3);
+    const retainedDraft = structuredClone(controller.rejectedRequirementDefinitionDraft?.input);
     expect(
       await execute(tool, {
         action: "repair_definition",
         definition_revision: revision1,
-        requirement_repairs: [{ requirement_index: 1, replacements: [] }],
+        requirement_repairs: [
+          { requirement_index: shiftedIndex!, replacements: [requirement("Stale index replacement")] },
+        ],
       }),
-    ).toContain('record_task_verification with action "status"');
+    ).toContain("stale or unavailable");
     expect(received).toHaveLength(2);
-    controller.requirementRepairStatusRevision = undefined;
+    expect(controller.rejectedRequirementDefinitionDraft?.input).toEqual(retainedDraft);
+
     expect(
       await execute(tool, {
         action: "repair_definition",
         definition_revision: revision2,
-        requirement_repairs: [{ requirement_index: 3, replacements: [requirement("Shipping decreases reservation")] }],
+        requirement_repairs: [
+          { requirement_index: shiftedIndex!, replacements: [requirement("Shipping decreases reservation")] },
+        ],
       }),
     ).toBe("Accepted.");
     expect(received).toHaveLength(3);
@@ -225,6 +235,12 @@ async function execute(
   const content = result.content[0];
   if (content?.type !== "text") throw new Error("Expected text tool output.");
   return content.text;
+}
+
+function currentBatchFrom(text: string): { requirements: [number, string, string, ...unknown[]][] } {
+  const line = text.split("\n").find((value) => value.startsWith('{"requirement_columns"'));
+  if (!line) throw new Error(`Missing current rejected batch in: ${text}`);
+  return JSON.parse(line) as { requirements: [number, string, string, ...unknown[]][] };
 }
 
 function revisionFrom(text: string): string {
@@ -242,6 +258,17 @@ function definition(): RequirementAuditInput {
     ],
     ignored_source_prompts: [{ source_prompt_index: 1, reason: "Delegates to the specification" }],
     ignored_source_clauses: [],
+  };
+}
+
+function largeDefinition(): RequirementAuditInput {
+  const base = definition();
+  return {
+    ...base,
+    requirements: [
+      ...base.requirements!,
+      ...Array.from({ length: 32 }, (_value, index) => requirement(`Independent behavior ${index + 3}`)),
+    ],
   };
 }
 

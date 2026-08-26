@@ -63,7 +63,6 @@ describe("rejected requirement definition monotonic repair", () => {
       ...improvedDraft,
       unproductiveRepairAttempts: 1,
     });
-    expect(harness.controller.requirementRepairStatusRevision).toBeUndefined();
 
     await nextModelTurn(harness);
     expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(

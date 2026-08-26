@@ -194,7 +194,6 @@ export function do_completionGate(
 
 export function do_restore(self: TaskVerificationController): void {
   self.rejectedRequirementDefinitionDraft = undefined;
-  self.requirementRepairStatusRevision = undefined;
   const restoredEvidence: TaskVerificationEvidence[] = [];
   const branch = self.sessionManager.getBranch();
   let latestStateData: unknown;

@@ -161,7 +161,6 @@ describe("requirement-audit lifecycle", () => {
       unproductiveRepairAttempts: 0,
       input: { action: "define", requirements: [] },
     };
-    restored.controller.requirementRepairStatusRevision = "stale-recovery";
     await recordAuditToolResult(restored.agent, "finish_work", {
       status: "success",
       summary: "Requirement audit complete",
@@ -172,7 +171,6 @@ describe("requirement-audit lifecycle", () => {
     expect(restored.controller.currentState.taskPrompts).toEqual([]);
     expect(restored.controller.evidence.size).toBe(0);
     expect(restored.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
-    expect(restored.controller.requirementRepairStatusRevision).toBeUndefined();
     expect(await callTaskVerification(restored.controller, { action: "status" })).not.toContain("stale-recovery");
 
     const rehydrated = createRequirementAuditHarness(harness.sessionManager);
