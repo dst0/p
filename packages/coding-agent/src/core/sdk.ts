@@ -12,6 +12,7 @@ import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
+import { guardProviderPayloadBudget } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
@@ -190,12 +191,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
   const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
   let resourceLoader = options.resourceLoader;
-
   const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
   const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
   const authStorage = options.authStorage ?? AuthStorage.create(authPath);
   const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
-
   const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
   const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
   const configuredCompletionMode = options.completionMode ?? settingsManager.getCompletionMode();
@@ -208,23 +207,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     modelRegistry,
     sessionManager,
   });
-
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
     await resourceLoader.reload();
     time("resourceLoader.reload");
   }
-
   // Check if session has existing data to restore. Do not truncate restored
   // messages here: changing provider-visible history outside a recorded
   // compaction boundary breaks prefix cache reuse for reopened sessions.
   const existingSession = sessionManager.buildSessionContext();
   const hasExistingSession = existingSession.messages.length > 0;
   const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
-
   let model = options.model;
   let modelFallbackMessage: string | undefined;
-
   // If session has data, try to restore model from it
   if (!model && hasExistingSession && existingSession.model) {
     const restoredModel = modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
@@ -235,7 +230,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
     }
   }
-
   // If still no model, use findInitialModel (checks settings default, then provider defaults)
   if (!model) {
     const defaultModelString = settingsManager.getDefaultModel();
@@ -293,7 +287,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const completionMode =
     options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
   const defaultMaxTokens = options.maxTokens;
-
   let agent: Agent;
 
   // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
@@ -373,10 +366,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     },
     onPayload: async (payload, _model) => {
       const runner = extensionRunnerRef.current;
-      if (!runner?.hasHandlers("before_provider_request")) {
-        return payload;
-      }
-      return runner.emitBeforeProviderRequest(payload);
+      const transformedPayload = runner?.hasHandlers("before_provider_request")
+        ? await runner.emitBeforeProviderRequest(payload)
+        : payload;
+      return guardProviderPayloadBudget(
+        transformedPayload ?? payload,
+        _model,
+        settingsManager.getCompactionSettings(),
+        agent.maxTokens,
+        payload,
+      );
     },
     onResponse: async (response, _model) => {
       const runner = extensionRunnerRef.current;
@@ -402,6 +401,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     transport: settingsManager.getTransport(),
     thinkingBudgets: settingsManager.getThinkingBudgets(),
     maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
+    maxTokens: defaultMaxTokens ?? 16384,
   });
 
   // Restore messages if session has existing data

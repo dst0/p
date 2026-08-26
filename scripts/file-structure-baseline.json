@@ -325,7 +325,7 @@
   },
   "packages/coding-agent/src/core/compaction/minimal-compaction.ts": {
     "classes": 0,
-    "lines": 458
+    "lines": 456
   },
   "packages/coding-agent/src/core/export-html/index.ts": {
     "classes": 0,

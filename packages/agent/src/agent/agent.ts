@@ -7,6 +7,7 @@ import {
   type Transport,
 } from "@dst0/p-ai";
 import type { CompletionMode, CompletionProtocolLimits } from "../completion-protocol.ts";
+import type { PrepareModelCallContext, PrepareModelCallResult } from "../model-call-preparation.ts";
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -88,6 +89,11 @@ export class Agent {
     context?: PrepareNextTurnContext,
   ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
 
+  public prepareModelCall?: (
+    context: PrepareModelCallContext,
+    signal?: AbortSignal,
+  ) => Promise<PrepareModelCallResult | undefined> | PrepareModelCallResult | undefined;
+
   public activeRun?: ActiveRun;
 
   public sessionId?: string;
@@ -99,6 +105,8 @@ export class Agent {
   public transport: Transport;
 
   public maxRetryDelayMs?: number;
+
+  public maxTokens?: SimpleStreamOptions["maxTokens"];
 
   public toolExecution: ToolExecutionMode;
 
@@ -117,6 +125,7 @@ export class Agent {
     this.beforeToolCall = options.beforeToolCall;
     this.afterToolCall = options.afterToolCall;
     this.prepareNextTurn = options.prepareNextTurn;
+    this.prepareModelCall = options.prepareModelCall;
     this.steeringQueue = new PendingMessageQueue(options.steeringMode ?? "one-at-a-time");
     this.followUpQueue = new PendingMessageQueue(options.followUpMode ?? "one-at-a-time");
     this.sessionId = options.sessionId;
@@ -124,6 +133,7 @@ export class Agent {
     this.thinkingBudgets = options.thinkingBudgets;
     this.transport = options.transport ?? "auto";
     this.maxRetryDelayMs = options.maxRetryDelayMs;
+    this.maxTokens = options.maxTokens;
     this.toolExecution = options.toolExecution ?? "parallel";
     this.completionMode = options.completionMode ?? "explicit_finish";
     this.completionLimits = options.completionLimits;
