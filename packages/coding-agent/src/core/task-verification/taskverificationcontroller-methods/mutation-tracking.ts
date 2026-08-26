@@ -42,7 +42,8 @@ export async function do_afterToolCall(
 ): Promise<AfterToolCallResult | undefined> {
   const nativeIsError = context.isError;
   const effectiveIsError = previousResult?.isError ?? context.isError;
-  const content = previousResult?.content ?? context.result.content;
+  const nativeContent = context.result.content;
+  const content = previousResult?.content ?? nativeContent;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
     self.rejectedRequirementDefinitionDraft = undefined;
@@ -100,12 +101,12 @@ export async function do_afterToolCall(
   }
   if (!isEvidenceTool(context.toolCall.name)) return previousResult;
   const proofWitnesses = collectProofWitnesses(
-    content,
+    nativeContent,
     self.state.requirementAudit.requirements,
     self.state.requirementAudit.requirementSetHash,
     self.state.mutationRevision,
   );
-  const proofFrameCount = countProofFrameMarkers(content);
+  const proofFrameCount = countProofFrameMarkers(nativeContent);
   const recordedProofCount = proofWitnesses?.length ?? 0;
   const proofFrameFeedback =
     proofFrameCount > recordedProofCount
