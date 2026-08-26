@@ -7,6 +7,7 @@ import { ModelRegistry, type ProviderConfigInput } from "../src/core/model-regis
 
 const PROVIDER = "dynamic-validation";
 const MODEL = "configured-model";
+const PARTIAL_PROVIDER = "partial-dynamic-validation";
 
 describe("ModelRegistry dynamic registration validation", () => {
   let tempDir: string;
@@ -83,6 +84,26 @@ describe("ModelRegistry dynamic registration validation", () => {
     registry.refresh();
     expect(registry.find(PROVIDER, MODEL)?.reasoning).toBe(false);
     expect(registry.find(PROVIDER, MODEL)?.thinkingLevelMap).toBeUndefined();
+  });
+
+  it("accepts model membership after provider connection details were registered separately", () => {
+    const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+    registry.registerProvider(PARTIAL_PROVIDER, {
+      baseUrl: "https://partial.test/v1",
+      apiKey: "partial-test-key",
+      api: "openai-completions",
+    });
+
+    registry.registerProvider(PARTIAL_PROVIDER, { models: [{ id: MODEL }] });
+
+    expect(registry.find(PARTIAL_PROVIDER, MODEL)).toMatchObject({
+      id: MODEL,
+      provider: PARTIAL_PROVIDER,
+      baseUrl: "https://partial.test/v1",
+      api: "openai-completions",
+    });
+    registry.refresh();
+    expect(registry.find(PARTIAL_PROVIDER, MODEL)?.id).toBe(MODEL);
   });
 });
 

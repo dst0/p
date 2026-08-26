@@ -31,4 +31,38 @@ describe("high-risk requirement classification", () => {
       }),
     ).toBe(true);
   });
+
+  it.each([
+    [
+      "Create handoff.json with exactly the keys decision, owner, and rollback in that order",
+      "The JSON key order is decision, owner, rollback",
+    ],
+    [
+      "Rollback must declare: Restore only contract-declared reversible state",
+      "The rollback value contains the exact declared text",
+    ],
+    ["Rollback must declare: never alter audit history", "The rollback value preserves the exact declared text"],
+  ])("does not classify a static rollback field as a transactional invariant", (text, acceptanceCriterion) => {
+    expect(
+      isHighRiskRequirement({
+        id: "R1",
+        type: "constraint",
+        text,
+        acceptanceCriterion,
+        sourcePromptIndexes: [1],
+      }),
+    ).toBe(false);
+  });
+
+  it("retains high-risk classification for an active rollback invariant", () => {
+    expect(
+      isHighRiskRequirement({
+        id: "R1",
+        type: "constraint",
+        text: "A rollback leaves state unchanged",
+        acceptanceCriterion: "After rollback, state matches its pre-operation snapshot",
+        sourcePromptIndexes: [1],
+      }),
+    ).toBe(true);
+  });
 });

@@ -1390,7 +1390,7 @@ export interface ProviderConfig {
   /** API type. Required at provider or model level when defining models. */
   api?: Api;
   compat?: Model<Api>["compat"]; // Compatibility defaults shared by this provider's models.
-  modelMetadata?: "replace" | "inherit-existing"; // Metadata policy; defaults to replace.
+  modelMetadata?: "replace" | "inherit-existing"; // Defaults to exact-match inheritance; use replace to discard omitted metadata.
   /** Optional streamSimple handler for custom APIs. */
   streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
   headers?: Record<string, string>; // Custom headers to include in requests.

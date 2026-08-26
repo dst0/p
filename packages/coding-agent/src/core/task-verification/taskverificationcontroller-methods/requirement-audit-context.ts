@@ -7,6 +7,7 @@ import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requ
 import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
+import { formatRequirementSourcePreparationGuidance } from "./requirement-source-preparation-guidance.ts";
 
 export function auditContextError(self: TaskVerificationController): string | undefined {
   const readiness = self.state.readiness ?? emptyReadiness();
@@ -47,7 +48,7 @@ function preMutationDefinitionContextError(self: TaskVerificationController): st
   const references = self.state.requirementSourceRefs ?? [];
   const ignored = self.state.ignoredRequirementSources ?? [];
   if (candidates.length > 0 && !requirementSourceSelectionMatches(prompts, references, ignored)) {
-    return "Freeze and classify referenced requirement sources before defining requirements.";
+    return formatRequirementSourcePreparationGuidance(candidates.map((candidate) => candidate.path));
   }
   if (references.some((reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference))) {
     return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";

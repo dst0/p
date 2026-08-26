@@ -265,6 +265,7 @@ export async function createAgentSessionFromServices(
   });
   if (verificationController) {
     result.session._projectRuleSafeToolDefinitions.add(verificationController.toolDefinition);
+    result.session._projectRuleSafeToolDefinitions.add(verificationController.requirementAuditToolDefinition);
     result.session.setActiveToolsByName([
       ...result.session.getActiveToolNames(),
       TASK_VERIFICATION_TOOL_NAME,

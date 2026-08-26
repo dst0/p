@@ -986,7 +986,7 @@ describe("ModelRegistry", () => {
           apiKey: "test-key",
           models: [
             {
-              id: "broken-model",
+              id: "",
               name: "Broken Model",
               reasoning: false,
               input: ["text"],
@@ -996,7 +996,7 @@ describe("ModelRegistry", () => {
             },
           ],
         }),
-      ).toThrow('Provider demo-provider, model broken-model: no "api" specified.');
+      ).toThrow("Provider demo-provider: model id must be a non-empty string.");
 
       expect(registry.find("demo-provider", "demo-model")).toBeDefined();
       expect(() => registry.refresh()).not.toThrow();

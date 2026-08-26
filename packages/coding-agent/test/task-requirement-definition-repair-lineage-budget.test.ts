@@ -150,7 +150,7 @@ describe("requirement definition repair lineage budget", () => {
     expect(lineageBaseline(fresh!)).toBe(3);
   });
 
-  it("preserves and resets lineage through the real requirement-audit tool", async () => {
+  it("preserves lineage while promoting an improving overflow through the real tool", async () => {
     const controller = rejectingController();
     const tool = do_createRequirementAuditToolDefinition(controller);
     await execute(tool, definition(10));
@@ -166,12 +166,10 @@ describe("requirement definition repair lineage budget", () => {
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
 
     const overflow = await execute(tool, repairInput(controller.rejectedRequirementDefinitionDraft!, [10]));
-    expect(overflow).toContain("cumulative net growth permits at most 16");
-    expect(overflow).toContain("next_required_action: define");
-
-    await execute(tool, definition(3));
-    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(3);
-    expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(3);
+    expect(overflow).toContain("3 deterministic validation errors");
+    expect(overflow).toContain("next_required_action: repair_definition");
+    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(27);
+    expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(10);
   });
 });
 

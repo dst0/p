@@ -77,8 +77,9 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       (potentialWorkspaceMutation || testInvocation !== undefined);
     if (captureShellSnapshots) {
       captureTestVerificationStart(self, context);
+      const sessionFile = self.sessionManager.getSessionFile();
       const [fingerprint, testSnapshot, sourceSnapshot] = await Promise.all([
-        captureWorkspaceFingerprint(self.sessionManager.getCwd()),
+        captureWorkspaceFingerprint(self.sessionManager.getCwd(), sessionFile ? [sessionFile] : []),
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
         mutationAttempt ? captureSourceWorkspaceSnapshot(self.sessionManager.getCwd()) : undefined,
       ]);
@@ -195,7 +196,6 @@ function userMessageText(message: Extract<AgentMessage, { role: "user" }>): stri
         .map((part) => part.text)
         .join("\n");
 }
-
 export function do_createToolDefinition(
   self: TaskVerificationController,
 ): ToolDefinition<typeof VerificationSchema, VerificationResult> {

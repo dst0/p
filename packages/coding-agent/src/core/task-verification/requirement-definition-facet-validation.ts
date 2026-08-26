@@ -1,3 +1,4 @@
+import { choiceGroupConstraintErrors } from "./requirement-clause-context.ts";
 import { clauseRequirementRelevanceError, sourceClauseConceptCoverageError } from "./requirement-clause-semantics.ts";
 import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 import {
@@ -105,10 +106,12 @@ export function validateRequirementClauseCoverage(
   ignoredClauseIds: ReadonlySet<string>,
   invalidOnlyClauseIds: ReadonlySet<string>,
   unevaluableOnlyClauseIds: ReadonlySet<string>,
+  coveredIntroductionClauseIds: ReadonlySet<string>,
   diagnostics: string[],
 ): void {
+  diagnostics.push(...choiceGroupConstraintErrors(sourceClauses, requirements, ignoredClauseIds));
   for (const clause of sourceClauses) {
-    if (ignoredClauseIds.has(clause.id)) continue;
+    if (ignoredClauseIds.has(clause.id) || coveredIntroductionClauseIds.has(clause.id)) continue;
     const mapped = requirements.filter((requirement) => requirement.sourceClauseIds?.includes(clause.id));
     const facetErrors = sourceClauseFacetCoverageErrors(clause, mapped);
     if (facetErrors !== undefined) {

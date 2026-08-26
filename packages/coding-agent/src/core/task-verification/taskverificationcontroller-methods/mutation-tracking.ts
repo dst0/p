@@ -216,7 +216,11 @@ export async function do_detectMutation(
   const beforeFingerprint = self.bashFingerprints.get(context.toolCall.id);
   self.bashFingerprints.delete(context.toolCall.id);
   if (hadFingerprint && beforeFingerprint !== undefined) {
-    const afterFingerprint = await captureWorkspaceFingerprint(self.sessionManager.getCwd());
+    const sessionFile = self.sessionManager.getSessionFile();
+    const afterFingerprint = await captureWorkspaceFingerprint(
+      self.sessionManager.getCwd(),
+      sessionFile ? [sessionFile] : [],
+    );
     if (afterFingerprint !== undefined) return beforeFingerprint !== afterFingerprint;
   }
   return isRecognizedBashMutation(context.args);

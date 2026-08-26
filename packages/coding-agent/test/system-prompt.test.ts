@@ -22,43 +22,35 @@ describe("buildSystemPrompt", () => {
     const prompt = buildSystemPrompt(baseOptions);
     const invariantNeedles = [
       "End created or edited text files",
-      "return R[] directly",
-      "Cover each exported function, public method, static factory, and lifecycle function",
-      "normal, negative, boundary, failure/recovery, and invariant cases",
-      "implement the smallest complete production slice",
-      "Run each new or changed test immediately",
-      "fix it before writing another",
-      "required coverage, requested final checks, and deliverables finish before optional expansion",
-      "atomic rollback",
-      "state changes, external mutations, caches, logs, and tracking registries",
-      "pre-operation state",
-      "re-read the original specification line by line",
-      "every requirement",
-      "specific error types, idempotency, boundaries, and corruption/integrity handling",
-      "implemented and asserted by dedicated tests",
-      "JSONL/NDJSON",
-      "raw input ends with '\\n' before splitting",
-      "validPayload.slice(0, -1)",
-      "domain validation error",
-      "domain-specific custom errors",
-      "business invariants, validation, or optimistic concurrency",
-      "run the type checker and relevant tests",
-      "full test suite",
-      "100% green",
-      "Fix every type error and test failure",
+      "Plan the smallest complete outcome",
+      "Establish a baseline when relevant",
+      "verify each meaningful increment",
+      "fix failures before expanding",
+      "finish required checks and deliverables before optional work",
+      "declared transaction, rollback, irreversibility, and append-only semantics",
+      "Never invent rollback for irreversible effects",
+      "restore only contract-declared reversible state",
+      "re-read the original request and authoritative sources",
+      "every requirement, boundary, negative case, requested format, and verification condition",
+      "against direct evidence",
+      "Preserve exact requested formats and boundaries",
+      "whitespace, framing, ordering, units, or byte-level representation",
+      "verify the raw artifact",
+      "For implementation changes",
+      "relevant static checks and focused tests",
+      "Distinguish focused evidence from full-suite evidence",
       "precise edit calls on failing logic over whole-file write calls",
       "avoid collateral regressions",
-      "plan the smallest useful target",
-      "Preserve full output outside model context",
-      "Treat exit codes as authoritative",
-      "never append `; echo $?`",
-      "never use `console.assert` for verification",
+      "compact, high-signal tool output",
+      "preserve full logs outside model context",
+      "Treat exit status as authoritative",
+      "never mask a failed operation",
       "consult loaded specialized skills",
     ];
     for (const needle of invariantNeedles) expect(prompt).toContain(needle);
     expect(prompt).not.toContain("Subagent Exploration");
     expect(prompt).not.toContain("test-output-discipline");
-    expect(prompt.length).toBeLessThanOrEqual(4_200);
+    expect(prompt.length).toBeLessThanOrEqual(3_500);
   });
 
   it("keeps the full static prompt with every conditional guideline within budget", () => {
@@ -72,14 +64,27 @@ describe("buildSystemPrompt", () => {
         web_search: "Search the web",
       },
     });
-    expect(prompt).toContain("Prioritize semantic_search for code discovery");
-    expect(prompt).toContain("Proactive Web Research & Validation: For unfamiliar packages");
-    expect(prompt.length).toBeLessThanOrEqual(4_200);
+    expect(prompt).toContain("Use semantic_search when identifiers or paths are unknown");
+    expect(prompt).toContain("For unfamiliar or time-sensitive claims");
+    expect(prompt.length).toBeLessThanOrEqual(3_500);
   });
 
   it("does not demand subagents when no such workflow is part of P", () => {
     const prompt = buildSystemPrompt(baseOptions);
     expect(prompt).not.toMatch(/subagents?|parallel research/iu);
+  });
+
+  it("keeps the default role and always-on guidance domain-neutral", () => {
+    const prompt = buildSystemPrompt(baseOptions);
+
+    expect(prompt).toContain("expert task assistant in p");
+    expect(prompt).not.toContain("expert coding assistant");
+    expect(prompt).not.toContain("JSONL/NDJSON");
+    expect(prompt).not.toContain("validPayload.slice");
+    expect(prompt).not.toContain("domain-specific custom errors");
+    expect(prompt).not.toContain("full test suite to 100% green");
+    expect(prompt).not.toContain("revert state changes, external mutations, caches, logs, and tracking registries");
+    expect(prompt).toContain("Preserve declared transaction, rollback, irreversibility, and append-only semantics");
   });
 
   it("does not mistake local semantic search for web research capability", () => {
@@ -88,7 +93,7 @@ describe("buildSystemPrompt", () => {
       selectedTools: ["read", "semantic_search"],
       toolSnippets: { read: "Read a file", semantic_search: "Search local code" },
     });
-    expect(prompt).not.toContain("Proactive Web Research & Validation");
+    expect(prompt).not.toContain("For unfamiliar or time-sensitive claims");
   });
 
   it("includes web research guidance when a web-capable tool is active", () => {
@@ -97,7 +102,7 @@ describe("buildSystemPrompt", () => {
       selectedTools: ["read", "web_search"],
       toolSnippets: { read: "Read a file", web_search: "Search the web" },
     });
-    expect(prompt).toContain("Proactive Web Research & Validation");
+    expect(prompt).toContain("For unfamiliar or time-sensitive claims");
   });
 
   it("includes promptGuidelines in the prompt", () => {
@@ -143,7 +148,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("Main documentation:");
     expect(prompt).toContain("Additional docs:");
     expect(prompt).toContain("Examples:");
-    expect(prompt).toMatch(/Before answering p questions or implementing p work/iu);
+    expect(prompt).toMatch(/Before answering p questions or performing p work/iu);
   });
 
   it("includes date and working directory", () => {

@@ -4,7 +4,7 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
-import { TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification/constants.ts";
+import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification/constants.ts";
 import {
   cleanupProjectInstructionModeWorkspaces,
   createProjectInstructionModeWorkspace,
@@ -109,7 +109,7 @@ describe("compiled project-instruction tool identity gate", () => {
     }
   });
 
-  it("trusts only the identity-bound internal verification status action", async () => {
+  it("trusts identity-bound verification control-plane actions without bypassing completion gates", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const verificationTool = {
       name: TASK_VERIFICATION_TOOL_NAME,
@@ -118,6 +118,13 @@ describe("compiled project-instruction tool identity gate", () => {
       parameters: Type.Object({ action: Type.String() }),
       execute: async () => ({ content: [{ type: "text" as const, text: "status" }], details: {} }),
     };
+    const requirementAuditTool = {
+      name: REQUIREMENT_AUDIT_TOOL_NAME,
+      label: "Requirement audit",
+      description: "Prepare and record the internal requirement definition",
+      parameters: Type.Object({ action: Type.String() }),
+      execute: async () => ({ content: [{ type: "text" as const, text: "prepared" }], details: {} }),
+    };
     const { session } = await createAgentSession({
       cwd: workspace.root,
       agentDir: join(workspace.root, ".agent-verification-status"),
@@ -125,15 +132,23 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
-      customTools: [verificationTool],
+      customTools: [verificationTool, requirementAuditTool],
     });
     try {
       session._projectRuleSafeToolDefinitions.add(verificationTool);
+      session._projectRuleSafeToolDefinitions.add(requirementAuditTool);
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
       expect(turn.projectRuleLinks?.length).toBeGreaterThan(0);
       await expect(
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "status" }),
+        ),
+      ).resolves.toBeUndefined();
+      await expect(
+        session.agent.beforeToolCall?.(
+          projectInstructionToolHookInput(REQUIREMENT_AUDIT_TOOL_NAME, {
+            action: "prepare_definition",
+          }),
         ),
       ).resolves.toBeUndefined();
       await expect(

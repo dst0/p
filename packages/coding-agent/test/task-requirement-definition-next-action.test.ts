@@ -61,11 +61,10 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(apply).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps non-improving fresh definitions define-only after cumulative lineage overflow", async () => {
+  it("keeps non-improving fresh definitions define-only after repeated non-improving lineage overflow", async () => {
     const harness = await preparedHarness();
     const apply = rejectingApplySpy(harness, [5, 4, 3, 3, 3]);
     await callRequirementAudit(harness.controller, definition(10));
-    expect(apply).toHaveBeenCalledTimes(1);
     await nextModelTurn(harness);
 
     await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [16]));
@@ -81,44 +80,51 @@ describe("rejected requirement definition next-action authorization", () => {
     await nextModelTurn(harness);
 
     const overflowDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
-    const lineageOverflow = await callRequirementAudit(
+    let lineageOverflow = await callRequirementAudit(
       harness.controller,
       repair(currentRevision(harness.controller), [2]),
     );
-    expect(lineageOverflow).toContain("cumulative net growth permits at most 16");
-    expect(lineageOverflow).toContain("next_required_action: define");
+    expect(lineageOverflow).toContain("Repair was not adopted");
+    expect(lineageOverflow).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...overflowDraft,
       unproductiveRepairAttempts: 1,
     });
+    expect(apply).toHaveBeenCalledTimes(4);
+    for (let attempt = 2; attempt <= 3; attempt++) {
+      await nextModelTurn(harness);
+      lineageOverflow = await callRequirementAudit(
+        harness.controller,
+        repair(currentRevision(harness.controller), [2]),
+      );
+    }
+    expect(lineageOverflow).toContain("next_required_action: define");
+    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
+      "stagnant_repair",
+    );
     const authorizedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
-    expect(apply).toHaveBeenCalledTimes(3);
 
     expect(await callRequirementAudit(harness.controller, { action: "prepare_definition" })).toContain(
       "next_required_action: define",
     );
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(authorizedDraft);
-    expect(apply).toHaveBeenCalledTimes(3);
 
     expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
       "fresh define is required",
     );
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(authorizedDraft);
-    expect(apply).toHaveBeenCalledTimes(3);
 
     const lineageStatus = await callTaskVerification(harness.controller, { action: "status" });
     expect(lineageStatus).toContain("next_required_action: define");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(authorizedDraft);
 
     expect(await callRequirementAudit(harness.controller, definition(3))).toContain("definition_revision");
-    expect(apply).toHaveBeenCalledTimes(4);
+    expect(apply).toHaveBeenCalledTimes(7);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(3);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).not.toBe(overflowDraft?.revision);
     expect(lineageBaseline(harness.controller)).toBe(3);
     expect(await callRequirementAudit(harness.controller, definition(4))).toContain("next_required_action: define");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(4);
     expect(lineageBaseline(harness.controller)).toBe(4);
-    expect(apply).toHaveBeenCalledTimes(5);
+    expect(apply).toHaveBeenCalledTimes(8);
     expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
       "No sparse-repair budget was reopened",
     );

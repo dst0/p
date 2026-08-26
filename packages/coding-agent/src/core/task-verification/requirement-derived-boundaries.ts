@@ -1,3 +1,8 @@
+import {
+  hasRollbackOperationSemantics,
+  hasStaticRollbackMetadata,
+  withoutStaticRollbackPropertyValues,
+} from "./requirement-rollback-semantics.ts";
 import { requirementSourceClauses } from "./requirement-source-clauses.ts";
 import { type RequirementSourceFacet, requirementSourceFacets } from "./requirement-source-facets.ts";
 import type { RequirementProofPolicy, TaskRequirement, TaskVerificationSourcePrompt } from "./types.ts";
@@ -63,7 +68,7 @@ const NEGATED_PASSIVE_CHANGE_PATTERN =
   /\b(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?)\s+(?:is|are|was|were)\s+not\s+(?:being\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*)(?:\s+(?:and|nor|or)\s+(?:being\s+)?(?:alter\w*|chang\w*|corrupt\w*|modif\w*|mutat\w*|tamper\w*))*\b/giu;
 const NO_ARTIFACT_CHANGE_PATTERN =
   /\bno\s+(?:(?:artifacts?|buffers?|bytes?|data|files?|inputs?|logs?|manifests?|metadata|outputs?|packets?|payloads?|records?|state|streams?|values?)\s+)?(?:alteration|change|corruption|modification|mutation|tampering)(?:\s+(?:and|nor|or)\s+(?:alteration|change|corruption|modification|mutation|tampering))*\b/giu;
-const FAILURE_PATTERN = /\b(?:error|fail\w*|invalid|reject\w*|rollback|stale|throw\w*)\b/iu;
+const FAILURE_PATTERN = /\b(?:error|fail\w*|invalid|reject\w*|stale|throw\w*)\b/iu;
 const PRESERVATION_PATTERN =
   /\b(?:all[-\s]?or[-\s]?nothing|does\s+not\s+(?:advance|append|change|consume)|no\s+partial\s+mutation|preserv\w*|remain\w*|restor\w*|rollback|unchanged)\b/iu;
 const ATOMIC_FAILURE_PRESERVATION_PATTERN =
@@ -158,9 +163,14 @@ export function deriveRequirementProofPolicies(
       addFacetFailureProofPolicies(mappedFacets, policies.get(requirement.id)!);
       continue;
     }
+    const proofSemanticText = withoutStaticRollbackPropertyValues(semanticText);
+    const hasRollbackOperation = hasRollbackOperationSemantics(proofSemanticText);
+    const staticRollbackMetadata = hasStaticRollbackMetadata(text);
     const hasFailurePreservation =
-      (FAILURE_PATTERN.test(semanticText) && PRESERVATION_PATTERN.test(semanticText)) ||
-      ATOMIC_FAILURE_PRESERVATION_PATTERN.test(semanticText);
+      (hasRollbackOperation && PRESERVATION_PATTERN.test(proofSemanticText)) ||
+      (!staticRollbackMetadata &&
+        ((FAILURE_PATTERN.test(proofSemanticText) && PRESERVATION_PATTERN.test(proofSemanticText)) ||
+          ATOMIC_FAILURE_PRESERVATION_PATTERN.test(proofSemanticText)));
     if (!hasFailurePreservation) continue;
     if (/\bstate\b/iu.test(text)) policies.get(requirement.id)!.add("preserve_state_on_failure");
     if (/\b(?:event[-\s]?logs?|history|logs?)\b/iu.test(text)) {
