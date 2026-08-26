@@ -25,6 +25,12 @@ describe("restored task-verification state validation", () => {
     expect(isTaskVerificationState({ ...state, mutatedSourcePathOverflow: "yes" })).toBe(false);
   });
 
+  it("accepts only the current pre-mutation requirement-definition policy marker", () => {
+    const state = emptyState("validation-task");
+    expect(isTaskVerificationState({ ...state, requirementDefinitionPolicy: 1 })).toBe(true);
+    expect(isTaskVerificationState({ ...state, requirementDefinitionPolicy: 2 })).toBe(false);
+  });
+
   it("rejects evidence readiness without acceptance evidence", () => {
     const state = emptyState("validation-task");
     expect(

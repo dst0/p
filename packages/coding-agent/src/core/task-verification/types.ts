@@ -127,6 +127,8 @@ export interface TaskVerificationState {
   mutatedSourcePaths?: string[];
   /** Source mutation scope exceeded bounds or could not be observed safely. */
   mutatedSourcePathOverflow?: boolean;
+  /** Enables fail-closed requirement redefinition before later mutations when direct user requirements change. */
+  requirementDefinitionPolicy?: 1;
   mutationRevision: number;
   baseline: {
     required: boolean;

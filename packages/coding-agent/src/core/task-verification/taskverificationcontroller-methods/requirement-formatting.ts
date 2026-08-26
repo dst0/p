@@ -11,8 +11,9 @@ import {
   referencedRequirementCandidates,
   requirementSourceSelectionMatches,
 } from "../referenced-requirement-sources.ts";
-import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { requirementDefinitionMatchesState, sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import { emptyReadiness } from "../state-factories.ts";
@@ -41,6 +42,24 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         `Call ${REQUIREMENT_AUDIT_TOOL_NAME} once with action "prepare_definition", 0-3 relevant selected_paths, and reasons for every ignored_paths item.`,
       ].join("\n");
     }
+  }
+
+  if (self.rejectedRequirementDefinitionDraft) {
+    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+    return [
+      `NEXT REQUIRED ACTION: continue the active rejected requirement definition through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
+      typeof sources === "string"
+        ? sources
+        : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
+    ].join("\n");
+  }
+
+  if (requirementDefinitionPolicyActive(self.state) && !requirementDefinitionMatchesState(self.state)) {
+    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+    return [
+      `NEXT REQUIRED ACTION: define and obtain one accepted complete requirement set through ${REQUIREMENT_AUDIT_TOOL_NAME} before implementation.`,
+      typeof sources === "string" ? sources : formatRequirementDefinitionPrompt(sources),
+    ].join("\n");
   }
 
   if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
@@ -121,16 +140,6 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         : "Use a runtime reproduction, a failing focused regression test, or two independent static inspection handles.",
       `For a regression test, first call ${TASK_VERIFICATION_TOOL_NAME} with {"action":"authorize_baseline_test","test_paths":["exact/repository-relative.test.ts"]}.`,
       "For runtime reproduction, run the concrete scenario now; its bash result will receive an evidence handle. Then call action status again.",
-    ].join("\n");
-  }
-
-  if (self.rejectedRequirementDefinitionDraft) {
-    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
-    return [
-      `NEXT REQUIRED ACTION: continue the active rejected requirement definition through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-      typeof sources === "string"
-        ? sources
-        : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
     ].join("\n");
   }
 

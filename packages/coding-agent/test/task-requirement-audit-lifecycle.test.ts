@@ -49,33 +49,41 @@ async function defineAndPass(
 }
 
 describe("requirement-audit lifecycle", () => {
-  it("reuses stable requirement IDs after mutation while requiring fresh hard evidence and verdicts", async () => {
+  it("reuses the policy-v1 upfront requirement definition after mutation without redefining it", async () => {
     const harness = createRequirementAuditHarness();
-    const { evidenceRef } = await reachAuditEvidenceReady(harness);
-    const firstToken = auditVerificationToken(await defineAndPass(harness, evidenceRef));
+    await sendAuditUserPrompt(harness, "Add a completion gate backed by focused verification.", 100);
+    await callTaskVerification(harness.controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add a completion gate backed by focused verification",
+    });
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: oneRequirement(),
+      ignored_source_prompts: [],
+    });
+    const definedHash = harness.controller.currentState.requirementAudit.userRequirementsHash;
+    const definedSetHash = harness.controller.currentState.requirementAudit.requirementSetHash;
+    expect(harness.controller.currentState).toMatchObject({
+      mutationRevision: 0,
+      requirementDefinitionPolicy: 1,
+      requirementAudit: { status: "verifying", nextRequirementIndex: 0 },
+    });
 
     await nextModelTurn(harness);
     await recordAuditToolResult(harness.agent, "edit", {
       path: "src/gate.ts",
-      edits: [{ oldText: "new", newText: "newer" }],
+      edits: [{ oldText: "old", newText: "new" }],
     });
     expect(harness.controller.currentState).toMatchObject({
-      mutationRevision: 2,
+      mutationRevision: 1,
       final: { status: "pending" },
       readiness: { status: "pending" },
       requirementAudit: { status: "pending", nextRequirementIndex: 0 },
     });
     expect(harness.controller.currentState.requirementAudit.requirements[0]?.id).toBe("R1");
     expect(harness.controller.currentState.requirementAudit.requirements[0]?.verdict).toBeUndefined();
-    expect(
-      (
-        await beforeAuditTool(harness.agent, "finish_work", {
-          status: "success",
-          verification_token: firstToken,
-        })
-      )?.block,
-    ).toBe(true);
-
     const freshEvidence = auditEvidenceHandle(
       await recordAuditToolResult(
         harness.agent,
@@ -91,20 +99,9 @@ describe("requirement-audit lifecycle", () => {
     });
     expect(readiness).toContain("Reusing the existing 1-item requirement set");
     expect(readiness).toContain("Verify all 1 requirements");
-
-    await nextModelTurn(harness);
-    const completed = await callRequirementAudit(harness.controller, {
-      action: "verdict",
-      verdicts: [
-        {
-          requirement_id: "R1",
-          passed: true,
-          reason: "Fresh revision-two evidence proves the stable requirement.",
-          evidence_refs: [freshEvidence],
-        },
-      ],
-    });
-    expect(auditVerificationToken(completed)).not.toBe(firstToken);
+    expect(harness.controller.currentState.requirementAudit.userRequirementsHash).toBe(definedHash);
+    expect(harness.controller.currentState.requirementAudit.requirementSetHash).toBe(definedSetHash);
+    expect(harness.controller.currentState.requirementAudit.status).toBe("verifying");
   });
 
   it("restores the pending batch and clears task-scoped evidence and repair recovery after successful finish", async () => {

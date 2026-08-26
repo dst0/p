@@ -3,30 +3,41 @@ import { copyFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Agent } from "@dst0/p-agent-core";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import type { TaskVerificationController } from "../src/core/task-verification.ts";
-import { createRequirementAuditHarness, sendAuditUserPrompt } from "./task-requirement-audit-test-harness.ts";
+import {
+  createRequirementAuditHarness,
+  defineDirectPromptRequirements,
+  defineSingleDirectPromptRequirement,
+  sendAuditUserPrompt,
+} from "./task-requirement-audit-test-harness.ts";
 
 interface TestDebtState {
   unverifiedTestPaths?: string[];
 }
+const workspaces: string[] = [];
 
+afterEach(async () => {
+  await Promise.all(workspaces.splice(0).map((workspace) => rm(workspace, { recursive: true, force: true })));
+});
+async function createIsolatedHarness() {
+  const cwd = await mkdtemp(join(tmpdir(), "p-test-authoring-gate-"));
+  workspaces.push(cwd);
+  return createRequirementAuditHarness(SessionManager.inMemory(cwd));
+}
 function writeCall(id: string, path: string) {
   const args = { path, content: "test('behavior', () => {});\n" };
   return { args, toolCall: { type: "toolCall" as const, id, name: "write", arguments: args } };
 }
-
 async function beforeWrite(agent: Agent, id: string, path: string) {
   const { args, toolCall } = writeCall(id, path);
   return agent.beforeToolCall?.({ assistantMessage: {} as never, toolCall, args, context: {} as never });
 }
-
 async function beforeTool(agent: Agent, id: string, name: string, args: Record<string, unknown>) {
   const toolCall = { type: "toolCall" as const, id, name, arguments: args };
   return agent.beforeToolCall?.({ assistantMessage: {} as never, toolCall, args, context: {} as never });
 }
-
 async function finishTool(
   agent: Agent,
   id: string,
@@ -45,7 +56,6 @@ async function finishTool(
     context: {} as never,
   });
 }
-
 async function runTool(
   agent: Agent,
   id: string,
@@ -58,7 +68,6 @@ async function runTool(
   if (before?.block) throw new Error(before.reason ?? `${name} was blocked`);
   await finishTool(agent, id, name, args, text, isError);
 }
-
 async function finishWrite(agent: Agent, id: string, path: string, isError = false): Promise<string> {
   const { args, toolCall } = writeCall(id, path);
   const result = await agent.afterToolCall?.({
@@ -78,20 +87,17 @@ async function finishWrite(agent: Agent, id: string, path: string, isError = fal
       .join("\n") ?? ""
   );
 }
-
 async function writeTest(agent: Agent, id: string, path: string): Promise<{ block?: boolean; output: string }> {
   const before = await beforeWrite(agent, id, path);
   if (before?.block) return { block: true, output: before.reason ?? "" };
   return { block: false, output: await finishWrite(agent, id, path) };
 }
-
 function pendingPaths(controller: TaskVerificationController): string[] {
   return (controller.currentState as TestDebtState).unverifiedTestPaths ?? [];
 }
-
 describe("task verification test-authoring cadence", () => {
   it("blocks a fourth distinct test path until the three-file batch passes", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     const first = await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -106,7 +112,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("settles a full batch from the Node spec reporter summary", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -118,7 +124,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("allows same-path repairs while the batch is full", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -127,7 +133,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("does not clear debt after failed or exit-masked test commands", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -141,7 +147,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("does not clear debt with vacuous, unrelated, or substring-matched selectors", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/unit/shared.test.ts");
     await writeTest(harness.agent, "write-c", "test/integration/shared.test.ts");
@@ -169,7 +175,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("clears only the path covered by a focused successful run", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -181,7 +187,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("does not let an older concurrent test result clear newer test mutations", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
     await writeTest(harness.agent, "write-c", "test/c.test.ts");
@@ -195,7 +201,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("counts in-flight parallel writes before their results arrive", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     expect((await beforeWrite(harness.agent, "write-a", "test/a.test.ts"))?.block).not.toBe(true);
     expect((await beforeWrite(harness.agent, "write-b", "test/b.test.ts"))?.block).not.toBe(true);
     expect((await beforeWrite(harness.agent, "write-c", "test/c.test.ts"))?.block).not.toBe(true);
@@ -230,7 +236,7 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("blocks successful completion and publishing while test paths remain unverified", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
 
     const finish = await beforeTool(harness.agent, "finish", "finish_work", { status: "success" });
@@ -243,8 +249,13 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("honors an explicit user request not to run tests", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await sendAuditUserPrompt(harness, "Create four test files but do not run tests.", 100);
+    await defineSingleDirectPromptRequirement(
+      harness,
+      "Create four test files but do not run tests",
+      "Four test files are created without running tests",
+    );
 
     for (const [index, path] of ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts", "test/d.test.ts"].entries()) {
       expect((await writeTest(harness.agent, `write-${index}`, path)).block).toBe(false);
@@ -253,8 +264,12 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("does not mistake mandatory-test wording for an opt-out", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await sendAuditUserPrompt(harness, "Do not finish without tests; never skip tests.", 100);
+    await defineDirectPromptRequirements(harness, [
+      { text: "Do not finish without tests", acceptanceCriterion: "Completion includes tests", sourcePromptIndex: 1 },
+      { text: "Never skip tests", acceptanceCriterion: "Tests run before completion", sourcePromptIndex: 1 },
+    ]);
 
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");
@@ -264,9 +279,17 @@ describe("task verification test-authoring cadence", () => {
   });
 
   it("uses the latest explicit test directive", async () => {
-    const harness = createRequirementAuditHarness();
+    const harness = await createIsolatedHarness();
     await sendAuditUserPrompt(harness, "Create test files but do not run tests.", 100);
     await sendAuditUserPrompt(harness, "Actually, run each new test before writing more.", 200);
+    await defineDirectPromptRequirements(harness, [
+      { text: "Create test files", acceptanceCriterion: "The requested test files exist", sourcePromptIndex: 1 },
+      {
+        text: "Run each new test before writing more",
+        acceptanceCriterion: "Each new test passes",
+        sourcePromptIndex: 2,
+      },
+    ]);
 
     await writeTest(harness.agent, "write-a", "test/a.test.ts");
     await writeTest(harness.agent, "write-b", "test/b.test.ts");

@@ -41,7 +41,7 @@ describe("referenced requirement-source protocol liveness", () => {
     expect(await prepare(harness, ["README.md"])).toMatch(/Prepared 1 .*immutable requirement-source snapshot/iu);
   });
 
-  it("allows mutation when every candidate is explicitly ignored", async () => {
+  it("still requires the direct-prompt definition when every referenced candidate is ignored", async () => {
     const { harness } = await setup(workspaces, "Implement the change; README.md is background only.", true);
 
     const prepared = await callRequirementAudit(harness.controller, {
@@ -51,9 +51,9 @@ describe("referenced requirement-source protocol liveness", () => {
     });
 
     expect(prepared).toContain("no requirement source was selected");
-    expect(prepared).toContain("Implementation may proceed");
+    expect(prepared).toContain("Complete the requirement definition before implementation");
     expect(harness.controller.currentState.requirementSourceRefs).toEqual([]);
-    expect(harness.controller.currentState.requirementAudit.status).toBe("pending");
+    expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
     expect(
       (
         await beforeAuditTool(harness.agent, "edit", {
@@ -61,7 +61,7 @@ describe("referenced requirement-source protocol liveness", () => {
           edits: [{ oldText: "old", newText: "new" }],
         })
       )?.block,
-    ).not.toBe(true);
+    ).toBe(true);
   });
 
   it("rejects a model-authored ignore reason for an authoritative source", async () => {
@@ -118,7 +118,7 @@ describe("referenced requirement-source protocol liveness", () => {
     expect([...harness.controller.requirementSourceTexts]).toEqual([]);
   });
 
-  it("allows an initial output-only path to remain non-authoritative", async () => {
+  it("keeps an output-only path non-authoritative while requiring the direct-prompt definition", async () => {
     const { harness } = await setup(workspaces, "Implement the change and write the summary to finish_notes.md.", true);
 
     const prepared = await callRequirementAudit(harness.controller, {
@@ -136,7 +136,7 @@ describe("referenced requirement-source protocol liveness", () => {
           edits: [{ oldText: "old", newText: "new" }],
         })
       )?.block,
-    ).not.toBe(true);
+    ).toBe(true);
   });
 
   it("preserves frozen snapshots across a later status clarification", async () => {
