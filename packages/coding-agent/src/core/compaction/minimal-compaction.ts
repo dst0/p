@@ -14,6 +14,7 @@ import {
   selectKeepRecentTokens,
   stubToolResultsForCompactionSummary,
 } from "./compaction.ts";
+import { compactCompletedToolCallArguments } from "./completed-tool-call-compaction.ts";
 import {
   createStructuredSessionState,
   getLatestStructuredSessionState,
@@ -407,11 +408,7 @@ function totalTokens(messages: AgentMessage[], systemPromptTokens: number): numb
   return systemPromptTokens + messages.reduce((total, message) => total + estimateTokens(message), 0);
 }
 
-/**
- * Enforce the final prompt target without destroying the beginning of old
- * requests. Oversized kept messages retain both setup and outcome; exact raw
- * content remains retrievable from the persisted session.
- */
+/** Enforce the final prompt target while exact raw content remains in the persisted session. */
 export function truncateKeptMessages(
   messages: AgentMessage[],
   budget:
@@ -423,6 +420,7 @@ export function truncateKeptMessages(
       },
 ): AgentMessage[] {
   if (messages.length === 0) return messages;
+  messages = compactCompletedToolCallArguments(messages);
   const keepRecentTokens = typeof budget === "number" ? budget : budget.keepRecentTokens;
   const targetContextTokens =
     typeof budget === "number" ? keepRecentTokens * 1.5 : (budget.targetContextTokens ?? keepRecentTokens * 1.5);
