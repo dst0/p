@@ -41,9 +41,13 @@ export async function do_afterToolCall(
   previousResult: AfterToolCallResult | undefined,
 ): Promise<AfterToolCallResult | undefined> {
   const nativeIsError = context.isError;
-  const effectiveIsError = previousResult?.isError ?? context.isError;
+  const effectiveIsError = nativeIsError || previousResult?.isError === true;
+  const effectivePreviousResult =
+    previousResult && previousResult.isError !== effectiveIsError
+      ? { ...previousResult, isError: effectiveIsError }
+      : previousResult;
   const nativeContent = context.result.content;
-  const content = previousResult?.content ?? nativeContent;
+  const content = effectivePreviousResult?.content ?? nativeContent;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
     self.rejectedRequirementDefinitionDraft = undefined;
@@ -58,9 +62,9 @@ export async function do_afterToolCall(
     self.requirementSourceTexts.clear();
     self.latestUserPrompt = "";
     self.persistState();
-    return previousResult;
+    return effectivePreviousResult;
   }
-  const initialMutation = await self.detectMutation(context, effectiveIsError);
+  const initialMutation = await self.detectMutation(context, nativeIsError);
   const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
   const sourceMutation = await settleSourceWorkspaceMutation(self, context);
   const detectedMutation =
@@ -86,7 +90,7 @@ export async function do_afterToolCall(
         updatedAt: new Date().toISOString(),
       };
       self.persistState();
-      return appendTestMutationGuidance(context, previousResult, mutationGuidance);
+      return appendTestMutationGuidance(context, effectivePreviousResult, mutationGuidance);
     }
     self.state = {
       ...self.state,
@@ -97,9 +101,9 @@ export async function do_afterToolCall(
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
-    return appendTestMutationGuidance(context, previousResult, mutationGuidance);
+    return appendTestMutationGuidance(context, effectivePreviousResult, mutationGuidance);
   }
-  if (!isEvidenceTool(context.toolCall.name)) return previousResult;
+  if (!isEvidenceTool(context.toolCall.name)) return effectivePreviousResult;
   const proofWitnesses = collectProofWitnesses(
     nativeContent,
     self.state.requirementAudit.requirements,
@@ -184,9 +188,9 @@ export async function do_afterToolCall(
     content: newContent,
     isError: evidence.isError,
   };
-  if (previousResult?.details !== undefined) result.details = previousResult.details;
+  if (effectivePreviousResult?.details !== undefined) result.details = effectivePreviousResult.details;
   else if (context.result.details !== undefined) result.details = context.result.details;
-  if (previousResult?.terminate !== undefined) result.terminate = previousResult.terminate;
+  if (effectivePreviousResult?.terminate !== undefined) result.terminate = effectivePreviousResult.terminate;
   return result;
 }
 function invalidateAfterFailedVerification(
