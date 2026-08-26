@@ -34,7 +34,7 @@ describe("requirement-audit validation", () => {
         requirements: [requirement()],
         ignored_source_prompts: [],
       }),
-    ).toContain("Requirement audit is not active");
+    ).toContain("Declare the task before defining requirements.");
 
     const stale = createRequirementAuditHarness();
     await reachAuditEvidenceReady(stale);

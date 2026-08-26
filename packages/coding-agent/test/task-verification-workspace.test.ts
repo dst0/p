@@ -218,60 +218,65 @@ describe("task verification workspace enforcement", () => {
   });
 
   it("requires final verification to replay the baseline scenario", async () => {
-    const agent = new Agent();
-    const controller = createTaskVerificationController(SessionManager.inMemory());
-    controller.install(agent);
-    await callVerificationTool(controller, {
-      action: "declare_task",
-      task_kind: "bug_fix",
-      task_summary: "Fix refresh recovery after daemon restart",
-    });
+    const cwd = await mkdtemp(join(tmpdir(), "p-verification-baseline-replay-"));
+    try {
+      const agent = new Agent();
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      controller.install(agent);
+      await callVerificationTool(controller, {
+        action: "declare_task",
+        task_kind: "bug_fix",
+        task_summary: "Fix refresh recovery after daemon restart",
+      });
 
-    const baselineCommand = "node test/reproduce-refresh-restart.js";
-    const baselineEvidence = evidenceHandle(
-      await runHookedTool(agent, "bash", { command: baselineCommand }, { text: "reproduced" }),
-    );
-    const baseline = await callVerificationTool(controller, {
-      action: "record_baseline",
-      baseline_method: "runtime_reproduction",
-      hypothesis: "Restart repeats an interrupted refresh from the previous manifest",
-      conclusion: "The reproduction confirms repeated work after restart",
-      evidence_refs: [baselineEvidence],
-      unresolved_assumptions: [],
-    });
-    expect(baseline.isError).toBe(false);
+      const baselineCommand = "node test/reproduce-refresh-restart.js";
+      const baselineEvidence = evidenceHandle(
+        await runHookedTool(agent, "bash", { command: baselineCommand }, { text: "reproduced" }),
+      );
+      const baseline = await callVerificationTool(controller, {
+        action: "record_baseline",
+        baseline_method: "runtime_reproduction",
+        hypothesis: "Restart repeats an interrupted refresh from the previous manifest",
+        conclusion: "The reproduction confirms repeated work after restart",
+        evidence_refs: [baselineEvidence],
+        unresolved_assumptions: [],
+      });
+      expect(baseline.isError).toBe(false);
 
-    await runHookedTool(agent, "edit", {
-      path: "src/refresh.ts",
-      edits: [{ oldText: "old", newText: "new" }],
-    });
-    const unrelatedEvidence = evidenceHandle(
-      await runHookedTool(agent, "bash", { command: "node test/other-check.js" }, { text: "passed" }),
-    );
-    const unrelatedFinal = await callVerificationTool(controller, {
-      action: "record_final",
-      final_method: "manual_reproduction",
-      final_status: "passed",
-      expected_behavior: "Restart no longer repeats completed refresh work",
-      observed_behavior: "A different check passed",
-      evidence_refs: [unrelatedEvidence],
-      unresolved_failures: [],
-    });
-    expect(unrelatedFinal.isError).toBe(false);
-    expect(unrelatedFinal.text).toContain("same command");
+      await runHookedTool(agent, "edit", {
+        path: "src/refresh.ts",
+        edits: [{ oldText: "old", newText: "new" }],
+      });
+      const unrelatedEvidence = evidenceHandle(
+        await runHookedTool(agent, "bash", { command: "node test/other-check.js" }, { text: "passed" }),
+      );
+      const unrelatedFinal = await callVerificationTool(controller, {
+        action: "record_final",
+        final_method: "manual_reproduction",
+        final_status: "passed",
+        expected_behavior: "Restart no longer repeats completed refresh work",
+        observed_behavior: "A different check passed",
+        evidence_refs: [unrelatedEvidence],
+        unresolved_failures: [],
+      });
+      expect(unrelatedFinal.isError).toBe(false);
+      expect(unrelatedFinal.text).toContain("same command");
 
-    const replayEvidence = evidenceHandle(
-      await runHookedTool(agent, "bash", { command: baselineCommand }, { text: "no repeated work" }),
-    );
-    const replayedFinal = await callVerificationTool(controller, {
-      action: "record_final",
-      final_method: "manual_reproduction",
-      final_status: "passed",
-      expected_behavior: "Restart no longer repeats completed refresh work",
-      observed_behavior: "The original reproduction now completes without repeated work",
-      evidence_refs: [replayEvidence],
-      unresolved_failures: [],
-    });
-    expect(replayedFinal.isError).toBe(false);
+      const replayEvidence = evidenceHandle(
+        await runHookedTool(agent, "bash", { command: baselineCommand }, { text: "no repeated work" }),
+      );
+      const replayedFinal = await callVerificationTool(controller, {
+        action: "record_final",
+        final_method: "manual_reproduction",
+        final_status: "passed",
+        expected_behavior: "Restart no longer repeats completed refresh work",
+        observed_behavior: "The original reproduction now completes without repeated work",
+        evidence_refs: [replayEvidence],
+        unresolved_failures: [],
+      });
+      expect(replayedFinal.isError).toBe(false);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
   });
 });

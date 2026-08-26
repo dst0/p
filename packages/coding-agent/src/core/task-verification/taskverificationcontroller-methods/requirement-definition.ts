@@ -45,6 +45,8 @@ export function do_defineRequirements(
   const requirementSetHash = computeRequirementSetHash(requirements, ignoredSourcePrompts, ignoredSourceClauses);
   self.state = {
     ...self.state,
+    requirementDefinitionPolicy:
+      self.state.requirementDefinitionPolicy === 1 || self.state.readiness?.status !== "evidence_ready" ? 1 : undefined,
     requirementAudit: {
       status: "verifying",
       requirements,

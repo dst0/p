@@ -83,8 +83,7 @@ export function do_prepareRequirementDefinition(
     requirementSourceRefs: references,
     ignoredRequirementSources: selection.ignoredSources,
     readiness: emptyReadiness(),
-    requirementAudit:
-      references.length > 0 ? { ...emptyRequirementAudit(), status: "awaiting_definition" } : emptyRequirementAudit(),
+    requirementAudit: { ...emptyRequirementAudit(), status: "awaiting_definition" },
     updatedAt: new Date().toISOString(),
   };
   if (self.restoreError?.startsWith("requirement-source snapshot")) self.restoreError = undefined;
@@ -92,7 +91,11 @@ export function do_prepareRequirementDefinition(
 
   if (references.length === 0) {
     return self.updated(
-      `Classified ${selection.ignoredSources.length} referenced path(s) as non-authoritative; no requirement source was selected. Implementation may proceed.`,
+      [
+        `Classified ${selection.ignoredSources.length} referenced path(s) as non-authoritative; no requirement source was selected.`,
+        "Complete the requirement definition before implementation.",
+        renderRequirementDefinitionPrompt(prospectiveSources).text,
+      ].join("\n"),
       false,
     );
   }
@@ -100,7 +103,8 @@ export function do_prepareRequirementDefinition(
     [
       `Prepared ${references.length} immutable requirement-source snapshot(s) (${persisted.length} new, ${reusable.length} reused).`,
       `Ignored ${selection.ignoredSources.length} classified candidate(s).`,
-      "Implementation may proceed. The complete clause-to-requirement matrix is deferred until evidence readiness passes at completion.",
+      "Complete the requirement definition before implementation.",
+      renderRequirementDefinitionPrompt(prospectiveSources).text,
     ].join("\n"),
     false,
   );

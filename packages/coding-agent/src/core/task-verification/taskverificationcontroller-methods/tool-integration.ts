@@ -25,6 +25,7 @@ import {
   shellCommand,
 } from "../tool-classification.ts";
 import type { VerificationResult } from "../types.ts";
+import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
 import { captureSourceWorkspaceSnapshot } from "./source-workspace-snapshot.ts";
@@ -42,13 +43,11 @@ const NON_REQUIREMENT_NUDGE_PATTERN =
 const COMPLETION_NUDGE_PATTERN =
   /^are\s+you\s+(?:done|finished)(?:\s+with\s+(?:the\s+)?task)?\s+or\s+is\s+there\s+(?:anything|something)\s+left\s*[?!.]*\s*if\s+you\s+are\s+finished\s*,?\s*(?:ensure|make\s+sure)(?:\s+that)?\s+all\s+requirements\s+(?:are\s+)?(?:satisfied|met)(?:\s+and\s+(?:create|write)\s+[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt))?\s*[?!.]*$/iu;
 const NUDGE_DOCUMENT_PATH_PATTERN = /[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt)\b/giu;
-
 export function do_install(self: TaskVerificationController, agent: Agent): void {
   if (self.installed) return;
   self.installed = true;
   const previousBeforeToolCall = agent.beforeToolCall;
   const previousAfterToolCall = agent.afterToolCall;
-
   agent.beforeToolCall = async (context, signal) => {
     const verificationGate = self.beforeToolCall(context);
     if (verificationGate?.block) return verificationGate;
@@ -66,12 +65,17 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     const testInvocation = isShellTool(context.toolCall.name)
       ? focusedTestInvocation(shellCommand(context.args))
       : undefined;
-    const mutationAttempt = canPotentiallyChangeWorkspace(context.toolCall.name, context.args) && !testInvocation;
+    const potentialWorkspaceMutation = canPotentiallyChangeWorkspace(context.toolCall.name, context.args);
+    const mutationAttempt = potentialWorkspaceMutation && !testInvocation;
     if (mutationAttempt) {
       self.activeMutationAttempts.add(context.toolCall.id);
       self.mutationAttemptRevision += 1;
     }
-    if (isShellTool(context.toolCall.name) && !isPublishCommand(context.toolCall.name, context.args)) {
+    const captureShellSnapshots =
+      isShellTool(context.toolCall.name) &&
+      !isPublishCommand(context.toolCall.name, context.args) &&
+      (potentialWorkspaceMutation || testInvocation !== undefined);
+    if (captureShellSnapshots) {
       captureTestVerificationStart(self, context);
       const [fingerprint, testSnapshot, sourceSnapshot] = await Promise.all([
         captureWorkspaceFingerprint(self.sessionManager.getCwd()),
@@ -93,7 +97,6 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     }
     return previousResult;
   };
-
   agent.afterToolCall = async (context, signal) => {
     let previousFailed = false;
     let previousError: unknown;
@@ -118,7 +121,6 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       releaseTestMutationReservation(self, context.toolCall.id);
     }
   };
-
   agent.subscribe((event) => {
     if (event.type === "turn_start") {
       self.testMutationReservations.clear();
@@ -134,7 +136,6 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     captureUserPrompt(self, event.message);
   });
 }
-
 function captureUserPrompt(self: TaskVerificationController, message: Extract<AgentMessage, { role: "user" }>): void {
   if (isRecord(message.metadata) && message.metadata.pInternal !== undefined) return;
   const promptText =
@@ -145,7 +146,6 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
           .map((part) => part.text)
           .join("\n");
   if (!promptText.trim()) return;
-
   self.latestUserPrompt = promptText;
   const taskPrompts = self.state.taskPrompts ?? [];
   if (isNonRequirementNudge(promptText, taskPrompts)) return;
@@ -161,6 +161,8 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
     )?.id;
   self.state = {
     ...self.state,
+    requirementDefinitionPolicy:
+      self.state.requirementDefinitionPolicy ?? (self.state.mutationRevision > 0 ? 1 : undefined),
     taskPrompts: [
       ...taskPrompts,
       {
@@ -174,7 +176,6 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
   };
   self.persistState();
 }
-
 function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text: string }[]): boolean {
   const normalized = promptText.trim();
   if (NON_REQUIREMENT_NUDGE_PATTERN.test(normalized)) return true;
@@ -186,7 +187,6 @@ function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text:
   const mentionedPaths = [...normalized.matchAll(NUDGE_DOCUMENT_PATH_PATTERN)].map((match) => match[0].toLowerCase());
   return mentionedPaths.every((path) => priorText.includes(path));
 }
-
 function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {
   return typeof message.content === "string"
     ? message.content
@@ -209,7 +209,7 @@ export function do_createToolDefinition(
     promptGuidelines: [
       `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
       `The controller automatically records mutation intent before the first mutating tool call. Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override its classification before mutation.`,
-      "Workflow steps: 1. collect the required baseline -> 2. apply file edits -> 3. rerun the exact baseline command. A successful exact replay automatically records final verification.",
+      "Workflow steps: 1. obtain one accepted complete requirement definition -> 2. collect the required baseline -> 3. apply file edits -> 4. rerun the exact baseline command. A successful exact replay automatically records final verification.",
       'When using static_trace for record_baseline, you MUST provide at least two non-error inspection evidence handles (e.g. evidence_refs: ["verification-evidence-1", "verification-evidence-2"]).',
       "Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
       'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
@@ -219,7 +219,7 @@ export function do_createToolDefinition(
       "Complete all requested file deliverables before final verification; any later write or edit advances the mutation revision and invalidates earlier evidence and readiness.",
       "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
       "After final verification passes, call action 'ready_to_finish' with acceptance_checks and fresh evidence_refs. This opens finalization operations but does not issue a finish token.",
-      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: define only user-authored requirements, then record one complete evidence-backed verdict batch covering every requirement.`,
+      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: record one complete evidence-backed verdict batch for the existing set; define only when the controller explicitly reports that no reusable definition exists.`,
       "Git commit/push require evidence readiness. Successful finish_work requires the later completion certificate and exact verification_token.",
     ],
     parameters: VerificationSchema,
@@ -286,11 +286,15 @@ export function do_beforeToolCall(
   if (sourceGate) return sourceGate;
   const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
   if (proofCommandGate) return proofCommandGate;
+  const definitionGate = requirementDefinitionMutationGate(self, toolName, context.args);
+  if (definitionGate) return definitionGate;
   if (!isPotentialMutationTool(toolName, context.args)) return undefined;
+  const authorizedBaselineTestMutation = self.isAuthorizedBaselineTestMutation(toolName, context.args);
   if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
     if (isShellTool(toolName)) return undefined;
-    if (self.isAuthorizedBaselineTestMutation(toolName, context.args)) return undefined;
-    return self.blocked("Collect baseline evidence or authorize exact regression-test paths before implementation.");
+    if (!authorizedBaselineTestMutation) {
+      return self.blocked("Collect baseline evidence or authorize exact regression-test paths before implementation.");
+    }
   }
-  return reserveTestMutation(self, context);
+  return authorizedBaselineTestMutation ? undefined : reserveTestMutation(self, context);
 }

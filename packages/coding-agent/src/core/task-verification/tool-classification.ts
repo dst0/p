@@ -215,7 +215,12 @@ export function isConfidentlyReadOnlyShellTool(toolName: string, args: unknown):
     const executable = words[0];
     if (!executable || executable.includes("/") || executable.includes("\\")) return false;
     const name = executable.toLocaleLowerCase("en-US");
-    if (name === "find" && words.some((word) => /^-(?:delete|exec|execdir|ok|okdir)$/u.test(word))) return false;
+    if (
+      name === "find" &&
+      words.some((word) => /^-(?:delete|exec|execdir|fls|fprint|fprint0|fprintf|ok|okdir)$/u.test(word))
+    ) {
+      return false;
+    }
     if (name === "rg" && words.some((word) => word === "--pre" || word.startsWith("--pre="))) return false;
     if (
       name === "file" &&

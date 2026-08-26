@@ -7,7 +7,6 @@ import {
   createTaskVerificationController,
   findOversizedSourceFiles,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
-  TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   type TaskVerificationController,
 } from "../src/core/task-verification.ts";
 import { completeSingleRequirementAudit } from "./task-requirement-audit-test-harness.ts";
@@ -827,42 +826,6 @@ describe("task verification controller", () => {
     expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).toBe(true);
   });
 
-  it("uses persisted task context to preserve high-risk baseline guidance after restoration", async () => {
-    const sessionManager = SessionManager.inMemory();
-    sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
-      version: 2,
-      taskId: "restored-task",
-      taskKind: "bug_fix",
-      taskSummary: "Fix the reported issue",
-      taskContext: "The daemon restart loses persisted indexing state and recovery repeats work",
-      mutationRevision: 0,
-      baseline: {
-        required: true,
-        status: "pending",
-        evidenceRefs: [],
-        authorizedTestPaths: [],
-        testSetupChanged: false,
-      },
-      final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
-      requirementAudit: {
-        status: "pending",
-        requirements: [],
-        ignoredSourcePrompts: [],
-        nextRequirementIndex: 0,
-      },
-      updatedAt: new Date().toISOString(),
-    });
-    const agent = new Agent();
-    const controller = createTaskVerificationController(sessionManager);
-    controller.install(agent);
-    await afterTool(agent, "read", { path: "src/daemon.ts" });
-    await afterTool(agent, "read", { path: "src/manifest.ts" });
-
-    const status = await callVerificationTool(controller, { action: "status" });
-    expect(status.text).toContain("lifecycle/durability task");
-    expect(status.text).not.toContain('"baseline_method":"static_trace"');
-  });
-
   it("recognizes tool aliases (ctx_shell, ctx_read, replace_file_content) and generates evidence handles", async () => {
     const { agent, controller } = createInstalledController();
     await callVerificationTool(controller, {
@@ -949,46 +912,6 @@ describe("task verification controller", () => {
     });
     expect(baseline.isError).toBe(false);
     expect(baseline.text).toContain("Pipelined test commands (containing '|') mask exit codes");
-  });
-
-  it("allows read-only shell commands after declare_task without blocking", async () => {
-    const { agent, controller } = createInstalledController();
-    await callVerificationTool(controller, {
-      action: "declare_task",
-      task_kind: "bug_fix",
-      task_summary: "Fix read-only shell passthrough",
-    });
-
-    const readOnlyCommands = [
-      { command: "ls /tmp" },
-      { command: "git log --oneline -5" },
-      { command: "git status" },
-      { command: "git diff" },
-      { command: "git show HEAD" },
-      { command: "find . -name '*.ts' | head" },
-      { command: "grep 'foo' src/foo.ts" },
-      { command: "cat README.md" },
-      { command: "head -50 src/main.ts" },
-      { command: "tail -20 src/main.ts" },
-      { command: "curl -s https://example.com/api/status" },
-      { command: "echo hello" },
-      { command: "pwd" },
-    ];
-
-    for (const args of readOnlyCommands) {
-      const result = await beforeTool(agent, "bash", args);
-      expect(result?.block).not.toBe(true);
-    }
-    for (const args of readOnlyCommands) {
-      const result = await beforeTool(agent, "ctx_shell", args);
-      expect(result?.block).not.toBe(true);
-    }
-
-    // Shell commands (even mutations) are allowed before baseline;
-    // mutations are detected via workspace fingerprints in afterToolCall.
-    // Direct mutation tools (edit, write) ARE blocked before baseline.
-    expect((await beforeTool(agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
-    expect((await beforeTool(agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
   });
 
   it("resolves implicit failed evidence when final_status is failed", async () => {

@@ -40,7 +40,6 @@ function isString(value: unknown): value is string {
 function isNonemptyString(value: unknown): value is string {
   return isString(value) && value.length > 0;
 }
-
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every(isString);
 }
@@ -270,6 +269,7 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     (value.unverifiedTestPathOverflow === undefined || typeof value.unverifiedTestPathOverflow === "boolean") &&
     isMutatedSourcePaths(value.mutatedSourcePaths) &&
     (value.mutatedSourcePathOverflow === undefined || typeof value.mutatedSourcePathOverflow === "boolean") &&
+    (value.requirementDefinitionPolicy === undefined || value.requirementDefinitionPolicy === 1) &&
     sourceIdentitiesAreUnique(value.requirementSourceRefs ?? [], value.ignoredRequirementSources ?? []) &&
     isNonnegativeInteger(value.mutationRevision) &&
     isBaseline(value.baseline) &&

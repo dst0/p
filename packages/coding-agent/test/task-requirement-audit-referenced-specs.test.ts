@@ -48,7 +48,7 @@ describe("referenced requirement documents", () => {
     await rm(workspace, { recursive: true, force: true });
   });
 
-  it("prepares an immutable referenced spec and permits mutation before its complete definition", async () => {
+  it("prepares an immutable referenced spec and requires its complete definition before mutation", async () => {
     const beforeRead = await beforeAuditTool(harness.agent, "edit", {
       path: "src/store.ts",
       edits: [{ oldText: "old", newText: "new" }],
@@ -63,17 +63,17 @@ describe("referenced requirement documents", () => {
       ignored_paths: [],
     });
     expect(prepared).toContain("Prepared 1 immutable requirement-source snapshot");
-    expect(prepared).toContain("Implementation may proceed");
-    expect(prepared).not.toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
+    expect(prepared).toContain("Complete the requirement definition before implementation");
+    expect(prepared).toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
     expect(JSON.stringify(harness.controller.currentState)).not.toContain("Any log truncation");
 
     const afterRead = await beforeAuditTool(harness.agent, "edit", {
       path: "src/store.ts",
       edits: [{ oldText: "old", newText: "new" }],
     });
-    expect(afterRead?.block).not.toBe(true);
+    expect(afterRead?.block).toBe(true);
+    expect(afterRead?.reason).toContain("accepted complete requirement definition");
 
-    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const definition = await callRequirementAudit(harness.controller, {
       action: "define",

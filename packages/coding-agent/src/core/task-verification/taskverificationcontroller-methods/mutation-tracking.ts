@@ -259,6 +259,7 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
     taskPrompts: currentPrompts,
     requirementSourceRefs: self.state.requirementSourceRefs ?? [],
     ignoredRequirementSources: self.state.ignoredRequirementSources ?? [],
+    requirementDefinitionPolicy: self.state.requirementDefinitionPolicy,
     baseline: {
       required,
       status: required ? "pending" : "not_required",

@@ -1,5 +1,10 @@
-import { preparedRequirementSourceMatches } from "../referenced-requirement-sources.ts";
-import { computeStateUserRequirementsHash } from "../requirement-audit-hashing.ts";
+import {
+  preparedRequirementSourceMatches,
+  referencedRequirementCandidates,
+  requirementSourceSelectionMatches,
+} from "../referenced-requirement-sources.ts";
+import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 
@@ -16,6 +21,10 @@ export function auditContextError(self: TaskVerificationController): string | un
 }
 
 export function definitionContextError(self: TaskVerificationController): string | undefined {
+  if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
+  if (requirementDefinitionPolicyActive(self.state)) {
+    return preMutationDefinitionContextError(self);
+  }
   const references = self.state.requirementSourceRefs ?? [];
   if (references.length === 0) return auditContextError(self);
   if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
@@ -29,4 +38,19 @@ export function definitionContextError(self: TaskVerificationController): string
     return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";
   }
   return auditContextError(self);
+}
+
+function preMutationDefinitionContextError(self: TaskVerificationController): string | undefined {
+  if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
+  const prompts = sourcePromptsForState(self.state);
+  const candidates = referencedRequirementCandidates(prompts);
+  const references = self.state.requirementSourceRefs ?? [];
+  const ignored = self.state.ignoredRequirementSources ?? [];
+  if (candidates.length > 0 && !requirementSourceSelectionMatches(prompts, references, ignored)) {
+    return "Freeze and classify referenced requirement sources before defining requirements.";
+  }
+  if (references.some((reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference))) {
+    return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";
+  }
+  return undefined;
 }

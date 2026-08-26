@@ -50,6 +50,38 @@ export async function sendAuditUserPrompt(
   await harness.emit({ type: "message_end", message });
 }
 
+export async function defineSingleDirectPromptRequirement(
+  harness: RequirementAuditHarness,
+  text: string,
+  acceptanceCriterion: string,
+): Promise<void> {
+  return defineDirectPromptRequirements(harness, [{ text, acceptanceCriterion, sourcePromptIndex: 1 }]);
+}
+
+export async function defineDirectPromptRequirements(
+  harness: RequirementAuditHarness,
+  requirements: readonly { text: string; acceptanceCriterion: string; sourcePromptIndex: number }[],
+): Promise<void> {
+  if (!harness.controller.currentState.taskKind) {
+    await callTaskVerification(harness.controller, {
+      action: "declare_task",
+      task_kind: "docs",
+      task_summary: requirements[0]?.text ?? "Verify the requested behavior",
+    });
+  }
+  const result = await callRequirementAudit(harness.controller, {
+    action: "define",
+    requirements: requirements.map((requirement) => ({
+      type: "behavior",
+      text: requirement.text,
+      acceptance_criterion: requirement.acceptanceCriterion,
+      source_prompt_indexes: [requirement.sourcePromptIndex],
+    })),
+    ignored_source_prompts: [],
+  });
+  if (!result.includes(`Defined ${requirements.length} atomic requirement`)) throw new Error(result);
+}
+
 function resultText(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content
     .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
