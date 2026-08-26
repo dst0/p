@@ -25,6 +25,7 @@ import {
   shellCommand,
 } from "../tool-classification.ts";
 import type { VerificationResult } from "../types.ts";
+import { snapshotNativeToolCallContext } from "./native-tool-result-context.ts";
 import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
@@ -99,6 +100,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     return previousResult;
   };
   agent.afterToolCall = async (context, signal) => {
+    const nativeContext = snapshotNativeToolCallContext(context);
     let previousFailed = false;
     let previousError: unknown;
     let previousResult: AfterToolCallResult | undefined;
@@ -109,7 +111,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       previousError = error;
     }
     try {
-      const result = await self.afterToolCall(context, previousResult);
+      const result = await self.afterToolCall(nativeContext, previousResult);
       if (previousFailed) throw previousError;
       return result;
     } catch (controllerError) {
@@ -119,7 +121,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       }
       throw controllerError;
     } finally {
-      releaseTestMutationReservation(self, context.toolCall.id);
+      releaseTestMutationReservation(self, nativeContext.toolCall.id);
     }
   };
   agent.subscribe((event) => {
@@ -235,11 +237,7 @@ export function do_createToolDefinition(
     },
   };
 }
-
-export function do_beforeToolCall(
-  self: TaskVerificationController,
-  context: BeforeToolCallContext,
-): BeforeToolCallResult | undefined {
+export function do_beforeToolCall(self: TaskVerificationController, context: BeforeToolCallContext) {
   const toolName = context.toolCall.name;
   if (isPublishCommand(toolName, context.args)) {
     if (!isSafePublishCommandSequence(shellCommand(context.args))) {

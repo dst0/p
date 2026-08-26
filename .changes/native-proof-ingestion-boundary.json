@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Record proof witnesses against a native tool-result snapshot before model-facing hooks can redact, mutate, or inject evidence."
+}
