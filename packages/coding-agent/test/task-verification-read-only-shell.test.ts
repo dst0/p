@@ -1,4 +1,5 @@
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { execFileSync } from "node:child_process";
+import { appendFile, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -8,6 +9,17 @@ import {
   callTaskVerification,
   createRequirementAuditHarness,
 } from "./task-requirement-audit-test-harness.ts";
+
+async function initializeGitWorkspace(prefix: string): Promise<string> {
+  const cwd = await mkdtemp(join(tmpdir(), prefix));
+  await writeFile(join(cwd, "README.md"), "fixture\n");
+  execFileSync("git", ["init", "-q"], { cwd });
+  execFileSync("git", ["config", "user.name", "P Test"], { cwd });
+  execFileSync("git", ["config", "user.email", "p-test@example.invalid"], { cwd });
+  execFileSync("git", ["add", "README.md"], { cwd });
+  execFileSync("git", ["commit", "-qm", "fixture"], { cwd });
+  return cwd;
+}
 
 describe("read-only shell verification integration", () => {
   it("skips workspace snapshots for confidently read-only commands", async () => {
@@ -74,6 +86,93 @@ describe("read-only shell verification integration", () => {
         toolCall,
         args,
         result: { content: [{ type: "text", text: "ok" }], details: undefined },
+        isError: false,
+        context: {} as never,
+      });
+
+      expect(harness.controller.currentState.mutationRevision).toBe(1);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not treat the runtime-owned session log as a workspace mutation", async () => {
+    const cwd = await initializeGitWorkspace("p-session-log-fingerprint-");
+    try {
+      const sessionDir = join(cwd, "sessions");
+      await mkdir(sessionDir);
+      const sessionFile = join(sessionDir, "runtime[1].jsonl");
+      await writeFile(sessionFile, "");
+      await mkdir(join(cwd, ".pdev"));
+      const runtimeStateFile = join(cwd, ".pdev", "state.json");
+      await writeFile(runtimeStateFile, "before\n");
+      const sessionManager = SessionManager.create(cwd, sessionDir);
+      sessionManager.setSessionFile(sessionFile);
+      sessionManager.appendCustomEntry("runtime-progress", { phase: "before" });
+      const harness = createRequirementAuditHarness(sessionManager);
+      const args = { command: "python3 -c 'print(\"ALL CHECKS PASSED\")'" };
+      const toolCall = {
+        type: "toolCall" as const,
+        id: "read-only-runtime-assertion",
+        name: "bash",
+        arguments: args,
+      };
+
+      await harness.agent.beforeToolCall?.({
+        assistantMessage: {} as never,
+        toolCall,
+        args,
+        context: {} as never,
+      });
+      await appendFile(sessionFile, '{"type":"runtime-progress","phase":"during"}\n');
+      await writeFile(runtimeStateFile, "during\n");
+      await harness.agent.afterToolCall?.({
+        assistantMessage: {} as never,
+        toolCall,
+        args,
+        result: { content: [{ type: "text", text: "ALL CHECKS PASSED" }], details: undefined },
+        isError: false,
+        context: {} as never,
+      });
+
+      expect(harness.controller.currentState.mutationRevision).toBe(0);
+      expect([...harness.controller.evidence.values()]).toHaveLength(1);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("does not let session-path metacharacters mask a user workspace mutation", async () => {
+    const cwd = await initializeGitWorkspace("p-session-literal-fingerprint-");
+    try {
+      const sessionDir = join(cwd, "sessions");
+      await mkdir(sessionDir);
+      const sessionFile = join(sessionDir, "runtime*.jsonl");
+      await writeFile(sessionFile, "runtime\n");
+      const sessionManager = SessionManager.create(cwd, sessionDir);
+      sessionManager.setSessionFile(sessionFile);
+      const harness = createRequirementAuditHarness(sessionManager);
+      const args = { command: "python3 -c 'print(\"ALL CHECKS PASSED\")'" };
+      const toolCall = {
+        type: "toolCall" as const,
+        id: "literal-session-path-assertion",
+        name: "bash",
+        arguments: args,
+      };
+
+      await harness.agent.beforeToolCall?.({
+        assistantMessage: {} as never,
+        toolCall,
+        args,
+        context: {} as never,
+      });
+      await appendFile(sessionFile, "runtime-progress\n");
+      await writeFile(join(sessionDir, "runtime-user.jsonl"), "user artifact\n");
+      await harness.agent.afterToolCall?.({
+        assistantMessage: {} as never,
+        toolCall,
+        args,
+        result: { content: [{ type: "text", text: "ALL CHECKS PASSED" }], details: undefined },
         isError: false,
         context: {} as never,
       });

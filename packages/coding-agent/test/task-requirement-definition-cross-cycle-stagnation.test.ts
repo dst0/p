@@ -109,13 +109,16 @@ describe("requirement definition cross-cycle stagnation", () => {
     await callRequirementAudit(harness.controller, invalidDefinition());
     for (let repairAttempt = 0; repairAttempt < 3; repairAttempt++) {
       await nextModelTurn(harness);
-      await callRequirementAudit(harness.controller, invalidRepair(currentRevision(harness)));
+      await callRequirementAudit(
+        harness.controller,
+        invalidRepair(currentRevision(harness), `attempt-${repairAttempt}`),
+      );
     }
     await nextModelTurn(harness);
     expect(await callRequirementAudit(harness.controller, invalidDefinition())).toContain("definition_revision");
     expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBeUndefined();
     await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, invalidRepair(currentRevision(harness)))).toBe(
+    expect(await callRequirementAudit(harness.controller, invalidRepair(currentRevision(harness), "accepted"))).toBe(
       "Accepted improved repair.",
     );
     expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
@@ -150,14 +153,16 @@ function invalidDefinition(): RequirementAuditInput {
   };
 }
 
-function invalidRepair(definitionRevision: string): RequirementAuditInput {
+function invalidRepair(definitionRevision: string, change?: string): RequirementAuditInput {
+  const replacement = invalidDefinition().requirements![0]!;
+  if (change) replacement.text = `${replacement.text} ${change}`;
   return {
     action: "repair_definition",
     definition_revision: definitionRevision,
     requirement_repairs: [
       {
         requirement_index: 1,
-        replacements: invalidDefinition().requirements!,
+        replacements: [replacement],
       },
     ],
   };

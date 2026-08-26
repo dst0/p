@@ -12,8 +12,12 @@ describe("CLI help for project instruction readers", () => {
 
     printHelp();
 
-    expect(output.join("\n")).toContain("list_skills");
-    expect(output.join("\n")).toContain("read_rules");
-    expect(output.join("\n")).toContain("read_skills");
+    const help = output.join("\n");
+    expect(help).toContain("AI task assistant");
+    expect(help).not.toContain("AI coding assistant");
+    expect(help).not.toContain("coding assistant prompt");
+    expect(help).toContain("list_skills");
+    expect(help).toContain("read_rules");
+    expect(help).toContain("read_skills");
   });
 });

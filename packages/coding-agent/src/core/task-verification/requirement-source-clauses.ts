@@ -8,6 +8,7 @@ export interface RequirementSourceClause {
   kind: RequirementSourceClauseKind;
   text: string;
   normativeHint?: boolean;
+  introducedByClauseId?: string;
 }
 
 export interface RequirementSourceClauseLocation {
@@ -21,6 +22,7 @@ export interface RequirementSourceClauseCatalogEntry extends RequirementSourceCl
 interface ExtractedClause extends Pick<RequirementSourceClause, "kind" | "text" | "normativeHint"> {
   line: number;
   part: number;
+  introducedByClauseOffset?: number;
 }
 
 interface LocatedRequirementSourceClause extends RequirementSourceClause, RequirementSourceClauseLocation {}
@@ -44,6 +46,7 @@ export function requirementSourceClauses(sources: readonly TaskVerificationSourc
     kind: clause.kind,
     text: clause.text,
     ...(clause.normativeHint === true ? { normativeHint: true } : {}),
+    ...(clause.introducedByClauseId ? { introducedByClauseId: clause.introducedByClauseId } : {}),
   }));
 }
 
@@ -75,6 +78,9 @@ function locatedRequirementSourceClauses(
       kind: clause.kind,
       text: clause.text,
       ...(clause.normativeHint === true ? { normativeHint: true } : {}),
+      ...(clause.introducedByClauseOffset !== undefined
+        ? { introducedByClauseId: `S${sourceOffset + 1}-C${clause.introducedByClauseOffset + 1}` }
+        : {}),
       line: clause.line,
       part: clause.part,
     }));
@@ -93,29 +99,37 @@ export function isUnsafeDelegatedInstruction(value: string): boolean {
 function extractClauses(source: string): ExtractedClause[] {
   const clauses: ExtractedClause[] = [];
   let inFence = false;
+  let listIntroductions: Array<{ clauseOffset: number; childIndent: number }> = [];
   for (const [lineOffset, rawLine] of source.split(/\r?\n/u).entries()) {
     const line = lineOffset + 1;
     const trimmed = rawLine.trim();
     if (/^```/u.test(trimmed)) {
       inFence = !inFence;
+      listIntroductions = [];
       continue;
     }
     if (!trimmed) continue;
     if (inFence) {
+      listIntroductions = [];
       clauses.push({ kind: "code", text: trimmed, line, part: 1 });
       continue;
     }
     const heading = trimmed.match(/^#{1,6}\s+(.+)$/u);
     if (heading) {
+      listIntroductions = [];
       clauses.push({ kind: "heading", text: heading[1]!.trim(), line, part: 1 });
       continue;
     }
     const sectionLabel = standaloneSectionLabel(trimmed);
     if (sectionLabel) {
       clauses.push({ kind: "heading", text: sectionLabel, line, part: 1 });
+      listIntroductions = [{ clauseOffset: clauses.length - 1, childIndent: 0 }];
       continue;
     }
     const listItem = /^(?:[-*+]\s+|\d+[.)]\s+)/u.test(trimmed);
+    const indent = rawLine.match(/^[ \t]*/u)?.[0].length ?? 0;
+    if (listItem) listIntroductions = listIntroductions.filter((introduction) => introduction.childIndent <= indent);
+    const listIntroductionOffset = listItem ? listIntroductions.at(-1)?.clauseOffset : undefined;
     const withoutMarker = trimmed.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/u, "");
     let part = 0;
     for (const partText of withoutMarker.split(/;|(?<=[.!?])\s+/u)) {
@@ -126,10 +140,18 @@ function extractClauses(source: string): ExtractedClause[] {
           kind: "prose",
           text: normalized,
           ...(listItem ? { normativeHint: true } : {}),
+          ...(listItem && listIntroductionOffset !== undefined
+            ? { introducedByClauseOffset: listIntroductionOffset }
+            : {}),
           line,
           part,
         });
       }
+    }
+    if (listItem && trimmed.endsWith(":")) {
+      listIntroductions.push({ clauseOffset: clauses.length - 1, childIndent: indent + 1 });
+    } else if (!listItem) {
+      listIntroductions = trimmed.endsWith(":") ? [{ clauseOffset: clauses.length - 1, childIndent: indent }] : [];
     }
   }
   return clauses;

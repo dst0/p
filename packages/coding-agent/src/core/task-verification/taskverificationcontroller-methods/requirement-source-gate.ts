@@ -26,13 +26,7 @@ export function requirementSourceMutationGate(
   const references = self.state.requirementSourceRefs ?? [];
   const ignored = self.state.ignoredRequirementSources ?? [];
   if (!requirementSourceSelectionMatches(prompts, references, ignored)) {
-    return self.blocked(
-      [
-        "Freeze explicitly referenced task specifications before the first matching mutating action.",
-        `Candidates: ${candidates.map((candidate) => candidate.path).join(", ")}.`,
-        'Call record_requirement_audit once with action "prepare_definition", 0-3 relevant selected_paths, and every remaining candidate in ignored_paths with a concrete reason.',
-      ].join("\n"),
-    );
+    return self.blocked("Requirement-source preparation is incomplete.");
   }
 
   if (references.length === 0) return undefined;

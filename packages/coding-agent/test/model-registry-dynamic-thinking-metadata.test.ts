@@ -27,16 +27,13 @@ describe("ModelRegistry dynamic thinking metadata", () => {
     if (existsSync(tempDir)) rmSync(tempDir, { recursive: true, force: true });
   });
 
-  it("keeps replacement semantics by default", () => {
+  it("preserves configured compiler-control metadata when dynamic discovery omits it", () => {
     const registry = ModelRegistry.create(authStorage, modelsJsonPath);
 
     registry.registerProvider(PROVIDER, sparseRegistration());
 
-    const model = requireCompilerModel(registry);
     expect(providerModelIds(registry)).toEqual([COMPILER_MODEL]);
-    expect(model.reasoning).toBe(false);
-    expect(model.thinkingLevelMap).toBeUndefined();
-    expect(model.compat).toBeUndefined();
+    assertConfiguredCompilerMetadata(registry);
   });
 
   it("treats an explicit empty discovered list as authoritative membership", () => {

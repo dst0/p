@@ -18,6 +18,11 @@ import {
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
 } from "../requirement-definition-repair.ts";
+import {
+  rejectedRepairExceedsLineageGrowth,
+  rejectedRepairHasSemanticEffect,
+} from "../requirement-definition-repair-candidate.ts";
+import { formatRejectedDefinitionRepairFeedback } from "../requirement-definition-repair-feedback.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import type { VerificationResult } from "../types.ts";
 
@@ -39,7 +44,8 @@ export function do_createRequirementAuditToolDefinition(
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements before a fresh define batch is required. Every adopted rejected repair returns a new revision and the complete current indexed batch in that same tool response.`,
+      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and normal cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements. An overflow candidate is adopted only when atomic validation strictly improves the historical diagnostic minimum.`,
+      "Each adopted repair returns a new revision, compact current diagnostics, and the active requirement count. Use task-verification status only when compaction requires exact complete-batch recovery; unchanged requirements remain controller-side.",
       COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
       "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
@@ -57,7 +63,7 @@ export function do_createRequirementAuditToolDefinition(
         }
         const result = self.rejected(foreignFieldError);
         const message = activeDraft
-          ? formatRejectedDefinitionRepairGuidance(result.message, activeDraft)
+          ? formatRejectedDefinitionRepairFeedback(result.message, activeDraft)
           : result.message;
         return { content: [{ type: "text", text: message }], details: result };
       }
@@ -69,11 +75,31 @@ export function do_createRequirementAuditToolDefinition(
       const previousRejectedDraft = self.rejectedRequirementDefinitionDraft;
       const repaired =
         params.action === "repair_definition"
-          ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params)
+          ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params, {
+              allowLineageOverflowValidation: true,
+            })
           : params;
       if (params.action === "repair_definition" && typeof repaired === "string" && previousRejectedDraft) {
         recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
       }
+      if (
+        params.action === "repair_definition" &&
+        previousRejectedDraft &&
+        typeof repaired !== "string" &&
+        !rejectedRepairHasSemanticEffect(previousRejectedDraft, repaired)
+      ) {
+        recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
+        const result = self.rejected(
+          "Repair was not validated or adopted because it makes no semantic change to the active rejected definition. The previous draft and definition_revision were retained.",
+        );
+        const message = formatRejectedDefinitionRepairFeedback(result.message, previousRejectedDraft);
+        return { content: [{ type: "text", text: message }], details: result };
+      }
+      const lineageOverflow =
+        params.action === "repair_definition" &&
+        previousRejectedDraft &&
+        typeof repaired !== "string" &&
+        rejectedRepairExceedsLineageGrowth(previousRejectedDraft, repaired);
       const result = typeof repaired === "string" ? self.rejected(repaired) : self.applyRequirementAudit(repaired);
       const candidateDiagnosticCount = result.requirementDefinitionDiagnosticCount;
       if (
@@ -82,26 +108,28 @@ export function do_createRequirementAuditToolDefinition(
         typeof repaired !== "string" &&
         result.status === "needs_action" &&
         result.state.requirementAudit?.status === "awaiting_definition" &&
-        !rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount)
+        !(
+          rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount) &&
+          (!lineageOverflow || candidateDiagnosticCount! < previousRejectedDraft.bestDiagnosticCount)
+        )
       ) {
         recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
-        if (candidateDiagnosticCount !== undefined) {
+        if (
+          candidateDiagnosticCount !== undefined &&
+          candidateDiagnosticCount > previousRejectedDraft.bestDiagnosticCount
+        ) {
           authorizeRejectedDraftFreshDefinition(previousRejectedDraft, "regressive_repair");
         }
         const activeDiagnosticCount = definitionDiagnosticCount(previousRejectedDraft.diagnostics);
         const retainedMessage =
           candidateDiagnosticCount === undefined
-            ? [
-                "Repair was not adopted because the controller rejection did not include structured requirement-definition diagnostics. The previous draft and definition_revision were retained.",
-                "Active-draft diagnostics:",
-                previousRejectedDraft.diagnostics,
-              ].join("\n\n")
+            ? "Repair was not adopted because the controller rejection did not include structured requirement-definition diagnostics. The previous draft and definition_revision were retained."
             : [
                 `Repair was not adopted because it produced ${candidateDiagnosticCount} deterministic diagnostic(s); the active draft has ${activeDiagnosticCount} and the historical best is ${previousRejectedDraft.bestDiagnosticCount}. The previous draft and definition_revision were retained.`,
-                "Active-draft diagnostics:",
-                previousRejectedDraft.diagnostics,
+                "Candidate diagnostics:",
+                result.message,
               ].join("\n\n");
-        const message = formatRejectedDefinitionRepairGuidance(retainedMessage, previousRejectedDraft);
+        const message = formatRejectedDefinitionRepairFeedback(retainedMessage, previousRejectedDraft);
         return { content: [{ type: "text", text: message }], details: result };
       }
       if (
@@ -126,7 +154,9 @@ export function do_createRequirementAuditToolDefinition(
         result.status !== "needs_action"
           ? result.message
           : params.action === "define" || params.action === "repair_definition"
-            ? formatRejectedDefinitionRepairGuidance(result.message, self.rejectedRequirementDefinitionDraft)
+            ? params.action === "repair_definition" && self.rejectedRequirementDefinitionDraft
+              ? formatRejectedDefinitionRepairFeedback(result.message, self.rejectedRequirementDefinitionDraft)
+              : formatRejectedDefinitionRepairGuidance(result.message, self.rejectedRequirementDefinitionDraft)
             : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },

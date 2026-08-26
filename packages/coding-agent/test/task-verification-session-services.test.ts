@@ -54,6 +54,9 @@ describe("task verification session wiring", () => {
       expect(session.getActiveToolNames()).toContain(REQUIREMENT_AUDIT_TOOL_NAME);
       expect(session.systemPrompt).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.systemPrompt).toContain(REQUIREMENT_AUDIT_TOOL_NAME);
+      expect(session._projectRuleSafeToolDefinitions.has(session.getToolDefinition(REQUIREMENT_AUDIT_TOOL_NAME)!)).toBe(
+        true,
+      );
     } finally {
       session.dispose();
     }
