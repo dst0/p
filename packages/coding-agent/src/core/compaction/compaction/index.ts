@@ -9,6 +9,15 @@ export {
   isUsageReliable,
   resolveCompactionSettings,
 } from "./message-selection.ts";
+export type { ModelCallContextBudgetReport, ModelContextCapacity } from "./model-call-budget.ts";
+export {
+  createModelCallContextBudgetReport,
+  estimatePreparedModelCallTokens,
+  estimatePreparedModelCallTokenUpperBound,
+  getModelCallMaxTokens,
+  guardProviderPayloadBudget,
+  MODEL_CALL_CONTEXT_SAFETY_TOKENS,
+} from "./model-call-budget.ts";
 export {
   createContextBudgetReport,
   estimateContextTokens,
