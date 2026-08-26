@@ -110,6 +110,11 @@ function extractClauses(source: string): ExtractedClause[] {
       clauses.push({ kind: "heading", text: heading[1]!.trim(), line, part: 1 });
       continue;
     }
+    const sectionLabel = standaloneSectionLabel(trimmed);
+    if (sectionLabel) {
+      clauses.push({ kind: "heading", text: sectionLabel, line, part: 1 });
+      continue;
+    }
     const listItem = /^(?:[-*+]\s+|\d+[.)]\s+)/u.test(trimmed);
     const withoutMarker = trimmed.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/u, "");
     let part = 0;
@@ -128,4 +133,8 @@ function extractClauses(source: string): ExtractedClause[] {
     }
   }
   return clauses;
+}
+
+function standaloneSectionLabel(value: string): string | undefined {
+  return value === "Requirements:" ? "Requirements" : undefined;
 }

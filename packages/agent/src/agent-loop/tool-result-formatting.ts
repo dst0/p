@@ -58,7 +58,7 @@ export function detectCompletionProtocolRepair(
   if (hasMalformedOrTruncatedToolCall(message, toolCalls)) {
     return {
       reason: "malformed_or_truncated_tool_call",
-      message: MALFORMED_TOOL_CALL_REPAIR_MESSAGE,
+      message: malformedToolCallRepairMessage(toolCalls),
       event: "malformed_tool_call_retry",
     };
   }
@@ -81,6 +81,32 @@ export function detectCompletionProtocolRepair(
   }
 
   return undefined;
+}
+
+function malformedToolCallRepairMessage(toolCalls: AgentToolCall[]): string {
+  const pendingCall = toolCalls.length === 1 ? toolCalls[0] : undefined;
+  const toolName = pendingCall ? boundedRepairLabel(pendingCall.name, 80) : undefined;
+  const argumentsRecord = pendingCall && isRecord(pendingCall.arguments) ? pendingCall.arguments : undefined;
+  const path = boundedRepairLabel(
+    getStringValue(argumentsRecord?.path) ?? getStringValue(argumentsRecord?.file_path) ?? "",
+    200,
+  );
+  const pendingStep = toolName
+    ? `The pending ${JSON.stringify(toolName)} call${path ? ` for path ${JSON.stringify(path)}` : ""} was not executed.`
+    : "The incomplete response was not executed as a tool call.";
+  return [
+    MALFORMED_TOOL_CALL_REPAIR_MESSAGE,
+    pendingStep,
+    "Reapply already-known task and project constraints and retry only this pending step; do not restart planning or project discovery, and do not reread unchanged inputs.",
+    "If the arguments were large, use smaller bounded tool calls.",
+  ].join("\n");
+}
+
+function boundedRepairLabel(value: string, maxLength: number): string {
+  return value
+    .replace(/[\u0000-\u001f\u007f]+/gu, " ")
+    .trim()
+    .slice(0, maxLength);
 }
 
 export function createErrorToolResult(message: string): AgentToolResult<any> {

@@ -10,6 +10,7 @@ export function requirementProofCommandGate(
   toolName: string,
   args: unknown,
 ): BeforeToolCallResult | undefined {
+  if (self.state.mutationRevision === 0) return undefined;
   if (!isShellTool(toolName)) return undefined;
   const command = shellCommand(args);
   if (!commandContainsTestInvocation(command)) return undefined;

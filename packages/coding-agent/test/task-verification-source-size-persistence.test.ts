@@ -6,7 +6,11 @@ import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { mutationSourceSizeGuidance } from "../src/core/task-verification/taskverificationcontroller-methods/source-size-guidance.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
-import { createRequirementAuditHarness, sendAuditUserPrompt } from "./task-requirement-audit-test-harness.ts";
+import {
+  createRequirementAuditHarness,
+  defineSingleDirectPromptRequirement,
+  sendAuditUserPrompt,
+} from "./task-requirement-audit-test-harness.ts";
 
 async function callVerificationTool(
   controller: TaskVerificationController,
@@ -31,7 +35,6 @@ async function callVerificationTool(
     return { isError: true, text: error instanceof Error ? error.message : String(error) };
   }
 }
-
 function createToolCall(name: string, args: Record<string, unknown>) {
   return {
     type: "toolCall" as const,
@@ -40,9 +43,7 @@ function createToolCall(name: string, args: Record<string, unknown>) {
     arguments: args,
   };
 }
-
 type TestToolCall = ReturnType<typeof createToolCall>;
-
 async function runHookedTool(
   agent: Agent,
   name: string,
@@ -76,13 +77,11 @@ async function runHookedTool(
     .map((part) => part.text)
     .join("\n");
 }
-
 function evidenceHandle(text: string | undefined): string {
   const match = text?.match(/Verification evidence handle: (verification-evidence-\d+)/u);
   if (!match) throw new Error(`Missing evidence handle in: ${text ?? "<empty>"}`);
   return match[1];
 }
-
 async function declareTask(
   controller: TaskVerificationController,
   taskSummary = "Generate source and verify its behavior",
@@ -93,7 +92,6 @@ async function declareTask(
     task_summary: taskSummary,
   });
 }
-
 async function recordFinal(agent: Agent, controller: TaskVerificationController): Promise<string> {
   const evidence = evidenceHandle(
     await runHookedTool(agent, "bash", { command: "node verify.js" }, { text: "generated source verified" }),
@@ -203,6 +201,11 @@ describe("task verification source-size persistence", () => {
       const { agent, controller } = harness;
       await sendAuditUserPrompt(harness, "Split this large file into smaller modules.", 1);
       await declareTask(controller, "Allow large files without a line limit.");
+      await defineSingleDirectPromptRequirement(
+        harness,
+        "Split this large file into smaller modules",
+        "Generated source is split into modules within the file-size limit",
+      );
 
       const mutationResult = await runHookedTool(
         agent,
@@ -262,6 +265,11 @@ describe("task verification source-size persistence", () => {
       const overridePrompt = "Explicitly ignore the file-size limit and allow this task to exceed it.";
       await sendAuditUserPrompt(harness, overridePrompt, 1);
       await declareTask(controller);
+      await defineSingleDirectPromptRequirement(
+        harness,
+        "Explicitly ignore the file-size limit and allow this task to exceed it",
+        "Generated source may exceed the normal file-size limit",
+      );
 
       const mutationResult = await runHookedTool(
         agent,

@@ -617,7 +617,7 @@
   },
 	"packages/coding-agent/test/task-verification.test.ts": {
 		"classes": 0,
-      "lines": 1077
+      "lines": 1000
 	},
   "packages/coding-agent/test/test-harness.test.ts": {
     "classes": 0,

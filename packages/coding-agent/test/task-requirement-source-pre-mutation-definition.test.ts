@@ -5,7 +5,6 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
-  activateRequirementDefinitionAfterEvidenceForTest,
   beforeAuditTool,
   callRequirementAudit,
   callTaskVerification,
@@ -15,14 +14,14 @@ import {
   sendAuditUserPrompt,
 } from "./task-requirement-audit-test-harness.ts";
 
-describe("deferred referenced-source requirement definition", () => {
+describe("referenced-source pre-mutation requirement definition", () => {
   let workspace: string | undefined;
 
   afterEach(async () => {
     if (workspace) await rm(workspace, { recursive: true, force: true });
   });
 
-  it("allows implementation after freezing a selected source and defers definition until completion", async () => {
+  it("requires an accepted complete definition after freezing and before implementation", async () => {
     workspace = await mkdtemp(join(tmpdir(), "p-deferred-requirement-definition-"));
     await writeFile(join(workspace, "README.md"), "# Requirements\n\nPreserve deterministic output.\n");
     git(workspace, "init", "-q");
@@ -41,51 +40,16 @@ describe("deferred referenced-source requirement definition", () => {
       ignored_paths: [],
     });
 
-    expect(prepared).toContain("Implementation may proceed");
-    expect(prepared).not.toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
+    expect(prepared).toContain("Complete the requirement definition before implementation");
+    expect(prepared).toContain("REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS");
     expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
-    await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "define",
-        requirements: [
-          {
-            type: "behavior",
-            text: "Preserve deterministic output",
-            acceptance_criterion: "Output remains deterministic",
-            source_clause_ids: ["S2-C2"],
-          },
-        ],
-        ignored_source_prompts: [
-          { source_prompt_index: 1, reason: "Pure delegation to the referenced README specification" },
-        ],
-        ignored_source_clauses: [],
-      }),
-    ).toContain("Complete record_task_verification");
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
-    expect(
-      (
-        await beforeAuditTool(harness.agent, "edit", {
-          path: "src/index.ts",
-          edits: [{ oldText: "old", newText: "new" }],
-        })
-      )?.block,
-    ).not.toBe(true);
-
-    await recordAuditToolResult(harness.agent, "write", {
+    const blockedBeforeDefinition = await beforeAuditTool(harness.agent, "edit", {
       path: "src/index.ts",
-      content: "export const implemented = true;\n",
+      edits: [{ oldText: "old", newText: "new" }],
     });
-    await writeFile(join(workspace, "README.md"), "# Requirements\n\nPreserve stable output.\n");
-    const changedSourceGate = await beforeAuditTool(harness.agent, "edit", {
-      path: "src/index.ts",
-      edits: [{ oldText: "true", newText: "false" }],
-    });
-    expect(changedSourceGate?.block).toBe(true);
-    expect(changedSourceGate?.reason).toContain("changed after preparation");
+    expect(blockedBeforeDefinition?.block).toBe(true);
+    expect(blockedBeforeDefinition?.reason).toContain("accepted complete requirement definition");
 
-    await writeFile(join(workspace, "README.md"), "# Requirements\n\nPreserve deterministic output.\n");
-    activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
     await nextModelTurn(harness);
     const defined = await callRequirementAudit(harness.controller, {
       action: "define",
@@ -107,8 +71,27 @@ describe("deferred referenced-source requirement definition", () => {
         },
       ],
     });
-    expect(defined).toContain("Defined 1 atomic requirement");
-    expect(harness.controller.currentState.requirementAudit.status).toBe("verifying");
+    expect(defined).toContain("Defined 1 atomic requirement(s) before production mutation");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+    expect(
+      (
+        await beforeAuditTool(harness.agent, "edit", {
+          path: "src/index.ts",
+          edits: [{ oldText: "old", newText: "new" }],
+        })
+      )?.block,
+    ).not.toBe(true);
+
+    await recordAuditToolResult(harness.agent, "write", {
+      path: "src/index.ts",
+      content: "export const implemented = true;\n",
+    });
+    expect(harness.controller.currentState.mutationRevision).toBe(1);
+    expect(harness.controller.currentState.requirementAudit.status).toBe("pending");
+    expect(harness.controller.currentState.requirementAudit.requirements).toHaveLength(1);
+    expect(harness.controller.currentState.requirementAudit.requirements[0]?.text).toBe(
+      "Preserve deterministic output",
+    );
   });
 });
 

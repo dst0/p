@@ -1,6 +1,6 @@
 import { mkdtempSync, readdirSync, rmdirSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, resolve } from "node:path";
+import { join, parse, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { expandPath, resolveReadPath, resolveToCwd } from "../src/core/tools/path-utils.ts";
 
@@ -45,6 +45,34 @@ describe("path-utils", () => {
       const cwd = join(tmpdir(), "pi-path-utils-cwd");
       expect(resolveToCwd("~draft.md", cwd)).toBe(resolve(cwd, "~draft.md"));
       expect(resolveToCwd("@~draft.md", cwd)).toBe(resolve(cwd, "~draft.md"));
+    });
+
+    it("rejects a cwd-qualified absolute path whose root separator is missing", () => {
+      const cwd = resolve(tmpdir(), "p-rootless-cwd", "workspace");
+      const rootlessCwd = cwd.slice(parse(cwd).root.length);
+
+      expect(() => resolveToCwd(`${rootlessCwd}/src/index.ts`, cwd)).toThrow(
+        /looks like the absolute cwd .* leading root separator is missing/iu,
+      );
+    });
+
+    it("rejects normalized variants of a rootless cwd-qualified path", () => {
+      const cwd = resolve(tmpdir(), "p-rootless-cwd", "workspace");
+      const rootlessCwd = cwd.slice(parse(cwd).root.length);
+
+      for (const candidate of [
+        `./${rootlessCwd}/src/index.ts`,
+        `${rootlessCwd}//src/index.ts`,
+        `${rootlessCwd}/temporary/../src/index.ts`,
+      ]) {
+        expect(() => resolveToCwd(candidate, cwd)).toThrow(/leading root separator is missing/iu);
+      }
+    });
+
+    it("keeps ordinary nested relative paths valid", () => {
+      const cwd = resolve(tmpdir(), "p-rootless-cwd", "workspace");
+
+      expect(resolveToCwd("private/local/index.ts", cwd)).toBe(resolve(cwd, "private/local/index.ts"));
     });
   });
 

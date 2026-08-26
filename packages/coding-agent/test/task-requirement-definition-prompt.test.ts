@@ -116,6 +116,35 @@ describe("requirement definition prompt", () => {
     expect(expectedClauses.map((clause) => clause.normativeHint)).toEqual([undefined, true, true, undefined]);
   });
 
+  it("classifies an allowlisted section label without inventing path-derived concepts", () => {
+    const sources: TaskVerificationSourcePrompt[] = [
+      {
+        id: "log-spec",
+        kind: "referenced_file",
+        path: "SPEC.md",
+        text: [
+          "Requirements:",
+          "- Implement a dependency-free Node.js module in `src/log.js` with `test/log.test.js` coverage.",
+        ].join("\n"),
+      },
+    ];
+
+    const rendered = formatRequirementDefinitionPrompt(sources);
+    const lines = rendered.split("\n");
+    const catalog = parsePromptCatalog(lines, lines.indexOf("HASH-BOUND REFERENCED-SOURCE CLAUSE CATALOG"));
+
+    expect(catalog).toHaveLength(2);
+    expect(catalog[0]).toMatchObject({
+      id: "S1-C1",
+      kind: "heading",
+      text: "Requirements",
+      controllerClassification: "informational",
+    });
+    expect(catalog[0]?.requiredConcepts).toBeUndefined();
+    expect(catalog[1]).toMatchObject({ id: "S1-C2", kind: "prose", normativeHint: true });
+    expect(catalog[1]?.requiredConcepts).toBeUndefined();
+  });
+
   it("indexes duplicate and split structured clauses without replaying the source blob", () => {
     const referencedText = [
       "# Top",

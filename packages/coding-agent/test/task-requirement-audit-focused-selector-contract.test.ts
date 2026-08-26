@@ -1,4 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { collectProofWitnesses } from "../src/core/task-verification/requirement-proof-witnesses.ts";
 import { isFocusedEvidence } from "../src/core/task-verification/taskverificationcontroller-methods/focused-requirement-evidence.ts";
 import {
@@ -35,6 +39,12 @@ const multiPolicyRequirement: TaskRequirement = {
 };
 
 describe("focused selector contract", () => {
+  const workspaces: string[] = [];
+
+  afterEach(async () => {
+    await Promise.all(workspaces.splice(0).map((workspace) => rm(workspace, { recursive: true, force: true })));
+  });
+
   it("states that the selector needs the outcome and proof concepts", () => {
     const guidance = formatFocusedSelectorContract(requirement);
 
@@ -119,7 +129,9 @@ describe("focused selector contract", () => {
   });
 
   it("blocks a broad test command until the exact proof selector is run", async () => {
-    const harness = createRequirementAuditHarness();
+    const workspace = await mkdtemp(join(tmpdir(), "p-focused-selector-contract-"));
+    workspaces.push(workspace);
+    const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));
     harness.controller.state = {
       ...harness.controller.state,
       mutationRevision: 1,
