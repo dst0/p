@@ -20,6 +20,7 @@ import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
+import { formatRequirementSourcePreparationGuidance } from "./requirement-source-preparation-guidance.ts";
 
 export function do_formatNextRequirement(self: TaskVerificationController): string {
   if (!self.state.taskKind || !self.state.taskSummary) {
@@ -36,11 +37,7 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
     const references = self.state.requirementSourceRefs ?? [];
     const ignored = self.state.ignoredRequirementSources ?? [];
     if (!requirementSourceSelectionMatches(prompts, references, ignored)) {
-      return [
-        "NEXT REQUIRED ACTION: freeze referenced task specifications before baseline setup or implementation.",
-        `Candidates: ${sourceCandidates.map((candidate) => candidate.path).join(", ")}.`,
-        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} once with action "prepare_definition", 0-3 relevant selected_paths, and reasons for every ignored_paths item.`,
-      ].join("\n");
+      return formatRequirementSourcePreparationGuidance(sourceCandidates.map((candidate) => candidate.path));
     }
   }
 

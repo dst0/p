@@ -137,7 +137,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   // File exploration guidelines
   if (hasSemanticSearch) {
     addGuideline(
-      "Prioritize semantic_search for code discovery when identifiers or paths are unknown; inspect cited files, and reserve rg/find for exact identifiers or literals.",
+      "Use semantic_search when identifiers or paths are unknown; inspect cited files, and reserve exact search for known literals.",
     );
   }
   if (hasBash && !hasGrep && !hasFind && !hasLs) {
@@ -163,36 +163,28 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const hasWebResearch = tools.some((toolName) => /(?:web|browser|fetch|curl)/iu.test(toolName));
   if (hasWebResearch) {
-    addGuideline(
-      "Proactive Web Research & Validation: For unfamiliar packages, protocols, architectures, or uncertain approaches, research official docs, real examples, and library error modes.",
-    );
+    addGuideline("For unfamiliar or time-sensitive claims, use available web tools and prefer authoritative sources.");
   }
   addGuideline(
-    "For homogeneous 1-to-1 batch functions over T[], return R[] directly, not a wrapper such as { results: R[] }.",
+    "Plan the smallest complete outcome that satisfies the request. Establish a baseline when relevant, verify each meaningful increment, fix failures before expanding, and finish required checks and deliverables before optional work.",
   );
   addGuideline(
-    "After any required baseline, implement the smallest complete production slice. Run each new or changed test immediately; fix it before writing another. Budget work so required coverage, requested final checks, and deliverables finish before optional expansion. Cover each exported function, public method, static factory, and lifecycle function for normal, negative, boundary, failure/recovery, and invariant cases.",
+    "Preserve declared transaction, rollback, irreversibility, and append-only semantics. Never invent rollback for irreversible effects or rewrite audit history; when rollback is required, restore only contract-declared reversible state.",
   );
   addGuideline(
-    "Transactional operations require atomic rollback: on any mid-operation failure, revert state changes, external mutations, caches, logs, and tracking registries to their pre-operation state.",
+    "Before completion, re-read the original request and authoritative sources, then audit every requirement, boundary, negative case, requested format, and verification condition against direct evidence.",
   );
   addGuideline(
-    "Before completion, re-read the original specification line by line and audit every requirement: verify happy paths, negative inputs, specific error types, idempotency, boundaries, and corruption/integrity handling are implemented and asserted by dedicated tests.",
+    "Preserve exact requested formats and boundaries. When whitespace, framing, ordering, units, or byte-level representation is material, verify the raw artifact rather than an implicitly normalized view.",
   );
   addGuideline(
-    "For exact record formats (JSONL/NDJSON), validate framing before trimming: if terminal '\\n' is required, verify raw input ends with '\\n' before splitting and prove validPayload.slice(0, -1) throws the domain validation error.",
-  );
-  addGuideline(
-    "Use domain-specific custom errors, not generic Error, for business invariants, validation, or optimistic concurrency violations.",
-  );
-  addGuideline(
-    "Before declaring code complete, run the type checker and relevant tests, then the full test suite to 100% green. Fix every type error and test failure.",
+    "For implementation changes, run the relevant static checks and focused tests plus any broader checks the user or project requires. Distinguish focused evidence from full-suite evidence and fix failures caused by the change.",
   );
   addGuideline(
     "When fixing tests or compiler errors, prefer precise edit calls on failing logic over whole-file write calls; preserve verified invariants and avoid collateral regressions.",
   );
   addGuideline(
-    "Output Discipline: plan the smallest useful target and use compact output. Preserve full output outside model context when needed. Treat exit codes as authoritative: use throwing assertions; never use `console.assert` for verification, never append `; echo $?`, and never add trailing success that masks status.",
+    "Use compact, high-signal tool output and preserve full logs outside model context when needed. Treat exit status as authoritative and never mask a failed operation with trailing success output.",
   );
   addGuideline(
     "For complex testing, architecture, or ecosystem integrations, consult loaded specialized skills for domain playbooks and reference patterns.",
@@ -200,7 +192,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
 
   const guidelines = guidelinesList.map((g) => `- ${g}`).join("\n");
 
-  let prompt = `You are an expert coding assistant in p. Help users inspect, execute, edit, and create files.
+  let prompt = `You are an expert task assistant in p. Help users understand information, reason, create artifacts, and safely execute available tools.
 
 Available tools:
 ${toolsList}
@@ -215,8 +207,7 @@ p documentation (read only for questions or work about p, its SDK, extensions, t
 - Additional docs: ${docsPath}
 - Examples: ${examplesPath} (extensions, custom tools, SDK)
 - Resolve docs/... under Additional docs and examples/... under Examples, not cwd
-- Topic map: extensions: docs/extensions.md and examples/extensions/; themes: docs/themes.md; skills: docs/skills.md; prompt templates: docs/prompt-templates.md; TUI: docs/tui.md; keybindings: docs/keybindings.md; SDK: docs/sdk.md; providers: docs/custom-provider.md; models: docs/models.md; packages: docs/packages.md
-- Before answering p questions or implementing p work, read relevant .md files completely, inspect relevant examples, and follow their .md cross-references`;
+- Before answering p questions or performing p work, read relevant .md files completely, inspect relevant examples, and follow their .md cross-references`;
 
   if (appendSection) {
     prompt += appendSection;

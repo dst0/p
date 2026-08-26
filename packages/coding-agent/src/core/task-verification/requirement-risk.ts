@@ -1,4 +1,9 @@
 import { HIGH_RISK_PATTERN, HIGH_RISK_REQUIREMENT_PATTERN } from "./constants.ts";
+import {
+  hasRollbackOperationSemantics,
+  withoutRollbackTerms,
+  withoutStaticRollbackPropertyValues,
+} from "./requirement-rollback-semantics.ts";
 import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 
 export interface RequirementRisk {
@@ -25,5 +30,11 @@ export function requirementRisk(
 }
 
 export function isHighRiskText(value: string): boolean {
-  return HIGH_RISK_PATTERN.test(value) || HIGH_RISK_REQUIREMENT_PATTERN.test(value);
+  const semanticText = withoutStaticRollbackPropertyValues(value);
+  const nonRollbackText = withoutRollbackTerms(semanticText);
+  return (
+    HIGH_RISK_PATTERN.test(nonRollbackText) ||
+    HIGH_RISK_REQUIREMENT_PATTERN.test(nonRollbackText) ||
+    hasRollbackOperationSemantics(semanticText)
+  );
 }

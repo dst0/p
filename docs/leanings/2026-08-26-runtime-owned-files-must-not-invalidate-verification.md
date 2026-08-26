@@ -1,0 +1,22 @@
+# 2026-08-26 — Runtime-owned files must not invalidate verification
+
+- **Status:** Resolved
+- **Task/context:** Completing a live non-coding compiled-instruction canary with exact JSON verification.
+- **Unexpected observation or failure:** Each read-only verification attempt advanced the workspace mutation revision, so the newly recorded evidence was immediately reported as stale and the agent entered a verification loop.
+- **Evidence:** The session trace showed a successful artifact read recorded at mutation revision 2, followed by revision 3 before `record_final`, even though no task artifact changed. The shell assertion ran concurrently with another evidence-producing tool while the runtime-owned JSONL session file lived inside the Git workspace.
+- **Approaches tried:**
+  - **Attempt:** Classify the Python assertion command as inherently read-only.
+    - **Outcome:** Did not work
+    - **Why:** Arbitrary interpreters cannot be trusted from command text alone, and the fingerprint is intentionally the fail-closed fallback.
+  - **Attempt:** Re-run verification at the new revision.
+    - **Outcome:** Did not work
+    - **Why:** Concurrent runtime persistence changed the same session log during every fingerprint interval, advancing the revision again.
+  - **Attempt:** Exclude only known runtime-owned paths from the Git-visible fingerprint while retaining snapshots for arbitrary shell commands.
+    - **Outcome:** Worked in focused tests
+    - **Why:** The exact active session file and generated `.pdev` state are controller-owned, whereas every other Git-visible path remains mutation evidence.
+- **Root cause:** Workspace mutation fingerprints included runtime-owned `.pdev` and active session artifacts. Concurrent tool evidence persistence therefore looked indistinguishable from a user workspace mutation.
+- **Resolution:** Add Git pathspec exclusions for generated `.pdev` state and the exact active session file to both sides of the verification fingerprint comparison.
+- **Verification:** Focused Git-backed regressions prove that changing the exact runtime session file and `.pdev` state does not advance mutation revision, a metacharacter-bearing session filename cannot hide a matching user file, and a user-created workspace file still advances the revision. The post-fix live non-coding canary retained current-revision Python assertion evidence, passed all 7 requirement verdicts, received a completion certificate, and finished successfully.
+- **Prevention/follow-up:** Keep runtime ownership explicit and path-bound. Never silence broad directories such as `sessions/`; exclude only the exact active runtime file supplied by `SessionManager`.
+- **Reusable learning:** Mutation detection must compare user-owned workspace state, not the controller's own concurrently persisted state.
+- **References:** `packages/coding-agent/src/core/workspace-fingerprint.ts`, `packages/coding-agent/test/task-verification-read-only-shell.test.ts`

@@ -80,6 +80,7 @@ describe("requirement definition prompt", () => {
       "line",
       "part",
       "controllerClassification",
+      "introducedByClauseId",
     ]);
     expect(
       catalog.map(
@@ -191,15 +192,16 @@ describe("requirement definition prompt", () => {
     ]);
   });
 
-  it("preserves universal qualifiers, separates observables, and names required fields", () => {
+  it("preserves source semantics, coordinated groups, and required fields", () => {
     const rendered = formatRequirementDefinitionPrompt([{ id: "prompt-1", text: "Implement every boundary." }]);
 
     expect(rendered).toContain(
-      "Preserve universal qualifiers such as any, every, and all while splitting each named boundary or case into its own requirement.",
+      "Preserve every explicit subject, behavior, qualifier, boundary, and verification condition from its source",
     );
-    expect(rendered).toContain("state, log, version, position, command-ID, and idempotency-record guarantees");
+    expect(rendered).toContain("keep alternatives or cardinality relationships that depend on each other");
+    expect(rendered).toContain("Preserve universal and negative scope explicitly");
     expect(rendered).toContain("For clauses without requiredFacets, map every requiredConcepts entry");
-    expect(rendered).not.toContain("version/position");
+    expect(rendered).not.toContain("command-ID");
     expect(rendered).toContain(
       "Each requirement needs type, text, and acceptance_criterion. Use source_prompt_indexes for direct prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
     );
@@ -236,7 +238,12 @@ describe("requirement definition prompt", () => {
         sha256: "c".repeat(64),
         text: referencedText,
       }),
-      ...requirementSourceClauseLocations(sources).map((location) => JSON.stringify(location)),
+      ...requirementSourceClauseLocations(sources).map((location, index) =>
+        JSON.stringify({
+          ...location,
+          introducedByClauseId: requirementSourceClauseCatalog(sources)[index]?.introducedByClauseId ?? null,
+        }),
+      ),
     ].join("\n");
 
     expect(Buffer.byteLength(currentPayload, "utf8")).toBeLessThan(Buffer.byteLength(priorPayload, "utf8"));

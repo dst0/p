@@ -108,7 +108,6 @@ export function do_isUsingOAuth(self: ModelRegistry, model: Model<Api>): boolean
 }
 
 export function do_registerProvider(self: ModelRegistry, providerName: string, config: ProviderConfigInput): void {
-  self.validateProviderConfig(providerName, config);
   const effectiveConfig = mergeProviderConfig(self.registeredProviders.get(providerName), config);
   self.validateProviderConfig(providerName, effectiveConfig);
   self.applyProviderConfig(providerName, effectiveConfig);
@@ -133,14 +132,17 @@ function mergeProviderConfig(
   existing: ProviderConfigInput | undefined,
   update: ProviderConfigInput,
 ): ProviderConfigInput {
-  if (!existing) return { ...update };
-  const merged = { ...existing };
+  const merged: ProviderConfigInput = existing ? { ...existing } : {};
   for (const key of Object.keys(update) as (keyof ProviderConfigInput)[]) {
     if (update[key] !== undefined) {
       (merged as Record<string, unknown>)[key] = update[key];
     }
   }
-  if (update.models !== undefined && merged.modelMetadata === "inherit-existing") {
+  // Dynamic model membership is authoritative, but omitted metadata must not erase configured compatibility.
+  if (update.models !== undefined && merged.modelMetadata === undefined) {
+    merged.modelMetadata = "inherit-existing";
+  }
+  if (existing && update.models !== undefined && merged.modelMetadata === "inherit-existing") {
     merged.models = mergeRegisteredModelMetadata(existing, merged, update.models);
   }
   return merged;

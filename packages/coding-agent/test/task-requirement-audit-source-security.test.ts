@@ -30,6 +30,22 @@ describe("referenced requirement-source security", () => {
     });
     expect(shellGate?.block).toBe(true);
     expect(shellGate?.reason).toContain("prepare_definition");
+    expect(shellGate?.reason).toContain("Modules returned by read_rules are execution instructions");
+
+    const prematureDefinition = await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "Implement the referenced behavior",
+          acceptance_criterion: "The referenced behavior is implemented",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    expect(prematureDefinition).toContain('Call record_requirement_audit with action "prepare_definition" next');
+    expect(prematureDefinition).toContain("Do not call define first");
 
     await callTaskVerification(harness.controller, {
       action: "authorize_baseline_test",

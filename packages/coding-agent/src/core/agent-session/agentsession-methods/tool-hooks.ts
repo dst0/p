@@ -6,7 +6,7 @@ import {
   matchesProjectInstructionRuleBatch,
   type PreparedProjectInstructions,
 } from "../../project-instructions/index.ts";
-import { TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
+import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
 import {
   isConfidentlyReadOnlyShellTool,
   isPotentialMutationTool,
@@ -236,7 +236,7 @@ async function getProjectRuleBlockReason(
     isPotentialMutationTool(toolName, args) ||
     (!isTrustedProjectRuleReadOnlyShellTool(self, toolName, args) &&
       !isTrustedProjectRuleSafeTool(self, toolName) &&
-      !isTrustedVerificationStatusTool(self, toolName, args));
+      !isTrustedVerificationControlPlaneTool(self, toolName, args));
   if (!mayMutate) return undefined;
   let refreshed: PreparedProjectInstructions;
   try {
@@ -279,10 +279,11 @@ function isTrustedProjectRuleSafeTool(self: AgentSession, toolName: string): boo
   return isTrustedBaseTool(self, toolName);
 }
 
-function isTrustedVerificationStatusTool(self: AgentSession, toolName: string, args: unknown): boolean {
-  if (toolName !== TASK_VERIFICATION_TOOL_NAME || !isRecord(args) || args.action !== "status") return false;
+function isTrustedVerificationControlPlaneTool(self: AgentSession, toolName: string, args: unknown): boolean {
   const entry = self._toolDefinitions.get(toolName);
-  return entry !== undefined && self._projectRuleSafeToolDefinitions.has(entry.definition);
+  if (!entry || !self._projectRuleSafeToolDefinitions.has(entry.definition)) return false;
+  if (toolName === REQUIREMENT_AUDIT_TOOL_NAME) return true;
+  return toolName === TASK_VERIFICATION_TOOL_NAME && isRecord(args) && args.action === "status";
 }
 
 function isTrustedProjectRuleReadOnlyShellTool(self: AgentSession, toolName: string, args: unknown): boolean {

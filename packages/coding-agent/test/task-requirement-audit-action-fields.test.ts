@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS } from "../src/core/task-verification/constants.ts";
 import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
@@ -115,10 +116,12 @@ describe("requirement audit action fields", () => {
       requirements: [requirement()],
     };
 
-    await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain(
-      "next_required_action: repair_definition",
-    );
+    for (let attempt = 1; attempt < MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS; attempt += 1) {
+      await nextModelTurn(harness);
+      expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain(
+        "next_required_action: repair_definition",
+      );
+    }
     await nextModelTurn(harness);
     expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain("next_required_action: define");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(draft!.revision);

@@ -1,6 +1,7 @@
 import { REQUIREMENT_AUDIT_TOOL_NAME } from "./constants.ts";
 import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "./referenced-requirement-sources.ts";
 import { formatCurrentRejectedDefinitionBatch } from "./rejected-definition-batch-format.ts";
+import { effectiveRequirementSourceClause } from "./requirement-clause-context.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
 import {
@@ -25,6 +26,7 @@ const SOURCE_CLAUSE_CATALOG_COLUMNS = [
   "line",
   "part",
   "controllerClassification",
+  "introducedByClauseId",
 ] as const;
 
 export const ACTIVE_REJECTED_DEFINITION_MARKER = "ACTIVE REJECTED DEFINITION BATCH — NON-AUTHORITATIVE RECOVERY";
@@ -40,12 +42,15 @@ export function renderRequirementDefinitionPrompt(
   sourcePrompts: readonly TaskVerificationSourcePrompt[],
   rejectedDraft?: RejectedRequirementDefinitionDraft,
 ): { text: string; normalPromptExceedsLimit: boolean } {
-  const sourceClauseCatalog = requirementSourceClauseCatalog(sourcePrompts).map((clause) => {
-    const controllerClassification = controllerIgnoredSourceClause(clause)?.classification;
-    const requiredFacets = requirementSourceFacets(clause);
+  const extractedSourceClauseCatalog = requirementSourceClauseCatalog(sourcePrompts);
+  const extractedClausesById = new Map(extractedSourceClauseCatalog.map((clause) => [clause.id, clause]));
+  const sourceClauseCatalog = extractedSourceClauseCatalog.map((clause) => {
+    const effectiveClause = effectiveRequirementSourceClause(clause, extractedClausesById);
+    const controllerClassification = controllerIgnoredSourceClause(effectiveClause)?.classification;
+    const requiredFacets = requirementSourceFacets(effectiveClause);
     return {
       ...clause,
-      requiredConcepts: requiredFacets.length === 0 ? sourceClauseRequiredConcepts(clause) : [],
+      requiredConcepts: requiredFacets.length === 0 ? sourceClauseRequiredConcepts(effectiveClause) : [],
       requiredFacets,
       ...(controllerClassification ? { controllerClassification } : {}),
     };
@@ -86,6 +91,7 @@ export function renderRequirementDefinitionPrompt(
               clause.line,
               clause.part,
               clause.controllerClassification ?? null,
+              clause.introducedByClauseId ?? null,
             ]),
           ),
           "",
@@ -94,11 +100,9 @@ export function renderRequirementDefinitionPrompt(
   const normalPrompt = [
     "REQUIREMENT AUDIT — DEFINE AUTHORITATIVE USER REQUIREMENTS",
     "Read each direct user prompt verbatim and each hash-bound referenced-source clause in the self-describing catalog below. Decompose only user-authored requirements into atomic, independently verifiable items.",
-    "For high-risk requirements, use one observable outcome and one listed case per item; split semicolon/comma lists and combined outcomes into separate requirements.",
-    "Preserve universal qualifiers such as any, every, and all while splitting each named boundary or case into its own requirement.",
-    "For newline-terminated formats that reject truncation, include an atomic terminal-newline case whose focused test removes exactly the final byte.",
-    "For corruption or tampering, require the focused test to prove its mutation changed the original payload before validation.",
-    "For atomic rollback, split independently observable state, log, version, position, command-ID, and idempotency-record guarantees when the source names them; preserve the source concept wording.",
+    "Preserve every explicit subject, behavior, qualifier, boundary, and verification condition from its source; do not substitute domain-specific assumptions.",
+    "Split independently observable obligations into atomic requirements, but keep alternatives or cardinality relationships that depend on each other in one coordinated requirement.",
+    "Preserve universal and negative scope explicitly. For either, one-of, exactly-N-of, at-least-N-of, or at-most-N-of lists, map every governed active alternative to one requirement that retains the group constraint; never assert the alternatives as independent obligations.",
     "Do not add repository policy, generic best practices, or requirements invented by the model.",
     "Among direct user prompts, the later instruction wins; preserve non-conflicting earlier requirements.",
     "A conflict between a referenced file and a direct prompt has no automatic precedence. Require an explicit direct-user clarification before classifying the file clause as superseded.",
@@ -106,6 +110,7 @@ export function renderRequirementDefinitionPrompt(
     "Only ignore a whole prompt when it contains no surviving task requirement; explain whether it is non-task context or was fully superseded.",
     "Every source index must be referenced by at least one requirement or listed in ignored_source_prompts with a concrete reason.",
     "Classify every remaining referenced-file clause exactly once: map normative clauses through source_clause_ids or list eligible clauses in ignored_source_clauses as informational, example, or superseded with a concrete reason. Do not resubmit clauses with controllerClassification; the controller classifies those deterministically.",
+    "A list child inherits its introducedByClauseId clause context. Explicitly map every child that lacks controllerClassification; an introduction is covered through requirements only when every governed child has a valid mapping, and the relation never auto-maps normative content or removes group semantics.",
     "When splitting a clause across requirements, retain its exact subject and behavior plus the specific identifier and case term covered by each mapped requirement; do not paraphrase those identity terms away.",
     "For clauses without requiredFacets, map every requiredConcepts entry using the source concept wording and split independently observable outcomes.",
     "Map every requiredFacets entry exactly once through source_facet_ids. Use one facet per atomic requirement and preserve its branch, subject-bound behavior, and qualifiers in that same requirement.",
@@ -171,7 +176,7 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
         "next_required_action: repair_definition",
         `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this current batch definition_revision, and current indexed requirement_repairs or classification changes. Address every current diagnostic in one convergent call when it fits the bounds.`,
         COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-        "Omitted requirements and classifications are retained. The next rejection returns the complete current batch with updated indexes; use it directly without a status roundtrip. Do not restart with action define unless the controller returns next_required_action: define.",
+        "Omitted requirements and classifications are retained. The next rejection returns compact indexed feedback and the next required action; continue with those indexes. Use action status only when exact complete-batch recovery is needed. Do not restart with action define unless the controller returns next_required_action: define.",
       ];
   return [
     ACTIVE_REJECTED_DEFINITION_MARKER,

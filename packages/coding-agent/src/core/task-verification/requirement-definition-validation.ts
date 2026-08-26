@@ -1,4 +1,9 @@
 import { REQUIREMENT_TYPES } from "./constants.ts";
+import {
+  completeIntroductionClauseIds,
+  effectiveRequirementSourceClauses,
+  inheritedListConstraintError,
+} from "./requirement-clause-context.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { clauseRequirementRelevanceError } from "./requirement-clause-semantics.ts";
 import { compoundHighRiskRequirementError } from "./requirement-definition-atomicity.ts";
@@ -29,7 +34,6 @@ export {
   formatRequirementDefinitionDiagnostics,
   MAX_REQUIREMENT_DEFINITION_DIAGNOSTIC_BYTES,
 } from "./requirement-definition-diagnostics.ts";
-
 export interface ValidatedRequirementDefinition {
   requirements: TaskRequirement[];
   ignoredSourcePrompts: IgnoredSourcePrompt[];
@@ -44,7 +48,7 @@ export function validateRequirementDefinition(
   prompts: readonly TaskVerificationSourcePrompt[],
   input: RequirementAuditInput,
 ): RequirementDefinitionValidation {
-  const sourceClauses = requirementSourceClauses(prompts);
+  const sourceClauses = effectiveRequirementSourceClauses(requirementSourceClauses(prompts));
   const clausesById = new Map(sourceClauses.map((clause) => [clause.id, clause]));
   const facetIndex = createRequirementFacetIndex(sourceClauses);
   const diagnostics: string[] = [];
@@ -172,13 +176,14 @@ export function validateRequirementDefinition(
   }
 
   const validRequirementClauseIds = new Set(requirements.flatMap((requirement) => requirement.sourceClauseIds ?? []));
+  const coveredIntroductionClauseIds = completeIntroductionClauseIds(sourceClauses, validRequirementClauseIds);
   const invalidOnlyClauseIds = new Set(
     [...declaredMappedClauseIds].filter((clauseId) => !validRequirementClauseIds.has(clauseId)),
   );
   const unevaluableOnlyClauseIds = new Set(
     [...declaredMappedClauseIds].filter((clauseId) => !evaluableMappedClauseIds.has(clauseId)),
   );
-  const coveredClauseIds = declaredMappedClauseIds;
+  const coveredClauseIds = new Set([...declaredMappedClauseIds, ...coveredIntroductionClauseIds]);
   const modelIgnoredClauseIds = new Set(
     (input.ignored_source_clauses ?? []).map((clause) => normalizeText(clause.source_clause_id)),
   );
@@ -214,6 +219,7 @@ export function validateRequirementDefinition(
     ignoredClauseIds,
     invalidOnlyClauseIds,
     unevaluableOnlyClauseIds,
+    coveredIntroductionClauseIds,
     diagnostics,
   );
 
@@ -268,9 +274,13 @@ function validateMappedClauses(
         `Requirement ${requirementIndex + 1} maps source clause ${clauseId} without its source_prompt_index.`,
       );
     }
-    if (validateRelevance && !facetMappedClauseIds.has(clauseId)) {
-      const relevanceError = clauseRequirementRelevanceError(clause, text, acceptanceCriterion);
-      if (relevanceError) diagnostics.push(`Requirement ${requirementIndex + 1}: ${relevanceError}`);
+    if (validateRelevance) {
+      if (!facetMappedClauseIds.has(clauseId)) {
+        const relevanceError = clauseRequirementRelevanceError(clause, text, acceptanceCriterion);
+        if (relevanceError) diagnostics.push(`Requirement ${requirementIndex + 1}: ${relevanceError}`);
+      }
+      const qualifierError = inheritedListConstraintError(clause, clausesById, `${text}\n${acceptanceCriterion}`);
+      if (qualifierError) diagnostics.push(`Requirement ${requirementIndex + 1}: ${qualifierError}`);
     }
   }
 }

@@ -128,6 +128,7 @@ export function rejectedRepairDoesNotWorsenHistoricalMinimum(
 export function repairRejectedRequirementDefinition(
   draft: RejectedRequirementDefinitionDraft | undefined,
   repair: RequirementAuditInput,
+  options: { allowLineageOverflowValidation?: boolean } = {},
 ): RequirementAuditInput | string {
   if (!draft || repair.definition_revision !== draft.revision) {
     return "The definition_revision is stale or unavailable. Resubmit one complete definition batch.";
@@ -173,7 +174,7 @@ export function repairRejectedRequirementDefinition(
     return `repair would create ${mergedRequirementCount} requirements; maximum is ${MAX_REQUIREMENT_COUNT}.`;
   }
   const lineageLimit = draft.repairLineageBaselineRequirementCount + MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH;
-  if (mergedRequirementCount > lineageLimit) {
+  if (mergedRequirementCount > lineageLimit && !options.allowLineageOverflowValidation) {
     authorizeRejectedDraftFreshDefinition(draft, "lineage_growth");
     return `repair lineage would grow from ${draft.repairLineageBaselineRequirementCount} to ${mergedRequirementCount} requirements; cumulative net growth permits at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH}.`;
   }
