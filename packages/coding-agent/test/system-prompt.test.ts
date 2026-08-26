@@ -38,6 +38,8 @@ describe("buildSystemPrompt", () => {
       "implemented and asserted by dedicated tests",
       "JSONL/NDJSON",
       "raw input ends with '\\n' before splitting",
+      "validPayload.slice(0, -1)",
+      "domain validation error",
       "domain-specific custom errors",
       "business invariants, validation, or optimistic concurrency",
       "run the type checker and relevant tests",
@@ -71,7 +73,7 @@ describe("buildSystemPrompt", () => {
       },
     });
     expect(prompt).toContain("Prioritize semantic_search for code discovery");
-    expect(prompt).toContain("Proactive Web Research & Validation: For tasks involving");
+    expect(prompt).toContain("Proactive Web Research & Validation: For unfamiliar packages");
     expect(prompt.length).toBeLessThanOrEqual(4_200);
   });
 

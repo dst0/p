@@ -96,39 +96,13 @@ describe("rejected requirement definition status recovery", () => {
     ]);
   });
 
-  it("requires status before repairing indexes shifted by a rejected split", async () => {
+  it("repairs the returned current indexes directly after a rejected split", async () => {
     const { harness, splitRevision } = await rejectedSplit(workspaces);
     await nextModelTurn(harness);
-    const splitDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
-    const blocked = await callRequirementAudit(harness.controller, shiftedRepair(splitRevision));
-
-    expect(blocked).toContain('record_task_verification with action "status"');
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
-      ...splitDraft,
-      unproductiveRepairAttempts: 2,
-    });
-    const status = await callTaskVerification(harness.controller, { action: "status" });
-    expect(status).toContain('"requirement_columns":["index","type","text"');
-    expect(status).toContain("Shipping reduces invoice");
     expect(await callRequirementAudit(harness.controller, shiftedRepair(splitRevision))).toContain(
       "Defined 2 atomic requirement",
     );
-  });
-
-  it("bounds repeated repairs that ignore the required status refresh", async () => {
-    const { harness, splitRevision } = await rejectedSplit(workspaces);
-    const splitDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
-
-    await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, shiftedRepair(splitRevision))).toContain(
-      'record_task_verification with action "status"',
-    );
-    await nextModelTurn(harness);
-    const escaped = await callRequirementAudit(harness.controller, shiftedRepair(splitRevision));
-    expect(escaped).toContain("next_required_action: define");
-    expect(escaped).toContain("consecutive repair attempts were unproductive");
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(splitDraft?.revision);
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.input).toEqual(splitDraft?.input);
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
   });
 });
 

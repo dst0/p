@@ -1,5 +1,6 @@
 import { REQUIREMENT_AUDIT_TOOL_NAME } from "./constants.ts";
 import { MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES } from "./referenced-requirement-sources.ts";
+import { formatCurrentRejectedDefinitionBatch } from "./rejected-definition-batch-format.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
 import {
@@ -27,11 +28,6 @@ const SOURCE_CLAUSE_CATALOG_COLUMNS = [
 ] as const;
 
 export const ACTIVE_REJECTED_DEFINITION_MARKER = "ACTIVE REJECTED DEFINITION BATCH — NON-AUTHORITATIVE RECOVERY";
-
-export function renderedRejectedDefinitionRevision(text: string, revision: string): boolean {
-  const lines = new Set(text.split("\n"));
-  return lines.has(ACTIVE_REJECTED_DEFINITION_MARKER) && lines.has(`definition_revision: ${revision}`);
-}
 
 export function formatRequirementDefinitionPrompt(
   sourcePrompts: readonly TaskVerificationSourcePrompt[],
@@ -169,44 +165,20 @@ export function renderRequirementDefinitionPrompt(
 }
 
 function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDraft): string[] {
-  const requirementColumns = [
-    "index",
-    "type",
-    "text",
-    "acceptance_criterion",
-    "source_prompt_indexes",
-    "source_clause_ids",
-    "source_facet_ids",
-  ];
-  const requirements = (draft.input.requirements ?? []).map((requirement, index) => [
-    index + 1,
-    requirement.type,
-    requirement.text,
-    requirement.acceptance_criterion,
-    requirement.source_prompt_indexes ?? null,
-    requirement.source_clause_ids ?? null,
-    requirement.source_facet_ids ?? null,
-  ]);
   const nextAction = rejectedDraftRequiresFreshDefinition(draft)
     ? rejectedDefinitionNextActionGuardMessage(draft).split("\n")
     : [
         "next_required_action: repair_definition",
-        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this definition_revision, and the smallest high-leverage subset of requirement_repairs or classification changes. You do not need to eliminate every diagnostic in one repair call.`,
+        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this current batch definition_revision, and current indexed requirement_repairs or classification changes. Address every current diagnostic in one convergent call when it fits the bounds.`,
         COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-        "Omitted requirements and classifications are retained. Do not restart with action define unless the controller returns next_required_action: define, and do not call status again unless instructed.",
+        "Omitted requirements and classifications are retained. The next rejection returns the complete current batch with updated indexes; use it directly without a status roundtrip. Do not restart with action define unless the controller returns next_required_action: define.",
       ];
   return [
     ACTIVE_REJECTED_DEFINITION_MARKER,
     `definition_revision: ${draft.revision}`,
     "Latest deterministic diagnostics:",
     draft.diagnostics,
-    "Current merged rejected batch; requirement indexes below are the repair_definition indexes:",
-    JSON.stringify({
-      requirement_columns: requirementColumns,
-      requirements,
-      ignored_source_prompts: draft.input.ignored_source_prompts ?? [],
-      ignored_source_clauses: draft.input.ignored_source_clauses ?? [],
-    }),
+    ...formatCurrentRejectedDefinitionBatch(draft),
     ...nextAction,
     "Do not submit a verdict in the same model turn.",
   ];
