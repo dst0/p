@@ -76,19 +76,24 @@ export function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[
   const rel = toPosixPath(relative(baseDir, filePath));
   const name = basename(filePath);
   const filePathPosix = toPosixPath(filePath);
-  const isSkillFile = name === "SKILL.md";
-  const parentDir = isSkillFile ? dirname(filePath) : undefined;
-  const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-  const parentName = isSkillFile ? basename(parentDir!) : undefined;
-  const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
 
   for (let i = 0; i < compiledPatterns.length; i++) {
     const compiled = compiledPatterns[i];
     if (compiled.match(rel) || compiled.match(name) || compiled.match(filePathPosix)) {
       return true;
     }
-    if (isSkillFile) {
-      if (compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!)) {
+  }
+
+  // ⚡ Bolt: Lazily evaluate parent directory patterns only if the file is a SKILL.md file
+  if (name === "SKILL.md") {
+    const parentDir = dirname(filePath);
+    const parentRel = toPosixPath(relative(baseDir, parentDir));
+    const parentName = basename(parentDir);
+    const parentDirPosix = toPosixPath(parentDir);
+
+    for (let i = 0; i < compiledPatterns.length; i++) {
+      const compiled = compiledPatterns[i];
+      if (compiled.match(parentRel) || compiled.match(parentName) || compiled.match(parentDirPosix)) {
         return true;
       }
     }

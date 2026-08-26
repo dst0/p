@@ -20,3 +20,6 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+## 2026-07-29 - Eager string allocations in hot file-matching paths
+**Learning:** In hot file-matching paths (like checking thousands of files against glob arrays in `matchesAnyPattern`), eagerly calling `dirname()`, `relative()`, `basename()`, and `toPosixPath()` to set up variables for an edge-case rule (`isSkillFile = name === "SKILL.md"`) incurs massive, unnecessary string allocation overhead for the other 99% of files.
+**Action:** When filtering or matching large file trees, always evaluate fallback logic or edge-cases (and their associated path manipulations) lazily within an isolated conditional block *after* testing the common path, rather than unconditionally preparing variables at the top of the function.
