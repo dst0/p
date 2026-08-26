@@ -17,7 +17,6 @@ import {
   rejectedRepairDoesNotWorsenHistoricalMinimum,
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
-  requirementRepairChangesArity,
 } from "../requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import type { VerificationResult } from "../types.ts";
@@ -40,7 +39,7 @@ export function do_createRequirementAuditToolDefinition(
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      `After a rejected definition, use action 'repair_definition' with its definition_revision and the smallest useful subset of indexed replacements or splits; at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements are allowed per call and cumulative lineage growth is capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements before a fresh define batch is required.`,
+      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements before a fresh define batch is required. Every adopted rejected repair returns a new revision and the complete current indexed batch in that same tool response.`,
       COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
       "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
@@ -58,11 +57,7 @@ export function do_createRequirementAuditToolDefinition(
         }
         const result = self.rejected(foreignFieldError);
         const message = activeDraft
-          ? formatRejectedDefinitionRepairGuidance(
-              result.message,
-              activeDraft,
-              self.requirementRepairStatusRevision === activeDraft.revision,
-            )
+          ? formatRejectedDefinitionRepairGuidance(result.message, activeDraft)
           : result.message;
         return { content: [{ type: "text", text: message }], details: result };
       }
@@ -71,20 +66,6 @@ export function do_createRequirementAuditToolDefinition(
         const result = self.rejected(rejectedDefinitionNextActionGuardMessage(activeDraft));
         return { content: [{ type: "text", text: result.message }], details: result };
       }
-      if (
-        params.action === "repair_definition" &&
-        activeDraft &&
-        self.requirementRepairStatusRevision !== undefined &&
-        self.requirementRepairStatusRevision === activeDraft.revision
-      ) {
-        recordUnproductiveRejectedDefinitionRepair(activeDraft);
-        const result = self.rejected(
-          'Requirement indexes changed after the last rejected repair. Call record_task_verification with action "status" before another repair_definition call.',
-        );
-        const message = formatRejectedDefinitionRepairGuidance(result.message, activeDraft, true);
-        return { content: [{ type: "text", text: message }], details: result };
-      }
-      const changesArity = params.action === "repair_definition" && requirementRepairChangesArity(params);
       const previousRejectedDraft = self.rejectedRequirementDefinitionDraft;
       const repaired =
         params.action === "repair_definition"
@@ -138,22 +119,14 @@ export function do_createRequirementAuditToolDefinition(
           authorizedFreshDefinition ? "fresh_definition" : "repair",
           candidateDiagnosticCount,
         );
-        if (changesArity) {
-          self.requirementRepairStatusRevision = self.rejectedRequirementDefinitionDraft?.revision;
-        }
       } else if (result.status === "updated") {
         self.rejectedRequirementDefinitionDraft = undefined;
-        self.requirementRepairStatusRevision = undefined;
       }
       const message =
         result.status !== "needs_action"
           ? result.message
           : params.action === "define" || params.action === "repair_definition"
-            ? formatRejectedDefinitionRepairGuidance(
-                result.message,
-                self.rejectedRequirementDefinitionDraft,
-                self.requirementRepairStatusRevision === self.rejectedRequirementDefinitionDraft?.revision,
-              )
+            ? formatRejectedDefinitionRepairGuidance(result.message, self.rejectedRequirementDefinitionDraft)
             : self.withGuidance(result.message);
       return { content: [{ type: "text", text: message }], details: result };
     },

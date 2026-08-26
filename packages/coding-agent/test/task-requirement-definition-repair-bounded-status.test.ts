@@ -68,7 +68,6 @@ describe("rejected requirement definition bounded status recovery", () => {
     const status = await callTaskVerification(harness.controller, { action: "status" });
     expect(status).toContain(ACTIVE_REJECTED_DEFINITION_MARKER);
     expect(status).toContain("next_required_action: define");
-    expect(harness.controller.requirementRepairStatusRevision).toBeUndefined();
     await nextModelTurn(harness);
     expect(
       await callRequirementAudit(harness.controller, {

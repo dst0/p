@@ -1,0 +1,22 @@
+# 2026-08-26 — Requirement repair responses must bind current indexes
+
+- **Status:** Resolved
+- **Task/context:** Validating candidate 5.0.1-rc.40 on the paired project-instructions event-sourced inventory benchmark.
+- **Unexpected observation or failure:** The first legacy cell implemented a modular solution and passed 62 self-authored tests, but timed out at the 40-minute gate while repairing its requirement definition. The preserved workspace also scored 95/100 because its truncation test removed an event line rather than the exact final byte.
+- **Evidence:** The cell ended `timed_out` after 2,402,502 ms and 2,385,751 recorded tokens. Its initial 34-requirement definition had 23 diagnostics; one sparse repair expanded the draft to 50 requirements and reduced the count to 17; the next repair was protocol-rejected. The preserved `src/validate.ts` called `log.trimEnd()`, while `test/hash-validation.test.ts` removed an entire event line instead of evaluating `validLog.slice(0, -1)`.
+- **Approaches tried:**
+  - **Attempt:** Rotate the definition UUID after an arity-changing sparse repair and require a separate status call before another repair.
+    - **Outcome:** Did not work
+    - **Why:** The redundant recovery roundtrip repeated a large draft, the model still reused stale metadata, and the protocol consumed the remaining benchmark budget.
+  - **Attempt:** Preserve one model-visible revision for the whole repair lineage.
+    - **Outcome:** Did not work
+    - **Why:** Adversarial review showed that an old in-range index could then target a different requirement after a split, weakening the protocol's stale-index guard even though later semantic validation might reject the candidate.
+  - **Attempt:** Rotate the revision for every adopted rejected repair and return that revision with the complete newly indexed batch in the same tool response.
+    - **Outcome:** Worked
+    - **Why:** The next repair can derive both revision and indexes directly from one response, while an old revision fails closed without mutating the active draft.
+- **Root cause:** Revision rotation and current indexes were separated across two tool calls. That made a safety handshake costly and easy for the model to execute with mismatched state. Separately, compact prompt guidance did not explicitly derive the named final-byte negative test from a valid payload.
+- **Resolution:** Remove the forced status barrier, rotate the model-visible revision after every adopted rejected repair, include the complete current indexed batch in every rejection response, reject stale revisions without draft mutation, and direct exact-record tests to validate `validPayload.slice(0, -1)` with the domain error.
+- **Verification:** A 34-to-35 requirement regression first failed because the repair response omitted the current batch. It now derives the shifted index and fresh revision from that response, proves the prior revision is rejected without draft mutation, and completes without `status`. The focused repair and prompt set passes 75 tests. A compiled-mode live AI-unit reduced an initial 5-diagnostic definition to 1 diagnostic and then acceptance, using each rotated revision and complete current batch directly from the rejection response without a status call. Its exact final-byte implementation independently passes all 7 fixture tests; the provider returned HTTP 503 after the first focused verdict-evidence replay, so end-to-end task completion remains unverified by that run.
+- **Prevention/follow-up:** Keep task 4 gated on three paired task-3 repetitions with correctness as a hard gate. Distinguish provider availability failures from product failures, but never count an interrupted live AI-unit as completed evidence.
+- **Reusable learning:** Bind positional indexes to a fresh state revision and return both together; never require a second recovery call merely to make the first response usable.
+- **References:** `packages/coding-agent/test/task-requirement-definition-repair-protocol.test.ts`, `packages/coding-agent/src/core/task-verification/rejected-definition-batch-format.ts`, `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `benchmarks/results/2026-08-25T23-05-36-871Z-v5.0.1-rc.40-project-instructions-paired/`
