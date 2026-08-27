@@ -213,7 +213,12 @@ describe("truncated tool-call recovery", () => {
     expect(contexts).toHaveLength(3);
     expect(executed).toEqual(["small bounded content"]);
     expect(
-      events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
-    ).toHaveLength(0);
+      events.filter(
+        (event) =>
+          event.type === "completion_protocol" &&
+          event.event === "malformed_tool_call_retry" &&
+          event.reason === "repetitive_model_output",
+      ),
+    ).toHaveLength(1);
   });
 });
