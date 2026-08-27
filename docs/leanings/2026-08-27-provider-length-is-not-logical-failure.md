@@ -1,0 +1,22 @@
+# 2026-08-27 — Provider length is not a logical failure
+
+- **Status:** Resolved
+- **Task/context:** Restore universal coding and non-coding generation after a live request needed more than three provider-sized output segments.
+- **Unexpected observation or failure:** The runtime preserved the first segments but synthesized a terminal error after the fourth `stopReason: "length"`. Strict completion modes could stop even earlier because each segment also consumed logical turn and malformed/no-progress budgets. The internal continuation prompt was persisted correctly for retry context, but coding-agent exposed it as a real user message to subscribers, extensions, UI/state derivation, and user-turn gates.
+- **Evidence:** A focused scripted-provider regression expected five length segments plus a successful tail but observed only four provider calls. A second regression never reached its final complete tool call, and an abort regression could not reach the provider cancellation response. With `maxTurns: 1`, explicit mode stopped after its first length segment. Coding-agent observers received `message_start` and `message_end` for `pInternal: "provider_length_continuation"`.
+- **Approaches tried:**
+  - **Attempt:** Retain a fixed small continuation ceiling and raise it.
+    - **Outcome:** Did not work
+    - **Why:** Any segment count is unrelated to task completeness and only moves the truncation boundary.
+  - **Attempt:** Add a provider-length-specific no-progress ceiling.
+    - **Outcome:** Rejected
+    - **Why:** A capacity finish is not evidence of logical stagnation, and unique valid output can require an unknown number of segments.
+  - **Attempt:** Continue every length-finished response through the common next-turn preparation boundary, while using caller cancellation/deadlines as the run-level safety control.
+    - **Outcome:** Worked
+    - **Why:** Completed segments remain durable, compaction can run before every next request, partial tool calls remain suppressed, and the caller retains explicit control over pathological providers.
+- **Root cause:** Provider transport capacity was conflated with logical task progress. The same internal control message was also classified narrowly as a completion-protocol repair instead of as an internal agent message.
+- **Resolution:** Removed all stop conditions and completion-budget accounting caused solely by `stopReason: "length"`. The runtime now continues until a non-length response or caller cancellation/error. Coding-agent keeps the continuation message in persisted/provider context for compaction and retry, while filtering it from public events, extensions, UI, state derivation, and user-turn gates.
+- **Verification:** Agent regressions cover more than three text segments followed by success, more than three partial tool segments followed by exactly one complete execution, explicit `maxTurns: 1`, and caller abort after repeated segments. Coding-agent regressions cover threshold compaction, persistence and provider ordering, observer filtering, gate isolation, final execution, and cancellation.
+- **Prevention/follow-up:** Treat provider finish reasons independently from semantic progress budgets. If cost control is required later, add an explicit whole-run provider-call, time, or cost budget owned by the caller rather than another hidden length-only ceiling.
+- **Reusable learning:** Capacity exhaustion should trigger persistence, compaction, and continuation; only semantic failure or an explicit caller budget may terminate the run.
+- **References:** `docs/leanings/2026-08-27-provider-length-continuation-must-be-protocol-independent.md`, `packages/agent/src/agent-loop/provider-length-continuation.ts`, `packages/agent/test/provider-length-continuation-liveness.test.ts`, `packages/coding-agent/test/suite/agent-session-provider-length-liveness.test.ts`, `packages/coding-agent/test/suite/agent-session-provider-length-compaction-state.test.ts`

@@ -134,11 +134,11 @@ finish_work({
 })
 ```
 
-When `finish_work` succeeds, the loop emits `agent_end` immediately and does not start another LLM turn. In every completion mode, a provider response ending with `stopReason: "length"` is finalized and preserved before any continuation. Tool calls from that response are never executed. The loop can request up to three consecutive bounded continuations, using a content-continuation instruction for text-only responses and a complete re-emission instruction for partial tool calls. Each continuation passes through `prepareNextTurn`, allowing hosts to compact before the next provider request; a fourth consecutive length finish emits a terminal error diagnostic instead of looping or pretending the response completed.
+When `finish_work` succeeds, the loop emits `agent_end` immediately and does not start another LLM turn. In every completion mode, a provider response ending with `stopReason: "length"` is finalized and preserved before any continuation. Tool calls from that response are never executed. The loop continues after every provider output limit, using a content-continuation instruction for text-only responses and a complete re-emission instruction for partial tool calls, until the provider completes or the caller aborts or reaches its own deadline. Each continuation passes through `prepareNextTurn`, allowing hosts to compact before the next provider request. Length-finished segments do not consume completion-protocol turn, malformed-tool, or no-progress limits because they represent provider capacity exhaustion rather than a logical agent turn.
 
 In strict mode, other malformed or truncated tool-call-looking output remains a recoverable completion-protocol error: the loop finalizes and emits the completed response, injects an internal repair message, then passes through `prepareNextTurn` before asking the model to re-emit a valid tool call or call `finish_work`.
 
-Safety limits prevent weak models from looping forever:
+Safety limits bound logical completion-protocol failures. Provider-length continuation is instead controlled by the caller's `AbortSignal`, deadline, or whole-run budget so a hidden segment count cannot truncate valid generation:
 
 ```typescript
 const agent = new Agent({

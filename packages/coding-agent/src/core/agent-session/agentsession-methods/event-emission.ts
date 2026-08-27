@@ -15,7 +15,7 @@ import type {
 } from "../../extensions/index.ts";
 import type { TokenBreakdown } from "../../token-accounting.ts";
 import type { AgentSession } from "../agentsession.ts";
-import { isInternalCompletionProtocolRepairMessage } from "../message-utils.ts";
+import { isInternalAgentMessage } from "../message-utils.ts";
 import type { AgentSessionEventListener } from "../session-types.ts";
 
 export async function do__emitExtensionEvent(self: AgentSession, event: AgentEvent): Promise<void> {
@@ -25,7 +25,7 @@ export async function do__emitExtensionEvent(self: AgentSession, event: AgentEve
   } else if (event.type === "agent_end") {
     await self._extensionRunner.emit({
       type: "agent_end",
-      messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
+      messages: event.messages.filter((message) => !isInternalAgentMessage(message)),
     });
   } else if (event.type === "turn_start") {
     const extensionEvent: TurnStartEvent = {
