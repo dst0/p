@@ -8,6 +8,7 @@ export const MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS = MAX_REQUIREMENT_COUNT;
 export const MAX_REQUIREMENT_REPAIR_ENTRIES = 16;
 export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
 export const MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS = 3;
+export const MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS = 3;
 
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:\b(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:without|with\s+no)\s+(?:a\s+)?(?:file[- ]size|line(?:-count)?)\s+limit\b|\b(?:do\s+not|don't)\s+split\s+(?:this|the)\s+file\b|(?:явно\s+)?(?:игнорируй|отмени)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|без\s+ограничени[яй]\s+(?:на\s+)?(?:размер|число\s+строк)|не\s+разбива(?:й|ть)\s+(?:этот\s+)?файл)/i;

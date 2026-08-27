@@ -4,6 +4,7 @@ import {
   MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
   MAX_REQUIREMENT_REPAIR_ENTRIES,
   MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
+  MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS,
   MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
 } from "./constants.ts";
 import { formatCurrentRejectedDefinitionBatch } from "./rejected-definition-batch-format.ts";
@@ -16,19 +17,18 @@ export interface RejectedRequirementDefinitionDraft {
   repairLineageBaselineRequirementCount: number;
   bestDiagnosticCount: number;
   unproductiveRepairAttempts: number;
+  consecutiveNonImprovingFreshDefinitions: number;
 }
-
 type IgnoredPromptInput = NonNullable<RequirementAuditInput["ignored_source_prompts"]>[number];
 type IgnoredClauseInput = NonNullable<RequirementAuditInput["ignored_source_clauses"]>[number];
-
 export type FreshDefinitionReason =
   | "empty_definition"
   | "lineage_growth"
   | "non_improving_fresh_definition"
+  | "stagnant_definition"
   | "recovery_prompt_limit"
   | "stagnant_repair";
 export type RejectedDefinitionTransition = "repair" | "fresh_definition";
-
 export const COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE =
   'Each repair replacement is a complete requirement object, not a patch; omitted provenance fields are deleted. When both independently apply, preserve them explicitly, for example {"source_prompt_indexes":[1],"source_clause_ids":["S2-C2"]}. Remove an accidental ignored-clause classification with ignored_source_clause_removals:["S2-C2"].';
 
@@ -51,9 +51,15 @@ export function rejectedDraftFreshDefinitionReason(
 export function rejectedDraftRequiresFreshDefinition(draft: RejectedRequirementDefinitionDraft | undefined): boolean {
   return rejectedDraftFreshDefinitionReason(draft) !== undefined;
 }
+export function rejectedDraftRecoveryExhausted(draft: RejectedRequirementDefinitionDraft | undefined): boolean {
+  return rejectedDraftFreshDefinitionReason(draft) === "stagnant_definition";
+}
 
 export function rejectedDefinitionNextActionGuardMessage(draft: RejectedRequirementDefinitionDraft): string {
   const reason = rejectedDraftFreshDefinitionReason(draft);
+  if (reason === "stagnant_definition") {
+    return `next_required_action: none\nDefinition recovery exhausted after ${MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS} consecutive non-improving complete definitions. No further define or repair transition is accepted for this task; preserve the workspace and start a fresh task or session with narrower, directly actionable requirements.`;
+  }
   if (reason === "non_improving_fresh_definition") {
     return `next_required_action: define\nThe fresh definition has ${definitionDiagnosticCount(draft.diagnostics)} deterministic diagnostic(s); the historical best is ${draft.bestDiagnosticCount}. No sparse-repair budget was reopened. Submit a valid complete definition or one with fewer than ${draft.bestDiagnosticCount} diagnostics.`;
   }
@@ -61,14 +67,12 @@ export function rejectedDefinitionNextActionGuardMessage(draft: RejectedRequirem
     ? `next_required_action: define\nA fresh define is required because ${freshDefinitionReasonText(reason)}. Resubmit one complete action "define" batch.`
     : 'next_required_action: repair_definition\nA fresh define is not authorized while the active rejected definition remains repairable. Use action "repair_definition" with the current definition_revision.';
 }
-
 export function recordUnproductiveRejectedDefinitionRepair(draft: RejectedRequirementDefinitionDraft): void {
   draft.unproductiveRepairAttempts += 1;
   if (draft.unproductiveRepairAttempts >= MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS) {
     authorizeRejectedDraftFreshDefinition(draft, "stagnant_repair");
   }
 }
-
 export function rejectedRequirementDefinitionDraft(
   input: RequirementAuditInput,
   diagnostics: string = "",
@@ -80,6 +84,12 @@ export function rejectedRequirementDefinitionDraft(
   const currentDiagnosticCount = diagnosticCount;
   const previousBestDiagnosticCount = previousDraft?.bestDiagnosticCount ?? currentDiagnosticCount;
   const diagnosticCountImproved = previousDraft !== undefined && currentDiagnosticCount < previousBestDiagnosticCount;
+  const consecutiveNonImprovingFreshDefinitions =
+    transition === "fresh_definition"
+      ? diagnosticCountImproved
+        ? 0
+        : (previousDraft?.consecutiveNonImprovingFreshDefinitions ?? 0) + 1
+      : (previousDraft?.consecutiveNonImprovingFreshDefinitions ?? 0);
   const draft: RejectedRequirementDefinitionDraft = {
     revision: randomUUID(),
     diagnostics,
@@ -88,6 +98,7 @@ export function rejectedRequirementDefinitionDraft(
         ? input.requirements.length
         : (previousDraft?.repairLineageBaselineRequirementCount ?? input.requirements.length),
     bestDiagnosticCount: Math.min(previousBestDiagnosticCount, currentDiagnosticCount),
+    consecutiveNonImprovingFreshDefinitions,
     unproductiveRepairAttempts: previousDraft
       ? diagnosticCountImproved
         ? 0
@@ -102,7 +113,12 @@ export function rejectedRequirementDefinitionDraft(
       ignored_source_clauses: structuredClone(input.ignored_source_clauses ?? []),
     },
   };
-  if (transition === "fresh_definition" && !diagnosticCountImproved) {
+  if (
+    transition === "fresh_definition" &&
+    consecutiveNonImprovingFreshDefinitions >= MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS
+  ) {
+    authorizeRejectedDraftFreshDefinition(draft, "stagnant_definition");
+  } else if (transition === "fresh_definition" && !diagnosticCountImproved) {
     authorizeRejectedDraftFreshDefinition(draft, "non_improving_fresh_definition");
   } else if (input.requirements.length === 0) {
     authorizeRejectedDraftFreshDefinition(draft, "empty_definition");
@@ -111,7 +127,6 @@ export function rejectedRequirementDefinitionDraft(
   }
   return draft;
 }
-
 export function definitionDiagnosticCount(diagnostics: string): number {
   const count = diagnostics.match(/^Requirement definition has (\d+) deterministic validation errors(?:\s|:)/u)?.[1];
   return count ? Number(count) : diagnostics.trim() ? 1 : 0;
@@ -123,7 +138,6 @@ export function rejectedRepairDoesNotWorsenHistoricalMinimum(
 ): boolean {
   return diagnosticCount !== undefined && diagnosticCount <= draft.bestDiagnosticCount;
 }
-
 export function repairRejectedRequirementDefinition(
   draft: RejectedRequirementDefinitionDraft | undefined,
   repair: RequirementAuditInput,
@@ -204,7 +218,6 @@ export function repairRejectedRequirementDefinition(
     ignored_source_clauses: ignoredSourceClauses,
   };
 }
-
 function mergeKeyedClassifications<T extends IgnoredPromptInput | IgnoredClauseInput, K extends string | number>(
   current: readonly T[],
   upserts: readonly T[],
@@ -277,6 +290,8 @@ function freshDefinitionReasonText(reason: FreshDefinitionReason): string {
       return "the active rejected definition exhausted its cumulative lineage growth budget";
     case "non_improving_fresh_definition":
       return "the fresh definition did not improve the historical diagnostic minimum";
+    case "stagnant_definition":
+      return "the complete-definition recovery budget was exhausted without a lower diagnostic count";
     case "recovery_prompt_limit":
       return "the active rejected batch cannot be rendered within the recovery prompt limit";
     case "stagnant_repair":
