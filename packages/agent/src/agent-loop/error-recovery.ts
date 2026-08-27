@@ -15,6 +15,14 @@ import {
   resolveCompletionMode,
   withCompletionProtocolTools,
 } from "./message-preparation.ts";
+import { prepareAgentNextTurn } from "./next-turn-preparation.ts";
+import { prepareProviderLengthContinuation } from "./provider-length-completion-compatibility.ts";
+import {
+  createProviderLengthContinuationState,
+  emitProviderLengthExhaustion,
+  isProviderLengthResponse,
+  requiresSpecializedProviderLengthRepair,
+} from "./provider-length-continuation.ts";
 import { streamAssistantResponse } from "./response-processing.ts";
 import { detectCompletionProtocolRepair } from "./tool-result-formatting.ts";
 import type { AgentEventSink, ExecutedToolCallBatch } from "./types.ts";
@@ -30,20 +38,18 @@ export async function runLoop(
   let config = initialConfig;
   let completionMode = resolveCompletionMode(config);
   const completionState = createCompletionProtocolState();
+  const providerLengthState = createProviderLengthContinuationState();
   let currentContext = withCompletionProtocolTools(initialContext, completionMode);
   let firstTurn = true;
-  // Check for steering messages at start (user may have typed while waiting)
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
 
   if (isCompletionProtocolEnabled(completionMode)) {
     await emit({ type: "completion_protocol", completionMode, event: "completion_mode" });
   }
 
-  // Outer loop: continues when queued follow-up messages arrive after agent would stop
   while (true) {
     let hasMoreToolCalls = true;
 
-    // Inner loop: process tool calls and steering messages
     while (hasMoreToolCalls || pendingMessages.length > 0) {
       if (!firstTurn) {
         await emit({ type: "turn_start" });
@@ -51,7 +57,6 @@ export async function runLoop(
         firstTurn = false;
       }
 
-      // Process pending messages (inject before next assistant response)
       if (pendingMessages.length > 0) {
         for (const message of pendingMessages) {
           await emit({ type: "message_start", message });
@@ -80,7 +85,6 @@ export async function runLoop(
       }
       completionState.turns++;
 
-      // Stream assistant response
       const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
       newMessages.push(message);
 
@@ -90,16 +94,18 @@ export async function runLoop(
         return;
       }
 
-      // Check for tool calls
       const toolCalls = message.content.filter((c) => c.type === "toolCall");
-      const protocolRepairBeforeExecution = isCompletionProtocolEnabled(completionMode)
-        ? detectCompletionProtocolRepair(message, toolCalls, true)
-        : undefined;
+      const providerLengthResponse = isProviderLengthResponse(message);
+      const protocolRepairBeforeExecution =
+        isCompletionProtocolEnabled(completionMode) &&
+        (!providerLengthResponse || requiresSpecializedProviderLengthRepair(message, toolCalls))
+          ? detectCompletionProtocolRepair(message, toolCalls, true)
+          : undefined;
 
       const toolResults: ToolResultMessage[] = [];
       let executedToolBatch: ExecutedToolCallBatch | undefined;
       hasMoreToolCalls = false;
-      if (toolCalls.length > 0 && !protocolRepairBeforeExecution) {
+      if (toolCalls.length > 0 && !providerLengthResponse && !protocolRepairBeforeExecution) {
         executedToolBatch = await executeToolCalls(currentContext, message, config, signal, emit);
         toolResults.push(...executedToolBatch.messages);
         hasMoreToolCalls = !executedToolBatch.terminate;
@@ -111,6 +117,28 @@ export async function runLoop(
       }
 
       await emit({ type: "turn_end", message, toolResults });
+
+      const providerLengthDecision = await prepareProviderLengthContinuation(
+        message,
+        toolCalls,
+        protocolRepairBeforeExecution,
+        providerLengthState,
+        completionState,
+        completionLimits,
+        currentContext,
+        newMessages,
+        config,
+        completionMode,
+        emit,
+      );
+      if (providerLengthDecision === "failed") return;
+      if (providerLengthDecision === "exhausted") {
+        await emitProviderLengthExhaustion(config, currentContext, newMessages, emit);
+        return;
+      }
+      if (providerLengthDecision === "continue") {
+        hasMoreToolCalls = true;
+      }
 
       if (executedToolBatch?.madeProgress) {
         completionState.consecutiveWaitingTurns = 0;
@@ -134,7 +162,11 @@ export async function runLoop(
         hasMoreToolCalls = true;
       }
 
-      if (isCompletionProtocolEnabled(completionMode) && !completionState.allowImplicitCompletion) {
+      if (
+        providerLengthDecision === "none" &&
+        isCompletionProtocolEnabled(completionMode) &&
+        !completionState.allowImplicitCompletion
+      ) {
         const finishWorkResult = toolResults.find((result) => isFinishWorkToolResult(result) && !result.isError);
         if (finishWorkResult) {
           await emit({ type: "completion_protocol", completionMode, event: "finish_work_called" });
@@ -157,9 +189,7 @@ export async function runLoop(
           }
         } else if (executedToolBatch?.madeProgress) {
           resetCompletionProgress(completionState);
-        } else if (executedToolBatch?.waiting) {
-          // Wait-only turns are managed by waiting_loop_warning and do not count towards no_progress_stop
-        } else if (toolCalls.length > 0) {
+        } else if (!executedToolBatch?.waiting && toolCalls.length > 0) {
           completionState.noProgressTurns++;
         }
 
@@ -224,34 +254,18 @@ export async function runLoop(
         }
       }
 
-      const nextTurnContext = {
+      ({ config, context: currentContext } = await prepareAgentNextTurn(
         message,
         toolResults,
-        context: currentContext,
+        currentContext,
         newMessages,
-      };
-      const nextTurnSnapshot = await config.prepareNextTurn?.(nextTurnContext);
-      if (nextTurnSnapshot) {
-        currentContext = nextTurnSnapshot.context ?? currentContext;
-        config = {
-          ...config,
-          model: nextTurnSnapshot.model ?? config.model,
-          reasoning:
-            nextTurnSnapshot.thinkingLevel === undefined
-              ? config.reasoning
-              : nextTurnSnapshot.thinkingLevel === "off"
-                ? undefined
-                : nextTurnSnapshot.thinkingLevel,
-        };
-        for (const appendedMessage of nextTurnSnapshot.appendMessages ?? []) {
-          await emit({ type: "message_start", message: appendedMessage });
-          await emit({ type: "message_end", message: appendedMessage });
-          currentContext.messages.push(appendedMessage);
-          newMessages.push(appendedMessage);
-        }
-      }
+        config,
+        emit,
+      ));
 
-      const canStopImplicitly = !isCompletionProtocolEnabled(completionMode) || completionState.allowImplicitCompletion;
+      const canStopImplicitly =
+        providerLengthDecision === "none" &&
+        (!isCompletionProtocolEnabled(completionMode) || completionState.allowImplicitCompletion);
       if (
         canStopImplicitly &&
         (await config.shouldStopAfterTurn?.({
