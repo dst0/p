@@ -1,7 +1,7 @@
 import type { ImageContent } from "@dst0/p-ai";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { runPrintMode } from "../src/modes/print-mode.ts";
-import { createAssistantMessage, createRuntimeHost } from "./print-mode-test-support.ts";
+import { captureStdout, createAssistantMessage, createRuntimeHost } from "./print-mode-test-support.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -53,6 +53,29 @@ describe("runPrintMode lifecycle", () => {
 
     expect(exitCode).toBe(1);
     expect(errorSpy).toHaveBeenCalledWith("provider failure");
+    expect(session.extensionRunner.emit).toHaveBeenCalledTimes(1);
+    expect(session.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
+  });
+
+  it("prints marker-free partial output before a post-length cancellation and shuts down", async () => {
+    const response = [
+      createAssistantMessage({ text: "useful partial", stopReason: "length" }),
+      createAssistantMessage({ stopReason: "aborted", errorMessage: "Request aborted" }),
+    ];
+    const runtimeHost = createRuntimeHost(response[1]!, { promptAgentEnds: [response] });
+    const { session } = runtimeHost;
+    const stdout = captureStdout();
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    const exitCode = await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+      mode: "text",
+      initialMessage: "Produce a long response",
+    });
+
+    expect(exitCode).toBe(1);
+    expect(stdout.text()).toBe("useful partial\n");
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenCalledWith("Request aborted");
     expect(session.extensionRunner.emit).toHaveBeenCalledTimes(1);
     expect(session.extensionRunner.emit).toHaveBeenCalledWith({ type: "session_shutdown", reason: "quit" });
   });
