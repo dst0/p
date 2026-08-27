@@ -119,10 +119,15 @@ export async function runLoop(
         message,
         toolCalls,
         protocolRepairBeforeExecution,
+        completionState,
+        completionLimits,
         currentContext,
         newMessages,
+        config,
+        completionMode,
         emit,
       );
+      if (providerLengthDecision === "failed") return;
       if (providerLengthDecision === "continue") {
         hasMoreToolCalls = true;
       }

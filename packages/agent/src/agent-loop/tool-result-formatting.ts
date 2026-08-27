@@ -50,7 +50,8 @@ export function detectCompletionProtocolRepair(
   if (hasRepetitiveModelOutput(message)) {
     return {
       reason: "repetitive_model_output",
-      message: REPETITIVE_MODEL_OUTPUT_REPAIR_MESSAGE,
+      message:
+        toolCalls.length > 0 ? malformedToolCallRepairMessage(toolCalls) : REPETITIVE_MODEL_OUTPUT_REPAIR_MESSAGE,
       event: "malformed_tool_call_retry",
     };
   }

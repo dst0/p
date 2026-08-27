@@ -1,6 +1,7 @@
 import type { AssistantMessage, Usage } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { hasRepetitiveModelOutput } from "../src/agent-loop/response-processing.ts";
+import { detectCompletionProtocolRepair } from "../src/agent-loop/tool-result-formatting.ts";
 
 const usage: Usage = {
   input: 0,
@@ -29,11 +30,19 @@ describe("hasRepetitiveModelOutput", () => {
   it("detects repetitive loop in streamed text truncated by length", () => {
     const message = createAssistantMessage("length", "streamed text entered a repetitive loop and stopped");
     expect(hasRepetitiveModelOutput(message)).toBe(true);
+    expect(detectCompletionProtocolRepair(message, [], true)?.reason).toBe("repetitive_model_output");
   });
 
   it("detects repetitive loop in streamed reasoning truncated by length", () => {
     const message = createAssistantMessage("length", "Streamed reasoning entered a repetitive loop and was truncated");
     expect(hasRepetitiveModelOutput(message)).toBe(true);
+    expect(detectCompletionProtocolRepair(message, [], true)?.reason).toBe("repetitive_model_output");
+  });
+
+  it("detects repetitive loop in streamed tool arguments truncated by length", () => {
+    const message = createAssistantMessage("length", "Streamed arguments entered a repetitive loop and was truncated");
+    expect(hasRepetitiveModelOutput(message)).toBe(true);
+    expect(detectCompletionProtocolRepair(message, [], true)?.reason).toBe("repetitive_model_output");
   });
 
   it("returns false when message stopped due to max length without repetitive loop marker", () => {
