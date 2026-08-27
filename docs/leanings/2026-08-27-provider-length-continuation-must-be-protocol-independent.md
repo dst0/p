@@ -1,0 +1,22 @@
+# 2026-08-27 — Provider-length continuation must be protocol-independent
+
+- **Status:** Resolved
+- **Task/context:** Preserve streamed generation across provider output-token limits for coding and non-coding requests in implicit, hybrid, and explicit-finish agent modes.
+- **Unexpected observation or failure:** The first continuity fix routed strict completion-protocol repair through `prepareNextTurn`, but implicit mode still executed a partial tool call from a `length`-finished response, while text-only output stopped without an automatic continuation.
+- **Evidence:** Faux-provider regressions showed the implicit partial write executing both its oversized truncated arguments and the later bounded retry. Implicit and explicit text-only contexts contained queued steering but no provider-length continuation marker. Applying one generic prompt to every length response then broke four existing specialized repetitive-output and detailed tool-repair regressions.
+- **Approaches tried:**
+  - **Attempt:** Reuse only the strict `finish_work` repair path.
+    - **Outcome:** Did not work
+    - **Why:** Provider output exhaustion is transport completion state, not task-completion protocol state; implicit requests never enter the strict repair branch.
+  - **Attempt:** Replace every strict length repair with one generic continuation prompt.
+    - **Outcome:** Partial
+    - **Why:** It made ordinary text continuation universal but discarded detailed pending-tool and repetitive-output recovery semantics already required by strict-mode tests.
+  - **Attempt:** Universally suppress tools from every length-finished response, add bounded generic continuation for implicit and ordinary text output, and retain specialized strict recovery for malformed tools and repetitive streams.
+    - **Outcome:** Worked
+    - **Why:** Safety no longer depends on completion mode, while specialized recovery remains available when its stronger diagnostic is relevant.
+- **Root cause:** The loop conflated provider output-token exhaustion with the optional task completion protocol and therefore gated both tool suppression and continuation on `finish_work` semantics.
+- **Resolution:** Finalize and persist every length-finished response, execute none of its tool calls, inject a content-aware internal continuation, pass through `prepareNextTurn`, and stop with a clear error after three consecutive continuations. Non-length output resets the bound; cancellation remains terminal.
+- **Verification:** Faux-provider continuity tests cover implicit partial tools, implicit and explicit text-only continuation, compaction-before-retry, exact queue ordering, semantic no-duplication, bounded terminal failure, and cancellation. Low-level agent coverage proves a continuation cannot be preempted by `shouldStopAfterTurn`; focused agent and coding-agent suites pass.
+- **Prevention/follow-up:** Keep provider transport finish reasons independent from task completion modes, and regression-test every new finish reason across implicit and explicit operation before relying on protocol-specific recovery.
+- **Reusable learning:** Persist the current stream first, classify the provider finish reason independently, suppress unsafe side effects, and compact only before a bounded next request.
+- **References:** `packages/agent/src/agent-loop/provider-length-continuation.ts`, `packages/agent/test/provider-length-continuation.test.ts`, `packages/coding-agent/test/suite/agent-session-stream-generation-continuity.test.ts`
