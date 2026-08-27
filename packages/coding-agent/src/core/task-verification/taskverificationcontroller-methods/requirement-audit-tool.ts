@@ -7,7 +7,6 @@ import {
 } from "../constants.ts";
 import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
 import {
-  authorizeRejectedDraftFreshDefinition,
   COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
   definitionDiagnosticCount,
   formatRejectedDefinitionRepairGuidance,
@@ -44,7 +43,7 @@ export function do_createRequirementAuditToolDefinition(
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and normal cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements. An overflow candidate is adopted only when atomic validation strictly improves the historical diagnostic minimum.`,
+      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and normal cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements. A lineage-overflow candidate must pass atomic validation completely; an invalid overflow is never retained as the next repair draft.`,
       "Each adopted repair returns a new revision, compact current diagnostics, and the active requirement count. Use task-verification status only when compaction requires exact complete-batch recovery; unchanged requirements remain controller-side.",
       COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
       "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
@@ -108,27 +107,25 @@ export function do_createRequirementAuditToolDefinition(
         typeof repaired !== "string" &&
         result.status === "needs_action" &&
         result.state.requirementAudit?.status === "awaiting_definition" &&
-        !(
-          rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount) &&
-          (!lineageOverflow || candidateDiagnosticCount! < previousRejectedDraft.bestDiagnosticCount)
-        )
+        (!rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount) ||
+          lineageOverflow)
       ) {
         recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
-        if (
-          candidateDiagnosticCount !== undefined &&
-          candidateDiagnosticCount > previousRejectedDraft.bestDiagnosticCount
-        ) {
-          authorizeRejectedDraftFreshDefinition(previousRejectedDraft, "regressive_repair");
-        }
         const activeDiagnosticCount = definitionDiagnosticCount(previousRejectedDraft.diagnostics);
         const retainedMessage =
           candidateDiagnosticCount === undefined
             ? "Repair was not adopted because the controller rejection did not include structured requirement-definition diagnostics. The previous draft and definition_revision were retained."
-            : [
-                `Repair was not adopted because it produced ${candidateDiagnosticCount} deterministic diagnostic(s); the active draft has ${activeDiagnosticCount} and the historical best is ${previousRejectedDraft.bestDiagnosticCount}. The previous draft and definition_revision were retained.`,
-                "Candidate diagnostics:",
-                result.message,
-              ].join("\n\n");
+            : lineageOverflow
+              ? [
+                  `Repair was not adopted because it would retain ${repaired.requirements?.length ?? 0} invalid requirements beyond the lineage limit of ${previousRejectedDraft.repairLineageBaselineRequirementCount + MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH}. Overflow candidates are validated atomically but only a fully valid overflow may replace the compact draft. The previous draft and definition_revision were retained.`,
+                  "Candidate diagnostics:",
+                  result.message,
+                ].join("\n\n")
+              : [
+                  `Repair was not adopted because it produced ${candidateDiagnosticCount} deterministic diagnostic(s); the active draft has ${activeDiagnosticCount} and the historical best is ${previousRejectedDraft.bestDiagnosticCount}. The previous draft and definition_revision were retained.`,
+                  "Candidate diagnostics:",
+                  result.message,
+                ].join("\n\n");
         const message = formatRejectedDefinitionRepairFeedback(retainedMessage, previousRejectedDraft);
         return { content: [{ type: "text", text: message }], details: result };
       }

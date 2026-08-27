@@ -1,4 +1,5 @@
 import { HIGH_RISK_REQUIREMENT_PATTERN } from "./constants.ts";
+import { maskScalarLiterals } from "./requirement-literal-boundaries.ts";
 
 const OBSERVABLE_OUTCOME_FAMILIES = [
   /\b(?:accept(?:s|ed|ing)?|allow(?:s|ed|ing)?|permit(?:s|ted|ting)?)\b/iu,
@@ -42,18 +43,22 @@ const ROLLBACK_OBSERVABLES = [
 export function compoundHighRiskRequirementError(text: string, acceptanceCriterion: string): string | undefined {
   const combined = `${text}\n${acceptanceCriterion}`;
   if (!HIGH_RISK_REQUIREMENT_PATTERN.test(combined)) return undefined;
+  const maskedAcceptanceCriterion = maskScalarLiterals(acceptanceCriterion);
+  const maskedCombined = `${maskScalarLiterals(text)}\n${maskedAcceptanceCriterion}`;
   const outcomeCount =
-    OBSERVABLE_OUTCOME_FAMILIES.filter((pattern) => pattern.test(acceptanceCriterion)).length +
-    Number(hasAuditAction(acceptanceCriterion));
-  const coordinatedCaseCount = acceptanceCriterion
+    OBSERVABLE_OUTCOME_FAMILIES.filter((pattern) => pattern.test(maskedAcceptanceCriterion)).length +
+    Number(hasAuditAction(maskedAcceptanceCriterion));
+  const coordinatedCaseCount = maskedAcceptanceCriterion
     .split(CASE_COORDINATOR_PATTERN)
     .filter((segment) => HIGH_RISK_CASE_FAMILIES.some((pattern) => pattern.test(segment))).length;
-  const sentenceCount = acceptanceCriterion.split(/[.!?]+(?=\s|$)/u).filter((part) => part.trim().length > 0).length;
-  const rollbackObservableCount = FAILURE_PRESERVATION_PATTERN.test(combined)
-    ? ROLLBACK_OBSERVABLES.filter((pattern) => pattern.test(combined)).length
+  const sentenceCount = maskedAcceptanceCriterion
+    .split(/[.!?]+(?=\s|$)/u)
+    .filter((part) => part.trim().length > 0).length;
+  const rollbackObservableCount = FAILURE_PRESERVATION_PATTERN.test(maskedCombined)
+    ? ROLLBACK_OBSERVABLES.filter((pattern) => pattern.test(maskedCombined)).length
     : 0;
   if (
-    acceptanceCriterion.includes(";") ||
+    maskedAcceptanceCriterion.includes(";") ||
     outcomeCount > 1 ||
     coordinatedCaseCount > 1 ||
     rollbackObservableCount > 1 ||

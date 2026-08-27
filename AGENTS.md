@@ -40,6 +40,7 @@
 - Do not run `npm run test:unit` inside a wrapper with a fixed deadline shorter than the suite. `test.sh` temporarily moves `~/.p/agent/auth.json`; after any interrupted run, verify the primary and `.bak` paths and restore the intact mode-`0600` backup only when the primary is absent.
 - Run `./test.sh` directly with output redirected to a temporary active log; do not route it through lean-ctx's bounded CLI wrapper. Compress the closed log with Brotli Q6 after the process exits.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
+- After restarting a live `p` run, rediscover and identity-bind its newest session JSONL before monitoring; never infer a stall from the previous process's log.
 
 ## Test Quality & Adversarial Review
 
@@ -53,6 +54,7 @@
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
 - When adding a test under `scripts/`, inspect the root npm test scripts; if its parent suite enumerates files explicitly, add the new file in the same change and run that parent script at least once.
 - Temporary release Git fixtures that recursively delete repositories, remotes, or clones must disable repository-local automatic and detached maintenance/GC unless the test explicitly owns and joins that background lifecycle.
+- Successful child-process regressions must give their kill timeout measured full-suite load margin rather than setting it near the focused runtime.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 

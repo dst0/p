@@ -25,7 +25,6 @@ export type FreshDefinitionReason =
   | "empty_definition"
   | "lineage_growth"
   | "non_improving_fresh_definition"
-  | "regressive_repair"
   | "recovery_prompt_limit"
   | "stagnant_repair";
 export type RejectedDefinitionTransition = "repair" | "fresh_definition";
@@ -278,8 +277,6 @@ function freshDefinitionReasonText(reason: FreshDefinitionReason): string {
       return "the active rejected definition exhausted its cumulative lineage growth budget";
     case "non_improving_fresh_definition":
       return "the fresh definition did not improve the historical diagnostic minimum";
-    case "regressive_repair":
-      return "the rejected repair increased deterministic diagnostics above the historical minimum";
     case "recovery_prompt_limit":
       return "the active rejected batch cannot be rendered within the recovery prompt limit";
     case "stagnant_repair":

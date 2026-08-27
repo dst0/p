@@ -1,0 +1,22 @@
+# 2026-08-28 — Invalid lineage overflow must not become repair state
+
+- **Status:** Partial
+- **Task/context:** Validate requirement-definition repair liveness on the paired project-instruction benchmark's event-sourced inventory task.
+- **Unexpected observation or failure:** A repair expanded the active rejected definition from 16 to 61 requirements while reducing deterministic diagnostics only from 28 to 27. The agent then could address at most 16 indexed requirements per repair call and made no implementation progress.
+- **Evidence:** The live rc.46 telemetry reported 21 resolved, 7 persisting, and 20 introduced diagnostics after roughly ten minutes. The controller retained the 61-item candidate because its scalar diagnostic total beat the historical minimum by one.
+- **Approaches tried:**
+  - **Attempt:** Retain any lineage-overflow candidate whose diagnostic count strictly improves.
+    - **Outcome:** Did not work.
+    - **Why:** A scalar count hid near-total diagnostic replacement and allowed rejected state to grow beyond the next sparse repair call's correction capacity.
+  - **Attempt:** Require introduced diagnostics to be fewer than resolved diagnostics.
+    - **Outcome:** Did not work.
+    - **Why:** That inequality is algebraically equivalent to requiring a lower total diagnostic count and would still accept the observed 21-to-20 exchange.
+  - **Attempt:** Validate overflow candidates atomically but retain them only when validation passes completely.
+    - **Outcome:** Worked in focused controller regressions; live revalidation is pending.
+    - **Why:** A valid large definition can still advance in one transaction, while an invalid large candidate cannot pollute the compact repair state.
+- **Root cause:** Repair adoption treated scalar diagnostic reduction as sufficient compensation for unbounded intermediate structural churn.
+- **Resolution:** Invalid lineage-overflow candidates are now discarded with the compact draft and revision retained; a fully valid overflow remains eligible for atomic adoption.
+- **Verification:** The new failing-before-fix regression now passes, along with the focused bounded, monotonic, lineage, next-action, and stagnation suites (32 tests). Full gates and live canary remain pending.
+- **Prevention/follow-up:** Keep retained rejected state within the cumulative lineage budget, and rerun the non-coding AI-unit canary before registering the next benchmark candidate.
+- **Reusable learning:** Validate large speculative state, but never persist it as intermediate repair state when the next bounded repair operation cannot cover it.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `packages/coding-agent/test/task-requirement-definition-repair-lineage-budget.test.ts`, `packages/coding-agent/test/task-requirement-definition-bounded-repair.test.ts`

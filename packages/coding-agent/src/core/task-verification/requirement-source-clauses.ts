@@ -1,3 +1,4 @@
+import { splitSourceClauses } from "./requirement-literal-boundaries.ts";
 import type { TaskVerificationSourcePrompt } from "./types.ts";
 
 export type RequirementSourceClauseKind = "heading" | "prose" | "code";
@@ -132,7 +133,7 @@ function extractClauses(source: string): ExtractedClause[] {
     const listIntroductionOffset = listItem ? listIntroductions.at(-1)?.clauseOffset : undefined;
     const withoutMarker = trimmed.replace(/^(?:[-*+]\s+|\d+[.)]\s+)/u, "");
     let part = 0;
-    for (const partText of withoutMarker.split(/;|(?<=[.!?])\s+/u)) {
+    for (const partText of splitSourceClauses(withoutMarker)) {
       const normalized = partText.trim();
       if (normalized) {
         part += 1;
