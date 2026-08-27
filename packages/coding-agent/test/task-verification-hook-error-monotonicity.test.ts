@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { createTaskVerificationController } from "../src/core/task-verification.ts";
+import { callTaskVerification } from "./task-requirement-audit-test-harness.ts";
 
 describe("task verification hook error monotonicity", () => {
   it("does not let a hook demote a native failing command into passing evidence", async () => {
@@ -64,6 +65,54 @@ describe("task verification hook error monotonicity", () => {
 
     expect(result?.isError).toBe(true);
     expect(controller.currentState.mutationRevision).toBe(0);
+    expect(controller.evidence.size).toBe(0);
+  });
+
+  it("records native successful evidence as failed when an earlier hook throws", async () => {
+    const hookError = new Error("presentation hook failed");
+    let throwFromHook = false;
+    const { agent, controller } = harness(async () => {
+      if (throwFromHook) throw hookError;
+      return undefined;
+    });
+    const command = "node --test test/success.test.ts";
+    await callTaskVerification(controller, {
+      action: "declare_task",
+      task_kind: "bug_fix",
+      task_summary: "Keep thrown result hooks from accepting verification evidence",
+    });
+    await callTool(agent, "bash", { command }, true);
+    const baselineEvidence = [...controller.evidence.values()][0];
+    expect(baselineEvidence).toBeDefined();
+    await callTaskVerification(controller, {
+      action: "record_baseline",
+      baseline_method: "failing_regression_test",
+      hypothesis: "The result hook failure can accept passing replay evidence",
+      conclusion: "The focused regression reproduces the evidence boundary defect",
+      evidence_refs: [baselineEvidence?.ref],
+      unresolved_assumptions: [],
+    });
+    await callTool(agent, "write", { path: "src/example.ts", content: "export const value = 2;\n" }, false);
+    throwFromHook = true;
+
+    await expect(callTool(agent, "bash", { command }, false)).rejects.toBe(hookError);
+    const evidence = [...controller.evidence.values()].at(-1);
+
+    expect(evidence).toMatchObject({ nativeIsError: false, isError: true, mutationRevision: 1 });
+    expect(controller.currentState.final.status).toBe("pending");
+  });
+
+  it("still settles a native successful mutation when an earlier hook throws", async () => {
+    const hookError = new Error("presentation hook failed");
+    const { agent, controller } = harness(async () => {
+      throw hookError;
+    });
+
+    await expect(
+      callTool(agent, "write", { path: "src/example.ts", content: "export const value = 2;\n" }, false),
+    ).rejects.toBe(hookError);
+
+    expect(controller.currentState.mutationRevision).toBe(1);
     expect(controller.evidence.size).toBe(0);
   });
 });

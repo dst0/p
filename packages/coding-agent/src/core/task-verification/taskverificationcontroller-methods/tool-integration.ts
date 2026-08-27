@@ -109,6 +109,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     } catch (error) {
       previousFailed = true;
       previousError = error;
+      previousResult = { isError: true };
     }
     try {
       const result = await self.afterToolCall(nativeContext, previousResult);
