@@ -32,6 +32,48 @@ export interface TextModeFinalOutput {
   exitCode: number;
 }
 
+function isProviderLengthContinuationMessage(message: AgentMessage): boolean {
+  return message.role === "user" && message.metadata?.pInternal === "provider_length_continuation";
+}
+
+function getFinalResponseAssistantMessages(messages: readonly AgentMessage[]): AssistantMessage[] {
+  let lastAssistantIndex = -1;
+  for (let index = messages.length - 1; index >= 0; index--) {
+    if (messages[index]?.role === "assistant") {
+      lastAssistantIndex = index;
+      break;
+    }
+  }
+  if (lastAssistantIndex === -1) return [];
+
+  let responseStart = lastAssistantIndex;
+  let cursor = lastAssistantIndex;
+  while (cursor >= 1) {
+    const continuationMessage = messages[cursor - 1];
+    if (continuationMessage?.role === "assistant" && continuationMessage.stopReason === "length") {
+      responseStart = cursor - 1;
+      cursor = responseStart;
+      continue;
+    }
+    const precedingLengthMessage = messages[cursor - 2];
+    if (
+      cursor < 2 ||
+      !continuationMessage ||
+      !isProviderLengthContinuationMessage(continuationMessage) ||
+      precedingLengthMessage?.role !== "assistant" ||
+      precedingLengthMessage.stopReason !== "length"
+    ) {
+      break;
+    }
+    responseStart = cursor - 2;
+    cursor = responseStart;
+  }
+
+  return messages
+    .slice(responseStart, lastAssistantIndex + 1)
+    .filter((message): message is AssistantMessage => message.role === "assistant");
+}
+
 export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextModeFinalOutput {
   const finishPayload = getFinishWorkPayload(messages);
   if (finishPayload) {
@@ -41,26 +83,47 @@ export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextM
     };
   }
 
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage?.role !== "assistant") {
+  const assistantMessages = getFinalResponseAssistantMessages(messages);
+  const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+  if (!lastAssistantMessage) {
     return { exitCode: 0 };
   }
 
-  const assistantMsg = lastMessage as AssistantMessage;
-  if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+  const isTerminalError = lastAssistantMessage.stopReason === "error" || lastAssistantMessage.stopReason === "aborted";
+  const error = isTerminalError
+    ? lastAssistantMessage.errorMessage || `Request ${lastAssistantMessage.stopReason}`
+    : undefined;
+  const text = assistantMessages
+    .map((message, index) => {
+      const messageText = message.content
+        .filter((content) => content.type === "text")
+        .map((content) => content.text)
+        .join("");
+      const isTerminalDiagnostic = index === assistantMessages.length - 1 && error === messageText;
+      return isTerminalDiagnostic ? "" : messageText;
+    })
+    .join("");
+
+  if (error) {
     return {
-      error: assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`,
+      ...(text ? { text } : {}),
+      error,
       exitCode: 1,
     };
   }
 
   return {
-    text: assistantMsg.content
-      .filter((content) => content.type === "text")
-      .map((content) => content.text)
-      .join(""),
+    text,
     exitCode: 0,
   };
+}
+
+function getSessionStateTextModeFinalOutput(messages: readonly AgentMessage[]): TextModeFinalOutput {
+  if (getFinishWorkPayload(messages)) {
+    return getTextModeFinalOutput(messages);
+  }
+  const lastMessage = messages[messages.length - 1];
+  return getTextModeFinalOutput(lastMessage ? [lastMessage] : []);
 }
 
 /**
@@ -72,6 +135,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
   let exitCode = 0;
   let session = runtimeHost.session;
   let unsubscribe: (() => void) | undefined;
+  let latestAgentEndMessages: readonly AgentMessage[] | undefined;
   let disposed = false;
   const signalCleanupHandlers: Array<() => void> = [];
 
@@ -140,6 +204,9 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
     unsubscribe?.();
     unsubscribe = session.subscribe((event) => {
+      if (event.type === "agent_end" && !event.willRetry) {
+        latestAgentEndMessages = event.messages;
+      }
       if (mode === "json") {
         writeRawStdout(`${JSON.stringify(event)}\n`);
       }
@@ -157,20 +224,25 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
     await rebindSession();
 
     if (initialMessage) {
+      latestAgentEndMessages = undefined;
       await session.prompt(initialMessage, { images: initialImages });
     }
 
     for (const message of messages) {
+      latestAgentEndMessages = undefined;
       await session.prompt(message);
     }
 
     if (mode === "text") {
-      const finalOutput = getTextModeFinalOutput(session.state.messages);
+      const finalOutput = latestAgentEndMessages
+        ? getTextModeFinalOutput(latestAgentEndMessages)
+        : getSessionStateTextModeFinalOutput(session.state.messages);
       exitCode = finalOutput.exitCode;
+      if (finalOutput.text) {
+        writeRawStdout(`${finalOutput.text}\n`);
+      }
       if (finalOutput.error) {
         console.error(finalOutput.error);
-      } else if (finalOutput.text) {
-        writeRawStdout(`${finalOutput.text}\n`);
       }
     }
 
