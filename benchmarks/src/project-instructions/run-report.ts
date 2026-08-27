@@ -94,6 +94,7 @@ type PairedReportDocument = {
   generatedAt: string;
   model: string;
   compilerModel?: string;
+  thinking?: string;
   binarySha256: string;
   seed: string;
   candidateVersion: string;
@@ -136,6 +137,7 @@ export function renderPairedReport(document: PairedReportDocument): string {
   report += `Generated: ${escapeMarkdownText(document.generatedAt)}\n\nTask model: ${markdownCodeSpan(document.model)}\n\nCompiler model: ${markdownCodeSpan(document.compilerModel ?? document.model)}\n\n`;
   report += `P runtime-closure SHA-256: ${markdownCodeSpan(document.binarySha256)}\n\nSeed: ${markdownCodeSpan(document.seed)}\n\n`;
   report += `Candidate version: ${markdownCodeSpan(document.candidateVersion)}\n\n`;
+  report += `Task thinking level: ${markdownCodeSpan(document.thinking ?? "default")}\n\n`;
   report += `Repetitions: ${formatNumber(document.runs)}; tasks: ${document.tasks.map(markdownCodeSpan).join(", ")}.\n\n`;
   report +=
     "Per-cell token and runtime totals measure steady-state agent work only; compiler preparation is excluded.\n\n";

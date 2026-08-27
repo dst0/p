@@ -1,6 +1,7 @@
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { isThinkingLevel, type ThinkingLevel } from "./thinking-level.ts";
 
 export const supportedAgents = ["pi", "p", "kilo", "codex", "agy"] as const;
 export type AgentId = (typeof supportedAgents)[number];
@@ -31,6 +32,7 @@ export type RunnerOptions = {
   minimumTimeoutSeconds?: number;
   maxRuntimeSeconds: number;
   output?: string;
+  thinking?: ThinkingLevel;
   outputLimits?: Readonly<Record<string, number>>;
   help?: boolean;
   signal?: AbortSignal;
@@ -80,6 +82,7 @@ Options:
   --project-instructions <mode> P-only mode: compiled, legacy, or off
   --project-instruction-compiler-model <provider/id> Dedicated P compiler model
   --project-instructions-file <path> Authoritative source copied into each P fixture
+  --thinking <level>           P reasoning level: off, minimal, low, medium, high, or xhigh
   --runs <n>                  Complete repetitions (default: 1)
   --timeout-seconds <n>       Per-agent task timeout (default: ${defaultTimeoutSeconds})
   --minimum-timeout-seconds <n> Raise shorter fixture timeouts to at least this value
@@ -141,7 +144,10 @@ function assignStringOption(options: RunnerOptions, argument: string, value: str
   } else if (argument === "--project-instruction-compiler-model") {
     options.projectInstructionCompilerModel = value;
   } else if (argument === "--project-instructions-file") options.projectInstructionsFile = resolve(value);
-  else if (argument === "--output") options.output = resolve(value);
+  else if (argument === "--thinking") {
+    if (!isThinkingLevel(value)) throw new Error("--thinking must be off, minimal, low, medium, high, or xhigh");
+    options.thinking = value;
+  } else if (argument === "--output") options.output = resolve(value);
 }
 
 export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
@@ -185,6 +191,7 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
     "--project-instructions",
     "--project-instruction-compiler-model",
     "--project-instructions-file",
+    "--thinking",
     "--output",
   ]);
   const integerOptions = new Set([

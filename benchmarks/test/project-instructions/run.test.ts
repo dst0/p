@@ -46,10 +46,20 @@ test("failed agent turns stop without watchdog nudges", () => {
 });
 
 test("paired arguments require three to five repetitions", () => {
-  const parsed = parsePairedArgs(["--model", "provider/model", "--runs", "5", "--task", "monolith-split"]);
+  const parsed = parsePairedArgs([
+    "--model",
+    "provider/model",
+    "--runs",
+    "5",
+    "--task",
+    "monolith-split",
+    "--thinking",
+    "off",
+  ]);
   assert.equal(parsed.runs, 5);
   assert.equal(parsed.compilerModel, "provider/model");
   assert.deepEqual(parsed.tasks, ["monolith-split"]);
+  assert.equal(parsed.thinking, "off");
   assert.equal(
     parsePairedArgs(["--model", "task-provider/task-model", "--compiler-model", "compiler-provider/compiler/model"])
       .compilerModel,
@@ -57,6 +67,10 @@ test("paired arguments require three to five repetitions", () => {
   );
   assert.throws(() => parsePairedArgs(["--model", "provider/model", "--runs", "2"]), /between 3 and 5/u);
   assert.throws(() => parsePairedArgs(["--model", "provider/model", "--runs", "6"]), /between 3 and 5/u);
+  assert.throws(
+    () => parsePairedArgs(["--model", "provider/model", "--thinking", "unknown"]),
+    /must be off, minimal, low, medium, high, or xhigh/u,
+  );
 });
 
 test("sample model identity must resolve to the requested provider and model", () => {
@@ -226,6 +240,7 @@ test("failed report suppresses performance conclusions", () => {
   const report = renderPairedReport({
     generatedAt: "2026-08-22T00:00:00.000Z",
     model: "provider/model",
+    thinking: "off",
     seed: "seed",
     runs: 3,
     tasks: ["typescript-calculator"],
@@ -246,6 +261,7 @@ test("failed report suppresses performance conclusions", () => {
     },
   });
   assert.match(report, /HARD STOP/u);
+  assert.match(report, /Task thinking level: `off`/u);
   assert.match(report, /Compiler telemetry: 2 attempts; envelope, constraint-set; 12 tokens; 123 ms/u);
   assert.match(report, /No token or runtime comparison is reported/u);
   assert.doesNotMatch(report, /Median total tokens/u);
@@ -268,6 +284,7 @@ test("in-progress evidence never claims the correctness gate passed", () => {
   });
   assert.match(report, /RUNNING/u);
   assert.match(report, /Candidate version: `5\.0\.1-rc\.1`/u);
+  assert.match(report, /Task thinking level: `default`/u);
   assert.match(report, /One-time certified compiler preparation: \*\*777 tokens\*\*, \*\*1,234 ms\*\*/u);
   assert.doesNotMatch(report, /Compiler tokens/u);
   assert.doesNotMatch(report, /Correctness gate: \*\*PASSED\*\*/u);

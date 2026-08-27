@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
+import { isThinkingLevel, type ThinkingLevel } from "../workloads/thinking-level.ts";
 import { describeCaptureOverflow } from "./run-assessment.ts";
 
 export { createBenchmarkGateFailure } from "./failure.ts";
@@ -24,6 +25,7 @@ export type PairedBenchmarkArgs = {
   timeoutSeconds: number;
   maxRuntimeSeconds: number;
   output?: string;
+  thinking?: ThinkingLevel;
   help: boolean;
 };
 export type PairedScheduleCell = { run: number; task: string; modes: ProjectInstructionMode[] };
@@ -97,6 +99,7 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
     "--timeout-seconds",
     "--max-runtime-seconds",
     "--output",
+    "--thinking",
   ]);
 
   for (let index = 0; index < argv.length; index += 1) {
@@ -117,6 +120,10 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
     if (arg === "--timeout-seconds") options.timeoutSeconds = positiveInteger(value, arg);
     if (arg === "--max-runtime-seconds") options.maxRuntimeSeconds = positiveInteger(value, arg);
     if (arg === "--output") options.output = resolve(value);
+    if (arg === "--thinking") {
+      if (!isThinkingLevel(value)) throw new Error("--thinking must be off, minimal, low, medium, high, or xhigh");
+      options.thinking = value;
+    }
   }
 
   if (options.help) return options;
@@ -197,6 +204,7 @@ export function buildBenchmarkArgs(
     "--output",
     output,
   );
+  if (options.thinking) args.push("--thinking", options.thinking);
   return args;
 }
 
