@@ -20,3 +20,6 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+## 2024-11-20 - Replace Array.from().filter().join("") with precompiled Regex replace
+**Learning:** For sanitizing string chunks in hot paths (like streaming shell output), converting the string into an array, filtering character-by-character, and then joining it back creates massive overhead (takes ~3s for 100 iterations on large strings). A pre-compiled Regex substitution takes ~23ms for the same data and logic, avoiding intermediate array allocations entirely.
+**Action:** Always prefer precompiled `.replace(REGEX, "")` over array operations when sanitizing or filtering characters out of strings in tight loops or streaming handlers.

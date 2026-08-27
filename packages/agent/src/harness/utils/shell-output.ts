@@ -27,17 +27,12 @@ function toExecutionError(error: unknown): ExecutionError {
   return new ExecutionError("unknown", cause.message, cause);
 }
 
+const SANITIZE_REGEX = /[\x00-\x08\x0b\x0c\x0e-\x1f\ufff9-\ufffb]/g;
+
+// ⚡ Bolt: Use a pre-compiled regular expression to remove invalid binary output
+// instead of splitting into an array, filtering every character, and joining.
 export function sanitizeBinaryOutput(str: string): string {
-  return Array.from(str)
-    .filter((char) => {
-      const code = char.codePointAt(0);
-      if (code === undefined) return false;
-      if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
-      if (code <= 0x1f) return false;
-      if (code >= 0xfff9 && code <= 0xfffb) return false;
-      return true;
-    })
-    .join("");
+  return str.replace(SANITIZE_REGEX, "");
 }
 
 export async function executeShellWithCapture(
