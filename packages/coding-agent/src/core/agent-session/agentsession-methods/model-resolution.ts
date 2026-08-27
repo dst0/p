@@ -19,6 +19,13 @@ export async function do__handlePostAgentRun(self: AgentSession): Promise<boolea
     return false;
   }
 
+  // A terminal abort settles the whole current run. Queued messages may still
+  // be inspected or restored by the caller, but must not start a fresh run
+  // with a new, non-aborted signal after abort() has resolved.
+  if (msg.stopReason === "aborted") {
+    return false;
+  }
+
   if (self._isRetryableError(msg) && (await self._prepareRetry(msg))) {
     return true;
   }
