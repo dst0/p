@@ -217,7 +217,9 @@ export async function runLoop(
             currentContext.messages.push(repairMessage);
             newMessages.push(repairMessage);
             hasMoreToolCalls = true;
-            continue;
+            // Protocol repair is another provider turn. Let the common
+            // prepareNextTurn boundary compact the completed response before
+            // that request instead of bypassing it with an early continue.
           }
         }
       }

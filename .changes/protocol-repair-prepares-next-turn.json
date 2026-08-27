@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve length-finished streamed responses and run compaction before their protocol-repair request."
+}
