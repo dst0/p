@@ -82,7 +82,7 @@ describe("requirement definition stagnation recovery", () => {
     expect(initialDraft).toBeDefined();
 
     const oversize = await callRequirementAudit(harness.controller, oversizeRepair(initialDraft!.revision));
-    expect(oversize).toContain("33 total replacements");
+    expect(oversize).toContain("97 total replacements");
     expect(oversize).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(initialDraft!.revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toEqual(
@@ -117,7 +117,7 @@ describe("requirement definition stagnation recovery", () => {
     await nextModelTurn(harness);
 
     const oversize = await callRequirementAudit(harness.controller, oversizeRepair(rev1));
-    expect(oversize).toContain("33 total replacements");
+    expect(oversize).toContain("97 total replacements");
     expect(oversize).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(rev1);
     await nextModelTurn(harness);
@@ -230,12 +230,12 @@ function oversizeRepair(revision: string): RequirementAuditInput {
   return {
     action: "repair_definition",
     definition_revision: revision,
-    requirement_repairs: [16, 17].map((count, requirementIndex) => ({
+    requirement_repairs: [48, 49].map((count, requirementIndex) => ({
       requirement_index: requirementIndex + 1,
       replacements: Array.from({ length: count }, (_v, i) => ({
         type: "behavior" as const,
-        text: `Item ${requirementIndex * 16 + i + 1}`,
-        acceptance_criterion: `Criterion ${requirementIndex * 16 + i + 1}`,
+        text: `Item ${requirementIndex * 48 + i + 1}`,
+        acceptance_criterion: `Criterion ${requirementIndex * 48 + i + 1}`,
         source_prompt_indexes: [1],
       })),
     })),

@@ -2,7 +2,9 @@ import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 import type { TaskRequirement } from "./types.ts";
 
 const INHERITED_CONSTRAINT_PATTERN =
-  /\b(?:all|any|each|either|every|one\s+of|exactly\s+[\p{L}\p{N}]+|at\s+(?:least|most)\s+[\p{L}\p{N}]+)\b|(?<![-\p{L}\p{N}_])only(?![-\p{L}\p{N}_])/giu;
+  /\b(?:all|any|each|either|every|one\s+of|(?:exactly|at\s+(?:least|most))\s+(?!(?:following|listed|specified|the|these|this|those)\b)[\p{L}\p{N}]+)\b|(?<![-\p{L}\p{N}_])only(?![-\p{L}\p{N}_])/giu;
+const NON_DISTRIBUTIVE_COLLECTION_CONSTRAINT_PATTERN =
+  /\b(?:(?:at\s+most|exactly|only|strictly)\s+(?:the\s+)?(?:following|listed|specified|these|this|those)|(?:the\s+)?(?:following|listed|specified|these|this|those)(?:\s+[\p{L}\p{N}_-]+){0,5}\s+only(?=\s*(?:[:;,.!?]|$))|no\s+other)\b/iu;
 const NEGATIVE_SCOPE_PATTERN =
   /\b(?:never|cannot|can't|don't|doesn't|didn't|mustn't|shouldn't|won't|wouldn't|(?:must|shall|should|may|can|do|does|did|is|are|was|were|will|would)\s+not)\b/iu;
 const NEGATIVE_SCOPE_PREDICATE_PATTERN =
@@ -233,6 +235,7 @@ export function completeIntroductionClauseIds(
   sourceClauses: readonly RequirementSourceClause[],
   validRequirementClauseIds: ReadonlySet<string>,
 ): Set<string> {
+  const clausesById = new Map(sourceClauses.map((clause) => [clause.id, clause]));
   const childrenByIntroduction = new Map<string, string[]>();
   for (const clause of sourceClauses) {
     if (!clause.introducedByClauseId) continue;
@@ -246,6 +249,7 @@ export function completeIntroductionClauseIds(
     changed = false;
     for (const [introductionId, childIds] of childrenByIntroduction) {
       if (covered.has(introductionId)) continue;
+      if (NON_DISTRIBUTIVE_COLLECTION_CONSTRAINT_PATTERN.test(clausesById.get(introductionId)?.text ?? "")) continue;
       if (!childIds.every((childId) => validRequirementClauseIds.has(childId) || covered.has(childId))) continue;
       covered.add(introductionId);
       changed = true;
@@ -273,7 +277,10 @@ function terminalDescendantIds(clauseId: string, childrenByIntroduction: Readonl
 }
 
 function inheritedConstraints(value: string): Set<string> {
+  const distributiveValue = value.replace(NON_DISTRIBUTIVE_COLLECTION_CONSTRAINT_PATTERN, "");
   return new Set(
-    [...value.matchAll(INHERITED_CONSTRAINT_PATTERN)].map((match) => match[0].toLowerCase().replace(/\s+/gu, " ")),
+    [...distributiveValue.matchAll(INHERITED_CONSTRAINT_PATTERN)].map((match) =>
+      match[0].toLowerCase().replace(/\s+/gu, " "),
+    ),
   );
 }
