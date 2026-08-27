@@ -12,12 +12,43 @@ describe("AgentSession next-request context budget", () => {
       harnesses.pop()?.cleanup();
     }
   });
+  it("allows a realistic first request with the default active tools", async () => {
+    let toolCount = 0;
+    let serializedBytes = 0;
+    let estimatedTokens = 0;
+    const harness = await createHarness({
+      completionMode: "implicit",
+      models: [{ id: "bounded-output", contextWindow: 65_536, maxTokens: 16_384 }],
+      extensionFactories: [
+        (pi) => {
+          pi.on("before_agent_start", async (event) => ({
+            systemPrompt: `${event.systemPrompt}\n${"s".repeat(37_132)}`,
+          }));
+        },
+      ],
+    });
+    harnesses.push(harness);
+    harness.setResponses([
+      (context) => {
+        toolCount = (context.tools ?? []).length;
+        const serialized = JSON.stringify(context);
+        serializedBytes = new TextEncoder().encode(serialized).length;
+        estimatedTokens = Math.ceil(serialized.length / 4);
+        return fauxAssistantMessage("first request completed");
+      },
+    ]);
+    await harness.session.prompt("Inspect the project safely");
+    expect(toolCount).toBeGreaterThan(5);
+    expect(serializedBytes).toBeGreaterThan(48_128);
+    expect(estimatedTokens + 16_384 + 1024).toBeLessThanOrEqual(65_536);
+    expect(harness.eventsOfType("compaction_start")).toHaveLength(0);
+  });
   it("fails before provider invocation when static tool context cannot fit after compaction", async () => {
     let providerCalls = 0;
     const oversizedTool: AgentTool = {
       name: "oversized_static_tool",
       label: "Oversized static tool",
-      description: "d".repeat(220_000),
+      description: "d".repeat(300_000),
       parameters: Type.Object({}),
       execute: async () => ({ content: [{ type: "text", text: "unused" }], details: {} }),
     };
@@ -54,7 +85,7 @@ describe("AgentSession next-request context budget", () => {
     await harness.session.prompt("Do not start an unsafe request");
     expect(providerCalls).toBe(0);
     expect(harness.session.agent.state.errorMessage).toContain(
-      "Context still cannot fit the complete response budget after preflight compaction.",
+      "Model-call preflight could not reserve a positive response budget.",
     );
     expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["threshold"]);
   });
@@ -220,8 +251,10 @@ describe("AgentSession next-request context budget", () => {
     await harness.session.prompt("Complete the write and continue");
     expect(completedWrites).toEqual([writePayload]);
     expect(requestMaxTokens).toEqual([16_384, 16_384, 16_384]);
-    expect(requestInputTokens.every((tokens) => tokens + 16_384 + 1024 <= 65_536)).toBe(true);
-    expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["threshold", "threshold"]);
+    expect(requestInputTokens.every((tokens, index) => tokens + (requestMaxTokens[index] ?? 0) + 1024 <= 65_536)).toBe(
+      true,
+    );
+    expect(harness.eventsOfType("compaction_start").map((event) => event.reason)).toEqual(["threshold"]);
     expect(laterRequestContexts).toHaveLength(2);
     expect(laterRequestContexts[0]).toContain("Large completed write preserved by preflight compaction.");
     expect(laterRequestContexts[0]).toContain("QUEUED_STEER_START");
