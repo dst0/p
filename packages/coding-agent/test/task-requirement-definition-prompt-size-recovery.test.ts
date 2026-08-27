@@ -103,6 +103,7 @@ function largeDraft(revision: string, baseline: number): RejectedRequirementDefi
     repairLineageBaselineRequirementCount: baseline,
     bestDiagnosticCount: 1,
     unproductiveRepairAttempts: 0,
+    consecutiveNonImprovingFreshDefinitions: 0,
     input: {
       action: "define",
       requirements: Array.from({ length: 96 }, (_value, index) => ({
@@ -122,6 +123,7 @@ function singleDraft(revision: string, diagnostics: string): RejectedRequirement
     repairLineageBaselineRequirementCount: 1,
     bestDiagnosticCount: diagnostics.trim() ? 1 : 0,
     unproductiveRepairAttempts: 0,
+    consecutiveNonImprovingFreshDefinitions: 0,
     input: {
       action: "define",
       requirements: [

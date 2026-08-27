@@ -4,6 +4,7 @@ import {
   formatRejectedDefinitionRepairGuidance,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftFreshDefinitionReason,
+  rejectedDraftRecoveryExhausted,
   rejectedRequirementDefinitionDraft,
 } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
@@ -47,6 +48,47 @@ describe("requirement definition cross-cycle stagnation", () => {
     draft = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnostics(2), draft, "fresh_definition");
     expect(draft?.unproductiveRepairAttempts).toBe(3);
     expect(rejectedDraftFreshDefinitionReason(draft)).toBe("non_improving_fresh_definition");
+  });
+
+  it("exhausts repeated non-improving fresh definitions instead of reopening forever", () => {
+    let draft = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnostics(3));
+    draft = nonImprovingRepairs(draft, 3, 3);
+
+    for (let attempt = 0; attempt < 3; attempt++) {
+      draft = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnostics(4), draft, "fresh_definition");
+    }
+
+    expect(rejectedDraftFreshDefinitionReason(draft)).toBe("stagnant_definition");
+    expect(rejectedDefinitionNextActionGuardMessage(draft!)).toContain("next_required_action: none");
+  });
+
+  it("blocks further audit validation after the fresh-definition budget is exhausted", async () => {
+    const harness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    const apply = vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation(() => ({
+      status: "needs_action",
+      message: diagnostics(4),
+      state: harness.controller.currentState,
+      requirementDefinitionDiagnosticCount: 4,
+    }));
+
+    await callRequirementAudit(harness.controller, invalidDefinition());
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await nextModelTurn(harness);
+      await callRequirementAudit(harness.controller, invalidRepair(currentRevision(harness)));
+    }
+    for (let attempt = 0; attempt < 3; attempt++) {
+      await nextModelTurn(harness);
+      await callRequirementAudit(harness.controller, invalidDefinition());
+    }
+    expect(rejectedDraftRecoveryExhausted(harness.controller.rejectedRequirementDefinitionDraft)).toBe(true);
+    const callsBeforeGuard = apply.mock.calls.length;
+
+    await nextModelTurn(harness);
+    const blocked = await callRequirementAudit(harness.controller, invalidDefinition());
+    expect(blocked).toContain("No further define or repair transition is accepted");
+    expect(apply).toHaveBeenCalledTimes(callsBeforeGuard);
   });
 
   it("resets the cross-cycle bound after a fresh definition reaches a lower diagnostic minimum", () => {
