@@ -3,8 +3,8 @@ import type { AgentSession } from "./agent-session.ts";
 import {
   createModelCallContextBudgetReport,
   estimatePreparedModelCallTokens,
-  estimatePreparedModelCallTokenUpperBound,
   getModelCallMaxTokens,
+  getPreparedModelCallMaxTokens,
 } from "./compaction/index.ts";
 import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
@@ -77,41 +77,39 @@ export function installAgentSessionPrepareNextTurn(
 
   agent.prepareModelCall = async ({ context, model, maxTokens, attempt }) => {
     const settings = session._getEffectiveCompactionSettings();
-    const requestMaxTokens = getModelCallMaxTokens(model, settings, maxTokens);
-    if (requestMaxTokens === undefined) {
+    const desiredMaxTokens = getModelCallMaxTokens(model, settings, maxTokens);
+    if (desiredMaxTokens === undefined) {
       throw new Error("Model-call preflight could not reserve a positive response budget.");
     }
     const contextTokens = estimatePreparedModelCallTokens(context);
-    const contextTokenUpperBound = estimatePreparedModelCallTokenUpperBound(context);
-    const budget = createModelCallContextBudgetReport(contextTokens, model, settings, requestMaxTokens);
-    const cannotFitCompleteResponse =
-      contextTokenUpperBound + budget.reservedOutputTokens + budget.safetyMarginTokens > budget.contextWindow;
-    if (!settings.enabled) {
-      if (cannotFitCompleteResponse) {
-        throw new Error("Model-call context cannot fit the complete response budget while compaction is disabled.");
+    const budget = createModelCallContextBudgetReport(contextTokens, model, settings, desiredMaxTokens);
+    const requestMaxTokens = getPreparedModelCallMaxTokens(contextTokens, model, settings, desiredMaxTokens);
+    const desiredCapCanFitSomePrompt = desiredMaxTokens + budget.safetyMarginTokens < budget.contextWindow;
+    const hasPriorAssistantHistory = context.messages.some((message) => message.role === "assistant");
+    const shouldAttemptCompaction =
+      settings.enabled &&
+      attempt === 0 &&
+      budget.shouldCompact &&
+      desiredCapCanFitSomePrompt &&
+      hasPriorAssistantHistory;
+    if (shouldAttemptCompaction) {
+      const previousCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
+      await session._runAutoCompaction("threshold", false);
+      const nextCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
+      if (nextCompactionId !== previousCompactionId) {
+        return {
+          maxTokens: desiredMaxTokens,
+          retryContext: {
+            systemPrompt: agent.state.systemPrompt,
+            messages: agent.state.messages.slice(),
+            tools: agent.state.tools.slice(),
+          },
+        };
       }
-      return { maxTokens: requestMaxTokens };
     }
-    if ((!budget.shouldCompact && !cannotFitCompleteResponse) || attempt > 0) {
-      if (cannotFitCompleteResponse) {
-        throw new Error("Context still cannot fit the complete response budget after preflight compaction.");
-      }
-      return { maxTokens: requestMaxTokens };
+    if (requestMaxTokens === undefined) {
+      throw new Error("Model-call preflight could not reserve a positive response budget.");
     }
-
-    const previousCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
-    await session._runAutoCompaction("threshold", false);
-    const nextCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
-    if (nextCompactionId === previousCompactionId) {
-      throw new Error("Model-call preflight compaction did not produce a compacted context.");
-    }
-    return {
-      maxTokens: requestMaxTokens,
-      retryContext: {
-        systemPrompt: agent.state.systemPrompt,
-        messages: agent.state.messages.slice(),
-        tools: agent.state.tools.slice(),
-      },
-    };
+    return { maxTokens: requestMaxTokens };
   };
 }
