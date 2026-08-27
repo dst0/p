@@ -14,6 +14,7 @@ Options:
   --seed <value>              Reproduce randomized pair order (random by default)
   --timeout-seconds <n>       Minimum per-cell timeout; raises shorter fixture caps
   --max-runtime-seconds <n>   Overall deadline (default: 54000)
+  --thinking <level>          P reasoning level: off, minimal, low, medium, high, or xhigh
   --output <dir>              Evidence directory
   --help                      Show this help
 

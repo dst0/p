@@ -128,6 +128,7 @@ export async function runProjectInstructionsBenchmark({
       generatedAt: new Date().toISOString(),
       model: baseOptions.model,
       compilerModel: baseOptions.compilerModel,
+      thinking: baseOptions.thinking,
       binarySha256: runtimeSha256,
       projectInstructionsSourceSha256: sourceSha256,
       ...privateInputEvidence(privateSnapshots),

@@ -17,6 +17,7 @@ test("parses the established defaults for a PI/P comparison", () => {
   assert.equal(options.timeoutSeconds, 300);
   assert.equal(options.maxRuntimeSeconds, 900);
   assert.equal(options.kiloStartupTimeoutSeconds, 60);
+  assert.equal(options.thinking, undefined);
 });
 
 test("preserves sequential agent order and explicit numeric overrides", () => {
@@ -78,6 +79,20 @@ test("constructs the unchanged non-interactive P command", () => {
   assert.equal(command.env.P_SKIP_VERSION_CHECK, "1");
   assert.equal(command.env.PI_SKIP_VERSION_CHECK, "1");
   assert.equal(command.env.NO_COLOR, "1");
+});
+
+test("passes an explicit thinking level to P but not PI", () => {
+  const options = parseRunnerArgs(["--agents", "p", "--model", "provider/model", "--thinking", "off"]);
+  const pCommand = commandForAgent("p", options, task, configDir, workspace);
+  const thinkingIndex = pCommand.args.indexOf("--thinking");
+  assert.deepEqual(pCommand.args.slice(thinkingIndex, thinkingIndex + 2), ["--thinking", "off"]);
+  assert.equal(pCommand.args.at(-1), "fixture prompt");
+  const piCommand = commandForAgent("pi", options, task, configDir, workspace);
+  assert.equal(piCommand.args.includes("--thinking"), false);
+  assert.throws(
+    () => parseRunnerArgs(["--agents", "p", "--model", "provider/model", "--thinking", "invalid"]),
+    /must be off, minimal, low, medium, high, or xhigh/u,
+  );
 });
 
 test("constructs exact commands for every supported agent", () => {
