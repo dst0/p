@@ -207,6 +207,6 @@ export async function streamAssistantResponse(
 export function hasRepetitiveModelOutput(message: AssistantMessage): boolean {
   return (
     message.stopReason === "length" &&
-    /streamed (?:text|reasoning) entered a repetitive loop/i.test(message.errorMessage ?? "")
+    /streamed (?:text|reasoning|arguments) entered a repetitive loop/i.test(message.errorMessage ?? "")
   );
 }
