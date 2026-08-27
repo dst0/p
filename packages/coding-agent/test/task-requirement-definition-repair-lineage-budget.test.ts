@@ -24,49 +24,77 @@ const promoteDraft = rejectedRequirementDefinitionDraft as (
 ) => RejectedRequirementDefinitionDraft | undefined;
 
 describe("requirement definition repair lineage budget", () => {
-  it("rejects the rc9 39-item draft fan-out without changing its draft or revision", () => {
+  it("allows constructing an rc9-style 48-replacement 7-entry candidate for atomic validation", () => {
+    const draft = initialDraft(39);
+    const replacementCounts = [7, 7, 7, 7, 7, 7, 6];
+    const candidate = repairRejectedRequirementDefinition(draft, repairInput(draft, replacementCounts), {
+      allowLineageOverflowValidation: true,
+    });
+
+    expect(typeof candidate).not.toBe("string");
+    expect((candidate as RequirementAuditInput).requirements).toHaveLength(80);
+  });
+
+  it("rejects direct rc9 fan-out as lineage growth without allowLineageOverflowValidation while preserving draft and revision", () => {
     const draft = initialDraft(39);
     const before = structuredClone(draft);
     const replacementCounts = [7, 7, 7, 7, 7, 7, 6];
     const result = repairRejectedRequirementDefinition(draft, repairInput(draft, replacementCounts));
 
-    expect(result).toBe("requirement_repairs contains 48 total replacements; sparse repair permits at most 32.");
-    expect(draft).toEqual(before);
+    expect(result).toBe(
+      "repair lineage would grow from 39 to 80 requirements; cumulative net growth permits at most 16.",
+    );
+    expect(draft.input).toEqual(before.input);
     expect(draft.revision).toBe(before.revision);
   });
 
-  it("rejects rc9 fan-out through the tool without applying or rotating state", async () => {
-    const { controller, applyCount } = instrumentedRejectingController();
+  it("retains the 16-item draft after validating the rc46 61-item one-count overflow", async () => {
+    const validatedRequirementCounts: number[] = [];
+    const controller = rejectingController([28, 27], (input) =>
+      validatedRequirementCounts.push(input.requirements?.length ?? 0),
+    );
     const tool = do_createRequirementAuditToolDefinition(controller);
-    await execute(tool, definition(39));
-    const original = structuredClone(controller.rejectedRequirementDefinitionDraft);
+    await execute(tool, definition(16));
+    const original = controller.rejectedRequirementDefinitionDraft;
     expect(original).toBeDefined();
-    expect(applyCount()).toBe(1);
+    expect(original?.bestDiagnosticCount).toBe(28);
 
-    const result = await execute(tool, repairInput(original!, [7, 7, 7, 7, 7, 7, 6]));
-    expect(result).toContain("requirement_repairs contains 48 total replacements; sparse repair permits at most 32.");
-    expect(controller.rejectedRequirementDefinitionDraft).toEqual({
-      ...original,
-      unproductiveRepairAttempts: 1,
-    });
+    const result = await execute(tool, repairInput(original!, [...Array(13).fill(4), 3, 3, 3]));
+    expect(result).toContain("Repair was not adopted");
+    expect(result).toContain("next_required_action: repair_definition");
+    expect(validatedRequirementCounts).toEqual([16, 61]);
+    expect(controller.rejectedRequirementDefinitionDraft?.input).toEqual(original?.input);
     expect(controller.rejectedRequirementDefinitionDraft?.revision).toBe(original?.revision);
-    expect(applyCount()).toBe(1);
+    expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(28);
+    expect(controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
   });
 
-  it("accepts 32 aggregate replacements and rejects 33", () => {
-    const draft = initialDraft(20);
-    const accepted = acceptedRepair(
+  it("accepts 96 aggregate replacements and rejects 97", () => {
+    const draft = initialDraft(16);
+    const candidate = repairRejectedRequirementDefinition(
       draft,
-      Array.from({ length: 16 }, () => 2),
+      repairInput(
+        draft,
+        Array.from({ length: 16 }, () => 6),
+      ),
+      { allowLineageOverflowValidation: true },
     );
 
-    expect(accepted.requirements).toHaveLength(36);
-    expect(accepted.requirements?.[0]?.text).toBe("Requirement 1000");
-    expect(accepted.requirements?.[31]?.text).toBe("Requirement 1031");
-    expect(accepted.requirements?.[32]?.text).toBe("Requirement 17");
-    expect(accepted.requirements?.at(-1)?.text).toBe("Requirement 20");
-    expect(repairRejectedRequirementDefinition(draft, repairInput(draft, [3, ...Array(15).fill(2)]))).toBe(
-      "requirement_repairs contains 33 total replacements; sparse repair permits at most 32.",
+    expect(typeof candidate).not.toBe("string");
+    expect((candidate as RequirementAuditInput).requirements).toHaveLength(96);
+    expect((candidate as RequirementAuditInput).requirements?.[0]?.text).toBe("Requirement 1000");
+    expect((candidate as RequirementAuditInput).requirements?.[95]?.text).toBe("Requirement 1095");
+
+    const overflow = repairInput(draft, [7, ...Array(15).fill(6)]);
+    const firstOverflowReplacement = overflow.requirement_repairs?.[0]?.replacements[0];
+    if (!firstOverflowReplacement) throw new Error("Expected overflow repair fixture.");
+    Object.defineProperty(firstOverflowReplacement, "text", {
+      get: () => {
+        throw new Error("replacement objects must not be cloned before aggregate-count rejection");
+      },
+    });
+    expect(repairRejectedRequirementDefinition(draft, overflow, { allowLineageOverflowValidation: true })).toBe(
+      `requirement_repairs contains 97 total replacements; sparse repair permits at most ${MAX_REQUIREMENT_COUNT}.`,
     );
   });
 
@@ -150,7 +178,7 @@ describe("requirement definition repair lineage budget", () => {
     expect(lineageBaseline(fresh!)).toBe(3);
   });
 
-  it("preserves lineage while promoting an improving overflow through the real tool", async () => {
+  it("preserves the last repairable lineage when an improving overflow remains invalid", async () => {
     const controller = rejectingController();
     const tool = do_createRequirementAuditToolDefinition(controller);
     await execute(tool, definition(10));
@@ -166,10 +194,13 @@ describe("requirement definition repair lineage budget", () => {
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
 
     const overflow = await execute(tool, repairInput(controller.rejectedRequirementDefinitionDraft!, [10]));
+    expect(overflow).toContain("Repair was not adopted");
     expect(overflow).toContain("3 deterministic validation errors");
     expect(overflow).toContain("next_required_action: repair_definition");
-    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(27);
+    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
     expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(10);
+    expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(4);
+    expect(controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
   });
 });
 
@@ -228,13 +259,17 @@ function lineageBaseline(draft: RejectedRequirementDefinitionDraft): number | un
   return (draft as Partial<LineageDraft>).repairLineageBaselineRequirementCount;
 }
 
-function rejectingController(): TaskVerificationController {
+function rejectingController(
+  diagnosticCounts = [5, 4, 3],
+  onInput: (input: RequirementAuditInput) => void = () => {},
+): TaskVerificationController {
   const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
   const rejected = (message: string): VerificationResult => ({ status: "needs_action", message, state });
-  let diagnosticCount = 5;
   return {
-    applyRequirementAudit: (_input: RequirementAuditInput) => {
-      const currentDiagnosticCount = diagnosticCount--;
+    applyRequirementAudit: (input: RequirementAuditInput) => {
+      onInput(input);
+      const currentDiagnosticCount = diagnosticCounts.shift();
+      if (currentDiagnosticCount === undefined) throw new Error("Unexpected requirement validation.");
       return {
         ...rejected(
           `Requirement definition has ${currentDiagnosticCount} deterministic validation errors:\n1. Rejected.`,
@@ -254,21 +289,4 @@ async function execute(
   const content = result.content[0];
   if (content?.type !== "text") throw new Error("Expected text tool output.");
   return content.text;
-}
-
-function instrumentedRejectingController(): {
-  controller: TaskVerificationController;
-  applyCount: () => number;
-} {
-  const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
-  let calls = 0;
-  const rejected = (message: string): VerificationResult => ({ status: "needs_action", message, state });
-  const controller = {
-    applyRequirementAudit: (_input: RequirementAuditInput) => {
-      calls += 1;
-      return { ...rejected("Definition rejected."), requirementDefinitionDiagnosticCount: 1 };
-    },
-    rejected,
-  } as unknown as TaskVerificationController;
-  return { controller, applyCount: () => calls };
 }

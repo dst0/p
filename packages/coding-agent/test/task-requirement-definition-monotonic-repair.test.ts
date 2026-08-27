@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { rejectedDraftFreshDefinitionReason } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
 import {
   beforeAuditTool,
@@ -11,16 +10,17 @@ import {
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("rejected requirement definition monotonic repair", () => {
-  it("retains the best draft when a later arity-changing repair regresses diagnostics", async () => {
+  it("retains the best draft and allows sparse recovery after a regressive repair", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
 
+    const realApply = harness.controller.applyRequirementAudit.bind(harness.controller);
     const diagnosticCounts = [28, 21, 28];
-    const apply = vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation(() => {
+    const apply = vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation((input) => {
       const diagnosticCount = diagnosticCounts.shift();
       return diagnosticCount === undefined
-        ? { status: "updated", message: "Accepted.", state: harness.controller.currentState }
+        ? realApply(input)
         : {
             status: "needs_action",
             message: diagnostics(diagnosticCount),
@@ -55,31 +55,28 @@ describe("rejected requirement definition monotonic repair", () => {
     expect(apply.mock.calls[2]?.[0].requirements).toHaveLength(51);
     expect(regressed).toContain("Repair was not adopted");
     expect(regressed).toContain("28 deterministic diagnostic(s); the active draft has 21");
-    expect(regressed).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "regressive_repair",
-    );
+    expect(regressed).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...improvedDraft,
       unproductiveRepairAttempts: 1,
     });
 
     await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
-      "fresh define is required",
-    );
-    expect(apply).toHaveBeenCalledTimes(3);
+    expect(
+      await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1], 2_000)),
+    ).toContain("Defined 45 atomic requirement(s).");
+    expect(apply).toHaveBeenCalledTimes(4);
+    expect(apply.mock.calls[3]?.[0].requirements).toHaveLength(45);
+    expect(apply.mock.calls[3]?.[0].requirements?.[0]?.text).toBe("Requirement 2000");
+    expect(apply.mock.calls[3]?.[0].requirements?.at(-1)?.text).toBe("Requirement 39");
+    expect(harness.controller.currentState.requirementAudit?.status).toBe("verifying");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
     const mutationGate = await beforeAuditTool(harness.agent, "edit", {
       path: "src/inventory.ts",
       oldText: "before",
       newText: "after",
     });
-    expect(mutationGate?.block).toBe(true);
-
-    await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, definition(45))).toBe("Accepted.");
-    expect(apply).toHaveBeenCalledTimes(4);
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+    expect(mutationGate?.block).not.toBe(true);
   });
 
   it("adopts a lateral repair when both diagnostic messages use the single-error shape", async () => {
@@ -107,6 +104,24 @@ describe("rejected requirement definition monotonic repair", () => {
       "Requirement 1000",
     );
     expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
+  });
+
+  it("adopts a fully valid lineage overflow atomically through the real controller", async () => {
+    const harness = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    const invalidDefinition = definition(35);
+    invalidDefinition.requirements![0]!.type = "unsupported" as never;
+
+    expect(await callRequirementAudit(harness.controller, invalidDefinition)).toContain("unsupported type");
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(35);
+    await nextModelTurn(harness);
+
+    const accepted = await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [20]));
+
+    expect(accepted).toContain("Defined 54 atomic requirement(s).");
+    expect(harness.controller.currentState.requirementAudit?.status).toBe("verifying");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
   });
 
   it("does not mistake a controller rejection for an improved validator result", async () => {
@@ -148,8 +163,12 @@ function definition(count: number): RequirementAuditInput {
   };
 }
 
-function repair(definitionRevision: string, replacementCounts: number[]): RequirementAuditInput {
-  let nextRequirement = 1_000;
+function repair(
+  definitionRevision: string,
+  replacementCounts: number[],
+  startRequirement = 1_000,
+): RequirementAuditInput {
+  let nextRequirement = startRequirement;
   return {
     action: "repair_definition",
     definition_revision: definitionRevision,

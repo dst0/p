@@ -1,6 +1,4 @@
 import { describe, expect, it } from "vitest";
-import { formatCurrentRejectedDefinitionBatch } from "../src/core/task-verification/rejected-definition-batch-format.ts";
-import { formatRequirementDefinitionPrompt } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import {
   type RejectedRequirementDefinitionDraft,
   rejectedDraftFreshDefinitionReason,
@@ -96,24 +94,18 @@ describe("bounded requirement-definition repair", () => {
     expect(rejectedDraftFreshDefinitionReason(requiredDraft(harness.controller))).toBe("stagnant_repair");
   });
 
-  it("validates and promotes a strictly improving 35-to-54 lineage overflow", async () => {
+  it("validates but retains a strictly improving 35-to-54 overflow while it remains invalid", async () => {
     const harness = rejectingController([8, 4]);
     await execute(harness.controller, definition(35));
     const original = structuredClone(requiredDraft(harness.controller));
 
     const response = await execute(harness.controller, overflowRepair(original));
-    const promoted = requiredDraft(harness.controller);
 
     expect(harness.applyCount()).toBe(2);
-    expect(promoted.input.requirements).toHaveLength(54);
-    expect(promoted.revision).not.toBe(original.revision);
-    expect(promoted.bestDiagnosticCount).toBe(4);
-    expect(promoted.repairLineageBaselineRequirementCount).toBe(35);
+    expect(requiredDraft(harness.controller)).toEqual({ ...original, unproductiveRepairAttempts: 1 });
+    expect(response).toContain("Repair was not adopted");
     expect(response).toContain("4 deterministic validation errors");
     expect(response).not.toContain("Current merged rejected batch");
-
-    const recovery = formatRequirementDefinitionPrompt([{ id: "prompt-1", text: "Preserve inventory." }], promoted);
-    for (const line of formatCurrentRejectedDefinitionBatch(promoted)) expect(recovery).toContain(line);
   });
 
   it("validates but retains the prior draft when a lineage overflow regresses", async () => {
