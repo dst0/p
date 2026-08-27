@@ -114,7 +114,6 @@ export async function runLoop(
       }
 
       await emit({ type: "turn_end", message, toolResults });
-
       const providerLengthDecision = await prepareProviderLengthContinuation(
         message,
         toolCalls,
@@ -128,6 +127,13 @@ export async function runLoop(
         emit,
       );
       if (providerLengthDecision === "failed") return;
+      if (
+        executedToolBatch?.terminate &&
+        !toolResults.some((result) => isFinishWorkToolResult(result) && !result.isError)
+      ) {
+        await emit({ type: "agent_end", messages: newMessages });
+        return;
+      }
       if (providerLengthDecision === "continue") {
         hasMoreToolCalls = true;
       }
