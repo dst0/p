@@ -244,6 +244,7 @@ test("paired child arguments and probe environment carry only the receipt SHA", 
         projectInstructionProbe: "/runtime/probe.js",
         projectInstructionsFile: sourceFile,
         timeoutSeconds: 123,
+        thinking: "off",
       },
       { task: "inventory" },
       "compiled",
@@ -252,6 +253,7 @@ test("paired child arguments and probe environment carry only the receipt SHA", 
       receipt,
     );
     assert.deepEqual(args.slice(10, 12), ["--project-instruction-proof-receipt", receipt.sha256]);
+    assert.deepEqual(args.slice(-2), ["--thinking", "off"]);
     const env: NodeJS.ProcessEnv = {};
     configureProjectInstructionProbe(
       args,
