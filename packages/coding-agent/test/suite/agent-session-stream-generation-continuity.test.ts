@@ -1,4 +1,4 @@
-import type { AgentTool } from "@dst0/p-agent-core";
+import type { AgentMessage, AgentTool } from "@dst0/p-agent-core";
 import { type AssistantMessage, fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
@@ -13,6 +13,8 @@ describe("AgentSession streamed generation continuity", () => {
 
   it("protects an implicit length-finished partial tool call and retries it only after compaction", async () => {
     const executedWrites: string[] = [];
+    const publicInternalMessageEvents: string[] = [];
+    const extensionInternalMessageEvents: string[] = [];
     const writeTool: AgentTool = {
       name: "continuity_write",
       label: "Continuity write",
@@ -42,6 +44,16 @@ describe("AgentSession streamed generation continuity", () => {
       },
       extensionFactories: [
         (pi) => {
+          pi.on("message_start", (event) => {
+            if (event.message.role === "user" && event.message.metadata?.pInternal === "provider_length_continuation") {
+              extensionInternalMessageEvents.push(event.type);
+            }
+          });
+          pi.on("message_end", (event) => {
+            if (event.message.role === "user" && event.message.metadata?.pInternal === "provider_length_continuation") {
+              extensionInternalMessageEvents.push(event.type);
+            }
+          });
           pi.on("session_before_compact", async (event) => ({
             compaction: {
               summary: "The completed length-finished response was persisted before this compaction boundary.",
@@ -62,6 +74,13 @@ describe("AgentSession streamed generation continuity", () => {
     let queuedSteering: Promise<void> | undefined;
     const unsubscribe = harness.session.subscribe((event) => {
       if (
+        (event.type === "message_start" || event.type === "message_end") &&
+        event.message.role === "user" &&
+        event.message.metadata?.pInternal === "provider_length_continuation"
+      ) {
+        publicInternalMessageEvents.push(event.type);
+      }
+      if (
         event.type !== "message_end" ||
         event.message.role !== "assistant" ||
         event.message.stopReason !== "length" ||
@@ -69,6 +88,8 @@ describe("AgentSession streamed generation continuity", () => {
       ) {
         return;
       }
+      harness.session._processingQueuedProjectRuleTurn = false;
+      harness.session._stateUpdateRequiredForCurrentUserTurn = false;
       queuedSteering = harness.session.steer(steeringText);
     });
     harness.setResponses([
@@ -111,6 +132,24 @@ describe("AgentSession streamed generation continuity", () => {
     expect(executedWrites).toEqual(["bounded retry"]);
     expect(retryQueuedMessageOrder).toEqual(["continuation", "steering"]);
     expect(retryObservedPriorCompaction).toBe(true);
+    expect(publicInternalMessageEvents).toEqual([]);
+    expect(extensionInternalMessageEvents).toEqual([]);
+    expect(
+      harness.sessionManager
+        .getEntries()
+        .filter(
+          (entry): entry is Extract<typeof entry, { type: "message" }> =>
+            entry.type === "message" &&
+            entry.message.role === "user" &&
+            entry.message.metadata?.pInternal === "provider_length_continuation",
+        ),
+    ).toHaveLength(1);
+    expect(
+      harness.session.messages.filter(
+        (message: AgentMessage) =>
+          message.role === "user" && message.metadata?.pInternal === "provider_length_continuation",
+      ),
+    ).toHaveLength(0);
   });
 
   it.each(["implicit", "explicit_finish"] as const)(
@@ -203,62 +242,6 @@ describe("AgentSession streamed generation continuity", () => {
       expect(persistedAssistantTexts.join("")).toBe(prefix + continuation);
     },
   );
-
-  it("bounds repeated implicit length continuation and reports a terminal error without executing tools", async () => {
-    const executed: string[] = [];
-    const tool: AgentTool = {
-      name: "bounded_write",
-      label: "Bounded write",
-      description: "Record content",
-      parameters: Type.Object({ content: Type.String() }),
-      async execute(_toolCallId, args) {
-        executed.push(String((args as { content: string }).content));
-        return { content: [{ type: "text", text: "recorded" }], details: {} };
-      },
-    };
-    const harness = await createHarness({
-      completionMode: "implicit",
-      tools: [tool],
-      initialActiveToolNames: [tool.name],
-    });
-    harnesses.push(harness);
-    const prefixes = ["segment one", "segment two", "segment three", "segment four"];
-    harness.setResponses([
-      ...prefixes.map((prefix, index) =>
-        fauxAssistantMessage(
-          [
-            { type: "text" as const, text: prefix },
-            fauxToolCall(tool.name, { content: `partial-${index}` }, { id: `partial-${index}` }),
-          ],
-          { stopReason: "length" },
-        ),
-      ),
-      fauxAssistantMessage("must remain unrequested"),
-    ]);
-
-    await harness.session.prompt("Keep generating bounded segments until the runtime continuation limit is reached.");
-
-    const persisted = harness.sessionManager
-      .getEntries()
-      .flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
-    const lengthMessages = persisted.flatMap((message) =>
-      message.role === "assistant" && message.stopReason === "length" ? [message as AssistantMessage] : [],
-    );
-    const terminal = persisted.at(-1);
-    expect(executed).toEqual([]);
-    expect(lengthMessages.map(getMessageText)).toEqual(prefixes);
-    expect(
-      lengthMessages.map((message) => message.content.find((part) => part.type === "toolCall")?.arguments),
-    ).toEqual(prefixes.map((_prefix, index) => ({ content: `partial-${index}` })));
-    expect(
-      persisted.filter(
-        (message) => message.role === "user" && message.metadata?.pInternal === "provider_length_continuation",
-      ),
-    ).toHaveLength(3);
-    expect(terminal?.role === "assistant" ? terminal.stopReason : undefined).toBe("error");
-    expect(getMessageText(terminal)).toContain("3 consecutive output-limit continuations");
-    expect(harness.getPendingResponseCount()).toBe(1);
-  });
 
   it("keeps explicit cancellation terminal and persists the streamed prefix", async () => {
     const harness = await createHarness({

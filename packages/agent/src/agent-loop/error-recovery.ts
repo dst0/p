@@ -17,12 +17,7 @@ import {
 } from "./message-preparation.ts";
 import { prepareAgentNextTurn } from "./next-turn-preparation.ts";
 import { prepareProviderLengthContinuation } from "./provider-length-completion-compatibility.ts";
-import {
-  createProviderLengthContinuationState,
-  emitProviderLengthExhaustion,
-  isProviderLengthResponse,
-  requiresSpecializedProviderLengthRepair,
-} from "./provider-length-continuation.ts";
+import { isProviderLengthResponse, requiresSpecializedProviderLengthRepair } from "./provider-length-continuation.ts";
 import { streamAssistantResponse } from "./response-processing.ts";
 import { detectCompletionProtocolRepair } from "./tool-result-formatting.ts";
 import type { AgentEventSink, ExecutedToolCallBatch } from "./types.ts";
@@ -38,7 +33,6 @@ export async function runLoop(
   let config = initialConfig;
   let completionMode = resolveCompletionMode(config);
   const completionState = createCompletionProtocolState();
-  const providerLengthState = createProviderLengthContinuationState();
   let currentContext = withCompletionProtocolTools(initialContext, completionMode);
   let firstTurn = true;
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
@@ -83,10 +77,10 @@ export async function runLoop(
         );
         return;
       }
-      completionState.turns++;
-
       const message = await streamAssistantResponse(currentContext, config, signal, emit, streamFn);
       newMessages.push(message);
+      const providerLengthResponse = isProviderLengthResponse(message);
+      if (!providerLengthResponse) completionState.turns++;
 
       if (message.stopReason === "error" || message.stopReason === "aborted") {
         await emit({ type: "turn_end", message, toolResults: [] });
@@ -95,7 +89,6 @@ export async function runLoop(
       }
 
       const toolCalls = message.content.filter((c) => c.type === "toolCall");
-      const providerLengthResponse = isProviderLengthResponse(message);
       const protocolRepairBeforeExecution =
         isCompletionProtocolEnabled(completionMode) &&
         (!providerLengthResponse || requiresSpecializedProviderLengthRepair(message, toolCalls))
@@ -122,20 +115,10 @@ export async function runLoop(
         message,
         toolCalls,
         protocolRepairBeforeExecution,
-        providerLengthState,
-        completionState,
-        completionLimits,
         currentContext,
         newMessages,
-        config,
-        completionMode,
         emit,
       );
-      if (providerLengthDecision === "failed") return;
-      if (providerLengthDecision === "exhausted") {
-        await emitProviderLengthExhaustion(config, currentContext, newMessages, emit);
-        return;
-      }
       if (providerLengthDecision === "continue") {
         hasMoreToolCalls = true;
       }
@@ -262,6 +245,10 @@ export async function runLoop(
         config,
         emit,
       ));
+      if (signal?.aborted) {
+        await emit({ type: "agent_end", messages: newMessages });
+        return;
+      }
 
       const canStopImplicitly =
         providerLengthDecision === "none" &&
