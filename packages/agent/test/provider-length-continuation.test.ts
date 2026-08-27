@@ -63,7 +63,11 @@ async function runResponses(
   responses: AssistantMessage[],
   context: AgentContext,
   config: Partial<AgentLoopConfig>,
-): Promise<{ events: AgentEvent[]; messages: AgentMessage[]; providerContexts: Context[] }> {
+): Promise<{
+  events: AgentEvent[];
+  messages: AgentMessage[];
+  providerContexts: Context[];
+}> {
   const providerContexts: Context[] = [];
   let responseIndex = 0;
   const stream = agentLoop(
@@ -120,6 +124,32 @@ describe("provider output-length continuation", () => {
       ),
     ).toHaveLength(1);
     expect(messages.filter((message) => message.role === "assistant").map(text)).toEqual(["prefix", "tail"]);
+    expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
+  });
+
+  it("preserves and continues more than three length-finished segments until the provider completes", async () => {
+    const segments = ["segment-1", "segment-2", "segment-3", "segment-4", "segment-5", "segment-6"];
+    const { events, messages, providerContexts } = await runResponses(
+      [
+        ...segments.map((segment) => assistant([{ type: "text", text: segment }], "length")),
+        assistant([{ type: "text", text: "complete" }], "stop"),
+      ],
+      { systemPrompt: "", messages: [], tools: [] },
+      {},
+    );
+
+    expect(providerContexts).toHaveLength(segments.length + 1);
+    expect(
+      messages.filter(
+        (message) => message.role === "user" && message.metadata?.pInternal === "provider_length_continuation",
+      ),
+    ).toHaveLength(segments.length);
+    expect(messages.filter((message) => message.role === "assistant").map(text)).toEqual([...segments, "complete"]);
+    expect(
+      messages.filter(
+        (message) => message.role === "assistant" && "stopReason" in message && message.stopReason === "error",
+      ),
+    ).toHaveLength(0);
     expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
   });
 
@@ -210,6 +240,6 @@ describe("provider output-length continuation", () => {
     ).toHaveLength(0);
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 });

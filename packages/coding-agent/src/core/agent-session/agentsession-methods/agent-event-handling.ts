@@ -4,17 +4,16 @@ import { stripSessionStateUpdateBlocks } from "../../compaction/index.ts";
 import { filterSleepToolUseForHistory } from "../../messages.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
-import { isInternalCompletionProtocolRepairMessage } from "../message-utils.ts";
+import { isInternalAgentMessage } from "../message-utils.ts";
 import { MAX_PROJECT_RULE_LINKS_PER_TURN, type ProjectRuleGate } from "../state-types.ts";
 
 export async function handleAgentEvent(self: AgentSession, event: AgentEvent): Promise<void> {
   if (event.type === "turn_start" || event.type === "agent_end") {
     self._processingQueuedProjectRuleTurn = false;
   }
-  const isInternalRepairEvent =
-    (event.type === "message_start" || event.type === "message_end") &&
-    isInternalCompletionProtocolRepairMessage(event.message);
-  if (event.type === "message_start" && event.message.role === "user") {
+  const isInternalMessageEvent =
+    (event.type === "message_start" || event.type === "message_end") && isInternalAgentMessage(event.message);
+  if (event.type === "message_start" && event.message.role === "user" && !isInternalMessageEvent) {
     if (self._queuedProjectRuleGates.has(event.message)) {
       const queuedGate = self._queuedProjectRuleGates.get(event.message);
       self._queuedProjectRuleGates.delete(event.message);
@@ -40,7 +39,7 @@ export async function handleAgentEvent(self: AgentSession, event: AgentEvent): P
     }
   }
 
-  if (!isInternalRepairEvent) await self._emitExtensionEvent(event);
+  if (!isInternalMessageEvent) await self._emitExtensionEvent(event);
 
   let assistantStateUpdateText: string | undefined;
   if (event.type === "message_end" && event.message.role === "assistant") {
@@ -56,12 +55,12 @@ export async function handleAgentEvent(self: AgentSession, event: AgentEvent): P
     event.message.role === "assistant" &&
     self._shouldHideContextOverflowMessage(event.message as AssistantMessage);
 
-  if (!hideContextOverflowMessage && !isInternalRepairEvent) {
+  if (!hideContextOverflowMessage && !isInternalMessageEvent) {
     self._emit(
       event.type === "agent_end"
         ? {
             ...event,
-            messages: event.messages.filter((message) => !isInternalCompletionProtocolRepairMessage(message)),
+            messages: event.messages.filter((message) => !isInternalAgentMessage(message)),
             willRetry: self._willRetryAfterAgentEnd(event),
           }
         : event,
@@ -92,7 +91,7 @@ export async function handleAgentEvent(self: AgentSession, event: AgentEvent): P
     }
   }
 
-  if (event.message.role === "user" && !isInternalCompletionProtocolRepairMessage(event.message)) {
+  if (event.message.role === "user" && !isInternalAgentMessage(event.message)) {
     self._stateUpdateRequiredForCurrentUserTurn = self.getActiveToolNames().includes(UPDATE_SESSION_STATE_TOOL_NAME);
     self._progressUpdateRequiredBeforeFinish = false;
     return;

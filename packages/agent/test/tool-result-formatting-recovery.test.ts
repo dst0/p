@@ -151,7 +151,11 @@ describe("truncated tool-call recovery", () => {
     const responses: Array<AssistantMessage | ((context: Context) => AssistantMessage)> = [
       truncated,
       (context) => {
-        const repair = messageText(context.messages[context.messages.length - 1] as AgentMessage);
+        const continuation = context.messages[context.messages.length - 1] as AgentMessage;
+        const repair = messageText(continuation);
+        expect(continuation.role === "user" ? continuation.metadata?.pInternal : undefined).toBe(
+          "provider_length_continuation",
+        );
         expect(repair).toContain('pending "write" call for path "test/serialization.test.ts" was not executed');
         expect(repair).toContain("retry only this pending step");
         expect(repair).toContain("smaller bounded tool calls");
@@ -210,6 +214,6 @@ describe("truncated tool-call recovery", () => {
     expect(executed).toEqual(["small bounded content"]);
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "malformed_tool_call_retry"),
-    ).toHaveLength(1);
+    ).toHaveLength(0);
   });
 });

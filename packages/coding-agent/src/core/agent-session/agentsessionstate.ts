@@ -24,7 +24,7 @@ import type { SettingsManager } from "../settings-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 import { createVerificationLedger, type VerificationLedger } from "../verification-ledger.ts";
-import { isInternalCompletionProtocolRepairMessage } from "./message-utils.ts";
+import { isInternalAgentMessage } from "./message-utils.ts";
 import type {
   AgentSessionConfig,
   AgentSessionEventListener,
@@ -176,7 +176,7 @@ export class AgentSessionState {
   }
   get messages(): AgentMessage[] {
     return this.agent.state.messages
-      .filter((message) => !isInternalCompletionProtocolRepairMessage(message))
+      .filter((message) => !isInternalAgentMessage(message))
       .map(filterSleepToolUseForHistory)
       .filter((message): message is AgentMessage => message !== undefined);
   }
