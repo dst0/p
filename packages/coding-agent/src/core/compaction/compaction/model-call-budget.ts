@@ -72,24 +72,31 @@ export function getModelCallMaxTokens(
   return reservedOutputTokens > 0 ? reservedOutputTokens : undefined;
 }
 
+/** Clamp the desired response cap to the capacity left by the prepared prompt. */
+export function getPreparedModelCallMaxTokens(
+  contextTokens: number,
+  model: ModelContextCapacity,
+  settings: CompactionSettings,
+  requestedMaxTokens?: number,
+): number | undefined {
+  const { contextWindow, reservedOutputTokens, safetyMarginTokens } = resolveModelCallCapacity(
+    model,
+    settings,
+    requestedMaxTokens,
+  );
+  const availableOutputTokens = Math.floor(contextWindow - Math.max(0, Math.ceil(contextTokens)) - safetyMarginTokens);
+  const maxTokens = Math.min(reservedOutputTokens, availableOutputTokens);
+  return maxTokens > 0 ? maxTokens : undefined;
+}
+
 /** Estimate the fully transformed provider request, including serialized tool schemas. */
 export function estimatePreparedModelCallTokens(context: Context): number {
   const providerVisibleContext = {
     systemPrompt: context.systemPrompt,
     messages: context.messages,
-    tools: context.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
+    tools: (context.tools ?? []).map(({ name, description, parameters }) => ({ name, description, parameters })),
   };
   return Math.ceil(JSON.stringify(providerVisibleContext).length / 4);
-}
-
-/** Conservative upper bound for byte-fallback tokenizers, used only for the final safety decision. */
-export function estimatePreparedModelCallTokenUpperBound(context: Context): number {
-  const providerVisibleContext = {
-    systemPrompt: context.systemPrompt,
-    messages: context.messages,
-    tools: context.tools.map(({ name, description, parameters }) => ({ name, description, parameters })),
-  };
-  return new TextEncoder().encode(JSON.stringify(providerVisibleContext)).length;
 }
 
 interface ProviderOutputLimit {
@@ -100,7 +107,7 @@ interface ProviderOutputLimit {
 function getProviderPayloadOutputLimits(payload: unknown): ProviderOutputLimit[] {
   if (typeof payload !== "object" || payload === null || Array.isArray(payload)) return [];
   const record = payload as Record<string, unknown>;
-  const limits = TOP_LEVEL_OUTPUT_LIMIT_FIELDS.flatMap((field) =>
+  const limits: ProviderOutputLimit[] = TOP_LEVEL_OUTPUT_LIMIT_FIELDS.flatMap((field) =>
     typeof record[field] === "number" ? [{ path: field, value: record[field] }] : [],
   );
   for (const [container, field] of [
@@ -124,25 +131,30 @@ export function guardProviderPayloadBudget<T>(
   baselinePayload?: unknown,
 ): T {
   const serializedPayload = JSON.stringify(payload);
+  const serializedBaseline = JSON.stringify(baselinePayload);
   const outputLimits = getProviderPayloadOutputLimits(payload);
   const baselineOutputLimits = getProviderPayloadOutputLimits(baselinePayload);
   const outputLimitByPath = new Map(outputLimits.map((limit) => [limit.path, limit.value]));
+  const baselineOutputLimitPaths = new Set(baselineOutputLimits.map((limit) => limit.path));
   const certifiedMaxTokens = getModelCallMaxTokens(model, settings, requestedMaxTokens);
   if (
     certifiedMaxTokens === undefined ||
+    serializedBaseline === undefined ||
     baselineOutputLimits.length === 0 ||
     outputLimits.length === 0 ||
     [...baselineOutputLimits, ...outputLimits].some((limit) => !Number.isInteger(limit.value) || limit.value <= 0) ||
     baselineOutputLimits.some((limit) => limit.value > certifiedMaxTokens) ||
     outputLimits.some((limit) => limit.value > certifiedMaxTokens) ||
-    baselineOutputLimits.some((limit) => !outputLimitByPath.has(limit.path))
+    baselineOutputLimits.some((limit) => {
+      const finalValue = outputLimitByPath.get(limit.path);
+      return finalValue === undefined || finalValue > limit.value;
+    }) ||
+    outputLimits.some((limit) => !baselineOutputLimitPaths.has(limit.path))
   ) {
     throw new Error("context_length_exceeded: final provider payload changed the certified output limit");
   }
-  const payloadTokens = new TextEncoder().encode(serializedPayload).length;
-  const budget = createModelCallContextBudgetReport(payloadTokens, model, settings, requestedMaxTokens);
-  if (payloadTokens + budget.reservedOutputTokens + budget.safetyMarginTokens > budget.contextWindow) {
-    throw new Error("context_length_exceeded: final provider payload exceeds the certified model-call budget");
+  if (new TextEncoder().encode(serializedPayload).length > new TextEncoder().encode(serializedBaseline).length) {
+    throw new Error("context_length_exceeded: final provider payload expanded beyond its certified baseline");
   }
   return payload;
 }

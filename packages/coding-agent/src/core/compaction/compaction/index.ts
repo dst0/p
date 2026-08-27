@@ -13,8 +13,8 @@ export type { ModelCallContextBudgetReport, ModelContextCapacity } from "./model
 export {
   createModelCallContextBudgetReport,
   estimatePreparedModelCallTokens,
-  estimatePreparedModelCallTokenUpperBound,
   getModelCallMaxTokens,
+  getPreparedModelCallMaxTokens,
   guardProviderPayloadBudget,
   MODEL_CALL_CONTEXT_SAFETY_TOKENS,
 } from "./model-call-budget.ts";

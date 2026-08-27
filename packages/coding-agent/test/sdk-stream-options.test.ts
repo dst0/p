@@ -110,7 +110,7 @@ describe("createAgentSession stream options", () => {
     });
 
     const sessionManager = SessionManager.inMemory(cwd);
-    const { session, extensionsResult } = await createAgentSession({
+    const { session } = await createAgentSession({
       cwd,
       agentDir,
       model,
@@ -122,8 +122,6 @@ describe("createAgentSession stream options", () => {
       resourceLoader,
       completionMode: "implicit",
     });
-    if (sessionOptions.extensionFactories) await session.bindExtensions(extensionsResult);
-
     try {
       if (sessionOptions.probe) {
         await session.prompt("Exercise the provider boundary");
@@ -210,7 +208,7 @@ describe("createAgentSession stream options", () => {
           },
         },
       ),
-    ).rejects.toThrow("final provider payload exceeds the certified model-call budget");
+    ).rejects.toThrow("final provider payload expanded beyond its certified baseline");
     expect(providerIoCalls).toBe(0);
   });
 });
