@@ -89,6 +89,15 @@ describe("requirement definition cross-cycle stagnation", () => {
     const blocked = await callRequirementAudit(harness.controller, invalidDefinition());
     expect(blocked).toContain("No further define or repair transition is accepted");
     expect(apply).toHaveBeenCalledTimes(callsBeforeGuard);
+
+    const terminalResult = await harness.controller.requirementAuditToolDefinition.execute(
+      "requirement-audit-terminal-call",
+      invalidDefinition() as never,
+      undefined,
+      undefined,
+      {} as never,
+    );
+    expect(terminalResult.terminate).toBe(true);
   });
 
   it("resets the cross-cycle bound after a fresh definition reaches a lower diagnostic minimum", () => {

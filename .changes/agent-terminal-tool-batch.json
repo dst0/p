@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Fixed",
+  "summary": "Honor terminal tool batches before explicit-finish protocol repair."
+}
