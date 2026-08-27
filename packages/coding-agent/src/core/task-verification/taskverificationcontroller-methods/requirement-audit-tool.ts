@@ -12,6 +12,7 @@ import {
   formatRejectedDefinitionRepairGuidance,
   recordUnproductiveRejectedDefinitionRepair,
   rejectedDefinitionNextActionGuardMessage,
+  rejectedDraftRecoveryExhausted,
   rejectedDraftRequiresFreshDefinition,
   rejectedRepairDoesNotWorsenHistoricalMinimum,
   rejectedRequirementDefinitionDraft,
@@ -55,6 +56,10 @@ export function do_createRequirementAuditToolDefinition(
     executionMode: "sequential",
     execute: async (_id, params) => {
       const activeDraft = self.rejectedRequirementDefinitionDraft;
+      if (rejectedDraftRecoveryExhausted(activeDraft)) {
+        const result = self.rejected(rejectedDefinitionNextActionGuardMessage(activeDraft!));
+        return { content: [{ type: "text", text: result.message }], details: result };
+      }
       const foreignFieldError = requirementAuditForeignFieldError(params);
       if (foreignFieldError) {
         if (params.action === "repair_definition" && activeDraft) {

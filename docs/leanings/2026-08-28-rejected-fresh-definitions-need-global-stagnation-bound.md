@@ -1,0 +1,22 @@
+# 2026-08-28 — Rejected fresh definitions need a global stagnation bound
+
+- **Status:** Resolved
+- **Task/context:** Validating requirement-definition liveness in the event-sourced inventory benchmark after adding bounded sparse repair state.
+- **Unexpected observation or failure:** A live compiled-mode run repeatedly crossed from sparse repair into full `define` attempts. Each new rejected draft still permitted another complete definition, so the run spent about 15 minutes without reaching an accepted definition or first mutation.
+- **Evidence:** The run recorded three complete definition attempts and four repair attempts by 879 seconds. The first rejected batch had 22 diagnostics; later fresh batches changed between 1 and 11 diagnostics, but the active controller remained in `awaiting_definition` and no sample completed. The run was stopped as infrastructure evidence, not scored as a correctness failure.
+- **Approaches tried:**
+  - **Attempt:** Rely on payload, lineage-growth, and three-unproductive-repair bounds alone.
+    - **Outcome:** Did not work
+    - **Why:** Those bounds applied within one rejected draft; an authorized fresh `define` created a new draft and reopened the same repair cycle.
+  - **Attempt:** Stop all fresh definitions after the first non-improving batch.
+    - **Outcome:** Did not work
+    - **Why:** A model can make a later strictly improving full definition, and rejecting that recovery would discard useful progress.
+  - **Attempt:** Count consecutive non-improving fresh definitions globally, retain the historical diagnostic minimum, accept strict improvements, and block audit validation after three stagnant full definitions.
+    - **Outcome:** Worked
+    - **Why:** The controller now preserves the lossless improvement path while preventing unbounded expensive revalidation.
+- **Root cause:** Fresh-definition authorization was controller-global but its no-progress budget was draft-local. `rejectedRequirementDefinitionDraft(..., "fresh_definition")` carried the historical best diagnostic count but reset the state needed to bound repeated equal-or-worse full definitions.
+- **Resolution:** Added `consecutiveNonImprovingFreshDefinitions` and a three-definition stagnation limit. An exhausted draft returns `next_required_action: none`; the audit tool rejects further `define` and `repair_definition` calls without invoking requirement validation. Strictly improving fresh definitions reset the counter and remain eligible for repair.
+- **Verification:** The new regression first failed before the fix, then passed with the cross-cycle and controller-guard tests. The focused requirement-definition slice passes 31/31; `npm run check` passes with 1962 files and 2141 source files.
+- **Prevention/follow-up:** Keep progress budgets across every transition that rotates rejected state, not only within a single draft. Add live benchmark checks for repeated fresh-definition transitions before spending full paired-run time.
+- **Reusable learning:** A repair protocol is not live unless every state-rotating recovery path shares a monotonic, globally bounded no-progress measure.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `packages/coding-agent/test/task-requirement-definition-cross-cycle-stagnation.test.ts`, `benchmarks/results/2026-08-28-v5.0.1-rc.48-task3-thinking-off-qwen-compat-paired-v1/results.json`

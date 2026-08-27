@@ -148,6 +148,7 @@ function controllerHarness(hasActiveRejectedDraft: boolean = false) {
           repairLineageBaselineRequirementCount: 1,
           bestDiagnosticCount: 0,
           unproductiveRepairAttempts: 0,
+          consecutiveNonImprovingFreshDefinitions: 0,
           input: {
             action: "define",
             requirements: [requirement()],
