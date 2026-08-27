@@ -195,6 +195,8 @@ describe("provider output-length continuation liveness", () => {
     const abortController = new AbortController();
     let completedLengthTurns = 0;
     const segments = ["segment-1", "segment-2", "segment-3", "segment-4"];
+    const cancellationDiagnostic =
+      "Agent stopped because the operation was cancelled before the next provider continuation request.";
     const { events, messages, providerContexts } = await runResponses(
       segments.map((segment) => assistant([{ type: "text", text: segment }], "length")),
       { systemPrompt: "", messages: [], tools: [] },
@@ -208,8 +210,33 @@ describe("provider output-length continuation liveness", () => {
     );
 
     expect(providerContexts).toHaveLength(segments.length);
-    expect(messages.filter((message) => message.role === "assistant").map(text)).toEqual(segments);
+    expect(messages.filter((message) => message.role === "assistant").map(text)).toEqual([
+      ...segments,
+      cancellationDiagnostic,
+    ]);
+    const terminalMessage = messages.at(-1);
+    expect(terminalMessage?.role).toBe("assistant");
+    if (!terminalMessage || terminalMessage.role !== "assistant")
+      throw new Error("Expected terminal assistant message");
+    expect(terminalMessage.stopReason).toBe("aborted");
+    expect(terminalMessage.errorMessage).toBe(cancellationDiagnostic);
+    expect(messages.filter((message) => text(message) === cancellationDiagnostic)).toHaveLength(1);
     expect(messages.some((message) => message.role === "assistant" && message.stopReason === "error")).toBe(false);
+    expect(events.slice(-5).map((event) => event.type)).toEqual([
+      "turn_start",
+      "message_start",
+      "message_end",
+      "turn_end",
+      "agent_end",
+    ]);
+    expect(
+      events.filter(
+        (event) =>
+          (event.type === "message_start" || event.type === "message_end" || event.type === "turn_end") &&
+          event.message.role === "assistant" &&
+          event.message.stopReason === "aborted",
+      ),
+    ).toHaveLength(3);
     expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
     expect(abortController.signal.aborted).toBe(true);
   });
