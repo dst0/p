@@ -9,6 +9,7 @@ import {
 } from "./context-management.ts";
 import {
   createCompletionProtocolState,
+  emitAbortedTurn,
   emitProtocolFailure,
   isCompletionProtocolEnabled,
   resolveCompletionLimits,
@@ -21,6 +22,9 @@ import { isProviderLengthResponse, requiresSpecializedProviderLengthRepair } fro
 import { streamAssistantResponse } from "./response-processing.ts";
 import { detectCompletionProtocolRepair } from "./tool-result-formatting.ts";
 import type { AgentEventSink, ExecutedToolCallBatch } from "./types.ts";
+
+const PROVIDER_CONTINUATION_CANCELLED_DIAGNOSTIC =
+  "Agent stopped because the operation was cancelled before the next provider continuation request.";
 
 export async function runLoop(
   initialContext: AgentContext,
@@ -246,7 +250,7 @@ export async function runLoop(
         emit,
       ));
       if (signal?.aborted) {
-        await emit({ type: "agent_end", messages: newMessages });
+        await emitAbortedTurn(currentContext, newMessages, config, emit, PROVIDER_CONTINUATION_CANCELLED_DIAGNOSTIC);
         return;
       }
 
