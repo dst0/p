@@ -58,7 +58,7 @@ export function do_createRequirementAuditToolDefinition(
       const activeDraft = self.rejectedRequirementDefinitionDraft;
       if (rejectedDraftRecoveryExhausted(activeDraft)) {
         const result = self.rejected(rejectedDefinitionNextActionGuardMessage(activeDraft!));
-        return { content: [{ type: "text", text: result.message }], details: result };
+        return { content: [{ type: "text", text: result.message }], details: result, terminate: true };
       }
       const foreignFieldError = requirementAuditForeignFieldError(params);
       if (foreignFieldError) {
