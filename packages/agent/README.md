@@ -134,7 +134,7 @@ finish_work({
 })
 ```
 
-When `finish_work` succeeds, the loop emits `agent_end` immediately and does not start another LLM turn. In strict mode, malformed or truncated tool-call-looking output is treated as a recoverable protocol error: the loop injects an internal repair message and asks the model to re-emit a valid tool call or call `finish_work`.
+When `finish_work` succeeds, the loop emits `agent_end` immediately and does not start another LLM turn. In strict mode, malformed or truncated tool-call-looking output is treated as a recoverable protocol error: the loop finalizes and emits the completed response, injects an internal repair message, then passes through `prepareNextTurn` before asking the model to re-emit a valid tool call or call `finish_work`. This lets hosts persist and compact the completed response before the repair request; incomplete tool calls are never executed.
 
 Safety limits prevent weak models from looping forever:
 
