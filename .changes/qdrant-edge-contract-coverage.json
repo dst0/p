@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Add non-user-facing regressions for Qdrant storage lifecycle edge contracts and changed-line coverage."
+}

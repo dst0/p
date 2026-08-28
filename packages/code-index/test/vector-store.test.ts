@@ -92,7 +92,7 @@ describe("QdrantVectorStore", () => {
     });
   });
 
-  it("skips creation when collection already exists with matching dimensions", async () => {
+  it("reuses an existing matching collection and backfills payload indexes", async () => {
     const client = createMockClient();
     client.collectionExists.mockResolvedValue({ exists: true });
     client.getCollection.mockResolvedValue({
@@ -105,6 +105,7 @@ describe("QdrantVectorStore", () => {
 
     await store.createCollection("existing", 3);
     expect(client.createCollection).not.toHaveBeenCalled();
+    expect(client.createPayloadIndex).toHaveBeenCalledTimes(5);
   });
 
   it("throws when existing collection has mismatched dimensions", async () => {
@@ -180,26 +181,6 @@ describe("QdrantVectorStore", () => {
 
     await store.upsert("coll", []);
     expect(client.upsert).not.toHaveBeenCalled();
-  });
-
-  it("deletes file versions with keepFileHash filter", async () => {
-    const client = createMockClient();
-    const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
-    // @ts-expect-error — replacing private field for testing
-    store.client = client;
-
-    await store.deleteFileVersions("coll", "repo", "file1", "keep-hash");
-
-    expect(client.delete).toHaveBeenCalledWith("coll", {
-      wait: true,
-      filter: {
-        must: [
-          { key: "repoId", match: { value: "repo" } },
-          { key: "fileId", match: { value: "file1" } },
-        ],
-        must_not: [{ key: "fileHash", match: { value: "keep-hash" } }],
-      },
-    });
   });
 
   it("deletes all versions when keepFileHash is omitted", async () => {
@@ -509,17 +490,17 @@ describe("QdrantVectorStore", () => {
     expect(callArgs.filter.must_not).toBeUndefined();
   });
 
-  it("treats payload index creation as best-effort", async () => {
+  it("rolls back a new collection when payload index creation fails", async () => {
     const client = createMockClient();
-    client.createPayloadIndex.mockRejectedValueOnce(new Error("already exists"));
+    client.createPayloadIndex.mockRejectedValueOnce(new Error("permission denied"));
+    client.deleteCollection.mockRejectedValueOnce(new Error("rollback failed"));
     const store = new QdrantVectorStore({ url: "http://localhost:6333", timeoutMs: 10_000 });
     // @ts-expect-error — replacing private field for testing
     store.client = client;
 
-    // Should not throw even if a payload index creation fails
-    await expect(store.createCollection("test-best-effort", 3)).resolves.toBeUndefined();
-    // Other indexes should still be attempted
-    expect(client.createPayloadIndex).toHaveBeenCalledTimes(4);
+    await expect(store.createCollection("test-index-failure", 3)).rejects.toThrow("permission denied");
+    expect(client.deleteCollection).toHaveBeenCalledWith("test-index-failure");
+    expect(client.createPayloadIndex).toHaveBeenCalledOnce();
   });
 
   it("handles FetchQdrantRestClient HTTP errors and response parsing failures", async () => {
@@ -580,10 +561,11 @@ describe("QdrantVectorStore", () => {
           { status: 200 },
         );
       if (u.includes("/points/delete"))
-        return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+        return new Response(JSON.stringify({ result: { status: "completed" } }), { status: 200 });
       if (u.includes("/points?wait="))
-        return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
-      if (u.includes("/index")) return new Response(JSON.stringify({ result: { status: "ok" } }), { status: 200 });
+        return new Response(JSON.stringify({ result: { status: "completed" } }), { status: 200 });
+      if (u.includes("/index"))
+        return new Response(JSON.stringify({ result: { status: "completed" } }), { status: 200 });
       if (init?.method === "GET") {
         return new Response(
           JSON.stringify({

@@ -13,11 +13,15 @@ export function createIndexingDaemonOptions(agentDir: string): IndexingDaemonOpt
   return {
     agentDir,
     qdrantBinary: settings.qdrantBinary,
+    qdrantUrl: settings.qdrantUrl,
     qdrantDataDirectory: settings.qdrantDataDirectory,
+    qdrantStartupTimeoutMs: settings.qdrantStartupTimeoutMs,
     qdrantApiKey: settings.qdrantApiKey,
+    collectionPrefix: settings.collectionPrefix,
     pythonExecutable: settings.pythonExecutable,
     embeddingModel: settings.embeddingModel,
     embeddingConfigPath: configPath,
+    embeddingStartupTimeoutMs: settings.embeddingStartupTimeoutMs,
     useDenseEmbeddings: settings.searchMode !== "bm25-only",
   };
 }

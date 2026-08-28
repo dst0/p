@@ -126,7 +126,7 @@ describe("RAG lifecycle states and repository lock management", () => {
       vectorStore: store,
       embeddingProvider: {
         dim: 1024,
-        encode: async () => [new Float32Array(1024)],
+        encode: async (texts: string[]) => texts.map(() => new Float32Array(1024)),
         encodeQuery: async () => new Float32Array(1024),
       },
       manageLocalBackends: false,
@@ -213,5 +213,9 @@ describe("RAG lifecycle states and repository lock management", () => {
       settings: { qdrantUrl: "http://127.0.0.1" },
     });
     expect((service.qdrantServerManager as unknown as { port: number })?.port).toBe(6333);
+    expect(service.settings.qdrantUrl).toBe("http://127.0.0.1:6333");
+    expect((service.vectorStore as unknown as { client: { baseUrl: string } }).client.baseUrl).toBe(
+      "http://127.0.0.1:6333",
+    );
   });
 });

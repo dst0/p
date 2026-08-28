@@ -1,0 +1,22 @@
+# 2026-08-28 — Changed-line coverage needs edge-contract tests
+
+- **Status:** Resolved
+- **Task/context:** Final validation of Qdrant recovery, file-version cleanup, payload maintenance, and daily collection garbage collection in PR #104.
+- **Unexpected observation or failure:** Focused tests, the full non-coverage suite, static checks, reinstall, and live semantic-search smoke all passed, but CI still rejected the commit on changed-line coverage.
+- **Evidence:** CI reported 4,922 of 4,984 executable changed lines covered (98.76%) against the required 99%. The misses included Qdrant ownership-name parsing, lock inspection races, malformed administration responses, invalid cleanup pagination, deletion failure accounting, and GC startup/failure recovery.
+- **Approaches tried:**
+  - **Attempt:** Treat the earlier full non-coverage suite and primary-path Qdrant tests as sufficient evidence.
+    - **Outcome:** Did not work
+    - **Why:** Passing behavior tests do not prove that new fail-closed and recovery branches execute under coverage instrumentation.
+  - **Attempt:** Lower the gate, ignore lines, or add mechanical branch fillers.
+    - **Outcome:** Did not work
+    - **Why:** Those approaches would hide unverified safety contracts and violate the repository test-quality rules.
+  - **Attempt:** Reproduce the exact CI base and add focused behavioral tests for each Qdrant edge contract.
+    - **Outcome:** Worked
+    - **Why:** The tests exercise externally meaningful failure behavior while increasing coverage of the implementation paths that enforce it.
+- **Root cause:** The original tests emphasized successful lifecycle flows and major races but did not directly exercise several defensive boundaries. Because changed-line coverage is computed cumulatively from the PR base, a later implementation commit can move an otherwise green branch below the threshold.
+- **Resolution:** Added direct regressions for managed collection-name validation, lock metadata/read races, Qdrant transport and response validation, invalid point identity and pagination, failed-deletion accounting, daily recovery after typed and untyped GC failures, and nonblocking startup rejection logging. An adversarial critic tightened the nested-cause assertion so the malformed-reference test cannot pass through a different error branch.
+- **Verification:** Focused code-index tests passed 39/39; focused daemon tests passed 27/27; the full coverage suite exited 0; the exact changed-line check against CI base `4c6bc0af26ddb2da25bf246bb8748c239833b543` passed at 4,948 of 4,984 lines (99.28%).
+- **Prevention/follow-up:** Before pushing a large lifecycle change, run the exact changed-line check against the intended PR base after the coverage-instrumented suite, not only the normal unit suite. Keep negative tests anchored to the specific nested error or side effect that identifies the intended branch.
+- **Reusable learning:** Safety code is not verified until its fail-closed and recovery contracts are exercised directly; a green non-coverage suite cannot substitute for the exact PR-base coverage gate.
+- **References:** `packages/code-index/test/qdrant-collection-names.test.ts`, `packages/code-index/test/qdrant-collection-maintenance.test.ts`, `packages/code-index/test/qdrant-file-version-cleanup.test.ts`, `packages/code-index/test/manifest.test.ts`, `packages/coding-agent/test/qdrant-garbage-collection-failures.test.ts`

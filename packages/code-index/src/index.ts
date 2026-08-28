@@ -15,6 +15,7 @@ export {
   matchesConfiguredEmbeddingBackend,
 } from "./embed/backend-health.ts";
 export {
+  DEFAULT_QDRANT_STARTUP_TIMEOUT_MS,
   type EmbeddingProvider,
   EmbeddingProviderHttp,
   EmbeddingServerManager,
@@ -22,8 +23,12 @@ export {
 } from "./embed.ts";
 export { CodeIndexer } from "./indexer.ts";
 export { QdrantClient } from "./qdrant.ts";
+export { getQdrantCollectionCreatedAt, normalizeQdrantCollectionPrefix } from "./rag/collection-names.ts";
 export { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "./rag/config.ts";
 export type { EmbeddingDevice, EmbeddingRuntimeSettings } from "./rag/embedding-settings.ts";
+export { getRepositoryRefreshLockState } from "./rag/manifest.ts";
+export { QdrantCollectionAdmin } from "./rag/qdrant-collection-admin.ts";
+export { type ResolvedQdrantEndpoint, resolveQdrantEndpoint } from "./rag/qdrant-endpoint.ts";
 export { CodeRagError, WorkspaceCodeRagService } from "./rag/service.ts";
 export type {
   CodeRagService,

@@ -126,11 +126,13 @@ export function mapOperationError(error: unknown, signal: AbortSignal): CodeRagE
   return new CodeRagError("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
 }
 
-export function waitForSignal<T>(promise: Promise<T>, signal?: AbortSignal): Promise<T> {
+export function waitForSignal<T>(promise: Promise<T>, signal?: AbortSignal, preserveSignalReason = false): Promise<T> {
   if (!signal) return promise;
-  if (signal.aborted) return Promise.reject(new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled"));
+  const abortReason = () =>
+    preserveSignalReason ? signal.reason : new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled");
+  if (signal.aborted) return Promise.reject(abortReason());
   return new Promise<T>((resolve, reject) => {
-    const onAbort = () => reject(new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled"));
+    const onAbort = () => reject(abortReason());
     signal.addEventListener("abort", onAbort, { once: true });
     promise.then(
       (value) => {

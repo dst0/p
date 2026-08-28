@@ -2,6 +2,11 @@ import type { FSWatcher } from "node:fs";
 import type { CodeRagService, IndexingProgress, RagState } from "@dst0/p-code-index";
 import type { IndexingTrayService } from "../indexing-tray-manager.ts";
 
+export interface QdrantGarbageCollector {
+  start(): Promise<void>;
+  stop(): Promise<void>;
+}
+
 export type WatchFactory = (
   target: string,
   options: { recursive: boolean },
@@ -25,11 +30,15 @@ export interface DaemonLock {
 export interface IndexingDaemonOptions {
   agentDir: string;
   qdrantBinary: string;
+  qdrantUrl?: string;
   qdrantDataDirectory: string;
+  qdrantStartupTimeoutMs?: number;
   qdrantApiKey?: string;
+  collectionPrefix?: string;
   pythonExecutable: string;
   embeddingModel: string;
   embeddingConfigPath?: string;
+  embeddingStartupTimeoutMs?: number;
   useDenseEmbeddings?: boolean;
   debounceMs?: number;
   retryMs?: number;
@@ -43,6 +52,7 @@ export interface IndexingDaemonOptions {
   disposeBackends?: () => Promise<void>;
   watchFactory?: WatchFactory;
   trayManager?: IndexingTrayService;
+  qdrantGarbageCollector?: QdrantGarbageCollector;
 }
 
 export interface IndexingDaemonStopOptions {
