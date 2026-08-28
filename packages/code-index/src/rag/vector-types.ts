@@ -54,6 +54,7 @@ export interface VectorSearchResult {
 export interface RagVectorStore {
   collectionExists(collection: string): Promise<boolean>;
   createCollection(collection: string, denseDimensions: number): Promise<void>;
+  createPayloadIndexes?(collection: string): Promise<void>;
   deleteCollection(collection: string): Promise<void>;
   collectionStatus(collection: string): Promise<{ points: number; dimensions: number | undefined }>;
   upsert(collection: string, points: VectorPoint[]): Promise<void>;

@@ -223,10 +223,6 @@
     "classes": 3,
     "lines": 407
   },
-  "packages/code-index/src/rag/vector-store.ts": {
-    "classes": 3,
-    "lines": 450
-  },
   "packages/code-index/test/embed-servers-and-http-more.test.ts": {
     "classes": 0,
     "lines": 306
@@ -253,7 +249,7 @@
   },
   "packages/code-index/test/vector-store.test.ts": {
     "classes": 0,
-    "lines": 721
+    "lines": 703
   },
   "packages/coding-agent/examples/extensions/border-status-editor.ts": {
     "classes": 2,

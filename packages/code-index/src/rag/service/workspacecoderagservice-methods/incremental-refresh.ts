@@ -26,6 +26,7 @@ export async function do_performIncrementalRefresh(
   onProgress: RefreshIndexOptions["onProgress"],
 ): Promise<IndexUpdateSummary> {
   if (!self.manifest) throw new CodeRagError("RAG_NOT_INITIALIZED", "Code RAG index is not initialized");
+  await self.waitForPayloadIndexMaintenance();
   const status = await self.vectorStore.collectionStatus(self.manifest.collection);
   if (status.dimensions !== self.settings.embeddingDimensions) {
     throw new CodeRagError("RAG_INCOMPATIBLE_INDEX", "Stored vector dimensions are incompatible");

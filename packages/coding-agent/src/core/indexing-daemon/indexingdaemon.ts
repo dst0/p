@@ -2,9 +2,10 @@ import fs, { type FSWatcher } from "node:fs";
 import path from "node:path";
 import {
   type CodeRagService,
+  DEFAULT_WORKSPACE_CODE_RAG_SETTINGS,
   EmbeddingServerManager,
   type IndexingProgress,
-  QdrantServerManager,
+  normalizeQdrantCollectionPrefix,
   type RagStatus,
   WorkspaceCodeRagService,
 } from "@dst0/p-code-index";
@@ -47,11 +48,13 @@ import {
   do_watchRegistry,
   do_watchRepository,
 } from "./indexingdaemon-methods/status-monitoring.ts";
+import { createQdrantDaemonRuntime } from "./qdrant-daemon-runtime.ts";
 import type {
   DaemonLock,
   DrainWorker,
   IndexingDaemonOptions,
   IndexingDaemonStopOptions,
+  QdrantGarbageCollector,
   RepositoryRuntime,
   WatchFactory,
 } from "./types.ts";
@@ -76,6 +79,9 @@ export class IndexingDaemon {
   public readonly watchFactory: WatchFactory;
   public readonly embeddingManager: EmbeddingServerManager;
   public readonly trayManager: IndexingTrayService;
+  public readonly qdrantGarbageCollector: QdrantGarbageCollector;
+  public readonly startQdrantMaintenance: (signal?: AbortSignal) => Promise<void>;
+  public readonly collectQdrantGarbageOnStart: boolean;
   public readonly runtimes = new Map<string, RepositoryRuntime>();
   public readonly startedAt = new Date().toISOString();
   public readonly indexingVersion: string;
@@ -102,40 +108,52 @@ export class IndexingDaemon {
       repositoryTimeoutMs: options.repositoryTimeoutMs ?? DEFAULT_REPOSITORY_TIMEOUT_MS,
       useDenseEmbeddings: options.useDenseEmbeddings ?? true,
     };
-    const qdrantManager = new QdrantServerManager(6333, {
-      qdrantBinary: options.qdrantBinary,
-      dataDirectory: options.qdrantDataDirectory,
-      startupTimeoutMs: 30_000,
-      apiKey: options.qdrantApiKey,
+    const qdrantRuntime = createQdrantDaemonRuntime({
+      daemonOptions: options,
+      canDeleteCollections: () =>
+        !this.disposed && !this.quiescing && ![...this.runtimes.values()].some((runtime) => runtime.active),
       onLog: (level, message) => this.log(level, message),
     });
+    this.qdrantGarbageCollector = qdrantRuntime.garbageCollector;
+    this.startQdrantMaintenance = (signal) => qdrantRuntime.startMaintenance(signal);
+    this.collectQdrantGarbageOnStart = qdrantRuntime.collectGarbageOnStart;
     this.embeddingManager = new EmbeddingServerManager(18742, options.embeddingModel, {
       pythonExecutable: options.pythonExecutable,
       configPath: options.embeddingConfigPath ?? path.join(options.agentDir, "code-rag.json"),
-      startupTimeoutMs: 5 * 60_000,
+      startupTimeoutMs:
+        options.embeddingStartupTimeoutMs ?? DEFAULT_WORKSPACE_CODE_RAG_SETTINGS.embeddingStartupTimeoutMs,
       onLog: (level, message) => this.log(level, message),
     });
     this.serviceFactory =
       options.serviceFactory ??
-      ((workspaceRoot) =>
-        new WorkspaceCodeRagService({
+      ((workspaceRoot) => {
+        const service = new WorkspaceCodeRagService({
           workspaceRoot,
           dataDirectory: path.join(options.agentDir, "code-rag"),
           userConfigPath: path.join(options.agentDir, "code-rag.json"),
           manageLocalBackends: false,
           allowSearchRefresh: false,
-        }));
+        });
+        if (service.settings.qdrantUrl !== qdrantRuntime.endpointUrl) {
+          throw new Error("Repository qdrantUrl must match the daemon Qdrant endpoint");
+        }
+        if (normalizeQdrantCollectionPrefix(service.settings.collectionPrefix) !== qdrantRuntime.collectionPrefix) {
+          throw new Error("Repository collectionPrefix must match daemon ownership");
+        }
+        return service;
+      });
     this._ensureBackendsRaw =
       options.ensureBackends ??
       (async (signal) => {
-        await qdrantManager.ensureStarted(signal);
+        await this.startQdrantMaintenance(signal);
         if (this.options.useDenseEmbeddings) await this.embeddingManager.ensureStarted(signal);
       });
-    this.disposeBackends =
-      options.disposeBackends ??
-      (async () => {
-        await Promise.all([this.embeddingManager.stop(), qdrantManager.stop()]);
-      });
+    const disposeBackendProcesses =
+      options.disposeBackends ?? (async () => Promise.all([this.embeddingManager.stop(), qdrantRuntime.stopProcess()]));
+    this.disposeBackends = async () => {
+      await this.qdrantGarbageCollector.stop();
+      await disposeBackendProcesses();
+    };
     this.persistResourceFailure =
       options.persistResourceFailure ??
       ((workspaceRoot, message) => {

@@ -25,7 +25,7 @@
     "test": "npm run test --workspaces --if-present",
     "test:cli": "node --test scripts/p-test-wrapper.test.js",
     "test:release-audit": "node --test --test-concurrency=1 scripts/release-change-fragments.test.js scripts/release-changelog-audit.test.js scripts/release-audit-certificate.test.js scripts/release-flow-certificate.test.js scripts/release-major-authorization.test.js scripts/release-origin-ancestry.test.js scripts/release-pr-version-policy.test.js scripts/release-receipt-verification.test.js scripts/release-recovery.test.js scripts/release-target-policy.test.js scripts/release-workflow.test.js scripts/version-bump-authorization.test.js",
-    "test:scripts": "node --test scripts/benchmark-archive-references.test.js scripts/benchmark-model-attribution.test.js scripts/benchmark-report.test.js scripts/benchmark-result-sanitization.test.js scripts/benchmark-runtime-evidence.test.js scripts/pre-commit-restage.test.js",
+    "test:scripts": "node --test scripts/benchmark-archive-references.test.js scripts/benchmark-model-attribution.test.js scripts/benchmark-report.test.js scripts/benchmark-result-sanitization.test.js scripts/benchmark-runtime-evidence.test.js scripts/pre-commit-restage.test.js scripts/indexing-service-health.test.js",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
     "test:unit": "./test.sh",
     "test:unit:coverage": "./test.sh test:coverage",

@@ -1,0 +1,22 @@
+# 2026-08-28 — Qdrant schema migration must gate first use
+
+- **Status:** Resolved
+- **Task/context:** Backfill required payload indexes for existing local and remote collections without delaying daemon readiness.
+- **Unexpected observation or failure:** Startup backfill could consume the readiness budget, while a lazy migration could be skipped after collection replacement, disappearance, retry, or sparse-generation reuse.
+- **Evidence:** Regressions cover one failed attempt followed by two concurrent searches, a collection switch while maintenance is pending, a missing collection restored under the same name, search timeout, incremental refresh, sparse-generation scans, and a startup GC pass that must retain referenced collections without building their indexes.
+- **Approaches tried:**
+  - **Attempt:** Run all schema maintenance during daemon initialization.
+    - **Outcome:** Did not work.
+    - **Why:** Remote latency or a large backfill could make an otherwise usable daemon miss startup readiness.
+  - **Attempt:** Gate only incremental refresh.
+    - **Outcome:** Did not work.
+    - **Why:** Search and sparse-generation reuse also depend on indexed filters.
+  - **Attempt:** Piggyback schema backfill on startup garbage collection.
+    - **Outcome:** Did not work.
+    - **Why:** A retained large collection can turn a bounded cleanup pass into long-running schema work and defeats lazy first-use migration.
+- **Root cause:** Required schema readiness belongs to each collection's first dependent operation, and the collection identity can change while that asynchronous gate is pending.
+- **Resolution:** Share one retryable maintenance promise per collection, await it before search and every filtered reuse path, apply search cancellation/timeouts, recheck collection identity after the wait, and invalidate cached maintenance when a collection disappears.
+- **Verification:** `rag-payload-index-maintenance.test.ts` covers retry, concurrency, timeout, generation switch, sparse reuse, and restoration.
+- **Prevention/follow-up:** New filtered Qdrant paths must declare and test their required payload indexes at their first-use boundary.
+- **Reusable learning:** Lazy migration is safe only when every dependent path gates on it and revalidates the resource identity after awaiting.
+- **References:** `packages/code-index/src/rag/service/workspacecoderagservice-methods/state-management.ts`, `packages/code-index/src/rag/service/workspacecoderagservice-methods/lifecycle.ts`, `packages/code-index/src/rag/service/workspacecoderagservice-methods/sparse-refresh.ts`

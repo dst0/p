@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Allow slow persisted Qdrant recovery and safely reclaim obsolete local index collections every 24 hours and at daemon startup."
+}
