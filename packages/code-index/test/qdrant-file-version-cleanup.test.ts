@@ -75,4 +75,30 @@ describe("Qdrant file-version cleanup", () => {
     );
     expect(client.deletePoints).not.toHaveBeenCalled();
   });
+
+  it("fails closed before deletion when a point identity is invalid", async () => {
+    const client = createStoreClient();
+    client.scroll.mockResolvedValue({
+      points: [{ id: true, payload: { fileHash: "old-hash" } }],
+      next_page_offset: null,
+    });
+
+    await expect(storeWithClient(client).deleteFileVersions("coll", "repo", "file1", "keep-hash")).rejects.toThrow(
+      "invalid point ID",
+    );
+    expect(client.deletePoints).not.toHaveBeenCalled();
+  });
+
+  it("fails closed before deletion when pagination returns an invalid offset", async () => {
+    const client = createStoreClient();
+    client.scroll.mockResolvedValue({
+      points: [{ id: "old", payload: { fileHash: "old-hash" } }],
+      next_page_offset: { invalid: true },
+    });
+
+    await expect(storeWithClient(client).deleteFileVersions("coll", "repo", "file1", "keep-hash")).rejects.toThrow(
+      "invalid offset",
+    );
+    expect(client.deletePoints).not.toHaveBeenCalled();
+  });
 });

@@ -29,6 +29,7 @@ describe("Qdrant endpoint ownership", () => {
 
     expect(load("http://localhost")).toBe("http://127.0.0.1:6333");
     expect(load("http://127.0.0.1:7444")).toBe("http://127.0.0.1:7444");
+    expect(() => load("http://localhost:0")).toThrow("qdrantUrl has an invalid port");
   });
 
   it("validates external endpoint structure even when remote backends are allowed", () => {

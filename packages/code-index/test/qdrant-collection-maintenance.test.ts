@@ -88,4 +88,53 @@ describe("Qdrant collection maintenance", () => {
 
     await expect(admin.createPayloadIndexes("first")).rejects.toThrow("payload index update did not complete");
   });
+
+  it("deletes an encoded collection through the admin API", async () => {
+    const requests: Array<{ body: BodyInit | null | undefined; method: string | undefined; url: string }> = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      requests.push({ url: String(input), method: init?.method, body: init?.body });
+      return Response.json({ result: true });
+    });
+    const admin = new QdrantCollectionAdmin({
+      url: "http://localhost:6333/",
+      timeoutMs: 10_000,
+      fetch: fetchImpl as unknown as typeof fetch,
+    });
+
+    await admin.deleteCollection("repo/main generation");
+
+    expect(requests).toEqual([
+      {
+        url: "http://localhost:6333/collections/repo%2Fmain%20generation",
+        method: "DELETE",
+        body: undefined,
+      },
+    ]);
+  });
+
+  it.each([new Error("socket closed"), "socket closed"])(
+    "reports collection-list transport failures without losing their cause (%s)",
+    async (failure) => {
+      const admin = new QdrantCollectionAdmin({
+        url: "http://localhost:6333",
+        timeoutMs: 10_000,
+        fetch: vi.fn(async () => Promise.reject(failure)) as unknown as typeof fetch,
+      });
+
+      await expect(admin.listCollections()).rejects.toThrow("Qdrant GET /collections failed: socket closed");
+    },
+  );
+
+  it.each([
+    ["invalid JSON", () => new Response("not-json"), "returned invalid JSON"],
+    ["missing result", () => Response.json({ status: "ok" }), "response without a result"],
+  ])("rejects malformed collection-list responses: %s", async (_case, response, expectedMessage) => {
+    const admin = new QdrantCollectionAdmin({
+      url: "http://localhost:6333",
+      timeoutMs: 10_000,
+      fetch: vi.fn(async () => response()) as unknown as typeof fetch,
+    });
+
+    await expect(admin.listCollections()).rejects.toThrow(expectedMessage);
+  });
 });
