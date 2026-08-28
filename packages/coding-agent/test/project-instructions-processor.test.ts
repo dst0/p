@@ -271,7 +271,7 @@ describe("project instruction processing", () => {
   it("falls back when a valid compiled body leaves no room for routed turn metadata", async () => {
     const workspace = createWorkspace();
     const content = [
-      `# Global\n\nAlways ${"preserve ".repeat(350)}evidence on every task.\n`,
+      `# Global\n\nAlways ${"preserve ".repeat(365)}evidence on every task.\n`,
       ...Array.from({ length: 3 }, (_, index) => `# Routed ${index}\n\nWhen routed ${index} applies, inspect it.\n`),
     ].join("");
     writeFileSync(workspace.agentsPath, content);
