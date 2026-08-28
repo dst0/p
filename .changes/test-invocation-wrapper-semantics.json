@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve shell-wrapper semantics when validating test evidence."
+}

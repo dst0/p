@@ -12,6 +12,16 @@ describe("project instruction source-activity routing", () => {
       signing.link,
     ]);
   });
+
+  it("gives an explicit catalog link or module id deterministic routing precedence", () => {
+    const signing = rule("operational-conventions", "Operational conventions", "Before publishing, sign artifacts");
+    const release = rule("release", "Release", "Release packaging");
+
+    expect(selectProjectInstructionRuleLinks([release, signing], `Follow ${signing.link}`)).toEqual([signing.link]);
+    expect(selectProjectInstructionRuleLinks([release, signing], "Apply operational-conventions")).toEqual([
+      signing.link,
+    ]);
+  });
 });
 
 function rule(id: string, title: string, trigger: string): ProjectInstructionRuleRecord {

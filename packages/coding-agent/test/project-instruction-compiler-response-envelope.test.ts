@@ -29,6 +29,7 @@ describe("project instruction compiler response envelope", () => {
     expect(() => parseProjectInstructionCompilerResponse(`${payload.slice(0, -1)}`)).toThrow(/complete/iu);
     expect(() => parseProjectInstructionCompilerResponse("{'classifications': {}}")).toThrow(/JSON/iu);
     expect(() => parseProjectInstructionCompilerResponse('{"value":/* comment */1}')).toThrow(/JSON/iu);
+    expect(() => parseProjectInstructionCompilerResponse('{"unterminated')).toThrow(/complete/iu);
   });
 
   it("selects one sparse contract object from unrelated reasoning JSON but rejects two contracts", () => {

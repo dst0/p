@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { sourceIdentitiesAreUnique } from "../src/core/task-verification/requirement-source-state-validation.ts";
+import { isMutatedSourcePaths } from "../src/core/task-verification/source-path-state.ts";
 import { emptyState } from "../src/core/task-verification/state-factories.ts";
 import { isTaskVerificationState } from "../src/core/task-verification/state-validation.ts";
+import type { TaskRequirement, TaskVerificationState } from "../src/core/task-verification/types.ts";
 
 describe("restored task-verification state validation", () => {
   it("preserves well-shaped ignored source-prompt metadata", () => {
@@ -75,7 +78,91 @@ describe("restored task-verification state validation", () => {
 
     expect(isTaskVerificationState(state)).toBe(false);
   });
+
+  it.each([
+    null,
+    {
+      sourceClauseId: "S1-C1",
+      classification: "superseded",
+      reason: "A later prompt supersedes this clause.",
+      supersededBySourcePromptIndex: 0,
+    },
+    {
+      sourceClauseId: "S1-C1",
+      classification: "informational",
+      reason: "Background context.",
+      supersededBySourcePromptIndex: 1,
+    },
+  ])("rejects malformed persisted ignored-clause metadata %#", (ignoredClause) => {
+    const state = emptyState("validation-task");
+    state.requirementAudit.ignoredSourceClauses = [ignoredClause] as never;
+
+    expect(isTaskVerificationState(state)).toBe(false);
+  });
+
+  it("rejects a malformed ignored-clause collection at the audit boundary", () => {
+    const state = emptyState("validation-task");
+    state.requirementAudit.ignoredSourceClauses = "not-an-array" as never;
+
+    expect(isTaskVerificationState(state)).toBe(false);
+  });
+
+  it("accepts internally consistent passed and failed terminal audits", () => {
+    const passed = terminalState("passed", true);
+    const failed = terminalState("failed", false);
+
+    expect(isTaskVerificationState(passed)).toBe(true);
+    expect(isTaskVerificationState(failed)).toBe(true);
+  });
+
+  it("rejects terminal audits without a complete verdict set", () => {
+    const state = terminalState("failed", false);
+    delete state.requirementAudit.requirements[0]!.verdict;
+
+    expect(isTaskVerificationState(state)).toBe(false);
+  });
+
+  it("validates source-identity overlap and mutated-path container shape directly", () => {
+    expect(
+      sourceIdentitiesAreUnique(
+        [requirementSourceRef("source-1", "README.md", "snapshot-1")],
+        [{ path: "README.md", reason: "Conflicting classification." }],
+      ),
+    ).toBe(false);
+    expect(sourceIdentitiesAreUnique([], [{ path: "notes.md", reason: "User marked it as background." }])).toBe(true);
+    expect(isMutatedSourcePaths("src/index.ts")).toBe(false);
+  });
 });
+
+function terminalState(status: "failed" | "passed", passed: boolean): TaskVerificationState {
+  const state = emptyState("validation-task");
+  state.requirementAudit = {
+    status,
+    requirements: [requirement(passed)],
+    ignoredSourcePrompts: [],
+    nextRequirementIndex: 1,
+    userRequirementsHash: "user-requirements",
+    requirementSetHash: "requirement-set",
+    verifiedMutationRevision: 0,
+  };
+  return state;
+}
+
+function requirement(passed: boolean): TaskRequirement {
+  return {
+    id: "R1",
+    type: "behavior",
+    text: "Preserve deterministic output",
+    acceptanceCriterion: "Repeated execution produces identical output",
+    sourcePromptIndexes: [1],
+    verdict: {
+      passed,
+      reason: passed ? "Focused evidence passed." : "Focused evidence failed.",
+      evidenceRefs: ["evidence-1"],
+      mutationRevision: 0,
+    },
+  };
+}
 
 function requirementSourceRef(id: string, path: string, snapshotEntryId: string) {
   return {

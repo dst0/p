@@ -105,6 +105,27 @@ describe("ModelRegistry dynamic registration validation", () => {
     registry.refresh();
     expect(registry.find(PARTIAL_PROVIDER, MODEL)?.id).toBe(MODEL);
   });
+
+  it("upserts discovered membership while merging partial thinking-level metadata", () => {
+    const registry = ModelRegistry.create(authStorage, modelsJsonPath);
+    registry.upsertRegisteredProvider(PARTIAL_PROVIDER, {
+      baseUrl: "https://partial.test/v1",
+      apiKey: "partial-test-key",
+      api: "openai-completions",
+      models: [{ id: MODEL, thinkingLevelMap: { off: "disabled" } }],
+    });
+
+    registry.upsertRegisteredProvider(PARTIAL_PROVIDER, {
+      models: [{ id: MODEL, thinkingLevelMap: { high: "enabled" } }],
+    });
+
+    expect(registry.registeredProviders.get(PARTIAL_PROVIDER)?.models?.[0]?.thinkingLevelMap).toEqual({
+      off: "disabled",
+      high: "enabled",
+    });
+    registry.refresh();
+    expect(registry.find(PARTIAL_PROVIDER, MODEL)?.thinkingLevelMap).toEqual({ off: "disabled", high: "enabled" });
+  });
 });
 
 function sparseRegistration() {
