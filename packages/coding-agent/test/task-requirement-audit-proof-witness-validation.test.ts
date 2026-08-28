@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  areProofWitnesses,
   collectProofWitnesses,
   evidenceHasProofWitnesses,
   redactProofFrames,
@@ -196,6 +197,29 @@ describe("requirement proof witness validation", () => {
     expect(result).toContain("Recorded 0 of 1 P_PROOF_V1 frames");
     expect(result).toContain("rejected or duplicate");
     expect(stored?.proofWitnesses).toBeUndefined();
+  });
+
+  it("rejects malformed persisted witness containers while accepting a complete witness", () => {
+    expect(areProofWitnesses([null])).toBe(false);
+    expect(
+      areProofWitnesses([
+        {
+          requirementId: "R1",
+          policy: "change_artifact_bytes",
+          requirementSetHash: "proof-set",
+          mutationRevision: 0,
+          factsHash: "facts-hash",
+        },
+      ]),
+    ).toBe(true);
+  });
+
+  it("ignores syntactically malformed proof JSON without throwing", () => {
+    const requirement = proofRequirement("change_artifact_bytes");
+
+    expect(
+      collectProofWitnesses([{ type: "text", text: "P_PROOF_V1 {not-json" }], [requirement], "proof-set", 0),
+    ).toBeUndefined();
   });
 });
 

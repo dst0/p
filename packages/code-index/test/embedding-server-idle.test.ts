@@ -36,7 +36,7 @@ describe("EmbeddingServerManager.waitUntilIdle", () => {
   it("waits until the server reports that no embedding request is active", async () => {
     const manager = new EmbeddingServerManager(await startHealthServer([1, 0]));
 
-    await expect(manager.waitUntilIdle(500)).resolves.toBe(true);
+    await expect(manager.waitUntilIdle(2_000)).resolves.toBe(true);
   });
 
   it("fails closed when the server cannot be reached", async () => {

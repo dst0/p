@@ -59,6 +59,69 @@ afterEach(() => {
 });
 
 describe("compiled read_rules success gate", () => {
+  it("merges a generated context extract into non-record tool details", async () => {
+    const workspace = createWorkspace();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-context-extract"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      projectInstructionCompiler: workspace.compiler,
+    });
+    try {
+      vi.spyOn(session, "_maybeCreateToolResultContextExtract").mockResolvedValue({
+        summary: "Focused evidence",
+        relevantLines: ["line 1"],
+        source: "deterministic",
+      });
+      const call = hookInput("read", "read-with-extract", { path: "src/auth.ts" });
+      const result = await session.agent.afterToolCall?.({
+        ...call,
+        result: { content: [{ type: "text", text: "raw" }], details: "opaque" },
+        isError: false,
+        context: { messages: [] },
+      } as unknown as AfterToolCallContext);
+
+      expect(result?.details).toEqual({
+        contextExtract: { summary: "Focused evidence", relevantLines: ["line 1"], source: "deterministic" },
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("keeps a staged read pending when source refresh fails during finalization", async () => {
+    const workspace = createWorkspace();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-refresh-failure"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      projectInstructionCompiler: workspace.compiler,
+    });
+    try {
+      session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
+      await session.agent.beforeToolCall?.(hookInput("edit", "edit-stage-refresh-failure", { path: "src/auth.ts" }));
+      const links = session._projectRuleGate?.batches.find((batch) => !batch.satisfied)?.links ?? [];
+      expect(links.length).toBeGreaterThan(0);
+      const call = hookInput("read_rules", "read-refresh-failure", { links });
+      await session.agent.beforeToolCall?.(call);
+      const result = await session
+        .getToolDefinition("read_rules")!
+        .execute(call.toolCall.id, { links }, undefined, undefined, extensionContext);
+      vi.spyOn(session._projectInstructions, "refresh").mockRejectedValueOnce(new Error("refresh failed"));
+      await session.agent.afterToolCall?.({ ...call, result, isError: false } as AfterToolCallContext);
+
+      await expect(
+        session.agent.beforeToolCall?.(hookInput("edit", "edit-after-refresh-failure", { path: "src/auth.ts" })),
+      ).resolves.toMatchObject({ block: true });
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("allows exploratory reads without satisfying a pending mutation batch", async () => {
     const workspace = createWorkspace();
     const { session } = await createAgentSession({
@@ -157,6 +220,24 @@ describe("compiled read_rules success gate", () => {
       ).resolves.toMatchObject({ block: true });
 
       extensionResult = "pass";
+      const mismatchedCall = hookInput("read_rules", "read-mismatched", { links });
+      await session.agent.beforeToolCall?.(mismatchedCall);
+      const mismatchedRawResult = await reader?.execute(
+        mismatchedCall.toolCall.id,
+        { links },
+        undefined,
+        undefined,
+        extensionContext,
+      );
+      await session.agent.afterToolCall?.({
+        ...mismatchedCall,
+        result: { ...mismatchedRawResult!, details: { links: [] } },
+        isError: false,
+      } as AfterToolCallContext);
+      await expect(
+        session.agent.beforeToolCall?.(hookInput("edit", "edit-after-mismatch", { path: "src/auth.ts" })),
+      ).resolves.toMatchObject({ block: true });
+
       await session.agent.afterToolCall?.({
         ...replacedCall,
         result: replacedRawResult!,

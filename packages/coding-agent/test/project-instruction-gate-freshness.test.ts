@@ -23,6 +23,61 @@ function makeInstructionSourcesDynamic(workspace: ReturnType<typeof createProjec
 }
 
 describe("compiled project-instruction source freshness", () => {
+  it("rejects a staged read when the in-memory source hash changed before execution", async () => {
+    const workspace = createProjectInstructionModeWorkspace();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-stale-read"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      projectInstructionCompiler: workspace.compiler,
+    });
+    try {
+      session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
+      await session.agent.beforeToolCall?.(projectInstructionToolHookInput("edit", { path: "src/auth.ts" }));
+      const links = session._projectRuleGate?.batches.find((batch) => !batch.satisfied)?.links ?? [];
+      const current = session._projectInstructions.state.current!;
+      session._projectInstructions.state.current = {
+        ...current,
+        manifest: { ...current.manifest, inputHash: "f".repeat(64) },
+      };
+
+      await expect(
+        session.agent.beforeToolCall?.(projectInstructionToolHookInput("read_rules", { links })),
+      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("changed") });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("reports refresh failures and missing turn checkpoints before mutation", async () => {
+    const workspace = createProjectInstructionModeWorkspace();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-defensive-refresh"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      projectInstructionCompiler: workspace.compiler,
+    });
+    try {
+      vi.spyOn(session._projectInstructions, "refresh").mockRejectedValueOnce("refresh unavailable");
+      const editCall = projectInstructionToolHookInput("edit", { path: "src/auth.ts" });
+      await expect(session.agent.beforeToolCall?.(editCall)).resolves.toMatchObject({
+        block: true,
+        reason: expect.stringContaining("refresh unavailable"),
+      });
+
+      await expect(session.agent.beforeToolCall?.(editCall)).resolves.toMatchObject({
+        block: true,
+        reason: expect.stringContaining("No project instruction freshness checkpoint"),
+      });
+    } finally {
+      session.dispose();
+    }
+  });
+
   it("fails closed after a no-route turn when the instruction source changes", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const agentsPath = makeInstructionSourcesDynamic(workspace);

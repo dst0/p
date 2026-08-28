@@ -9,6 +9,9 @@ import {
   validateRequirementDefinition,
 } from "../src/core/task-verification/requirement-definition-validation.ts";
 import { deriveRequirementProofPolicies } from "../src/core/task-verification/requirement-derived-boundaries.ts";
+import { requirementRisk } from "../src/core/task-verification/requirement-risk.ts";
+import { requirementSourceClauses } from "../src/core/task-verification/requirement-source-clauses.ts";
+import { requirementSourceFacets } from "../src/core/task-verification/requirement-source-facets.ts";
 import type {
   RequirementAuditInput,
   TaskRequirement,
@@ -191,6 +194,68 @@ describe("requirement definition facet hardening", () => {
 
     expect(computeUserRequirementsHash(prompt)).toBe(directExpected);
     expect(computeUserRequirementsHash(prompt, [reference])).toBe(referencedExpected);
+  });
+
+  it("rejects duplicate and unknown facet identifiers on one requirement", () => {
+    const duplicate = facetRequirement(
+      "Successful batches commit all commands in order across all SKUs",
+      "A successful batch commits every command in item order across every SKU",
+      "S2-C1-F1",
+    );
+    duplicate.source_facet_ids.push("S2-C1-F1");
+    const duplicateDiagnostics = validate([duplicate]).diagnostics.join("\n");
+    const unknown = facetRequirement(
+      "Successful batches commit all commands in order across all SKUs",
+      "A successful batch commits every command in item order across every SKU",
+      "S2-C1-F999",
+    );
+
+    expect(duplicateDiagnostics).toContain("maps duplicate source facets: S2-C1-F1");
+    expect(duplicateDiagnostics).toContain("references an invalid source_facet_id");
+    expect(validate([unknown]).diagnostics.join("\n")).toContain("references an invalid source_facet_id");
+  });
+
+  it("rejects an unknown source clause instead of accepting prompt-only provenance", () => {
+    const validation = validate([
+      {
+        type: "behavior",
+        text: "Preserve deterministic output",
+        acceptance_criterion: "Repeated execution produces identical output",
+        source_prompt_indexes: [1],
+        source_clause_ids: ["S2-C999"],
+      },
+    ]);
+
+    expect(validation.diagnostics.join("\n")).toContain("references an invalid source_clause_id");
+  });
+
+  it("deduplicates and sorts high-risk provenance from multiple source clauses", () => {
+    const riskSources: TaskVerificationSourcePrompt[] = [
+      { id: "prompt", text: "Implement both referenced specifications." },
+      { id: "source-a", kind: "referenced_file", path: "A.md", text: "Retry the transaction after failure." },
+      { id: "source-b", kind: "referenced_file", path: "B.md", text: "Preserve transaction integrity." },
+    ];
+    const clauses = requirementSourceClauses(riskSources);
+    const risk = requirementRisk(
+      "Preserve deterministic processing",
+      "Repeated processing is deterministic",
+      [3, 2],
+      clauses.map((clause) => clause.id),
+      clauses,
+    );
+
+    expect(risk).toEqual({ highRisk: true, sourcePromptIndexes: [2, 3] });
+  });
+
+  it("splits a coordinated behavior into one facet per governed object", () => {
+    const [clause] = requirementSourceClauses([
+      { id: "source", kind: "referenced_file", text: "Retries increase both latency and throughput after failure." },
+    ]);
+
+    expect(requirementSourceFacets(clause!).map((facet) => facet.requiredConcepts)).toEqual([
+      ["latency"],
+      ["throughput"],
+    ]);
   });
 });
 

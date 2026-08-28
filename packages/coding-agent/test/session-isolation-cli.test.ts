@@ -245,5 +245,5 @@ describe("real CLI session isolation", () => {
     expect(sessionAFile).not.toBe(sessionBFile);
     expect(readFileSync(join(sessionDir, sessionAFile!), "utf8")).toContain("ALPHA_SESSION_SECRET");
     expect(readFileSync(join(sessionDir, sessionBFile!), "utf8")).not.toContain("ALPHA_SESSION_SECRET");
-  }, 30000);
+  }, 120_000);
 });

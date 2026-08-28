@@ -8,7 +8,10 @@ import {
   prepareProjectInstructions,
   renderProjectInstructionTurnContext,
 } from "../src/core/project-instructions/index.ts";
-import type { ProjectInstructionCompiler } from "../src/core/project-instructions/types.ts";
+import type {
+  PreparedProjectInstructions,
+  ProjectInstructionCompiler,
+} from "../src/core/project-instructions/types.ts";
 import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
@@ -117,5 +120,31 @@ describe("project instruction compiler v4 budget", () => {
     expect(prepared.prompt.length).toBeGreaterThan(PROJECT_INSTRUCTIONS_PROMPT_TARGET);
     expect(turn?.links).toHaveLength(3);
     expect(prepared.prompt.length + (turn?.prompt.length ?? 0)).toBeLessThanOrEqual(PROJECT_INSTRUCTIONS_PROMPT_BUDGET);
+  });
+
+  it("fails closed if a tampered prepared prompt leaves no room for its selected route", () => {
+    const prepared = {
+      prompt: "x".repeat(PROJECT_INSTRUCTIONS_PROMPT_BUDGET),
+      manifest: {
+        mode: "compiled",
+        inputHash: "a".repeat(64),
+        rules: [
+          {
+            id: "release",
+            link: "rules/release.md",
+            file: "rules/release.md",
+            title: "Release",
+            trigger: "Publish release artifacts",
+            routable: true,
+            sourcePath: "/repo/AGENTS.md",
+            contentHash: "b".repeat(64),
+          },
+        ],
+      },
+    } as PreparedProjectInstructions;
+
+    expect(() => renderProjectInstructionTurnContext(prepared, "publish release artifacts")).toThrow(
+      /complete injected prompt budget/iu,
+    );
   });
 });

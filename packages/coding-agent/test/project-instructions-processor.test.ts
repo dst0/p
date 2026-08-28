@@ -267,4 +267,34 @@ describe("project instruction processing", () => {
     const catalog = readFileSync(join(prepared.versionDir, prepared.manifest.skillsCatalogFile), "utf8");
     expect(catalog).toContain(prepared.manifest.skills[119].link);
   });
+
+  it("falls back when a valid compiled body leaves no room for routed turn metadata", async () => {
+    const workspace = createWorkspace();
+    const content = [
+      `# Global\n\nAlways ${"preserve ".repeat(350)}evidence on every task.\n`,
+      ...Array.from({ length: 3 }, (_, index) => `# Routed ${index}\n\nWhen routed ${index} applies, inspect it.\n`),
+    ].join("");
+    writeFileSync(workspace.agentsPath, content);
+    const prepared = await prepareProjectInstructions({
+      cwd: workspace.root,
+      cacheDir: workspace.cacheDir,
+      contextFiles: [{ path: workspace.agentsPath, content }],
+      skills: [],
+      compiler: async (request) => {
+        const result = createProjectInstructionCompilation(request);
+        for (const module of request.modules) {
+          if (result.classifications.modules[module.id] === "routed") {
+            result.triggers[module.id] = `${module.title} ${"x".repeat(450)}`;
+          }
+        }
+        return result;
+      },
+    });
+
+    expect(prepared.manifest).toMatchObject({
+      mode: "fallback",
+      compilerStatus: "failed",
+      compilerDiagnostic: "project instruction compiler output validation failed",
+    });
+  });
 });

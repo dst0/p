@@ -16,8 +16,8 @@ afterEach(() => {
   cleanupProjectInstructionModeWorkspaces();
 });
 
-async function createCompiledSession(suffix: string) {
-  const workspace = createProjectInstructionModeWorkspace();
+async function createCompiledSession(suffix: string, additionalInstructions: string[] = []) {
+  const workspace = createProjectInstructionModeWorkspace({ additionalInstructions });
   const created = await createAgentSession({
     cwd: workspace.root,
     agentDir: join(workspace.root, `.agent-action-chunk-${suffix}`),
@@ -112,6 +112,47 @@ describe("chunked project-instruction action routing", () => {
           }),
         ),
       ).resolves.toMatchObject({ block: true, reason: expect.stringContaining(checkLink!) });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("routes circular mutation arguments through semantic labels without serializing them", async () => {
+    const { session } = await createCompiledSession("circular");
+    try {
+      session._createRuntimeContextPrompts("please handle it", session.systemPrompt);
+      const checkLink = session._projectInstructions.state.current?.manifest.rules.find(
+        (rule) => rule.title === "Code checks",
+      )?.link;
+      const circular: Record<string, unknown> = { path: "src/app.ts" };
+      circular.self = circular;
+
+      await expect(
+        session.agent.beforeToolCall?.(projectInstructionToolHookInput("edit", circular)),
+      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining(checkLink!) });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it.each([
+    ["package-install", "npm install exact-package", "Dependency management"],
+    ["file-delete", "rm obsolete.txt", "Deletion safety"],
+  ])("adds defensive shell semantics for %s", async (suffix, command, title) => {
+    const { session } = await createCompiledSession(suffix, [
+      "## Dependency management\n\nBefore dependency installation, inspect package integrity.\n",
+      "## Deletion safety\n\nBefore file deletion, verify the removal scope.\n",
+    ]);
+    try {
+      session._createRuntimeContextPrompts("please handle it", session.systemPrompt);
+      const expectedLink = session._projectInstructions.state.current?.manifest.rules.find(
+        (rule) => rule.title === title,
+      )?.link;
+      expect(expectedLink).toBeDefined();
+
+      await expect(
+        session.agent.beforeToolCall?.(projectInstructionToolHookInput("bash", { command })),
+      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining(expectedLink!) });
     } finally {
       session.dispose();
     }

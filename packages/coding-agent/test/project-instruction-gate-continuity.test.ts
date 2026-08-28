@@ -2,6 +2,8 @@ import { join } from "node:path";
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { fauxAssistantMessage } from "@dst0/p-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { mergeProjectRuleGates } from "../src/core/agent-session/agentsession-methods/agent-event-handling.ts";
+import type { ProjectRuleGate } from "../src/core/agent-session/state-types.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { installCacheRoutingProjectInstructions } from "./project-instruction-compiler-fixture.ts";
@@ -19,6 +21,33 @@ afterEach(() => {
 });
 
 describe("compiled project-instruction gate continuity", () => {
+  it("fails closed when either idle or pending queued gates cross an instruction hash", () => {
+    const incoming: ProjectRuleGate = {
+      inputHash: "b".repeat(64),
+      batches: [{ links: ["rules/incoming.md"], satisfied: false, generation: 2 }],
+      activeGeneration: 2,
+      candidateLinks: ["rules/incoming.md"],
+    };
+    const idle: ProjectRuleGate = {
+      inputHash: "a".repeat(64),
+      batches: [],
+      activeGeneration: 1,
+      candidateLinks: ["rules/idle.md"],
+    };
+    const pending: ProjectRuleGate = {
+      ...idle,
+      batches: [{ links: ["rules/pending.md"], satisfied: false, generation: 1 }],
+    };
+
+    expect(mergeProjectRuleGates(idle, incoming, { preserveCurrentCandidates: true })).toMatchObject({
+      batches: incoming.batches,
+      failure: expect.stringContaining("changed"),
+    });
+    expect(mergeProjectRuleGates(pending, incoming)).toMatchObject({
+      batches: [...pending.batches, ...incoming.batches],
+      failure: expect.stringContaining("changed"),
+    });
+  });
   it("preserves uncommitted route candidates across a normal no-route follow-up", async () => {
     const harness = await createHarness({ completionMode: "implicit" });
     try {
