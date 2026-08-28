@@ -7,6 +7,7 @@ import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { hashText } from "../src/core/project-instructions/content.ts";
 import {
   expandProjectInstructionRuleLinks,
+  normalizeProjectInstructionModuleDependencies,
   validateProjectInstructionRuleDependencies,
 } from "../src/core/project-instructions/dependency-graph.ts";
 import {
@@ -89,6 +90,20 @@ describe("rule dependency graph validation", () => {
     expect(() =>
       validateProjectInstructionRuleDependencies([rule("a", ["rules/b.md"]), rule("b", ["rules/a.md"])]),
     ).toThrow(/dependency cycle.*rules\/a\.md.*rules\/b\.md.*rules\/a\.md/iu);
+  });
+
+  it("rejects non-array rule dependencies and malformed compiler module metadata", () => {
+    const malformedRule = { ...rule("a"), requires: "rules/b.md" as unknown as string[] };
+    expect(() => validateProjectInstructionRuleDependencies([malformedRule])).toThrow(/invalid dependency list/iu);
+
+    const modules = [
+      { id: "a", link: "rules/a.md", title: "A", sourcePath: "/repo/AGENTS.md", content: "A" },
+      { id: "b", link: "rules/b.md", title: "B", sourcePath: "/repo/AGENTS.md", content: "B" },
+    ];
+    expect(() => normalizeProjectInstructionModuleDependencies({ unknown: [] }, modules)).toThrow(/unknown module/iu);
+    expect(() => normalizeProjectInstructionModuleDependencies({ a: "b" }, modules)).toThrow(
+      /invalid dependencies for a/iu,
+    );
   });
 
   it("expands prerequisites before selected rules once and enforces explicit and expanded bounds", () => {

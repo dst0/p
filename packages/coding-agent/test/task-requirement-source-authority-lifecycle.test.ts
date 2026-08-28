@@ -4,7 +4,10 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
-import { isExplicitRequirementSourceDeauthorization } from "../src/core/task-verification/requirement-source-authority.ts";
+import {
+  isExplicitRequirementSourceDeauthorization,
+  requirementSourceDeauthorizationIsCurrent,
+} from "../src/core/task-verification/requirement-source-authority.ts";
 import {
   beforeAuditTool,
   callRequirementAudit,
@@ -81,6 +84,20 @@ describe("referenced requirement-source authority lifecycle", () => {
     expect(
       isExplicitRequirementSourceDeauthorization("Stop using README.md as a requirement source.", "README.md"),
     ).toBe(true);
+  });
+
+  it("requires a real current prompt identity for persisted de-authorization", () => {
+    const prompts = [{ id: "user-1", text: "Stop using README.md as a requirement source." }];
+
+    expect(requirementSourceDeauthorizationIsCurrent(prompts, "README.md", "missing-prompt")).toBe(false);
+    expect(requirementSourceDeauthorizationIsCurrent(prompts, "README.md", "user-1")).toBe(true);
+    expect(
+      requirementSourceDeauthorizationIsCurrent(
+        [...prompts, { id: "user-2", text: "Follow README.md as the authoritative specification." }],
+        "README.md",
+        "user-1",
+      ),
+    ).toBe(false);
   });
 });
 

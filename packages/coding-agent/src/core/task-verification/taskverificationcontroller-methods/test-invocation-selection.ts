@@ -273,8 +273,13 @@ function testPathMatchesGlob(path: string, glob: string): boolean {
       continue;
     }
     if (glob[index + 1] === "*") {
-      pattern += ".*";
-      index += 1;
+      if (glob[index + 2] === "/") {
+        pattern += "(?:.*/)?";
+        index += 2;
+      } else {
+        pattern += ".*";
+        index += 1;
+      }
     } else {
       pattern += "[^/]*";
     }

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { isConfidentlyReadOnlyShellTool } from "../src/core/task-verification/tool-classification.ts";
 import {
   beforeAuditTool,
   callTaskVerification,
@@ -22,6 +23,17 @@ async function initializeGitWorkspace(prefix: string): Promise<string> {
 }
 
 describe("read-only shell verification integration", () => {
+  it.each([
+    ["file --compile magic", false],
+    ["file -C magic", false],
+    ["file -b sample.bin", true],
+    ["diff --output=result.patch before after", false],
+    ["diff --output result.patch before after", false],
+    ["diff -u before after", true],
+  ] as const)("classifies %s as read-only=%s", (command, expected) => {
+    expect(isConfidentlyReadOnlyShellTool("bash", { command })).toBe(expected);
+  });
+
   it("skips workspace snapshots for confidently read-only commands", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "p-read-only-shell-gate-"));
     try {

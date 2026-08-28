@@ -2,6 +2,10 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import {
+  isValidProjectInstructionTrigger,
+  validateProjectInstructionCompilerResult,
+} from "../src/core/project-instructions/compiler-validation.ts";
 import { prepareProjectInstructions } from "../src/core/project-instructions/index.ts";
 import type {
   ProjectInstructionCompilerRequest,
@@ -27,6 +31,74 @@ function forceFirstConstraintIntoBody(request: ProjectInstructionCompilerRequest
 }
 
 describe("project instruction compiler v4 body validation", () => {
+  it("rejects malformed root fields and inconsistent empty-module classifications", () => {
+    const noConstraints = "No source constraints apply to every task.";
+    expect(() => validateProjectInstructionCompilerResult(null as never, [], [])).toThrow(/invalid body/iu);
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: noConstraints,
+          triggers: {},
+          classifications: { modules: {}, constraints: {} },
+          alwaysOn: [] as never,
+        },
+        [],
+        [],
+      ),
+    ).toThrow(/incomplete classifications/iu);
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: noConstraints,
+          triggers: {},
+          classifications: { modules: { empty: "routed" }, constraints: {} },
+          alwaysOn: {},
+        },
+        [{ id: "empty", link: "rules/empty.md", title: "Empty", sourcePath: "/repo/AGENTS.md", content: "" }],
+        [],
+      ),
+    ).toThrow(/inconsistent classification.*empty/iu);
+  });
+
+  it("rejects conditional routing text even when its always-on source mapping is otherwise exact", () => {
+    const content = "When releasing, read the release policy.";
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: content,
+          triggers: {},
+          classifications: { modules: { release: "always-on" }, constraints: { release: "always-on" } },
+          alwaysOn: { release: content },
+        },
+        [
+          {
+            id: "release",
+            link: "rules/release.md",
+            title: "Release",
+            sourcePath: "/repo/AGENTS.md",
+            content,
+          },
+        ],
+        [
+          {
+            id: "release",
+            moduleId: "release",
+            kind: "content",
+            headingContext: [],
+            content,
+            sourceText: content,
+          },
+        ],
+      ),
+    ).toThrow(/routing metadata/iu);
+  });
+
+  it("accepts paired surrogate triggers but rejects isolated high and low surrogates", () => {
+    expect(isValidProjectInstructionTrigger("Release 🚀 artifacts")).toBe(true);
+    expect(isValidProjectInstructionTrigger("Release \ud800 artifacts")).toBe(false);
+    expect(isValidProjectInstructionTrigger("Release \udc00 artifacts")).toBe(false);
+  });
+
   it.each([
     "Read rules/1-1-1-rules-deadbeef.md before editing.",
     "Call list_skills for matching work.",

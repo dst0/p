@@ -149,6 +149,21 @@ describe("project instruction compilation cache recovery", () => {
     expect(loadCachedCompilation(options)).toBeUndefined();
   });
 
+  it("rejects invalid usage before writing a successful cache record", () => {
+    const options = createOptions();
+    const result = {
+      body: "Always preserve cache evidence.",
+      triggers: {},
+      classifications: { modules: { rule: "always-on" as const }, constraints: {} },
+      alwaysOn: {},
+      usage: { input: -1, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
+    };
+
+    expect(() => persistCompilation(options, result)).toThrow(/invalid usage/iu);
+    const compilationDirectory = join(options.cacheDir, "compilations");
+    expect(existsSync(compilationDirectory) ? readdirSync(compilationDirectory) : []).toEqual([]);
+  });
+
   it("rejects corrupt failure records and clears a valid backoff after success", () => {
     const options = createOptions();
     persistCompilationFailure(options, { failedAtMs: 123, error: "failure ".repeat(100) });

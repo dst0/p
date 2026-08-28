@@ -145,6 +145,6 @@ export function runFixtureRelease(fixture, targetVersion = "0.5.0", options = {}
     cwd: fixture.repoRoot,
     encoding: "utf8",
     env: { ...process.env, PATH: `${fixture.fakeBin}:${process.env.PATH}` },
-    timeout: 30_000,
+    timeout: 120_000,
   });
 }

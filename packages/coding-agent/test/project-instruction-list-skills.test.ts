@@ -120,6 +120,19 @@ describe("list_skills", () => {
     expect(empty.parsed).toEqual(omitted.parsed);
   });
 
+  it("orders duplicate exact-name matches by stable virtual link", async () => {
+    const fixture = await createFixture(4);
+    const current = fixture.state.current;
+    if (!current) throw new Error("Expected prepared project instructions");
+    const original = current.manifest.skills.find((skill) => skill.name === "skill-03");
+    if (!original) throw new Error("Expected skill-03 fixture");
+    current.manifest.skills.push({ ...original, link: "skills/00-skill-03/SKILL.md" });
+
+    const result = await executeList(fixture.state, { query: "skill-03" });
+
+    expect(result.parsed.skills.map((skill) => skill.link)).toEqual(["skills/00-skill-03/SKILL.md", original.link]);
+  });
+
   it("normalizes equivalent queries and enforces query and cursor boundaries", async () => {
     const fixture = await createFixture();
     const normalized = await executeList(fixture.state, { query: "deployment needle" });

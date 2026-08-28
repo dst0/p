@@ -77,6 +77,7 @@ describe("createAgentSession model switching", () => {
       settingsManager: SettingsManager.inMemory(),
       sessionManager: SessionManager.inMemory(tempDir),
       resourceLoader: createTestResourceLoader(),
+      projectInstructionMode: "off",
       customTools: [noopTool],
       completionMode: "implicit",
     });

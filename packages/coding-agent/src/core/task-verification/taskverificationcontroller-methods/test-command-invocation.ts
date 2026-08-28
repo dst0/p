@@ -32,6 +32,12 @@ const TIME_OPTIONS_WITH_VALUE = new Set(["-f", "-o", "--format", "--output"]);
 const TIMEOUT_OPTIONS_WITH_VALUE = new Set(["-k", "-s", "--kill-after", "--signal"]);
 const MAX_WRAPPER_DEPTH = 4;
 
+interface UnwrappedCommand {
+  queryOnly: boolean;
+  words: string[];
+  workingDirectories: string[];
+}
+
 export function focusedTestInvocation(command: string, depth = 0): TestCommandInvocation | undefined {
   const shellInvocation = focusedShellInvocation(command);
   if (shellInvocation === undefined) return undefined;
@@ -47,31 +53,46 @@ export function commandContainsTestInvocation(command: string, depth = 0): boole
   if (depth > MAX_WRAPPER_DEPTH) return false;
   return tokenizeShellCommands(command).some((words) => {
     const unwrapped = unwrapCommandAndEnv(words);
-    const nested = wrappedShellCommand(unwrapped);
+    if (unwrapped.queryOnly) return false;
+    const nested = wrappedShellCommand(unwrapped.words);
     return nested !== undefined
       ? commandContainsTestInvocation(nested, depth + 1)
-      : invocationFromWords(unwrapped, depth) !== undefined;
+      : invocationFromWords(unwrapped.words, depth) !== undefined;
   });
 }
 
 function invocationFromWords(words: readonly string[], depth: number): TestCommandInvocation | undefined {
   if (depth > MAX_WRAPPER_DEPTH) return undefined;
   const unwrapped = unwrapCommandAndEnv(words);
-  const executable = unwrapped[0]?.split("/").pop();
-  if (executable === "lean-ctx") return nestedCommandInvocation(unwrapped, ["-c", "--command"], depth);
+  if (unwrapped.queryOnly) return undefined;
+  const executable = unwrapped.words[0]?.split("/").pop();
+  if (executable === "lean-ctx") {
+    return addWrapperState(nestedCommandInvocation(unwrapped.words, ["-c", "--command"], depth), unwrapped);
+  }
   if (executable === "bash" || executable === "sh" || executable === "zsh") {
-    const command = shellCommandPayload(unwrapped);
-    return command === undefined ? undefined : focusedTestInvocation(command, depth + 1);
+    const command = shellCommandPayload(unwrapped.words);
+    return addWrapperState(command === undefined ? undefined : focusedTestInvocation(command, depth + 1), unwrapped);
   }
   if (executable === "timeout") {
-    const nested = commandAfterTimeout(unwrapped);
-    return nested === undefined ? undefined : invocationFromWords(nested, depth + 1);
+    const nested = commandAfterTimeout(unwrapped.words);
+    return addWrapperState(nested === undefined ? undefined : invocationFromWords(nested, depth + 1), unwrapped);
   }
   if (executable === "time") {
-    const nested = commandAfterOptions(unwrapped, TIME_OPTIONS_WITH_VALUE);
-    return nested.length === 0 ? undefined : invocationFromWords(nested, depth + 1);
+    const nested = commandAfterOptions(unwrapped.words, TIME_OPTIONS_WITH_VALUE);
+    return addWrapperState(nested.length === 0 ? undefined : invocationFromWords(nested, depth + 1), unwrapped);
   }
-  return directTestInvocation(unwrapped);
+  return addWrapperState(directTestInvocation(unwrapped.words), unwrapped);
+}
+
+function addWrapperState(
+  invocation: TestCommandInvocation | undefined,
+  wrapper: UnwrappedCommand,
+): TestCommandInvocation | undefined {
+  if (invocation === undefined) return undefined;
+  return {
+    ...invocation,
+    workingDirectories: [...wrapper.workingDirectories, ...invocation.workingDirectories],
+  };
 }
 
 function nestedCommandInvocation(
@@ -101,14 +122,19 @@ function optionPayload(words: readonly string[], options: readonly string[]): st
   return commandIndex >= 0 ? words[commandIndex + 1] : undefined;
 }
 
-function unwrapCommandAndEnv(words: readonly string[]): string[] {
+function unwrapCommandAndEnv(words: readonly string[]): UnwrappedCommand {
   let index = 0;
+  let queryOnly = false;
+  const workingDirectories: string[] = [];
   while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   while (index < words.length) {
     const executable = words[index]?.split("/").pop();
     if (executable === "command") {
       index += 1;
-      while (words[index]?.startsWith("-") && words[index] !== "--") index += 1;
+      while (words[index]?.startsWith("-") && words[index] !== "--") {
+        if (/^-[^-]*[vV]/u.test(words[index]!)) queryOnly = true;
+        index += 1;
+      }
       if (words[index] === "--") index += 1;
     } else if (executable === "env") {
       index += 1;
@@ -118,8 +144,14 @@ function unwrapCommandAndEnv(words: readonly string[]): string[] {
           index += 1;
           break;
         }
-        if (ENV_OPTIONS_WITH_VALUE.has(word)) index += 2;
-        else if (word.startsWith("-") || SHELL_ASSIGNMENT_PATTERN.test(word)) index += 1;
+        if (ENV_OPTIONS_WITH_VALUE.has(word)) {
+          const directory = word === "-C" || word === "--chdir" ? words[index + 1] : undefined;
+          if (directory !== undefined) workingDirectories.push(directory);
+          index += 2;
+        } else if (/^(?:-C|--chdir)=/u.test(word)) {
+          workingDirectories.push(word.slice(word.indexOf("=") + 1));
+          index += 1;
+        } else if (word.startsWith("-") || SHELL_ASSIGNMENT_PATTERN.test(word)) index += 1;
         else break;
       }
     } else {
@@ -127,7 +159,7 @@ function unwrapCommandAndEnv(words: readonly string[]): string[] {
     }
     while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   }
-  return words.slice(index);
+  return { queryOnly, words: words.slice(index), workingDirectories };
 }
 
 function commandAfterTimeout(words: readonly string[]): string[] | undefined {
@@ -180,7 +212,9 @@ function directTestInvocation(words: readonly string[]): TestCommandInvocation |
       : undefined;
   }
   if (executable === "python" || executable === "python3") {
-    const moduleIndex = words.findIndex((word, index) => index > 0 && word === "-m" && words[index + 1] === "pytest");
+    const moduleIndex = words.findIndex(
+      (word, index) => index > 0 && word === "-m" && ["pytest", "unittest"].includes(words[index + 1] ?? ""),
+    );
     return moduleIndex >= 0
       ? { args: words.slice(moduleIndex + 2), allowsBareName: false, ecosystem: "python", workingDirectories: [] }
       : undefined;
