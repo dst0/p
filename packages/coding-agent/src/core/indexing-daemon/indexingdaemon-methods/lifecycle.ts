@@ -15,6 +15,7 @@ export async function do_start(self: IndexingDaemon): Promise<void> {
   fs.mkdirSync(self.options.agentDir, { recursive: true, mode: 0o700 });
   self.daemonLock = acquireDaemonLock(self.options.agentDir);
   try {
+    if (self.collectQdrantGarbageOnStart) await self.startQdrantMaintenance();
     self.watchRegistry();
     await self.syncRegistry();
     self.reconcileTimer = setInterval(() => void self.reconcile(), self.options.reconcileMs);

@@ -57,15 +57,41 @@ export interface RepositoryLock {
   release(): void;
 }
 
-export function acquireRepositoryLock(directory: string, staleAfterMs: number = 10 * 60_000): RepositoryLock {
+export type RepositoryRefreshLockState = "absent" | "active" | "stale";
+
+const DEFAULT_REPOSITORY_LOCK_STALE_AFTER_MS = 10 * 60_000;
+
+export function getRepositoryRefreshLockState(
+  directory: string,
+  staleAfterMs: number = DEFAULT_REPOSITORY_LOCK_STALE_AFTER_MS,
+): RepositoryRefreshLockState {
+  const lockPath = path.join(directory, "refresh.lock");
+  let stat: fs.Stats;
+  try {
+    stat = fs.statSync(lockPath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return "absent";
+    throw error;
+  }
+  let lock: { pid: number } | undefined;
+  try {
+    lock = readLock(lockPath);
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return "absent";
+    throw error;
+  }
+  if (lock) return isProcessAlive(lock.pid) ? "active" : "stale";
+  return Date.now() - stat.mtimeMs > staleAfterMs ? "stale" : "active";
+}
+
+export function acquireRepositoryLock(
+  directory: string,
+  staleAfterMs: number = DEFAULT_REPOSITORY_LOCK_STALE_AFTER_MS,
+): RepositoryLock {
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
   const lockPath = path.join(directory, "refresh.lock");
   try {
-    const stat = fs.statSync(lockPath);
-    const lock = readLock(lockPath);
-    if ((lock && !isProcessAlive(lock.pid)) || (!lock && Date.now() - stat.mtimeMs > staleAfterMs)) {
-      fs.unlinkSync(lockPath);
-    }
+    if (getRepositoryRefreshLockState(directory, staleAfterMs) === "stale") fs.unlinkSync(lockPath);
   } catch (error) {
     if (!(error instanceof Error && "code" in error && error.code === "ENOENT")) throw error;
   }
@@ -97,11 +123,12 @@ export function acquireRepositoryLock(directory: string, staleAfterMs: number = 
 }
 
 function readLock(lockPath: string): { pid: number } | undefined {
+  const contents = fs.readFileSync(lockPath, "utf-8");
   try {
-    const value = JSON.parse(fs.readFileSync(lockPath, "utf-8")) as unknown;
+    const value = JSON.parse(contents) as unknown;
     if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
     const pid = (value as { pid?: unknown }).pid;
-    return typeof pid === "number" && Number.isInteger(pid) && pid > 0 ? { pid } : undefined;
+    return typeof pid === "number" && Number.isSafeInteger(pid) && pid > 0 ? { pid } : undefined;
   } catch {
     return undefined;
   }
@@ -111,7 +138,7 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0);
     return true;
-  } catch {
-    return false;
+  } catch (error) {
+    return !(error instanceof Error && "code" in error && error.code === "ESRCH");
   }
 }

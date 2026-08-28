@@ -8,6 +8,7 @@ import { QdrantServerManager } from "../../embed/qdrant-server.ts";
 import { type DelegatedMethods, installDelegatedMethods } from "../../utils/install-delegated-methods.ts";
 import { DEFAULT_WORKSPACE_CODE_RAG_SETTINGS, loadWorkspaceCodeRagSettings } from "../config.ts";
 import type { FilePreparationPlan } from "../file-preparation.ts";
+import { resolveQdrantEndpoint } from "../qdrant-endpoint.ts";
 import type {
   CodeRagService,
   IndexManifest,
@@ -56,6 +57,8 @@ export class WorkspaceCodeRagService implements CodeRagService {
   public now: () => Date;
 
   public manifest: IndexManifest | undefined;
+
+  public payloadIndexMaintenance: { collection: string; promise: Promise<void> } | undefined;
 
   public state: RagState = "not_initialized";
 
@@ -120,14 +123,10 @@ export class WorkspaceCodeRagService implements CodeRagService {
         },
       );
     this.ownsVectorStore = options.vectorStore === undefined;
-    const qdrantUrl = new URL(this.settings.qdrantUrl);
-    const qdrantPort = Number.parseInt(qdrantUrl.port || "6333", 10);
-    const managesLocalQdrant =
-      manageLocalBackends &&
-      this.ownsVectorStore &&
-      ["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(qdrantUrl.hostname);
+    const qdrantEndpoint = resolveQdrantEndpoint(this.settings.qdrantUrl, this.settings.remoteBackendsAllowed);
+    const managesLocalQdrant = manageLocalBackends && this.ownsVectorStore && qdrantEndpoint.kind === "managed-local";
     this.qdrantServerManager = managesLocalQdrant
-      ? new QdrantServerManager(qdrantPort, {
+      ? new QdrantServerManager(qdrantEndpoint.port, {
           qdrantBinary: this.settings.qdrantBinary,
           dataDirectory: this.settings.qdrantDataDirectory,
           startupTimeoutMs: this.settings.qdrantStartupTimeoutMs,

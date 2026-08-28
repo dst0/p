@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import path from "node:path";
+import { createQdrantCollectionName } from "../../collection-names.ts";
 import type { IndexUpdateSummary, RagErrorCode, RagErrorInfo, SemanticSearchResponse } from "../../types.ts";
 import type { RefreshPlan } from "../types.ts";
 import type { WorkspaceCodeRagService } from "../workspacecoderagservice.ts";
@@ -66,8 +67,7 @@ export function do_createGeneration(self: WorkspaceCodeRagService): string {
 }
 
 export function do_collectionName(self: WorkspaceCodeRagService, generation: string): string {
-  const prefix = self.settings.collectionPrefix.replace(/[^a-zA-Z0-9_-]/g, "_").slice(0, 32);
-  return `${prefix}_${self.repoId.slice(0, 16)}_${generation.replace(/[^a-zA-Z0-9_-]/g, "_")}`;
+  return createQdrantCollectionName(self.settings.collectionPrefix, self.repoId, generation);
 }
 
 export function do_vocabularyPath(self: WorkspaceCodeRagService, generation: string): string {

@@ -105,7 +105,15 @@ export async function do_search(
     ...(signal ? [signal] : []),
   ]);
   try {
-    const manifest = self.manifest;
+    let manifest = self.manifest;
+    if (!manifest) return self.emptySearchResponse(normalized.query, startedAt);
+    while (true) {
+      await waitForSignal(self.waitForPayloadIndexMaintenance(), operationSignal, true);
+      const currentManifest = self.manifest;
+      if (!currentManifest) return self.emptySearchResponse(normalized.query, startedAt);
+      if (currentManifest.collection === manifest.collection) break;
+      manifest = currentManifest;
+    }
     if (!(await self.vectorStore.collectionExists(manifest.collection))) {
       self.state = "stale";
       self.staleReason = "Qdrant collection is missing";
@@ -184,8 +192,8 @@ export async function do_rebuild(
   options: RebuildIndexOptions = {},
   signal?: AbortSignal,
 ): Promise<IndexUpdateSummary> {
-  if (self.refreshPromise) return waitForSignal(self.refreshPromise, signal);
   if (!self.initialized) await self.initialize({ checkFreshness: false });
+  if (self.refreshPromise) return waitForSignal(self.refreshPromise, signal);
   if (self.state === "disabled") return self.emptyUpdateSummary(true);
   if (signal?.aborted) throw new CodeRagError("RAG_CANCELLED", "Code RAG operation was cancelled");
   self.refreshController = new AbortController();

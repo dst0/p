@@ -43,9 +43,13 @@ function createAgentDir(): string {
     path.join(temporaryDirectory, "code-rag.json"),
     `${JSON.stringify({
       qdrantBinary: "/opt/qdrant",
+      qdrantUrl: "http://127.0.0.1:7444",
       qdrantDataDirectory: "/var/lib/p-qdrant",
+      qdrantStartupTimeoutMs: 345_000,
       pythonExecutable: "/opt/p-indexing/bin/python",
       embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
+      embeddingStartupTimeoutMs: 600_000,
+      collectionPrefix: "custom_chunks",
     })}\n`,
   );
   return temporaryDirectory;
@@ -58,11 +62,15 @@ describe("indexing runtime startup", () => {
     expect(createIndexingDaemonOptions(agentDir)).toEqual({
       agentDir,
       qdrantBinary: "/opt/qdrant",
+      qdrantUrl: "http://127.0.0.1:7444",
       qdrantDataDirectory: "/var/lib/p-qdrant",
+      qdrantStartupTimeoutMs: 345_000,
       qdrantApiKey: undefined,
+      collectionPrefix: "custom_chunks",
       pythonExecutable: "/opt/p-indexing/bin/python",
       embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
       embeddingConfigPath: path.join(agentDir, "code-rag.json"),
+      embeddingStartupTimeoutMs: 600_000,
       useDenseEmbeddings: true,
     });
   });

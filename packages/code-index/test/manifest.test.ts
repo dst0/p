@@ -1,11 +1,12 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   acquireRepositoryLock,
   CHUNKER_NAME,
   CHUNKER_VERSION,
+  getRepositoryRefreshLockState,
   INDEX_MANIFEST_SCHEMA_VERSION,
   loadManifest,
   writeManifestAtomic,
@@ -16,9 +17,44 @@ const temporaryDirectories: string[] = [];
 
 afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) fs.rmSync(directory, { recursive: true, force: true });
+  vi.restoreAllMocks();
 });
 
 describe("repository index lock", () => {
+  it("classifies live, dead, and ambiguous refresh locks for maintenance", () => {
+    const directory = createDirectory();
+    const lockPath = path.join(directory, "refresh.lock");
+    expect(getRepositoryRefreshLockState(directory)).toBe("absent");
+
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: process.pid, startedAt: new Date().toISOString() }));
+    expect(getRepositoryRefreshLockState(directory)).toBe("active");
+
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: 2_147_483_647, startedAt: new Date().toISOString() }));
+    expect(getRepositoryRefreshLockState(directory)).toBe("stale");
+
+    fs.writeFileSync(lockPath, "ambiguous");
+    expect(getRepositoryRefreshLockState(directory)).toBe("active");
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    expect(getRepositoryRefreshLockState(directory)).toBe("stale");
+  });
+
+  it("fails closed when a fresh lock PID or liveness result is ambiguous", () => {
+    const directory = createDirectory();
+    const lockPath = path.join(directory, "refresh.lock");
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: Number.MAX_SAFE_INTEGER + 1 }));
+    expect(getRepositoryRefreshLockState(directory)).toBe("active");
+    fs.utimesSync(lockPath, new Date(0), new Date(0));
+    expect(getRepositoryRefreshLockState(directory)).toBe("stale");
+
+    fs.writeFileSync(lockPath, JSON.stringify({ pid: 123_456 }));
+    vi.spyOn(process, "kill").mockImplementation(() => {
+      const error = new Error("Liveness unavailable") as NodeJS.ErrnoException;
+      error.code = "EINVAL";
+      throw error;
+    });
+    expect(getRepositoryRefreshLockState(directory)).toBe("active");
+  });
+
   it("does not steal an old lock from a live indexing process", () => {
     const directory = createDirectory();
     const lock = acquireRepositoryLock(directory);

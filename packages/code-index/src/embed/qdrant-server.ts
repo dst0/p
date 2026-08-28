@@ -12,12 +12,15 @@ export interface QdrantServerManagerOptions {
   onLog?: (level: "debug" | "error", message: string) => void;
 }
 
+export const DEFAULT_QDRANT_STARTUP_TIMEOUT_MS = 5 * 60_000;
+
 const DEFAULT_QDRANT_OPTIONS: QdrantServerManagerOptions = {
   qdrantBinary: "qdrant",
   dataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
-  startupTimeoutMs: 30_000,
+  startupTimeoutMs: DEFAULT_QDRANT_STARTUP_TIMEOUT_MS,
 };
 const SERVER_STOP_TIMEOUT_MS = 5_000;
+type QdrantHealthStatus = "auth-rejected" | "healthy" | "unhealthy";
 
 /** Starts and monitors one local Qdrant process. */
 export class QdrantServerManager {
@@ -132,7 +135,10 @@ export class QdrantServerManager {
 
       const deadline = Date.now() + this.options.startupTimeoutMs;
       const poll = async () => {
-        if (await this.checkHealth()) {
+        if (settled) return;
+        const healthy = await this.checkHealth();
+        if (settled) return;
+        if (healthy) {
           this.options.onLog?.("debug", "Qdrant is ready");
           settle(() => resolve(true));
           return;
@@ -150,6 +156,12 @@ export class QdrantServerManager {
 
   getApiKey(): string | undefined {
     return this.ensureApiKey();
+  }
+
+  async isOwnedServerHealthy(): Promise<boolean> {
+    const apiKey = this.options.apiKey?.trim() || this.readSavedApiKey();
+    if (!apiKey || (await this.checkHealthStatus(undefined)) !== "auth-rejected") return false;
+    return this.checkHealthWithApiKey(apiKey);
   }
 
   private readSavedApiKey(): string | undefined {
@@ -207,8 +219,15 @@ export class QdrantServerManager {
   }
 
   private async checkHealth(): Promise<boolean> {
+    return this.checkHealthWithApiKey(this.options.apiKey ?? this.readSavedApiKey());
+  }
+
+  private async checkHealthWithApiKey(apiKey: string | undefined): Promise<boolean> {
+    return (await this.checkHealthStatus(apiKey)) === "healthy";
+  }
+
+  private async checkHealthStatus(apiKey: string | undefined): Promise<QdrantHealthStatus> {
     try {
-      const apiKey = this.options.apiKey ?? this.readSavedApiKey();
       const headers: Record<string, string> = {};
       if (apiKey) {
         headers["api-key"] = apiKey;
@@ -217,11 +236,12 @@ export class QdrantServerManager {
         headers,
         signal: AbortSignal.timeout(2_000),
       });
-      if (!response.ok) return false;
+      if (response.status === 401 || response.status === 403) return "auth-rejected";
+      if (!response.ok) return "unhealthy";
       const body = (await response.json()) as Record<string, unknown>;
-      return body.status === "ok";
+      return body.status === "ok" ? "healthy" : "unhealthy";
     } catch {
-      return false;
+      return "unhealthy";
     }
   }
 }

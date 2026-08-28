@@ -56,6 +56,7 @@ export async function do_reloadPersistedState(self: WorkspaceCodeRagService): Pr
   self.initialized = true;
   self.staleReason = undefined;
   if (!persisted) {
+    self.payloadIndexMaintenance = undefined;
     self.state = "not_initialized";
     self.lastError = undefined;
     return;
@@ -74,16 +75,39 @@ export async function do_reloadPersistedState(self: WorkspaceCodeRagService): Pr
     throw new CodeRagError("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
   }
   if (!collectionExists) {
+    self.payloadIndexMaintenance = undefined;
     self.state = "stale";
     self.staleReason = "Qdrant collection is missing";
     self.lastError = self.errorInfo("RAG_INCOMPATIBLE_INDEX", self.staleReason);
     return;
   }
+  if (self.payloadIndexMaintenance?.collection !== persisted.collection) self.payloadIndexMaintenance = undefined;
   self.state = persisted.state;
-  // Do not restore lastError from manifest: it is a transient diagnostic that persists
-  // across daemon restarts. It is already cleared by do_applyRuntimeStatus on successful
-  // indexing, so not restoring from disk avoids showing stale errors between restart
-  // and the next indexing run.
+  self.lastError = undefined;
+  // lastError is a transient diagnostic. A successful compatible reload clears it
+  // instead of restoring a stale failure persisted by an earlier indexing attempt.
+}
+
+export function do_startPayloadIndexMaintenance(self: WorkspaceCodeRagService, collection: string): void {
+  const createPayloadIndexes = self.vectorStore.createPayloadIndexes;
+  if (!createPayloadIndexes || self.payloadIndexMaintenance?.collection === collection) return;
+  const promise = Promise.resolve().then(() => createPayloadIndexes.call(self.vectorStore, collection));
+  self.payloadIndexMaintenance = { collection, promise };
+  void promise.catch(() => {});
+}
+
+export async function do_waitForPayloadIndexMaintenance(self: WorkspaceCodeRagService): Promise<void> {
+  const collection = self.manifest?.collection;
+  if (!collection || self.lastError?.code === "RAG_INCOMPATIBLE_INDEX") return;
+  self.startPayloadIndexMaintenance(collection);
+  const maintenance = self.payloadIndexMaintenance;
+  if (!maintenance || maintenance.collection !== collection) return;
+  try {
+    await maintenance.promise;
+  } catch (error) {
+    if (self.payloadIndexMaintenance === maintenance) self.payloadIndexMaintenance = undefined;
+    throw new CodeRagError("RAG_BACKEND_UNAVAILABLE", safeErrorMessage(error));
+  }
 }
 
 export function do_manifestIncompatibility(self: WorkspaceCodeRagService, manifest: IndexManifest): string | undefined {
