@@ -9,19 +9,22 @@ import {
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
-import { AgentSession, TOOL_SEARCH_TOOL_NAME } from "./agent-session.ts";
+import { AgentSession } from "./agent-session.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
+import { guardProviderPayloadBudget } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
 import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
+import { resolveSessionProjectInstructionCompilerModel } from "./project-instructions/compiler-model.ts";
 import { createSessionProjectInstructionController } from "./project-instructions/session-controller.ts";
-import type { ProjectInstructionCompiler } from "./project-instructions/types.ts";
+import type { ProjectInstructionCompiler, ProjectInstructionDeliveryMode } from "./project-instructions/types.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
+import { resolveSdkToolPolicy } from "./sdk-tool-policy.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
 import { time } from "./timings.ts";
@@ -42,7 +45,6 @@ import {
   createWriteTool,
   withFileMutationQueue,
 } from "./tools/index.ts";
-
 export interface CreateAgentSessionOptions {
   cwd?: string;
   agentDir?: string;
@@ -50,14 +52,12 @@ export interface CreateAgentSessionOptions {
   authStorage?: AuthStorage;
   /** Model registry. Default: ModelRegistry.create(authStorage, agentDir/models.json) */
   modelRegistry?: ModelRegistry;
-
   /** Model to use. Default: from settings, else first available */
   model?: Model<any>;
   /** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
   thinkingLevel?: ThinkingLevel;
   /** Models available for cycling (Ctrl+P in interactive mode) */
   scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
-
   /**
    * Optional default tool suppression mode when no explicit allowlist is provided.
    *
@@ -93,15 +93,14 @@ export interface CreateAgentSessionOptions {
    * but their schemas are not sent to the first provider request. Defaults to false.
    */
   includeAllExtensionTools?: boolean;
-
   /** Resource loader. When omitted, DefaultResourceLoader is used. */
   resourceLoader?: ResourceLoader;
-  /** Override the hash-miss project-instruction compiler. */
   projectInstructionCompiler?: ProjectInstructionCompiler;
-
+  projectInstructionCompilerIdentity?: string;
+  projectInstructionCompilerModel?: string;
+  projectInstructionMode?: ProjectInstructionDeliveryMode;
   /** Session manager. Default: SessionManager.create(cwd) */
   sessionManager?: SessionManager;
-
   /** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
   settingsManager?: SettingsManager;
   /** Session start event metadata for extension runtime startup. */
@@ -113,13 +112,11 @@ export interface CreateAgentSessionOptions {
   /** Default provider output token limit for each model request. */
   maxTokens?: number;
 }
-
 export interface CreateAgentSessionResult {
   session: AgentSession;
   extensionsResult: LoadExtensionsResult;
   modelFallbackMessage?: string;
 }
-
 export type { InteractionMode } from "./agent-session.ts";
 export * from "./agent-session-runtime.ts";
 export type {
@@ -152,7 +149,6 @@ export {
   createSleepTool,
   createSubmitPlanTool,
 };
-
 function getDefaultAgentDir(): string {
   return getAgentDir();
 }
@@ -195,33 +191,35 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
   const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
   let resourceLoader = options.resourceLoader;
-
   const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
   const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
   const authStorage = options.authStorage ?? AuthStorage.create(authPath);
   const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
-
   const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
   const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
   const configuredCompletionMode = options.completionMode ?? settingsManager.getCompletionMode();
   const completionLimits = options.completionLimits ?? settingsManager.getCompletionLimits();
-
+  const projectInstructionMode = options.projectInstructionMode ?? "compiled";
+  const projectInstructionCompilerModel = resolveSessionProjectInstructionCompilerModel({
+    reference: options.projectInstructionCompilerModel,
+    customCompiler: options.projectInstructionCompiler,
+    mode: projectInstructionMode,
+    modelRegistry,
+    sessionManager,
+  });
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
     await resourceLoader.reload();
     time("resourceLoader.reload");
   }
-
   // Check if session has existing data to restore. Do not truncate restored
   // messages here: changing provider-visible history outside a recorded
   // compaction boundary breaks prefix cache reuse for reopened sessions.
   const existingSession = sessionManager.buildSessionContext();
   const hasExistingSession = existingSession.messages.length > 0;
   const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
-
   let model = options.model;
   let modelFallbackMessage: string | undefined;
-
   // If session has data, try to restore model from it
   if (!model && hasExistingSession && existingSession.model) {
     const restoredModel = modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
@@ -232,7 +230,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
     }
   }
-
   // If still no model, use findInitialModel (checks settings default, then provider defaults)
   if (!model) {
     const defaultModelString = settingsManager.getDefaultModel();
@@ -280,35 +277,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
   }
 
-  const defaultActiveToolNames: string[] = [
-    "read",
-    "bash",
-    "process",
-    "edit",
-    "write",
-    "sleep",
-    "semantic_search",
-    "read_rules",
-    "read_skills",
-    "update_session_state",
-    "session_recall",
-    "keep_context",
-    TOOL_SEARCH_TOOL_NAME,
-  ];
-  if (options.userInputTools) {
-    defaultActiveToolNames.push("ask_user", "confirm_user");
-  }
-  const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
-  const excludedToolNames = options.excludeTools;
-  const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
-  const initialActiveToolNames: string[] = (
-    options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
-  ).filter((name) => !excludedToolNameSet?.has(name));
-  const explicitlyToolless = (options.tools !== undefined && options.tools.length === 0) || options.noTools === "all";
+  const { allowedToolNames, excludedToolNames, initialActiveToolNames, explicitlyToolless } = resolveSdkToolPolicy({
+    projectInstructionMode,
+    tools: options.tools,
+    noTools: options.noTools,
+    excludeTools: options.excludeTools,
+    userInputTools: options.userInputTools,
+  });
   const completionMode =
     options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
   const defaultMaxTokens = options.maxTokens;
-
   let agent: Agent;
 
   // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
@@ -388,10 +366,16 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     },
     onPayload: async (payload, _model) => {
       const runner = extensionRunnerRef.current;
-      if (!runner?.hasHandlers("before_provider_request")) {
-        return payload;
-      }
-      return runner.emitBeforeProviderRequest(payload);
+      const transformedPayload = runner?.hasHandlers("before_provider_request")
+        ? await runner.emitBeforeProviderRequest(payload)
+        : payload;
+      return guardProviderPayloadBudget(
+        transformedPayload ?? payload,
+        _model,
+        settingsManager.getCompactionSettings(),
+        agent.maxTokens,
+        payload,
+      );
     },
     onResponse: async (response, _model) => {
       const runner = extensionRunnerRef.current;
@@ -417,6 +401,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     transport: settingsManager.getTransport(),
     thinkingBudgets: settingsManager.getThinkingBudgets(),
     maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
+    maxTokens: defaultMaxTokens ?? 16384,
   });
 
   // Restore messages if session has existing data
@@ -433,15 +418,19 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
-  const projectInstructions = await createSessionProjectInstructionController({
-    cwd,
-    resourceLoader,
-    modelRegistry,
-    settingsManager,
-    getModel: () => agent.state.model,
-    compiler: options.projectInstructionCompiler,
-  });
-
+  const projectInstructions =
+    projectInstructionMode === "compiled"
+      ? await createSessionProjectInstructionController({
+          cwd,
+          resourceLoader,
+          modelRegistry,
+          settingsManager,
+          getModel: () => agent.state.model,
+          compilerModel: projectInstructionCompilerModel,
+          compiler: options.projectInstructionCompiler,
+          compilerIdentity: options.projectInstructionCompilerIdentity,
+        })
+      : undefined;
   const session = new AgentSession({
     agent,
     sessionManager,
@@ -450,6 +439,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     scopedModels: options.scopedModels,
     resourceLoader,
     projectInstructions,
+    projectInstructionMode,
     customTools: options.customTools,
     includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
     modelRegistry,

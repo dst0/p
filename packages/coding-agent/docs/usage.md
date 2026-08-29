@@ -92,7 +92,7 @@ When the task is done, the model calls:
 finish_work({
   status: "success" | "partial" | "failed",
   summary: string,
-  result?: string,
+  verification_token?: string,
   files_changed?: string[],
   tests_run?: string[],
   remaining_work?: string[],
@@ -100,7 +100,25 @@ finish_work({
 })
 ```
 
-Print mode displays `result` when present, otherwise `summary`. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
+Print mode displays `summary`. After a successful requirement audit, the controller can populate an omitted `verification_token`; a supplied token must match exactly. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
+
+### Evidence-backed completion
+
+Before `finish_work`, `ready_to_finish` freezes the current acceptance checks and evidence. The model then uses `record_requirement_audit` to define stable requirement IDs from user-authored prompts and submits every verdict together in one `action: "verdict"` call. A missing, duplicate, unexpected, stale, or unsupported verdict rejects the whole batch without persisting a partial result.
+
+When a user prompt names local Markdown, AsciiDoc, reStructuredText, or text documents, the controller blocks non-read-only shell commands and file mutations before baseline setup. One `action: "prepare_definition"` call must select zero to three authoritative paths and classify every other candidate. This call freezes the source bytes but deliberately defers model-based clause decomposition until completion evidence is ready, so implementation can proceed after the normal baseline gate. Every referenced local document fails closed as authoritative unless its exact prompt context makes it only a requested output. A model-authored reason cannot discard an authoritative or already frozen source; only a later direct-user prompt that explicitly deauthorizes the exact path can do so, and that prompt identity is persisted. A newer authorization for the same path invalidates the earlier deauthorization. Selected sources must be bounded, Git-tracked UTF-8 files without symlinks, hardlinks, or detected secrets. The controller checks size before allocation, reads through a no-follow descriptor, and stores hash-bound immutable session snapshots rather than copying source text into ordinary task state.
+
+After `ready_to_finish` accepts current evidence, `action: "define"` must classify every extracted source clause exactly once, including headings and fenced content. A premature definition call is rejected without creating a repair draft. Until a definition is fixed, every frozen source is revalidated before later workspace mutations, including mutations after the first one. The controller emits each clause once in a compact, self-describing columnar catalog with its stable ID, source prompt index, structural kind, exact text, normative hint, location, and any deterministic controller classification. Only structurally certain headings and controller-detected unsafe instructions are classified automatically; ambiguous prose remains fail-closed, and an explicit informational classification must match structural context markers. The model maps each remaining normative clause to semantically relevant atomic requirements or identifies structurally justified informational, example, or superseded content. Referenced-source indexes are derived from accepted clause IDs instead of requiring the model to repeat them correctly, while the primary camel-case, acronym, snake-case, or kebab-case identifier must retain its exact or spaced identity. Definition rejection reports independent diagnostics together in deterministic order, suppresses errors that depend only on a malformed item, stores no partial definition, and returns focused repair guidance without replaying the full source catalog. Responses that would exceed 32 KiB are grouped by repair class with exact instance counts, one stable bounded example per class, and complete-batch resubmission guidance. A referenced-file conflict has no implicit precedence; `superseded` requires the index of an explicit conflicting direct-user clarification. Later prompts retain already frozen bytes, add newly delegated sources incrementally, and cannot adopt changed file contents unless the latest direct prompt explicitly authorizes that exact path. Pure status or continuation nudges and redundant completion reminders preserve the frozen definition; a real new requirement invalidates it normally. Missing, corrupt, secret-bearing, or otherwise unsafe restored snapshots also fail closed.
+
+Clause extraction preserves semicolons and sentence punctuation inside Markdown inline-code and straight- or smart-quoted scalar literals, while continuing to split structural delimiters outside them. Contractions, possessives, and numeric measurement marks are not paired as quote delimiters. Exact and upper-bound collection closures such as "exactly these", terminal "following keys only", and "no other keys" stay attached to an explicitly mapped collection introduction instead of being distributed onto child items; conditional phrases such as "only when authorized" remain inherited constraints.
+
+Sparse definition repairs are transactional. One repair may update at most 16 indexed requirements with at most 96 complete replacement objects, matching the global requirement ceiling; cumulative retained lineage growth remains limited to 16 requirements. Equal-count lateral corrections may advance under the bounded stagnation policy, but a candidate with more deterministic diagnostics than the historical minimum is discarded without replacing the best draft or its revision. A candidate beyond the retained-lineage limit is still validated atomically and may become authoritative when fully valid, but an invalid overflow is never stored as the next repair draft. This keeps the active draft repairable until bounded stagnation instead of expanding it beyond the next call's sparse correction capacity. Potential workspace mutations remain blocked until that rejected-definition action is resolved.
+
+Task reclassification retains a hash-valid frozen definition only while every prepared source snapshot remains available. It resets completed verdicts and verification revisions before the new baseline/final cycle. Stale hashes, missing snapshots, and restoration errors fail closed; a stale definition with intact prepared sources returns to `awaiting_definition` so one complete definition batch can recover it.
+
+The controller derives proof policies for recognized high-risk relationships. Newline-terminated artifacts that reject truncation require a complete truncation requirement and focused evidence naming exact final-byte removal. Its witness is valid only when the original ends in LF (`0x0A`) and the rejected candidate is exactly the original minus that byte. Corruption evidence must identify a changed artifact, and failed-operation rollback claims for state, log, version, position, and command identity must be split into independently verifiable requirements. Rollback witnesses must record a thrown failure; monotonic counters must remain unchanged on failure and advance by exactly one on success. Each matching focused test emits a bounded one-line `P_PROOF_V1` frame. Before invoking earlier result hooks, the controller snapshots the native tool identity, validated arguments, content, and error state used for evidence. It validates proof frames only from that snapshot, independently of hooks that may redact, omit, inject, or mutate model-visible content. Error status is monotonic: a hook may promote a native success to failed evidence but cannot demote a native failure, while mutation settlement always follows the native outcome so a presentation-only error cannot hide a successful mutation. The controller reports rejected or duplicate frame counts immediately, persists only each accepted digest bound to the requirement-set hash and mutation revision, and redacts raw frame values from both returned tool content and durable evidence summaries. The proof policies are checked in the single verdict batch. They improve honest-agent evidence quality; arbitrary test code can still fabricate its observations, so this is not a cryptographic proof of production behavior.
+
+Every passing verdict needs current non-error evidence. Security, integrity, durability, persistence, lifecycle, transaction, and concurrency requirements additionally need a focused executable test selector and an independently positive result matching the invariant's concrete behavior, subject, qualifiers, and polarity. A generic `npm test` or `npm run check`, manual reproduction, output prose, or same-domain test for a different behavior is insufficient. Only a completely passing batch issues the completion token supplied unchanged to `finish_work`.
 
 Use `--completion-mode implicit` for the old behavior or `--completion-mode hybrid` during migration.
 
@@ -135,7 +153,7 @@ p loads `AGENTS.md` or `CLAUDE.md` at startup from:
 - parent directories, walking up from the current working directory
 - the current directory
 
-Use context files for project conventions, commands, safety rules, and preferences. p hashes the complete source chain, injects an exact or compiled block under 5,000 characters, and keeps exact large-file sections available through `read_rules`. See [Project instructions](project-instructions.md). Disable loading with `--no-context-files` or `-nc`.
+Use context files for project conventions, commands, safety rules, and preferences. p hashes the complete source chain, injects an exact or compiled block under 5,000 characters, and keeps exact large-file sections available through `read_rules`. Select `--project-instructions compiled` (default), `legacy`, or `off`; see [Project instructions](project-instructions.md). `--no-context-files` and `-nc` are aliases for `off`.
 
 ### System Prompt Files
 
@@ -241,7 +259,7 @@ cat README.md | p -p "Summarize this text"
 | `--no-builtin-tools`, `-nbt`           | Disable built-in tools but keep extension/custom tools enabled |
 | `--no-tools`, `-nt`                    | Disable all tools                                              |
 
-Built-in tools: `read`, `read_rules`, `read_skills`, `semantic_search`, `bash`, `process`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`.
+Built-in tools: `read`, `list_skills`, `read_rules`, `read_skills`, `semantic_search`, `bash`, `process`, `edit`, `write`, `grep`, `find`, `ls`, `sleep`, `update_session_state`, `ask_user`, `confirm_user`, `submit_plan`.
 
 `update_session_state` is active by default. The model is instructed to call it before other tools on each user turn so the durable goal and plan are revised explicitly instead of being inferred from the latest message. In interactive mode, `ask_user` and `confirm_user` are active by default. The model is instructed to use them only when you explicitly ask it to ask, collect information, or wait for confirmation. Type `/plan` or `/plan <request>` to enter plan mode: p may gather context and ask targeted questions, then must call `submit_plan` and wait for your approval before executing. The footer shows `PLAN` while this mode is active, and plan mode turns off automatically after you approve the suggested plan. Non-interactive modes do not enable user-input tools by default; RPC clients can enable them with `--tools` and answer the emitted UI requests.
 
@@ -257,7 +275,9 @@ Built-in tools: `read`, `read_rules`, `read_skills`, `semantic_search`, `bash`, 
 | `--no-prompt-templates`      | Disable prompt template discovery                    |
 | `--theme <path>`             | Load a theme; repeatable                             |
 | `--no-themes`                | Disable theme discovery                              |
-| `--no-context-files`, `-nc`  | Disable `AGENTS.md` and `CLAUDE.md` discovery        |
+| `--project-instructions <mode>` | Use `compiled` (default), `legacy`, or `off`      |
+| `--project-instruction-compiler-model <provider/id>` | Pin a dedicated model for cold compiled-instruction generation |
+| `--no-context-files`, `-nc`  | Alias for `--project-instructions off`               |
 
 Combine `--no-*` with explicit flags to load exactly what you need, ignoring settings. Example:
 

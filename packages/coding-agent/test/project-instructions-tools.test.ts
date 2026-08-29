@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Value } from "typebox/value";
 import { afterEach, describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { hashText } from "../src/core/project-instructions/content.ts";
@@ -10,6 +11,7 @@ import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 import { createReadRulesToolDefinition } from "../src/core/tools/read-rules.ts";
 import { createReadSkillsToolDefinition } from "../src/core/tools/read-skills.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 const extensionContext = {} as ExtensionContext;
@@ -48,10 +50,11 @@ async function prepareFixture() {
     cacheDir: join(fixture.root, ".pdev", "instructions"),
     contextFiles: [{ path: fixture.agentsPath, content: fixture.agentsContent }],
     skills: [fixture.skill],
-    compiler: async (request) => ({
-      body: "Read linked rule modules before matching work.",
-      triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-    }),
+    compiler: async (request) =>
+      createProjectInstructionCompilation(
+        request,
+        Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+      ),
   });
   const state = createProjectInstructionState(prepared);
   return { ...fixture, prepared, state };
@@ -61,6 +64,41 @@ afterEach(() => {
   for (const directory of temporaryDirectories.splice(0)) {
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+describe("logical reader schemas", () => {
+  it("emits fully anchored nonempty namespace patterns for OpenAI-compatible parsers", async () => {
+    const fixture = await prepareFixture();
+    const cases = [
+      {
+        namespace: "rules",
+        schema: createReadRulesToolDefinition(fixture.state).parameters,
+        valid: "rules/catalog.md",
+        invalid: ["rules/", "skills/catalog.md", "fallback.md"],
+      },
+      {
+        namespace: "skills",
+        schema: createReadSkillsToolDefinition(fixture.state).parameters,
+        valid: "skills/catalog.md",
+        invalid: ["skills/", "rules/catalog.md", "fallback.md"],
+      },
+    ];
+
+    for (const entry of cases) {
+      const itemSchema: object = entry.schema.properties.links.items;
+      const pattern = "pattern" in itemSchema ? itemSchema.pattern : undefined;
+      if (typeof pattern !== "string") {
+        throw new Error(`${entry.namespace} reader schema is missing a string pattern`);
+      }
+      expect.soft(pattern, `${entry.namespace} pattern`).toMatch(/^\^.+\$$/u);
+      expect.soft(new RegExp(pattern).test(entry.valid)).toBe(true);
+      expect.soft(Value.Check(entry.schema, { links: [entry.valid] })).toBe(true);
+      for (const invalid of entry.invalid) {
+        expect.soft(new RegExp(pattern).test(invalid), invalid).toBe(false);
+        expect.soft(Value.Check(entry.schema, { links: [invalid] }), invalid).toBe(false);
+      }
+    }
+  });
 });
 
 describe("read_rules", () => {

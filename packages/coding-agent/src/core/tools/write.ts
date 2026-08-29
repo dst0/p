@@ -192,7 +192,11 @@ export function createWriteToolDefinition(
     description:
       "Write content to a file. Creates the file if it doesn't exist, overwrites if it does. Automatically creates parent directories.",
     promptSnippet: "Create or overwrite files",
-    promptGuidelines: ["Use write only for new files or complete rewrites."],
+    promptGuidelines: [
+      "Use write only for new files or complete rewrites.",
+      "Before writing a new file, reapply project file-size and structure constraints and split oversized files by responsibility.",
+      "Keep each generated write payload comfortably within one response. For a permitted long file, write a compact initial version and add bounded sections with precise edit calls; never retry a near-limit whole-file payload.",
+    ],
     parameters: writeSchema,
     async execute(
       _toolCallId,

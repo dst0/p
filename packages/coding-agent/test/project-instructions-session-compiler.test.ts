@@ -9,6 +9,7 @@ import type * as ModelCompilerModule from "../src/core/project-instructions/mode
 import { createSessionProjectInstructionController } from "../src/core/project-instructions/session-controller.ts";
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import type { SettingsManager } from "../src/core/settings-manager.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 type CompileWithModel = typeof ModelCompilerModule.compileProjectInstructionsWithModel;
 
@@ -66,10 +67,12 @@ function createFixture() {
 
 beforeEach(() => {
   modelCompilerMocks.compile.mockReset();
-  modelCompilerMocks.compile.mockImplementation(async (request) => ({
-    body: `Use read_rules for ${request.modules[0].link}.`,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-  }));
+  modelCompilerMocks.compile.mockImplementation(async (request) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+    ),
+  );
 });
 
 afterEach(() => {
@@ -114,5 +117,38 @@ describe("default project instruction compiler lifecycle", () => {
       headers: { "x-test": "present" },
       timeoutMs: 60_000,
     });
+  });
+
+  it("keeps an explicit compiler model pinned across task-model switches", async () => {
+    const fixture = createFixture();
+    const compilerModel = createModel("compiler");
+    let taskModel: Model<Api> | undefined = createModel("task-one");
+    const getApiKeyAndHeaders = vi.fn(async () => ({
+      ok: true as const,
+      apiKey: "compiler-key",
+      headers: { "x-compiler": "dedicated" },
+    }));
+    const controller = await createSessionProjectInstructionController({
+      cwd: fixture.root,
+      resourceLoader: fixture.resourceLoader,
+      modelRegistry: { getApiKeyAndHeaders } as unknown as ModelRegistry,
+      settingsManager: {
+        getHttpIdleTimeoutMs: () => 0,
+        getEnableInstallTelemetry: () => false,
+      } as unknown as SettingsManager,
+      getModel: () => taskModel,
+      compilerModel,
+    });
+
+    const initialHash = controller.state.current?.manifest.inputHash;
+    taskModel = createModel("task-two");
+    rmSync(join(fixture.root, ".pdev"), { recursive: true, force: true });
+    const refreshed = await controller.refresh();
+
+    expect(refreshed.manifest.inputHash).toBe(initialHash);
+    expect(getApiKeyAndHeaders).toHaveBeenNthCalledWith(1, compilerModel);
+    expect(getApiKeyAndHeaders).toHaveBeenNthCalledWith(2, compilerModel);
+    expect(modelCompilerMocks.compile).toHaveBeenCalledTimes(2);
+    expect(modelCompilerMocks.compile.mock.calls.map((call) => call[1].model.id)).toEqual(["compiler", "compiler"]);
   });
 });

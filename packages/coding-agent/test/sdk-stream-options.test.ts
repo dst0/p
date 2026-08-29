@@ -11,7 +11,8 @@ import {
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { AuthStorage } from "../src/core/auth-storage.ts";
 import { ModelRegistry } from "../src/core/model-registry.ts";
-import { createAgentSession } from "../src/core/sdk.ts";
+import { DefaultResourceLoader } from "../src/core/resource-loader.ts";
+import { createAgentSession, type ExtensionFactory } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
@@ -76,7 +77,11 @@ describe("createAgentSession stream options", () => {
     api: Api,
     settings: { httpIdleTimeoutMs?: number; websocketConnectTimeoutMs?: number },
     requestOptions: SimpleStreamOptions = {},
-    sessionOptions: { maxTokens?: number } = {},
+    sessionOptions: {
+      maxTokens?: number;
+      extensionFactories?: ExtensionFactory[];
+      probe?: (options: SimpleStreamOptions, model: Model<Api>) => Promise<void>;
+    } = {},
   ): Promise<SimpleStreamOptions | undefined> {
     const model = createModel(api);
     const settingsManager = SettingsManager.inMemory(settings);
@@ -85,6 +90,16 @@ describe("createAgentSession stream options", () => {
     authStorage.setRuntimeApiKey(model.provider, "test-api-key");
     const modelRegistry = ModelRegistry.create(authStorage, join(agentDir, "models.json"));
     let capturedOptions: SimpleStreamOptions | undefined;
+
+    const resourceLoader = sessionOptions.extensionFactories
+      ? new DefaultResourceLoader({
+          cwd,
+          agentDir,
+          settingsManager,
+          extensionFactories: sessionOptions.extensionFactories,
+        })
+      : undefined;
+    await resourceLoader?.reload();
 
     modelRegistry.registerProvider(model.provider, {
       api,
@@ -104,10 +119,18 @@ describe("createAgentSession stream options", () => {
       settingsManager,
       sessionManager,
       maxTokens: sessionOptions.maxTokens,
+      resourceLoader,
+      completionMode: "implicit",
     });
-
     try {
-      await session.agent.streamFn(model, { messages: [] }, requestOptions);
+      if (sessionOptions.probe) {
+        await session.prompt("Exercise the provider boundary");
+      } else {
+        await session.agent.streamFn(model, { messages: [] }, requestOptions);
+      }
+      if (capturedOptions) {
+        await sessionOptions.probe?.(capturedOptions, model);
+      }
       return capturedOptions;
     } finally {
       session.dispose();
@@ -159,5 +182,33 @@ describe("createAgentSession stream options", () => {
     );
 
     expect(options?.websocketConnectTimeoutMs).toBe(0);
+  });
+
+  it("rejects an oversized before_provider_request payload before provider I/O", async () => {
+    let providerIoCalls = 0;
+    await expect(
+      captureStreamOptions(
+        "openai-completions",
+        {},
+        {},
+        {
+          maxTokens: 4096,
+          extensionFactories: [
+            (pi) => {
+              pi.on("before_provider_request", (event) => ({
+                ...(event.payload as Record<string, unknown>),
+                messages: "x".repeat(600_000),
+              }));
+            },
+          ],
+          probe: async (options, model) => {
+            expect(options.onPayload).toBeTypeOf("function");
+            await options.onPayload?.({ messages: [], max_tokens: 4096 }, model);
+            providerIoCalls++;
+          },
+        },
+      ),
+    ).rejects.toThrow("final provider payload expanded beyond its certified baseline");
+    expect(providerIoCalls).toBe(0);
   });
 });

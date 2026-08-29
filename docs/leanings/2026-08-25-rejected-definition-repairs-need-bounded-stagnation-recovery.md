@@ -1,0 +1,22 @@
+# 2026-08-25 — Rejected definition repairs need bounded stagnation recovery
+
+- **Status:** Resolved
+- **Task/context:** Validating compiled project instructions with the event-sourced inventory benchmark on candidate 5.0.1-rc.15.
+- **Unexpected observation or failure:** The agent repeatedly submitted requirement-definition repairs that could not advance the rejected draft. Oversized repairs were rejected before merge, bounded repairs reproduced the same diagnostics, and an equal-quality fresh definition could previously reopen another sparse-repair cycle.
+- **Evidence:** The interrupted task-3 progress artifact recorded one complete 45-item definition and at least six repairs. The authoritative mutation revision stayed at zero while the controller kept requesting another repair. Cross-cycle regressions then reproduced the equal-fresh-definition escape.
+- **Approaches tried:**
+  - **Attempt:** Rely on the existing 16-replacement batch bound and cumulative lineage-growth bound.
+    - **Outcome:** Did not work
+    - **Why:** Those limits constrained payload size and fan-out but did not bound repeated attempts that made no diagnostic progress.
+  - **Attempt:** Improve only the source-mapping schema descriptions and diagnostic wording.
+    - **Outcome:** Partial
+    - **Why:** Clearer guidance reduces this failure mode but cannot guarantee termination for other deterministic repair loops.
+  - **Attempt:** Count three consecutive unproductive repairs, retain the best historical diagnostic count across fresh definitions, and reopen sparse repair only after a strict improvement.
+    - **Outcome:** Worked
+    - **Why:** It provides a bounded escape while preserving atomic validation, the 16-replacement limit, and the non-authoritative rejected draft.
+- **Root cause:** The repair state machine had no bounded cross-cycle progress invariant. It permitted another repair indefinitely unless the draft was empty or exceeded separate payload, lineage-growth, or prompt-size limits; a fresh definition discarded the historical minimum that distinguished real improvement from loop reset.
+- **Resolution:** Track consecutive unproductive repairs, count unmergeable and non-improving revalidations, carry the best diagnostic count across fresh definitions, keep equal or worse fresh batches define-only, and reopen sparse repair only after a strict lower diagnostic count. Valid definitions still replace the rejected draft atomically.
+- **Verification:** Dedicated stagnation, repair-cycle, lineage, prompt-size, lifecycle, and cross-cycle regressions pass within the 53-file, 402-test requirement-verification slice. Candidate 5.0.1-rc.31 also completed its definition repair and full verification lifecycle live.
+- **Prevention/follow-up:** Keep stagnation recovery separate from payload and lineage limits; test the historical progress minimum across every state transition that can replace a rejected draft.
+- **Reusable learning:** Bounded payloads do not make a repair protocol live; every rejected-state loop also needs a bounded no-progress escape based on controller-observable progress.
+- **References:** `packages/coding-agent/test/task-requirement-definition-stagnation-recovery.test.ts`, `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `benchmarks/results/2026-08-25-v5.0.1-rc.15-task3-definition-canary-v1/`

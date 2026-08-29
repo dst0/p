@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
+import { isInternalAgentMessage } from "../../messages.ts";
 import type { SessionEntry } from "../../session-manager.ts";
 import {
   MAX_CANONICAL_REQUEST_CHARS,
@@ -145,7 +146,7 @@ export function collectOriginalUserRequests(
   const requests: OriginalUserRequest[] = [];
   const existingCount = existingRequests?.length ?? 0;
   for (const entry of entries) {
-    if (entry.type !== "message" || entry.message.role !== "user") continue;
+    if (entry.type !== "message" || entry.message.role !== "user" || isInternalAgentMessage(entry.message)) continue;
     const text = getAgentMessageText(entry.message).trim();
     if (!text) continue;
     const kind = classifyUserRequest(text, requests.length);

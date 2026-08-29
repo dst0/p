@@ -8,6 +8,7 @@ import type {
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { RequirementAuditSchema, VerificationSchema } from "./constants.ts";
+import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
 import { emptyState } from "./state-factories.ts";
 import {
   do_blocked,
@@ -57,6 +58,8 @@ import {
   do_baselineReplayInstruction,
   do_formatNextRequirement,
 } from "./taskverificationcontroller-methods/requirement-formatting.ts";
+import type { SourceWorkspaceSnapshot } from "./taskverificationcontroller-methods/source-workspace-snapshot.ts";
+import type { TestWorkspaceSnapshot } from "./taskverificationcontroller-methods/test-workspace-snapshot.ts";
 import {
   do_beforeToolCall,
   do_createToolDefinition,
@@ -82,7 +85,24 @@ export class TaskVerificationController {
 
   public readonly bashFingerprints = new Map<string, string | undefined>();
 
-  public readonly mutatedSourceFiles = new Set<string>();
+  public readonly testMutationReservations = new Map<string, string[]>();
+
+  public readonly testVerificationStarts = new Map<
+    string,
+    { mutationAttemptRevision: number; mutationRevision: number; unverifiedTestPaths: string[] }
+  >();
+
+  public readonly workspaceTestSnapshots = new Map<string, TestWorkspaceSnapshot | undefined>();
+
+  public readonly workspaceSourceSnapshots = new Map<string, SourceWorkspaceSnapshot | undefined>();
+
+  public readonly activeMutationAttempts = new Set<string>();
+
+  public mutationAttemptRevision = 0;
+
+  public readonly requirementSourceTexts = new Map<string, string>();
+
+  public rejectedRequirementDefinitionDraft?: RejectedRequirementDefinitionDraft;
 
   public state = emptyState();
 

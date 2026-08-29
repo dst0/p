@@ -13,6 +13,7 @@ export function emptyRequirementAudit(): TaskVerificationState["requirementAudit
     status: "pending",
     requirements: [],
     ignoredSourcePrompts: [],
+    ignoredSourceClauses: [],
     nextRequirementIndex: 0,
   };
 }
@@ -23,6 +24,10 @@ export function emptyState(taskId: string = randomUUID()): TaskVerificationState
     taskId,
     mutationRevision: 0,
     taskPrompts: [],
+    unverifiedTestPaths: [],
+    unverifiedTestPathOverflow: false,
+    mutatedSourcePaths: [],
+    mutatedSourcePathOverflow: false,
     baseline: {
       required: false,
       status: "not_required",

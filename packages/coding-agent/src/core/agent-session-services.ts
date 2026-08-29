@@ -72,6 +72,8 @@ export interface CreateAgentSessionFromServicesOptions {
   completionMode?: CompletionMode;
   completionLimits?: CompletionProtocolLimits;
   maxTokens?: CreateAgentSessionOptions["maxTokens"];
+  projectInstructionMode?: CreateAgentSessionOptions["projectInstructionMode"];
+  projectInstructionCompilerModel?: CreateAgentSessionOptions["projectInstructionCompilerModel"];
 }
 
 /**
@@ -258,8 +260,12 @@ export async function createAgentSessionFromServices(
     completionMode: options.completionMode,
     completionLimits: options.completionLimits,
     maxTokens: options.maxTokens,
+    projectInstructionMode: options.projectInstructionMode,
+    projectInstructionCompilerModel: options.projectInstructionCompilerModel,
   });
   if (verificationController) {
+    result.session._projectRuleSafeToolDefinitions.add(verificationController.toolDefinition);
+    result.session._projectRuleSafeToolDefinitions.add(verificationController.requirementAuditToolDefinition);
     result.session.setActiveToolsByName([
       ...result.session.getActiveToolNames(),
       TASK_VERIFICATION_TOOL_NAME,

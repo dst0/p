@@ -1,23 +1,23 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import {
-  GENERIC_CHECK_PATTERN,
   REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import {
   computeCertificateHash,
   computeRequirementSetHash,
-  computeUserRequirementsHash,
-  sourcePromptsForState,
+  computeStateUserRequirementsHash,
 } from "../requirement-audit-hashing.ts";
+import { requirementDefinitionSources, restoreRequirementSourceTexts } from "../requirement-source-storage.ts";
 import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
 import { isTaskVerificationEvidence, isTaskVerificationState } from "../state-validation.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import { isShellTool, normalizeStrings } from "../tool-classification.ts";
+import { normalizeStrings } from "../tool-classification.ts";
 import type { TaskVerificationEvidence } from "../types.ts";
+import { resolveLatestFailedVerificationEvidence } from "./failed-verification-resolution.ts";
+import { isFocusedEvidence, isHighRiskRequirement } from "./requirement-verdict-validation.ts";
 
 export function do_resolveEvidence(
   self: TaskVerificationController,
@@ -53,24 +53,15 @@ export function do_resolveEvidence(
 }
 
 export function do_taskText(self: TaskVerificationController): string {
-  const promptText = sourcePromptsForState(self.state)
+  const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+  const promptText = (typeof sources === "string" ? (self.state.taskPrompts ?? []) : sources)
     .map((prompt) => prompt.text)
     .join("\n");
   return `${promptText || self.state.taskContext || self.latestUserPrompt}\n${self.state.taskSummary ?? ""}`;
 }
 
 export function do_latestFailedVerificationEvidence(self: TaskVerificationController): TaskVerificationEvidence[] {
-  const latestByCommand = new Map<string, TaskVerificationEvidence>();
-  for (const item of self.evidence.values()) {
-    if (
-      item.mutationRevision === self.state.mutationRevision &&
-      isShellTool(item.toolName) &&
-      (TEST_PATTERN.test(item.descriptor) || GENERIC_CHECK_PATTERN.test(item.descriptor))
-    ) {
-      latestByCommand.set(item.descriptor, item);
-    }
-  }
-  return [...latestByCommand.values()].filter((item) => item.isError);
+  return resolveLatestFailedVerificationEvidence(self.evidence.values(), self.state.mutationRevision);
 }
 
 export function do_finalVerificationError(self: TaskVerificationController, action: string): string | undefined {
@@ -115,7 +106,7 @@ export function do_publishGate(self: TaskVerificationController, action: string)
     );
   }
   const readiness = self.state.readiness ?? emptyReadiness();
-  const currentRequirementsHash = computeUserRequirementsHash(sourcePromptsForState(self.state));
+  const currentRequirementsHash = computeStateUserRequirementsHash(self.state);
   if (
     (readiness.status !== "evidence_ready" && readiness.status !== "completion_ready") ||
     readiness.verifiedMutationRevision !== self.state.mutationRevision ||
@@ -152,8 +143,12 @@ export function do_completionGate(
 
   const readiness = self.state.readiness ?? emptyReadiness();
   const audit = self.state.requirementAudit;
-  const currentRequirementsHash = computeUserRequirementsHash(sourcePromptsForState(self.state));
-  const currentRequirementSetHash = computeRequirementSetHash(audit.requirements, audit.ignoredSourcePrompts);
+  const currentRequirementsHash = computeStateUserRequirementsHash(self.state);
+  const currentRequirementSetHash = computeRequirementSetHash(
+    audit.requirements,
+    audit.ignoredSourcePrompts,
+    audit.ignoredSourceClauses ?? [],
+  );
   const expectedCertificateHash = computeCertificateHash(
     self.state.taskId,
     self.state.mutationRevision,
@@ -172,7 +167,8 @@ export function do_completionGate(
       const evidence = self.resolveEvidence(requirement.verdict.evidenceRefs);
       return (
         typeof evidence !== "string" &&
-        evidence.every((item) => !item.isError && item.mutationRevision === self.state.mutationRevision)
+        evidence.every((item) => !item.isError && item.mutationRevision === self.state.mutationRevision) &&
+        (!isHighRiskRequirement(requirement) || evidence.some((item) => isFocusedEvidence(self, item, requirement)))
       );
     });
   if (
@@ -185,7 +181,7 @@ export function do_completionGate(
     !readiness.token
   ) {
     return self.blocked(
-      `Cannot ${action}: complete every sequential verdict through ${REQUIREMENT_AUDIT_TOOL_NAME} before finish_work.`,
+      `Cannot ${action}: submit one complete evidence-backed verdict batch through ${REQUIREMENT_AUDIT_TOOL_NAME} before finish_work.`,
     );
   }
   if (verificationToken !== undefined && verificationToken !== readiness.token) {
@@ -197,6 +193,7 @@ export function do_completionGate(
 }
 
 export function do_restore(self: TaskVerificationController): void {
+  self.rejectedRequirementDefinitionDraft = undefined;
   const restoredEvidence: TaskVerificationEvidence[] = [];
   const branch = self.sessionManager.getBranch();
   let latestStateData: unknown;
@@ -215,6 +212,10 @@ export function do_restore(self: TaskVerificationController): void {
     self.state = {
       ...latestStateData,
       taskPrompts: latestStateData.taskPrompts ?? [],
+      unverifiedTestPaths: latestStateData.unverifiedTestPaths ?? [],
+      unverifiedTestPathOverflow: latestStateData.unverifiedTestPathOverflow ?? false,
+      mutatedSourcePaths: latestStateData.mutatedSourcePaths ?? [],
+      mutatedSourcePathOverflow: latestStateData.mutatedSourcePathOverflow ?? false,
       readiness: latestStateData.readiness ?? emptyReadiness(),
       requirementAudit: latestStateData.requirementAudit ?? emptyRequirementAudit(),
     };
@@ -222,6 +223,11 @@ export function do_restore(self: TaskVerificationController): void {
     self.state = emptyState();
     self.restoreError =
       "the latest persisted task-verification state is invalid; declare the task again before continuing";
+  }
+
+  if (!self.restoreError) {
+    const sourceRestoreError = restoreRequirementSourceTexts(branch, self.state, self.requirementSourceTexts);
+    if (sourceRestoreError) self.restoreError = sourceRestoreError;
   }
 
   for (const entry of branch) {

@@ -148,6 +148,6 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
   self.persistState();
   return self.updated(
     "Final semantic verification passed for the current mutation revision.\n\n" +
-      `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish", then complete the sequential requirement audit before a verification_token can be issued.`,
+      `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish", then complete the batched requirement audit before a verification_token can be issued.`,
   );
 }

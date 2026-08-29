@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Add a focused regression for marker-free post-length cancellation output without changing published behavior."
+}

@@ -1,5 +1,6 @@
 import type { Message, SimpleStreamOptions, ThinkingBudgets, Transport } from "@dst0/p-ai";
 import type { CompletionMode, CompletionProtocolLimits } from "../completion-protocol.ts";
+import type { PrepareModelCallContext, PrepareModelCallResult } from "../model-call-preparation.ts";
 import type {
   AfterToolCallContext,
   AfterToolCallResult,
@@ -38,6 +39,10 @@ export interface AgentOptions {
     signal?: AbortSignal,
     context?: PrepareNextTurnContext,
   ) => Promise<AgentLoopTurnUpdate | undefined> | AgentLoopTurnUpdate | undefined;
+  prepareModelCall?: (
+    context: PrepareModelCallContext,
+    signal?: AbortSignal,
+  ) => Promise<PrepareModelCallResult | undefined> | PrepareModelCallResult | undefined;
   steeringMode?: QueueMode;
   followUpMode?: QueueMode;
   sessionId?: string;
@@ -45,6 +50,7 @@ export interface AgentOptions {
   thinkingBudgets?: ThinkingBudgets;
   transport?: Transport;
   maxRetryDelayMs?: number;
+  maxTokens?: SimpleStreamOptions["maxTokens"];
   toolExecution?: ToolExecutionMode;
   completionMode?: CompletionMode;
   completionLimits?: CompletionProtocolLimits;

@@ -313,7 +313,7 @@
   },
   "packages/coding-agent/src/cli/args.ts": {
     "classes": 0,
-    "lines": 454
+    "lines": 452
   },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
     "classes": 2,
@@ -325,7 +325,7 @@
   },
   "packages/coding-agent/src/core/compaction/minimal-compaction.ts": {
     "classes": 0,
-    "lines": 458
+    "lines": 456
   },
   "packages/coding-agent/src/core/export-html/index.ts": {
     "classes": 0,
@@ -353,7 +353,7 @@
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
-    "lines": 470
+    "lines": 460
   },
   "packages/coding-agent/src/core/skills.ts": {
     "classes": 0,
@@ -621,7 +621,7 @@
   },
 	"packages/coding-agent/test/task-verification.test.ts": {
 		"classes": 0,
-		"lines": 1082
+      "lines": 1000
 	},
   "packages/coding-agent/test/test-harness.test.ts": {
     "classes": 0,
@@ -718,10 +718,6 @@
   "packages/tui/test/tui-render.test.ts": {
     "classes": 2,
     "lines": 874
-  },
-  "scripts/benchmark-agents.js": {
-    "classes": 0,
-    "lines": 2229
   },
   "scripts/edit-tool-stats.js": {
     "classes": 0,

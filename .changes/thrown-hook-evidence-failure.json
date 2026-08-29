@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Treat thrown result hooks as failed verification evidence without hiding successful native mutations."
+}

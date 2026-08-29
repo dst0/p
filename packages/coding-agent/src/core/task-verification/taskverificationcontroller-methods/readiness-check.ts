@@ -1,12 +1,9 @@
 import { resolve } from "node:path";
 import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
-import {
-  computeRequirementSetHash,
-  computeUserRequirementsHash,
-  sourcePromptsForState,
-} from "../requirement-audit-hashing.ts";
+import { computeRequirementSetHash, computeStateUserRequirementsHash } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   findOversizedSourceFiles,
@@ -22,7 +19,8 @@ import type {
   VerificationInput,
   VerificationResult,
 } from "../types.ts";
-import { formatRequirementPrompt } from "./requirement-audit.ts";
+import { userFileSizeOverrideIsAuthorized } from "../user-file-size-override.ts";
+import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
 
 export function do_readyToFinish(self: TaskVerificationController, input: VerificationInput): VerificationResult {
   if (!self.state.taskSummary || self.state.mutationRevision === 0) {
@@ -106,10 +104,16 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
     );
   }
 
+  const fileSizeLimitOverridden = userFileSizeOverrideIsAuthorized(self.state, self.latestUserPrompt);
+  if (self.state.mutatedSourcePathOverflow && !fileSizeLimitOverridden) {
+    return self.rejected(
+      "ready_to_finish is blocked because mutated source paths exceeded the bounded tracking scope or a source snapshot failed. Explicit user authorization to override the file-size constraint is required.",
+    );
+  }
   const oversizedFiles = findOversizedSourceFiles(
     self.sessionManager.getCwd(),
-    taskText,
-    Array.from(self.mutatedSourceFiles),
+    fileSizeLimitOverridden,
+    self.state.mutatedSourcePaths ?? [],
     250,
   );
   if (oversizedFiles.length > 0) {
@@ -126,8 +130,9 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
   const transitionError = self.beginAuditTransition();
   if (transitionError) return self.rejected(transitionError);
 
-  const sourcePrompts = sourcePromptsForState(self.state);
-  const userRequirementsHash = computeUserRequirementsHash(sourcePrompts);
+  const sourcePrompts = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+  if (typeof sourcePrompts === "string") return self.rejected(sourcePrompts);
+  const userRequirementsHash = computeStateUserRequirementsHash(self.state);
   const existingAudit = self.state.requirementAudit;
   const reuseRequirements =
     existingAudit.requirements.length > 0 && existingAudit.userRequirementsHash === userRequirementsHash;
@@ -138,11 +143,17 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
         text: requirement.text,
         acceptanceCriterion: requirement.acceptanceCriterion,
         sourcePromptIndexes: requirement.sourcePromptIndexes,
+        sourceClauseIds: requirement.sourceClauseIds,
+        sourceFacetIds: requirement.sourceFacetIds,
+        highRisk: requirement.highRisk,
+        highRiskSourcePromptIndexes: requirement.highRiskSourcePromptIndexes,
+        proofPolicies: requirement.proofPolicies,
       }))
     : [];
   const ignoredSourcePrompts = reuseRequirements ? existingAudit.ignoredSourcePrompts : [];
+  const ignoredSourceClauses = reuseRequirements ? (existingAudit.ignoredSourceClauses ?? []) : [];
   const requirementSetHash = reuseRequirements
-    ? computeRequirementSetHash(requirements, ignoredSourcePrompts)
+    ? computeRequirementSetHash(requirements, ignoredSourcePrompts, ignoredSourceClauses)
     : undefined;
   self.state = {
     ...self.state,
@@ -157,6 +168,7 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
       status: reuseRequirements ? "verifying" : "awaiting_definition",
       requirements,
       ignoredSourcePrompts,
+      ignoredSourceClauses,
       nextRequirementIndex: 0,
       userRequirementsHash,
       requirementSetHash,
@@ -170,7 +182,7 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
         `Reusing the existing ${requirements.length}-item requirement set because the user requirements hash is unchanged.`,
         "All prior verdicts were cleared. Re-verify every requirement for the current evidence state.",
         "",
-        formatRequirementPrompt(requirements[0]!, 0, requirements.length),
+        formatRequirementBatchPrompt(requirements),
       ].join("\n")
     : formatRequirementDefinitionPrompt(sourcePrompts);
 

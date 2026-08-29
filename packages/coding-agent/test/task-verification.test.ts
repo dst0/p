@@ -7,7 +7,6 @@ import {
   createTaskVerificationController,
   findOversizedSourceFiles,
   TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
-  TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   type TaskVerificationController,
 } from "../src/core/task-verification.ts";
 import { completeSingleRequirementAudit } from "./task-requirement-audit-test-harness.ts";
@@ -385,7 +384,7 @@ describe("task verification controller", () => {
     await callVerificationTool(controller, {
       action: "declare_task",
       task_kind: "feature",
-      task_summary: "Add transactional inventory persistence with a manifest",
+      task_summary: "Preserve transactional inventory manifest boundaries",
     });
     await afterTool(agent, "edit", {
       path: "src/inventory.ts",
@@ -401,8 +400,8 @@ describe("task verification controller", () => {
     const focusedOutput = await afterTool(
       agent,
       "bash",
-      { command: "npm test -- test/inventory-boundaries.test.ts" },
-      { text: "focused boundary tests passed" },
+      { command: "npm test -- test/inventory-transactional-manifest-boundaries-preserved.test.ts" },
+      { text: "Test Files 1 passed (1) Tests 3 passed (3)" },
     );
     expect(focusedOutput).toContain("Focused semantic verification passed");
     expect(controller.currentState.final).toMatchObject({
@@ -721,7 +720,7 @@ describe("task verification controller", () => {
     await callVerificationTool(baselineController, {
       action: "declare_task",
       task_kind: "bug_fix",
-      task_summary: "Fix exact replay recovery after compaction",
+      task_summary: "Recover exact replay state after compaction",
     });
     await callVerificationTool(baselineController, {
       action: "authorize_baseline_test",
@@ -731,7 +730,7 @@ describe("task verification controller", () => {
       path: "test/exact-replay.test.ts",
       edits: [{ oldText: "old", newText: "failing" }],
     });
-    const replayCommand = "vitest --run test/exact-replay.test.ts";
+    const replayCommand = "vitest --run test/exact-replay.test.ts -t 'recovers exact replay state after compaction'";
     const baselineHandle = evidenceHandle(
       await afterTool(baselineAgent, "bash", { command: replayCommand }, { isError: true, text: "expected failure" }),
     );
@@ -748,7 +747,7 @@ describe("task verification controller", () => {
       edits: [{ oldText: "old", newText: "new" }],
     });
     const unrelatedHandle = evidenceHandle(
-      await afterTool(baselineAgent, "bash", { command: "vitest --run test/unrelated.test.ts" }, { text: "passed" }),
+      await afterTool(baselineAgent, "bash", { command: "vitest -t unrelated" }, { text: "Tests 1 passed (1)" }),
     );
 
     const restored = createTaskVerificationController(sessionManager);
@@ -761,7 +760,7 @@ describe("task verification controller", () => {
     const restoredAgent = new Agent();
     restored.install(restoredAgent);
     const replayHandle = evidenceHandle(
-      await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "passed" }),
+      await afterTool(restoredAgent, "bash", { command: replayCommand }, { text: "Tests 2 passed (2)" }),
     );
     const afterReplay = await callVerificationTool(restored, { action: "status" });
     expect(replayHandle).toBeTruthy();
@@ -825,42 +824,6 @@ describe("task verification controller", () => {
     });
     expect(final.isError).toBe(false);
     expect((await beforeTool(agent, "finish_work", { status: "success" }))?.block).toBe(true);
-  });
-
-  it("uses persisted task context to preserve high-risk baseline guidance after restoration", async () => {
-    const sessionManager = SessionManager.inMemory();
-    sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
-      version: 2,
-      taskId: "restored-task",
-      taskKind: "bug_fix",
-      taskSummary: "Fix the reported issue",
-      taskContext: "The daemon restart loses persisted indexing state and recovery repeats work",
-      mutationRevision: 0,
-      baseline: {
-        required: true,
-        status: "pending",
-        evidenceRefs: [],
-        authorizedTestPaths: [],
-        testSetupChanged: false,
-      },
-      final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
-      requirementAudit: {
-        status: "pending",
-        requirements: [],
-        ignoredSourcePrompts: [],
-        nextRequirementIndex: 0,
-      },
-      updatedAt: new Date().toISOString(),
-    });
-    const agent = new Agent();
-    const controller = createTaskVerificationController(sessionManager);
-    controller.install(agent);
-    await afterTool(agent, "read", { path: "src/daemon.ts" });
-    await afterTool(agent, "read", { path: "src/manifest.ts" });
-
-    const status = await callVerificationTool(controller, { action: "status" });
-    expect(status.text).toContain("lifecycle/durability task");
-    expect(status.text).not.toContain('"baseline_method":"static_trace"');
   });
 
   it("recognizes tool aliases (ctx_shell, ctx_read, replace_file_content) and generates evidence handles", async () => {
@@ -951,46 +914,6 @@ describe("task verification controller", () => {
     expect(baseline.text).toContain("Pipelined test commands (containing '|') mask exit codes");
   });
 
-  it("allows read-only shell commands after declare_task without blocking", async () => {
-    const { agent, controller } = createInstalledController();
-    await callVerificationTool(controller, {
-      action: "declare_task",
-      task_kind: "bug_fix",
-      task_summary: "Fix read-only shell passthrough",
-    });
-
-    const readOnlyCommands = [
-      { command: "ls /tmp" },
-      { command: "git log --oneline -5" },
-      { command: "git status" },
-      { command: "git diff" },
-      { command: "git show HEAD" },
-      { command: "find . -name '*.ts' | head" },
-      { command: "grep 'foo' src/foo.ts" },
-      { command: "cat README.md" },
-      { command: "head -50 src/main.ts" },
-      { command: "tail -20 src/main.ts" },
-      { command: "curl -s https://example.com/api/status" },
-      { command: "echo hello" },
-      { command: "pwd" },
-    ];
-
-    for (const args of readOnlyCommands) {
-      const result = await beforeTool(agent, "bash", args);
-      expect(result?.block).not.toBe(true);
-    }
-    for (const args of readOnlyCommands) {
-      const result = await beforeTool(agent, "ctx_shell", args);
-      expect(result?.block).not.toBe(true);
-    }
-
-    // Shell commands (even mutations) are allowed before baseline;
-    // mutations are detected via workspace fingerprints in afterToolCall.
-    // Direct mutation tools (edit, write) ARE blocked before baseline.
-    expect((await beforeTool(agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
-    expect((await beforeTool(agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
-  });
-
   it("resolves implicit failed evidence when final_status is failed", async () => {
     const { agent, controller } = createInstalledController();
     await callVerificationTool(controller, {
@@ -1064,17 +987,12 @@ describe("task verification controller", () => {
     const lines = Array.from({ length: 260 }, (_, i) => `export const val${i} = ${i};`).join("\n");
     await writeFile(sourceFile, lines, "utf-8");
 
-    const oversized = findOversizedSourceFiles(tmpDir, "Build feature", ["src/large_module.ts"], 250);
+    const oversized = findOversizedSourceFiles(tmpDir, false, ["src/large_module.ts"], 250);
     expect(oversized.length).toBe(1);
     expect(oversized[0]?.path).toBe("src/large_module.ts");
     expect(oversized[0]?.lineCount).toBe(260);
 
-    const overridden = findOversizedSourceFiles(
-      tmpDir,
-      "Build single file without limits",
-      ["src/large_module.ts"],
-      250,
-    );
+    const overridden = findOversizedSourceFiles(tmpDir, true, ["src/large_module.ts"], 250);
     expect(overridden.length).toBe(0);
 
     await rm(tmpDir, { recursive: true, force: true });

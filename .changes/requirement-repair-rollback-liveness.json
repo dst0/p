@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep compact rejected requirement drafts repairable after worse or invalid lineage-overflow candidates and preserve scalar and collection boundaries during validation."
+}

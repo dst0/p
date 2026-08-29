@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Prevent stalled or duplicate requirement definitions and enforce controller-scoped proof selectors before broad tests."
+}

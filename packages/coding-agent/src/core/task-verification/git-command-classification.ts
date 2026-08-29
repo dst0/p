@@ -24,7 +24,7 @@ function isExecutable(token: string | undefined, name: string): boolean {
   return token === name || token?.endsWith(`/${name}`) === true;
 }
 
-function tokenizeShellCommands(command: string): string[][] {
+export function tokenizeShellCommands(command: string): string[][] {
   const commands: string[][] = [];
   let words: string[] = [];
   let word = "";
@@ -79,7 +79,7 @@ function tokenizeShellCommands(command: string): string[][] {
   return commands;
 }
 
-function gitArgumentStart(words: readonly string[]): number | undefined {
+function commandStart(words: readonly string[]): number {
   let index = 0;
   while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   while (isExecutable(words[index], "command") || isExecutable(words[index], "env")) {
@@ -104,8 +104,23 @@ function gitArgumentStart(words: readonly string[]): number | undefined {
     }
     while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   }
-  const executable = words[index];
-  return isExecutable(executable, "git") ? index + 1 : undefined;
+  return index;
+}
+
+function gitArgumentStart(words: readonly string[]): number | undefined {
+  const index = commandStart(words);
+  return isExecutable(words[index], "git") ? index + 1 : undefined;
+}
+
+function shellWrapperPayload(words: readonly string[]): string | undefined {
+  const startIndex = commandStart(words);
+  const executable = words[startIndex]?.split("/").pop();
+  if (executable === "eval") return words.slice(startIndex + 1).join(" ") || undefined;
+  if (executable !== "bash" && executable !== "sh" && executable !== "zsh") return undefined;
+  const commandIndex = words.findIndex(
+    (word, index) => index > startIndex && (word === "-c" || /^-[^-]*c[^-]*$/u.test(word)),
+  );
+  return commandIndex >= 0 ? words[commandIndex + 1] : undefined;
 }
 
 function envSplitStringPayload(words: readonly string[]): string | undefined {
@@ -152,6 +167,11 @@ function invocationPublishes(words: readonly string[], startIndex: number): bool
 
 function containsGitPublishCommandAtDepth(command: string, depth: number): boolean {
   for (const words of tokenizeShellCommands(command)) {
+    const shellPayload = shellWrapperPayload(words);
+    if (shellPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH) return true;
+      if (containsGitPublishCommandAtDepth(shellPayload, depth + 1)) return true;
+    }
     const splitStringPayload = envSplitStringPayload(words);
     if (splitStringPayload !== undefined) {
       if (depth >= MAX_SPLIT_STRING_DEPTH) return true;
@@ -163,6 +183,47 @@ function containsGitPublishCommandAtDepth(command: string, depth: number): boole
   return false;
 }
 
+function isDirectoryChange(words: readonly string[]): boolean {
+  if (!isExecutable(words[0], "cd")) return false;
+  return words.length === 2 || (words.length === 3 && words[1] === "--");
+}
+
+function isSafePublishCommandSequenceAtDepth(command: string, depth: number): boolean {
+  if (/[<>`]|\$\(/u.test(command)) return false;
+  const commands = tokenizeShellCommands(command);
+  if (commands.length === 0) return false;
+  let foundPublish = false;
+  for (const words of commands) {
+    const shellPayload = shellWrapperPayload(words);
+    if (shellPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH || !isSafePublishCommandSequenceAtDepth(shellPayload, depth + 1)) {
+        return false;
+      }
+      foundPublish = true;
+      continue;
+    }
+    const splitStringPayload = envSplitStringPayload(words);
+    if (splitStringPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH || !isSafePublishCommandSequenceAtDepth(splitStringPayload, depth + 1)) {
+        return false;
+      }
+      foundPublish = true;
+      continue;
+    }
+    const startIndex = gitArgumentStart(words);
+    if (startIndex !== undefined && invocationPublishes(words, startIndex)) {
+      foundPublish = true;
+      continue;
+    }
+    if (!isDirectoryChange(words)) return false;
+  }
+  return foundPublish;
+}
+
 export function containsGitPublishCommand(command: string): boolean {
   return containsGitPublishCommandAtDepth(command, 0);
+}
+
+export function isSafePublishCommandSequence(command: string): boolean {
+  return isSafePublishCommandSequenceAtDepth(command, 0);
 }

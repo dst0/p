@@ -12,6 +12,7 @@ import type {
 } from "@dst0/p-ai";
 import type { Static, TSchema } from "typebox";
 import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
+import type { ModelCallPreparationConfig } from "./model-call-preparation.ts";
 
 /**
  * Stream function used by the agent loop.
@@ -144,8 +145,7 @@ export interface AgentLoopTurnUpdate {
 }
 
 export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}
-
-export interface AgentLoopConfig extends Omit<SimpleStreamOptions, "reasoning" | "onPayload" | "onResponse"> {
+export interface AgentLoopConfig extends ModelCallPreparationConfig {
   model: Model<any>;
 
   /** Dynamic session identifier forwarded to the stream function. */
@@ -503,6 +503,6 @@ export type AgentEvent =
       reason?: string;
     }
   // Tool execution lifecycle
-  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
+  | { type: "tool_execution_start"; toolCallId: string; toolName: string; toolDescription?: string; args: any }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }
   | { type: "tool_execution_end"; toolCallId: string; toolName: string; result: any; isError: boolean };

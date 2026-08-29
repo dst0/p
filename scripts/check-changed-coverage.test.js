@@ -6,11 +6,13 @@ import path from "node:path";
 import test from "node:test";
 import {
 	LINE_COVERAGE_THRESHOLD,
+	GIT_DIFF_MAX_BUFFER_BYTES,
 	evaluateChangedCoverage,
 	findReports,
 	mergeCoverage,
 	parseChangedLines,
 	parseLcov,
+	readChangedDiff,
 } from "./check-changed-coverage.js";
 
 test("can be imported when the Node entrypoint argument is absent", () => {
@@ -39,6 +41,18 @@ test("parses added and replaced line ranges from a zero-context diff", () => {
 	);
 
 	assert.deepEqual([...changed.get("packages/demo/src/example.ts")], [2, 3]);
+});
+
+test("uses an explicit buffer for large package diffs", () => {
+	let options;
+	const diff = readChangedDiff("/repo", "base", (_file, _args, receivedOptions) => {
+		options = receivedOptions;
+		return "diff\n";
+	});
+
+	assert.equal(diff, "diff\n");
+	assert.equal(options.maxBuffer, GIT_DIFF_MAX_BUFFER_BYTES);
+	assert.ok(GIT_DIFF_MAX_BUFFER_BYTES > 2_266_014);
 });
 
 test("normalizes relative LCOV sources against the package root", () => {

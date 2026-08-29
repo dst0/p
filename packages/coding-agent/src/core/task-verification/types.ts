@@ -3,10 +3,11 @@ import type {
   BASELINE_METHODS,
   FINAL_METHODS,
   REQUIREMENT_TYPES,
-  RequirementAuditSchema,
   TASK_KINDS,
   VerificationSchema,
 } from "./constants.ts";
+import type { RequirementAuditInputSchema } from "./requirement-audit-schema.ts";
+import type { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 
 export type TaskKind = (typeof TASK_KINDS)[number];
 
@@ -16,9 +17,44 @@ export type FinalMethod = (typeof FINAL_METHODS)[number];
 
 export type RequirementType = (typeof REQUIREMENT_TYPES)[number];
 
+export type RequirementProofPolicy = (typeof REQUIREMENT_PROOF_POLICIES)[number];
+
 export interface TaskVerificationSourcePrompt {
   id: string;
   text: string;
+  kind?: "user_prompt" | "referenced_file";
+  path?: string;
+  sha256?: string;
+}
+
+export interface TaskVerificationRequirementSourceRef {
+  id: string;
+  path: string;
+  sha256: string;
+  byteLength: number;
+  snapshotEntryId: string;
+  referencedByPromptIds: string[];
+  capturedAtMutationRevision: number;
+  origin: "requirement_audit.prepare_definition";
+  policyVersion: 1;
+}
+
+export interface TaskVerificationRequirementSourceSnapshot {
+  version: 1;
+  taskId: string;
+  sourceId: string;
+  path: string;
+  sha256: string;
+  byteLength: number;
+  referencedByPromptIds: string[];
+  capturedAtMutationRevision: number;
+  text: string;
+}
+
+export interface IgnoredTaskVerificationRequirementSource {
+  path: string;
+  reason: string;
+  deauthorizedByPromptId?: string;
 }
 
 export interface TaskRequirementVerdict {
@@ -34,6 +70,11 @@ export interface TaskRequirement {
   text: string;
   acceptanceCriterion: string;
   sourcePromptIndexes: number[];
+  sourceClauseIds?: string[];
+  sourceFacetIds?: string[];
+  highRisk?: boolean;
+  highRiskSourcePromptIndexes?: number[];
+  proofPolicies?: RequirementProofPolicy[];
   verdict?: TaskRequirementVerdict;
 }
 
@@ -42,10 +83,18 @@ export interface IgnoredSourcePrompt {
   reason: string;
 }
 
+export interface IgnoredSourceClause {
+  sourceClauseId: string;
+  classification: "informational" | "example" | "superseded" | "unsafe_instruction";
+  reason: string;
+  supersededBySourcePromptIndex?: number;
+}
+
 export interface TaskRequirementAuditState {
   status: "pending" | "awaiting_definition" | "verifying" | "failed" | "passed";
   requirements: TaskRequirement[];
   ignoredSourcePrompts: IgnoredSourcePrompt[];
+  ignoredSourceClauses?: IgnoredSourceClause[];
   nextRequirementIndex: number;
   userRequirementsHash?: string;
   requirementSetHash?: string;
@@ -66,6 +115,20 @@ export interface TaskVerificationState {
   taskContext?: string;
   /** Accumulated user prompts since task start or last finish_work. */
   taskPrompts?: TaskVerificationSourcePrompt[];
+  /** Metadata-only references to immutable requirement-source snapshot entries. */
+  requirementSourceRefs?: TaskVerificationRequirementSourceRef[];
+  /** Explicit model classifications for prompt-derived candidates not selected as task requirements. */
+  ignoredRequirementSources?: IgnoredTaskVerificationRequirementSource[];
+  /** Distinct changed test paths awaiting a trustworthy successful test command. */
+  unverifiedTestPaths?: string[];
+  /** A pathless mutation changed more test files than can be tracked individually. */
+  unverifiedTestPathOverflow?: boolean;
+  /** Bounded source paths changed by the current task. */
+  mutatedSourcePaths?: string[];
+  /** Source mutation scope exceeded bounds or could not be observed safely. */
+  mutatedSourcePathOverflow?: boolean;
+  /** Enables fail-closed requirement redefinition before later mutations when direct user requirements change. */
+  requirementDefinitionPolicy?: 1;
   mutationRevision: number;
   baseline: {
     required: boolean;
@@ -107,17 +170,28 @@ export interface TaskVerificationEvidence {
   toolName: string;
   descriptor: string;
   outputSummary: string;
+  proofWitnesses?: TaskVerificationProofWitness[];
   isError: boolean;
+  nativeIsError?: boolean;
   mutationRevision: number;
   timestamp: string;
 }
 
+export interface TaskVerificationProofWitness {
+  requirementId: string;
+  policy: RequirementProofPolicy;
+  requirementSetHash: string;
+  mutationRevision: number;
+  factsHash: string;
+}
+
 export type VerificationInput = Static<typeof VerificationSchema>;
 
-export type RequirementAuditInput = Static<typeof RequirementAuditSchema>;
+export type RequirementAuditInput = Static<typeof RequirementAuditInputSchema>;
 
 export interface VerificationResult {
   status: "updated" | "needs_action";
   message: string;
   state: TaskVerificationState;
+  requirementDefinitionDiagnosticCount?: number;
 }

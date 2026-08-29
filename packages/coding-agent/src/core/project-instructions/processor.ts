@@ -8,6 +8,10 @@ import {
   persistCompilation,
   persistCompilationFailure,
 } from "./compilation-cache.ts";
+import { buildProjectInstructionConstraints } from "./compiler-constraints.ts";
+import { classifyProjectInstructionCompilerError } from "./compiler-diagnostics.ts";
+import { type ProjectInstructionCompilationAttempt, runProjectInstructionCompiler } from "./compiler-runner.ts";
+import { validateProjectInstructionCompilerResult } from "./compiler-validation.ts";
 import {
   buildSkillRecords,
   buildSourceRecords,
@@ -16,18 +20,20 @@ import {
   hashText,
   splitInstructionSources,
 } from "./content.ts";
+import { validateProjectInstructionRuleDependencies } from "./dependency-graph.ts";
 import { computeProjectInstructionResultHash } from "./manifest.ts";
 import { renderProjectInstructions, renderRulesCatalog, renderSkillsCatalog } from "./prompt.ts";
 import type {
   PreparedProjectInstructions,
   PrepareProjectInstructionsOptions,
+  ProjectInstructionCompilerDiagnostic,
   ProjectInstructionCompilerResult,
   ProjectInstructionCompilerStatus,
   ProjectInstructionMode,
   ProjectInstructionRuleRecord,
 } from "./types.ts";
 
-export const PROJECT_INSTRUCTION_COMPILER_VERSION = "project-instructions-v3";
+export const PROJECT_INSTRUCTION_COMPILER_VERSION = "project-instructions-v4-exact-source-v15-module-dependencies";
 
 export async function prepareProjectInstructions(
   options: PrepareProjectInstructionsOptions,
@@ -41,8 +47,14 @@ export async function prepareProjectInstructions(
   const sourceRecords = buildSourceRecords(sources);
   const skillRecords = buildSkillRecords(options.skills);
   const agentsHash = computeAgentsHash(sources);
-  const inputHash = computeInputHash(agentsHash, skillRecords, PROJECT_INSTRUCTION_COMPILER_VERSION);
+  const compilerCacheIdentity = options.compiler ? options.compilerIdentity?.trim() || "default" : "none";
+  const inputHash = computeInputHash(
+    agentsHash,
+    skillRecords,
+    `${PROJECT_INSTRUCTION_COMPILER_VERSION}:${compilerCacheIdentity}`,
+  );
   const modules = splitInstructionSources(sources);
+  const constraints = buildProjectInstructionConstraints(modules);
   const expected = { sources: sourceRecords, modules, skills: skillRecords };
   const cacheOptions = {
     cacheDir,
@@ -55,9 +67,11 @@ export async function prepareProjectInstructions(
   const cached = loadCachedProjectInstructions(cacheOptions);
   if (cached && (cached.manifest.mode !== "fallback" || !options.compiler)) return cached;
 
-  let rules = buildRuleRecords(modules);
+  let rules = buildRuleRecords(modules, constraints);
   let mode: ProjectInstructionMode = "exact";
   let compilerStatus: ProjectInstructionCompilerStatus = "not-needed";
+  let compilerDiagnostic: ProjectInstructionCompilerDiagnostic | undefined;
+  let compilerUsage: ProjectInstructionCompilerResult["usage"];
   let prompt = renderProjectInstructions({
     agentsHash,
     inputHash,
@@ -75,9 +89,12 @@ export async function prepareProjectInstructions(
       compilerVersion: PROJECT_INSTRUCTION_COMPILER_VERSION,
       compilerIdentity: options.compilerIdentity,
       modules,
+      constraints,
     });
     compilerStatus = compilation.status;
-    rules = buildRuleRecords(modules, compilation.result);
+    compilerDiagnostic = compilation.diagnostic;
+    compilerUsage = compilation.result?.usage;
+    rules = buildRuleRecords(modules, constraints, compilation.result);
     mode = compilation.result ? "compiled" : "fallback";
     prompt = renderProjectInstructions({
       agentsHash,
@@ -89,6 +106,20 @@ export async function prepareProjectInstructions(
       rules,
       skills: skillRecords,
     });
+    if (!prompt && compilation.result) {
+      mode = "fallback";
+      compilerStatus = "failed";
+      compilerDiagnostic = "project instruction compiler output validation failed";
+      prompt = renderProjectInstructions({
+        agentsHash,
+        inputHash,
+        cacheDir,
+        mode,
+        sources,
+        rules,
+        skills: skillRecords,
+      });
+    }
   }
   if (!prompt) throw new Error("Unable to render project instructions inside the prompt budget");
 
@@ -115,6 +146,8 @@ export async function prepareProjectInstructions(
     })),
     mode,
     compilerStatus,
+    compilerDiagnostic,
+    compilerUsage,
     promptFile: "prompt.md" as const,
     rulesCatalogFile: "rules/catalog.md" as const,
     skillsCatalogFile: "skills/catalog.md" as const,
@@ -144,13 +177,16 @@ async function getCompilation(
     compilerVersion: string;
     compilerIdentity?: string;
     modules: ReturnType<typeof splitInstructionSources>;
+    constraints: ReturnType<typeof buildProjectInstructionConstraints>;
   },
-): Promise<{ status: ProjectInstructionCompilerStatus; result?: ProjectInstructionCompilerResult; error?: string }> {
-  const allowedLinks = cache.modules.map((module) => module.link);
+): Promise<ProjectInstructionCompilationAttempt> {
   const cached = loadCachedCompilation(cache);
   if (cached) {
     try {
-      return { status: "success", result: validateCompilerResult(cached, allowedLinks) };
+      return {
+        status: "success",
+        result: validateProjectInstructionCompilerResult(cached, cache.modules, cache.constraints),
+      };
     } catch {
       // Treat a malformed derived compiler cache as absent and regenerate it.
     }
@@ -158,78 +194,56 @@ async function getCompilation(
   const backoffMs = Math.max(0, options.compilerFailureBackoffMs ?? 0);
   const previousFailure = backoffMs > 0 ? loadCachedCompilationFailure(cache) : undefined;
   if (previousFailure && Date.now() - previousFailure.failedAtMs < backoffMs) {
-    return { status: "failed", error: previousFailure.error };
+    return {
+      status: "failed",
+      error: previousFailure.error,
+      diagnostic: classifyProjectInstructionCompilerError(previousFailure.error),
+    };
   }
-  const compilation = await runCompiler(options, cache.modules);
+  const compilation = await runProjectInstructionCompiler(options.compiler, {
+    sources: options.contextFiles,
+    modules: cache.modules,
+    constraints: cache.constraints,
+  });
   if (compilation.result) persistCompilation(cache, compilation.result);
   else if (compilation.status === "failed") {
     persistCompilationFailure(cache, {
       failedAtMs: Date.now(),
       error: compilation.error ?? "Compiler failed without a diagnostic",
+      ...(compilation.compilerFailure ? { compilerFailure: compilation.compilerFailure } : {}),
     });
   }
   return compilation;
 }
 
-async function runCompiler(
-  options: PrepareProjectInstructionsOptions,
-  modules: ReturnType<typeof splitInstructionSources>,
-): Promise<{ status: ProjectInstructionCompilerStatus; result?: ProjectInstructionCompilerResult; error?: string }> {
-  if (!options.compiler || options.contextFiles.length === 0) return { status: "unavailable" };
-  try {
-    const candidate = await options.compiler({ sources: options.contextFiles, modules });
-    return {
-      status: "success",
-      result: validateCompilerResult(
-        candidate,
-        modules.map((module) => module.link),
-      ),
-    };
-  } catch (error) {
-    return { status: "failed", error: sanitizeCompilerError(error) };
-  }
-}
-
 function buildRuleRecords(
   modules: ReturnType<typeof splitInstructionSources>,
+  constraints: ReturnType<typeof buildProjectInstructionConstraints>,
   compilation?: ProjectInstructionCompilerResult,
 ): ProjectInstructionRuleRecord[] {
-  return modules.map((module) => ({
+  const linkById = new Map(modules.map((module) => [module.id, module.link]));
+  const rules = modules.map((module) => ({
     id: module.id,
     link: module.link,
     file: module.link,
     title: module.title,
     trigger: compilation?.triggers[module.id]?.trim().slice(0, 500) || fallbackTrigger(module.title),
+    routable:
+      compilation?.classifications.constraints !== undefined &&
+      constraints.some(
+        (constraint) =>
+          constraint.moduleId === module.id && compilation.classifications.constraints[constraint.id] === "routed",
+      ),
+    requires: (compilation?.requires?.[module.id] ?? []).map((dependencyId) => {
+      const link = linkById.get(dependencyId);
+      if (!link) throw new Error(`Project instruction compiler returned missing module dependency ${dependencyId}`);
+      return link;
+    }),
     sourcePath: module.sourcePath,
     contentHash: hashText(module.content),
   }));
-}
-
-function validateCompilerResult(
-  result: ProjectInstructionCompilerResult,
-  allowedLinks: string[],
-): ProjectInstructionCompilerResult {
-  if (!result || typeof result.body !== "string" || !result.body.trim()) {
-    throw new Error("Project instruction compiler returned an empty body");
-  }
-  if (typeof result.triggers !== "object" || result.triggers === null || Array.isArray(result.triggers)) {
-    throw new Error("Project instruction compiler returned invalid triggers");
-  }
-  const allowedLinkSet = new Set(["rules/catalog.md", ...allowedLinks]);
-  for (const link of result.body.match(/rules\/[a-z0-9][a-z0-9./-]*/gu) ?? []) {
-    if (!allowedLinkSet.has(link.replace(/[.),;:]+$/u, ""))) {
-      throw new Error(`Project instruction compiler referenced unknown link: ${link}`);
-    }
-  }
-  const allowedIds = new Set(allowedLinks.map((link) => link.slice("rules/".length, -".md".length)));
-  const triggers: Record<string, string> = {};
-  for (const [id, trigger] of Object.entries(result.triggers)) {
-    if (!allowedIds.has(id) || typeof trigger !== "string" || !trigger.trim()) {
-      throw new Error(`Project instruction compiler returned an invalid trigger for ${id}`);
-    }
-    triggers[id] = trigger.trim().slice(0, 500);
-  }
-  return { body: result.body.trim(), triggers };
+  validateProjectInstructionRuleDependencies(rules);
+  return rules;
 }
 
 function fallbackTrigger(title: string): string {
@@ -267,14 +281,4 @@ function assertRequestedCachePathSafe(cacheDir: string, workspaceRoot: string): 
     if (!existsSync(current)) return;
     if (lstatSync(current).isSymbolicLink()) throw new Error(`Refusing symlinked cache path: ${current}`);
   }
-}
-
-function sanitizeCompilerError(error: unknown): string {
-  const message = error instanceof Error ? `${error.name}: ${error.message}` : "Unknown compiler error";
-  return message
-    .replace(/https?:\/\/\S+/gu, "[url]")
-    .replace(/[A-Za-z0-9_=-]{32,}/gu, "[redacted]")
-    .replace(/\s+/gu, " ")
-    .trim()
-    .slice(0, 500);
 }

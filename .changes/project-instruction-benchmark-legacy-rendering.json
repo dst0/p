@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Certify production-equivalent compacted legacy instruction rendering in paired benchmark startup evidence."
+}

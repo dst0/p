@@ -15,6 +15,7 @@ import type { ModelRegistry } from "../model-registry.ts";
 import {
   createProjectInstructionController,
   type ProjectInstructionController,
+  type ProjectInstructionDeliveryMode,
 } from "../project-instructions/index.ts";
 import type { PromptTemplate } from "../prompt-templates.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
@@ -23,14 +24,19 @@ import type { SettingsManager } from "../settings-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 import { createVerificationLedger, type VerificationLedger } from "../verification-ledger.ts";
-import { isInternalCompletionProtocolRepairMessage } from "./message-utils.ts";
+import { isInternalAgentMessage } from "./message-utils.ts";
 import type {
   AgentSessionConfig,
   AgentSessionEventListener,
   InteractionMode,
   ToolDefinitionEntry,
 } from "./session-types.ts";
-import type { RuntimeContextPrompts, WorkingStatePromptInsertion } from "./state-types.ts";
+import type {
+  ProjectRuleGate,
+  ProjectRuleReadStage,
+  RuntimeContextPrompts,
+  WorkingStatePromptInsertion,
+} from "./state-types.ts";
 
 export class AgentSessionState {
   readonly agent: Agent;
@@ -58,8 +64,15 @@ export class AgentSessionState {
   public _turnIndex = 0;
   public _resourceLoader: ResourceLoader;
   public _projectInstructions: ProjectInstructionController;
+  public _projectInstructionMode: ProjectInstructionDeliveryMode;
+  public _projectRuleGate: ProjectRuleGate | undefined;
+  public _projectRuleGateGeneration = 0;
+  public _projectRuleReadStages = new Map<string, ProjectRuleReadStage>();
+  public _queuedProjectRuleGates = new WeakMap<AgentMessage, ProjectRuleGate | undefined>();
+  public _processingQueuedProjectRuleTurn = false;
   public _customTools: ToolDefinition[];
   public _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
+  public _projectRuleSafeToolDefinitions = new Set<ToolDefinition>();
   public _cwd: string;
   public _extensionRunnerRef?: {
     current?: ExtensionRunner;
@@ -107,6 +120,7 @@ export class AgentSessionState {
         getContextFiles: () => config.resourceLoader.getAgentsFiles().agentsFiles,
         getSkills: () => config.resourceLoader.getSkills().skills,
       });
+    this._projectInstructionMode = config.projectInstructionMode ?? "compiled";
     this._customTools = config.customTools ?? [];
     this._cwd = config.cwd;
     this._modelRegistry = config.modelRegistry;
@@ -161,7 +175,7 @@ export class AgentSessionState {
   }
   get messages(): AgentMessage[] {
     return this.agent.state.messages
-      .filter((message) => !isInternalCompletionProtocolRepairMessage(message))
+      .filter((message) => !isInternalAgentMessage(message))
       .map(filterSleepToolUseForHistory)
       .filter((message): message is AgentMessage => message !== undefined);
   }
