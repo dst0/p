@@ -1,14 +1,25 @@
 import { Type } from "typebox";
 
+export {
+  IgnoredSourceClauseSchema,
+  IgnoredSourcePromptSchema,
+  MAX_REQUIREMENT_COUNT,
+  MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
+  MAX_REQUIREMENT_REPAIR_ENTRIES,
+  MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
+  MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS,
+  MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
+  REQUIREMENT_TYPES,
+  RequirementAuditInputSchema,
+  RequirementAuditSchema,
+  RequirementDefinitionRepairSchema,
+  RequirementDefinitionSchema,
+  RequirementTypeSchema,
+  RequirementVerdictSchema,
+} from "./requirement-audit-schema.ts";
+
 export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
 export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
-
-export const MAX_REQUIREMENT_COUNT = 96;
-export const MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS = MAX_REQUIREMENT_COUNT;
-export const MAX_REQUIREMENT_REPAIR_ENTRIES = 16;
-export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
-export const MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS = 3;
-export const MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS = 3;
 
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
   /(?:\b(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:without|with\s+no)\s+(?:a\s+)?(?:file[- ]size|line(?:-count)?)\s+limit\b|\b(?:do\s+not|don't)\s+split\s+(?:this|the)\s+file\b|(?:явно\s+)?(?:игнорируй|отмени)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|без\s+ограничени[яй]\s+(?:на\s+)?(?:размер|число\s+строк)|не\s+разбива(?:й|ть)\s+(?:этот\s+)?файл)/i;
@@ -67,8 +78,6 @@ export const TASK_VERIFICATION_REQUIREMENT_SOURCE_CUSTOM_TYPE = "task_verificati
 
 export const TASK_KINDS = ["bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation"] as const;
 
-export const REQUIREMENT_TYPES = ["behavior", "constraint", "deliverable", "verification", "workflow"] as const;
-
 export const BASELINE_METHODS = ["runtime_reproduction", "failing_regression_test", "static_trace"] as const;
 
 export const FINAL_METHODS = ["focused_test", "test_suite", "manual_reproduction", "static_review"] as const;
@@ -98,117 +107,6 @@ export const FinalMethodSchema = Type.Union([
 export const AcceptanceCheckSchema = Type.Object({
   criterion: Type.String({ minLength: 1 }),
   evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
-});
-
-export const RequirementTypeSchema = Type.Union([
-  Type.Literal("behavior"),
-  Type.Literal("constraint"),
-  Type.Literal("deliverable"),
-  Type.Literal("verification"),
-  Type.Literal("workflow"),
-]);
-
-export const RequirementDefinitionSchema = Type.Object({
-  type: RequirementTypeSchema,
-  text: Type.String({ minLength: 1 }),
-  acceptance_criterion: Type.String({ minLength: 1 }),
-  source_prompt_indexes: Type.Optional(
-    Type.Array(Type.Integer({ minimum: 1 }), {
-      description:
-        "1-based indexes of direct user prompts only; referenced-file provenance is supplied with source_clause_ids or source_facet_ids and derived by the controller.",
-      minItems: 1,
-    }),
-  ),
-  source_clause_ids: Type.Optional(
-    Type.Array(Type.String({ minLength: 1 }), {
-      description: "Referenced-file source clause identifiers; prompt indexes are derived by the controller.",
-      minItems: 1,
-      maxItems: 128,
-    }),
-  ),
-  source_facet_ids: Type.Optional(
-    Type.Array(Type.String({ minLength: 1 }), {
-      description: "Referenced-file source facet identifiers; prompt indexes are derived by the controller.",
-      minItems: 1,
-      maxItems: 32,
-    }),
-  ),
-});
-
-export const RequirementDefinitionRepairSchema = Type.Object({
-  requirement_index: Type.Integer({ minimum: 1, maximum: MAX_REQUIREMENT_COUNT }),
-  replacements: Type.Array(RequirementDefinitionSchema, {
-    description: `Atomic replacements for this indexed item only; all repair entries together are limited to ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements.`,
-    maxItems: MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
-  }),
-});
-
-export const IgnoredSourcePromptSchema = Type.Object({
-  source_prompt_index: Type.Integer({ minimum: 1 }),
-  reason: Type.String({ minLength: 1 }),
-});
-
-export const IgnoredSourceClauseSchema = Type.Object({
-  source_clause_id: Type.String({ minLength: 1 }),
-  classification: Type.Union([
-    Type.Literal("informational"),
-    Type.Literal("example"),
-    Type.Literal("superseded"),
-    Type.Literal("unsafe_instruction"),
-  ]),
-  reason: Type.String({ minLength: 1 }),
-  superseded_by_source_prompt_index: Type.Optional(Type.Integer({ minimum: 1 })),
-});
-
-export const RequirementVerdictSchema = Type.Object({
-  requirement_id: Type.String({ minLength: 1 }),
-  passed: Type.Boolean(),
-  reason: Type.String({ minLength: 1 }),
-  evidence_refs: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
-});
-
-export const RequirementAuditSchema = Type.Object({
-  action: Type.Union([
-    Type.Literal("prepare_definition"),
-    Type.Literal("define"),
-    Type.Literal("repair_definition"),
-    Type.Literal("verdict"),
-  ]),
-  selected_paths: Type.Optional(Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 3 })),
-  adopt_changed_paths: Type.Optional(
-    Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { maxItems: 3, uniqueItems: true }),
-  ),
-  ignored_paths: Type.Optional(
-    Type.Array(
-      Type.Object({
-        path: Type.String({ minLength: 1, maxLength: 240 }),
-        reason: Type.String({ minLength: 1, maxLength: 500 }),
-      }),
-      { maxItems: 8 },
-    ),
-  ),
-  requirements: Type.Optional(
-    Type.Array(RequirementDefinitionSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT }),
-  ),
-  definition_revision: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
-  requirement_repairs: Type.Optional(
-    Type.Array(RequirementDefinitionRepairSchema, {
-      description: `Sparse indexed changes; omitted requirements are retained and lineage growth beyond ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements requires a fresh define batch.`,
-      minItems: 1,
-      maxItems: MAX_REQUIREMENT_REPAIR_ENTRIES,
-    }),
-  ),
-  ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
-  ignored_source_clauses: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
-  ignored_source_prompt_upserts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
-  ignored_source_prompt_removals: Type.Optional(
-    Type.Array(Type.Integer({ minimum: 1 }), { maxItems: 64, uniqueItems: true }),
-  ),
-  ignored_source_clause_upserts: Type.Optional(Type.Array(IgnoredSourceClauseSchema, { maxItems: 128 })),
-  ignored_source_clause_removals: Type.Optional(
-    Type.Array(Type.String({ minLength: 1 }), { maxItems: 128, uniqueItems: true }),
-  ),
-  verdicts: Type.Optional(Type.Array(RequirementVerdictSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT })),
 });
 
 export const VerificationSchema = Type.Object({

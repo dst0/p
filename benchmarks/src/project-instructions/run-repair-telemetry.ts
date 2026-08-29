@@ -183,14 +183,20 @@ export function createRequirementRepairTelemetry(): RequirementRepairTelemetry {
       pending.action !== "repair_definition" ||
       (currentDefinitionRevision !== null && pending.submittedDefinitionRevision === currentDefinitionRevision);
     const accepted = status === "updated" && repairRevisionMatches;
+    const resultDetails = isRecord(event.result) && isRecord(event.result.details) ? event.result.details : undefined;
+    const candidateDiagnosticCount = resultDetails?.requirementDefinitionDiagnosticCount;
+    const hasStructuredDefinitionDiagnostics =
+      typeof candidateDiagnosticCount === "number" &&
+      Number.isSafeInteger(candidateDiagnosticCount) &&
+      candidateDiagnosticCount > 0;
     const appliedRejection =
       status === "needs_action" &&
       hasRevision &&
+      hasStructuredDefinitionDiagnostics &&
       (pending.action === "define" ||
         (repairRevisionMatches &&
           currentDefinitionRevision !== null &&
           responseRevision !== currentDefinitionRevision));
-    const resultDetails = isRecord(event.result) && isRecord(event.result.details) ? event.result.details : undefined;
     const parsedDiagnostics = diagnosticSet(resultDetails?.message, hasRevision, fingerprintKey);
     const outcome = accepted
       ? "accepted"

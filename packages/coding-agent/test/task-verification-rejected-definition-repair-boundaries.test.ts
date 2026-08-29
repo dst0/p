@@ -17,7 +17,7 @@ describe("task verification rejected-definition repair boundaries", () => {
         action: "repair_definition",
         definition_revision: draft.revision,
       }),
-    ).toContain("requires at least one requirement repair or keyed classification change");
+    ).toContain("requires exactly one repair item; received 0");
     expect(draft.input).toEqual(retained);
   });
 

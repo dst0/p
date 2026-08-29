@@ -11,7 +11,14 @@ function start(id: string, args: Record<string, unknown>) {
   return { type: "tool_execution_start", toolCallId: id, toolName: "record_requirement_audit", args };
 }
 
-function end(id: string, status: string, message: string, revision?: string, acceptedCount?: number) {
+function end(
+  id: string,
+  status: string,
+  message: string,
+  revision?: string,
+  acceptedCount?: number,
+  diagnosticCount?: number,
+) {
   const content = revision ? `${message}\n\ndefinition_revision: ${revision}` : message;
   const requirements = acceptedCount === undefined ? undefined : Array.from({ length: acceptedCount }, () => ({}));
   return {
@@ -20,7 +27,12 @@ function end(id: string, status: string, message: string, revision?: string, acc
     toolName: "record_requirement_audit",
     result: {
       content: [{ type: "text", text: content }],
-      details: { status, message, state: { requirementAudit: { requirements } } },
+      details: {
+        status,
+        message,
+        ...(diagnosticCount === undefined ? {} : { requirementDefinitionDiagnosticCount: diagnosticCount }),
+        state: { requirementAudit: { requirements } },
+      },
     },
   };
 }
@@ -46,13 +58,22 @@ test("revision rotation recognizes an unknown validator diagnostic and gates acc
       "needs_action",
       "Requirement definition has 2 deterministic validation errors:\n1. Requirement 1 is compound.\n2. Requirement 2 references an invalid source_clause_id.",
       CURRENT_REVISION,
+      undefined,
+      2,
     ),
     "define",
     20,
   );
   telemetry.start(start("unknown", repairArgs(CURRENT_REVISION)), "unknown", 30);
   const unknown = telemetry.end(
-    end("unknown", "needs_action", "Requirement 1 violates a newly introduced validator invariant.", NEXT_REVISION),
+    end(
+      "unknown",
+      "needs_action",
+      "Requirement 1 violates a newly introduced validator invariant.",
+      NEXT_REVISION,
+      undefined,
+      1,
+    ),
     "unknown",
     40,
   );
@@ -86,7 +107,7 @@ test("diagnostic fingerprints correlate only inside one telemetry cell", () => {
   const diagnostic = "Requirement 1 contains customer-specific low-entropy-value.";
   const settleDefine = (telemetry: RequirementRepairTelemetry, id: string, revision: string) => {
     telemetry.start(start(id, { action: "define", requirements: [{ text: "one" }] }), id, 10);
-    return telemetry.end(end(id, "needs_action", diagnostic, revision), id, 20);
+    return telemetry.end(end(id, "needs_action", diagnostic, revision, undefined, 1), id, 20);
   };
   const firstCell = createRequirementRepairTelemetry();
   const first = settleDefine(firstCell, "first", CURRENT_REVISION);
@@ -108,7 +129,7 @@ test("diagnostic fingerprints correlate only inside one telemetry cell", () => {
 test("suppressed final replay rebuilds lineage before an unseen repair", () => {
   const telemetry = createRequirementRepairTelemetry();
   const defineStart = start("define", { action: "define", requirements: [{ text: "one" }] });
-  const defineEnd = end("define", "needs_action", "Requirement 1 is compound.", CURRENT_REVISION);
+  const defineEnd = end("define", "needs_action", "Requirement 1 is compound.", CURRENT_REVISION, undefined, 1);
   telemetry.start(defineStart, "define", 10);
   assert.ok(telemetry.end(defineEnd, "define", 20));
 
@@ -117,7 +138,7 @@ test("suppressed final replay rebuilds lineage before an unseen repair", () => {
   assert.equal(telemetry.end(defineEnd, "define", 40), undefined);
   telemetry.start(start("repair", repairArgs(CURRENT_REVISION)), "repair", 50);
   const repair = telemetry.end(
-    end("repair", "needs_action", "Requirement 1 is compound.", NEXT_REVISION),
+    end("repair", "needs_action", "Requirement 1 is compound.", NEXT_REVISION, undefined, 1),
     "repair",
     60,
   );

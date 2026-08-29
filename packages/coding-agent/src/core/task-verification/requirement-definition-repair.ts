@@ -31,10 +31,13 @@ export type FreshDefinitionReason =
 export type RejectedDefinitionTransition = "repair" | "fresh_definition";
 export const COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE =
   'Each repair replacement is a complete requirement object, not a patch; omitted provenance fields are deleted. When both independently apply, preserve them explicitly, for example {"source_prompt_indexes":[1],"source_clause_ids":["S2-C2"]}. Remove an accidental ignored-clause classification with ignored_source_clause_removals:["S2-C2"].';
+export const SINGLE_REPAIR_ITEM_GUIDANCE =
+  "Submit exactly one semantic repair item: one indexed requirement repair or one keyed classification change. One indexed requirement may split into multiple complete replacements.";
+const FRESH_DEFINITION_FIELD_GUIDANCE =
+  "Define fields only: action, requirements, ignored_source_prompts, and ignored_source_clauses. Never include selected_paths, adopt_changed_paths, ignored_paths, or repair fields.";
 
 // Authorization belongs to one ephemeral draft identity and must not survive structured cloning or draft rotation.
 const freshDefinitionReasons = new WeakMap<RejectedRequirementDefinitionDraft, FreshDefinitionReason>();
-
 export function authorizeRejectedDraftFreshDefinition(
   draft: RejectedRequirementDefinitionDraft,
   reason: FreshDefinitionReason,
@@ -61,10 +64,10 @@ export function rejectedDefinitionNextActionGuardMessage(draft: RejectedRequirem
     return `next_required_action: none\nDefinition recovery exhausted after ${MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS} consecutive non-improving complete definitions. No further define or repair transition is accepted for this task; preserve the workspace and start a fresh task or session with narrower, directly actionable requirements.`;
   }
   if (reason === "non_improving_fresh_definition") {
-    return `next_required_action: define\nThe fresh definition has ${definitionDiagnosticCount(draft.diagnostics)} deterministic diagnostic(s); the historical best is ${draft.bestDiagnosticCount}. No sparse-repair budget was reopened. Submit a valid complete definition or one with fewer than ${draft.bestDiagnosticCount} diagnostics.`;
+    return `next_required_action: define\nThe fresh definition has ${definitionDiagnosticCount(draft.diagnostics)} deterministic diagnostic(s); the historical best is ${draft.bestDiagnosticCount}. No sparse-repair budget was reopened. Submit a valid complete definition or one with fewer than ${draft.bestDiagnosticCount} diagnostics.\n${FRESH_DEFINITION_FIELD_GUIDANCE}`;
   }
   return reason
-    ? `next_required_action: define\nA fresh define is required because ${freshDefinitionReasonText(reason)}. Resubmit one complete action "define" batch.`
+    ? `next_required_action: define\nA fresh define is required because ${freshDefinitionReasonText(reason)}. Resubmit one complete action "define" batch.\n${FRESH_DEFINITION_FIELD_GUIDANCE}`
     : 'next_required_action: repair_definition\nA fresh define is not authorized while the active rejected definition remains repairable. Use action "repair_definition" with the current definition_revision.';
 }
 export function recordUnproductiveRejectedDefinitionRepair(draft: RejectedRequirementDefinitionDraft): void {
@@ -147,26 +150,17 @@ export function repairRejectedRequirementDefinition(
     return "The definition_revision is stale or unavailable. Resubmit one complete definition batch.";
   }
   if (repair.ignored_source_prompts || repair.ignored_source_clauses) {
-    return "repair_definition requires keyed ignored-source upserts/removals; legacy ignored_source_prompts and ignored_source_clauses are complete define snapshots.";
+    return "repair_definition requires one keyed repair item; complete ignored-source snapshots are define-only.";
   }
   const repairs = repair.requirement_repairs ?? [];
-  if (
-    repairs.length === 0 &&
-    (repair.ignored_source_prompt_upserts?.length ?? 0) === 0 &&
-    (repair.ignored_source_prompt_removals?.length ?? 0) === 0 &&
-    (repair.ignored_source_clause_upserts?.length ?? 0) === 0 &&
-    (repair.ignored_source_clause_removals?.length ?? 0) === 0
-  ) {
-    return "repair_definition requires at least one requirement repair or keyed classification change.";
-  }
-  if (repairs.length > MAX_REQUIREMENT_REPAIR_ENTRIES) {
-    return `requirement_repairs contains ${repairs.length} entries; sparse repair permits at most ${MAX_REQUIREMENT_REPAIR_ENTRIES}.`;
-  }
-  const duplicateIndexes = repairs
-    .map((item) => item.requirement_index)
-    .filter((index, offset, indexes) => indexes.indexOf(index) !== offset);
-  if (duplicateIndexes.length > 0) {
-    return `requirement_repairs contains duplicate requirement indexes: ${[...new Set(duplicateIndexes)].join(", ")}.`;
+  const repairItemCount =
+    repairs.length +
+    (repair.ignored_source_prompt_upserts?.length ?? 0) +
+    (repair.ignored_source_prompt_removals?.length ?? 0) +
+    (repair.ignored_source_clause_upserts?.length ?? 0) +
+    (repair.ignored_source_clause_removals?.length ?? 0);
+  if (repairItemCount !== MAX_REQUIREMENT_REPAIR_ENTRIES) {
+    return `repair_definition requires exactly one repair item; received ${repairItemCount}.`;
   }
   const requirements = draft.input.requirements ?? [];
   const invalidIndexes = repairs
@@ -268,11 +262,11 @@ export function formatRejectedDefinitionRepairGuidance(
             ? rejectedDefinitionNextActionGuardMessage(draft).split("\n")
             : [
                 "next_required_action: repair_definition",
-                `Continue corrections with action "repair_definition", this current batch revision, and the current 1-based indexes returned here. Each repair atomically replaces one rejected-batch item with zero or more replacements; one call permits at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements total and one lineage may grow by at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements.`,
+                `Continue corrections with action "repair_definition", this current batch revision, and one current 1-based index. Each call corrects exactly one requirement or one keyed classification item. A requirement repair atomically replaces that one rejected-batch item with zero or more replacements; one lineage may grow by at most ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements.`,
                 COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-                'Address every current diagnostic in one convergent repair call when it fits the bounds. The complete merged batch is revalidated atomically; use the next returned current batch directly if another repair is required. A fresh action "define" batch is forbidden unless the controller explicitly returns next_required_action: define.',
+                'Address one repair item, then use the new revision and indexes returned after atomic merged-batch validation. A fresh action "define" batch is forbidden unless the controller explicitly returns next_required_action: define.',
               ]),
-          "Omitted requirements and keyed classification changes are retained. Repair classifications only with ignored_source_prompt_upserts/removals and ignored_source_clause_upserts/removals; legacy ignored-source arrays are complete define snapshots.",
+          "Omitted requirements and classifications are retained. Complete ignored-source snapshots are define-only; a repair uses exactly one keyed upsert or removal.",
           "The rejected draft is non-authoritative. The controller reconstructs and validates the complete batch before accepting any requirement or permitting mutation.",
         ]
       : [

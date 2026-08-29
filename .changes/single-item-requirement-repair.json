@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Recover rejected requirement definitions through one atomic repair item per call, including prompt-only tasks before mutation."
+}
