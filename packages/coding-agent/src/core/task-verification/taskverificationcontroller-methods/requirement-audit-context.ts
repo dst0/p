@@ -4,7 +4,10 @@ import {
   requirementSourceSelectionMatches,
 } from "../referenced-requirement-sources.ts";
 import { computeStateUserRequirementsHash, sourcePromptsForState } from "../requirement-audit-hashing.ts";
-import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
+import {
+  deferredReferencedSourceDefinition,
+  requirementDefinitionPolicyActive,
+} from "../requirement-definition-policy.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { formatRequirementSourcePreparationGuidance } from "./requirement-source-preparation-guidance.ts";
@@ -23,20 +26,25 @@ export function auditContextError(self: TaskVerificationController): string | un
 
 export function definitionContextError(self: TaskVerificationController): string | undefined {
   if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
+  const references = self.state.requirementSourceRefs ?? [];
+  if (references.length > 0) {
+    const referencesToValidate =
+      self.state.requirementAudit.requirements.length === 0
+        ? references
+        : references.filter((reference) => reference.capturedAtMutationRevision === self.state.mutationRevision);
+    if (
+      referencesToValidate.some(
+        (reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference),
+      )
+    ) {
+      return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";
+    }
+    return deferredReferencedSourceDefinition(self.state)
+      ? auditContextError(self)
+      : preMutationDefinitionContextError(self);
+  }
   if (requirementDefinitionPolicyActive(self.state)) {
     return preMutationDefinitionContextError(self);
-  }
-  const references = self.state.requirementSourceRefs ?? [];
-  if (references.length === 0) return auditContextError(self);
-  if (!self.state.taskKind || !self.state.taskSummary) return "Declare the task before defining requirements.";
-  const referencesToValidate =
-    self.state.requirementAudit.requirements.length === 0
-      ? references
-      : references.filter((reference) => reference.capturedAtMutationRevision === self.state.mutationRevision);
-  if (
-    referencesToValidate.some((reference) => !preparedRequirementSourceMatches(self.sessionManager.getCwd(), reference))
-  ) {
-    return "A referenced requirement source changed after preparation. Ask the user whether to adopt the changed specification before continuing.";
   }
   return auditContextError(self);
 }

@@ -212,7 +212,7 @@ export function do_createToolDefinition(
     promptGuidelines: [
       `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
       `The controller automatically records mutation intent before the first mutating tool call. Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override its classification before mutation.`,
-      "Workflow steps: 1. obtain one accepted complete requirement definition -> 2. collect the required baseline -> 3. apply file edits -> 4. rerun the exact baseline command. A successful exact replay automatically records final verification.",
+      "Workflow steps: 1. freeze selected requirement sources and collect the required baseline -> 2. apply file edits -> 3. rerun the exact baseline command -> 4. obtain the accepted complete requirement definition and verdict batch. Source-free tasks define before mutation; selecting any authoritative source defers the combined source-and-direct definition until evidence readiness. A successful exact replay automatically records final verification.",
       'When using static_trace for record_baseline, you MUST provide at least two non-error inspection evidence handles (e.g. evidence_refs: ["verification-evidence-1", "verification-evidence-2"]).',
       "Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
       'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
