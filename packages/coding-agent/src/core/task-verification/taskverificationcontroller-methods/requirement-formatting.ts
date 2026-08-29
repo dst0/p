@@ -13,7 +13,10 @@ import {
 } from "../referenced-requirement-sources.ts";
 import { requirementDefinitionMatchesState, sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
-import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
+import {
+  deferredReferencedSourceDefinition,
+  requirementDefinitionPolicyActive,
+} from "../requirement-definition-policy.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import { emptyReadiness } from "../state-factories.ts";
@@ -51,7 +54,13 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
     ].join("\n");
   }
 
-  if (requirementDefinitionPolicyActive(self.state) && !requirementDefinitionMatchesState(self.state)) {
+  const definitionDeferred =
+    deferredReferencedSourceDefinition(self.state) && self.state.readiness?.status !== "evidence_ready";
+  if (
+    requirementDefinitionPolicyActive(self.state) &&
+    !definitionDeferred &&
+    !requirementDefinitionMatchesState(self.state)
+  ) {
     const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
     return [
       `NEXT REQUIRED ACTION: define and obtain one accepted complete requirement set through ${REQUIREMENT_AUDIT_TOOL_NAME} before implementation.`,

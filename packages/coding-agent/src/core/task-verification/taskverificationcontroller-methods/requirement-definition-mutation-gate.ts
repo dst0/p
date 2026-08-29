@@ -1,6 +1,9 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import { requirementDefinitionMatchesState } from "../requirement-audit-hashing.ts";
-import { requirementDefinitionPolicyActive } from "../requirement-definition-policy.ts";
+import {
+  deferredReferencedSourceDefinition,
+  requirementDefinitionPolicyActive,
+} from "../requirement-definition-policy.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -12,6 +15,9 @@ export function requirementDefinitionMutationGate(
   args: unknown,
 ): BeforeToolCallResult | undefined {
   if (!requirementDefinitionPolicyActive(self.state) || !canPotentiallyChangeWorkspace(toolName, args)) {
+    return undefined;
+  }
+  if (deferredReferencedSourceDefinition(self.state) && self.state.readiness?.status !== "evidence_ready") {
     return undefined;
   }
   if (requirementDefinitionMatchesState(self.state)) return undefined;

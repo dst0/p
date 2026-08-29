@@ -39,10 +39,12 @@ describe("referenced requirement-source security", () => {
           type: "behavior",
           text: "Implement the referenced behavior",
           acceptance_criterion: "The referenced behavior is implemented",
-          source_prompt_indexes: [1],
+          source_prompt_indexes: [],
         },
       ],
-      ignored_source_prompts: [],
+      ignored_source_prompts: [
+        { source_prompt_index: 1, reason: "Pure delegation to the referenced SPEC.md requirements" },
+      ],
     });
     expect(prematureDefinition).toContain('Call record_requirement_audit with action "prepare_definition" next');
     expect(prematureDefinition).toContain("Do not call define first");
@@ -144,7 +146,7 @@ describe("referenced requirement-source security", () => {
           type: "behavior",
           text: "Export deterministic newline-terminated JSONL",
           acceptance_criterion: "The exported log is deterministic JSONL ending in a terminal newline",
-          source_prompt_indexes: [1],
+          source_prompt_indexes: [],
           source_clause_ids: ["S2-C4"],
         },
         {
@@ -156,7 +158,9 @@ describe("referenced requirement-source security", () => {
           source_clause_ids: ["S2-C5"],
         },
       ],
-      ignored_source_prompts: [],
+      ignored_source_prompts: [
+        { source_prompt_index: 1, reason: "Pure delegation to the referenced SPEC.md requirements" },
+      ],
       ignored_source_clauses: [
         {
           source_clause_id: "S2-C1",
