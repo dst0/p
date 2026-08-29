@@ -10,3 +10,7 @@ export function requirementDefinitionPolicyActive(state: TaskVerificationState):
     (state.ignoredRequirementSources?.length ?? 0) > 0
   );
 }
+
+export function deferredReferencedSourceDefinition(state: TaskVerificationState): boolean {
+  return (state.requirementSourceRefs?.length ?? 0) > 0;
+}

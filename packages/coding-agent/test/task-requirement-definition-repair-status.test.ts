@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
+  activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
   callTaskVerification,
   createRequirementAuditHarness,
@@ -47,8 +48,8 @@ describe("rejected requirement definition status recovery", () => {
     await sendAuditUserPrompt(harness, "Also preserve the exact event position.", 200);
     const status = await callTaskVerification(harness.controller, { action: "status" });
 
-    expect(status).toContain("accepted complete requirement set");
-    expect(status).toContain('action "define"');
+    expect(status).toContain("implement the production change");
+    expect(status).not.toContain('action "define"');
     expect(status).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
     expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
       "stale or unavailable",
@@ -63,7 +64,9 @@ describe("rejected requirement definition status recovery", () => {
     const rejected = await callRequirementAudit(harness.controller, {
       action: "define",
       requirements: [compoundFacetRequirement("S2-C3")],
-      ignored_source_prompts: [],
+      ignored_source_prompts: [
+        { source_prompt_index: 1, reason: "Pure delegation to the referenced README specification" },
+      ],
       ignored_source_clauses: [
         exampleClassification("S2-C1", "Payload example"),
         exampleClassification("S2-C2", "Archive example"),
@@ -113,7 +116,9 @@ async function rejectedSplit(workspaces: string[]): Promise<{
   const rejected = await callRequirementAudit(harness.controller, {
     action: "define",
     requirements: [compoundFacetRequirement("S2-C1")],
-    ignored_source_prompts: [],
+    ignored_source_prompts: [
+      { source_prompt_index: 1, reason: "Pure delegation to the referenced README specification" },
+    ],
     ignored_source_clauses: [],
   });
   await nextModelTurn(harness);
@@ -156,6 +161,7 @@ async function preparedRepairHarness(workspaces: string[], source: string): Prom
     selected_paths: ["README.md"],
     ignored_paths: [],
   });
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   return harness;
 }
@@ -165,7 +171,7 @@ function compoundFacetRequirement(sourceClauseId: string) {
     type: "behavior" as const,
     text: "Shipping reduces both onHand and the reservation",
     acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
-    source_prompt_indexes: [1],
+    source_prompt_indexes: [],
     source_clause_ids: [sourceClauseId],
     source_facet_ids: [`${sourceClauseId}-F1`, `${sourceClauseId}-F2`],
   };
@@ -176,7 +182,7 @@ function facetRequirement(object: string, sourceFacetId: string) {
     type: "behavior" as const,
     text: `Shipping reduces ${object}`,
     acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
-    source_prompt_indexes: [1],
+    source_prompt_indexes: [],
     source_clause_ids: [sourceFacetId.replace(/-F\d+$/u, "")],
     source_facet_ids: [sourceFacetId],
   };
@@ -212,11 +218,14 @@ async function rejectedRepair(workspaces: string[]): Promise<{
     selected_paths: ["README.md"],
     ignored_paths: [],
   });
+  activateRequirementDefinitionAfterEvidenceForTest(harness.controller);
   await nextModelTurn(harness);
   const rejected = await callRequirementAudit(harness.controller, {
     action: "define",
     requirements: [requirement("Ship command changes two counters together")],
-    ignored_source_prompts: [],
+    ignored_source_prompts: [
+      { source_prompt_index: 1, reason: "Pure delegation to the referenced README specification" },
+    ],
     ignored_source_clauses: [],
   });
   const firstRevision = revisionFrom(rejected);
@@ -252,7 +261,7 @@ function requirement(text: string) {
     type: "behavior" as const,
     text,
     acceptance_criterion: `${text} by the shipped quantity`,
-    source_prompt_indexes: [1],
+    source_prompt_indexes: [],
   };
 }
 

@@ -46,7 +46,9 @@ describe("rejected requirement definition bounded status recovery", () => {
     const rejected = await callRequirementAudit(harness.controller, {
       action: "define",
       requirements: [compoundRequirement()],
-      ignored_source_prompts: [],
+      ignored_source_prompts: [
+        { source_prompt_index: 1, reason: "Pure delegation to the referenced README specification" },
+      ],
       ignored_source_clauses: [],
     });
     await nextModelTurn(harness);
@@ -84,7 +86,7 @@ function compoundRequirement() {
     type: "behavior" as const,
     text: "Shipping reduces both onHand and the reservation",
     acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
-    source_prompt_indexes: [1],
+    source_prompt_indexes: [],
     source_clause_ids: ["S2-C1"],
     source_facet_ids: ["S2-C1-F1", "S2-C1-F2"],
   };
@@ -95,7 +97,7 @@ function facetRequirement(object: string, sourceFacetId: string) {
     type: "behavior" as const,
     text: `Shipping reduces ${object}`,
     acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
-    source_prompt_indexes: [1],
+    source_prompt_indexes: [],
     source_clause_ids: ["S2-C1"],
     source_facet_ids: [sourceFacetId],
   };

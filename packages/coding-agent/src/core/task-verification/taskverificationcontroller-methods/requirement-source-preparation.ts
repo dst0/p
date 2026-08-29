@@ -5,6 +5,7 @@ import {
   prepareReferencedRequirementSources,
 } from "../referenced-requirement-sources.ts";
 import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import { deferredReferencedSourceDefinition } from "../requirement-definition-policy.ts";
 import { renderRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
 import { persistRequirementSourceSnapshots } from "../requirement-source-storage.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
@@ -80,6 +81,7 @@ export function do_prepareRequirementDefinition(
   for (const [id, text] of selectedTexts) self.requirementSourceTexts.set(id, text);
   self.state = {
     ...self.state,
+    requirementDefinitionPolicy: references.length > 0 ? 1 : self.state.requirementDefinitionPolicy,
     requirementSourceRefs: references,
     ignoredRequirementSources: selection.ignoredSources,
     readiness: emptyReadiness(),
@@ -99,12 +101,15 @@ export function do_prepareRequirementDefinition(
       false,
     );
   }
+  const deferred = deferredReferencedSourceDefinition(self.state);
   return self.updated(
     [
       `Prepared ${references.length} immutable requirement-source snapshot(s) (${persisted.length} new, ${reusable.length} reused).`,
       `Ignored ${selection.ignoredSources.length} classified candidate(s).`,
-      "Complete the requirement definition before implementation.",
-      renderRequirementDefinitionPrompt(prospectiveSources).text,
+      deferred
+        ? "Implementation may proceed. The complete clause-to-requirement matrix is deferred until evidence readiness passes at completion."
+        : "Complete the requirement definition before implementation because the direct prompts contain independent product requirements.",
+      ...(deferred ? [] : [renderRequirementDefinitionPrompt(prospectiveSources).text]),
     ].join("\n"),
     false,
   );

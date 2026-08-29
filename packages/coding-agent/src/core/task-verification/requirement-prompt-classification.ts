@@ -6,6 +6,10 @@ const DELEGATION_PATTERN = new RegExp(
   String.raw`^(?:(?:please|kindly)\s+)?(?:(?:read|review|inspect)(?:\s+<source>)?\s+(?:and|then)\s+)?(?:apply|complete|follow|implement|satisfy)\s+(?:all(?:\s+of(?:\s+the)?)?|every|the)\s+(?:listed\s+)?requirements?\s+(?:from|in)\s+<source>(?:\s+(?:in|into|within)\s+${FILE_TOKEN})?(?:\s*,?\s+(?:and|then)\s+${FINISH_WORKFLOW})?$`,
   "iu",
 );
+const DESCRIBED_SOURCE_PATTERN = new RegExp(
+  String.raw`^(?:(?:please|kindly)\s+)?(?:apply|complete|follow|implement|satisfy)\s+(?:the\s+)?[\p{L}\p{N}_ -]+?\s+(?:described\s+in|specified\s+by)\s+<source>(?:\s*,?\s+(?:and|then)\s+${FINISH_WORKFLOW})?$`,
+  "iu",
+);
 const TEST_WORKFLOW_PATTERN = new RegExp(
   String.raw`^(?:use\s+(?:${FILE_TOKEN}|(?:the\s+)?(?:(?:focused|relevant)\s+)*tests?)\s+(?:for|as)\s+(?:(?:focused|executable)\s+)*(?:evidence|verification)|run\s+(?:the\s+)?(?:(?:focused|relevant)\s+)*tests?(?:\s+(?:for|as)\s+(?:evidence|verification))?)(?:\s+(?:and|then)\s+${FINISH_WORKFLOW})?$`,
   "iu",
@@ -88,5 +92,10 @@ function escapeRegExp(value: string): string {
 }
 
 function isDelegationOrWorkflowClause(clause: string): boolean {
-  return DELEGATION_PATTERN.test(clause) || TEST_WORKFLOW_PATTERN.test(clause) || FINISH_WORKFLOW_PATTERN.test(clause);
+  return (
+    DELEGATION_PATTERN.test(clause) ||
+    DESCRIBED_SOURCE_PATTERN.test(clause) ||
+    TEST_WORKFLOW_PATTERN.test(clause) ||
+    FINISH_WORKFLOW_PATTERN.test(clause)
+  );
 }
