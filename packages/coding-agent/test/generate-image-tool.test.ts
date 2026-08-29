@@ -113,10 +113,12 @@ describe("generate_image tool", () => {
     expect(createdDirs.has("/workspace/assets")).toBe(true);
     expect(writtenFiles.has("/workspace/assets/forest.png")).toBe(true);
 
-    const writeOp = operationsLog.find((op) => op.startsWith("write:/workspace/assets/forest.png.tmp"));
-    const renameOp = operationsLog.find((op) => op.startsWith("rename:/workspace/assets/forest.png.tmp"));
-    expect(writeOp).toBeDefined();
-    expect(renameOp).toBeDefined();
+    // Assert strict write→rename ordering
+    const writeIdx = operationsLog.findIndex((op) => op.startsWith("write:/workspace/assets/forest.png.tmp"));
+    const renameIdx = operationsLog.findIndex((op) => op.startsWith("rename:/workspace/assets/forest.png.tmp"));
+    expect(writeIdx).toBeGreaterThanOrEqual(0);
+    expect(renameIdx).toBeGreaterThanOrEqual(0);
+    expect(writeIdx).toBeLessThan(renameIdx);
   });
 
   it("auto-generates unique collision-safe output path if omitted", async () => {
@@ -188,6 +190,36 @@ describe("generate_image tool", () => {
     await expect(
       tool.execute("call-conflict", { prompt: "Test", size: "1792x1024", aspectRatio: "9:16" }),
     ).rejects.toThrow("Conflicting size");
+  });
+
+  it("aborts and cleans up temp file when signal fires during write", async () => {
+    const controller = new AbortController();
+    const unlinkedPaths: string[] = [];
+
+    const mockOperations: GenerateImageOperations = {
+      writeFile: async () => {
+        // Abort during write
+        controller.abort();
+        throw new Error("Operation aborted");
+      },
+      rename: async () => {},
+      unlink: async (path) => {
+        unlinkedPaths.push(path);
+      },
+      mkdir: async () => {},
+    };
+
+    const tool = createGenerateImageTool("/workspace", {
+      model: dummyModel,
+      apiKey: "test-api-key",
+      operations: mockOperations,
+    });
+
+    await expect(
+      tool.execute("call-abort", { prompt: "Abort test", outputPath: "aborted.png" }, controller.signal),
+    ).rejects.toThrow("aborted");
+    expect(unlinkedPaths.length).toBe(1);
+    expect(unlinkedPaths[0]).toContain("aborted.png.tmp");
   });
 
   it("renders call and result properly", () => {
