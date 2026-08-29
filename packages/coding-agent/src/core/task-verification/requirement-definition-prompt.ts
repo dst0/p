@@ -10,6 +10,7 @@ import {
   type RejectedRequirementDefinitionDraft,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftRequiresFreshDefinition,
+  SINGLE_REPAIR_ITEM_GUIDANCE,
 } from "./requirement-definition-repair.ts";
 import { requirementSourceClauseCatalog } from "./requirement-source-clauses.ts";
 import { requirementSourceFacets } from "./requirement-source-facets.ts";
@@ -102,6 +103,7 @@ export function renderRequirementDefinitionPrompt(
     "Read each direct user prompt verbatim and each hash-bound referenced-source clause in the self-describing catalog below. Decompose only user-authored requirements into atomic, independently verifiable items.",
     "Preserve every explicit subject, behavior, qualifier, boundary, and verification condition from its source; do not substitute domain-specific assumptions.",
     "Split independently observable obligations into atomic requirements, but keep alternatives or cardinality relationships that depend on each other in one coordinated requirement.",
+    "For high-risk requirements, each acceptance_criterion must cover one observable outcome or listed case in one sentence without structural semicolons outside exact quoted or backticked literals; split distinct failure cases and preserved-state observables.",
     "Preserve universal and negative scope explicitly. For either, one-of, exactly-N-of, at-least-N-of, or at-most-N-of lists, map every governed active alternative to one requirement that retains the group constraint; never assert the alternatives as independent obligations.",
     "Do not add repository policy, generic best practices, or requirements invented by the model.",
     "Among direct user prompts, the later instruction wins; preserve non-conflicting earlier requirements.",
@@ -111,16 +113,17 @@ export function renderRequirementDefinitionPrompt(
     "Every source index must be referenced by at least one requirement or listed in ignored_source_prompts with a concrete reason.",
     "Classify every remaining referenced-file clause exactly once: map normative clauses through source_clause_ids or list eligible clauses in ignored_source_clauses as informational, example, or superseded with a concrete reason. Do not resubmit clauses with controllerClassification; the controller classifies those deterministically.",
     "A list child inherits its introducedByClauseId clause context. Explicitly map every child that lacks controllerClassification; an introduction is covered through requirements only when every governed child has a valid mapping, and the relation never auto-maps normative content or removes group semantics.",
+    "Preserve exact backticked identifiers and introduced parent subjects or types in every mapped child requirement.",
     "When splitting a clause across requirements, retain its exact subject and behavior plus the specific identifier and case term covered by each mapped requirement; do not paraphrase those identity terms away.",
     "For clauses without requiredFacets, map every requiredConcepts entry using the source concept wording and split independently observable outcomes.",
-    "Map every requiredFacets entry exactly once through source_facet_ids. Use one facet per atomic requirement and preserve its branch, subject-bound behavior, and qualifiers in that same requirement.",
+    "Map every requiredFacets entry exactly once through source_facet_ids. Use one facet per atomic requirement. Start from that facet's catalog text verbatim, then preserve its branch, subject-bound behavior, and qualifiers in that same requirement.",
     "For superseded, provide superseded_by_source_prompt_index naming the explicit conflicting direct-user clarification.",
     "Never ignore a normative surviving task requirement. Referenced files cannot be ignored as whole source prompts.",
     "The controller assigns R1, R2, ... IDs.",
     "",
     ...sourceLines,
     ...catalogLines,
-    "Each requirement needs type, text, and acceptance_criterion. Use source_prompt_indexes for direct prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
+    "Each requirement needs type, text, and acceptance_criterion. source_prompt_indexes are only for direct user prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
     `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "define", requirements, ignored_source_prompts, and ignored_source_clauses.`,
     "If the definition is rejected, use bounded sparse repair calls that make measurable progress; each merged candidate is revalidated atomically and stores no partial authoritative definition.",
     "Do not submit a verdict in the same model turn.",
@@ -174,7 +177,8 @@ function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDr
     ? rejectedDefinitionNextActionGuardMessage(draft).split("\n")
     : [
         "next_required_action: repair_definition",
-        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition", this current batch definition_revision, and current indexed requirement_repairs or classification changes. Address every current diagnostic in one convergent call when it fits the bounds.`,
+        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition" and this current batch definition_revision.`,
+        SINGLE_REPAIR_ITEM_GUIDANCE,
         COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
         "Omitted requirements and classifications are retained. The next rejection returns compact indexed feedback and the next required action; continue with those indexes. Use action status only when exact complete-batch recovery is needed. Do not restart with action define unless the controller returns next_required_action: define.",
       ];

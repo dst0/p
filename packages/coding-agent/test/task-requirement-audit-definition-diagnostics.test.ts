@@ -138,7 +138,7 @@ describe("requirement definition diagnostics", () => {
 
     await nextModelTurn(harness);
     const revision = harness.controller.rejectedRequirementDefinitionDraft?.revision;
-    const accepted = await callRequirementAudit(harness.controller, {
+    const split = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revision,
       requirement_repairs: [
@@ -161,8 +161,15 @@ describe("requirement definition diagnostics", () => {
             },
           ],
         },
+      ],
+    });
+    await nextModelTurn(harness);
+    const accepted = await callRequirementAudit(harness.controller, {
+      action: "repair_definition",
+      definition_revision: split.match(/definition_revision: ([0-9a-f-]+)/u)?.[1],
+      requirement_repairs: [
         {
-          requirement_index: 2,
+          requirement_index: 3,
           replacements: [
             {
               type: "behavior",

@@ -7,6 +7,7 @@ import {
 } from "../constants.ts";
 import { requirementAuditForeignFieldError } from "../requirement-audit-action-fields.ts";
 import {
+  authorizeRejectedDraftFreshDefinition,
   COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
   definitionDiagnosticCount,
   formatRejectedDefinitionRepairGuidance,
@@ -24,7 +25,7 @@ import {
 } from "../requirement-definition-repair-candidate.ts";
 import { formatRejectedDefinitionRepairFeedback } from "../requirement-definition-repair-feedback.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import type { VerificationResult } from "../types.ts";
+import type { RequirementAuditInput, VerificationResult } from "../types.ts";
 
 export function do_createRequirementAuditToolDefinition(
   self: TaskVerificationController,
@@ -44,10 +45,10 @@ export function do_createRequirementAuditToolDefinition(
       "Use source_prompt_indexes only for direct user prompts. For referenced files, use source_clause_ids or source_facet_ids; the controller derives their prompt indexes.",
       "Classify every referenced-file clause exactly once: map normative clauses through source_clause_ids or list non-requirement clauses in ignored_source_clauses with a concrete classification and reason.",
       "The controller assigns stable R1, R2, ... IDs; never supply IDs during definition.",
-      `After a rejected definition, use action 'repair_definition' with its current batch definition_revision and indexed replacements or splits; address every current diagnostic in one convergent call when possible, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements per call and normal cumulative lineage growth capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements. A lineage-overflow candidate must pass atomic validation completely; an invalid overflow is never retained as the next repair draft.`,
+      `After a rejected definition, use action 'repair_definition' with its current definition_revision and exactly one repair item: one indexed requirement replacement/split or one keyed classification upsert/removal. A requirement split may contain at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements and normal cumulative lineage growth is capped at ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements. A lineage-overflow candidate must pass atomic validation completely; an invalid overflow is never retained as the next repair draft.`,
       "Each adopted repair returns a new revision, compact current diagnostics, and the active requirement count. Use task-verification status only when compaction requires exact complete-batch recovery; unchanged requirements remain controller-side.",
       COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-      "In repair_definition, change classifications only through keyed ignored_source_prompt_upserts/removals or ignored_source_clause_upserts/removals; ignored_source_prompts and ignored_source_clauses remain complete define snapshots.",
+      "In repair_definition, complete ignored-source snapshots are forbidden; correct exactly one classification item with one keyed upsert or removal.",
       "For action 'verdict', submit exactly one verdicts item for every controller-assigned requirement ID in one tool call.",
       "Every verdict needs a reason. Every passed verdict requires current non-error evidence_refs.",
       "High-risk integrity, security, durability, transaction, and concurrency requirements need a relevant focused test with a positive passing result; generic suites and manual reproductions cannot prove them.",
@@ -77,7 +78,7 @@ export function do_createRequirementAuditToolDefinition(
         return { content: [{ type: "text", text: result.message }], details: result };
       }
       const previousRejectedDraft = self.rejectedRequirementDefinitionDraft;
-      const repaired =
+      const repaired: RequirementAuditInput | string =
         params.action === "repair_definition"
           ? repairRejectedRequirementDefinition(self.rejectedRequirementDefinitionDraft, params, {
               allowLineageOverflowValidation: true,
@@ -111,10 +112,12 @@ export function do_createRequirementAuditToolDefinition(
         previousRejectedDraft &&
         typeof repaired !== "string" &&
         result.status === "needs_action" &&
-        result.state.requirementAudit?.status === "awaiting_definition" &&
         (!rejectedRepairDoesNotWorsenHistoricalMinimum(previousRejectedDraft, candidateDiagnosticCount) ||
           lineageOverflow)
       ) {
+        if (lineageOverflow && candidateDiagnosticCount !== undefined) {
+          authorizeRejectedDraftFreshDefinition(previousRejectedDraft, "lineage_growth");
+        }
         recordUnproductiveRejectedDefinitionRepair(previousRejectedDraft);
         const activeDiagnosticCount = definitionDiagnosticCount(previousRejectedDraft.diagnostics);
         const retainedMessage =
@@ -134,12 +137,7 @@ export function do_createRequirementAuditToolDefinition(
         const message = formatRejectedDefinitionRepairFeedback(retainedMessage, previousRejectedDraft);
         return { content: [{ type: "text", text: message }], details: result };
       }
-      if (
-        result.status === "needs_action" &&
-        result.state.requirementAudit?.status === "awaiting_definition" &&
-        typeof repaired !== "string" &&
-        candidateDiagnosticCount !== undefined
-      ) {
+      if (result.status === "needs_action" && typeof repaired !== "string" && candidateDiagnosticCount !== undefined) {
         const authorizedFreshDefinition =
           params.action === "define" && rejectedDraftRequiresFreshDefinition(previousRejectedDraft);
         self.rejectedRequirementDefinitionDraft = rejectedRequirementDefinitionDraft(

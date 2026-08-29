@@ -16,7 +16,14 @@ function start(toolCallId: string, toolName: string, args: Record<string, unknow
   return { type: "tool_execution_start", toolCallId, toolName, args, benchmarkEventOrdinal };
 }
 
-function end(toolCallId: string, toolName: string, status: string, message: string, content = message) {
+function end(
+  toolCallId: string,
+  toolName: string,
+  status: string,
+  message: string,
+  content = message,
+  diagnosticCount?: number,
+) {
   return {
     type: "tool_execution_end",
     toolCallId,
@@ -27,6 +34,7 @@ function end(toolCallId: string, toolName: string, status: string, message: stri
       details: {
         status,
         message,
+        ...(diagnosticCount === undefined ? {} : { requirementDefinitionDiagnosticCount: diagnosticCount }),
         state: { requirementAudit: { status: status === "updated" ? "verifying" : "awaiting_definition" } },
       },
     },
@@ -52,7 +60,7 @@ test("repair lineage distinguishes resolved and introduced diagnostics when the 
   telemetry.start(start("define", "record_requirement_audit", definitionArgs(), 10), "define", 100);
   const firstMsg = `Requirement definition has 2 deterministic validation errors:\n1. Requirement 1 is compound: ${PRIVATE_DIAGNOSTIC}.\n2. Requirement 2 references an invalid source_clause_id.`;
   const first = telemetry.end(
-    end("define", "record_requirement_audit", "needs_action", firstMsg, rejection("rejected")),
+    end("define", "record_requirement_audit", "needs_action", firstMsg, rejection("rejected"), 2),
     "define",
     200,
   );
@@ -65,7 +73,7 @@ test("repair lineage distinguishes resolved and introduced diagnostics when the 
   const secondMsg =
     "Requirement definition has 3 deterministic validation errors:\n1. Requirement 1 references an invalid source_clause_id.\n2. Requirement 2 references an invalid source_facet_id.\n3. Requirement 3 references an invalid source_facet_id.";
   const second = telemetry.end(
-    end("repair", "record_requirement_audit", "needs_action", secondMsg, rejection("rejected again", NEXT_REVISION)),
+    end("repair", "record_requirement_audit", "needs_action", secondMsg, rejection("rejected again", NEXT_REVISION), 3),
     "repair",
     400,
   );
@@ -92,13 +100,7 @@ test("repair lineage distinguishes resolved and introduced diagnostics when the 
 test("final recording replay rebuilds lineage without emitting duplicate settled telemetry", () => {
   const telemetry = createRequirementRepairTelemetry();
   const startEvent = start("define", "record_requirement_audit", definitionArgs(), 10);
-  const endEvent = end(
-    "define",
-    "record_requirement_audit",
-    "needs_action",
-    "Requirement 1 is compound.",
-    rejection("x"),
-  );
+  const endEvent = end("define", "record_requirement_audit", "needs_action", "compound", rejection("x"), 1);
   telemetry.start(startEvent, "define", 100);
   assert.ok(telemetry.end(endEvent, "define", 200));
   telemetry.resetReplayState();
@@ -113,7 +115,7 @@ test("liveness final recording replay does not duplicate telemetry already obser
   const progressPath = join(root, "progress.jsonl");
   const events = [
     start("define", "record_requirement_audit", definitionArgs(), 10),
-    end("define", "record_requirement_audit", "needs_action", "Requirement 1 is compound.", rejection("x")),
+    end("define", "record_requirement_audit", "needs_action", "Requirement 1 is compound.", rejection("x"), 1),
   ];
   const recording = `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
   try {
@@ -171,7 +173,11 @@ test("rejected repair protocol calls preserve the active draft count and diagnos
   telemetry.start(start("define", "record_requirement_audit", definitionArgs(), 1), "define", 10);
   const defMsg =
     "Requirement definition has 2 deterministic validation errors:\n1. Requirement 1 is compound.\n2. Requirement 2 references an invalid source_clause_id.";
-  telemetry.end(end("define", "record_requirement_audit", "needs_action", defMsg, rejection("rejected")), "define", 20);
+  telemetry.end(
+    end("define", "record_requirement_audit", "needs_action", defMsg, rejection("rejected"), 2),
+    "define",
+    20,
+  );
   const repairArgs = {
     action: "repair_definition",
     definition_revision: "stale",
@@ -211,6 +217,35 @@ test("rejected repair protocol calls preserve the active draft count and diagnos
   }
 });
 
+test("revision-bearing define protocol errors cannot masquerade as a replacement rejected draft", () => {
+  const telemetry = createRequirementRepairTelemetry();
+  telemetry.start(start("define", "record_requirement_audit", definitionArgs(), 1), "define", 10);
+  const diagnostics =
+    "Requirement definition has 2 deterministic validation errors:\n1. Requirement 1 is compound.\n2. Requirement 2 references an invalid source_clause_id.";
+  telemetry.end(
+    end("define", "record_requirement_audit", "needs_action", diagnostics, rejection("rejected"), 2),
+    "define",
+    20,
+  );
+  telemetry.start(
+    start("foreign", "record_requirement_audit", { ...definitionArgs(), selected_paths: ["README.md"] }, 2),
+    "foreign",
+    30,
+  );
+  const protocolError = "define requires at least one atomic requirement.";
+  const record = telemetry.end(
+    end("foreign", "record_requirement_audit", "needs_action", protocolError, rejection(protocolError)),
+    "foreign",
+    40,
+  );
+
+  assert.ok(record && record.event === "requirement_definition_settled");
+  assert.equal(record.definitionOutcome, "protocol_rejected");
+  assert.equal(record.currentDraftRequirementCount, 2);
+  assert.equal(record.diagnosticTotal, 2);
+  assert.equal(record.diagnosticsComparable, false);
+});
+
 test("SIGINT finalization retains sanitized settled telemetry in Brotli progress evidence", async () => {
   const root = mkdtempSync(join(tmpdir(), "p-repair-telemetry-interrupted-"));
   const activeRecordingPath = join(root, "recording.jsonl.active");
@@ -234,6 +269,7 @@ test("SIGINT finalization retains sanitized settled telemetry in Brotli progress
         "needs_action",
         `Requirement 1 is compound: ${PRIVATE_DIAGNOSTIC}.`,
         rejection("x"),
+        1,
       ),
       start("status", "record_task_verification", { action: "status" }, 20),
       end("status", "record_task_verification", "needs_action", "status", "ACTIVE REJECTED DEFINITION BATCH"),

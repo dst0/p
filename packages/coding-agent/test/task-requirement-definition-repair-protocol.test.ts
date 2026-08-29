@@ -1,6 +1,4 @@
-import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
-import { RequirementAuditSchema } from "../src/core/task-verification/constants.ts";
 import {
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
@@ -42,7 +40,7 @@ describe("rejected requirement definition repair protocol", () => {
     });
   });
 
-  it("fails closed for stale revisions, duplicate repairs, and out-of-range indexes", () => {
+  it("fails closed for stale revisions, multi-item repairs, and out-of-range indexes", () => {
     const draft = rejectedRequirementDefinitionDraft(definition())!;
 
     expect(
@@ -61,7 +59,7 @@ describe("rejected requirement definition repair protocol", () => {
           { requirement_index: 1, replacements: [] },
         ],
       }),
-    ).toContain("duplicate requirement indexes: 1");
+    ).toContain("exactly one repair item; received 2");
     expect(
       repairRejectedRequirementDefinition(draft, {
         action: "repair_definition",
@@ -71,58 +69,85 @@ describe("rejected requirement definition repair protocol", () => {
     ).toContain("invalid rejected-batch indexes: 3");
   });
 
-  it("supports deletion and keyed classification replacement", () => {
+  it("rejects more than one repair item across requirement and classification changes", () => {
     const draft = rejectedRequirementDefinitionDraft(definition())!;
-    const repaired = repairRejectedRequirementDefinition(draft, {
-      action: "repair_definition",
-      definition_revision: draft.revision,
-      requirement_repairs: [{ requirement_index: 2, replacements: [] }],
-      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
-    });
-
-    expect(typeof repaired).not.toBe("string");
-    if (typeof repaired === "string") throw new Error(repaired);
-    expect(repaired.requirements).toEqual([requirement("Receiving increases onHand")]);
-    expect(repaired.ignored_source_prompts).toEqual([{ source_prompt_index: 1, reason: "Updated classification" }]);
-    expect(repaired.ignored_source_clauses).toEqual([]);
-
-    const removed = repairRejectedRequirementDefinition(draft, {
-      action: "repair_definition",
-      definition_revision: draft.revision,
-      requirement_repairs: [{ requirement_index: 2, replacements: [] }],
-      ignored_source_prompt_removals: [1],
-    });
-    expect(typeof removed).not.toBe("string");
-    if (typeof removed === "string") throw new Error(removed);
-    expect(removed.ignored_source_prompts).toEqual([]);
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [
+          { requirement_index: 1, replacements: [requirement("First correction")] },
+          { requirement_index: 2, replacements: [requirement("Second correction")] },
+        ],
+      }),
+    ).toContain("exactly one repair item");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [{ requirement_index: 2, replacements: [] }],
+        ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
+      }),
+    ).toContain("exactly one repair item");
   });
 
-  it("fails closed for ambiguous classification repair payloads", () => {
+  it("supports one requirement or keyed classification repair per call", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+    const repairedRequirement = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft.revision,
+      requirement_repairs: [{ requirement_index: 2, replacements: [] }],
+    });
+    expect(typeof repairedRequirement).not.toBe("string");
+    if (typeof repairedRequirement === "string") throw new Error(repairedRequirement);
+    expect(repairedRequirement.requirements).toEqual([requirement("Receiving increases onHand")]);
+    const repairedClassification = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft.revision,
+      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
+    });
+    expect(typeof repairedClassification).not.toBe("string");
+    if (typeof repairedClassification === "string") throw new Error(repairedClassification);
+    expect(repairedClassification.ignored_source_prompts).toEqual([
+      { source_prompt_index: 1, reason: "Updated classification" },
+    ]);
+  });
+
+  it("rejects complete classification snapshots and multi-item classification deltas", () => {
     const draft = rejectedRequirementDefinitionDraft(definition())!;
     const base = { action: "repair_definition" as const, definition_revision: draft.revision };
-
     expect(
       repairRejectedRequirementDefinition(draft, {
         ...base,
-        ignored_source_prompts: [{ source_prompt_index: 1, reason: "Legacy snapshot" }],
+        ignored_source_prompts: [{ source_prompt_index: 1, reason: "Complete snapshot" }],
       }),
-    ).toContain("complete define snapshots");
+    ).toContain("complete ignored-source snapshots are define-only");
     expect(
       repairRejectedRequirementDefinition(draft, {
         ...base,
         ignored_source_prompt_upserts: [
-          { source_prompt_index: 1, reason: "First" },
-          { source_prompt_index: 1, reason: "Second" },
+          { source_prompt_index: 1, reason: "First correction" },
+          { source_prompt_index: 2, reason: "Second correction" },
         ],
       }),
-    ).toContain("duplicate keys: 1");
+    ).toContain("exactly one repair item; received 2");
     expect(
       repairRejectedRequirementDefinition(draft, {
         ...base,
         ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Replacement" }],
         ignored_source_prompt_removals: [1],
       }),
-    ).toContain("both upserted and removed: 1");
+    ).toContain("exactly one repair item; received 2");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_clause_upserts: [
+          { source_clause_id: "S1-C1", classification: "example", reason: "Illustrative payload" },
+        ],
+        ignored_source_clause_removals: ["S1-C2"],
+      }),
+    ).toContain("exactly one repair item; received 2");
+    expect(repairRejectedRequirementDefinition(draft, base)).toContain("exactly one repair item; received 0");
   });
 
   it("does not consume the audit transition gate when no rejected draft exists", () => {
@@ -137,21 +162,6 @@ describe("rejected requirement definition repair protocol", () => {
 
     expect(result.status).toBe("needs_action");
     expect(controller.lastAuditTransitionTurn).toBe(-1);
-  });
-
-  it("allows one compound item to split into more than four atomic replacements", () => {
-    expect(
-      Value.Check(RequirementAuditSchema, {
-        action: "repair_definition",
-        definition_revision: "revision",
-        requirement_repairs: [
-          {
-            requirement_index: 1,
-            replacements: Array.from({ length: 5 }, (_value, index) => requirement(`Atomic case ${index + 1}`)),
-          },
-        ],
-      }),
-    ).toBe(true);
   });
 
   it("rejects repair-only classification deltas on define", async () => {

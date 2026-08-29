@@ -12,6 +12,17 @@ import {
 import type { TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
 
 describe("requirement definition prompt size recovery", () => {
+  it("directs recovery to exactly one semantic repair item", () => {
+    const recovery = formatRequirementDefinitionPrompt(
+      [{ id: "prompt-1", text: "Preserve inventory." }],
+      singleDraft("single-item-revision", "Requirement 1 is compound."),
+    );
+
+    expect(recovery).toContain("Submit exactly one semantic repair item");
+    expect(recovery).toContain("one indexed requirement repair or one keyed classification change");
+    expect(recovery).not.toContain("Address every current diagnostic in one convergent call");
+  });
+
   it("keeps exact-ceiling recovery repairable and authorizes define at one byte over", () => {
     const source = { id: "prompt-1", text: "Preserve inventory." };
     const base = singleDraft("boundary-revision", "");
