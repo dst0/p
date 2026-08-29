@@ -24,10 +24,9 @@ const promoteDraft = rejectedRequirementDefinitionDraft as (
 ) => RejectedRequirementDefinitionDraft | undefined;
 
 describe("requirement definition repair lineage budget", () => {
-  it("allows constructing an rc9-style 48-replacement 7-entry candidate for atomic validation", () => {
+  it("allows one indexed item to fan out for atomic overflow validation", () => {
     const draft = initialDraft(39);
-    const replacementCounts = [7, 7, 7, 7, 7, 7, 6];
-    const candidate = repairRejectedRequirementDefinition(draft, repairInput(draft, replacementCounts), {
+    const candidate = repairRejectedRequirementDefinition(draft, repairInput(draft, [42]), {
       allowLineageOverflowValidation: true,
     });
 
@@ -35,11 +34,10 @@ describe("requirement definition repair lineage budget", () => {
     expect((candidate as RequirementAuditInput).requirements).toHaveLength(80);
   });
 
-  it("rejects direct rc9 fan-out as lineage growth without allowLineageOverflowValidation while preserving draft and revision", () => {
+  it("rejects one-item fan-out as lineage growth without overflow validation", () => {
     const draft = initialDraft(39);
     const before = structuredClone(draft);
-    const replacementCounts = [7, 7, 7, 7, 7, 7, 6];
-    const result = repairRejectedRequirementDefinition(draft, repairInput(draft, replacementCounts));
+    const result = repairRejectedRequirementDefinition(draft, repairInput(draft, [42]));
 
     expect(result).toBe(
       "repair lineage would grow from 39 to 80 requirements; cumulative net growth permits at most 16.",
@@ -48,44 +46,39 @@ describe("requirement definition repair lineage budget", () => {
     expect(draft.revision).toBe(before.revision);
   });
 
-  it("retains the 16-item draft after validating the rc46 61-item one-count overflow", async () => {
+  it("authorizes a fresh definition after validating the rc51 lineage overflow", async () => {
     const validatedRequirementCounts: number[] = [];
-    const controller = rejectingController([28, 27], (input) =>
+    const controller = rejectingController([25, 37], (input) =>
       validatedRequirementCounts.push(input.requirements?.length ?? 0),
     );
     const tool = do_createRequirementAuditToolDefinition(controller);
-    await execute(tool, definition(16));
+    await execute(tool, definition(20));
     const original = controller.rejectedRequirementDefinitionDraft;
     expect(original).toBeDefined();
-    expect(original?.bestDiagnosticCount).toBe(28);
+    expect(original?.bestDiagnosticCount).toBe(25);
 
-    const result = await execute(tool, repairInput(original!, [...Array(13).fill(4), 3, 3, 3]));
+    const result = await execute(tool, repairInput(original!, [24]));
     expect(result).toContain("Repair was not adopted");
-    expect(result).toContain("next_required_action: repair_definition");
-    expect(validatedRequirementCounts).toEqual([16, 61]);
+    expect(result).toContain("next_required_action: define");
+    expect(validatedRequirementCounts).toEqual([20, 43]);
     expect(controller.rejectedRequirementDefinitionDraft?.input).toEqual(original?.input);
     expect(controller.rejectedRequirementDefinitionDraft?.revision).toBe(original?.revision);
-    expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(28);
+    expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(25);
     expect(controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
   });
 
-  it("accepts 96 aggregate replacements and rejects 97", () => {
-    const draft = initialDraft(16);
-    const candidate = repairRejectedRequirementDefinition(
-      draft,
-      repairInput(
-        draft,
-        Array.from({ length: 16 }, () => 6),
-      ),
-      { allowLineageOverflowValidation: true },
-    );
+  it("accepts a 96-replacement split and rejects 97 before cloning", () => {
+    const draft = initialDraft(1);
+    const candidate = repairRejectedRequirementDefinition(draft, repairInput(draft, [96]), {
+      allowLineageOverflowValidation: true,
+    });
 
     expect(typeof candidate).not.toBe("string");
     expect((candidate as RequirementAuditInput).requirements).toHaveLength(96);
     expect((candidate as RequirementAuditInput).requirements?.[0]?.text).toBe("Requirement 1000");
     expect((candidate as RequirementAuditInput).requirements?.[95]?.text).toBe("Requirement 1095");
 
-    const overflow = repairInput(draft, [7, ...Array(15).fill(6)]);
+    const overflow = repairInput(draft, [97]);
     const firstOverflowReplacement = overflow.requirement_repairs?.[0]?.replacements[0];
     if (!firstOverflowReplacement) throw new Error("Expected overflow repair fixture.");
     Object.defineProperty(firstOverflowReplacement, "text", {
@@ -98,24 +91,18 @@ describe("requirement definition repair lineage budget", () => {
     );
   });
 
-  it("accepts the rc34 20-replacement repair when net lineage growth is only seven", () => {
+  it("accepts a one-item split when net lineage growth is seven", () => {
     const draft = initialDraft(42);
-    const repaired = acceptedRepair(draft, [2, 2, 2, 2, 2, 2, 2, 1, 1, 1, 1, 1, 1]);
+    const repaired = acceptedRepair(draft, [8]);
 
     expect(repaired.requirements).toHaveLength(49);
   });
 
-  it("enforces the schema repair-entry limit during direct execution", () => {
+  it("enforces the one-item repair limit during direct execution", () => {
     const draft = initialDraft(20);
-    expect(
-      repairRejectedRequirementDefinition(
-        draft,
-        repairInput(
-          draft,
-          Array.from({ length: 17 }, () => 0),
-        ),
-      ),
-    ).toBe("requirement_repairs contains 17 entries; sparse repair permits at most 16.");
+    expect(repairRejectedRequirementDefinition(draft, repairInput(draft, [0, 0]))).toBe(
+      "repair_definition requires exactly one repair item; received 2.",
+    );
   });
 
   it("bounds cumulative net growth against the immutable original lineage baseline", () => {
@@ -196,7 +183,7 @@ describe("requirement definition repair lineage budget", () => {
     const overflow = await execute(tool, repairInput(controller.rejectedRequirementDefinitionDraft!, [10]));
     expect(overflow).toContain("Repair was not adopted");
     expect(overflow).toContain("3 deterministic validation errors");
-    expect(overflow).toContain("next_required_action: repair_definition");
+    expect(overflow).toContain("next_required_action: define");
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
     expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(10);
     expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(4);

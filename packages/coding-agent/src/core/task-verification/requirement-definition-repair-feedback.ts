@@ -1,10 +1,10 @@
-import { MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS } from "./constants.ts";
 import {
   COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
   definitionDiagnosticCount,
   type RejectedRequirementDefinitionDraft,
   rejectedDefinitionNextActionGuardMessage,
   rejectedDraftFreshDefinitionReason,
+  SINGLE_REPAIR_ITEM_GUIDANCE,
 } from "./requirement-definition-repair.ts";
 
 export function formatRejectedDefinitionRepairFeedback(
@@ -15,7 +15,7 @@ export function formatRejectedDefinitionRepairFeedback(
     ? rejectedDefinitionNextActionGuardMessage(draft)
     : [
         "next_required_action: repair_definition",
-        `Submit only changed indexed requirements or classifications, with at most ${MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS} replacements.`,
+        SINGLE_REPAIR_ITEM_GUIDANCE,
         COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
       ].join("\n");
   return [

@@ -230,15 +230,17 @@ function oversizeRepair(revision: string): RequirementAuditInput {
   return {
     action: "repair_definition",
     definition_revision: revision,
-    requirement_repairs: [48, 49].map((count, requirementIndex) => ({
-      requirement_index: requirementIndex + 1,
-      replacements: Array.from({ length: count }, (_v, i) => ({
-        type: "behavior" as const,
-        text: `Item ${requirementIndex * 48 + i + 1}`,
-        acceptance_criterion: `Criterion ${requirementIndex * 48 + i + 1}`,
-        source_prompt_indexes: [1],
-      })),
-    })),
+    requirement_repairs: [
+      {
+        requirement_index: 1,
+        replacements: Array.from({ length: 97 }, (_v, i) => ({
+          type: "behavior" as const,
+          text: `Item ${i + 1}`,
+          acceptance_criterion: `Criterion ${i + 1}`,
+          source_prompt_indexes: [1],
+        })),
+      },
+    ],
   };
 }
 

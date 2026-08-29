@@ -32,10 +32,7 @@ describe("rejected requirement definition monotonic repair", () => {
     await callRequirementAudit(harness.controller, definition(39));
     await nextModelTurn(harness);
 
-    const improved = await callRequirementAudit(
-      harness.controller,
-      repair(currentRevision(harness.controller), [3, 3, 3, 1]),
-    );
+    const improved = await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [7]));
     const improvedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
     expect(improved).toContain("21 deterministic validation errors");
     expect(improvedDraft?.input.requirements).toHaveLength(45);
@@ -45,10 +42,7 @@ describe("rejected requirement definition monotonic repair", () => {
     await callTaskVerification(harness.controller, { action: "status" });
     await nextModelTurn(harness);
 
-    const regressed = await callRequirementAudit(
-      harness.controller,
-      repair(currentRevision(harness.controller), [3, 2, 2, 2, 2]),
-    );
+    const regressed = await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [7]));
 
     expect(apply.mock.calls[0]?.[0].requirements).toHaveLength(39);
     expect(apply.mock.calls[1]?.[0].requirements).toHaveLength(45);

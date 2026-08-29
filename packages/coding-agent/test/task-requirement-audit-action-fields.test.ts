@@ -35,13 +35,23 @@ const FIELD_VALUES = {
   ignored_paths: [{ path: "notes.md", reason: "Not authoritative" }],
   requirements: [requirement()],
   definition_revision: "revision",
-  requirement_repairs: [{ requirement_index: 1, replacements: [requirement()] }],
+  requirement_repairs: [
+    {
+      requirement_index: 1,
+      replacements: [
+        {
+          ...requirement(),
+          text: "The action validator preserves exactly one repair item",
+        },
+      ],
+    },
+  ],
   ignored_source_prompts: [{ source_prompt_index: 1, reason: "Non-task context" }],
   ignored_source_clauses: [],
-  ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated context" }],
-  ignored_source_prompt_removals: [2],
+  ignored_source_prompt_upserts: [],
+  ignored_source_prompt_removals: [],
   ignored_source_clause_upserts: [],
-  ignored_source_clause_removals: ["S1-C1"],
+  ignored_source_clause_removals: [],
   verdicts: [verdict()],
 } satisfies Record<Exclude<keyof RequirementAuditInput, "action">, unknown>;
 

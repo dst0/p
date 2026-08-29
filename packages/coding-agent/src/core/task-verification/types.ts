@@ -3,10 +3,10 @@ import type {
   BASELINE_METHODS,
   FINAL_METHODS,
   REQUIREMENT_TYPES,
-  RequirementAuditSchema,
   TASK_KINDS,
   VerificationSchema,
 } from "./constants.ts";
+import type { RequirementAuditInputSchema } from "./requirement-audit-schema.ts";
 import type { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 
 export type TaskKind = (typeof TASK_KINDS)[number];
@@ -187,7 +187,7 @@ export interface TaskVerificationProofWitness {
 
 export type VerificationInput = Static<typeof VerificationSchema>;
 
-export type RequirementAuditInput = Static<typeof RequirementAuditSchema>;
+export type RequirementAuditInput = Static<typeof RequirementAuditInputSchema>;
 
 export interface VerificationResult {
   status: "updated" | "needs_action";

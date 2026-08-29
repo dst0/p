@@ -201,10 +201,25 @@ describe("requirement definition prompt", () => {
     expect(rendered).toContain("keep alternatives or cardinality relationships that depend on each other");
     expect(rendered).toContain("Preserve universal and negative scope explicitly");
     expect(rendered).toContain("For clauses without requiredFacets, map every requiredConcepts entry");
+    expect(rendered).toContain(
+      "one observable outcome or listed case in one sentence without structural semicolons outside exact quoted or backticked literals",
+    );
+    expect(rendered).toContain("Start from that facet's catalog text verbatim");
+    expect(rendered).toContain("Preserve exact backticked identifiers and introduced parent subjects or types");
+    expect(rendered).toContain("source_prompt_indexes are only for direct user prompts");
     expect(rendered).not.toContain("command-ID");
     expect(rendered).toContain(
-      "Each requirement needs type, text, and acceptance_criterion. Use source_prompt_indexes for direct prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
+      "Each requirement needs type, text, and acceptance_criterion. source_prompt_indexes are only for direct user prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
     );
+  });
+
+  it("preserves exact semicolon-bearing literals while explaining structural atomicity", () => {
+    const rendered = formatRequirementDefinitionPrompt([
+      { id: "prompt-1", text: "Reject the exact backticked value `type;a`." },
+    ]);
+
+    expect(rendered).toContain("Reject the exact backticked value `type;a`.");
+    expect(rendered).toContain("without structural semicolons outside exact quoted or backticked literals");
   });
 
   it("keeps dense referenced-source payload below the prior blob-plus-location representation", () => {

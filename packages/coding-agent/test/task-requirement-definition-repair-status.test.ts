@@ -76,7 +76,6 @@ describe("rejected requirement definition status recovery", () => {
     const repaired = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revisionFrom(rejected),
-      requirement_repairs: [{ requirement_index: 1, replacements: [compoundFacetRequirement("S2-C3")] }],
       ignored_source_clause_upserts: [exampleClassification("S2-C1", "Updated payload example")],
     });
 
@@ -88,7 +87,6 @@ describe("rejected requirement definition status recovery", () => {
     const regressedRemoval = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
       definition_revision: revisionFrom(repaired),
-      requirement_repairs: [{ requirement_index: 1, replacements: [compoundFacetRequirement("S2-C3")] }],
       ignored_source_clause_removals: ["S2-C2"],
     });
     expect(regressedRemoval).toContain("Repair was not adopted");

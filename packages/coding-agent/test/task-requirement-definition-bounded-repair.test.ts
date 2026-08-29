@@ -85,6 +85,8 @@ describe("bounded requirement-definition repair", () => {
       expect(result).toContain("Active-draft diagnostics:");
       expect(result).toContain("Diagnostic 1");
       expect(result).toContain("active_requirement_count: 2");
+      if (attempt < 3) expect(result).toContain("Submit exactly one semantic repair item");
+      expect(result).not.toContain("Submit only changed indexed requirements or classifications");
       expect(result).not.toContain("Current merged rejected batch");
       expect(requiredDraft(harness.controller).revision).toBe(revision);
       expect(requiredDraft(harness.controller).unproductiveRepairAttempts).toBe(attempt);
@@ -120,9 +122,20 @@ describe("bounded requirement-definition repair", () => {
     expect(response).toContain("Repair was not adopted");
     expect(response).not.toContain("Current merged rejected batch");
   });
+
+  it("does not authorize a fresh definition without structured validation diagnostics", async () => {
+    const harness = rejectingController([4, null]);
+    await execute(harness.controller, definition(35));
+
+    const response = await execute(harness.controller, overflowRepair(requiredDraft(harness.controller)));
+
+    expect(response).toContain("did not include structured requirement-definition diagnostics");
+    expect(response).toContain("next_required_action: repair_definition");
+    expect(rejectedDraftFreshDefinitionReason(requiredDraft(harness.controller))).toBeUndefined();
+  });
 });
 
-function rejectingController(diagnosticCounts: number[]): {
+function rejectingController(diagnosticCounts: (number | null)[]): {
   controller: TaskVerificationController;
   applyCount: () => number;
 } {
@@ -134,6 +147,7 @@ function rejectingController(diagnosticCounts: number[]): {
       calls += 1;
       const count = diagnosticCounts.shift();
       if (count === undefined) throw new Error("Unexpected requirement validation.");
+      if (count === null) return rejected("Transient validation failure without structured diagnostics.");
       return {
         ...rejected(diagnostics(count)),
         requirementDefinitionDiagnosticCount: count,

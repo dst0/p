@@ -1,0 +1,22 @@
+# 2026-08-30 — Single-item requirement repair
+
+- **Status:** Resolved
+- **Task/context:** Bound rejected requirement-definition recovery so a model cannot submit a broad multi-item rewrite after deterministic diagnostics.
+- **Unexpected observation or failure:** Runtime batch limits still allowed several indexed or keyed changes in one call, and some recovery messages explicitly encouraged repairing every diagnostic together.
+- **Evidence:** Failing focused tests showed that both the provider schema and runtime accepted more than one semantic repair item. A live provider canary also showed that a top-level union schema was converted to an empty tool input on one provider path.
+- **Approaches tried:**
+  - **Attempt:** Express action variants as a top-level schema union.
+    - **Outcome:** Did not work
+    - **Why:** A provider converter reads root object properties directly, so the union produced an unusable empty tool schema.
+  - **Attempt:** Keep a flat root object and rely only on per-array `maxItems` bounds.
+    - **Outcome:** Partial
+    - **Why:** It prevented overflow within one array but still allowed one item in several repair arrays in the same call.
+  - **Attempt:** Keep a provider-compatible root object, bound every repair array to one present item, and count all semantic repair channels at runtime.
+    - **Outcome:** Worked
+    - **Why:** Schema validation rejects local overflow while the execution guard enforces exactly one item across all channels. One indexed requirement can still split into multiple complete replacements.
+- **Root cause:** The protocol treated array cardinality as the repair boundary even though the semantic boundary spans requirement and keyed-classification channels; model guidance had also drifted from the intended invariant.
+- **Resolution:** Enforce exactly one semantic repair item across all repair fields, make complete classification snapshots define-only, retain multi-replacement splits inside one indexed item, and use one shared single-item guidance string in recovery prompts and compact feedback.
+- **Verification:** Focused schema, repair-protocol, feedback, prompt-recovery, and the complete requirement test suite pass; the benchmark test suite also passes.
+- **Prevention/follow-up:** Keep provider conversion and runtime action-field tests paired whenever the audit tool schema changes. Never encode action variants as a provider-visible top-level union without converter tests.
+- **Reusable learning:** Bound multi-channel tool protocols at the semantic operation level in both schema and runtime, and generate every recovery instruction from the same invariant.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-audit-schema.ts`, `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/test/task-requirement-audit-provider-schema.test.ts`
