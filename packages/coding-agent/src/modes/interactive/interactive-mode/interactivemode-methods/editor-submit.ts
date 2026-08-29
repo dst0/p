@@ -25,6 +25,18 @@ export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
       await self.showModelsSelector();
       return;
     }
+    if (
+      text === "/model:image" ||
+      text.startsWith("/model:image ") ||
+      text === "/image-model" ||
+      text.startsWith("/image-model ")
+    ) {
+      const prefix = text.startsWith("/model:image") ? "/model:image" : "/image-model";
+      const searchTerm = text.startsWith(`${prefix} `) ? text.slice(prefix.length + 1).trim() : undefined;
+      self.editor.setText("");
+      await self.handleImageModelCommand(searchTerm);
+      return;
+    }
     if (text === "/model" || text.startsWith("/model ")) {
       const searchTerm = text.startsWith("/model ") ? text.slice(7).trim() : undefined;
       self.editor.setText("");

@@ -1,14 +1,20 @@
 import { registerImagesApiProvider } from "../../images-api-registry.ts";
 import type { AssistantImages, ImagesContext, ImagesFunction, ImagesModel, ImagesOptions } from "../../types.ts";
+import type { generateImagesOpenAI as generateImagesOpenAIFunction } from "./openai.ts";
 import type { generateImagesOpenRouter as generateImagesOpenRouterFunction } from "./openrouter.ts";
 
 interface OpenRouterImagesProviderModule {
   generateImagesOpenRouter: typeof generateImagesOpenRouterFunction;
 }
 
-let openRouterImagesProviderModulePromise: Promise<OpenRouterImagesProviderModule> | undefined;
+interface OpenAIImagesProviderModule {
+  generateImagesOpenAI: typeof generateImagesOpenAIFunction;
+}
 
-function createLazyLoadErrorImages(model: ImagesModel<"openrouter-images">, error: unknown): AssistantImages {
+let openRouterImagesProviderModulePromise: Promise<OpenRouterImagesProviderModule> | undefined;
+let openAIImagesProviderModulePromise: Promise<OpenAIImagesProviderModule> | undefined;
+
+function createLazyLoadErrorImages(model: ImagesModel<any>, error: unknown): AssistantImages {
   return {
     api: model.api,
     provider: model.provider,
@@ -27,6 +33,11 @@ function loadOpenRouterImagesProviderModule(): Promise<OpenRouterImagesProviderM
   return openRouterImagesProviderModulePromise;
 }
 
+function loadOpenAIImagesProviderModule(): Promise<OpenAIImagesProviderModule> {
+  openAIImagesProviderModulePromise ||= import("./openai.ts").then((module) => module as OpenAIImagesProviderModule);
+  return openAIImagesProviderModulePromise;
+}
+
 export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", ImagesOptions> = async (
   model: ImagesModel<"openrouter-images">,
   context: ImagesContext,
@@ -40,10 +51,27 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
   }
 };
 
+export const generateImagesOpenAI: ImagesFunction<"openai-images", ImagesOptions> = async (
+  model: ImagesModel<"openai-images">,
+  context: ImagesContext,
+  options?: ImagesOptions,
+) => {
+  try {
+    const module = await loadOpenAIImagesProviderModule();
+    return await module.generateImagesOpenAI(model, context, options);
+  } catch (error) {
+    return createLazyLoadErrorImages(model, error);
+  }
+};
+
 export function registerBuiltInImagesApiProviders(): void {
   registerImagesApiProvider({
     api: "openrouter-images",
     generateImages: generateImagesOpenRouter,
+  });
+  registerImagesApiProvider({
+    api: "openai-images",
+    generateImages: generateImagesOpenAI,
   });
 }
 

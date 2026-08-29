@@ -1,5 +1,5 @@
 import type { AgentEvent, AgentMessage, CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
-import type { AssistantMessage, ImageContent, Message, Model, TextContent } from "@dst0/p-ai";
+import type { AssistantMessage, ImageContent, ImagesModel, Message, Model, TextContent } from "@dst0/p-ai";
 import type { StructuredSessionState } from "../compaction/index.ts";
 import type { ToolDefinition, ToolInfo } from "../extensions/index.ts";
 import type { CustomMessage } from "../messages.ts";
@@ -142,6 +142,9 @@ export interface AgentSessionCoreMethods {
     source: "set" | "cycle" | "restore",
   ): Promise<void>;
   setModel(model: Model<any>): Promise<void>;
+  getImageModel(): ImagesModel<any> | undefined;
+  setImageModel(model: ImagesModel<any>): void;
+  resolveImageModel(): Promise<{ model: ImagesModel<any>; apiKey?: string } | undefined>;
   cycleModel(direction?: "forward" | "backward"): Promise<ModelCycleResult | undefined>;
   _cycleScopedModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined>;
   _cycleAvailableModel(direction: "forward" | "backward"): Promise<ModelCycleResult | undefined>;

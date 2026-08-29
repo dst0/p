@@ -16,7 +16,7 @@ export type KnownApi =
 
 export type Api = KnownApi | (string & {});
 
-export type KnownImagesApi = "openrouter-images";
+export type KnownImagesApi = "openrouter-images" | "openai-images";
 
 export type ImagesApi = KnownImagesApi | (string & {});
 
@@ -59,7 +59,7 @@ export type KnownProvider =
 
 export type Provider = KnownProvider | string;
 
-export type KnownImagesProvider = "openrouter";
+export type KnownImagesProvider = "openrouter" | "openai" | "llm-orchestrator";
 
 export type ImagesProvider = KnownImagesProvider | string;
 

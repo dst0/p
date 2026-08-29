@@ -4,6 +4,7 @@ import { createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition } from "./edit.ts";
 import { createFindTool, createFindToolDefinition } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
+import { createGenerateImageTool, createGenerateImageToolDefinition } from "./generate-image.ts";
 import type { ToolName, ToolsOptions } from "./index.ts";
 import {
   createRecallLearningsTool,
@@ -51,6 +52,7 @@ export function createAllToolDefinitions(
     finish_work: createFinishWorkToolDefinition(),
     record_learning: createRecordLearningToolDefinition(cwd),
     recall_learnings: createRecallLearningsToolDefinition(cwd),
+    generate_image: createGenerateImageToolDefinition(cwd, options?.generateImage),
   };
 }
 
@@ -63,6 +65,7 @@ export function createCodingTools(cwd: string, options?: ToolsOptions): AgentToo
     createProcessTool({ ...options?.process, manager: backgroundProcesses }),
     createEditTool(cwd, options?.edit),
     createWriteTool(cwd, options?.write),
+    createGenerateImageTool(cwd, options?.generateImage),
   ];
 }
 
@@ -97,5 +100,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
     finish_work: createFinishWorkTool(),
     record_learning: createRecordLearningTool(cwd),
     recall_learnings: createRecallLearningsTool(cwd),
+    generate_image: createGenerateImageTool(cwd, options?.generateImage),
   };
 }

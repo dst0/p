@@ -1,6 +1,7 @@
 import type { Model } from "@dst0/p-ai";
 import { findExactModelReferenceMatch } from "../../../../core/model-resolver.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../../../core/trust-manager.ts";
+import { ImageModelSelectorComponent } from "../../components/image-model-selector.ts";
 import { ToolExecutionComponent } from "../../components/tool-execution.ts";
 import { TrustSelectorComponent } from "../../components/trust-selector.ts";
 import { ANTHROPIC_SUBSCRIPTION_AUTH_WARNING } from "../constants.ts";
@@ -151,6 +152,31 @@ export function do_showTrustSelector(self: InteractiveMode): void {
         self.ui.requestRender();
       },
     });
+    return { component: selector, focus: selector };
+  });
+}
+
+export async function do_handleImageModelCommand(self: InteractiveMode, searchTerm?: string): Promise<void> {
+  self.showImageModelSelector(searchTerm);
+}
+
+export function do_showImageModelSelector(self: InteractiveMode, searchTerm?: string): void {
+  self.showSelector((done) => {
+    const selector = new ImageModelSelectorComponent(
+      self.ui,
+      (self.session as any).imageModel,
+      (model) => {
+        (self.session as any).setImageModel?.(model);
+        self.settingsManager.setDefaultImageModelAndProvider(model.provider, model.id);
+        done();
+        self.showStatus(`Image Model: ${model.provider}/${model.id}`);
+      },
+      () => {
+        done();
+        self.ui.requestRender();
+      },
+      searchTerm,
+    );
     return { component: selector, focus: selector };
   });
 }

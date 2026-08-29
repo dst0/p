@@ -49,6 +49,8 @@ export interface TerminalSettings {
 export interface ImageSettings {
   autoResize?: boolean; // default: true (resize images to 2000x2000 max for better model compatibility)
   blockImages?: boolean; // default: false - when true, prevents all images from being sent to LLM providers
+  defaultProvider?: string;
+  defaultModel?: string;
 }
 
 export interface ThinkingBudgetsSettings {
@@ -94,6 +96,8 @@ export interface Settings {
   lastChangelogVersion?: string;
   defaultProvider?: string;
   defaultModel?: string;
+  defaultImageProvider?: string;
+  defaultImageModel?: string;
   serviceProvider?: string; // Optional fast model provider for compaction/memory/tool-output extraction tasks
   serviceModel?: string; // Optional fast model id; falls back to current model when unavailable
   serviceThinkingLevel?: "off" | "minimal" | "low" | "medium" | "high" | "xhigh";

@@ -43,6 +43,16 @@ export {
   type FinishWorkToolOptions,
 } from "./finish-work.ts";
 export {
+  createGenerateImageTool,
+  createGenerateImageToolDefinition,
+  type GenerateImageModelResolution,
+  type GenerateImageOperations,
+  type GenerateImageToolDetails,
+  type GenerateImageToolInput,
+  type GenerateImageToolOptions,
+  generateImageSchema,
+} from "./generate-image.ts";
+export {
   createRecallLearningsTool,
   createRecallLearningsToolDefinition,
   createRecordLearningTool,
@@ -105,17 +115,6 @@ export {
   truncateTail,
 } from "./truncate.ts";
 export {
-  createWriteTool,
-  createWriteToolDefinition,
-  type WriteOperations,
-  type WriteToolInput,
-  type WriteToolOptions,
-} from "./write.ts";
-
-import type { AgentTool } from "@dst0/p-agent-core";
-import type { ToolDefinition } from "../extensions/types.ts";
-
-export {
   type AskUserToolDetails,
   type AskUserToolInput,
   type ConfirmUserToolDetails,
@@ -130,40 +129,28 @@ export {
   type SubmitPlanToolInput,
   type SubmitPlanToolOptions,
 } from "./user-input.ts";
+export {
+  createWriteTool,
+  createWriteToolDefinition,
+  type WriteOperations,
+  type WriteToolInput,
+  type WriteToolOptions,
+} from "./write.ts";
 
+import type { AgentTool } from "@dst0/p-agent-core";
+import type { ToolDefinition } from "../extensions/types.ts";
 import type { BackgroundProcessManager } from "./background-process.ts";
-import { type BashToolOptions, createBashTool, createBashToolDefinition } from "./bash.ts";
-import { createEditTool, createEditToolDefinition, type EditToolOptions } from "./edit.ts";
-import { createFindTool, createFindToolDefinition, type FindToolOptions } from "./find.ts";
-import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
-import {
-  createRecallLearningsTool,
-  createRecallLearningsToolDefinition,
-  createRecordLearningTool,
-  createRecordLearningToolDefinition,
-} from "./learnings.ts";
-import { createLsTool, createLsToolDefinition, type LsToolOptions } from "./ls.ts";
-import { createProcessTool, createProcessToolDefinition, type ProcessToolOptions } from "./process.ts";
-import { createReadTool, createReadToolDefinition, type ReadToolOptions } from "./read.ts";
-import {
-  createGrepTool,
-  createGrepToolDefinition,
-  createRgTool,
-  createRgToolDefinition,
-  type GrepToolOptions,
-} from "./rg.ts";
-import { createSemanticSearchTool, createSemanticSearchToolDefinition } from "./semantic-search.ts";
-import { createSleepTool, createSleepToolDefinition } from "./sleep.ts";
-import {
-  createAskUserTool,
-  createAskUserToolDefinition,
-  createConfirmUserTool,
-  createConfirmUserToolDefinition,
-  createSubmitPlanTool,
-  createSubmitPlanToolDefinition,
-  type SubmitPlanToolOptions,
-} from "./user-input.ts";
-import { createWriteTool, createWriteToolDefinition, type WriteToolOptions } from "./write.ts";
+import type { BashToolOptions } from "./bash.ts";
+import type { EditToolOptions } from "./edit.ts";
+import type { FindToolOptions } from "./find.ts";
+import type { GenerateImageToolOptions } from "./generate-image.ts";
+import type { LsToolOptions } from "./ls.ts";
+import type { ProcessToolOptions } from "./process.ts";
+import type { ReadToolOptions } from "./read.ts";
+import type { GrepToolOptions } from "./rg.ts";
+import { createAllToolDefinitions, createAllTools } from "./tool-factories.ts";
+import type { SubmitPlanToolOptions } from "./user-input.ts";
+import type { WriteToolOptions } from "./write.ts";
 
 export type Tool = AgentTool<any>;
 export type ToolDef = ToolDefinition<any, any>;
@@ -184,7 +171,9 @@ export type ToolName =
   | "submit_plan"
   | "finish_work"
   | "record_learning"
-  | "recall_learnings";
+  | "recall_learnings"
+  | "generate_image";
+
 export const allToolNames: Set<ToolName> = new Set([
   "semantic_search",
   "rg",
@@ -203,6 +192,7 @@ export const allToolNames: Set<ToolName> = new Set([
   "finish_work",
   "record_learning",
   "recall_learnings",
+  "generate_image",
 ]);
 
 export interface ToolsOptions {
@@ -217,122 +207,35 @@ export interface ToolsOptions {
   process?: ProcessToolOptions;
   backgroundProcesses?: BackgroundProcessManager;
   submitPlan?: SubmitPlanToolOptions;
+  generateImage?: GenerateImageToolOptions;
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
-  switch (toolName) {
-    case "semantic_search":
-      return createSemanticSearchToolDefinition(cwd);
-    case "rg":
-      return createRgToolDefinition(cwd, options?.rg ?? options?.grep);
-    case "grep":
-      return createGrepToolDefinition(cwd, options?.grep ?? options?.rg, "grep");
-    case "read":
-      return createReadToolDefinition(cwd, options?.read);
-    case "bash":
-      return createBashToolDefinition(cwd, {
-        ...options?.bash,
-        processManager: options?.backgroundProcesses ?? options?.bash?.processManager,
-      });
-    case "edit":
-      return createEditToolDefinition(cwd, options?.edit);
-    case "write":
-      return createWriteToolDefinition(cwd, options?.write);
-    case "find":
-      return createFindToolDefinition(cwd, options?.find);
-    case "ls":
-      return createLsToolDefinition(cwd, options?.ls);
-    case "sleep":
-      return createSleepToolDefinition();
-    case "process":
-      return createProcessToolDefinition({
-        ...options?.process,
-        manager: options?.backgroundProcesses ?? options?.process?.manager,
-      });
-    case "ask_user":
-      return createAskUserToolDefinition();
-    case "confirm_user":
-      return createConfirmUserToolDefinition();
-    case "submit_plan":
-      return createSubmitPlanToolDefinition(options?.submitPlan);
-    case "finish_work":
-      return createFinishWorkToolDefinition();
-    case "record_learning":
-      return createRecordLearningToolDefinition(cwd);
-    case "recall_learnings":
-      return createRecallLearningsToolDefinition(cwd);
-    default:
-      throw new Error(`Unknown tool name: ${toolName}`);
+  const definitions = createAllToolDefinitions(cwd, options);
+  const def = definitions[toolName];
+  if (!def) {
+    throw new Error(`Unknown tool name: ${toolName}`);
   }
+  return def;
 }
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
-  switch (toolName) {
-    case "semantic_search":
-      return createSemanticSearchTool(cwd);
-    case "rg":
-      return createRgTool(cwd, options?.rg ?? options?.grep);
-    case "grep":
-      return createGrepTool(cwd, options?.grep ?? options?.rg, "grep");
-    case "read":
-      return createReadTool(cwd, options?.read);
-    case "bash":
-      return createBashTool(cwd, {
-        ...options?.bash,
-        processManager: options?.backgroundProcesses ?? options?.bash?.processManager,
-      });
-    case "edit":
-      return createEditTool(cwd, options?.edit);
-    case "write":
-      return createWriteTool(cwd, options?.write);
-    case "find":
-      return createFindTool(cwd, options?.find);
-    case "ls":
-      return createLsTool(cwd, options?.ls);
-    case "sleep":
-      return createSleepTool();
-    case "process":
-      return createProcessTool({
-        ...options?.process,
-        manager: options?.backgroundProcesses ?? options?.process?.manager,
-      });
-    case "ask_user":
-      return createAskUserTool();
-    case "confirm_user":
-      return createConfirmUserTool();
-    case "submit_plan":
-      return createSubmitPlanTool(options?.submitPlan);
-    case "finish_work":
-      return createFinishWorkTool();
-    case "record_learning":
-      return createRecordLearningTool(cwd);
-    case "recall_learnings":
-      return createRecallLearningsTool(cwd);
-    default:
-      throw new Error(`Unknown tool name: ${toolName}`);
+  const tools = createAllTools(cwd, options);
+  const tool = tools[toolName];
+  if (!tool) {
+    throw new Error(`Unknown tool name: ${toolName}`);
   }
+  return tool;
 }
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
-  return [
-    createReadToolDefinition(cwd, options?.read),
-    createBashToolDefinition(cwd, { ...options?.bash, processManager: backgroundProcesses }),
-    createProcessToolDefinition({ ...options?.process, manager: backgroundProcesses }),
-    createEditToolDefinition(cwd, options?.edit),
-    createWriteToolDefinition(cwd, options?.write),
-  ];
+  const allDefs = createAllToolDefinitions(cwd, options);
+  return [allDefs.read, allDefs.bash, allDefs.process, allDefs.edit, allDefs.write, allDefs.generate_image];
 }
 
 export function createReadOnlyToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {
-  return [
-    createSemanticSearchToolDefinition(cwd),
-    createReadToolDefinition(cwd, options?.read),
-    createRgToolDefinition(cwd, options?.rg ?? options?.grep),
-    createFindToolDefinition(cwd, options?.find),
-    createLsToolDefinition(cwd, options?.ls),
-  ];
+  const allDefs = createAllToolDefinitions(cwd, options);
+  return [allDefs.semantic_search, allDefs.read, allDefs.rg, allDefs.find, allDefs.ls];
 }
 
 export {

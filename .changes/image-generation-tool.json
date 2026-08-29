@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "ai",
+    "coding-agent"
+  ],
+  "type": "Added",
+  "summary": "Add generate_image tool, /model:image command with interactive selector, and OpenAI/llm-orc image provider support."
+}

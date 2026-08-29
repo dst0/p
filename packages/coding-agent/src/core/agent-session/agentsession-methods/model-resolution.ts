@@ -1,4 +1,5 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
+import { getImageModel, getImageModels, getImageProviders, type ImagesModel } from "@dst0/p-ai";
 import type { AgentSession } from "../agentsession.ts";
 
 export async function do__runAgentPrompt(self: AgentSession, messages: AgentMessage | AgentMessage[]): Promise<void> {
@@ -40,4 +41,47 @@ export async function do__handlePostAgentRun(self: AgentSession): Promise<boolea
   // The agent loop drains both queues before emitting agent_end. Any messages
   // here were queued by agent_end extension handlers and need a continuation.
   return self.agent.hasQueuedMessages();
+}
+
+export function do_getImageModel(self: AgentSession): ImagesModel<any> | undefined {
+  return (self as any)._imageModel;
+}
+
+export function do_setImageModel(self: AgentSession, model: ImagesModel<any>): void {
+  (self as any)._imageModel = model;
+}
+
+export async function do_resolveImageModel(
+  self: AgentSession,
+): Promise<{ model: ImagesModel<any>; apiKey?: string } | undefined> {
+  let model = (self as any)._imageModel as ImagesModel<any> | undefined;
+
+  if (!model) {
+    const defaultProvider = self.settingsManager.getDefaultImageProvider();
+    const defaultModelId = self.settingsManager.getDefaultImageModel();
+    if (defaultProvider && defaultModelId) {
+      model = getImageModel(defaultProvider as any, defaultModelId as any);
+    }
+  }
+
+  if (!model) {
+    const providers = getImageProviders();
+    for (const provider of providers) {
+      const apiKey = await self.modelRegistry.getApiKeyForProvider(provider);
+      if (apiKey) {
+        const available = getImageModels(provider);
+        if (available.length > 0) {
+          model = available[0];
+          break;
+        }
+      }
+    }
+  }
+
+  if (!model) {
+    return undefined;
+  }
+
+  const apiKey = await self.modelRegistry.getApiKeyForProvider(model.provider);
+  return { model, apiKey };
 }
