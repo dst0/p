@@ -62,15 +62,30 @@ describe("generate_image tool", () => {
     );
   });
 
-  it("generates image and writes file to target output path", async () => {
+  it("generates image and atomically writes file via temp file and rename", async () => {
+    const operationsLog: string[] = [];
     const writtenFiles = new Map<string, Buffer>();
     const createdDirs = new Set<string>();
 
     const mockOperations: GenerateImageOperations = {
       writeFile: async (filePath, buffer) => {
+        operationsLog.push(`write:${filePath}`);
         writtenFiles.set(filePath, buffer);
       },
+      rename: async (oldPath, newPath) => {
+        operationsLog.push(`rename:${oldPath}->${newPath}`);
+        const data = writtenFiles.get(oldPath);
+        if (data) {
+          writtenFiles.set(newPath, data);
+          writtenFiles.delete(oldPath);
+        }
+      },
+      unlink: async (path) => {
+        operationsLog.push(`unlink:${path}`);
+        writtenFiles.delete(path);
+      },
       mkdir: async (dir) => {
+        operationsLog.push(`mkdir:${dir}`);
         createdDirs.add(dir);
       },
     };
@@ -92,22 +107,33 @@ describe("generate_image tool", () => {
     expect(result.details?.outputPath).toBe("assets/forest.png");
     expect(result.details?.bytes).toBe(Buffer.from("aGVsbG8td29ybGQ=", "base64").length);
     expect(result.details?.revisedPrompt).toBe("Revised: a red circle");
+    expect(result.details?.provider).toBe("openai");
+    expect(result.details?.model).toBe("dall-e-3");
 
     expect(createdDirs.has("/workspace/assets")).toBe(true);
     expect(writtenFiles.has("/workspace/assets/forest.png")).toBe(true);
 
-    const lastOptions = mockAiState.lastOptions as { size?: string; apiKey?: string };
-    expect(lastOptions.size).toBe("1792x1024");
-    expect(lastOptions.apiKey).toBe("test-api-key");
+    const writeOp = operationsLog.find((op) => op.startsWith("write:/workspace/assets/forest.png.tmp"));
+    const renameOp = operationsLog.find((op) => op.startsWith("rename:/workspace/assets/forest.png.tmp"));
+    expect(writeOp).toBeDefined();
+    expect(renameOp).toBeDefined();
   });
 
-  it("auto-generates output path if omitted", async () => {
+  it("auto-generates unique collision-safe output path if omitted", async () => {
     const writtenFiles = new Map<string, Buffer>();
 
     const mockOperations: GenerateImageOperations = {
       writeFile: async (filePath, buffer) => {
         writtenFiles.set(filePath, buffer);
       },
+      rename: async (oldPath, newPath) => {
+        const data = writtenFiles.get(oldPath);
+        if (data) {
+          writtenFiles.set(newPath, data);
+          writtenFiles.delete(oldPath);
+        }
+      },
+      unlink: async () => {},
       mkdir: async () => {},
     };
 
@@ -120,29 +146,48 @@ describe("generate_image tool", () => {
       prompt: "A cat sleeping",
     });
 
-    expect(result.details?.outputPath).toMatch(/^assets\/generated_\d+\.png$/);
+    expect(result.details?.outputPath).toMatch(/^assets\/generated_\d+_[a-z0-9]+\.png$/);
     const writtenPaths = Array.from(writtenFiles.keys());
     expect(writtenPaths.length).toBe(1);
-    expect(writtenPaths[0]).toMatch(/\/workspace\/assets\/generated_\d+\.png$/);
+    expect(writtenPaths[0]).toMatch(/\/workspace\/assets\/generated_\d+_[a-z0-9]+\.png$/);
   });
 
-  it("throws error when image generation returns error", async () => {
-    mockAiState.mockResponse = {
-      api: "openai-images",
-      provider: "openai",
-      model: "dall-e-3",
-      output: [],
-      stopReason: "error",
-      errorMessage: "Content policy violation",
-      timestamp: Date.now(),
+  it("cleans up temp file when write operation fails", async () => {
+    const unlinkedPaths: string[] = [];
+
+    const mockOperations: GenerateImageOperations = {
+      writeFile: async () => {
+        throw new Error("Disk full");
+      },
+      rename: async () => {},
+      unlink: async (path) => {
+        unlinkedPaths.push(path);
+      },
+      mkdir: async () => {},
     };
 
     const tool = createGenerateImageTool("/workspace", {
       model: dummyModel,
       apiKey: "test-api-key",
+      operations: mockOperations,
     });
 
-    await expect(tool.execute("call-3", { prompt: "unsafe prompt" })).rejects.toThrow("Content policy violation");
+    await expect(tool.execute("call-fail", { prompt: "A failure test", outputPath: "fail.png" })).rejects.toThrow(
+      "Disk full",
+    );
+    expect(unlinkedPaths.length).toBe(1);
+    expect(unlinkedPaths[0]).toContain("fail.png.tmp");
+  });
+
+  it("throws error on conflicting size and aspectRatio", async () => {
+    const tool = createGenerateImageTool("/workspace", {
+      model: dummyModel,
+      apiKey: "test-api-key",
+    });
+
+    await expect(
+      tool.execute("call-conflict", { prompt: "Test", size: "1792x1024", aspectRatio: "9:16" }),
+    ).rejects.toThrow("Conflicting size");
   });
 
   it("renders call and result properly", () => {

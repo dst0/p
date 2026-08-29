@@ -1,8 +1,8 @@
 import type { AgentTool } from "@dst0/p-agent-core";
 import { generateImages, type ImagesModel } from "@dst0/p-ai";
 import { Container, Text } from "@dst0/p-tui";
-import { mkdir as fsMkdir, writeFile as fsWriteFile } from "fs/promises";
-import { dirname, relative } from "path";
+import { mkdir as fsMkdir, rename as fsRename, unlink as fsUnlink, writeFile as fsWriteFile } from "fs/promises";
+import { dirname, extname, relative } from "path";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
@@ -47,15 +47,22 @@ export interface GenerateImageToolDetails {
   mimeType: string;
   prompt: string;
   revisedPrompt?: string;
+  provider?: string;
+  model?: string;
+  dimensions?: string;
 }
 
 export interface GenerateImageOperations {
   writeFile: (absolutePath: string, buffer: Buffer) => Promise<void>;
+  rename: (oldPath: string, newPath: string) => Promise<void>;
+  unlink: (path: string) => Promise<void>;
   mkdir: (dir: string) => Promise<void>;
 }
 
 const defaultGenerateImageOperations: GenerateImageOperations = {
   writeFile: (path, buffer) => fsWriteFile(path, buffer),
+  rename: (oldPath, newPath) => fsRename(oldPath, newPath),
+  unlink: (path) => fsUnlink(path).catch(() => {}),
   mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
 };
 
@@ -71,12 +78,53 @@ export interface GenerateImageToolOptions {
   operations?: GenerateImageOperations;
 }
 
-function resolveDimensions(size?: string, aspectRatio?: string): string | undefined {
-  if (size) return size;
+function resolveAspectRatio(aspectRatio?: string): string | undefined {
   if (!aspectRatio) return undefined;
   if (aspectRatio === "16:9") return "1792x1024";
   if (aspectRatio === "9:16") return "1024x1792";
+  if (aspectRatio === "4:3") return "1024x768";
+  if (aspectRatio === "3:2") return "1200x800";
   return "1024x1024";
+}
+
+function resolveDimensions(size?: string, aspectRatio?: string): string | undefined {
+  if (size && aspectRatio) {
+    const expected = resolveAspectRatio(aspectRatio);
+    if (expected && expected !== size && size !== "1024x1024") {
+      throw new Error(`Conflicting size ("${size}") and aspectRatio ("${aspectRatio}") specified`);
+    }
+  }
+  if (size) return size;
+  return resolveAspectRatio(aspectRatio);
+}
+
+function detectBufferMimeType(buffer: Buffer): string {
+  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+    return "image/png";
+  }
+  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+    return "image/jpeg";
+  }
+  if (buffer.length >= 12 && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[8] === 0x57 && buffer[9] === 0x45) {
+    return "image/webp";
+  }
+  if (buffer.length >= 6 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
+    return "image/gif";
+  }
+  return "image/png";
+}
+
+function mimeToExtension(mime: string): string {
+  switch (mime) {
+    case "image/jpeg":
+      return "jpg";
+    case "image/webp":
+      return "webp";
+    case "image/gif":
+      return "gif";
+    default:
+      return "png";
+  }
 }
 
 export function createGenerateImageToolDefinition(
@@ -132,34 +180,52 @@ export function createGenerateImageToolDefinition(
       }
 
       const buffer = Buffer.from(imagePart.data, "base64");
-      const ext = imagePart.mimeType === "image/jpeg" ? "jpg" : "png";
-      const rawPath = params.outputPath || `assets/generated_${Date.now()}.${ext}`;
+      const detectedMime = detectBufferMimeType(buffer) || imagePart.mimeType || "image/png";
+      const ext = mimeToExtension(detectedMime);
+      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const defaultName = `assets/generated_${Date.now()}_${randomSuffix}.${ext}`;
+      const rawPath = params.outputPath
+        ? extname(params.outputPath)
+          ? params.outputPath
+          : `${params.outputPath}.${ext}`
+        : defaultName;
+
       const absolutePath = resolveToCwd(rawPath, cwd);
       const dir = dirname(absolutePath);
       const relPath = relative(cwd, absolutePath) || rawPath;
-
-      const revisedPrompt = res.output.find((p) => p.type === "text" && p.type === "text")?.text;
+      const revisedPrompt = res.output.find((p) => p.type === "text")?.text;
 
       return withFileMutationQueue(absolutePath, async () => {
         if (signal?.aborted) throw new Error("Operation aborted");
         await ops.mkdir(dir);
         if (signal?.aborted) throw new Error("Operation aborted");
-        await ops.writeFile(absolutePath, buffer);
-        if (signal?.aborted) throw new Error("Operation aborted");
+
+        const tempPath = `${absolutePath}.tmp.${Date.now()}.${randomSuffix}`;
+        try {
+          await ops.writeFile(tempPath, buffer);
+          if (signal?.aborted) throw new Error("Operation aborted");
+          await ops.rename(tempPath, absolutePath);
+        } catch (err) {
+          await ops.unlink(tempPath).catch(() => {});
+          throw err;
+        }
 
         return {
           content: [
             {
               type: "text",
-              text: `Successfully generated image and saved to ${relPath} (${buffer.length} bytes)`,
+              text: `Successfully generated image and saved to ${relPath} (${buffer.length} bytes, ${detectedMime})`,
             },
           ],
           details: {
             outputPath: relPath,
             bytes: buffer.length,
-            mimeType: imagePart.mimeType,
+            mimeType: detectedMime,
             prompt: params.prompt,
             revisedPrompt,
+            provider: model.provider,
+            model: model.id,
+            dimensions: targetDimensions,
           },
         };
       });
