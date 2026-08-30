@@ -101,13 +101,13 @@ describe("requirement definition diagnostics", () => {
     expect(harness.controller.currentState.requirementAudit.requirements).toEqual([]);
   });
 
-  it("leaves serialized controller state and the persisted branch byte-for-byte unchanged after rejection", async () => {
+  it("persists only non-authoritative repair metadata after rejection", async () => {
     const harness = await preparedHarness(workspaces, [
       "Replay rejects malformed and truncated logs.",
       "Reject invalid access tokens.",
     ]);
-    const stateBefore = JSON.stringify(harness.controller.currentState);
-    const branchBefore = JSON.stringify(harness.sessionManager.getBranch());
+    const stateBefore = structuredClone(harness.controller.currentState);
+    const branchBefore = structuredClone(harness.sessionManager.getBranch());
 
     const rejected = await callRequirementAudit(harness.controller, {
       action: "define",
@@ -133,8 +133,13 @@ describe("requirement definition diagnostics", () => {
 
     expect(rejected).toContain("Requirement 1 is compound");
     expect(rejected).toContain("Source clause S2-C2 has behavioral polarity");
-    expect(JSON.stringify(harness.controller.currentState)).toBe(stateBefore);
-    expect(JSON.stringify(harness.sessionManager.getBranch())).toBe(branchBefore);
+    const { requirementDefinitionRepairPending, rejectedRequirementDefinitionDraft, ...unchangedState } =
+      harness.controller.currentState;
+    expect(unchangedState).toEqual(stateBefore);
+    expect(requirementDefinitionRepairPending).toBe(1);
+    expect(rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(2);
+    expect(harness.sessionManager.getBranch().slice(0, branchBefore.length)).toEqual(branchBefore);
+    expect(harness.sessionManager.getBranch()).toHaveLength(branchBefore.length + 1);
 
     await nextModelTurn(harness);
     const revision = harness.controller.rejectedRequirementDefinitionDraft?.revision;

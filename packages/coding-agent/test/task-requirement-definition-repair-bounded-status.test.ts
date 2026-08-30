@@ -2,9 +2,9 @@ import { spawnSync } from "node:child_process";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
-import { ACTIVE_REJECTED_DEFINITION_MARKER } from "../src/core/task-verification/requirement-definition-prompt.ts";
+import type { VerificationResult } from "../src/core/task-verification/types.ts";
 import {
   activateRequirementDefinitionAfterEvidenceForTest,
   callRequirementAudit,
@@ -22,7 +22,7 @@ describe("rejected requirement definition bounded status recovery", () => {
     await Promise.all(workspaces.splice(0).map((workspace) => rm(workspace, { recursive: true, force: true })));
   });
 
-  it("switches oversized status recovery to a controller-authorized full definition", async () => {
+  it("keeps an oversized selected repair non-actionable until exact identity can be retrieved", async () => {
     const workspace = await mkdtemp(join(tmpdir(), "p-requirement-repair-bounded-status-"));
     workspaces.push(workspace);
     await writeFile(join(workspace, "README.md"), "Shipping reduces both onHand and the reservation.\n");
@@ -68,16 +68,38 @@ describe("rejected requirement definition bounded status recovery", () => {
     const splitRevision = revisionFrom(split);
 
     const status = await callTaskVerification(harness.controller, { action: "status" });
-    expect(status).toContain(ACTIVE_REJECTED_DEFINITION_MARKER);
-    expect(status).toContain("next_required_action: define");
+    expect(status).toContain("REQUIREMENT AUDIT — SELECTED REPAIR EXCEEDS THE DEFINITION LIMIT");
+    expect(status).toContain(`definition_revision: ${splitRevision}`);
+    expect(status).toContain("next_required_action: status");
+    expect(status).toContain("exact raw status result");
+    expect(status).not.toContain("next_required_action: repair_definition");
+    expect(status).not.toContain("next_required_action: define");
+    expect(status).not.toContain(`invoice-${"x".repeat(1_000)}`);
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeDefined();
+
+    const draftBeforeRepair = harness.controller.rejectedRequirementDefinitionDraft;
+    const apply = vi.spyOn(harness.controller, "applyRequirementAudit");
     await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
+    const blockedResult = await harness.controller.requirementAuditToolDefinition.execute(
+      "oversized-selected-repair",
+      {
         action: "repair_definition",
         definition_revision: splitRevision,
         requirement_repairs: [{ requirement_index: 2, replacements: [facetRequirement("reservation", "S2-C1-F2")] }],
-      }),
-    ).toContain("recovery prompt limit");
+      },
+      undefined,
+      undefined,
+      {} as never,
+    );
+    const blocked = blockedResult.content[0]?.type === "text" ? blockedResult.content[0].text : "";
+    const blockedDetails = blockedResult.details as VerificationResult;
+    expect(apply).not.toHaveBeenCalled();
+    expect(blocked).toContain("next_required_action: status");
+    expect(blocked).not.toContain("next_required_action: repair_definition");
+    expect(blockedDetails.contextExtract?.summary).toContain("next_required_action: status");
+    expect(blockedDetails.contextExtract?.summary).not.toContain("next_required_action: repair_definition");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBe(draftBeforeRepair);
+    expect(revisionFrom(blocked)).toBe(splitRevision);
   });
 });
 

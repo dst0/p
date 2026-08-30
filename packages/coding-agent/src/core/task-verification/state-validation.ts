@@ -1,7 +1,13 @@
 import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "./constants.ts";
+import { isPersistedRejectedDefinitionDraft } from "./rejected-definition-state-validation.ts";
 import { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 import { areProofWitnesses } from "./requirement-proof-witnesses.ts";
-import { ignoredRequirementSourceIsValid, sourceIdentitiesAreUnique } from "./requirement-source-state-validation.ts";
+import { isHighRiskText } from "./requirement-risk.ts";
+import {
+  ignoredRequirementSourceIsValid,
+  requirementSourceRefsAreValid,
+  sourceIdentitiesAreUnique,
+} from "./requirement-source-state-validation.ts";
 import { isMutatedSourcePaths } from "./source-path-state.ts";
 import { isUnverifiedTestPaths } from "./test-authoring-state-validation.ts";
 import type {
@@ -11,28 +17,12 @@ import type {
   TaskRequirementVerdict,
   TaskVerificationAcceptanceCheck,
   TaskVerificationEvidence,
-  TaskVerificationRequirementSourceRef,
   TaskVerificationSourcePrompt,
   TaskVerificationState,
 } from "./types.ts";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function isRequirementSourceRef(value: unknown): value is TaskVerificationRequirementSourceRef {
-  return (
-    isRecord(value) &&
-    isNonemptyString(value.id) &&
-    isNonemptyString(value.path) &&
-    isNonemptyString(value.sha256) &&
-    isNonnegativeInteger(value.byteLength) &&
-    isNonemptyString(value.snapshotEntryId) &&
-    isStringArray(value.referencedByPromptIds) &&
-    value.referencedByPromptIds.length > 0 &&
-    isNonnegativeInteger(value.capturedAtMutationRevision) &&
-    value.origin === "requirement_audit.prepare_definition" &&
-    value.policyVersion === 1
-  );
 }
 function isString(value: unknown): value is string {
   return typeof value === "string";
@@ -47,16 +37,14 @@ function isOptionalString(value: unknown): boolean {
   return value === undefined || isString(value);
 }
 function isNonnegativeInteger(value: unknown): value is number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0;
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0;
 }
 function isOptionalNonnegativeInteger(value: unknown): boolean {
   return value === undefined || isNonnegativeInteger(value);
 }
-
 function isOneOf(value: unknown, values: readonly string[]): boolean {
   return typeof value === "string" && values.includes(value);
 }
-
 function isSourcePrompt(value: unknown): value is TaskVerificationSourcePrompt {
   return (
     isRecord(value) &&
@@ -67,11 +55,9 @@ function isSourcePrompt(value: unknown): value is TaskVerificationSourcePrompt {
     isOptionalString(value.sha256)
   );
 }
-
 function isAcceptanceCheck(value: unknown): value is TaskVerificationAcceptanceCheck {
   return isRecord(value) && isString(value.criterion) && isStringArray(value.evidenceRefs);
 }
-
 function isRequirementVerdict(value: unknown): value is TaskRequirementVerdict {
   return (
     isRecord(value) &&
@@ -81,7 +67,6 @@ function isRequirementVerdict(value: unknown): value is TaskRequirementVerdict {
     isNonnegativeInteger(value.mutationRevision)
   );
 }
-
 function isRequirement(value: unknown): value is TaskRequirement {
   return (
     isRecord(value) &&
@@ -100,10 +85,16 @@ function isRequirement(value: unknown): value is TaskRequirement {
     (value.proofPolicies === undefined ||
       (Array.isArray(value.proofPolicies) &&
         value.proofPolicies.every((policy) => isOneOf(policy, REQUIREMENT_PROOF_POLICIES)))) &&
+    proceduralRequirementRiskIsValid(value) &&
     (value.verdict === undefined || isRequirementVerdict(value.verdict))
   );
 }
-
+function proceduralRequirementRiskIsValid(value: Record<string, unknown>): boolean {
+  if (value.type !== "workflow" && value.type !== "verification") return true;
+  if (!isString(value.text) || !isString(value.acceptanceCriterion)) return false;
+  if (value.highRiskSourcePromptIndexes !== undefined) return false;
+  return !isHighRiskText(`${value.text}\n${value.acceptanceCriterion}`);
+}
 function isIgnoredSourcePrompt(value: unknown): value is IgnoredSourcePrompt {
   return (
     isRecord(value) &&
@@ -112,7 +103,6 @@ function isIgnoredSourcePrompt(value: unknown): value is IgnoredSourcePrompt {
     isString(value.reason)
   );
 }
-
 function isIgnoredSourceClause(value: unknown): value is IgnoredSourceClause {
   const base =
     isRecord(value) &&
@@ -124,7 +114,6 @@ function isIgnoredSourceClause(value: unknown): value is IgnoredSourceClause {
     ? isNonnegativeInteger(value.supersededBySourcePromptIndex) && value.supersededBySourcePromptIndex > 0
     : value.supersededBySourcePromptIndex === undefined;
 }
-
 function isBaseline(value: unknown): value is TaskVerificationState["baseline"] {
   if (!isRecord(value)) return false;
   const evidenceRefs = value.evidenceRefs;
@@ -148,7 +137,6 @@ function isBaseline(value: unknown): value is TaskVerificationState["baseline"] 
       evidenceRefs.length > 0)
   );
 }
-
 function isFinal(value: unknown): value is TaskVerificationState["final"] {
   if (!isRecord(value)) return false;
   const evidenceRefs = value.evidenceRefs;
@@ -172,7 +160,6 @@ function isFinal(value: unknown): value is TaskVerificationState["final"] {
     (value.status !== "passed" || unresolvedFailures.length === 0)
   );
 }
-
 function isReadiness(value: unknown): value is NonNullable<TaskVerificationState["readiness"]> {
   if (!isRecord(value)) return false;
   const acceptanceChecks = value.acceptanceChecks;
@@ -203,7 +190,6 @@ function isReadiness(value: unknown): value is NonNullable<TaskVerificationState
       isNonemptyString(value.certificateHash))
   );
 }
-
 function isRequirementAudit(value: unknown): value is TaskVerificationState["requirementAudit"] {
   if (
     !isRecord(value) ||
@@ -260,8 +246,10 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     (value.taskPrompts === undefined ||
       (Array.isArray(value.taskPrompts) &&
         value.taskPrompts.every((prompt) => isSourcePrompt(prompt) && prompt.kind !== "referenced_file"))) &&
-    (value.requirementSourceRefs === undefined ||
-      (Array.isArray(value.requirementSourceRefs) && value.requirementSourceRefs.every(isRequirementSourceRef))) &&
+    requirementSourceRefsAreValid(
+      value.requirementSourceRefs,
+      Array.isArray(value.taskPrompts) ? value.taskPrompts.length : 0,
+    ) &&
     (value.ignoredRequirementSources === undefined ||
       (Array.isArray(value.ignoredRequirementSources) &&
         value.ignoredRequirementSources.every(ignoredRequirementSourceIsValid))) &&
@@ -270,6 +258,12 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     isMutatedSourcePaths(value.mutatedSourcePaths) &&
     (value.mutatedSourcePathOverflow === undefined || typeof value.mutatedSourcePathOverflow === "boolean") &&
     (value.requirementDefinitionPolicy === undefined || value.requirementDefinitionPolicy === 1) &&
+    ((value.requirementDefinitionRepairPending === undefined &&
+      value.rejectedRequirementDefinitionDraft === undefined) ||
+      (value.requirementDefinitionRepairPending === 1 &&
+        isPersistedRejectedDefinitionDraft(value.rejectedRequirementDefinitionDraft) &&
+        isRecord(value.requirementAudit) &&
+        value.requirementAudit.status === "awaiting_definition")) &&
     sourceIdentitiesAreUnique(value.requirementSourceRefs ?? [], value.ignoredRequirementSources ?? []) &&
     isNonnegativeInteger(value.mutationRevision) &&
     isBaseline(value.baseline) &&
@@ -279,7 +273,6 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     isString(value.updatedAt)
   );
 }
-
 export function isTaskVerificationEvidence(value: unknown): value is TaskVerificationEvidence {
   return (
     isRecord(value) &&
@@ -290,6 +283,8 @@ export function isTaskVerificationEvidence(value: unknown): value is TaskVerific
     isString(value.toolName) &&
     isString(value.descriptor) &&
     isString(value.outputSummary) &&
+    (value.testOutcome === undefined || isOneOf(value.testOutcome, ["passed", "unconfirmed"])) &&
+    (value.verificationFailureKind === undefined || value.verificationFailureKind === "missing_test_script") &&
     value.passedTestNames === undefined &&
     areProofWitnesses(value.proofWitnesses) &&
     typeof value.isError === "boolean" &&

@@ -5,10 +5,6 @@ import {
   MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
   RequirementDefinitionSchema,
 } from "../src/core/task-verification/constants.ts";
-import {
-  rejectedDraftFreshDefinitionReason,
-  rejectedDraftRequiresFreshDefinition,
-} from "../src/core/task-verification/requirement-definition-repair.ts";
 import { validateRequirementDefinition } from "../src/core/task-verification/requirement-definition-validation.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
 import type { RequirementAuditInput, TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
@@ -75,7 +71,7 @@ describe("requirement definition stagnation recovery", () => {
     expect(valid.definition?.requirements).toHaveLength(1);
   });
 
-  it("keeps repeated oversize repairs non-authoritative and then requires a fresh definition", async () => {
+  it("keeps repeated oversize repairs non-authoritative and saturates the bounded counter", async () => {
     const harness = await preparedHarness();
     await callRequirementAudit(harness.controller, invalidDef([1, 2]));
     const initialDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
@@ -89,7 +85,6 @@ describe("requirement definition stagnation recovery", () => {
       initialDraft!.input.requirements,
     );
     expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBeUndefined();
 
     await nextModelTurn(harness);
     const second = await callRequirementAudit(harness.controller, oversizeRepair(initialDraft!.revision));
@@ -98,97 +93,66 @@ describe("requirement definition stagnation recovery", () => {
     await nextModelTurn(harness);
 
     const threshold = await callRequirementAudit(harness.controller, oversizeRepair(initialDraft!.revision));
-    expect(threshold).toContain("next_required_action: define");
+    expect(threshold).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(initialDraft!.revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input).toEqual(initialDraft!.input);
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "stagnant_repair",
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(
+      MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
     );
 
     await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, validDefinition())).toContain("Defined 1 atomic requirement");
+    const blockedDefine = await callRequirementAudit(harness.controller, validDefinition());
+    expect(blockedDefine).toContain("next_required_action: repair_definition");
+    expect(blockedDefine).toContain('replacement action "define" is never accepted');
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(initialDraft!.revision);
   });
 
-  it("executes live mixed sequence until three non-improving repairs authorize a fresh definition", async () => {
+  it("retains the same draft across malformed and no-op attempts, then accepts one valid repair", async () => {
     const harness = await preparedHarness();
-    const init = await callRequirementAudit(harness.controller, invalidDef([1, 2]));
+    const init = await callRequirementAudit(harness.controller, invalidDef([1]));
     expect(init).toContain("next_required_action: repair_definition");
-    const rev1 = currentRevision(harness);
+    const revision = currentRevision(harness);
     await nextModelTurn(harness);
 
-    const oversize = await callRequirementAudit(harness.controller, oversizeRepair(rev1));
+    const oversize = await callRequirementAudit(harness.controller, oversizeRepair(revision));
     expect(oversize).toContain("97 total replacements");
     expect(oversize).toContain("next_required_action: repair_definition");
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(rev1);
+    expect(currentRevision(harness)).toBe(revision);
     await nextModelTurn(harness);
 
-    const identical = await callRequirementAudit(
+    const noOp = await callRequirementAudit(
       harness.controller,
-      singleRepair(rev1, "Still missing", "Still has an invalid source", 99),
+      singleRepair(revision, "Invalid requirement 1", "Requirement 1 is accepted only with valid provenance", 99),
     );
-    expect(identical).toContain("next_required_action: repair_definition");
-    const rev2 = currentRevision(harness);
-    expect(rev2).not.toBe(rev1);
+    expect(noOp).toContain("no semantic change");
+    expect(currentRevision(harness)).toBe(revision);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(2);
     await nextModelTurn(harness);
 
-    const threshold = await callRequirementAudit(
-      harness.controller,
-      singleRepair(rev2, "Still missing again", "Still has an invalid source", 99),
-    );
-    expect(threshold).toContain("next_required_action: define");
-    expect(threshold).toContain("consecutive repair attempts were unproductive");
-    const rev3 = currentRevision(harness);
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "stagnant_repair",
-    );
-    expect(rejectedDraftRequiresFreshDefinition(harness.controller.rejectedRequirementDefinitionDraft)).toBe(true);
-
-    const blocked = await callRequirementAudit(harness.controller, singleRepair(rev3, "Good", "Valid crit"));
-    expect(blocked).toContain("next_required_action: define");
-    expect(blocked).toContain("A fresh define is required because consecutive repair attempts were unproductive");
-    await nextModelTurn(harness);
-
-    const complete = await callRequirementAudit(harness.controller, validDefinition());
+    const complete = await callRequirementAudit(harness.controller, singleRepair(revision, "Good", "Valid crit"));
     expect(complete).toContain("Defined 1 atomic requirement(s)");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
   });
 
-  it("authorizes fresh define after three valid repairs without a lower diagnostic count", async () => {
+  it("keeps singular repair available after the unproductive counter saturates", async () => {
     const harness = await preparedHarness();
     await callRequirementAudit(harness.controller, invalidDef([1]));
-    const rev1 = currentRevision(harness);
-    await nextModelTurn(harness);
-
-    const repair1 = await callRequirementAudit(
-      harness.controller,
-      singleRepair(rev1, "Missing 1", "Still has an invalid source", 99),
-    );
-    expect(repair1).toContain("next_required_action: repair_definition");
-    const rev2 = currentRevision(harness);
-    expect(rev2).not.toBe(rev1);
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
-    await nextModelTurn(harness);
-
-    const repair2 = await callRequirementAudit(
-      harness.controller,
-      singleRepair(rev2, "Missing 2", "Still has an invalid source", 99),
-    );
-    expect(repair2).toContain("next_required_action: repair_definition");
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(2);
-    await nextModelTurn(harness);
-
-    const repair3 = await callRequirementAudit(
-      harness.controller,
-      singleRepair(currentRevision(harness), "Missing 3", "Still has an invalid source", 99),
-    );
-    expect(repair3).toContain("next_required_action: define");
-    expect(repair3).toContain("consecutive repair attempts were unproductive");
+    const revision = currentRevision(harness);
+    for (let attempt = 0; attempt < MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS + 2; attempt++) {
+      await nextModelTurn(harness);
+      const result = await callRequirementAudit(harness.controller, oversizeRepair(revision));
+      expect(result).toContain("next_required_action: repair_definition");
+      expect(currentRevision(harness)).toBe(revision);
+    }
     expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(
       MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
     );
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "stagnant_repair",
+
+    await nextModelTurn(harness);
+    expect(await callRequirementAudit(harness.controller, singleRepair(revision, "Good", "Valid crit"))).toContain(
+      "Defined 1 atomic requirement(s)",
     );
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
   });
 });
 

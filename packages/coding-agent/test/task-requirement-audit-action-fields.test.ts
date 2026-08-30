@@ -1,7 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS } from "../src/core/task-verification/constants.ts";
 import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
-import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
 import type {
   RequirementAuditInput,
@@ -14,12 +13,14 @@ import {
   nextModelTurn,
   reachAuditEvidenceReady,
 } from "./task-requirement-audit-test-harness.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
 
 const ACTION_FIELDS = {
   prepare_definition: ["selected_paths", "adopt_changed_paths", "ignored_paths"],
   define: ["requirements", "ignored_source_prompts", "ignored_source_clauses"],
   repair_definition: [
     "definition_revision",
+    "requirement_addition",
     "requirement_repairs",
     "ignored_source_prompt_upserts",
     "ignored_source_prompt_removals",
@@ -35,6 +36,7 @@ const FIELD_VALUES = {
   ignored_paths: [{ path: "notes.md", reason: "Not authoritative" }],
   requirements: [requirement()],
   definition_revision: "revision",
+  requirement_addition: undefined,
   requirement_repairs: [
     {
       requirement_index: 1,
@@ -107,7 +109,7 @@ describe("requirement audit action fields", () => {
     expect(harness.controller.lastAuditTransitionTurn).toBe(transition);
   });
 
-  it("bounds repeated foreign-field repairs without rotating the rejected draft", async () => {
+  it("bounds repeated foreign-field repairs without authorizing replacement define", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
@@ -126,49 +128,57 @@ describe("requirement audit action fields", () => {
       requirements: [requirement()],
     };
 
-    for (let attempt = 1; attempt < MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS; attempt += 1) {
+    for (let attempt = 1; attempt <= MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS; attempt += 1) {
       await nextModelTurn(harness);
-      expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain(
-        "next_required_action: repair_definition",
-      );
+      const result = await callRequirementAudit(harness.controller, foreignRepair);
+      expect(result).toContain("next_required_action: repair_definition");
+      expect(result).not.toContain("next_required_action: define");
     }
     await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, foreignRepair)).toContain("next_required_action: define");
+    const replacementDefine = await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [requirement()],
+      ignored_source_prompts: [],
+      ignored_source_clauses: [],
+    });
+    expect(replacementDefine).toContain("next_required_action: repair_definition");
+    expect(replacementDefine).toContain('A replacement action "define" is never accepted');
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(draft!.revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input).toEqual(draft!.input);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(
+      MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
+    );
   });
 });
 
 function controllerHarness(hasActiveRejectedDraft: boolean = false) {
-  const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
   const applyRequirementAudit = vi.fn(
-    (_input: RequirementAuditInput): VerificationResult => ({
+    (_input: RequirementAuditInput, state: TaskVerificationState): VerificationResult => ({
       status: "updated",
       message: "Applied.",
       state,
     }),
   );
-  const controller = {
-    applyRequirementAudit,
-    lastAuditTransitionTurn: -1,
-    rejectedRequirementDefinitionDraft: hasActiveRejectedDraft
-      ? ({
-          revision: "revision",
-          diagnostics: "",
-          repairLineageBaselineRequirementCount: 1,
-          bestDiagnosticCount: 0,
-          unproductiveRepairAttempts: 0,
-          consecutiveNonImprovingFreshDefinitions: 0,
-          input: {
-            action: "define",
-            requirements: [requirement()],
-            ignored_source_prompts: [],
-            ignored_source_clauses: [],
-          },
-        } satisfies RejectedRequirementDefinitionDraft)
-      : undefined,
-    rejected: (message: string): VerificationResult => ({ status: "needs_action", message, state }),
-  } as unknown as TaskVerificationController;
+  const { controller } = createRequirementAuditToolControllerDouble(
+    (input, state) => applyRequirementAudit(input, state),
+    { taskId: "action-fields-test" },
+  );
+  controller.lastAuditTransitionTurn = -1;
+  controller.rejectedRequirementDefinitionDraft = hasActiveRejectedDraft
+    ? ({
+        revision: "revision",
+        diagnostics: "",
+        repairLineageBaselineRequirementCount: 1,
+        bestDiagnosticCount: 0,
+        unproductiveRepairAttempts: 0,
+        input: {
+          action: "define",
+          requirements: [requirement()],
+          ignored_source_prompts: [],
+          ignored_source_clauses: [],
+        },
+      } satisfies RejectedRequirementDefinitionDraft)
+    : undefined;
   return { controller, applyRequirementAudit };
 }
 

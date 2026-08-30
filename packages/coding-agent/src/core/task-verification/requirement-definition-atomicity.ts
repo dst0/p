@@ -1,5 +1,5 @@
-import { HIGH_RISK_REQUIREMENT_PATTERN } from "./constants.ts";
 import { maskScalarLiterals } from "./requirement-literal-boundaries.ts";
+import { hasHighRiskRequirementSemantics } from "./requirement-risk.ts";
 
 const OBSERVABLE_OUTCOME_FAMILIES = [
   /\b(?:accept(?:s|ed|ing)?|allow(?:s|ed|ing)?|permit(?:s|ted|ting)?)\b/iu,
@@ -42,7 +42,7 @@ const ROLLBACK_OBSERVABLES = [
 
 export function compoundHighRiskRequirementError(text: string, acceptanceCriterion: string): string | undefined {
   const combined = `${text}\n${acceptanceCriterion}`;
-  if (!HIGH_RISK_REQUIREMENT_PATTERN.test(combined)) return undefined;
+  if (!hasHighRiskRequirementSemantics(combined)) return undefined;
   const maskedAcceptanceCriterion = maskScalarLiterals(acceptanceCriterion);
   const maskedCombined = `${maskScalarLiterals(text)}\n${maskedAcceptanceCriterion}`;
   const outcomeCount =

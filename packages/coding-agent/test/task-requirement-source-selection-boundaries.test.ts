@@ -102,6 +102,7 @@ function reference(path: string, index: number, byteLength: number): TaskVerific
     byteLength,
     snapshotEntryId: `snapshot-${index}`,
     referencedByPromptIds: ["user-1"],
+    definitionSourcePromptCount: 1,
     capturedAtMutationRevision: 0,
     origin: "requirement_audit.prepare_definition",
     policyVersion: 1,

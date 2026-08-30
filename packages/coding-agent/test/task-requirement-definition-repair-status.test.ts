@@ -28,35 +28,42 @@ describe("rejected requirement definition status recovery", () => {
     expect(status).toContain(`definition_revision: ${latestRevision}`);
     expect(status).toContain('action "repair_definition"');
     expect(status).toContain("ACTIVE REJECTED DEFINITION BATCH");
-    expect(status).toContain("Shipping reduces onHand after validation");
+    expect(status).toContain("Shipping reduces onHand");
     expect(status).toContain(latestDiagnostics);
     expect(status).not.toContain("Ship command changes two counters together");
     expect(status).not.toContain('Call record_requirement_audit with action "define"');
 
     harness.controller.restore();
     const restoredStatus = await callTaskVerification(harness.controller, { action: "status" });
-    expect(restoredStatus).toContain('Call record_requirement_audit with action "define"');
-    expect(restoredStatus).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
+    expect(restoredStatus).toContain(`definition_revision: ${latestRevision}`);
+    expect(restoredStatus).toContain('action "repair_definition"');
+    expect(restoredStatus).toContain("ACTIVE REJECTED DEFINITION BATCH");
     await nextModelTurn(harness);
-    expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
-      "stale or unavailable",
-    );
+    expect(
+      await callRequirementAudit(harness.controller, staleRepair("00000000-0000-4000-8000-000000000000")),
+    ).toContain("stale or unavailable");
   });
 
-  it("discards recovery when a new user requirement invalidates the rejected batch", async () => {
+  it("preserves stable referenced-source identities when a follow-up extends the rejected batch", async () => {
     const { harness, latestRevision } = await rejectedRepair(workspaces);
     await sendAuditUserPrompt(harness, "Also preserve the exact event position.", 200);
     const status = await callTaskVerification(harness.controller, { action: "status" });
 
-    expect(status).toContain("implement the production change");
-    expect(status).not.toContain('action "define"');
-    expect(status).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
-    expect(await callRequirementAudit(harness.controller, staleRepair(latestRevision))).toContain(
-      "stale or unavailable",
-    );
+    expect(status).toContain("Also preserve the exact event position.");
+    expect(status).toContain(`definition_revision: ${latestRevision}`);
+    expect(status).toContain("ACTIVE REJECTED DEFINITION BATCH");
+    expect(status).toContain("[Source 2 | kind=referenced_file");
+    expect(status).toContain("S2-C2");
+    expect(status).not.toContain("[Source 3 | kind=referenced_file");
+    expect(status).not.toContain('Call record_requirement_audit with action "define"');
+    harness.controller.restore();
+    const restored = await callTaskVerification(harness.controller, { action: "status" });
+    expect(restored).toContain(`definition_revision: ${latestRevision}`);
+    expect(restored).toContain("[Source 2 | kind=referenced_file");
+    expect(restored).not.toContain("[Source 3 | kind=referenced_file");
   });
 
-  it("applies keyed upserts and retains classifications when a removal regresses diagnostics", async () => {
+  it("rejects keyed classification edits that do not target the selected diagnostic", async () => {
     const harness = await preparedRepairHarness(
       workspaces,
       ["Example payload.", "Example archive.", "Shipping reduces both onHand and the reservation."].join("\n"),
@@ -73,25 +80,29 @@ describe("rejected requirement definition status recovery", () => {
       ],
     });
     await nextModelTurn(harness);
-    const repaired = await callRequirementAudit(harness.controller, {
+    const revision = revisionFrom(rejected);
+    const offTargetUpsert = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
-      definition_revision: revisionFrom(rejected),
+      definition_revision: revision,
       ignored_source_clause_upserts: [exampleClassification("S2-C1", "Updated payload example")],
     });
 
+    expect(offTargetUpsert).toContain("does not target the controller-selected diagnostic");
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.ignored_source_clauses).toEqual([
-      exampleClassification("S2-C1", "Updated payload example"),
+      exampleClassification("S2-C1", "Payload example"),
       exampleClassification("S2-C2", "Archive example"),
     ]);
     await nextModelTurn(harness);
-    const regressedRemoval = await callRequirementAudit(harness.controller, {
+    const offTargetRemoval = await callRequirementAudit(harness.controller, {
       action: "repair_definition",
-      definition_revision: revisionFrom(repaired),
+      definition_revision: revision,
       ignored_source_clause_removals: ["S2-C2"],
     });
-    expect(regressedRemoval).toContain("Repair was not adopted");
+    expect(offTargetRemoval).toContain("does not target the controller-selected diagnostic");
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).toBe(revision);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.ignored_source_clauses).toEqual([
-      exampleClassification("S2-C1", "Updated payload example"),
+      exampleClassification("S2-C1", "Payload example"),
       exampleClassification("S2-C2", "Archive example"),
     ]);
   });
@@ -169,7 +180,6 @@ function compoundFacetRequirement(sourceClauseId: string) {
     type: "behavior" as const,
     text: "Shipping reduces both onHand and the reservation",
     acceptance_criterion: "Shipping reduces both onHand and the reservation by the shipped quantity",
-    source_prompt_indexes: [],
     source_clause_ids: [sourceClauseId],
     source_facet_ids: [`${sourceClauseId}-F1`, `${sourceClauseId}-F2`],
   };
@@ -180,7 +190,6 @@ function facetRequirement(object: string, sourceFacetId: string) {
     type: "behavior" as const,
     text: `Shipping reduces ${object}`,
     acceptance_criterion: `Shipping reduces ${object} by the shipped quantity`,
-    source_prompt_indexes: [],
     source_clause_ids: [sourceFacetId.replace(/-F\d+$/u, "")],
     source_facet_ids: [sourceFacetId],
   };
@@ -234,7 +243,7 @@ async function rejectedRepair(workspaces: string[]): Promise<{
     requirement_repairs: [
       {
         requirement_index: 1,
-        replacements: [requirement("Shipping reduces onHand after validation")],
+        replacements: [facetRequirement("onHand", "S2-C2-F1")],
       },
     ],
   });
@@ -259,7 +268,6 @@ function requirement(text: string) {
     type: "behavior" as const,
     text,
     acceptance_criterion: `${text} by the shipped quantity`,
-    source_prompt_indexes: [],
   };
 }
 

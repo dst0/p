@@ -2,6 +2,11 @@ import {
   requirementClauseConceptNames,
   uncoveredRequirementClauseConceptNames,
 } from "./requirement-clause-concepts.ts";
+import {
+  behavioralPolaritiesAgree,
+  behavioralPolaritiesConflict,
+  retainsRequiredBehaviorPolarity,
+} from "./requirement-clause-polarity.ts";
 import type { RequirementSourceClause } from "./requirement-source-clauses.ts";
 
 const NORMATIVE_PATTERN =
@@ -13,22 +18,6 @@ const CONFLICT_PATTERN =
   /\b(?:but|do\s+not|don't|dont|instead|no\s+longer|not|override|rather\s+than|replace|supersed)\b/iu;
 const EXPLICIT_REPLACEMENT_PATTERN =
   /\b(?:instead\s+of|override|rather\s+than|replace\w*(?:\s+\w+){0,4}\s+with|supersed\w*|switch\w*(?:\s+\w+){0,4}\s+from)\b/iu;
-const REJECT_PATTERN = /\b(?:block\w*|den(?:y|ies|ied|ying)|fail\w*|reject\w*|throw\w*)\b/iu;
-const ACCEPT_PATTERN = /\b(?:accept\w*|allow\w*|permit\w*)\b/iu;
-const PRESERVE_PATTERN = /\b(?:include\w*|keep\w*|preserv\w*|retain\w*|same|unchanged)\b|\bend\w*\s+with\b/iu;
-const REMOVE_PATTERN = /\b(?:different|discard\w*|drop\w*|missing|new|omit\w*|remov\w*|replac\w*|without)\b/iu;
-const REQUIRE_PATTERN = /\b(?:must|need\w*|requir\w*|shall)\b/iu;
-const OPTIONAL_PATTERN = /\b(?:may|optional|optionally)\b/iu;
-const NEGATED_REJECT_PATTERN =
-  /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:block|deny|fail|reject|throw)\w*\b/iu;
-const NEGATED_ACCEPT_PATTERN =
-  /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:accept|allow|permit)\w*\b/iu;
-const NEGATED_PRESERVE_PATTERN =
-  /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:include|keep|preserve|retain)\w*\b/iu;
-const NEGATED_REMOVE_PATTERN =
-  /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:discard|drop|omit|remove|replace)\w*\b/iu;
-const NEGATED_REQUIRE_PATTERN =
-  /\b(?:do\s+not|don't|dont|never|no\s+longer|not\s+to)\s+(?:\w+\s+){0,2}(?:need|require)\w*\b/iu;
 const STOP_WORDS = new Set([
   "a",
   "an",
@@ -85,24 +74,23 @@ export function clauseRequirementRelevanceError(
   acceptanceCriterion: string,
 ): string | undefined {
   const requirement = `${requirementText}\n${acceptanceCriterion}`;
-  if (hasPolarityConflict(clause.text, requirement)) {
-    return `Source clause ${clause.id} has behavioral polarity that the mapped requirement reverses.`;
-  }
   if (!preservesPrimaryIdentifier(clause.text, requirement)) {
     return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
   }
   if (!preservesMappedCommandIdentity(clause.text, requirement)) {
     return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
   }
-  const clauseTokens = semanticTokens(clause.text, true);
-  const requirementTokens = semanticTokens(requirement, true);
-  const overlap = [...clauseTokens].filter((token) => requirementTokens.has(token)).length;
-  const comparisonSize = Math.min(clauseTokens.size, requirementTokens.size);
-  const minimum = Math.min(2, comparisonSize);
-  const enoughConcepts =
-    clauseTokens.size === 0 || (comparisonSize > 0 && overlap >= minimum && overlap / comparisonSize >= 0.4);
-  if (!enoughConcepts) {
+  if (!hasEnoughSemanticOverlap(clause.text, requirement)) {
     return `Source clause ${clause.id} does not semantically support the mapped requirement.`;
+  }
+  const relatedParts = [requirementText, acceptanceCriterion].filter((part) =>
+    hasEnoughSemanticOverlap(clause.text, part),
+  );
+  if (relatedParts.some((part) => behavioralPolaritiesConflict(clause.text, part))) {
+    return `Source clause ${clause.id} has behavioral polarity that the mapped requirement reverses.`;
+  }
+  if (behavioralPolaritiesConflict(clause.text, requirement)) {
+    return `Source clause ${clause.id} has behavioral polarity that the mapped requirement reverses.`;
   }
   return undefined;
 }
@@ -114,9 +102,13 @@ export function sourceClauseConceptCoverageError(
   if (!isNormativeSourceClause(clause)) return undefined;
   const aggregate = mappedRequirementTexts.join("\n");
   const missing = uncoveredRequirementClauseConceptNames(clause.text, aggregate);
-  return missing.length > 0
-    ? `Source clause ${clause.id} has uncovered normative concepts: ${missing.join(", ")}. Map each missing concept with source-exact wording in a separate atomic requirement when it is independently observable.`
-    : undefined;
+  if (missing.length > 0) {
+    return `Source clause ${clause.id} has uncovered normative concepts: ${missing.join(", ")}. Map each missing concept with source-exact wording in a separate atomic requirement when it is independently observable.`;
+  }
+  const relatedMappings = mappedRequirementTexts.filter((mapping) => hasEnoughSemanticOverlap(clause.text, mapping));
+  return retainsRequiredBehaviorPolarity(clause.text, relatedMappings)
+    ? undefined
+    : `Source clause ${clause.id} has behavioral polarity that the mapped requirements omit.`;
 }
 
 export function sourceClauseRequiredConcepts(clause: RequirementSourceClause): string[] {
@@ -129,67 +121,21 @@ export function directPromptSupersedesClause(directPrompt: string, clause: Requi
   const clauseTokens = semanticTokens(clause.text);
   const overlap = [...clauseTokens].filter((token) => promptTokens.has(token)).length;
   if (overlap < Math.min(2, clauseTokens.size)) return false;
-  const promptPolarity = behaviorPolarity(directPrompt);
-  const clausePolarity = behaviorPolarity(clause.text);
-  if (polaritiesConflict(promptPolarity, clausePolarity)) return true;
-  if (polaritiesAgree(promptPolarity, clausePolarity)) return false;
+  if (behavioralPolaritiesConflict(directPrompt, clause.text)) return true;
+  if (behavioralPolaritiesAgree(directPrompt, clause.text)) return false;
   return (
     EXPLICIT_REPLACEMENT_PATTERN.test(directPrompt) &&
     [...promptTokens].some((token) => !clauseTokens.has(token) && !["instead", "override", "rather"].includes(token))
   );
 }
 
-interface BehaviorPolarity {
-  reject: boolean;
-  accept: boolean;
-  preserve: boolean;
-  remove: boolean;
-  require: boolean;
-  optional: boolean;
-}
-
-function hasPolarityConflict(left: string, right: string): boolean {
-  return polaritiesConflict(behaviorPolarity(left), behaviorPolarity(right));
-}
-
-function behaviorPolarity(value: string): BehaviorPolarity {
-  const negatedReject = NEGATED_REJECT_PATTERN.test(value);
-  const negatedAccept = NEGATED_ACCEPT_PATTERN.test(value);
-  const negatedPreserve = NEGATED_PRESERVE_PATTERN.test(value);
-  const negatedRemove = NEGATED_REMOVE_PATTERN.test(value);
-  const negatedRequire = NEGATED_REQUIRE_PATTERN.test(value);
-  return {
-    reject: negatedAccept || (REJECT_PATTERN.test(value) && !negatedReject),
-    accept: negatedReject || (ACCEPT_PATTERN.test(value) && !negatedAccept),
-    preserve: negatedRemove || (PRESERVE_PATTERN.test(value) && !negatedPreserve),
-    remove: negatedPreserve || (REMOVE_PATTERN.test(value) && !negatedRemove),
-    require: REQUIRE_PATTERN.test(value) && !negatedRequire,
-    optional: negatedRequire || OPTIONAL_PATTERN.test(value),
-  };
-}
-
-function polaritiesConflict(left: BehaviorPolarity, right: BehaviorPolarity): boolean {
-  return (
-    polarityPairConflicts(left, right, "reject", "accept") ||
-    polarityPairConflicts(left, right, "preserve", "remove") ||
-    polarityPairConflicts(left, right, "require", "optional")
-  );
-}
-
-function polarityPairConflicts(
-  left: BehaviorPolarity,
-  right: BehaviorPolarity,
-  positive: keyof BehaviorPolarity,
-  negative: keyof BehaviorPolarity,
-): boolean {
-  return (
-    (left[positive] && !left[negative] && right[negative] && !right[positive]) ||
-    (left[negative] && !left[positive] && right[positive] && !right[negative])
-  );
-}
-
-function polaritiesAgree(left: BehaviorPolarity, right: BehaviorPolarity): boolean {
-  return (Object.keys(left) as Array<keyof BehaviorPolarity>).some((key) => left[key] && right[key]);
+function hasEnoughSemanticOverlap(left: string, right: string): boolean {
+  const leftTokens = semanticTokens(left, true);
+  const rightTokens = semanticTokens(right, true);
+  const overlap = [...leftTokens].filter((token) => rightTokens.has(token)).length;
+  const comparisonSize = Math.min(leftTokens.size, rightTokens.size);
+  const minimum = Math.min(2, comparisonSize);
+  return leftTokens.size === 0 || (comparisonSize > 0 && overlap >= minimum && overlap / comparisonSize >= 0.4);
 }
 
 function startsWithImperative(value: string): boolean {

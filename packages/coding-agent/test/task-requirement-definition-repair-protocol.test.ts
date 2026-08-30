@@ -3,14 +3,10 @@ import {
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
 } from "../src/core/task-verification/requirement-definition-repair.ts";
-import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
-import type {
-  RequirementAuditInput,
-  TaskVerificationState,
-  VerificationResult,
-} from "../src/core/task-verification/types.ts";
+import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
 import { createRequirementAuditHarness } from "./task-requirement-audit-test-harness.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
 
 describe("rejected requirement definition repair protocol", () => {
   it("replaces or splits only named items while retaining the rest of the rejected batch", () => {
@@ -176,21 +172,21 @@ describe("rejected requirement definition repair protocol", () => {
   });
 
   it("rotates revisions with compact feedback while retaining the indexed draft", async () => {
-    const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
     const received: RequirementAuditInput[] = [];
-    const rejection = (message: string): VerificationResult => ({ status: "needs_action", message, state });
-    const controller = {
-      applyRequirementAudit: (input: RequirementAuditInput) => {
+    const { controller } = createRequirementAuditToolControllerDouble(
+      (input, state) => {
         received.push(input);
         return received.length < 3
           ? {
-              ...rejection("Requirement definition has 2 deterministic validation errors:\n1. Rejected."),
+              status: "needs_action",
+              message: `Requirement definition has 2 deterministic validation errors:\n1. Rejected ${received.length}.`,
+              state,
               requirementDefinitionDiagnosticCount: 2,
             }
           : { status: "updated", message: "Accepted.", state };
       },
-      rejected: rejection,
-    } as unknown as TaskVerificationController;
+      { taskId: "repair-protocol-test" },
+    );
     const tool = do_createRequirementAuditToolDefinition(controller);
     const initial = await execute(tool, largeDefinition());
     const revision1 = revisionFrom(initial);

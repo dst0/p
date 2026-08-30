@@ -5,7 +5,6 @@ export const MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS = MAX_REQUIREMENT_COUNT;
 export const MAX_REQUIREMENT_REPAIR_ENTRIES = 1;
 export const MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH = 16;
 export const MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS = 3;
-export const MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS = 3;
 
 export const REQUIREMENT_TYPES = ["behavior", "constraint", "deliverable", "verification", "workflow"] as const;
 
@@ -139,9 +138,10 @@ const definitionFields = {
 
 const repairFields = {
   definition_revision: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
+  requirement_addition: Type.Optional(RequirementDefinitionSchema),
   requirement_repairs: Type.Optional(
     Type.Array(RequirementDefinitionRepairSchema, {
-      description: `Exactly one indexed item correction; lineage growth beyond ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements requires a fresh define batch.`,
+      description: `Exactly one indexed item correction; keep cumulative lineage growth within ${MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH} requirements by consolidating or replacing an existing item.`,
       minItems: 1,
       maxItems: MAX_REQUIREMENT_REPAIR_ENTRIES,
     }),

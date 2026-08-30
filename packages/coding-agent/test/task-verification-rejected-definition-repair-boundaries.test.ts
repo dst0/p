@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  authorizeRejectedDraftFreshDefinition,
-  formatRejectedDefinitionRepairGuidance,
   rejectedRequirementDefinitionDraft,
   repairRejectedRequirementDefinition,
 } from "../src/core/task-verification/requirement-definition-repair.ts";
@@ -21,14 +19,38 @@ describe("task verification rejected-definition repair boundaries", () => {
     expect(draft.input).toEqual(retained);
   });
 
-  it.each([
-    ["non_improving_fresh_definition", "No sparse-repair budget was reopened"],
-    ["stagnant_definition", "Definition recovery exhausted"],
-  ] as const)("explains why %s requires a fresh definition", (reason, expected) => {
+  it("rejects combined repair deltas without mutating the retained draft", () => {
     const draft = rejectedRequirementDefinitionDraft(definitionInput())!;
-    authorizeRejectedDraftFreshDefinition(draft, reason);
+    const retained = structuredClone(draft.input);
 
-    expect(formatRejectedDefinitionRepairGuidance("Rejected.", draft)).toContain(expected);
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_addition: {
+          acceptance_criterion: "A second behavior is observable",
+          source_prompt_indexes: [1],
+          text: "Add a second behavior",
+          type: "behavior",
+        },
+        ignored_source_prompt_upserts: [{ source_prompt_index: 2, reason: "Context only" }],
+      }),
+    ).toContain("requires exactly one repair item; received 2");
+    expect(draft.input).toEqual(retained);
+  });
+
+  it("rejects a stale singular repair without replacing the active revision", () => {
+    const draft = rejectedRequirementDefinitionDraft(definitionInput())!;
+    const retained = structuredClone(draft.input);
+
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: "stale-revision",
+        requirement_repairs: [{ requirement_index: 1, replacements: [] }],
+      }),
+    ).toContain("definition_revision is stale or unavailable");
+    expect(draft.input).toEqual(retained);
   });
 });
 

@@ -12,6 +12,8 @@ import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import type { FinalMethod, TaskVerificationEvidence, VerificationResult } from "../types.ts";
+import { formatTaskVerificationCompactionNextAction } from "./task-verification-compaction-context.ts";
+import { taskVerificationContextExtract } from "./task-verification-context-extract.ts";
 
 export function do_requiredBaselineReplayDescriptor(self: TaskVerificationController): string | undefined {
   if (self.state.baseline.method === "runtime_reproduction") {
@@ -243,9 +245,15 @@ export function do_updated(
     status: "updated",
     message: includeGuidance ? `${message}\n\n${self.formatNextRequirement()}` : message,
     state: self.currentState,
+    contextExtract: taskVerificationContextExtract(formatTaskVerificationCompactionNextAction(self), self.currentState),
   };
 }
 
 export function do_rejected(self: TaskVerificationController, message: string): VerificationResult {
-  return { status: "needs_action", message, state: self.currentState };
+  return {
+    status: "needs_action",
+    message,
+    state: self.currentState,
+    contextExtract: taskVerificationContextExtract(formatTaskVerificationCompactionNextAction(self), self.currentState),
+  };
 }

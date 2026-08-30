@@ -29,8 +29,8 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
   if (!self.state.taskKind || !self.state.taskSummary) {
     return [
       "Task classification is pending.",
-      "Continue with inspection or baseline checks; the controller will classify the task before the first mutation.",
-      `Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override that classification before mutation.`,
+      "Continue with inspection or baseline checks; the controller will classify an unambiguous task before the first mutation.",
+      `If the mutation gate reports an ambiguous mixed effect, call ${TASK_VERIFICATION_TOOL_NAME} once with action "declare_task" and the dominant requested effect.`,
     ].join("\n");
   }
 

@@ -1,3 +1,4 @@
+import { isProductInvariantRequirementType } from "./requirement-risk.ts";
 import {
   hasRollbackOperationSemantics,
   hasStaticRollbackMetadata,
@@ -96,7 +97,10 @@ export function deriveRequirementProofPolicies(
     clauses.flatMap((clause) => requirementSourceFacets(clause).map((facet) => [facet.id, facet] as const)),
   );
   const policies = new Map(
-    requirements.map((requirement) => [requirement.id, new Set(requirement.proofPolicies ?? [])]),
+    requirements.map((requirement) => [
+      requirement.id,
+      new Set(isProductInvariantRequirementType(requirement.type) ? (requirement.proofPolicies ?? []) : []),
+    ]),
   );
   for (const [sourceOffset, source] of sources.entries()) {
     const sourceIndex = sourceOffset + 1;
@@ -116,6 +120,7 @@ export function deriveRequirementProofPolicies(
     const truncationIds = new Set(truncationClauses.map((clause) => clause.id));
     const sourceIsUniversal = truncationClauses.some((clause) => UNIVERSAL_TRUNCATION_PATTERN.test(clause.text));
     const terminalRequirement = requirements.find((requirement) => {
+      if (!isProductInvariantRequirementType(requirement.type)) return false;
       const mapped = requirement.sourceClauseIds ?? [];
       const text = `${requirement.text}\n${requirement.acceptanceCriterion}`;
       const mapsTruncationBoundary =
@@ -138,6 +143,7 @@ export function deriveRequirementProofPolicies(
   }
 
   for (const requirement of requirements) {
+    if (!isProductInvariantRequirementType(requirement.type)) continue;
     const text = `${requirement.text}\n${requirement.acceptanceCriterion}`;
     const mappedDirectText = sources
       .flatMap((source, sourceOffset) =>
@@ -183,6 +189,11 @@ export function deriveRequirementProofPolicies(
     }
   }
   return requirements.map((requirement) => {
+    if (!isProductInvariantRequirementType(requirement.type)) {
+      const withoutProofPolicies = { ...requirement };
+      delete withoutProofPolicies.proofPolicies;
+      return withoutProofPolicies;
+    }
     const proofPolicies = [...policies.get(requirement.id)!];
     return proofPolicies.length > 0 ? { ...requirement, proofPolicies } : requirement;
   });

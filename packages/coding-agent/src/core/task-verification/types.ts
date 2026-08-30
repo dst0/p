@@ -34,6 +34,8 @@ export interface TaskVerificationRequirementSourceRef {
   byteLength: number;
   snapshotEntryId: string;
   referencedByPromptIds: string[];
+  /** Number of direct prompts that preceded this source in the definition catalog when captured. */
+  definitionSourcePromptCount: number;
   capturedAtMutationRevision: number;
   origin: "requirement_audit.prepare_definition";
   policyVersion: 1;
@@ -47,6 +49,7 @@ export interface TaskVerificationRequirementSourceSnapshot {
   sha256: string;
   byteLength: number;
   referencedByPromptIds: string[];
+  definitionSourcePromptCount: number;
   capturedAtMutationRevision: number;
   text: string;
 }
@@ -106,6 +109,16 @@ export interface TaskVerificationAcceptanceCheck {
   evidenceRefs: string[];
 }
 
+export interface PersistedRejectedRequirementDefinitionDraft {
+  revision: string;
+  diagnostics: string;
+  input: RequirementAuditInput;
+  repairLineageBaselineRequirementCount: number;
+  bestDiagnosticCount: number;
+  unproductiveRepairAttempts: number;
+  knownNormativeSourceClauseIds?: string[];
+}
+
 export interface TaskVerificationState {
   version: 2;
   taskId: string;
@@ -129,6 +142,9 @@ export interface TaskVerificationState {
   mutatedSourcePathOverflow?: boolean;
   /** Enables fail-closed requirement redefinition before later mutations when direct user requirements change. */
   requirementDefinitionPolicy?: 1;
+  /** Durable fail-closed marker paired with the exact rejected definition repair draft. */
+  requirementDefinitionRepairPending?: 1;
+  rejectedRequirementDefinitionDraft?: PersistedRejectedRequirementDefinitionDraft;
   mutationRevision: number;
   baseline: {
     required: boolean;
@@ -170,6 +186,8 @@ export interface TaskVerificationEvidence {
   toolName: string;
   descriptor: string;
   outputSummary: string;
+  testOutcome?: "passed" | "unconfirmed";
+  verificationFailureKind?: "missing_test_script";
   proofWitnesses?: TaskVerificationProofWitness[];
   isError: boolean;
   nativeIsError?: boolean;
@@ -193,5 +211,6 @@ export interface VerificationResult {
   status: "updated" | "needs_action";
   message: string;
   state: TaskVerificationState;
+  contextExtract?: { summary: string; relevantLines: string[] };
   requirementDefinitionDiagnosticCount?: number;
 }

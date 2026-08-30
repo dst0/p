@@ -7,6 +7,7 @@ import {
 import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { deferredReferencedSourceDefinition } from "../requirement-definition-policy.ts";
 import { renderRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import { orderRequirementDefinitionSources } from "../requirement-source-catalog-order.ts";
 import { persistRequirementSourceSnapshots } from "../requirement-source-storage.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -26,6 +27,9 @@ export function do_prepareRequirementDefinition(
   }
   const prompts = sourcePromptsForState(self.state);
   const selectedPaths = input.selected_paths ?? [];
+  if (selectedPaths.length > 0 && (self.state.taskPrompts?.length ?? 0) === 0) {
+    return self.rejected("Cannot prepare requirement sources without a captured direct user prompt.");
+  }
   const adoptionPaths = normalizeAdoptionPaths(input.adopt_changed_paths ?? []);
   if (typeof adoptionPaths === "string") return self.rejected(adoptionPaths);
   const adoptionError = validateAdoptions(self, selectedPaths, adoptionPaths);
@@ -72,7 +76,7 @@ export function do_prepareRequirementDefinition(
   }
 
   const persisted = persistRequirementSourceSnapshots(self.sessionManager, self.state, selection.sources);
-  const references = orderReferences(selection.selectedPaths, [...reusable, ...persisted]);
+  const references = orderReferences(selection.selectedPaths, [...reusable, ...persisted], existing);
   const selectedTexts = new Map<string, string>();
   for (const reference of reusable) selectedTexts.set(reference.id, self.requirementSourceTexts.get(reference.id)!);
   for (const source of selection.sources) selectedTexts.set(source.id, source.text);
@@ -122,19 +126,25 @@ function buildProspectiveSources(
   prepared: readonly { id: string; path: string; sha256: string; text: string }[],
   reusable: readonly TaskVerificationRequirementSourceRef[],
 ): TaskVerificationSourcePrompt[] | string {
-  const referenced: TaskVerificationSourcePrompt[] = [];
-  for (const path of selectedPaths) {
+  const referenced: { promptCount: number; source: TaskVerificationSourcePrompt }[] = [];
+  for (const path of orderSelectedPaths(selectedPaths, self.state.requirementSourceRefs ?? [])) {
     const fresh = prepared.find((source) => source.path === path);
     if (fresh) {
-      referenced.push({ id: fresh.id, kind: "referenced_file", path, sha256: fresh.sha256, text: fresh.text });
+      referenced.push({
+        promptCount: prompts.length,
+        source: { id: fresh.id, kind: "referenced_file", path, sha256: fresh.sha256, text: fresh.text },
+      });
       continue;
     }
     const reference = reusable.find((candidate) => candidate.path === path);
     const text = reference ? self.requirementSourceTexts.get(reference.id) : undefined;
     if (!reference || text === undefined) return `The frozen snapshot for ${path} is unavailable.`;
-    referenced.push({ id: reference.id, kind: "referenced_file", path, sha256: reference.sha256, text });
+    referenced.push({
+      promptCount: reference.definitionSourcePromptCount,
+      source: { id: reference.id, kind: "referenced_file", path, sha256: reference.sha256, text },
+    });
   }
-  return [...prompts, ...referenced];
+  return orderRequirementDefinitionSources(prompts, referenced);
 }
 
 function normalizeAdoptionPaths(values: readonly string[]): Set<string> | string {
@@ -164,6 +174,21 @@ function validateAdoptions(
 function orderReferences(
   selectedPaths: readonly string[],
   references: readonly TaskVerificationRequirementSourceRef[],
+  priorReferences: readonly TaskVerificationRequirementSourceRef[],
 ): TaskVerificationRequirementSourceRef[] {
-  return selectedPaths.map((path) => references.find((reference) => reference.path === path)!);
+  const byPath = new Map(references.map((reference) => [reference.path, reference]));
+  return orderSelectedPaths(selectedPaths, priorReferences).map((path) => byPath.get(path)!);
+}
+
+function orderSelectedPaths(
+  selectedPaths: readonly string[],
+  priorReferences: readonly TaskVerificationRequirementSourceRef[],
+): string[] {
+  const remaining = new Set(selectedPaths.map(normalizeRequirementSourcePath).filter((path) => path !== undefined));
+  const ordered = priorReferences.map((reference) => reference.path).filter((path) => remaining.delete(path));
+  for (const selectedPath of selectedPaths) {
+    const path = normalizeRequirementSourcePath(selectedPath);
+    if (path && remaining.delete(path)) ordered.push(path);
+  }
+  return ordered;
 }

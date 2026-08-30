@@ -121,7 +121,7 @@ export function validateRequirementClauseCoverage(
     if (invalidOnlyClauseIds.has(clause.id)) continue;
     const conceptError = sourceClauseConceptCoverageError(
       clause,
-      mapped.map((requirement) => `${requirement.text}\n${requirement.acceptanceCriterion}`),
+      mapped.flatMap((requirement) => [requirement.text, requirement.acceptanceCriterion]),
     );
     if (conceptError) diagnostics.push(conceptError);
   }

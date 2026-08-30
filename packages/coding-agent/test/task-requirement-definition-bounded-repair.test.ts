@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import {
-  type RejectedRequirementDefinitionDraft,
-  rejectedDraftFreshDefinitionReason,
-} from "../src/core/task-verification/requirement-definition-repair.ts";
+import type { RejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
 import { rejectedRepairHasSemanticEffect } from "../src/core/task-verification/requirement-definition-repair-candidate.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
-import type {
-  RequirementAuditInput,
-  TaskVerificationState,
-  VerificationResult,
-} from "../src/core/task-verification/types.ts";
+import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
 
 describe("bounded requirement-definition repair", () => {
   it("treats validation-equivalent provenance and classification ordering as a semantic no-op", () => {
@@ -85,7 +79,8 @@ describe("bounded requirement-definition repair", () => {
       expect(result).toContain("Active-draft diagnostics:");
       expect(result).toContain("Diagnostic 1");
       expect(result).toContain("active_requirement_count: 2");
-      if (attempt < 3) expect(result).toContain("Submit exactly one semantic repair item");
+      expect(result).toContain("next_required_action: repair_definition");
+      expect(result).toContain("Resolve only this diagnostic with one complete repair item");
       expect(result).not.toContain("Submit only changed indexed requirements or classifications");
       expect(result).not.toContain("Current merged rejected batch");
       expect(requiredDraft(harness.controller).revision).toBe(revision);
@@ -93,7 +88,7 @@ describe("bounded requirement-definition repair", () => {
     }
 
     expect(harness.applyCount()).toBe(1);
-    expect(rejectedDraftFreshDefinitionReason(requiredDraft(harness.controller))).toBe("stagnant_repair");
+    expect(requiredDraft(harness.controller).unproductiveRepairAttempts).toBe(3);
   });
 
   it("validates but retains a strictly improving 35-to-54 overflow while it remains invalid", async () => {
@@ -123,7 +118,7 @@ describe("bounded requirement-definition repair", () => {
     expect(response).not.toContain("Current merged rejected batch");
   });
 
-  it("does not authorize a fresh definition without structured validation diagnostics", async () => {
+  it("retains singular repair authority without structured validation diagnostics", async () => {
     const harness = rejectingController([4, null]);
     await execute(harness.controller, definition(35));
 
@@ -131,7 +126,7 @@ describe("bounded requirement-definition repair", () => {
 
     expect(response).toContain("did not include structured requirement-definition diagnostics");
     expect(response).toContain("next_required_action: repair_definition");
-    expect(rejectedDraftFreshDefinitionReason(requiredDraft(harness.controller))).toBeUndefined();
+    expect(requiredDraft(harness.controller).unproductiveRepairAttempts).toBe(1);
   });
 });
 
@@ -139,22 +134,28 @@ function rejectingController(diagnosticCounts: (number | null)[]): {
   controller: TaskVerificationController;
   applyCount: () => number;
 } {
-  const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
   let calls = 0;
-  const rejected = (message: string): VerificationResult => ({ status: "needs_action", message, state });
-  const controller = {
-    applyRequirementAudit: (_input: RequirementAuditInput) => {
+  const { controller } = createRequirementAuditToolControllerDouble(
+    (_input, state) => {
       calls += 1;
       const count = diagnosticCounts.shift();
       if (count === undefined) throw new Error("Unexpected requirement validation.");
-      if (count === null) return rejected("Transient validation failure without structured diagnostics.");
+      if (count === null) {
+        return {
+          status: "needs_action",
+          message: "Transient validation failure without structured diagnostics.",
+          state,
+        };
+      }
       return {
-        ...rejected(diagnostics(count)),
+        status: "needs_action",
+        message: diagnostics(count),
+        state,
         requirementDefinitionDiagnosticCount: count,
       };
     },
-    rejected,
-  } as unknown as TaskVerificationController;
+    { taskId: "bounded-repair-test" },
+  );
   return { controller, applyCount: () => calls };
 }
 

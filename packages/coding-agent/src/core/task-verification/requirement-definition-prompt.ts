@@ -4,14 +4,20 @@ import { formatCurrentRejectedDefinitionBatch } from "./rejected-definition-batc
 import { effectiveRequirementSourceClause } from "./requirement-clause-context.ts";
 import { controllerIgnoredSourceClause } from "./requirement-clause-controller-classification.ts";
 import { sourceClauseRequiredConcepts } from "./requirement-clause-semantics.ts";
+import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
 import {
-  authorizeRejectedDraftFreshDefinition,
+  formatRequirementDefinitionRepairContext,
+  REQUIREMENT_REPAIR_IDENTITY_GUIDANCE,
+  renderRequirementDefinitionRepairContext,
+} from "./requirement-definition-repair-context.ts";
+import {
   COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-  type RejectedRequirementDefinitionDraft,
-  rejectedDefinitionNextActionGuardMessage,
-  rejectedDraftRequiresFreshDefinition,
   SINGLE_REPAIR_ITEM_GUIDANCE,
-} from "./requirement-definition-repair.ts";
+} from "./requirement-definition-repair-guidance.ts";
+import {
+  formatSelectedRequirementDefinitionRepairGuidance,
+  selectRequirementDefinitionRepairTarget,
+} from "./requirement-definition-repair-target.ts";
 import { requirementSourceClauseCatalog } from "./requirement-source-clauses.ts";
 import { requirementSourceFacets } from "./requirement-source-facets.ts";
 import type { TaskVerificationSourcePrompt } from "./types.ts";
@@ -42,7 +48,7 @@ export function formatRequirementDefinitionPrompt(
 export function renderRequirementDefinitionPrompt(
   sourcePrompts: readonly TaskVerificationSourcePrompt[],
   rejectedDraft?: RejectedRequirementDefinitionDraft,
-): { text: string; normalPromptExceedsLimit: boolean } {
+): { text: string; normalPromptExceedsLimit: boolean; repairActionable?: boolean } {
   const extractedSourceClauseCatalog = requirementSourceClauseCatalog(sourcePrompts);
   const extractedClausesById = new Map(extractedSourceClauseCatalog.map((clause) => [clause.id, clause]));
   const sourceClauseCatalog = extractedSourceClauseCatalog.map((clause) => {
@@ -103,7 +109,7 @@ export function renderRequirementDefinitionPrompt(
     "Read each direct user prompt verbatim and each hash-bound referenced-source clause in the self-describing catalog below. Decompose only user-authored requirements into atomic, independently verifiable items.",
     "Preserve every explicit subject, behavior, qualifier, boundary, and verification condition from its source; do not substitute domain-specific assumptions.",
     "Split independently observable obligations into atomic requirements, but keep alternatives or cardinality relationships that depend on each other in one coordinated requirement.",
-    "For high-risk requirements, each acceptance_criterion must cover one observable outcome or listed case in one sentence without structural semicolons outside exact quoted or backticked literals; split distinct failure cases and preserved-state observables.",
+    "For high-risk product/runtime or artifact requirements, each acceptance_criterion must cover one observable outcome or listed case in one sentence without structural semicolons outside exact quoted or backticked literals; split distinct failure cases and preserved-state observables.",
     "Preserve universal and negative scope explicitly. For either, one-of, exactly-N-of, at-least-N-of, or at-most-N-of lists, map every governed active alternative to one requirement that retains the group constraint; never assert the alternatives as independent obligations.",
     "Do not add repository policy, generic best practices, or requirements invented by the model.",
     "Among direct user prompts, the later instruction wins; preserve non-conflicting earlier requirements.",
@@ -124,6 +130,7 @@ export function renderRequirementDefinitionPrompt(
     ...sourceLines,
     ...catalogLines,
     "Each requirement needs type, text, and acceptance_criterion. source_prompt_indexes are only for direct user prompts; referenced source indexes and clauses are derived from source_clause_ids and source_facet_ids.",
+    "Use behavior or constraint for observable product/runtime outcomes and invariants; use deliverable for artifact existence/content, verification only for evidence, and workflow only for ordered activity. Never hide an outcome or invariant inside a verification or workflow item; split it into behavior, constraint, or deliverable.",
     `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "define", requirements, ignored_source_prompts, and ignored_source_clauses.`,
     "If the definition is rejected, use bounded sparse repair calls that make measurable progress; each merged candidate is revalidated atomically and stores no partial authoritative definition.",
     "Do not submit a verdict in the same model turn.",
@@ -137,51 +144,98 @@ export function renderRequirementDefinitionPrompt(
       ].join("\n")
     : normalPrompt;
   if (!rejectedDraft) return { text: boundedNormalPrompt, normalPromptExceedsLimit };
+  const selectedTarget = selectRequirementDefinitionRepairTarget(
+    rejectedDraft.diagnostics,
+    rejectedDraft.knownNormativeSourceClauseIds,
+    rejectedDraft.input.requirements,
+  );
+  const selectedRepairContext = selectedTarget
+    ? renderRequirementDefinitionRepairContext(selectedTarget, sourcePrompts, rejectedDraft.input.requirements ?? [])
+    : undefined;
+  if (selectedRepairContext?.identityResolved === false) {
+    return {
+      text: [
+        "REQUIREMENT AUDIT — SELECTED REPAIR IDENTITY IS UNRESOLVED",
+        `definition_revision: ${rejectedDraft.revision}`,
+        "next_required_action: status",
+        selectedRepairContext.text,
+        "Do not submit a repair or infer source ordinals. Restore the authoritative frozen source catalog before continuing.",
+      ].join("\n"),
+      normalPromptExceedsLimit,
+      repairActionable: false,
+    };
+  }
   const recoveryPrompt = [
     "REQUIREMENT AUDIT — CONTINUE THE ACTIVE REJECTED DEFINITION",
     "Use the authoritative source catalog below only to correct the latest deterministic diagnostics.",
     ...sourceLines,
     ...catalogLines,
-    ...formatRejectedDefinitionRecovery(rejectedDraft),
+    ...formatRejectedDefinitionRecovery(rejectedDraft, sourcePrompts),
   ].join("\n");
   if (Buffer.byteLength(recoveryPrompt) <= MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
-    return { text: recoveryPrompt, normalPromptExceedsLimit };
+    return { text: recoveryPrompt, normalPromptExceedsLimit, repairActionable: true };
   }
-  if (normalPromptExceedsLimit) return { text: boundedNormalPrompt, normalPromptExceedsLimit };
-  const authorizedRecoveryPrompt = [
+  if (normalPromptExceedsLimit) {
+    return { text: boundedNormalPrompt, normalPromptExceedsLimit, repairActionable: false };
+  }
+  const selectedRequirement =
+    selectedTarget?.kind === "requirement"
+      ? rejectedDraft.input.requirements?.[selectedTarget.requirementIndex - 1]
+      : undefined;
+  const compactRecoveryPrompt = [
     ACTIVE_REJECTED_DEFINITION_MARKER,
     `definition_revision: ${rejectedDraft.revision}`,
-    "next_required_action: define",
-    "The rejected batch cannot fit in this prompt. Rebuild it completely from the authoritative catalog.",
-    ...normalPrompt.split("\n").slice(2),
+    "next_required_action: repair_definition",
+    "The controller retains the complete rejected batch, but it cannot fit in this prompt. Repair only the controller-selected item below; omitted items remain unchanged.",
+    selectedTarget
+      ? formatSelectedRequirementDefinitionRepairGuidance(selectedTarget, rejectedDraft.revision)
+      : SINGLE_REPAIR_ITEM_GUIDANCE,
+    ...(selectedRepairContext ? [selectedRepairContext.text] : []),
+    ...(selectedTarget ? [REQUIREMENT_REPAIR_IDENTITY_GUIDANCE] : []),
+    ...(selectedRequirement ? [`Selected requirement: ${JSON.stringify(selectedRequirement)}`] : []),
+    'A replacement action "define" is not accepted while this rejected batch exists.',
   ].join("\n");
-  if (Buffer.byteLength(authorizedRecoveryPrompt) > MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
+  if (Buffer.byteLength(compactRecoveryPrompt) > MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES) {
     return {
       text: [
-        "REQUIREMENT AUDIT — RECOVERY EXCEEDS THE DEFINITION LIMIT",
-        "Do not define or repair from incomplete recovery context.",
-        "Ask the user to start a fresh task or session so the controller can rebuild the complete definition source.",
+        "REQUIREMENT AUDIT — SELECTED REPAIR EXCEEDS THE DEFINITION LIMIT",
+        `definition_revision: ${rejectedDraft.revision}`,
+        "next_required_action: status",
+        "The exact selected repair identity cannot fit in the bounded prompt. Do not submit a repair, infer source ordinals, or replace the full definition. Retrieve the exact raw status result; if it cannot be recovered intact, ask the user to restart with narrower requirements.",
       ].join("\n"),
       normalPromptExceedsLimit,
+      repairActionable: false,
     };
   }
-  authorizeRejectedDraftFreshDefinition(rejectedDraft, "recovery_prompt_limit");
   return {
-    text: authorizedRecoveryPrompt,
+    text: compactRecoveryPrompt,
     normalPromptExceedsLimit,
+    repairActionable: true,
   };
 }
 
-function formatRejectedDefinitionRecovery(draft: RejectedRequirementDefinitionDraft): string[] {
-  const nextAction = rejectedDraftRequiresFreshDefinition(draft)
-    ? rejectedDefinitionNextActionGuardMessage(draft).split("\n")
-    : [
-        "next_required_action: repair_definition",
-        `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition" and this current batch definition_revision.`,
-        SINGLE_REPAIR_ITEM_GUIDANCE,
-        COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
-        "Omitted requirements and classifications are retained. The next rejection returns compact indexed feedback and the next required action; continue with those indexes. Use action status only when exact complete-batch recovery is needed. Do not restart with action define unless the controller returns next_required_action: define.",
-      ];
+function formatRejectedDefinitionRecovery(
+  draft: RejectedRequirementDefinitionDraft,
+  sourcePrompts: readonly TaskVerificationSourcePrompt[],
+): string[] {
+  const selectedTarget = selectRequirementDefinitionRepairTarget(
+    draft.diagnostics,
+    draft.knownNormativeSourceClauseIds,
+    draft.input.requirements,
+  );
+  const nextAction = [
+    "next_required_action: repair_definition",
+    `Call ${REQUIREMENT_AUDIT_TOOL_NAME} with action "repair_definition" and this current batch definition_revision.`,
+    selectedTarget
+      ? formatSelectedRequirementDefinitionRepairGuidance(selectedTarget, draft.revision)
+      : SINGLE_REPAIR_ITEM_GUIDANCE,
+    ...(selectedTarget
+      ? [formatRequirementDefinitionRepairContext(selectedTarget, sourcePrompts, draft.input.requirements ?? [])]
+      : []),
+    ...(selectedTarget ? [REQUIREMENT_REPAIR_IDENTITY_GUIDANCE] : []),
+    COMPLETE_REQUIREMENT_REPLACEMENT_GUIDANCE,
+    'Omitted requirements and classifications are retained. Continue one controller-selected item at a time; action "define" cannot replace an active rejected batch.',
+  ];
   return [
     ACTIVE_REJECTED_DEFINITION_MARKER,
     `definition_revision: ${draft.revision}`,

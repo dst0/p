@@ -147,7 +147,8 @@ describe("introduced list context", () => {
     );
 
     expect(validation.definition).toBeUndefined();
-    expect(validation.diagnostics.join("\n")).toContain("S1-C1, S1-C3");
+    expect(validation.diagnostics.join("\n")).toContain("unclassified source_clause_ids: S1-C1");
+    expect(validation.diagnostics.join("\n")).toContain("unclassified source_clause_ids: S1-C3");
   });
 
   it("does not cover an introduction from an ignored example child", () => {

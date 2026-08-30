@@ -6,7 +6,6 @@ import {
 } from "../src/core/task-verification/requirement-definition-prompt.ts";
 import {
   type RejectedRequirementDefinitionDraft,
-  rejectedDraftFreshDefinitionReason,
   repairRejectedRequirementDefinition,
 } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
@@ -18,32 +17,40 @@ describe("requirement definition prompt size recovery", () => {
       singleDraft("single-item-revision", "Requirement 1 is compound."),
     );
 
-    expect(recovery).toContain("Submit exactly one semantic repair item");
-    expect(recovery).toContain("one indexed requirement repair or one keyed classification change");
+    expect(recovery).toContain("Repair only Requirement 1");
+    expect(recovery).toContain("one requirement_repairs entry for requirement_index 1");
     expect(recovery).not.toContain("Address every current diagnostic in one convergent call");
   });
 
-  it("keeps exact-ceiling recovery repairable and authorizes define at one byte over", () => {
+  it("keeps exact-ceiling and oversized recovery singular-repair-only", () => {
     const source = { id: "prompt-1", text: "Preserve inventory." };
-    const base = singleDraft("boundary-revision", "");
-    const baseLength = Buffer.byteLength(formatRequirementDefinitionPrompt([source], base));
-    const padding = MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES - baseLength;
-    expect(padding).toBeGreaterThan(0);
+    let lower = 0;
+    let upper = MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES;
+    while (lower < upper) {
+      const midpoint = Math.ceil((lower + upper) / 2);
+      const rendered = formatRequirementDefinitionPrompt(
+        [source],
+        singleDraft("boundary-revision", `Requirement 1: ${"d".repeat(midpoint)}`),
+      );
+      if (rendered.includes("Latest deterministic diagnostics:")) lower = midpoint;
+      else upper = midpoint - 1;
+    }
 
-    const exact = singleDraft("boundary-revision", "d".repeat(padding));
+    const exact = singleDraft("boundary-revision", `Requirement 1: ${"d".repeat(lower)}`);
     const exactRecovery = formatRequirementDefinitionPrompt([source], exact);
-    expect(Buffer.byteLength(exactRecovery)).toBe(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+    expect(Buffer.byteLength(exactRecovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+    expect(exactRecovery).toContain("Latest deterministic diagnostics:");
     expect(exactRecovery).toContain("next_required_action: repair_definition");
-    expect(rejectedDraftFreshDefinitionReason(exact)).toBeUndefined();
 
-    const overflow = singleDraft("boundary-revision", "d".repeat(padding + 1));
+    const overflow = singleDraft("boundary-revision", `Requirement 1: ${"d".repeat(lower + 1)}`);
     const overflowRecovery = formatRequirementDefinitionPrompt([source], overflow);
     expect(Buffer.byteLength(overflowRecovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
-    expect(overflowRecovery).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(overflow)).toBe("recovery_prompt_limit");
+    expect(overflowRecovery).not.toContain("Latest deterministic diagnostics:");
+    expect(overflowRecovery).toContain("next_required_action: repair_definition");
+    expect(overflowRecovery).toContain('replacement action "define" is not accepted');
   });
 
-  it("authorizes a controller-consistent full definition when recovery would exceed the ceiling", () => {
+  it("keeps a controller-consistent selected repair when recovery would exceed the ceiling", () => {
     const source: TaskVerificationSourcePrompt = {
       id: "near-limit-spec",
       kind: "referenced_file",
@@ -68,9 +75,8 @@ describe("requirement definition prompt size recovery", () => {
     expect(Buffer.byteLength(recovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
     expect(recovery).toContain("ACTIVE REJECTED DEFINITION BATCH");
     expect(recovery).toContain("definition_revision: bounded-revision");
-    expect(recovery).toContain("next_required_action: define");
-    expect(recovery).toContain('Call record_requirement_audit with action "define"');
-    expect(rejectedDraftFreshDefinitionReason(draft)).toBe("recovery_prompt_limit");
+    expect(recovery).toContain("next_required_action: repair_definition");
+    expect(recovery).toContain('replacement action "define" is not accepted');
 
     const lineageDraft = largeDraft("lineage-revision", 1);
     expect(
@@ -83,9 +89,23 @@ describe("requirement definition prompt size recovery", () => {
     const lineageRecovery = formatRequirementDefinitionPrompt([source], lineageDraft);
     expect(Buffer.byteLength(lineageRecovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
     expect(lineageRecovery).toContain("definition_revision: lineage-revision");
-    expect(lineageRecovery).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(lineageDraft)).toBe("lineage_growth");
+    expect(lineageRecovery).toContain("next_required_action: repair_definition");
     expect(normalPrompt).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
+  });
+
+  it("does not authorize an unnamed repair when the selected target itself exceeds the ceiling", () => {
+    const draft = singleDraft("oversized-selected-revision", "Requirement 1 is compound.");
+    draft.input.requirements![0]!.text = "x".repeat(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+    draft.input.requirements![0]!.acceptance_criterion = "y".repeat(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+
+    const recovery = formatRequirementDefinitionPrompt([{ id: "prompt-1", text: "Preserve inventory." }], draft);
+
+    expect(Buffer.byteLength(recovery)).toBeLessThanOrEqual(MAX_REQUIREMENT_DEFINITION_PROMPT_BYTES);
+    expect(recovery).toContain("SELECTED REPAIR EXCEEDS THE DEFINITION LIMIT");
+    expect(recovery).toContain("next_required_action: status");
+    expect(recovery).not.toContain("next_required_action: repair_definition");
+    expect(recovery).toContain("Do not submit a repair");
+    expect(recovery).not.toContain("reduce only the selected indexed item");
   });
 
   it("blocks direct-only definition and recovery prompts whose authoritative source exceeds the ceiling", () => {
@@ -103,7 +123,6 @@ describe("requirement definition prompt size recovery", () => {
       expect(rendered).not.toContain("ACTIVE REJECTED DEFINITION BATCH");
       expect(rendered).not.toContain("x".repeat(100));
     }
-    expect(rejectedDraftFreshDefinitionReason(draft)).toBeUndefined();
   });
 });
 
@@ -114,7 +133,6 @@ function largeDraft(revision: string, baseline: number): RejectedRequirementDefi
     repairLineageBaselineRequirementCount: baseline,
     bestDiagnosticCount: 1,
     unproductiveRepairAttempts: 0,
-    consecutiveNonImprovingFreshDefinitions: 0,
     input: {
       action: "define",
       requirements: Array.from({ length: 96 }, (_value, index) => ({
@@ -134,7 +152,6 @@ function singleDraft(revision: string, diagnostics: string): RejectedRequirement
     repairLineageBaselineRequirementCount: 1,
     bestDiagnosticCount: diagnostics.trim() ? 1 : 0,
     unproductiveRepairAttempts: 0,
-    consecutiveNonImprovingFreshDefinitions: 0,
     input: {
       action: "define",
       requirements: [

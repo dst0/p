@@ -219,6 +219,7 @@ export function do_restore(self: TaskVerificationController): void {
       readiness: latestStateData.readiness ?? emptyReadiness(),
       requirementAudit: latestStateData.requirementAudit ?? emptyRequirementAudit(),
     };
+    self.rejectedRequirementDefinitionDraft = structuredClone(latestStateData.rejectedRequirementDefinitionDraft);
   } else if (hasPersistedState) {
     self.state = emptyState();
     self.restoreError =
@@ -244,7 +245,13 @@ export function do_restore(self: TaskVerificationController): void {
 }
 
 export function do_persistState(self: TaskVerificationController): void {
-  self.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, self.state);
+  const rejectedDraft = structuredClone(self.rejectedRequirementDefinitionDraft);
+  self.state = {
+    ...self.state,
+    requirementDefinitionRepairPending: rejectedDraft ? 1 : undefined,
+    rejectedRequirementDefinitionDraft: rejectedDraft,
+  };
+  self.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, structuredClone(self.state));
 }
 
 export function do_formatStatus(self: TaskVerificationController): string {
@@ -255,6 +262,7 @@ export function do_formatStatus(self: TaskVerificationController): string {
         `${item.ref} (@${item.toolCallId}): ${item.isError ? "FAILED" : "passed"} ${item.toolName} at revision ${item.mutationRevision} — ${item.descriptor}${item.outputSummary ? ` — ${item.outputSummary}` : ""}`,
     );
   return [
+    self.formatNextRequirement(),
     `Task: ${self.state.taskKind ?? "undeclared"}${self.state.taskSummary ? ` — ${self.state.taskSummary}` : ""}`,
     `Mutation revision: ${self.state.mutationRevision}`,
     `Baseline: ${self.state.baseline.status}`,
@@ -267,7 +275,6 @@ export function do_formatStatus(self: TaskVerificationController): string {
       ? `Unresolved failures: ${self.state.final.unresolvedFailures.join("; ")}`
       : undefined,
     recentEvidence.length > 0 ? `Evidence:\n- ${recentEvidence.join("\n- ")}` : "Evidence: none",
-    self.formatNextRequirement(),
   ]
     .filter((line): line is string => line !== undefined)
     .join("\n");

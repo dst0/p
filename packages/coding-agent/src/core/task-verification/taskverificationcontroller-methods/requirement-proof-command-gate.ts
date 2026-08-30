@@ -1,4 +1,5 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
+import { isProductInvariantRequirementType } from "../requirement-risk.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, shellCommand } from "../tool-classification.ts";
 import { focusedTestSelectors, isFocusedEvidence } from "./focused-requirement-evidence.ts";
@@ -19,6 +20,7 @@ export function requirementProofCommandGate(
   );
   const pending = (self.state.requirementAudit?.requirements ?? []).filter(
     (requirement) =>
+      isProductInvariantRequirementType(requirement.type) &&
       (requirement.proofPolicies?.length ?? 0) > 0 &&
       !evidence.some((item) => isFocusedEvidence(self, item, requirement)),
   );

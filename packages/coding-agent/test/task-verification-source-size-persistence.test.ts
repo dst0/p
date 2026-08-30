@@ -115,7 +115,6 @@ async function writeGeneratedSources(cwd: string): Promise<void> {
     ),
   );
 }
-
 describe("task verification source-size persistence", () => {
   it("tracks a pathless direct mutation and preserves its size gate after restore", async () => {
     const cwd = await mkdtemp(join(tmpdir(), "p-verification-pathless-restore-"));
@@ -244,6 +243,7 @@ describe("task verification source-size persistence", () => {
         byteLength: 24,
         snapshotEntryId: "snapshot-1",
         referencedByPromptIds: [promptId],
+        definitionSourcePromptCount: 1,
         capturedAtMutationRevision: 0,
         origin: "requirement_audit.prepare_definition",
         policyVersion: 1,

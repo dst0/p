@@ -70,6 +70,22 @@ describe("restored task-verification state validation", () => {
     expect(isTaskVerificationState(state)).toBe(false);
   });
 
+  it("requires every frozen source to have an in-range prompt anchor", () => {
+    const state = emptyState("validation-task");
+    state.taskPrompts = [{ id: "user-1", text: "Implement README.md." }];
+    const reference = requirementSourceRef("source-1", "README.md", "snapshot-1");
+    state.requirementSourceRefs = [reference];
+    expect(isTaskVerificationState(state)).toBe(true);
+    expect(
+      isTaskVerificationState({ ...state, requirementSourceRefs: [{ ...reference, definitionSourcePromptCount: 0 }] }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({ ...state, requirementSourceRefs: [{ ...reference, definitionSourcePromptCount: 2 }] }),
+    ).toBe(false);
+    const { definitionSourcePromptCount: _missing, ...legacyReference } = reference;
+    expect(isTaskVerificationState({ ...state, requirementSourceRefs: [legacyReference] })).toBe(false);
+  });
+
   it("rejects a malformed requirement-source deauthorization prompt identity", () => {
     const state = emptyState("validation-task");
     state.ignoredRequirementSources = [
@@ -172,6 +188,7 @@ function requirementSourceRef(id: string, path: string, snapshotEntryId: string)
     byteLength: 12,
     snapshotEntryId,
     referencedByPromptIds: ["user-1"],
+    definitionSourcePromptCount: 1,
     capturedAtMutationRevision: 0,
     origin: "requirement_audit.prepare_definition" as const,
     policyVersion: 1 as const,

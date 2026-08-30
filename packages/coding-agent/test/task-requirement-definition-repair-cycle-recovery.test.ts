@@ -1,26 +1,21 @@
 import { describe, expect, it } from "vitest";
-import {
-  rejectedDraftFreshDefinitionReason,
-  rejectedRequirementDefinitionDraft,
-} from "../src/core/task-verification/requirement-definition-repair.ts";
+import { rejectedRequirementDefinitionDraft } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
 
 describe("requirement definition repair cycle recovery", () => {
-  it("authorizes a fresh definition when diagnostics alternate without reducing their count", () => {
-    const initial = rejectedRequirementDefinitionDraft(invalidDefinition(), "Diagnostic A");
-    const alternate = rejectedRequirementDefinitionDraft(invalidDefinition(), "Diagnostic B", initial);
-    const cycle = rejectedRequirementDefinitionDraft(invalidDefinition(), "Diagnostic A", alternate);
-    const repeatedCycle = rejectedRequirementDefinitionDraft(invalidDefinition(), "Diagnostic B", cycle);
+  it("keeps singular repairs open while each one resolves the selected diagnostic", () => {
+    const initial = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnosticsFor("A", "B", "C"));
+    const second = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnosticsFor("B", "C", "D"), initial);
+    const third = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnosticsFor("C", "D", "E"), second);
+    const fourth = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnosticsFor("D", "E", "F"), third);
 
     expect(initial?.unproductiveRepairAttempts).toBe(0);
-    expect(alternate?.unproductiveRepairAttempts).toBe(1);
-    expect(cycle?.unproductiveRepairAttempts).toBe(2);
-    expect(rejectedDraftFreshDefinitionReason(cycle)).toBeUndefined();
-    expect(repeatedCycle?.unproductiveRepairAttempts).toBe(3);
-    expect(rejectedDraftFreshDefinitionReason(repeatedCycle)).toBe("stagnant_repair");
+    expect(second?.unproductiveRepairAttempts).toBe(0);
+    expect(third?.unproductiveRepairAttempts).toBe(0);
+    expect(fourth?.unproductiveRepairAttempts).toBe(0);
   });
 
-  it("resets stagnation only when a repair reaches a lower diagnostic count", () => {
+  it("recognizes selected-diagnostic progress even when the total does not fall", () => {
     const initial = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnostics(3));
     const improved = rejectedRequirementDefinitionDraft(invalidDefinition(), diagnostics(2), initial);
     const changedWithoutImprovement = rejectedRequirementDefinitionDraft(
@@ -30,8 +25,7 @@ describe("requirement definition repair cycle recovery", () => {
     );
 
     expect(improved?.unproductiveRepairAttempts).toBe(0);
-    expect(changedWithoutImprovement?.unproductiveRepairAttempts).toBe(1);
-    expect(rejectedDraftFreshDefinitionReason(changedWithoutImprovement)).toBeUndefined();
+    expect(changedWithoutImprovement?.unproductiveRepairAttempts).toBe(0);
   });
 });
 
@@ -55,5 +49,12 @@ function diagnostics(count: number): string {
   return [
     `Requirement definition has ${count} deterministic validation errors:`,
     ...Array.from({ length: count }, (_value, index) => `${index + 1}. Diagnostic ${index + 1}`),
+  ].join("\n");
+}
+
+function diagnosticsFor(...identities: string[]): string {
+  return [
+    `Requirement definition has ${identities.length} deterministic validation errors:`,
+    ...identities.map((identity, index) => `${index + 1}. Diagnostic ${identity}`),
   ].join("\n");
 }

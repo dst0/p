@@ -7,7 +7,6 @@ export {
   MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
   MAX_REQUIREMENT_REPAIR_ENTRIES,
   MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
-  MAX_REQUIREMENT_REPAIR_STAGNANT_FRESH_DEFINITIONS,
   MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
   REQUIREMENT_TYPES,
   RequirementAuditInputSchema,
@@ -148,7 +147,7 @@ export const REFACTOR_PATTERN = /\brefactor|restructure|reorganize\b|(?:рефа
 export const DOCS_PATTERN = /\b(?:docs?|documentation|readme|changelog)\b|(?:документ|ридми|чейнджлог)/iu;
 
 export const INVESTIGATION_PATTERN =
-  /\b(?:investigat|diagnos|analy[sz]|audit|explain|find the cause)\b|(?:исслед|диагност|анализ|аудит|объясн|причин)/iu;
+  /\b(?:analy[sz]\w*|assess\w*|audit\w*|diagnos\w*|explain\w*|find\s+the\s+cause|inspect\w*|investigat\w*|review\w*|summari[sz]\w*)\b|(?:исслед|диагност|анализ|аудит|объясн|обзор|причин|суммар)/iu;
 
 export const HIGH_RISK_PATTERN =
   /\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;

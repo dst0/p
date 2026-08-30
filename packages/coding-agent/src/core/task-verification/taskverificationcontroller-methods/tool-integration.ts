@@ -14,13 +14,11 @@ import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
-  inferTaskKind,
   isDirectMutationTool,
   isPotentialMutationTool,
   isPublishCommand,
   isRecord,
   isShellTool,
-  normalizeText,
   pathArgument,
   shellCommand,
 } from "../tool-classification.ts";
@@ -30,6 +28,7 @@ import { requirementDefinitionMutationGate } from "./requirement-definition-muta
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
 import { captureSourceWorkspaceSnapshot } from "./source-workspace-snapshot.ts";
+import { automaticTaskDeclarationGate } from "./task-declaration-gate.ts";
 import {
   captureTestVerificationStart,
   releaseTestMutationReservation,
@@ -151,9 +150,10 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
           .join("\n");
   if (!promptText.trim()) return;
   self.latestUserPrompt = promptText;
+  if (self.restoreError) return;
   const taskPrompts = self.state.taskPrompts ?? [];
   if (isNonRequirementNudge(promptText, taskPrompts)) return;
-  self.rejectedRequirementDefinitionDraft = undefined;
+  const activeRejectedDraft = self.rejectedRequirementDefinitionDraft;
   const persistedId = [...self.sessionManager.getBranch()]
     .reverse()
     .find(
@@ -175,7 +175,7 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
       },
     ],
     readiness: emptyReadiness(),
-    requirementAudit: emptyRequirementAudit(),
+    requirementAudit: activeRejectedDraft ? self.state.requirementAudit : emptyRequirementAudit(),
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
@@ -211,7 +211,7 @@ export function do_createToolDefinition(
       "record_task_verification(action, ...): declare mutation intent, prove baseline and final behavior, then call ready_to_finish with requirement-to-evidence mappings before successful finish_work.",
     promptGuidelines: [
       `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
-      `The controller automatically records mutation intent before the first mutating tool call. Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override its classification before mutation.`,
+      `The controller automatically records unambiguous mutation intent before the first mutating tool call. If that gate reports an ambiguous mixed effect, call ${TASK_VERIFICATION_TOOL_NAME} once with action "declare_task" and the dominant requested effect, then retry the mutation.`,
       "Workflow steps: 1. freeze selected requirement sources and collect the required baseline -> 2. apply file edits -> 3. rerun the exact baseline command -> 4. obtain the accepted complete requirement definition and verdict batch. Source-free tasks define before mutation; selecting any authoritative source defers the combined source-and-direct definition until evidence readiness. A successful exact replay automatically records final verification.",
       'When using static_trace for record_baseline, you MUST provide at least two non-error inspection evidence handles (e.g. evidence_refs: ["verification-evidence-1", "verification-evidence-2"]).',
       "Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
@@ -228,6 +228,10 @@ export function do_createToolDefinition(
     parameters: VerificationSchema,
     executionMode: "sequential",
     execute: async (_id, params) => {
+      if (params.action !== "status" && self.restoreError) {
+        const result = self.rejected(`Cannot update task verification: ${self.restoreError}.`);
+        return { content: [{ type: "text", text: result.message }], details: result };
+      }
       if (params.action !== "status" && self.rejectedRequirementDefinitionDraft) {
         const result = self.rejected(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
         return { content: [{ type: "text", text: result.message }], details: result };
@@ -240,7 +244,19 @@ export function do_createToolDefinition(
 }
 export function do_beforeToolCall(self: TaskVerificationController, context: BeforeToolCallContext) {
   const toolName = context.toolCall.name;
-  if (isPublishCommand(toolName, context.args)) {
+  const publish = isPublishCommand(toolName, context.args);
+  const successfulFinish =
+    toolName === "finish_work" &&
+    argsRecord(context.args).status !== "partial" &&
+    argsRecord(context.args).status !== "failed";
+  const guardedEffect = publish || successfulFinish || canPotentiallyChangeWorkspace(toolName, context.args);
+  if (self.restoreError && guardedEffect) {
+    return self.blocked(`Cannot change the workspace: ${self.restoreError}.`);
+  }
+  if (self.rejectedRequirementDefinitionDraft && guardedEffect) {
+    return self.blocked(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
+  }
+  if (publish) {
     if (!isSafePublishCommandSequence(shellCommand(context.args))) {
       return self.blocked(
         "Cannot combine a workspace mutation with git commit or push; run them as separate commands.",
@@ -248,11 +264,7 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
     }
     return unverifiedTestPathsGate(self, "publish changes") ?? self.publishGate("publish changes");
   }
-  if (
-    toolName === "finish_work" &&
-    argsRecord(context.args).status !== "partial" &&
-    argsRecord(context.args).status !== "failed"
-  ) {
+  if (successfulFinish) {
     const testPathsGate = unverifiedTestPathsGate(self, "finish successfully");
     if (testPathsGate) return testPathsGate;
     const token = argsRecord(context.args).verification_token;
@@ -266,20 +278,9 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
     }
     return undefined;
   }
-  if (self.restoreError && canPotentiallyChangeWorkspace(toolName, context.args)) {
-    return self.blocked(`Cannot change the workspace: ${self.restoreError}.`);
-  }
-  if (self.rejectedRequirementDefinitionDraft && canPotentiallyChangeWorkspace(toolName, context.args)) {
-    return self.blocked(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
-  }
   if (canPotentiallyChangeWorkspace(toolName, context.args) && !self.state.taskKind) {
-    const taskSummary =
-      normalizeText(self.latestUserPrompt).slice(0, 500) || "Implement the requested workspace change.";
-    self.declareTask({
-      action: "declare_task",
-      task_kind: inferTaskKind(taskSummary),
-      task_summary: taskSummary,
-    });
+    const declarationGate = automaticTaskDeclarationGate(self);
+    if (declarationGate) return declarationGate;
   }
   const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
   if (sourceGate) return sourceGate;

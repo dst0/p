@@ -1,4 +1,5 @@
 import { REQUIREMENT_AUDIT_TOOL_NAME } from "../constants.ts";
+import { isProductInvariantRequirementType } from "../requirement-risk.ts";
 import type { TaskRequirement } from "../types.ts";
 
 export function formatRequirementBatchPrompt(requirements: readonly TaskRequirement[]): string {
@@ -7,9 +8,9 @@ export function formatRequirementBatchPrompt(requirements: readonly TaskRequirem
     ...requirements.flatMap((requirement) => [
       `${requirement.id}: ${requirement.text}`,
       `Acceptance criterion: ${requirement.acceptanceCriterion}`,
-      ...(requirement.proofPolicies?.length
+      ...(activeProofPolicies(requirement).length
         ? [
-            `Controller proof obligations: ${requirement.proofPolicies.map(formatProofPolicy).join("; ")}`,
+            `Controller proof obligations: ${activeProofPolicies(requirement).map(formatProofPolicy).join("; ")}`,
             `Required focused selector contract: ${formatFocusedSelectorContract(requirement)}`,
             `Required same-run witness lines:\n${formatRequirementProofWitnessTemplates(requirement)}`,
           ]
@@ -17,14 +18,14 @@ export function formatRequirementBatchPrompt(requirements: readonly TaskRequirem
     ]),
     `Call ${REQUIREMENT_AUDIT_TOOL_NAME} once with action "verdict" and exactly one verdicts item for every listed ID.`,
     "Every item needs passed and a concrete reason. Every passed item needs current evidence_refs.",
-    "High-risk integrity, security, durability, transaction, and concurrency invariants require a relevant focused test with a positive passing result; generic suites and manual reproductions are insufficient.",
+    "High-risk product/runtime or artifact invariants involving integrity, security, durability, transactions, or concurrency require a relevant focused test with a positive passing result; generic suites and manual reproductions are insufficient.",
     "Each controller proof obligation additionally requires a valid one-line P_PROOF_V1 witness emitted inside that exact focused test during the same selected run; selector wording, standalone proof scripts, and separate commands are not proof.",
   ].join("\n");
 }
 
 export function formatRequirementProofPlan(requirements: readonly TaskRequirement[]): string | undefined {
   const obligations = requirements.flatMap((requirement) => {
-    const policies = requirement.proofPolicies ?? [];
+    const policies = activeProofPolicies(requirement);
     if (policies.length === 0) return [];
     return [
       `${requirement.id}: ${policies.map(formatProofPolicy).join("; ")}. ${formatFocusedSelectorContract(requirement)} Run only that full case name with the test runner's case selector (for example, --test-name-pattern="..." or -t "...").`,
@@ -37,7 +38,7 @@ export function formatRequirementProofPlan(requirements: readonly TaskRequiremen
 }
 
 export function formatFocusedSelectorContract(requirement: TaskRequirement): string {
-  const proofConcepts = (requirement.proofPolicies ?? []).map(formatProofPolicy);
+  const proofConcepts = activeProofPolicies(requirement).map(formatProofPolicy);
   const exactSelector = formatFocusedSelectorExample(requirement);
   return [
     `The selector itself must name the observable outcome ${JSON.stringify(requirement.acceptanceCriterion)}`,
@@ -49,7 +50,7 @@ export function formatFocusedSelectorContract(requirement: TaskRequirement): str
 }
 
 export function formatFocusedSelectorExample(requirement: TaskRequirement): string {
-  const proofConcepts = (requirement.proofPolicies ?? []).map(formatProofPolicy);
+  const proofConcepts = activeProofPolicies(requirement).map(formatProofPolicy);
   return (
     [requirement.text, requirement.acceptanceCriterion, ...proofConcepts]
       .join(" ")
@@ -61,9 +62,13 @@ export function formatFocusedSelectorExample(requirement: TaskRequirement): stri
 }
 
 export function formatRequirementProofWitnessTemplates(requirement: TaskRequirement): string {
-  return (requirement.proofPolicies ?? [])
+  return activeProofPolicies(requirement)
     .map((policy) => formatProofWitnessTemplate(requirement.id, policy))
     .join("\n");
+}
+
+function activeProofPolicies(requirement: TaskRequirement): NonNullable<TaskRequirement["proofPolicies"]> {
+  return isProductInvariantRequirementType(requirement.type) ? (requirement.proofPolicies ?? []) : [];
 }
 
 function formatProofWitnessTemplate(

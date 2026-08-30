@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
 import { formatRequirementDefinitionPrompt } from "../src/core/task-verification/requirement-definition-prompt.ts";
-import { rejectedDraftFreshDefinitionReason } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
 import {
@@ -39,12 +38,12 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(afterOverflow);
     expect(apply).toHaveBeenCalledTimes(1);
 
-    expect(await callRequirementAudit(harness.controller, definition(3))).toContain("fresh define is not authorized");
+    expect(await callRequirementAudit(harness.controller, definition(3))).toContain('replacement action "define"');
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(afterOverflow);
     expect(apply).toHaveBeenCalledTimes(1);
     const repairStatus = await callTaskVerification(harness.controller, { action: "status" });
     expect(repairStatus).toContain("next_required_action: repair_definition");
-    expect(await callRequirementAudit(harness.controller, definition(3))).toContain("fresh define is not authorized");
+    expect(await callRequirementAudit(harness.controller, definition(3))).toContain('replacement action "define"');
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(afterOverflow);
     expect(apply).toHaveBeenCalledTimes(1);
 
@@ -52,16 +51,16 @@ describe("rejected requirement definition next-action authorization", () => {
     const rotated = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
     expect(rotated?.revision).not.toBe(original?.revision);
     expect(apply).toHaveBeenCalledTimes(2);
-    expect(await callRequirementAudit(harness.controller, definition(4))).toContain("fresh define is not authorized");
+    expect(await callRequirementAudit(harness.controller, definition(4))).toContain('replacement action "define"');
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rotated);
     expect(apply).toHaveBeenCalledTimes(2);
     await callTaskVerification(harness.controller, { action: "status" });
-    expect(await callRequirementAudit(harness.controller, definition(4))).toContain("fresh define is not authorized");
+    expect(await callRequirementAudit(harness.controller, definition(4))).toContain('replacement action "define"');
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rotated);
     expect(apply).toHaveBeenCalledTimes(2);
   });
 
-  it("keeps non-improving fresh definitions define-only after repeated non-improving lineage overflow", async () => {
+  it("keeps lineage overflow repair-only without replacing the active batch", async () => {
     const harness = await preparedHarness();
     const apply = rejectingApplySpy(harness, [5, 4, 3, 3, 3]);
     await callRequirementAudit(harness.controller, definition(10));
@@ -85,41 +84,29 @@ describe("rejected requirement definition next-action authorization", () => {
       repair(currentRevision(harness.controller), [2]),
     );
     expect(lineageOverflow).toContain("Repair was not adopted");
-    expect(lineageOverflow).toContain("next_required_action: define");
+    expect(lineageOverflow).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...overflowDraft,
       unproductiveRepairAttempts: 1,
     });
     expect(apply).toHaveBeenCalledTimes(4);
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "lineage_growth",
-    );
-    const authorizedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
+    const retainedDraft = structuredClone(harness.controller.rejectedRequirementDefinitionDraft);
 
     expect(await callRequirementAudit(harness.controller, { action: "prepare_definition" })).toContain(
-      "next_required_action: define",
-    );
-
-    expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
-      "fresh define is required",
+      "next_required_action: repair_definition",
     );
 
     const lineageStatus = await callTaskVerification(harness.controller, { action: "status" });
-    expect(lineageStatus).toContain("next_required_action: define");
-    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(authorizedDraft);
+    expect(lineageStatus).toContain("next_required_action: repair_definition");
+    expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(retainedDraft);
+    expect(await callRequirementAudit(harness.controller, definition(3))).toContain('replacement action "define"');
+    expect(apply).toHaveBeenCalledTimes(4);
 
-    expect(await callRequirementAudit(harness.controller, definition(3))).toContain("definition_revision");
+    await callRequirementAudit(harness.controller, replacementRepair(currentRevision(harness.controller), 9_999));
     expect(apply).toHaveBeenCalledTimes(5);
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(3);
     expect(harness.controller.rejectedRequirementDefinitionDraft?.revision).not.toBe(overflowDraft?.revision);
-    expect(lineageBaseline(harness.controller)).toBe(3);
-    expect(await callRequirementAudit(harness.controller, definition(4))).toContain("next_required_action: define");
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(4);
-    expect(lineageBaseline(harness.controller)).toBe(4);
-    expect(apply).toHaveBeenCalledTimes(6);
-    expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
-      "No sparse-repair budget was reopened",
-    );
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(26);
+    expect(lineageBaseline(harness.controller)).toBe(10);
   });
 
   it("blocks task redeclaration while a rejected definition has a required next action", async () => {
@@ -136,7 +123,7 @@ describe("rejected requirement definition next-action authorization", () => {
         task_kind: "bug_fix",
         task_summary: "Try to replace the active audit.",
       }),
-    ).toContain("next_required_action: repair_definition");
+    ).toContain("next_required_action: status");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rejectedDraft);
     expect(harness.controller.currentState).toEqual(priorState);
 
@@ -148,24 +135,23 @@ describe("rejected requirement definition next-action authorization", () => {
         ],
         unresolved_failures: [],
       }),
-    ).toContain("next_required_action: repair_definition");
+    ).toContain("next_required_action: status");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rejectedDraft);
     expect(harness.controller.currentState).toEqual(priorState);
   });
 
-  it("keeps an equally rejected full retry define-only after an empty batch", async () => {
+  it("repairs an empty rejected batch with one addition instead of a full retry", async () => {
     const harness = await preparedHarness();
     const apply = rejectingApplySpy(harness);
     await callRequirementAudit(harness.controller, definition(0));
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toEqual([]);
     await nextModelTurn(harness);
 
-    expect(await callRequirementAudit(harness.controller, definition(3))).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "non_improving_fresh_definition",
-    );
+    expect(await callRequirementAudit(harness.controller, definition(3))).toContain('replacement action "define"');
+    expect(apply).toHaveBeenCalledTimes(1);
+    await callRequirementAudit(harness.controller, additionRepair(currentRevision(harness.controller)));
     expect(apply).toHaveBeenCalledTimes(2);
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(3);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(1);
   });
 
   it("rejects a repair that deletes the complete draft instead of authorizing a restart", async () => {
@@ -183,7 +169,7 @@ describe("rejected requirement definition next-action authorization", () => {
       unproductiveRepairAttempts: 1,
     });
     expect(apply).toHaveBeenCalledTimes(1);
-    expect(await callRequirementAudit(harness.controller, definition(2))).toContain("fresh define is not authorized");
+    expect(await callRequirementAudit(harness.controller, definition(2))).toContain('replacement action "define"');
   });
 
   it("blocks workspace mutation while a rejected definition has a required next action", async () => {
@@ -203,7 +189,7 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual(rejectedDraft);
   });
 
-  it("keeps an equally rejected recovery retry define-only", async () => {
+  it("keeps oversized recovery repair-only", async () => {
     const harness = await preparedHarness();
     const apply = rejectingApplySpy(harness);
     const oversized = definition(96);
@@ -216,17 +202,11 @@ describe("rejected requirement definition next-action authorization", () => {
     expect(draft).toBeDefined();
 
     const recovery = formatRequirementDefinitionPrompt([{ id: "prompt-1", text: "Preserve inventory." }], draft);
-    expect(recovery).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(draft)).toBe("recovery_prompt_limit");
+    expect(recovery).toContain("next_required_action: repair_definition");
     await nextModelTurn(harness);
 
-    expect(await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]))).toContain(
-      "recovery prompt limit",
-    );
-    expect(await callRequirementAudit(harness.controller, definition(3))).toContain("next_required_action: define");
-    expect(rejectedDraftFreshDefinitionReason(harness.controller.rejectedRequirementDefinitionDraft)).toBe(
-      "non_improving_fresh_definition",
-    );
+    await callRequirementAudit(harness.controller, repair(currentRevision(harness.controller), [1]));
+    expect(await callRequirementAudit(harness.controller, definition(3))).toContain('replacement action "define"');
     expect(apply).toHaveBeenCalledTimes(2);
   });
 });
@@ -244,7 +224,7 @@ function rejectingApplySpy(harness: RequirementAuditHarness, diagnosticCounts: n
     const diagnosticCount = diagnosticCounts[rejectionIndex++] ?? diagnosticCounts.at(-1)!;
     return {
       status: "needs_action",
-      message: `Requirement definition has ${diagnosticCount} deterministic validation errors:\n1. Rejected.`,
+      message: `Requirement definition has ${diagnosticCount} deterministic validation errors:\n1. Rejected ${rejectionIndex}.`,
       state: harness.controller.currentState,
       requirementDefinitionDiagnosticCount: diagnosticCount,
     };
@@ -269,6 +249,18 @@ function repair(definitionRevision: string, replacementCounts: number[]): Requir
       requirement_index: offset + 1,
       replacements: Array.from({ length: count }, () => requirement(next++)),
     })),
+  };
+}
+
+function additionRepair(definitionRevision: string): RequirementAuditInput {
+  return { action: "repair_definition", definition_revision: definitionRevision, requirement_addition: requirement(1) };
+}
+
+function replacementRepair(definitionRevision: string, requirementIndex: number): RequirementAuditInput {
+  return {
+    action: "repair_definition",
+    definition_revision: definitionRevision,
+    requirement_repairs: [{ requirement_index: 1, replacements: [requirement(requirementIndex)] }],
   };
 }
 

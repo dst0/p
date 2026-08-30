@@ -15,8 +15,10 @@ import { validateRequirementVerdict } from "../src/core/task-verification/taskve
 import type { TaskRequirement, TaskVerificationEvidence } from "../src/core/task-verification/types.ts";
 import {
   beforeAuditTool,
+  callTaskVerification,
   createRequirementAuditHarness,
   recordAuditToolResult,
+  sendAuditUserPrompt,
   withAuditProofWitnesses,
 } from "./task-requirement-audit-test-harness.ts";
 
@@ -132,6 +134,12 @@ describe("focused selector contract", () => {
     const workspace = await mkdtemp(join(tmpdir(), "p-focused-selector-contract-"));
     workspaces.push(workspace);
     const harness = createRequirementAuditHarness(SessionManager.inMemory(workspace));
+    await sendAuditUserPrompt(harness, `Implement a validator that must ${requirement.text}.`, 100);
+    await callTaskVerification(harness.controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: requirement.text,
+    });
     harness.controller.state = {
       ...harness.controller.state,
       mutationRevision: 1,

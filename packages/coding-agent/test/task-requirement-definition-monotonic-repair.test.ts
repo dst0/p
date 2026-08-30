@@ -10,22 +10,26 @@ import {
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("rejected requirement definition monotonic repair", () => {
-  it("retains the best draft and allows sparse recovery after a regressive repair", async () => {
+  it("retains the active draft when its selected diagnostic remains, then allows sparse recovery", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
 
     const realApply = harness.controller.applyRequirementAudit.bind(harness.controller);
-    const diagnosticCounts = [28, 21, 28];
+    const diagnosticMessages = [
+      diagnostics(28, "Requirement 1: initial defect"),
+      diagnostics(21, "Requirement 1: split still incomplete"),
+      diagnostics(28, "Requirement 1: split still incomplete"),
+    ];
     const apply = vi.spyOn(harness.controller, "applyRequirementAudit").mockImplementation((input) => {
-      const diagnosticCount = diagnosticCounts.shift();
-      return diagnosticCount === undefined
+      const message = diagnosticMessages.shift();
+      return message === undefined
         ? realApply(input)
         : {
             status: "needs_action",
-            message: diagnostics(diagnosticCount),
+            message,
             state: harness.controller.currentState,
-            requirementDefinitionDiagnosticCount: diagnosticCount,
+            requirementDefinitionDiagnosticCount: Number(message.match(/has (\d+)/u)?.[1]),
           };
     });
 
@@ -48,7 +52,8 @@ describe("rejected requirement definition monotonic repair", () => {
     expect(apply.mock.calls[1]?.[0].requirements).toHaveLength(45);
     expect(apply.mock.calls[2]?.[0].requirements).toHaveLength(51);
     expect(regressed).toContain("Repair was not adopted");
-    expect(regressed).toContain("28 deterministic diagnostic(s); the active draft has 21");
+    expect(regressed).toContain("controller-selected diagnostic remains unresolved");
+    expect(regressed).toContain("Requirement 1: split still incomplete");
     expect(regressed).toContain("next_required_action: repair_definition");
     expect(harness.controller.rejectedRequirementDefinitionDraft).toEqual({
       ...improvedDraft,
@@ -73,7 +78,7 @@ describe("rejected requirement definition monotonic repair", () => {
     expect(mutationGate?.block).not.toBe(true);
   });
 
-  it("adopts a lateral repair when both diagnostic messages use the single-error shape", async () => {
+  it("adopts a same-count repair when the selected single diagnostic disappears", async () => {
     const harness = createRequirementAuditHarness();
     await reachAuditEvidenceReady(harness);
     await nextModelTurn(harness);
@@ -97,7 +102,7 @@ describe("rejected requirement definition monotonic repair", () => {
     expect(harness.controller.rejectedRequirementDefinitionDraft?.input.requirements?.[0]?.text).toBe(
       "Requirement 1000",
     );
-    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(1);
+    expect(harness.controller.rejectedRequirementDefinitionDraft?.unproductiveRepairAttempts).toBe(0);
   });
 
   it("adopts a fully valid lineage overflow atomically through the real controller", async () => {
@@ -182,10 +187,11 @@ function requirement(index: number) {
   };
 }
 
-function diagnostics(count: number): string {
+function diagnostics(count: number, firstDiagnostic: string = "Diagnostic 1"): string {
   return [
     `Requirement definition has ${count} deterministic validation errors:`,
-    ...Array.from({ length: count }, (_value, index) => `${index + 1}. Diagnostic ${index + 1}`),
+    `1. ${firstDiagnostic}`,
+    ...Array.from({ length: count - 1 }, (_value, index) => `${index + 2}. Diagnostic ${index + 2}`),
   ].join("\n");
 }
 

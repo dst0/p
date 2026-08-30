@@ -33,6 +33,7 @@ import {
   clearVerifiedTestPaths,
   settleTestAuthoringMutation,
 } from "./test-authoring-gate.ts";
+import { classifyTestEvidence } from "./test-evidence-outcome.ts";
 
 export { do_authorizeBaselineTest } from "./baseline-test-authorization.ts";
 export async function do_afterToolCall(
@@ -72,7 +73,6 @@ export async function do_afterToolCall(
     testAuthoring.workspaceMutated ||
     sourceMutation.paths.length > 0 ||
     sourceMutation.trackingFailed;
-  const testMutationGuidance = testAuthoring.guidance;
   if (detectedMutation) {
     self.rejectedRequirementDefinitionDraft = undefined;
     recordSourceMutationPaths(
@@ -80,7 +80,7 @@ export async function do_afterToolCall(
       [...mutationSourcePaths(self, context), ...sourceMutation.paths],
       sourceMutation.trackingFailed,
     );
-    const mutationGuidance = [testMutationGuidance, mutationSourceSizeGuidance(self)]
+    const mutationGuidance = [testAuthoring.guidance, mutationSourceSizeGuidance(self)]
       .filter((message): message is string => message !== undefined && message.length > 0)
       .join("\n");
     if (self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
@@ -122,6 +122,7 @@ export async function do_afterToolCall(
     .map((part) => part.text)
     .join("\n");
   const runtimeAssertionFailed = isZeroExitRuntimeAssertionFailure(context, fullOutput, nativeIsError);
+  const verificationIsError = effectiveIsError || runtimeAssertionFailed;
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -131,7 +132,8 @@ export async function do_afterToolCall(
     descriptor,
     outputSummary: summarizeOutput(redactedContent),
     ...(proofWitnesses ? { proofWitnesses } : {}),
-    isError: effectiveIsError || runtimeAssertionFailed,
+    isError: verificationIsError,
+    ...classifyTestEvidence(descriptor, fullOutput, verificationIsError, self.sessionManager.getCwd()),
     nativeIsError,
     mutationRevision: self.state.mutationRevision,
     timestamp: new Date().toISOString(),
@@ -147,6 +149,9 @@ export async function do_afterToolCall(
     proofFrameFeedback,
     runtimeAssertionFailed
       ? "Runtime assertion failure detected despite a zero process exit; this evidence is failed. Use throwing assertions so the command exits non-zero."
+      : undefined,
+    evidence.verificationFailureKind === "missing_test_script"
+      ? "The requested package script is unavailable, so no tests ran and no implementation-test failure was recorded. Inspect the active package's declared scripts and run an applicable existing test command; do not add a script alias solely to clear verification."
       : undefined,
     testBatchVerification,
     invalidation,
@@ -197,7 +202,12 @@ function invalidateAfterFailedVerification(
   self: TaskVerificationController,
   evidence: TaskVerificationEvidence,
 ): string | undefined {
-  if (!evidence.isError || !isShellTool(evidence.toolName) || !isVerificationCommand(evidence.descriptor)) {
+  if (
+    !evidence.isError ||
+    evidence.verificationFailureKind === "missing_test_script" ||
+    !isShellTool(evidence.toolName) ||
+    !isVerificationCommand(evidence.descriptor)
+  ) {
     return undefined;
   }
   self.state = {
@@ -253,18 +263,19 @@ export function do_declareTask(self: TaskVerificationController, input: Verifica
   if (self.state.mutationRevision > 0)
     return self.rejected("Cannot replace the task declaration after mutation; finish the current task first.");
   const taskSummary = normalizeText(input.task_summary);
-  const required = baselineRequired(input.task_kind, `${self.latestUserPrompt}\n${taskSummary}`);
   const currentPrompts = self.state.taskPrompts?.length
     ? self.state.taskPrompts
     : self.latestUserPrompt.trim()
       ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
       : [];
+  const promptContext = currentPrompts.map((prompt) => prompt.text).join("\n") || self.latestUserPrompt;
+  const required = baselineRequired(input.task_kind, `${promptContext}\n${taskSummary}`);
   self.rejectedRequirementDefinitionDraft = undefined;
   self.state = {
     ...emptyState(self.state.taskId),
     taskKind: input.task_kind,
     taskSummary,
-    taskContext: self.latestUserPrompt.slice(0, 2_000) || undefined,
+    taskContext: promptContext.slice(0, 2_000) || undefined,
     taskPrompts: currentPrompts,
     requirementSourceRefs: self.state.requirementSourceRefs ?? [],
     ignoredRequirementSources: self.state.ignoredRequirementSources ?? [],

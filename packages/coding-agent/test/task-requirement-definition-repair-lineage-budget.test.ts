@@ -7,11 +7,8 @@ import {
 } from "../src/core/task-verification/requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
-import type {
-  RequirementAuditInput,
-  TaskVerificationState,
-  VerificationResult,
-} from "../src/core/task-verification/types.ts";
+import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
 
 interface LineageDraft extends RejectedRequirementDefinitionDraft {
   repairLineageBaselineRequirementCount: number;
@@ -46,10 +43,12 @@ describe("requirement definition repair lineage budget", () => {
     expect(draft.revision).toBe(before.revision);
   });
 
-  it("authorizes a fresh definition after validating the rc51 lineage overflow", async () => {
+  it("retains the draft and requires another selected repair after an invalid lineage overflow", async () => {
     const validatedRequirementCounts: number[] = [];
-    const controller = rejectingController([25, 37], (input) =>
-      validatedRequirementCounts.push(input.requirements?.length ?? 0),
+    const controller = rejectingController(
+      [25, 37],
+      (input) => validatedRequirementCounts.push(input.requirements?.length ?? 0),
+      ["Initial rejection.", "Overflow remains invalid."],
     );
     const tool = do_createRequirementAuditToolDefinition(controller);
     await execute(tool, definition(20));
@@ -59,7 +58,9 @@ describe("requirement definition repair lineage budget", () => {
 
     const result = await execute(tool, repairInput(original!, [24]));
     expect(result).toContain("Repair was not adopted");
-    expect(result).toContain("next_required_action: define");
+    expect(result).toContain("beyond the lineage limit");
+    expect(result).toContain("next_required_action: repair_definition");
+    expect(result).not.toContain("next_required_action: define");
     expect(validatedRequirementCounts).toEqual([20, 43]);
     expect(controller.rejectedRequirementDefinitionDraft?.input).toEqual(original?.input);
     expect(controller.rejectedRequirementDefinitionDraft?.revision).toBe(original?.revision);
@@ -183,7 +184,8 @@ describe("requirement definition repair lineage budget", () => {
     const overflow = await execute(tool, repairInput(controller.rejectedRequirementDefinitionDraft!, [10]));
     expect(overflow).toContain("Repair was not adopted");
     expect(overflow).toContain("3 deterministic validation errors");
-    expect(overflow).toContain("next_required_action: define");
+    expect(overflow).toContain("next_required_action: repair_definition");
+    expect(overflow).not.toContain("next_required_action: define");
     expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(18);
     expect(lineageBaseline(controller.rejectedRequirementDefinitionDraft!)).toBe(10);
     expect(controller.rejectedRequirementDefinitionDraft?.bestDiagnosticCount).toBe(4);
@@ -249,23 +251,22 @@ function lineageBaseline(draft: RejectedRequirementDefinitionDraft): number | un
 function rejectingController(
   diagnosticCounts = [5, 4, 3],
   onInput: (input: RequirementAuditInput) => void = () => {},
+  diagnosticMessages = ["Initial rejection.", "Expanded rejection.", "Overflow remains invalid."],
 ): TaskVerificationController {
-  const state = { requirementAudit: { status: "awaiting_definition" } } as TaskVerificationState;
-  const rejected = (message: string): VerificationResult => ({ status: "needs_action", message, state });
-  return {
-    applyRequirementAudit: (input: RequirementAuditInput) => {
+  return createRequirementAuditToolControllerDouble(
+    (input, state) => {
       onInput(input);
       const currentDiagnosticCount = diagnosticCounts.shift();
       if (currentDiagnosticCount === undefined) throw new Error("Unexpected requirement validation.");
       return {
-        ...rejected(
-          `Requirement definition has ${currentDiagnosticCount} deterministic validation errors:\n1. Rejected.`,
-        ),
+        status: "needs_action",
+        message: `Requirement definition has ${currentDiagnosticCount} deterministic validation errors:\n1. ${diagnosticMessages.shift() ?? "Rejected."}`,
+        state,
         requirementDefinitionDiagnosticCount: currentDiagnosticCount,
       };
     },
-    rejected,
-  } as unknown as TaskVerificationController;
+    { taskId: "repair-lineage-test" },
+  ).controller;
 }
 
 async function execute(
