@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   decodeImageBase64Safely,
   detectImageMimeType,
+  expandIPv6,
+  parseIPv4Strict,
   validateImageUrlForDownload,
   validateIpAddressForDownload,
 } from "../src/utils/image-mime.ts";
@@ -102,6 +104,9 @@ describe("validateIpAddressForDownload", () => {
     expect(validateIpAddressForDownload("2001:db8::1").valid).toBe(false);
     expect(validateIpAddressForDownload("2001:20::1").valid).toBe(false);
     expect(validateIpAddressForDownload("2606:4700:4700::1111").valid).toBe(true);
+    expect(validateIpAddressForDownload("ff02::1").valid).toBe(false);
+    expect(validateIpAddressForDownload("not-an-ip").valid).toBe(false);
+    expect(validateIpAddressForDownload("::ffff:8.8.8.8").valid).toBe(true);
   });
 
   it("blocks reserved, benchmarking, and documentation-only IPv4 ranges", () => {
@@ -228,5 +233,19 @@ describe("decodeImageBase64Safely", () => {
 
   it("treats a negative requested maximum as zero", () => {
     expect(() => decodeImageBase64Safely("AA==", -1)).toThrow("exceeds maximum limit of 0 bytes");
+  });
+
+  it("rejects empty, malformed, and impossible base64 shapes", () => {
+    for (const encoded of ["", "A", "AA=A", "AA$="]) {
+      expect(() => decodeImageBase64Safely(encoded)).toThrow("malformed base64");
+    }
+  });
+});
+
+describe("strict IP parsing", () => {
+  it("rejects malformed IPv4 groups and expands public IPv4-mapped IPv6", () => {
+    expect(parseIPv4Strict("1..2.3")).toBeNull();
+    expect(parseIPv4Strict("1.2.3.999")).toBeNull();
+    expect(expandIPv6("::ffff:8.8.8.8")).toBe("0000:0000:0000:0000:0000:ffff:0808:0808");
   });
 });

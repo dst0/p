@@ -108,4 +108,27 @@ describe("generate_image file publication", () => {
     expect(published).toHaveLength(2);
     expect(new Set(published).size).toBe(2);
   });
+
+  it("removes the temporary file when a real filesystem rename cannot replace a directory", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "p-generate-image-rename-collision-"));
+    temporaryDirectories.push(cwd);
+    await mkdir(join(cwd, "blocked.png"));
+    const model: ImagesModel<"openai-images"> = {
+      id: "flux2-klein-4b",
+      name: "LLM Orchestrator: FLUX.2 Klein 4B",
+      api: "openai-images",
+      provider: "llm-orchestrator",
+      baseUrl: "http://127.0.0.1:11450/v1",
+      input: ["text"],
+      output: ["image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    };
+    const tool = createGenerateImageTool(cwd, { model });
+
+    await expect(
+      tool.execute("rename-collision", { prompt: "A compass", outputPath: "blocked.png" }),
+    ).rejects.toThrow();
+    expect(await readdir(cwd)).toEqual(["blocked.png"]);
+    expect(await readdir(join(cwd, "blocked.png"))).toEqual([]);
+  });
 });

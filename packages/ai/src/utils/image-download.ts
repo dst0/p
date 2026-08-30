@@ -181,7 +181,7 @@ export async function downloadImageSafely(
   let currentUrl = initialUrl;
 
   try {
-    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+    for (let redirectCount = 0; ; redirectCount++) {
       if (signal.aborted) throw signal.reason ?? new Error("Download aborted");
 
       const urlCheck = validateImageUrlForDownload(currentUrl);
@@ -218,8 +218,6 @@ export async function downloadImageSafely(
       }
       return { buffer, mimeType };
     }
-
-    throw new Error(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) downloading image`);
   } catch (error) {
     if (timedOut) throw new Error(`Image download timed out after ${timeoutMs}ms`, { cause: error });
     if (options?.signal?.aborted) throw new Error("Download aborted", { cause: error });

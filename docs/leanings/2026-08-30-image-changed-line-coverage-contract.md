@@ -1,0 +1,22 @@
+# 2026-08-30 — Image changed-line coverage contract
+
+- **Status:** Resolved
+- **Task/context:** Hardening image generation support in the AI and coding-agent packages before PR delivery.
+- **Unexpected observation or failure:** Focused tests, the full non-e2e suite, and `npm run check` passed locally, but CI failed after those checks because the separate changed-line coverage audit measured only 81.73% against a 99% requirement.
+- **Evidence:** The CI coverage step reported 738 of 903 executable changed lines covered. Reproduction with all five package LCOV reports and the exact PR base produced the same class of uncovered transport, image-envelope, provider-selection, and tool-factory paths.
+- **Approaches tried:**
+  - **Attempt:** Treat the passing unit suites as sufficient PR evidence.
+    - **Outcome:** Did not work
+    - **Why:** Normal test execution proves assertions pass but does not run `scripts/check-changed-coverage.js` or enforce its 99% changed-line threshold.
+  - **Attempt:** Add domain tests for retry timing and cancellation, DNS and redirect failures, structural image envelopes, official-provider option limits, settings persistence, selector navigation, and `generate_image` factory surfaces.
+    - **Outcome:** Worked
+    - **Why:** The tests exercised observable contracts and realistic negative paths while also exposing redundant unreachable guards.
+  - **Attempt:** Retain unreachable fallback throws and a redundant post-decode size check solely as defensive code.
+    - **Outcome:** Did not work
+    - **Why:** The branches could not execute under their enclosing loop and validated-base64 invariants; repository policy requires deleting dead code rather than fabricating coverage.
+- **Root cause:** The local verification sequence omitted the CI-only changed-line coverage audit, and the feature introduced broad security and lifecycle branching whose uncommon negative paths were not yet represented in tests.
+- **Resolution:** Added behavior-oriented boundary tests, removed provably dead branches, and expressed retry and redirect loops as structurally infinite loops whose internal terminal conditions remain explicit to TypeScript.
+- **Verification:** All five package coverage reports plus `npm run test:coverage:check -- --base 3763df06d7c725fb71d951272eca0e3f032ad4e6` reported 859 of 866 executable changed lines covered (99.19%, above the 99% requirement); focused suites and `npm run check` also passed.
+- **Prevention/follow-up:** For broad feature PRs, generate all package LCOV reports and run the changed-line audit against the exact PR base before push, even when the ordinary full suite is green.
+- **Reusable learning:** Passing tests and passing changed-line coverage are distinct claims; reproduce the CI coverage gate locally and cover real boundary behavior instead of using line-filler tests.
+- **References:** `scripts/check-changed-coverage.js`, `packages/ai/test/image-http.test.ts`, `packages/ai/test/image-download-edge-cases.test.ts`, `packages/ai/test/image-envelope-edge-cases.test.ts`, `packages/coding-agent/test/generate-image-factory.test.ts`

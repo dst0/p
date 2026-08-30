@@ -116,4 +116,18 @@ describe("AgentSession Image Model Resolution", () => {
     expect(resolved?.model.provider).toBe("openai");
     expect(resolved?.apiKey).toBe("openai-key");
   });
+
+  it("returns undefined when no image model or provider credential is available", async () => {
+    const resolved = await do_resolveImageModel({
+      modelRegistry: {
+        getAll: () => [],
+        getApiKeyForProvider: async () => undefined,
+      },
+      settingsManager: {
+        getDefaultImageProvider: () => undefined,
+        getDefaultImageModel: () => undefined,
+      },
+    } as never);
+    expect(resolved).toBeUndefined();
+  });
 });

@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateImagesOpenAI } from "../src/providers/images/openai.ts";
 import type { ImagesContext, ImagesModel } from "../src/types.ts";
 import { MAX_IMAGE_DOWNLOAD_BYTES } from "../src/utils/image-download.ts";
@@ -84,6 +84,17 @@ describe("openai-images-unit", () => {
     expect(requestHeaders.has("authorization")).toBe(false);
   });
 
+  it("fails closed when a configured compatible provider has no authentication", async () => {
+    const customModel: ImagesModel<"openai-images"> = {
+      ...dummyModel,
+      provider: "configured-provider",
+      baseUrl: "https://orchestrator.example/v1",
+    };
+    const result = await generateImagesOpenAI(customModel, { input: [{ type: "text", text: "draw" }] });
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toContain("No API key or authentication headers");
+  });
+
   it("generates image and passes onPayload mutation to the HTTP request", async () => {
     const context: ImagesContext = { input: [{ type: "text", text: "draw a cat" }] };
     let responseSeen = false;
@@ -162,6 +173,63 @@ describe("openai-images-unit", () => {
     });
     expect(invalidStyle.stopReason).toBe("error");
     expect(invalidStyle.errorMessage).toContain("does not support style");
+  });
+
+  it.each([
+    ["not-a-size", "Invalid GPT Image 2 size"],
+    ["1000x1024", "multiples of 16"],
+    ["4096x1024", "3840 pixels"],
+    ["3840x1024", "3:1 aspect ratio"],
+    ["512x1024", "between 655360 and 8294400"],
+    ["2896x2896", "between 655360 and 8294400"],
+  ])("rejects GPT Image 2 size %s at the client boundary", async (size, expected) => {
+    const result = await generateImagesOpenAI(
+      dummyModel,
+      { input: [{ type: "text", text: "draw" }] },
+      {
+        apiKey: "test-key",
+        fetch: fakeFetch,
+        size,
+      },
+    );
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toContain(expected);
+  });
+
+  it("rejects response_format injected into an official GPT Image 2 payload", async () => {
+    const result = await generateImagesOpenAI(
+      dummyModel,
+      { input: [{ type: "text", text: "draw" }] },
+      {
+        apiKey: "test-key",
+        fetch: fakeFetch,
+        onPayload: (payload) => ({ ...(payload as Record<string, unknown>), response_format: "b64_json" }),
+      },
+    );
+    expect(result.stopReason).toBe("error");
+    expect(result.errorMessage).toContain("does not support response_format");
+  });
+
+  it("requires an explicit trusted adapter for remote URLs and uses it when supplied", async () => {
+    mockState.mockResponse = { data: [{ url: "https://cdn.example.com/image.png" }] };
+    const context: ImagesContext = { input: [{ type: "text", text: "draw" }] };
+    const missingAdapter = await generateImagesOpenAI(dummyModel, context, { apiKey: "test-key", fetch: fakeFetch });
+    expect(missingAdapter.stopReason).toBe("error");
+    expect(missingAdapter.errorMessage).toContain("require a trusted download adapter");
+
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const downloadImage = vi.fn(async () => ({ buffer: png, mimeType: "image/png" }));
+    const downloaded = await generateImagesOpenAI(dummyModel, context, {
+      apiKey: "test-key",
+      fetch: fakeFetch,
+      downloadImage,
+    });
+    expect(downloaded.stopReason).toBe("stop");
+    expect(downloaded.output[0]).toMatchObject({ type: "image", mimeType: "image/png" });
+    expect(downloadImage).toHaveBeenCalledWith("https://cdn.example.com/image.png", { signal: undefined });
   });
 
   it("rejects oversized base64 image responses before decoding", async () => {

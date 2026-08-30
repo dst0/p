@@ -1,3 +1,5 @@
+import type { ImagesApi, ImagesModel } from "@dst0/p-ai";
+
 export interface ParsedRatio {
   width: number;
   height: number;
@@ -125,5 +127,3 @@ export function validateDimensionsForModel(model: ImagesModel<ImagesApi>, dimens
     throw new Error("GPT Image 2 dimensions must contain between 655360 and 8294400 total pixels");
   }
 }
-
-import type { ImagesApi, ImagesModel } from "@dst0/p-ai";

@@ -73,6 +73,12 @@ describe("image-dimensions calculation and validation", () => {
     expect(() => resolveDimensions("invalid")).toThrow("Invalid size format");
     expect(() => resolveDimensions("0x1024")).toThrow("Invalid size format");
     expect(() => resolveDimensions("1024x0")).toThrow("Invalid size format");
+    expect(() => resolveDimensions("invalid", "1:1")).toThrow("Invalid size format");
+  });
+
+  it("supports auto only when no explicit aspect ratio is supplied", () => {
+    expect(resolveDimensions("auto")).toBe("auto");
+    expect(() => resolveDimensions("auto", "16:9")).toThrow('Cannot combine size "auto"');
   });
 
   it("applies GPT Image 2 limits without constraining llm-orchestrator dimensions", () => {
@@ -84,6 +90,9 @@ describe("image-dimensions calculation and validation", () => {
     expect(() => validateDimensionsForModel(openaiModel!, "1024x1024")).not.toThrow();
     expect(() => validateDimensionsForModel(openaiModel!, "1234x567")).toThrow("multiples of 16");
     expect(() => validateDimensionsForModel(openaiModel!, "4096x1024")).toThrow("3840 pixels");
+    expect(() => validateDimensionsForModel(openaiModel!, "3840x1024")).toThrow("3:1 aspect ratio");
+    expect(() => validateDimensionsForModel(openaiModel!, "512x1024")).toThrow("between 655360 and 8294400");
+    expect(() => validateDimensionsForModel(openaiModel!, "invalid")).toThrow("Invalid size format");
     expect(() => validateDimensionsForModel(orchestratorModel!, "1234x567")).not.toThrow();
   });
 });

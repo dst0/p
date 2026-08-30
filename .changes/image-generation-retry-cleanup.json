@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["ai"],
+  "type": "Fixed",
+  "summary": "Close retry response streams, reject invalid retry counts, and back off transient image transport failures."
+}

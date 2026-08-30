@@ -19,11 +19,7 @@ export function decodeImageBase64Safely(encoded: string, requestedMaximumBytes =
   if (decodedLength > maximumBytes) {
     throw new Error(`Image data exceeds maximum limit of ${maximumBytes} bytes`);
   }
-  const buffer = Buffer.from(normalized, "base64");
-  if (buffer.length > maximumBytes) {
-    throw new Error(`Image data exceeds maximum limit of ${maximumBytes} bytes`);
-  }
-  return buffer;
+  return Buffer.from(normalized, "base64");
 }
 
 /**

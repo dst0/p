@@ -43,6 +43,11 @@ function requestedRetryDelayMs(headers: Headers): number | undefined {
   return Number.isNaN(date) ? undefined : Math.max(0, date - Date.now());
 }
 
+function fallbackRetryDelayMs(attempt: number, maximumDelayMs: number): number {
+  const fallback = DEFAULT_RETRY_BASE_DELAY_MS * 2 ** attempt;
+  return maximumDelayMs > 0 ? Math.min(fallback, maximumDelayMs) : fallback;
+}
+
 function retryDelayMs(response: Response, attempt: number, maximumDelayMs: number): number {
   const requested = requestedRetryDelayMs(response.headers);
   if (requested !== undefined) {
@@ -51,8 +56,7 @@ function retryDelayMs(response: Response, attempt: number, maximumDelayMs: numbe
     }
     return requested;
   }
-  const fallback = DEFAULT_RETRY_BASE_DELAY_MS * 2 ** attempt;
-  return maximumDelayMs > 0 ? Math.min(fallback, maximumDelayMs) : fallback;
+  return fallbackRetryDelayMs(attempt, maximumDelayMs);
 }
 
 function sleepDefault(milliseconds: number, signal?: AbortSignal): Promise<void> {
@@ -129,13 +133,16 @@ export async function postImageJson<T>(
   const headers = new Headers(options.headers);
   headers.set("content-type", "application/json");
   if (!headers.has("authorization") && options.apiKey) headers.set("authorization", `Bearer ${options.apiKey}`);
-  const maxRetries = Math.max(0, options.maxRetries ?? 0);
+  const maxRetries = options.maxRetries ?? 0;
+  if (!Number.isFinite(maxRetries) || !Number.isInteger(maxRetries) || maxRetries < 0) {
+    throw new Error("maxRetries must be a non-negative finite integer");
+  }
   const maxRetryDelayMs = options.maxRetryDelayMs ?? DEFAULT_MAX_RETRY_DELAY_MS;
   if (!Number.isFinite(maxRetryDelayMs) || maxRetryDelayMs < 0) {
     throw new Error("maxRetryDelayMs must be a non-negative finite number");
   }
 
-  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+  for (let attempt = 0; ; attempt++) {
     let response: Response;
     try {
       response = await fetchFunction(url, {
@@ -146,14 +153,18 @@ export async function postImageJson<T>(
       });
     } catch (error) {
       if (options.signal?.aborted) throw new Error("Request aborted");
-      if (attempt < maxRetries) continue;
+      if (attempt < maxRetries) {
+        const delayMs = fallbackRetryDelayMs(attempt, maxRetryDelayMs);
+        await (options.sleep ?? sleepDefault)(delayMs, options.signal);
+        continue;
+      }
       throw error;
     }
 
     if (!response.ok) {
       if (attempt < maxRetries && shouldRetry(response.status)) {
-        const delayMs = retryDelayMs(response, attempt, maxRetryDelayMs);
         await response.body?.cancel().catch(() => undefined);
+        const delayMs = retryDelayMs(response, attempt, maxRetryDelayMs);
         await (options.sleep ?? sleepDefault)(delayMs, options.signal);
         continue;
       }
@@ -162,6 +173,4 @@ export async function postImageJson<T>(
     const responseText = await readBoundedImageResponse(response, MAX_IMAGE_JSON_RESPONSE_BYTES);
     return { data: JSON.parse(responseText) as T, response };
   }
-
-  throw new Error("Image generation request failed after retries");
 }

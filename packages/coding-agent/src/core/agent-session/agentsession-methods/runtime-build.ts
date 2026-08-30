@@ -46,7 +46,7 @@ export function do__buildRuntime(
             }),
         },
         generateImage: {
-          resolveModel: () => self.resolveImageModel(),
+          resolveModel: self.resolveImageModel.bind(self),
         },
       });
   const builtInToolDefinitions: Record<string, ToolDefinition> = {

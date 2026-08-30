@@ -1,4 +1,5 @@
 import type { ImagesModel } from "@dst0/p-ai";
+import { Container, Text } from "@dst0/p-tui";
 import { describe, expect, it } from "vitest";
 import { createGenerateImageToolDefinition } from "../src/core/tools/generate-image.ts";
 
@@ -35,5 +36,31 @@ describe("generate_image rendering", () => {
       { isError: true, showHarnessMessages: true } as never,
     );
     expect((errorComponent as unknown as { text: string }).text).toContain("Something went wrong");
+
+    const sanitizedError = toolDefinition.renderResult!(
+      {
+        content: [{ type: "text", text: "Verification evidence handle: internal\nVisible failure" }],
+        details: { outputPath: "dog.png", bytes: 0, mimeType: "image/png", prompt: "A dog" },
+      },
+      {} as never,
+      theme as never,
+      { isError: true, showHarnessMessages: false } as never,
+    );
+    expect((sanitizedError as unknown as { text: string }).text).toContain("Visible failure");
+    expect((sanitizedError as unknown as { text: string }).text).not.toContain("evidence handle");
+
+    const previousComponent = new Container();
+    previousComponent.addChild(new Text("stale", 0, 0));
+    const success = toolDefinition.renderResult!(
+      {
+        content: [{ type: "text", text: "saved" }],
+        details: { outputPath: "dog.png", bytes: 1, mimeType: "image/png", prompt: "A dog" },
+      },
+      {} as never,
+      theme as never,
+      { isError: false, lastComponent: previousComponent } as never,
+    );
+    expect(success).toBe(previousComponent);
+    expect(previousComponent.children).toHaveLength(0);
   });
 });
