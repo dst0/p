@@ -13,7 +13,7 @@
 ────────────────────────────────────────────────────────────────────────────────
 → model          Select model (opens selector UI)
   scoped-models  Enable/disable models for Ctrl+P cycling
-~/dev/p/packages/coding-agent (main)
+~/dev/p/packages/coding-agent (jules-1071408745862596731-2ef84397)
 🔎 static-indexing-status
 
 
