@@ -371,10 +371,6 @@
     "classes": 0,
     "lines": 368
   },
-  "packages/coding-agent/src/core/tools/index.ts": {
-    "classes": 0,
-    "lines": 343
-  },
   "packages/coding-agent/src/core/tools/read.ts": {
     "classes": 0,
     "lines": 368

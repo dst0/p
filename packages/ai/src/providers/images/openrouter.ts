@@ -1,11 +1,3 @@
-import OpenAI from "openai";
-import type {
-  ChatCompletion,
-  ChatCompletionContentPart,
-  ChatCompletionContentPartImage,
-  ChatCompletionContentPartText,
-  ChatCompletionCreateParamsNonStreaming,
-} from "openai/resources/chat/completions.js";
 import type {
   AssistantImages,
   ImageContent,
@@ -16,28 +8,42 @@ import type {
   TextContent,
 } from "../../types.ts";
 import { headersToRecord } from "../../utils/headers.ts";
+import { decodeImageBase64Safely, detectImageMimeType } from "../../utils/image-mime.ts";
 import { sanitizeSurrogates } from "../../utils/sanitize-unicode.ts";
+import { postImageJson } from "./image-http.ts";
 
-interface OpenRouterGeneratedImage {
-  image_url?: string | { url?: string };
+interface OpenRouterImagesOptions extends ImagesOptions {
+  fetch?: typeof globalThis.fetch;
 }
 
-type OpenRouterImageGenerationMessage = ChatCompletion["choices"][number]["message"] & {
-  images?: OpenRouterGeneratedImage[];
-};
+interface OpenRouterImageResponse {
+  id?: string;
+  usage?: {
+    prompt_tokens?: number;
+    completion_tokens?: number;
+    prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
+  };
+  choices?: Array<{
+    message: {
+      content?: string | null;
+      images?: Array<{ image_url?: string | { url?: string } }>;
+    };
+  }>;
+}
 
-type OpenRouterImageGenerationChoice = ChatCompletion["choices"][number] & {
-  message: OpenRouterImageGenerationMessage;
-};
+type OpenRouterContentPart = { type: "text"; text: string } | { type: "image_url"; image_url: { url: string } };
 
-type OpenRouterImageGenerationResponse = ChatCompletion & {
-  choices: OpenRouterImageGenerationChoice[];
-};
+interface OpenRouterImagePayload extends Record<string, unknown> {
+  model: string;
+  messages: Array<{ role: "user"; content: OpenRouterContentPart[] }>;
+  stream: false;
+  modalities: Array<"image" | "text">;
+}
 
-export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", ImagesOptions> = async (
+export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", OpenRouterImagesOptions> = async (
   model: ImagesModel<"openrouter-images">,
   context: ImagesContext,
-  options?: ImagesOptions,
+  options?: OpenRouterImagesOptions,
 ) => {
   const output: AssistantImages = {
     api: model.api,
@@ -50,51 +56,42 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
 
   try {
     const apiKey = options?.apiKey;
-    if (!apiKey) {
-      throw new Error(`No API key for provider: ${model.provider}`);
-    }
-    const client = createClient(model, apiKey, options?.headers);
-    let params = buildParams(model, context);
-    const nextParams = await options?.onPayload?.(params, model);
-    if (nextParams !== undefined) {
-      params = nextParams as typeof params;
-    }
-    const requestOptions = {
-      ...(options?.signal ? { signal: options.signal } : {}),
-      ...(options?.timeoutMs !== undefined ? { timeout: options.timeoutMs } : {}),
-      maxRetries: options?.maxRetries ?? 0,
-    };
-    const { data: response, response: rawResponse } = await client.chat.completions
-      .create(params as unknown as ChatCompletionCreateParamsNonStreaming, requestOptions)
-      .withResponse();
+    if (!apiKey) throw new Error(`No API key for provider: ${model.provider}`);
+    let payload = buildPayload(model, context);
+    const nextPayload = await options?.onPayload?.(payload, model);
+    if (nextPayload !== undefined) payload = nextPayload as OpenRouterImagePayload;
+
+    const { data: response, response: rawResponse } = await postImageJson<OpenRouterImageResponse>(
+      model.baseUrl,
+      "chat/completions",
+      payload,
+      {
+        apiKey,
+        headers: { ...model.headers, ...options?.headers },
+        signal: options?.signal,
+        timeoutMs: options?.timeoutMs,
+        maxRetries: options?.maxRetries,
+        maxRetryDelayMs: options?.maxRetryDelayMs,
+        fetch: options?.fetch,
+      },
+    );
     await options?.onResponse?.({ status: rawResponse.status, headers: headersToRecord(rawResponse.headers) }, model);
 
-    const imageResponse = response as OpenRouterImageGenerationResponse;
-    output.responseId = imageResponse.id;
-    if (imageResponse.usage) {
-      output.usage = parseUsage(imageResponse.usage, model);
+    output.responseId = response.id;
+    if (response.usage) output.usage = parseUsage(response.usage, model);
+    const choice = response.choices?.[0];
+    if (choice?.message.content) {
+      output.output.push({ type: "text", text: choice.message.content } satisfies TextContent);
     }
-
-    const choice = imageResponse.choices[0];
-    if (choice) {
-      const content = choice.message.content;
-      if (typeof content === "string" && content.length > 0) {
-        output.output.push({ type: "text", text: content } satisfies TextContent);
-      }
-
-      for (const image of choice.message.images ?? []) {
-        const imageUrl = typeof image.image_url === "string" ? image.image_url : image.image_url?.url;
-        if (!imageUrl?.startsWith("data:")) continue;
-        const matches = imageUrl.match(/^data:([^;]+);base64,(.+)$/);
-        if (!matches) continue;
-        output.output.push({
-          type: "image",
-          mimeType: matches[1],
-          data: matches[2],
-        } satisfies ImageContent);
-      }
+    for (const image of choice?.message.images ?? []) {
+      const imageUrl = typeof image.image_url === "string" ? image.image_url : image.image_url?.url;
+      const matches = imageUrl?.match(/^data:[^;]+;base64,(.+)$/);
+      if (!matches) continue;
+      const buffer = decodeImageBase64Safely(matches[1]);
+      const mimeType = detectImageMimeType(buffer);
+      if (!mimeType) throw new Error("Provider returned image data with unrecognized or invalid binary format");
+      output.output.push({ type: "image", mimeType, data: buffer.toString("base64") } satisfies ImageContent);
     }
-
     return output;
   } catch (error) {
     output.stopReason = options?.signal?.aborted ? "aborted" : "error";
@@ -103,63 +100,21 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", Image
   }
 };
 
-function createClient(
-  model: ImagesModel<"openrouter-images">,
-  apiKey: string,
-  optionsHeaders?: Record<string, string>,
-): OpenAI {
-  return new OpenAI({
-    apiKey,
-    baseURL: model.baseUrl,
-    dangerouslyAllowBrowser: true,
-    defaultHeaders: {
-      ...model.headers,
-      ...optionsHeaders,
-    },
-  });
-}
-
-type OpenRouterImagesCreateParams = Omit<ChatCompletionCreateParamsNonStreaming, "modalities"> & {
-  modalities: Array<"image" | "text">;
-};
-
-function buildParams(model: ImagesModel<"openrouter-images">, context: ImagesContext): OpenRouterImagesCreateParams {
-  const content: ChatCompletionContentPart[] = context.input.map((item): ChatCompletionContentPart => {
-    if (item.type === "text") {
-      return {
-        type: "text",
-        text: sanitizeSurrogates(item.text),
-      } satisfies ChatCompletionContentPartText;
-    }
-    return {
-      type: "image_url",
-      image_url: {
-        url: `data:${item.mimeType};base64,${item.data}`,
-      },
-    } satisfies ChatCompletionContentPartImage;
-  });
-
+function buildPayload(model: ImagesModel<"openrouter-images">, context: ImagesContext): OpenRouterImagePayload {
+  const content: OpenRouterContentPart[] = context.input.map((item) =>
+    item.type === "text"
+      ? { type: "text", text: sanitizeSurrogates(item.text) }
+      : { type: "image_url", image_url: { url: `data:${item.mimeType};base64,${item.data}` } },
+  );
   return {
     model: model.id,
-    messages: [
-      {
-        role: "user" as const,
-        content,
-      },
-    ],
+    messages: [{ role: "user", content }],
     stream: false,
     modalities: model.output.includes("text") ? ["image", "text"] : ["image"],
   };
 }
 
-function parseUsage(
-  rawUsage: {
-    prompt_tokens?: number;
-    completion_tokens?: number;
-    prompt_tokens_details?: { cached_tokens?: number; cache_write_tokens?: number };
-  },
-  model: ImagesModel<"openrouter-images">,
-) {
+function parseUsage(rawUsage: NonNullable<OpenRouterImageResponse["usage"]>, model: ImagesModel<"openrouter-images">) {
   const promptTokens = rawUsage.prompt_tokens || 0;
   const reportedCachedTokens = rawUsage.prompt_tokens_details?.cached_tokens || 0;
   const cacheWriteTokens = rawUsage.prompt_tokens_details?.cache_write_tokens || 0;
@@ -174,10 +129,10 @@ function parseUsage(
     cacheWrite: cacheWriteTokens,
     totalTokens: input + output + cacheReadTokens + cacheWriteTokens,
     cost: {
-      input: (model.cost.input / 1000000) * input,
-      output: (model.cost.output / 1000000) * output,
-      cacheRead: (model.cost.cacheRead / 1000000) * cacheReadTokens,
-      cacheWrite: (model.cost.cacheWrite / 1000000) * cacheWriteTokens,
+      input: (model.cost.input / 1_000_000) * input,
+      output: (model.cost.output / 1_000_000) * output,
+      cacheRead: (model.cost.cacheRead / 1_000_000) * cacheReadTokens,
+      cacheWrite: (model.cost.cacheWrite / 1_000_000) * cacheWriteTokens,
       total: 0,
     },
   };

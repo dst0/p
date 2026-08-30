@@ -45,6 +45,9 @@ export function do__buildRuntime(
               fullLogPointer: context.fullOutputPath,
             }),
         },
+        generateImage: {
+          resolveModel: self.resolveImageModel.bind(self),
+        },
       });
   const builtInToolDefinitions: Record<string, ToolDefinition> = {
     ...baseToolDefinitions,

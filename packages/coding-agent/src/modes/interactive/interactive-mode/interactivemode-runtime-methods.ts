@@ -76,6 +76,8 @@ export interface InteractiveModeRuntimeMethods {
   showSettingsSelector(): void;
   setShowHarnessMessages(enabled: boolean): void;
   handleModelCommand(searchTerm?: string): Promise<void>;
+  handleImageModelCommand(searchTerm?: string): Promise<void>;
+  showImageModelSelector(searchTerm?: string): void;
   findExactModelMatch(searchTerm: string): Promise<Model<any> | undefined>;
   getModelCandidates(): Promise<Model<any>[]>;
   updateAvailableProviderCount(): Promise<void>;

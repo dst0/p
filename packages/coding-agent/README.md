@@ -168,6 +168,7 @@ Type `/` in the editor to trigger commands. [Extensions](#extensions) can regist
 | `/login`, `/logout` | OAuth authentication |
 | `/plan [request]` | Plan first and wait for approval before execution |
 | `/model` | Switch models |
+| `/model:image` | Select the image-generation model used by `generate_image` |
 | `/scoped-models` | Enable/disable models for Ctrl+P cycling |
 | `/settings` | Thinking level, theme, message delivery, transport |
 | `/resume` | Pick from previous sessions |
@@ -285,6 +286,8 @@ Use `/settings` to modify common options, or edit JSON files directly:
 | `.p/settings.json` | Project (overrides global) |
 
 See [docs/settings.md](docs/settings.md) for all options.
+
+The built-in `generate_image` tool supports OpenAI GPT Image 2 and LLM-orchestrator. Select a registered model with `/model:image`, or configure `defaultImageProvider` and `defaultImageModel`. A custom OpenAI-compatible provider from `models.json` can be reused for image generation; p preserves it through model selection, reuses its base URL, credential, and resolved headers, and sends the configured image model ID to `/v1/images/generations`. Generated responses have a 50MB decoded-byte hard ceiling and a 36-megapixel structural dimension ceiling.
 
 ---
 

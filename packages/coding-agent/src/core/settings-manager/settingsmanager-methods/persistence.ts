@@ -38,6 +38,14 @@ export function do_getDefaultModel(self: SettingsManager): string | undefined {
   return self.settings.defaultModel;
 }
 
+export function do_getDefaultImageProvider(self: SettingsManager): string | undefined {
+  return self.settings.defaultImageProvider ?? self.settings.images?.defaultProvider;
+}
+
+export function do_getDefaultImageModel(self: SettingsManager): string | undefined {
+  return self.settings.defaultImageModel ?? self.settings.images?.defaultModel;
+}
+
 export function do_getServiceModelSelection(self: SettingsManager): {
   provider?: string;
   modelId?: string;
@@ -94,6 +102,14 @@ export function do_setDefaultModelAndProvider(self: SettingsManager, provider: s
   self.globalSettings.defaultModel = modelId;
   self.markModified("defaultProvider");
   self.markModified("defaultModel");
+  self.save();
+}
+
+export function do_setDefaultImageModelAndProvider(self: SettingsManager, provider: string, modelId: string): void {
+  self.globalSettings.defaultImageProvider = provider;
+  self.globalSettings.defaultImageModel = modelId;
+  self.markModified("defaultImageProvider");
+  self.markModified("defaultImageModel");
   self.save();
 }
 

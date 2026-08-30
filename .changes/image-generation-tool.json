@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "ai",
+    "coding-agent"
+  ],
+  "type": "Added",
+  "summary": "Add secure generate_image tooling, /model:image selection, and OpenAI, LLM-orchestrator, and configured OpenAI-compatible endpoint support."
+}

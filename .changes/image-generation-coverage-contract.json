@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "summary": "Add non-user-facing boundary coverage for image transport, envelope validation, provider selection, and tool registration."
+}
