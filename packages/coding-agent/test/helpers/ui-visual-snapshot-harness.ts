@@ -36,9 +36,12 @@ export function sanitizeUIOutput(text: string): string {
     .join("\n")
     .replace(/p v\d+\.\d+\.\d+/g, "p v0.4.169")
     .replace(/([^\n\s]+)\/packages\/coding-agent/g, "~/dev/p/packages/coding-agent")
+    .replace(/^\/app \(/gm, "~/dev/p/packages/coding-agent (")
     .replace(/^(~\/dev\/p\/packages\/coding-agent) \([^\n)]*\.\.\.$/gm, "$1 (main)")
     .replace(/ \(([^)\n]+)\)/g, (match, inner) =>
-      (inner.includes("/") || inner === "detached") && !/^\d+\/\d+$/.test(inner) ? " (main)" : match,
+      (inner.includes("/") || inner === "detached" || inner.includes("jules")) && !/^\d+\/\d+$/.test(inner)
+        ? " (main)"
+        : match,
     )
     .replace(/faux:\d+:[a-z0-9]+/g, "faux:static-id")
     .replace(/🔎[^\n]*/g, "🔎 static-indexing-status");
