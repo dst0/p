@@ -197,7 +197,7 @@ describe("generate_image tool", () => {
     );
 
     await expect(tool.execute("call-c3", { prompt: "Test", aspectRatio: "invalid-ratio" })).rejects.toThrow(
-      "Unsupported aspectRatio",
+      "Invalid aspectRatio format",
     );
   });
 

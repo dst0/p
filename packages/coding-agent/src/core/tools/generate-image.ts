@@ -6,6 +6,7 @@ import { dirname, extname, relative } from "path";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
+import { resolveDimensions } from "./image-dimensions.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, str, stripHarnessMessages } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -76,36 +77,6 @@ export interface GenerateImageToolOptions {
   apiKey?: string;
   resolveModel?: () => Promise<GenerateImageModelResolution | undefined> | GenerateImageModelResolution | undefined;
   operations?: GenerateImageOperations;
-}
-
-const SUPPORTED_ASPECT_RATIOS: Record<string, string> = {
-  "1:1": "1024x1024",
-  "16:9": "1792x1024",
-  "9:16": "1024x1792",
-  "4:3": "1024x768",
-  "3:2": "1200x800",
-};
-
-function resolveAspectRatio(aspectRatio?: string): string | undefined {
-  if (!aspectRatio) return undefined;
-  const resolved = SUPPORTED_ASPECT_RATIOS[aspectRatio];
-  if (!resolved) {
-    throw new Error(
-      `Unsupported aspectRatio "${aspectRatio}". Supported ratios: ${Object.keys(SUPPORTED_ASPECT_RATIOS).join(", ")}`,
-    );
-  }
-  return resolved;
-}
-
-function resolveDimensions(size?: string, aspectRatio?: string): string | undefined {
-  if (size && aspectRatio) {
-    const expected = resolveAspectRatio(aspectRatio);
-    if (expected && expected !== size) {
-      throw new Error(`Conflicting size ("${size}") and aspectRatio ("${aspectRatio}") specified`);
-    }
-  }
-  if (size) return size;
-  return resolveAspectRatio(aspectRatio);
 }
 
 function mimeToExtension(mime: string): string {
