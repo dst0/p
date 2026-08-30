@@ -39,6 +39,7 @@ export function computeUserRequirementsHash(
       sha256: source.sha256,
       byteLength: source.byteLength,
       referencedByPromptIds: source.referencedByPromptIds,
+      definitionSourcePromptCount: source.definitionSourcePromptCount,
       capturedAtMutationRevision: source.capturedAtMutationRevision,
       origin: source.origin,
       policyVersion: source.policyVersion,

@@ -150,8 +150,8 @@ each candidate to an immutable SHA-256 covering the copied P runtime, Node
 executable, and complete paired-benchmark orchestration and measurement closure in the private local
 `.pdev/benchmark-candidate-registry.json` registry. All three repetitions and
 reruns of the same runtime reuse that candidate. The first benchmark of a
-changed runtime must use the strictly next sequential candidate; reuse against
-a different runtime, skips, and rollback fail closed. `results.json` and
+changed runtime must use a strictly greater candidate; numeric gaps are allowed,
+while reuse against a different runtime and rollback fail closed. `results.json` and
 `report.md` always record the candidate and runtime identities. Package
 manifests stay unchanged until the certified release transaction sets final
 version `5.0.1`.

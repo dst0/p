@@ -277,6 +277,8 @@ This prevents the model from treating it as a conversation to continue.
 
 Tool results are truncated to 2000 characters during serialization. Content beyond that limit is replaced with a marker indicating how many characters were truncated. This keeps summarization requests within reasonable token budgets, since tool results (especially from `read` and `bash`) are typically the largest contributors to context size.
 
+Task-verification results also carry a bounded structured context extract. It preserves the exact current next-action block when it fits, including the tool or command, evidence references, mutation revision, and JSON payload. An active rejected requirement definition additionally carries one controller-owned `selected_repair_target` envelope with the exact diagnostic, target key, stable source ID, source ordinal, path/kind/hash, clause location, and exact clause text; immediate repair feedback, status/restore, and compacted pointers derive the same envelope from frozen source snapshots rather than from model memory. Opaque controller IDs must never be inferred or renumbered from a summary. An oversized action or repair target is never exposed as an executable truncation: the extract requires exact raw recall, and the compacted stub supplies the corresponding session pointer. This prevents compaction from preserving only a status marker, an incomplete command, or an unbound source-clause ordinal while dropping the authoritative recovery identity.
+
 ## Custom Summarization via Extensions
 
 Extensions can intercept and customize both compaction and branch summarization. See [`extensions/types.ts`](https://github.com/dst0/p-mono/blob/main/packages/coding-agent/src/core/extensions/types.ts) for event type definitions.

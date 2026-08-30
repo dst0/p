@@ -66,9 +66,9 @@ export function formatRequirementDefinitionDiagnostics(diagnostics: readonly str
     `Requirement definition has ${diagnostics.length} deterministic validation errors across ${represented.length} repair classes; detailed output was bounded to ${MAX_REQUIREMENT_DEFINITION_DIAGNOSTIC_BYTES} UTF-8 bytes:`,
     ...represented.map(
       (group, index) =>
-        `${index + 1}. [${group.count} ${group.count === 1 ? "instance" : "instances"}] ${truncateUtf8(group.example, MAX_REPAIR_CLASS_EXAMPLE_BYTES)}`,
+        `${index + 1}. ${truncateUtf8(group.example, MAX_REPAIR_CLASS_EXAMPLE_BYTES)} [${group.count} ${group.count === 1 ? "instance" : "instances"}]`,
     ),
-    `${omittedInstances} additional diagnostic instances are not expanded; every repair class is represented above. Apply each repair class to all matching items in the submitted definition, then resubmit the complete batch.`,
+    `${omittedInstances} additional diagnostic instances are not expanded; every repair class is represented above. Repair only the controller-selected concrete item, then rerun validation to reveal the next target.`,
   ].join("\n");
   return truncateUtf8(bounded, MAX_REQUIREMENT_DEFINITION_DIAGNOSTIC_BYTES);
 }

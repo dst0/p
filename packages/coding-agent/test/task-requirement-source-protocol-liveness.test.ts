@@ -155,6 +155,17 @@ describe("referenced requirement-source protocol liveness", () => {
     expect([...harness.controller.requirementSourceTexts.entries()]).toEqual(frozenTexts);
   });
 
+  it("preserves reusable source order when selected paths are reordered", async () => {
+    const { harness, workspace } = await setup(workspaces, "Implement README.md and SPEC.md requirements.", true);
+    await writeFile(join(workspace, "SPEC.md"), "Preserve stable ordering.\n");
+    git(workspace, "add", "SPEC.md");
+    await prepare(harness, ["README.md", "SPEC.md"]);
+    const original = harness.controller.currentState.requirementSourceRefs?.map((source) => source.path);
+    await nextModelTurn(harness);
+    await prepare(harness, ["SPEC.md", "README.md"]);
+    expect(harness.controller.currentState.requirementSourceRefs?.map((source) => source.path)).toEqual(original);
+  });
+
   it("requires explicit user confirmation before adopting changed source bytes", async () => {
     const { harness, workspace } = await setup(
       workspaces,

@@ -5,7 +5,8 @@ import { isShellTool } from "../tool-classification.ts";
 import type { TaskRequirement, TaskVerificationEvidence } from "../types.ts";
 import { evidenceMatchesRequirement } from "./focused-evidence-relevance.ts";
 import { focusedTestInvocation } from "./test-command-invocation.ts";
-import { focusedRequirementSelectors, hasPositivePassingTestResult } from "./test-invocation-selection.ts";
+import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
+import { focusedRequirementSelectors } from "./test-invocation-selection.ts";
 
 export function isFocusedEvidence(
   self: TaskVerificationController,
@@ -19,7 +20,7 @@ export function isFocusedEvidence(
     evidenceMatchesRequirement(requirement, selectors) &&
     selectorsMatchProofPolicies(requirement, selectors) &&
     evidenceHasProofWitnesses(evidence, requirement, self.state.requirementAudit.requirementSetHash) &&
-    hasPositivePassingTestResult(evidence.outputSummary)
+    evidenceHasPositivePassingTestResult(evidence)
   );
 }
 

@@ -10,10 +10,11 @@ export function requirementAuditAfterTaskDeclaration(
   taskPrompts: TaskVerificationSourcePrompt[],
 ): TaskRequirementAuditState {
   const audit = self.state.requirementAudit;
+  const promptContext = taskPrompts.map((prompt) => prompt.text).join("\n") || self.latestUserPrompt;
   const prospectiveState = {
     ...self.state,
     taskSummary,
-    taskContext: self.latestUserPrompt.slice(0, 2_000) || undefined,
+    taskContext: promptContext.slice(0, 2_000) || undefined,
     taskPrompts,
   };
   const sourcesAvailable =

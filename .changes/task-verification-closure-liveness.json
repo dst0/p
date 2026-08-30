@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep verification recovery compaction-safe, preserve stable requirement-source identity, enforce syntax-aware high-risk provenance, classify mixed task intent by requested effect, retire only manifest-proven missing test scripts, and make rejected definitions durable singular repairs with deterministic duplicate consolidation."
+}

@@ -1,14 +1,9 @@
 import { describe, expect, it } from "vitest";
 import type { ExtensionContext } from "../src/core/extensions/types.ts";
 import { validateRequirementDefinition } from "../src/core/task-verification/requirement-definition-validation.ts";
-import type { TaskVerificationController } from "../src/core/task-verification/taskverificationcontroller.ts";
 import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
-import type {
-  RequirementAuditInput,
-  TaskVerificationSourcePrompt,
-  TaskVerificationState,
-  VerificationResult,
-} from "../src/core/task-verification/types.ts";
+import type { RequirementAuditInput, TaskVerificationSourcePrompt } from "../src/core/task-verification/types.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
 
 const directPrompt: TaskVerificationSourcePrompt = {
   id: "prompt-1",
@@ -149,16 +144,10 @@ describe("single-batch requirement definition", () => {
   });
 
   it("returns focused define repairs without replaying the full definition prompt", async () => {
-    const state = {} as TaskVerificationState;
-    const rejection: VerificationResult = {
-      status: "needs_action",
-      message: "Requirement 1 is compound.",
-      state,
-    };
-    const controller = {
-      applyRequirementAudit: () => rejection,
-      withGuidance: () => "FULL DEFINITION PROMPT REPLAY",
-    } as unknown as TaskVerificationController;
+    const { controller } = createRequirementAuditToolControllerDouble(
+      (_input, state) => ({ status: "needs_action", message: "Requirement 1 is compound.", state }),
+      { withGuidance: () => "FULL DEFINITION PROMPT REPLAY" },
+    );
     const tool = do_createRequirementAuditToolDefinition(controller);
 
     const extensionContext = {} as ExtensionContext;
@@ -189,23 +178,18 @@ describe("single-batch requirement definition", () => {
   });
 
   it("repairs a rejected definition sparsely while validating one complete merged batch", async () => {
-    const state = {
-      requirementAudit: { status: "awaiting_definition" },
-    } as TaskVerificationState;
     const received: RequirementAuditInput[] = [];
-    const controller = {
-      applyRequirementAudit: (input: RequirementAuditInput): VerificationResult => {
-        received.push(input);
-        return received.length === 1
-          ? {
-              status: "needs_action",
-              message: "Requirement 2 is compound.",
-              state,
-              requirementDefinitionDiagnosticCount: 1,
-            }
-          : { status: "updated", message: "Defined 3 atomic requirements.", state };
-      },
-    } as unknown as TaskVerificationController;
+    const { controller } = createRequirementAuditToolControllerDouble((input, state) => {
+      received.push(input);
+      return received.length === 1
+        ? {
+            status: "needs_action",
+            message: "Requirement 2 is compound.",
+            state,
+            requirementDefinitionDiagnosticCount: 1,
+          }
+        : { status: "updated", message: "Defined 3 atomic requirements.", state };
+    });
     const tool = do_createRequirementAuditToolDefinition(controller);
     const extensionContext = {} as ExtensionContext;
     const initial = await tool.execute(

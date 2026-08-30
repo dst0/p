@@ -8,6 +8,7 @@ const ACTION_FIELDS: Record<RequirementAuditAction, readonly (keyof RequirementA
   repair_definition: [
     "action",
     "definition_revision",
+    "requirement_addition",
     "requirement_repairs",
     "ignored_source_prompt_upserts",
     "ignored_source_prompt_removals",

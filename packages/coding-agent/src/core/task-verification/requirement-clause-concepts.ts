@@ -8,6 +8,12 @@ function regexConcept(name: string, pattern: RegExp): CriticalConcept {
 }
 
 const CRITICAL_CONCEPTS: CriticalConcept[] = [
+  regexConcept(
+    "access control",
+    /\b(?:access\s+controls?|auth(?:entication|orization)?|authenticate(?:d)?|unauthenticated|authorize|authorized|credentials?|permissions?)\b/iu,
+  ),
+  regexConcept("recovery", /\b(?:recover\w*|rollback\w*|resume\w*)\b/iu),
+  regexConcept("integrity", /\bintegrity\b/iu),
   regexConcept("command ID", /\bcommand[-\s]?ids?\b/iu),
   regexConcept("idempotency record", /\bidempoten\w*\b/iu),
   regexConcept("state", /\bstate\b/iu),

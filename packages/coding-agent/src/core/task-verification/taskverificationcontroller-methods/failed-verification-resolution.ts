@@ -7,7 +7,8 @@ import {
   focusedTestInvocation,
   type TestCommandInvocation,
 } from "./test-command-invocation.ts";
-import { hasPositivePassingTestResult, testInvocationCovers } from "./test-invocation-selection.ts";
+import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
+import { testInvocationCovers } from "./test-invocation-selection.ts";
 
 const PYTEST_NAME_FILTER_USAGE_ERROR_PATTERN = /(?:^|\n)\s*ERROR:\s+Wrong expression passed to ['"]-k['"](?::|\s*$)/iu;
 const AFFIRMATIVE_TEST_FAILURE_PATTERN = /\bAssertionError\b|\b[1-9]\d*\s+(?:tests?\s+)?failed\b|(?:^|\n)\s*FAIL\b/iu;
@@ -38,7 +39,13 @@ export function resolveLatestFailedVerificationEvidence(
   }
 
   const failedTests = current.filter((item, index) => {
-    if (!item.isError || !commandContainsTestInvocation(item.descriptor)) return false;
+    if (
+      !item.isError ||
+      item.verificationFailureKind === "missing_test_script" ||
+      !commandContainsTestInvocation(item.descriptor)
+    ) {
+      return false;
+    }
     return !current.slice(index + 1).some((later) => supersedesFailedTest(later, item));
   });
   const failedGenerics = [...latestGenericByCommand.values()].filter((item) => item.isError);
@@ -52,9 +59,9 @@ export function isVerificationCommand(descriptor: string): boolean {
 
 function supersedesFailedTest(later: TaskVerificationEvidence, failed: TaskVerificationEvidence): boolean {
   if (later.descriptor === failed.descriptor) {
-    return later.isError || hasPositivePassingTestResult(later.outputSummary);
+    return later.isError || evidenceHasPositivePassingTestResult(later);
   }
-  if (later.isError || !hasPositivePassingTestResult(later.outputSummary)) return false;
+  if (later.isError || !evidenceHasPositivePassingTestResult(later)) return false;
   const laterInvocation = focusedTestInvocation(later.descriptor);
   const failedInvocation = focusedTestInvocation(failed.descriptor);
   return (

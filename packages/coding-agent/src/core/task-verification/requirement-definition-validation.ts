@@ -13,9 +13,11 @@ import {
   validateRequirementClauseCoverage,
   validateRequirementFacetMappings,
 } from "./requirement-definition-facet-validation.ts";
+import { validateReferencedSourceMappings } from "./requirement-definition-source-mapping-validation.ts";
 import { deriveRequirementProofPolicies } from "./requirement-derived-boundaries.ts";
+import { validateDirectHighRiskSourceCoverage } from "./requirement-direct-source-risk-validation.ts";
 import { pureDelegationPromptIndexes, unclassifiedDirectPromptGuidance } from "./requirement-prompt-classification.ts";
-import { requirementRisk } from "./requirement-risk.ts";
+import { isProductInvariantRequirementType, requirementRisk } from "./requirement-risk.ts";
 import {
   isUnsafeDelegatedInstruction,
   type RequirementSourceClause,
@@ -43,7 +45,6 @@ export interface ValidatedRequirementDefinition {
 export type RequirementDefinitionValidation =
   | { diagnostics: string[]; definition?: undefined }
   | { diagnostics: []; definition: ValidatedRequirementDefinition };
-
 export function validateRequirementDefinition(
   prompts: readonly TaskVerificationSourcePrompt[],
   input: RequirementAuditInput,
@@ -62,8 +63,7 @@ export function validateRequirementDefinition(
   );
   const declaredMappedClauseIds = new Set<string>();
   const evaluableMappedClauseIds = new Set<string>();
-  const seenRequirements = new Set<string>();
-
+  const seenRequirements = new Map<string, number>();
   for (const [index, item] of (input.requirements ?? []).entries()) {
     const requirementDiagnosticStart = diagnostics.length;
     const text = normalizeText(item.text);
@@ -79,10 +79,15 @@ export function validateRequirementDefinition(
 
     if (typeSupported && text && acceptanceCriterion) {
       const duplicateKey = `${item.type}\n${text.toLowerCase()}\n${acceptanceCriterion.toLowerCase()}`;
-      if (seenRequirements.has(duplicateKey)) diagnostics.push(`Duplicate requirement: ${text}`);
-      seenRequirements.add(duplicateKey);
+      const preservedRequirementIndex = seenRequirements.get(duplicateKey);
+      if (preservedRequirementIndex === undefined) {
+        seenRequirements.set(duplicateKey, index + 1);
+      } else {
+        diagnostics.push(
+          `Duplicate requirement: Requirement ${index + 1} duplicates Requirement ${preservedRequirementIndex}: ${text}`,
+        );
+      }
     }
-
     const requestedFacetIds = [...(item.source_facet_ids ?? [])].sort();
     const facetClauseIds = requestedFacetIds.flatMap((facetId) => {
       const facet = facetIndex.facetsById.get(facetId);
@@ -162,6 +167,12 @@ export function validateRequirementDefinition(
       continue;
     }
     const risk = requirementRisk(text, acceptanceCriterion, sourcePromptIndexes, validSourceClauseIds, sourceClauses);
+    if (!isProductInvariantRequirementType(item.type) && risk.highRisk) {
+      diagnostics.push(
+        `Requirement ${index + 1} asserts a high-risk product/runtime invariant and must use behavior, constraint, or deliverable instead of ${item.type}. Keep any separate process or evidence step in its own ${item.type} requirement.`,
+      );
+      continue;
+    }
     requirements.push({
       id: `R${index + 1}`,
       type: item.type,
@@ -174,7 +185,7 @@ export function validateRequirementDefinition(
       highRiskSourcePromptIndexes: risk.sourcePromptIndexes.length > 0 ? risk.sourcePromptIndexes : undefined,
     });
   }
-
+  validateDirectHighRiskSourceCoverage(prompts, requirements, pureDelegationIndexes, diagnostics);
   const validRequirementClauseIds = new Set(requirements.flatMap((requirement) => requirement.sourceClauseIds ?? []));
   const coveredIntroductionClauseIds = completeIntroductionClauseIds(sourceClauses, validRequirementClauseIds);
   const invalidOnlyClauseIds = new Set(
@@ -208,9 +219,9 @@ export function validateRequirementDefinition(
   const missingClauseIds = sourceClauses
     .map((clause) => clause.id)
     .filter((clauseId) => !coveredClauseIds.has(clauseId) && !ignoredClauseIds.has(clauseId));
-  if (missingClauseIds.length > 0) {
+  for (const clauseId of missingClauseIds) {
     diagnostics.push(
-      `Every referenced-file clause must be mapped or explicitly ignored; unclassified source_clause_ids: ${missingClauseIds.join(", ")}.`,
+      `Every referenced-file clause must be mapped or explicitly ignored; unclassified source_clause_ids: ${clauseId}.`,
     );
   }
   validateRequirementClauseCoverage(
@@ -232,12 +243,10 @@ export function validateRequirementDefinition(
   const unclassifiedPromptIndexes = prompts
     .map((_prompt, index) => index + 1)
     .filter((index) => !coveredPromptIndexes.has(index) && !ignoredPromptIndexes.has(index));
-  if (unclassifiedPromptIndexes.length > 0) {
-    const directPromptIndexes = unclassifiedPromptIndexes.filter(
-      (index) => prompts[index - 1]?.kind !== "referenced_file",
-    );
+  for (const promptIndex of unclassifiedPromptIndexes) {
+    const directPromptIndexes = prompts[promptIndex - 1]?.kind === "referenced_file" ? [] : [promptIndex];
     diagnostics.push(
-      `Every source prompt must be referenced or explicitly ignored; unclassified indexes: ${unclassifiedPromptIndexes.join(", ")}.${unclassifiedDirectPromptGuidance(directPromptIndexes, pureDelegationIndexes)}`,
+      `Every source prompt must be referenced or explicitly ignored; unclassified indexes: ${promptIndex}.${unclassifiedDirectPromptGuidance(directPromptIndexes, pureDelegationIndexes)}`,
     );
   }
 
@@ -282,19 +291,5 @@ function validateMappedClauses(
       const qualifierError = inheritedListConstraintError(clause, clausesById, `${text}\n${acceptanceCriterion}`);
       if (qualifierError) diagnostics.push(`Requirement ${requirementIndex + 1}: ${qualifierError}`);
     }
-  }
-}
-
-function validateReferencedSourceMappings(
-  requirementIndex: number,
-  prompts: readonly TaskVerificationSourcePrompt[],
-  explicitSourcePromptIndexes: readonly number[],
-  diagnostics: string[],
-): void {
-  for (const promptIndex of explicitSourcePromptIndexes) {
-    if (prompts[promptIndex - 1]?.kind !== "referenced_file") continue;
-    diagnostics.push(
-      `Requirement ${requirementIndex + 1} includes referenced-file source index ${promptIndex}, but source_prompt_indexes is direct-only; remove index ${promptIndex} and map the referenced requirement through source_clause_ids or source_facet_ids.`,
-    );
   }
 }

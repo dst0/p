@@ -156,7 +156,6 @@ describe("requirement-audit lifecycle", () => {
       repairLineageBaselineRequirementCount: 0,
       bestDiagnosticCount: 1,
       unproductiveRepairAttempts: 0,
-      consecutiveNonImprovingFreshDefinitions: 0,
       input: { action: "define", requirements: [] },
     };
     await recordAuditToolResult(restored.agent, "finish_work", {

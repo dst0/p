@@ -55,10 +55,14 @@ describe("requirement definition diagnostic boundaries", () => {
     expect(formatted).toContain("8194 deterministic validation errors");
     expect(formatted).toContain("across 3 repair classes");
     expect(formatted).toContain("[8192 instances]");
+    expect(formatted).toMatch(/\n1\. Requirement \d+:/u);
+    expect(formatted).not.toContain("1. [8192 instances]");
     expect(formatted).toContain("8191 additional diagnostic instances are not expanded");
     expect(formatted).toContain("does not semantically support the mapped requirement");
     expect(formatted).toContain("cannot be ignored as informational");
     expect(formatted).toContain("cannot be both mapped and ignored");
+    expect(formatted).toContain("Repair only the controller-selected concrete item, then rerun validation");
+    expect(formatted).not.toContain("Apply each repair class to all matching items");
     expect(formatRequirementDefinitionDiagnostics(validation.diagnostics)).toBe(formatted);
   });
 

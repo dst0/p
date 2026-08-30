@@ -4,21 +4,19 @@ import type { AfterToolCallContext } from "@dst0/p-agent-core";
 import {
   BASELINE_METHODS,
   BASH_MUTATION_PATTERN,
-  BUG_PATTERN,
-  DOCS_PATTERN,
   EXCLUDED_DIRS,
   FINAL_METHODS,
-  INVESTIGATION_PATTERN,
   KNOWN_DIRECT_MUTATION_TOOLS,
   KNOWN_EVIDENCE_TOOLS,
   KNOWN_STATIC_TOOLS,
-  REFACTOR_PATTERN,
   TASK_KINDS,
   WRITE_REDIRECT_PATTERN,
 } from "./constants.ts";
 import { containsGitPublishCommand, tokenizeShellCommands } from "./git-command-classification.ts";
 import { isCheckedSourcePath, physicalLineCount } from "./source-file-classification.ts";
 import type { BaselineMethod, FinalMethod, TaskKind } from "./types.ts";
+
+export { inferTaskKind } from "./task-kind-inference.ts";
 
 const CONFIDENTLY_READ_ONLY_SHELL_COMMANDS = new Set([
   "cat",
@@ -155,14 +153,6 @@ export function normalizeText(value: string | undefined): string {
 
 export function normalizeStrings(values: readonly string[] | undefined): string[] {
   return [...new Set((values ?? []).map(normalizeText).filter(Boolean))];
-}
-
-export function inferTaskKind(taskText: string): TaskKind {
-  if (BUG_PATTERN.test(taskText)) return "bug_fix";
-  if (REFACTOR_PATTERN.test(taskText)) return "refactor";
-  if (DOCS_PATTERN.test(taskText)) return "docs";
-  if (INVESTIGATION_PATTERN.test(taskText)) return "investigation";
-  return "feature";
 }
 
 export function isRecord(value: unknown): value is Record<string, unknown> {

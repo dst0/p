@@ -1,5 +1,5 @@
 import { evidenceHasProofWitnesses } from "../requirement-proof-witnesses.ts";
-import { isHighRiskText } from "../requirement-risk.ts";
+import { isHighRiskText, isProductInvariantRequirementType } from "../requirement-risk.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { normalizeStrings, normalizeText } from "../tool-classification.ts";
 import type { TaskRequirement, TaskRequirementVerdict, TaskVerificationEvidence } from "../types.ts";
@@ -36,6 +36,7 @@ export function validateRequirementVerdict(
   }
   if (
     input.passed &&
+    isProductInvariantRequirementType(requirement.type) &&
     requirement.proofPolicies?.length &&
     !evidence.some((item) =>
       evidenceHasProofWitnesses(item, requirement, self.state.requirementAudit.requirementSetHash),
@@ -70,6 +71,7 @@ function resolveOptionalEvidence(
 }
 
 export function isHighRiskRequirement(requirement: TaskRequirement): boolean {
+  if (!isProductInvariantRequirementType(requirement.type)) return false;
   const text = `${requirement.text}\n${requirement.acceptanceCriterion}`;
   return requirement.highRisk === true || isHighRiskText(text);
 }

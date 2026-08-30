@@ -183,15 +183,17 @@ describe("task declaration requirement preservation", () => {
     try {
       fixture.harness.controller.restoreError = "requirement-source snapshot README.md is missing or corrupt";
       fixture.harness.controller.requirementSourceTexts.clear();
+      const stateBefore = structuredClone(fixture.harness.controller.currentState);
 
-      await callTaskVerification(fixture.harness.controller, {
+      const declaration = await callTaskVerification(fixture.harness.controller, {
         action: "declare_task",
         task_kind: "feature",
         task_summary: "Implement the accepted authenticity contract",
       });
 
+      expect(declaration).toContain("Cannot update task verification");
       expect(fixture.harness.controller.restoreError).toContain("requirement-source snapshot README.md");
-      expect(fixture.harness.controller.currentState.requirementAudit.status).toBe("pending");
+      expect(fixture.harness.controller.currentState).toEqual(stateBefore);
       const gate = await beforeAuditTool(fixture.harness.agent, "edit", {
         path: "validator.js",
         edits: [{ oldText: "before", newText: "after" }],

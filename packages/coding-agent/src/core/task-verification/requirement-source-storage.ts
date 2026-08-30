@@ -3,6 +3,7 @@ import type { SessionManager } from "../session-manager.ts";
 import { TASK_VERIFICATION_REQUIREMENT_SOURCE_CUSTOM_TYPE } from "./constants.ts";
 import type { PreparedRequirementSource } from "./referenced-requirement-sources.ts";
 import { sourcePromptsForState } from "./requirement-audit-hashing.ts";
+import { orderRequirementDefinitionSources } from "./requirement-source-catalog-order.ts";
 import { hashRequirementSourceText, requirementSourceTextSafetyError } from "./requirement-source-file.ts";
 import type {
   TaskVerificationRequirementSourceRef,
@@ -16,6 +17,7 @@ export function persistRequirementSourceSnapshots(
   state: TaskVerificationState,
   sources: readonly PreparedRequirementSource[],
 ): TaskVerificationRequirementSourceRef[] {
+  const definitionSourcePromptCount = sourcePromptsForState(state).length;
   return sources.map((source) => {
     const snapshot: TaskVerificationRequirementSourceSnapshot = {
       version: 1,
@@ -25,6 +27,7 @@ export function persistRequirementSourceSnapshots(
       sha256: source.sha256,
       byteLength: source.byteLength,
       referencedByPromptIds: source.referencedByPromptIds,
+      definitionSourcePromptCount,
       capturedAtMutationRevision: state.mutationRevision,
       text: source.text,
     };
@@ -39,6 +42,7 @@ export function persistRequirementSourceSnapshots(
       byteLength: source.byteLength,
       snapshotEntryId,
       referencedByPromptIds: source.referencedByPromptIds,
+      definitionSourcePromptCount,
       capturedAtMutationRevision: state.mutationRevision,
       origin: "requirement_audit.prepare_definition",
       policyVersion: 1,
@@ -55,17 +59,21 @@ export function requirementDefinitionSources(
     const text = sourceTexts.get(reference.id);
     if (text === undefined) return undefined;
     return {
-      id: reference.id,
-      kind: "referenced_file" as const,
-      path: reference.path,
-      sha256: reference.sha256,
-      text,
+      promptCount: reference.definitionSourcePromptCount,
+      source: {
+        id: reference.id,
+        kind: "referenced_file" as const,
+        path: reference.path,
+        sha256: reference.sha256,
+        text,
+      },
     };
   });
   if (referenced.some((source) => source === undefined)) {
     return "A prepared requirement-source snapshot is unavailable; restart the task definition.";
   }
-  return [...prompts, ...(referenced as TaskVerificationSourcePrompt[])];
+  const available = referenced as NonNullable<(typeof referenced)[number]>[];
+  return orderRequirementDefinitionSources(prompts, available);
 }
 
 export function restoreRequirementSourceTexts(
@@ -106,6 +114,7 @@ function snapshotMatchesReference(
     snapshot.byteLength === reference.byteLength &&
     snapshot.capturedAtMutationRevision === reference.capturedAtMutationRevision &&
     arraysEqual(snapshot.referencedByPromptIds, reference.referencedByPromptIds) &&
+    snapshot.definitionSourcePromptCount === reference.definitionSourcePromptCount &&
     Buffer.byteLength(snapshot.text) === snapshot.byteLength &&
     hashRequirementSourceText(snapshot.text) === snapshot.sha256
   );
@@ -123,6 +132,8 @@ function isRequirementSourceSnapshot(value: unknown): value is TaskVerificationR
     Number(value.byteLength) >= 0 &&
     Array.isArray(value.referencedByPromptIds) &&
     value.referencedByPromptIds.every((item) => typeof item === "string") &&
+    Number.isSafeInteger(value.definitionSourcePromptCount) &&
+    Number(value.definitionSourcePromptCount) > 0 &&
     Number.isInteger(value.capturedAtMutationRevision) &&
     Number(value.capturedAtMutationRevision) >= 0 &&
     typeof value.text === "string"

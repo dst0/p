@@ -1,0 +1,22 @@
+# 2026-08-30 — Next actions need structured compaction extracts
+
+- **Status:** Resolved
+- **Task/context:** Diagnose a benchmark closure loop after final semantic evidence was already available.
+- **Unexpected observation or failure:** Compaction retained the `NEXT REQUIRED ACTION` marker but discarded the later evidence reference and exact `record_final` JSON payload, so the agent repeatedly asked for status instead of advancing. The first structured implementation also computed requirement-audit context before creating or clearing its rejected draft, so a compacted result could describe the previous definition transition.
+- **Evidence:** The failed run made roughly two dozen redundant closure calls after the status result was compacted. Focused regressions proved both that the raw pointer contained only the first action lines and that a new rejected definition's initial context extract lacked its active repair revision.
+- **Approaches tried:**
+  - **Attempt:** Keep the first status lines or a head-and-tail sample from arbitrary tool output.
+    - **Outcome:** Partial
+    - **Why:** It preserves a marker but can still drop authoritative fields from the middle of a multiline action.
+  - **Attempt:** Attach the controller-derived next action as a bounded structured `contextExtract` with state revision metadata.
+    - **Outcome:** Partial
+    - **Why:** It preserved task-verification transitions, but a wrapper that mutated rejected-definition state after constructing the result could still leave the extract stale.
+  - **Attempt:** Recompute requirement-audit context after every outer draft/state transition and emit a compact repair revision or verdict-batch action.
+    - **Outcome:** Worked
+    - **Why:** The extract is now derived from the same final controller state that governs the next accepted tool call.
+- **Root cause:** Generic line sampling treated an executable recovery protocol as ordinary diagnostic text, and the first structured replacement captured state before the complete transition transaction had committed.
+- **Resolution:** Updated and rejected verification results carry a 1,600-character bounded next-action extract. Normal actions remain byte-for-byte intact; oversized actions expose no executable truncation and require exact raw recall through the stub's session pointer. Requirement-audit returns replace that preliminary extract after all rejected-draft creation, rotation, authorization, or clearing, using the current revision or accepted verdict state.
+- **Verification:** `task-verification-status-compaction-guidance.test.ts` passes five cases covering exact short actions, evidence and JSON payloads, oversized raw recall, generic rejection, a newly created repair revision, and accepted-repair draft clearing. The pointer suite covers deduplication and generic head-tail fallback.
+- **Prevention/follow-up:** Stateful wrappers must compute compact recovery metadata only after every controller-side transition has committed.
+- **Reusable learning:** Do not ask generic compaction heuristics to reconstruct a state-machine command, and never snapshot that command before the state transition producing it is complete.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/task-verification-context-extract.ts`, `packages/coding-agent/test/task-verification-status-compaction-guidance.test.ts`
