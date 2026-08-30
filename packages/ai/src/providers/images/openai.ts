@@ -9,7 +9,8 @@ import type {
   TextContent,
 } from "../../types.ts";
 import { headersToRecord } from "../../utils/headers.ts";
-import { detectImageMimeType, validateImageUrlForDownload } from "../../utils/image-mime.ts";
+import { downloadImageSafely } from "../../utils/image-download.ts";
+import { detectImageMimeType } from "../../utils/image-mime.ts";
 import { sanitizeSurrogates } from "../../utils/sanitize-unicode.ts";
 
 export interface OpenAIImagesOptions extends ImagesOptions {
@@ -17,8 +18,6 @@ export interface OpenAIImagesOptions extends ImagesOptions {
   quality?: "standard" | "hd" | string;
   style?: "vivid" | "natural" | string;
 }
-
-const MAX_IMAGE_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50MB
 
 export const generateImagesOpenAI: ImagesFunction<"openai-images", OpenAIImagesOptions> = async (
   model: ImagesModel<"openai-images">,
@@ -88,7 +87,10 @@ export const generateImagesOpenAI: ImagesFunction<"openai-images", OpenAIImagesO
     for (const item of response.data ?? []) {
       if (item.b64_json) {
         const buffer = Buffer.from(item.b64_json, "base64");
-        const detectedMime = detectImageMimeType(buffer) || "image/png";
+        const detectedMime = detectImageMimeType(buffer);
+        if (!detectedMime) {
+          throw new Error("Provider returned image data with unrecognized or invalid binary format");
+        }
         output.output.push({
           type: "image",
           mimeType: detectedMime,
@@ -99,7 +101,10 @@ export const generateImagesOpenAI: ImagesFunction<"openai-images", OpenAIImagesO
           const matches = item.url.match(/^data:([^;]+);base64,(.+)$/);
           if (matches) {
             const buffer = Buffer.from(matches[2], "base64");
-            const detectedMime = detectImageMimeType(buffer) || matches[1];
+            const detectedMime = detectImageMimeType(buffer);
+            if (!detectedMime) {
+              throw new Error("Data URL image contains unrecognized or invalid binary format");
+            }
             output.output.push({
               type: "image",
               mimeType: detectedMime,
@@ -107,32 +112,10 @@ export const generateImagesOpenAI: ImagesFunction<"openai-images", OpenAIImagesO
             } satisfies ImageContent);
           }
         } else {
-          const validation = validateImageUrlForDownload(item.url);
-          if (!validation.valid) {
-            throw new Error(`Rejected image download URL for security: ${validation.reason} (${item.url})`);
-          }
-
-          const fetchRes = await fetch(item.url, { signal: options?.signal });
-          if (!fetchRes.ok) {
-            throw new Error(`Failed to download image from URL: ${fetchRes.status} ${fetchRes.statusText}`);
-          }
-
-          const contentLength = fetchRes.headers.get("content-length");
-          if (contentLength && parseInt(contentLength, 10) > MAX_IMAGE_DOWNLOAD_BYTES) {
-            throw new Error(`Image size exceeds maximum limit of ${MAX_IMAGE_DOWNLOAD_BYTES} bytes`);
-          }
-
-          const arrayBuffer = await fetchRes.arrayBuffer();
-          if (arrayBuffer.byteLength > MAX_IMAGE_DOWNLOAD_BYTES) {
-            throw new Error(`Image download size (${arrayBuffer.byteLength} bytes) exceeds limit`);
-          }
-
-          const buffer = Buffer.from(arrayBuffer);
-          const detectedMime = detectImageMimeType(buffer) || fetchRes.headers.get("content-type") || "image/png";
-
+          const { buffer, mimeType } = await downloadImageSafely(item.url, { signal: options?.signal });
           output.output.push({
             type: "image",
-            mimeType: detectedMime,
+            mimeType,
             data: buffer.toString("base64"),
           } satisfies ImageContent);
         }

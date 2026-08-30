@@ -9,15 +9,14 @@ export function detectImageMimeType(buffer: Uint8Array | Buffer): string | undef
     return "image/jpeg";
   }
   if (buffer.length < 4) return undefined;
-  // PNG: 89 50 4E 47 0D 0A 1A 0A (check first 4 for early match, full 8 below)
+  // PNG: 89 50 4E 47 0D 0A 1A 0A
   if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
     if (buffer.length >= 8 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
       return "image/png";
     }
-    // Truncated PNG header — first 4 bytes match but full 8 don't
     return undefined;
   }
-  // GIF: GIF87a or GIF89a (needs 6)
+  // GIF: GIF87a or GIF89a
   if (
     buffer.length >= 6 &&
     buffer[0] === 0x47 && // G
@@ -29,7 +28,7 @@ export function detectImageMimeType(buffer: Uint8Array | Buffer): string | undef
   ) {
     return "image/gif";
   }
-  // WebP: RIFF .... WEBP (needs 12)
+  // WebP: RIFF .... WEBP
   if (
     buffer.length >= 12 &&
     buffer[0] === 0x52 && // R
@@ -48,17 +47,13 @@ export function detectImageMimeType(buffer: Uint8Array | Buffer): string | undef
 
 /**
  * Parse a hostname into a 32-bit IPv4 integer, or null if not IPv4.
- * Handles dotted-decimal only. Rejects octal, hex, and integer-form IPs
- * by requiring each octet to be a base-10 number 0-255 with no leading zeros.
  */
-function parseIPv4Strict(hostname: string): number | null {
-  // Strip brackets that URL parser may include
+export function parseIPv4Strict(hostname: string): number | null {
   const h = hostname.startsWith("[") ? hostname.slice(1, -1) : hostname;
   const parts = h.split(".");
   if (parts.length !== 4) return null;
   let result = 0;
   for (const part of parts) {
-    // Reject empty, leading zeros (octal), hex prefixes, non-digit chars
     if (part.length === 0 || (part.length > 1 && part[0] === "0") || !/^\d+$/.test(part)) {
       return null;
     }
@@ -66,13 +61,13 @@ function parseIPv4Strict(hostname: string): number | null {
     if (n < 0 || n > 255) return null;
     result = (result << 8) | n;
   }
-  return result >>> 0; // unsigned
+  return result >>> 0;
 }
 
 /**
- * Check if an IPv4 integer falls in a private/reserved range.
+ * Check if an IPv4 integer falls in a private/reserved/non-global range.
  */
-function isPrivateIPv4(ip: number): { blocked: boolean; reason?: string } {
+export function isPrivateIPv4(ip: number): { blocked: boolean; reason?: string } {
   const o1 = (ip >>> 24) & 0xff;
   const o2 = (ip >>> 16) & 0xff;
   if (o1 === 127) return { blocked: true, reason: "Loopback IPv4 addresses are not allowed" };
@@ -86,18 +81,19 @@ function isPrivateIPv4(ip: number): { blocked: boolean; reason?: string } {
   if (o1 === 169 && o2 === 254) {
     return { blocked: true, reason: "Link-local metadata IPv4 addresses (169.254.0.0/16) are not allowed" };
   }
+  if (o1 === 100 && o2 >= 64 && o2 <= 127) {
+    return { blocked: true, reason: "Carrier-grade NAT addresses (100.64.0.0/10) are not allowed" };
+  }
   if (o1 === 0) return { blocked: true, reason: "Non-routable 0.0.0.0 IPv4 address is not allowed" };
+  if (o1 >= 224) return { blocked: true, reason: "Multicast or reserved IPv4 addresses are not allowed" };
   return { blocked: false };
 }
 
 /**
  * Expand a compressed IPv6 address for prefix matching.
- * Returns normalized lowercase hex groups or null on parse failure.
  */
-function expandIPv6(addr: string): string | null {
-  // Strip brackets
+export function expandIPv6(addr: string): string | null {
   let cleaned = addr.startsWith("[") ? addr.slice(1, -1) : addr;
-  // Handle IPv4-mapped IPv6 (::ffff:a.b.c.d)
   const v4Mapped = cleaned.match(/::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
   if (v4Mapped) {
     const ip4 = parseIPv4Strict(v4Mapped[1]);
@@ -120,9 +116,56 @@ function expandIPv6(addr: string): string | null {
 }
 
 /**
+ * Validates an IP address (IPv4 or IPv6) against private, loopback, and reserved ranges.
+ */
+export function validateIpAddressForDownload(ipStr: string): { valid: boolean; reason?: string } {
+  const ipv4 = parseIPv4Strict(ipStr);
+  if (ipv4 !== null) {
+    const check = isPrivateIPv4(ipv4);
+    if (check.blocked) return { valid: false, reason: check.reason };
+    return { valid: true };
+  }
+
+  const expanded = expandIPv6(ipStr);
+  if (expanded) {
+    if (
+      expanded === "0000:0000:0000:0000:0000:0000:0000:0001" ||
+      expanded === "0000:0000:0000:0000:0000:0000:0000:0000"
+    ) {
+      return { valid: false, reason: "Private/loopback IPv6 addresses are not allowed" };
+    }
+    if (
+      expanded.startsWith("fe8") ||
+      expanded.startsWith("fe9") ||
+      expanded.startsWith("fea") ||
+      expanded.startsWith("feb")
+    ) {
+      return { valid: false, reason: "Link-local IPv6 addresses are not allowed" };
+    }
+    if (expanded.startsWith("fc") || expanded.startsWith("fd")) {
+      return { valid: false, reason: "Unique local IPv6 addresses are not allowed" };
+    }
+    if (expanded.startsWith("ff")) {
+      return { valid: false, reason: "Multicast IPv6 addresses are not allowed" };
+    }
+    if (expanded.startsWith("0000:0000:0000:0000:0000:ffff:")) {
+      const lastTwo = expanded.split(":").slice(6);
+      const hi = parseInt(lastTwo[0], 16);
+      const lo = parseInt(lastTwo[1], 16);
+      const embeddedIP = ((hi << 16) | lo) >>> 0;
+      const check = isPrivateIPv4(embeddedIP);
+      if (check.blocked) {
+        return { valid: false, reason: `IPv4-mapped IPv6 blocked: ${check.reason}` };
+      }
+    }
+    return { valid: true };
+  }
+
+  return { valid: false, reason: "Unrecognized IP address format" };
+}
+
+/**
  * Validates a download URL against SSRF and private IP address ranges.
- * Rejects non-standard dotted-decimal representations (octal, hex, integer IPs)
- * and IPv4-mapped IPv6 addresses that resolve to private ranges.
  */
 export function validateImageUrlForDownload(urlStr: string): { valid: boolean; reason?: string } {
   let parsed: URL;
@@ -143,14 +186,11 @@ export function validateImageUrlForDownload(urlStr: string): { valid: boolean; r
     hostname === "localhost" ||
     hostname.endsWith(".localhost") ||
     hostname.endsWith(".local") ||
-    hostname.endsWith(".internal")
+    hostname.endsWith(".internal") ||
+    hostname.endsWith(".lan")
   ) {
     return { valid: false, reason: "Localhost and internal hosts are not allowed for image download" };
   }
-
-  // Note: new URL() normalizes integer/octal/hex IP notations to standard
-  // dotted-decimal before hostname is accessed, so no explicit regex is needed.
-  // The strict IPv4 parser below catches the normalized form.
 
   // Check IPv4 addresses (strict dotted-decimal only)
   const ipv4 = parseIPv4Strict(hostname);
@@ -161,37 +201,8 @@ export function validateImageUrlForDownload(urlStr: string): { valid: boolean; r
 
   // Check IPv6 addresses
   if (hostname.startsWith("[") || hostname.includes(":")) {
-    const expanded = expandIPv6(hostname);
-    if (expanded) {
-      // ::1 loopback
-      if (expanded === "0000:0000:0000:0000:0000:0000:0000:0001") {
-        return { valid: false, reason: "Private/loopback IPv6 addresses are not allowed" };
-      }
-      // fe80::/10 link-local
-      if (
-        expanded.startsWith("fe8") ||
-        expanded.startsWith("fe9") ||
-        expanded.startsWith("fea") ||
-        expanded.startsWith("feb")
-      ) {
-        return { valid: false, reason: "Private/loopback IPv6 addresses are not allowed" };
-      }
-      // fc00::/7 unique local
-      if (expanded.startsWith("fc") || expanded.startsWith("fd")) {
-        return { valid: false, reason: "Private/loopback IPv6 addresses are not allowed" };
-      }
-      // ::ffff:x.x.x.x mapped IPv4 — check embedded IPv4
-      if (expanded.startsWith("0000:0000:0000:0000:0000:ffff:")) {
-        const lastTwo = expanded.split(":").slice(6);
-        const hi = parseInt(lastTwo[0], 16);
-        const lo = parseInt(lastTwo[1], 16);
-        const embeddedIP = ((hi << 16) | lo) >>> 0;
-        const check = isPrivateIPv4(embeddedIP);
-        if (check.blocked) {
-          return { valid: false, reason: `IPv4-mapped IPv6 blocked: ${check.reason}` };
-        }
-      }
-    }
+    const ipCheck = validateIpAddressForDownload(hostname);
+    if (!ipCheck.valid) return ipCheck;
   }
 
   return { valid: true };

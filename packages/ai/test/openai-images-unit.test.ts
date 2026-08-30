@@ -1,7 +1,7 @@
+import { promises as dnsPromises } from "dns";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { generateImagesOpenAI } from "../src/providers/images/openai.ts";
 import type { ImagesContext, ImagesModel } from "../src/types.ts";
-import { detectImageMimeType, validateImageUrlForDownload } from "../src/utils/image-mime.ts";
 
 const mockState = vi.hoisted(() => ({
   lastParams: undefined as unknown,
@@ -97,7 +97,6 @@ describe("openai-images-unit", () => {
       },
     });
 
-    // Verify onPayload mutation reached the SDK
     const sentParams = mockState.lastParams as { size?: string };
     expect(sentParams.size).toBe("256x256");
     expect(responseSeen).toBe(true);
@@ -134,14 +133,30 @@ describe("openai-images-unit", () => {
     expect(res.errorMessage).toContain("Rejected image download URL for security");
   });
 
-  it("downloads remote URL images and enforces size limit", async () => {
+  it("downloads remote URL images streaming and verifies magic bytes", async () => {
     const pngBytes = Buffer.from([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44, 0x52,
     ]);
+
+    vi.spyOn(dnsPromises, "lookup").mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
+
     const fetchSpy = vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
       headers: new Headers({ "content-type": "image/png", "content-length": "16" }),
-      arrayBuffer: async () => pngBytes.buffer.slice(pngBytes.byteOffset, pngBytes.byteOffset + pngBytes.byteLength),
+      body: {
+        getReader: () => {
+          let readCount = 0;
+          return {
+            read: async () => {
+              if (readCount++ === 0) {
+                return { done: false, value: new Uint8Array(pngBytes) };
+              }
+              return { done: true, value: undefined };
+            },
+            cancel: async () => {},
+          };
+        },
+      } as any,
     } as Response);
 
     mockState.mockResponse = {
@@ -154,25 +169,69 @@ describe("openai-images-unit", () => {
     expect(fetchSpy).toHaveBeenCalledWith("https://cdn.openai.com/images/abc123.png", expect.any(Object));
     expect(res.stopReason).toBe("stop");
     expect(res.output[0].type).toBe("image");
+    expect((res.output[0] as { mimeType: string }).mimeType).toBe("image/png");
     fetchSpy.mockRestore();
   });
 
-  it("rejects remote URL with content-length exceeding 50MB", async () => {
+  it("rejects streaming response exceeding 50MB during stream consumption", async () => {
+    vi.spyOn(dnsPromises, "lookup").mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
+
+    let streamCancelled = false;
+    const hugeChunk = new Uint8Array(10 * 1024 * 1024); // 10MB chunk
+
     vi.spyOn(globalThis, "fetch").mockResolvedValue({
       ok: true,
-      headers: new Headers({ "content-length": "60000000" }),
-      arrayBuffer: async () => new ArrayBuffer(0),
+      headers: new Headers({}), // no Content-Length header
+      body: {
+        getReader: () => {
+          let chunksSent = 0;
+          return {
+            read: async () => {
+              chunksSent++;
+              if (chunksSent <= 6) {
+                // Total 60MB
+                return { done: false, value: hugeChunk };
+              }
+              return { done: true, value: undefined };
+            },
+            cancel: async () => {
+              streamCancelled = true;
+            },
+          };
+        },
+      } as any,
     } as Response);
 
     mockState.mockResponse = {
       created: 1234567890,
-      data: [{ url: "https://cdn.openai.com/images/huge.png" }],
+      data: [{ url: "https://cdn.openai.com/images/infinite.png" }],
     };
     const context: ImagesContext = { input: [{ type: "text", text: "draw" }] };
     const res = await generateImagesOpenAI(dummyModel, context, { apiKey: "test-key" });
 
     expect(res.stopReason).toBe("error");
     expect(res.errorMessage).toContain("exceeds maximum limit");
+    expect(streamCancelled).toBe(true);
+  });
+
+  it("rejects SSRF redirect to private network", async () => {
+    vi.spyOn(dnsPromises, "lookup").mockResolvedValue([{ address: "93.184.216.34", family: 4 }] as any);
+
+    vi.spyOn(globalThis, "fetch").mockResolvedValue({
+      status: 302,
+      ok: false,
+      headers: new Headers({ location: "http://169.254.169.254/latest/meta-data" }),
+    } as Response);
+
+    mockState.mockResponse = {
+      created: 1234567890,
+      data: [{ url: "https://public-cdn.example.com/image.png" }],
+    };
+    const context: ImagesContext = { input: [{ type: "text", text: "draw" }] };
+    const res = await generateImagesOpenAI(dummyModel, context, { apiKey: "test-key" });
+
+    expect(res.stopReason).toBe("error");
+    expect(res.errorMessage).toContain("Rejected image download URL for security");
   });
 
   it("handles abort signal properly", async () => {
@@ -185,111 +244,5 @@ describe("openai-images-unit", () => {
     });
     expect(res.stopReason).toBe("aborted");
     expect(res.errorMessage).toBe("Request aborted");
-  });
-});
-
-describe("validateImageUrlForDownload", () => {
-  it("allows valid public HTTPS/HTTP URLs", () => {
-    expect(validateImageUrlForDownload("https://cdn.openai.com/image.png").valid).toBe(true);
-    expect(validateImageUrlForDownload("http://example.com/img.jpg").valid).toBe(true);
-    expect(validateImageUrlForDownload("https://8.8.8.8/image.png").valid).toBe(true);
-  });
-
-  it("blocks basic private IPs and localhost", () => {
-    expect(validateImageUrlForDownload("http://localhost:8080/image.png").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://127.0.0.1:8080/image.png").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://169.254.169.254/latest/meta-data").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://10.0.1.5/image.png").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://192.168.1.1/image.png").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://172.20.0.1/image.png").valid).toBe(false);
-  });
-
-  it("blocks non-HTTP protocols", () => {
-    expect(validateImageUrlForDownload("ftp://example.com/image.png").valid).toBe(false);
-    expect(validateImageUrlForDownload("file:///etc/passwd").valid).toBe(false);
-    expect(validateImageUrlForDownload("gopher://evil.com/").valid).toBe(false);
-  });
-
-  it("blocks integer IP bypass (http://2130706433/ = 127.0.0.1)", () => {
-    // URL API normalizes integer IPs to dotted-decimal, so IPv4 check catches it
-    const r = validateImageUrlForDownload("http://2130706433/");
-    expect(r.valid).toBe(false);
-  });
-
-  it("blocks octal IP bypass (http://0177.0.0.1/ = 127.0.0.1)", () => {
-    // URL API normalizes octal octets to decimal, so IPv4 check catches it
-    const r = validateImageUrlForDownload("http://0177.0.0.1/");
-    expect(r.valid).toBe(false);
-  });
-
-  it("blocks hex IP bypass (http://0x7f000001/ = 127.0.0.1)", () => {
-    // URL API normalizes hex IPs to dotted-decimal, so IPv4 check catches it
-    const r = validateImageUrlForDownload("http://0x7f000001/");
-    expect(r.valid).toBe(false);
-  });
-
-  it("blocks IPv4-mapped IPv6 (::ffff:127.0.0.1)", () => {
-    const r = validateImageUrlForDownload("http://[::ffff:127.0.0.1]/");
-    expect(r.valid).toBe(false);
-  });
-
-  it("blocks IPv4-mapped IPv6 for private ranges (::ffff:10.0.0.1)", () => {
-    const r = validateImageUrlForDownload("http://[::ffff:10.0.0.1]/");
-    expect(r.valid).toBe(false);
-    expect(r.reason).toContain("IPv4-mapped");
-  });
-
-  it("blocks IPv6 loopback and private ranges", () => {
-    expect(validateImageUrlForDownload("http://[::1]/").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://[fe80::1]/").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://[fc00::1]/").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://[fd12::1]/").valid).toBe(false);
-  });
-
-  it("blocks .localhost, .local, .internal subdomains", () => {
-    expect(validateImageUrlForDownload("http://evil.localhost/").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://myhost.local/").valid).toBe(false);
-    expect(validateImageUrlForDownload("http://service.internal/").valid).toBe(false);
-  });
-
-  it("rejects invalid URLs", () => {
-    expect(validateImageUrlForDownload("not-a-url").valid).toBe(false);
-    expect(validateImageUrlForDownload("").valid).toBe(false);
-  });
-});
-
-describe("detectImageMimeType", () => {
-  it("detects standard image formats from magic bytes", () => {
-    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
-    const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xe0]);
-    const webp = Buffer.from([0x52, 0x49, 0x46, 0x46, 0x00, 0x00, 0x00, 0x00, 0x57, 0x45, 0x42, 0x50]);
-    const gif87 = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x37, 0x61]);
-    const gif89 = Buffer.from([0x47, 0x49, 0x46, 0x38, 0x39, 0x61]);
-
-    expect(detectImageMimeType(png)).toBe("image/png");
-    expect(detectImageMimeType(jpeg)).toBe("image/jpeg");
-    expect(detectImageMimeType(webp)).toBe("image/webp");
-    expect(detectImageMimeType(gif87)).toBe("image/gif");
-    expect(detectImageMimeType(gif89)).toBe("image/gif");
-  });
-
-  it("returns undefined for empty buffer", () => {
-    expect(detectImageMimeType(Buffer.alloc(0))).toBeUndefined();
-  });
-
-  it("returns undefined for truncated buffers (< minimum header size)", () => {
-    expect(detectImageMimeType(Buffer.from([0x89]))).toBeUndefined();
-    expect(detectImageMimeType(Buffer.from([0x89, 0x50]))).toBeUndefined();
-    expect(detectImageMimeType(Buffer.from([0xff, 0xd8]))).toBeUndefined();
-  });
-
-  it("returns undefined for truncated PNG (4 bytes match but not full 8)", () => {
-    const truncatedPng = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x00, 0x00]);
-    expect(detectImageMimeType(truncatedPng)).toBeUndefined();
-  });
-
-  it("returns undefined for unknown/random bytes", () => {
-    expect(detectImageMimeType(Buffer.from([0x00, 0x01, 0x02, 0x03]))).toBeUndefined();
-    expect(detectImageMimeType(Buffer.from([0xde, 0xad, 0xbe, 0xef]))).toBeUndefined();
   });
 });

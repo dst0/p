@@ -164,9 +164,9 @@ export function do_showImageModelSelector(self: InteractiveMode, searchTerm?: st
   self.showSelector((done) => {
     const selector = new ImageModelSelectorComponent(
       self.ui,
-      (self.session as any).imageModel,
+      self.session.getImageModel(),
       (model) => {
-        (self.session as any).setImageModel?.(model);
+        self.session.setImageModel(model);
         self.settingsManager.setDefaultImageModelAndProvider(model.provider, model.id);
         done();
         self.showStatus(`Image Model: ${model.provider}/${model.id}`);

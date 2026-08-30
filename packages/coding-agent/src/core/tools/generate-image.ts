@@ -1,5 +1,5 @@
 import type { AgentTool } from "@dst0/p-agent-core";
-import { generateImages, type ImagesModel } from "@dst0/p-ai";
+import { detectImageMimeType, generateImages, type ImagesModel } from "@dst0/p-ai";
 import { Container, Text } from "@dst0/p-tui";
 import { mkdir as fsMkdir, rename as fsRename, unlink as fsUnlink, writeFile as fsWriteFile } from "fs/promises";
 import { dirname, extname, relative } from "path";
@@ -53,14 +53,14 @@ export interface GenerateImageToolDetails {
 }
 
 export interface GenerateImageOperations {
-  writeFile: (absolutePath: string, buffer: Buffer) => Promise<void>;
+  writeFile: (absolutePath: string, buffer: Buffer, signal?: AbortSignal) => Promise<void>;
   rename: (oldPath: string, newPath: string) => Promise<void>;
   unlink: (path: string) => Promise<void>;
   mkdir: (dir: string) => Promise<void>;
 }
 
 const defaultGenerateImageOperations: GenerateImageOperations = {
-  writeFile: (path, buffer) => fsWriteFile(path, buffer),
+  writeFile: (path, buffer, signal) => fsWriteFile(path, buffer, { signal }),
   rename: (oldPath, newPath) => fsRename(oldPath, newPath),
   unlink: (path) => fsUnlink(path).catch(() => {}),
   mkdir: (dir) => fsMkdir(dir, { recursive: true }).then(() => {}),
@@ -78,40 +78,34 @@ export interface GenerateImageToolOptions {
   operations?: GenerateImageOperations;
 }
 
+const SUPPORTED_ASPECT_RATIOS: Record<string, string> = {
+  "1:1": "1024x1024",
+  "16:9": "1792x1024",
+  "9:16": "1024x1792",
+  "4:3": "1024x768",
+  "3:2": "1200x800",
+};
+
 function resolveAspectRatio(aspectRatio?: string): string | undefined {
   if (!aspectRatio) return undefined;
-  if (aspectRatio === "16:9") return "1792x1024";
-  if (aspectRatio === "9:16") return "1024x1792";
-  if (aspectRatio === "4:3") return "1024x768";
-  if (aspectRatio === "3:2") return "1200x800";
-  return "1024x1024";
+  const resolved = SUPPORTED_ASPECT_RATIOS[aspectRatio];
+  if (!resolved) {
+    throw new Error(
+      `Unsupported aspectRatio "${aspectRatio}". Supported ratios: ${Object.keys(SUPPORTED_ASPECT_RATIOS).join(", ")}`,
+    );
+  }
+  return resolved;
 }
 
 function resolveDimensions(size?: string, aspectRatio?: string): string | undefined {
   if (size && aspectRatio) {
     const expected = resolveAspectRatio(aspectRatio);
-    if (expected && expected !== size && size !== "1024x1024") {
+    if (expected && expected !== size) {
       throw new Error(`Conflicting size ("${size}") and aspectRatio ("${aspectRatio}") specified`);
     }
   }
   if (size) return size;
   return resolveAspectRatio(aspectRatio);
-}
-
-function detectBufferMimeType(buffer: Buffer): string {
-  if (buffer.length >= 8 && buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-    return "image/png";
-  }
-  if (buffer.length >= 3 && buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return "image/jpeg";
-  }
-  if (buffer.length >= 12 && buffer[0] === 0x52 && buffer[1] === 0x49 && buffer[8] === 0x57 && buffer[9] === 0x45) {
-    return "image/webp";
-  }
-  if (buffer.length >= 6 && buffer[0] === 0x47 && buffer[1] === 0x49 && buffer[2] === 0x46) {
-    return "image/gif";
-  }
-  return "image/png";
 }
 
 function mimeToExtension(mime: string): string {
@@ -180,7 +174,11 @@ export function createGenerateImageToolDefinition(
       }
 
       const buffer = Buffer.from(imagePart.data, "base64");
-      const detectedMime = detectBufferMimeType(buffer) || imagePart.mimeType || "image/png";
+      const detectedMime = detectImageMimeType(buffer);
+      if (!detectedMime) {
+        throw new Error("Generated image data contains unrecognized or invalid binary format");
+      }
+
       const ext = mimeToExtension(detectedMime);
       const randomSuffix = Math.random().toString(36).slice(2, 8);
       const defaultName = `assets/generated_${Date.now()}_${randomSuffix}.${ext}`;
@@ -202,7 +200,7 @@ export function createGenerateImageToolDefinition(
 
         const tempPath = `${absolutePath}.tmp.${Date.now()}.${randomSuffix}`;
         try {
-          await ops.writeFile(tempPath, buffer);
+          await ops.writeFile(tempPath, buffer, signal);
           if (signal?.aborted) throw new Error("Operation aborted");
           await ops.rename(tempPath, absolutePath);
         } catch (err) {

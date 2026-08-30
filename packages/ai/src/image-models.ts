@@ -26,9 +26,41 @@ type ImageModelApi<TProvider extends string, TModelId extends string> = TProvide
 export function getImageModel<TProvider extends KnownImagesProvider, TModelId extends string>(
   provider: TProvider,
   modelId: TModelId,
-): ImagesModel<ImageModelApi<TProvider, TModelId>> {
+): ImagesModel<ImageModelApi<TProvider, TModelId>> | undefined {
   const providerModels = imageModelRegistry.get(provider);
-  return providerModels?.get(modelId) as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+  const staticModel = providerModels?.get(modelId);
+  if (staticModel) {
+    return staticModel as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+  }
+
+  // Dynamic fallback for custom model IDs for openai / llm-orchestrator
+  if (provider === "openai") {
+    return {
+      id: modelId,
+      name: `OpenAI: ${modelId}`,
+      api: "openai-images",
+      provider: "openai",
+      baseUrl: "https://api.openai.com/v1",
+      input: ["text"],
+      output: ["image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    } as unknown as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+  }
+
+  if (provider === "llm-orchestrator") {
+    return {
+      id: modelId,
+      name: `LLM Orchestrator: ${modelId}`,
+      api: "openai-images",
+      provider: "llm-orchestrator",
+      baseUrl: "https://llm-orc.dst.lan/v1",
+      input: ["text"],
+      output: ["image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    } as unknown as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+  }
+
+  return undefined;
 }
 
 export function getImageProviders(): KnownImagesProvider[] {

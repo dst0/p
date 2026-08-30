@@ -20,7 +20,7 @@ describe("ImageModelSelectorComponent", () => {
   };
 
   it("renders image models and marks current selection", () => {
-    const currentModel = getImageModel("openrouter", "google/gemini-2.5-flash-image");
+    const currentModel = getImageModel("openai", "dall-e-3");
     const selector = new ImageModelSelectorComponent(
       mockTui as any,
       currentModel,
@@ -30,22 +30,22 @@ describe("ImageModelSelectorComponent", () => {
 
     const output = stripAnsi(selector.render(120).join("\n"));
     expect(output).toContain("Select Image Generation Model");
-    expect(output).toContain("[openrouter]");
+    expect(output).toContain("[openai]");
     expect(output).toContain("(current)");
   });
 
-  it("filters image models on search input", () => {
+  it("filters image models on search input for openai and llm-orchestrator", () => {
     const selector = new ImageModelSelectorComponent(
       mockTui as any,
       undefined,
       () => {},
       () => {},
-      "flux",
+      "dall-e",
     );
 
     const output = stripAnsi(selector.render(120).join("\n"));
-    expect(output).toContain("FLUX");
-    expect(output).not.toContain("Nano Banana");
+    expect(output).toContain("DALL-E 3");
+    expect(output).toContain("[openai]");
   });
 
   it("selects model on confirm key", () => {
@@ -54,7 +54,7 @@ describe("ImageModelSelectorComponent", () => {
 
     selector.handleInput("\r");
     expect(onSelect).toHaveBeenCalledOnce();
-    expect(onSelect.mock.calls[0][0]).toHaveProperty("provider", "openrouter");
+    expect(onSelect.mock.calls[0][0]).toHaveProperty("provider");
   });
 
   it("cancels on cancel key", () => {

@@ -26,6 +26,72 @@ interface OpenRouterModelRecord {
 	};
 }
 
+const STATIC_OPENAI_MODELS: ImagesModel<"openai-images">[] = [
+	{
+		id: "gpt-image-2",
+		name: "OpenAI: GPT Image 2",
+		api: "openai-images",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		input: ["text", "image"],
+		output: ["image"],
+		cost: { input: 0, output: 0.04, cacheRead: 0, cacheWrite: 0 },
+	},
+	{
+		id: "dall-e-3",
+		name: "OpenAI: DALL-E 3",
+		api: "openai-images",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		input: ["text"],
+		output: ["image"],
+		cost: { input: 0, output: 0.04, cacheRead: 0, cacheWrite: 0 },
+	},
+	{
+		id: "dall-e-2",
+		name: "OpenAI: DALL-E 2",
+		api: "openai-images",
+		provider: "openai",
+		baseUrl: "https://api.openai.com/v1",
+		input: ["text"],
+		output: ["image"],
+		cost: { input: 0, output: 0.02, cacheRead: 0, cacheWrite: 0 },
+	},
+];
+
+const STATIC_LLM_ORC_MODELS: ImagesModel<"openai-images">[] = [
+	{
+		id: "dall-e-3",
+		name: "LLM Orchestrator: DALL-E 3",
+		api: "openai-images",
+		provider: "llm-orchestrator",
+		baseUrl: "https://llm-orc.dst.lan/v1",
+		input: ["text"],
+		output: ["image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	{
+		id: "flux.1-schnell",
+		name: "LLM Orchestrator: FLUX.1 Schnell",
+		api: "openai-images",
+		provider: "llm-orchestrator",
+		baseUrl: "https://llm-orc.dst.lan/v1",
+		input: ["text"],
+		output: ["image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+	{
+		id: "flux.1-dev",
+		name: "LLM Orchestrator: FLUX.1 Dev",
+		api: "openai-images",
+		provider: "llm-orchestrator",
+		baseUrl: "https://llm-orc.dst.lan/v1",
+		input: ["text"],
+		output: ["image"],
+		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+	},
+];
+
 async function fetchOpenRouterImageModels(): Promise<ImagesModel<"openrouter-images">[]> {
 	try {
 		console.log("Fetching image models from OpenRouter API...");
@@ -76,21 +142,22 @@ async function fetchOpenRouterImageModels(): Promise<ImagesModel<"openrouter-ima
 	}
 }
 
-function generateImageModelsFile(models: ImagesModel<"openrouter-images">[]): string {
-	const serializeStringArray = (values: readonly string[]): string => `[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
-	const serializeCost = (cost: ImagesModel<"openrouter-images">["cost"]): string => `{
+function serializeModelMap(models: ImagesModel<any>[]): Record<string, string> {
+	const serializeStringArray = (values: readonly string[]): string =>
+		`[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
+	const serializeCost = (cost: ImagesModel<any>["cost"]): string => `{
 				input: ${cost.input},
 				output: ${cost.output},
 				cacheRead: ${cost.cacheRead},
 				cacheWrite: ${cost.cacheWrite},
 			}`;
-	const imageModelsByProvider = {
-		openrouter: Object.fromEntries(
-			models
-				.sort((a, b) => a.id.localeCompare(b.id))
-				.map((model) => [
-					model.id,
-					`{
+
+	return Object.fromEntries(
+		models
+			.sort((a, b) => a.id.localeCompare(b.id))
+			.map((model) => [
+				model.id,
+				`{
 			id: ${JSON.stringify(model.id)},
 			name: ${JSON.stringify(model.name)},
 			api: ${JSON.stringify(model.api)},
@@ -100,8 +167,15 @@ function generateImageModelsFile(models: ImagesModel<"openrouter-images">[]): st
 			output: ${serializeStringArray(model.output)},
 			cost: ${serializeCost(model.cost)},
 		} satisfies ImagesModel<${JSON.stringify(model.api)}>`,
-				]),
-		),
+			]),
+	);
+}
+
+function generateImageModelsFile(openRouterModels: ImagesModel<"openrouter-images">[]): string {
+	const imageModelsByProvider = {
+		openrouter: serializeModelMap(openRouterModels),
+		openai: serializeModelMap(STATIC_OPENAI_MODELS),
+		"llm-orchestrator": serializeModelMap(STATIC_LLM_ORC_MODELS),
 	};
 
 	const providerEntries = Object.entries(imageModelsByProvider)
@@ -109,7 +183,7 @@ function generateImageModelsFile(models: ImagesModel<"openrouter-images">[]): st
 			const modelEntries = Object.entries(providerModels)
 				.map(([id, serialized]) => `\t\t${JSON.stringify(id)}: ${serialized},`)
 				.join("\n");
-			return `\t${provider}: {\n${modelEntries}\n\t},`;
+			return `\t${JSON.stringify(provider)}: {\n${modelEntries}\n\t},`;
 		})
 		.join("\n");
 
@@ -125,8 +199,8 @@ ${providerEntries}
 }
 
 async function main(): Promise<void> {
-	const models = await fetchOpenRouterImageModels();
-	const output = generateImageModelsFile(models);
+	const openRouterModels = await fetchOpenRouterImageModels();
+	const output = generateImageModelsFile(openRouterModels);
 	const outputPath = join(packageRoot, "src", "image-models.generated.ts");
 	writeFileSync(outputPath, output, "utf-8");
 	console.log(`Generated ${outputPath}`);

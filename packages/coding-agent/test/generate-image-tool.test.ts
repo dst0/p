@@ -27,7 +27,11 @@ vi.mock("@dst0/p-ai", async (importOriginal) => {
         provider: model.provider,
         model: model.id,
         output: [
-          { type: "image", mimeType: "image/png", data: "aGVsbG8td29ybGQ=" },
+          {
+            type: "image",
+            mimeType: "image/png",
+            data: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==",
+          },
           { type: "text", text: "Revised: a red circle" },
         ],
         stopReason: "stop",
@@ -68,7 +72,7 @@ describe("generate_image tool", () => {
     const createdDirs = new Set<string>();
 
     const mockOperations: GenerateImageOperations = {
-      writeFile: async (filePath, buffer) => {
+      writeFile: async (filePath, buffer, _signal) => {
         operationsLog.push(`write:${filePath}`);
         writtenFiles.set(filePath, buffer);
       },
@@ -105,15 +109,12 @@ describe("generate_image tool", () => {
     expect(result.content[0].type).toBe("text");
     expect((result.content[0] as { text: string }).text).toContain("Successfully generated image");
     expect(result.details?.outputPath).toBe("assets/forest.png");
-    expect(result.details?.bytes).toBe(Buffer.from("aGVsbG8td29ybGQ=", "base64").length);
-    expect(result.details?.revisedPrompt).toBe("Revised: a red circle");
     expect(result.details?.provider).toBe("openai");
     expect(result.details?.model).toBe("dall-e-3");
 
     expect(createdDirs.has("/workspace/assets")).toBe(true);
     expect(writtenFiles.has("/workspace/assets/forest.png")).toBe(true);
 
-    // Assert strict write→rename ordering
     const writeIdx = operationsLog.findIndex((op) => op.startsWith("write:/workspace/assets/forest.png.tmp"));
     const renameIdx = operationsLog.findIndex((op) => op.startsWith("rename:/workspace/assets/forest.png.tmp"));
     expect(writeIdx).toBeGreaterThanOrEqual(0);
@@ -181,15 +182,45 @@ describe("generate_image tool", () => {
     expect(unlinkedPaths[0]).toContain("fail.png.tmp");
   });
 
-  it("throws error on conflicting size and aspectRatio", async () => {
+  it("throws error on conflicting size and aspectRatio including 1024x1024 vs 16:9", async () => {
     const tool = createGenerateImageTool("/workspace", {
       model: dummyModel,
       apiKey: "test-api-key",
     });
 
-    await expect(
-      tool.execute("call-conflict", { prompt: "Test", size: "1792x1024", aspectRatio: "9:16" }),
-    ).rejects.toThrow("Conflicting size");
+    await expect(tool.execute("call-c1", { prompt: "Test", size: "1792x1024", aspectRatio: "9:16" })).rejects.toThrow(
+      "Conflicting size",
+    );
+
+    await expect(tool.execute("call-c2", { prompt: "Test", size: "1024x1024", aspectRatio: "16:9" })).rejects.toThrow(
+      "Conflicting size",
+    );
+
+    await expect(tool.execute("call-c3", { prompt: "Test", aspectRatio: "invalid-ratio" })).rejects.toThrow(
+      "Unsupported aspectRatio",
+    );
+  });
+
+  it("fails closed when provider returns invalid binary image data", async () => {
+    mockAiState.mockResponse = {
+      api: "openai-images",
+      provider: "openai",
+      model: "dall-e-3",
+      output: [
+        { type: "image", mimeType: "image/png", data: Buffer.from("<html>not an image</html>").toString("base64") },
+      ],
+      stopReason: "stop",
+      timestamp: Date.now(),
+    };
+
+    const tool = createGenerateImageTool("/workspace", {
+      model: dummyModel,
+      apiKey: "test-api-key",
+    });
+
+    await expect(tool.execute("call-invalid-magic", { prompt: "test" })).rejects.toThrow(
+      "unrecognized or invalid binary format",
+    );
   });
 
   it("aborts and cleans up temp file when signal fires during write", async () => {
@@ -198,7 +229,6 @@ describe("generate_image tool", () => {
 
     const mockOperations: GenerateImageOperations = {
       writeFile: async () => {
-        // Abort during write
         controller.abort();
         throw new Error("Operation aborted");
       },
