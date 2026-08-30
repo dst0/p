@@ -757,36 +757,6 @@ export const IMAGE_MODELS = {
     } satisfies ImagesModel<"openrouter-images">,
   },
   openai: {
-    "dall-e-2": {
-      id: "dall-e-2",
-      name: "OpenAI: DALL-E 2",
-      api: "openai-images",
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      input: ["text"],
-      output: ["image"],
-      cost: {
-        input: 0,
-        output: 0.02,
-        cacheRead: 0,
-        cacheWrite: 0,
-      },
-    } satisfies ImagesModel<"openai-images">,
-    "dall-e-3": {
-      id: "dall-e-3",
-      name: "OpenAI: DALL-E 3",
-      api: "openai-images",
-      provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
-      input: ["text"],
-      output: ["image"],
-      cost: {
-        input: 0,
-        output: 0.04,
-        cacheRead: 0,
-        cacheWrite: 0,
-      },
-    } satisfies ImagesModel<"openai-images">,
     "gpt-image-2": {
       id: "gpt-image-2",
       name: "OpenAI: GPT Image 2",
@@ -804,42 +774,12 @@ export const IMAGE_MODELS = {
     } satisfies ImagesModel<"openai-images">,
   },
   "llm-orchestrator": {
-    "dall-e-3": {
-      id: "dall-e-3",
-      name: "LLM Orchestrator: DALL-E 3",
+    "flux2-klein-4b": {
+      id: "flux2-klein-4b",
+      name: "LLM Orchestrator: FLUX.2 Klein 4B",
       api: "openai-images",
       provider: "llm-orchestrator",
-      baseUrl: "https://llm-orc.dst.lan/v1",
-      input: ["text"],
-      output: ["image"],
-      cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      },
-    } satisfies ImagesModel<"openai-images">,
-    "flux.1-dev": {
-      id: "flux.1-dev",
-      name: "LLM Orchestrator: FLUX.1 Dev",
-      api: "openai-images",
-      provider: "llm-orchestrator",
-      baseUrl: "https://llm-orc.dst.lan/v1",
-      input: ["text"],
-      output: ["image"],
-      cost: {
-        input: 0,
-        output: 0,
-        cacheRead: 0,
-        cacheWrite: 0,
-      },
-    } satisfies ImagesModel<"openai-images">,
-    "flux.1-schnell": {
-      id: "flux.1-schnell",
-      name: "LLM Orchestrator: FLUX.1 Schnell",
-      api: "openai-images",
-      provider: "llm-orchestrator",
-      baseUrl: "https://llm-orc.dst.lan/v1",
+      baseUrl: "http://127.0.0.1:11450/v1",
       input: ["text"],
       output: ["image"],
       cost: {

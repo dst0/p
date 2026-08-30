@@ -86,6 +86,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "edit",
       "find",
       "finish_work",
+      "generate_image",
       "grep",
       "keep_context",
       "ls",

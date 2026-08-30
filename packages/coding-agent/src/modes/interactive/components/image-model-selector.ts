@@ -1,4 +1,4 @@
-import { getImageModels, getImageProviders, type ImagesModel } from "@dst0/p-ai";
+import { getImageModels, getImageProviders, type ImagesApi, type ImagesModel } from "@dst0/p-ai";
 import { Container, type Focusable, fuzzyFilter, getKeybindings, Input, Spacer, Text, type TUI } from "@dst0/p-tui";
 import { theme } from "../theme/theme.ts";
 import { DynamicBorder } from "./dynamic-border.ts";
@@ -6,7 +6,7 @@ import { DynamicBorder } from "./dynamic-border.ts";
 interface ImageModelItem {
   provider: string;
   id: string;
-  model: ImagesModel<any>;
+  model: ImagesModel<ImagesApi>;
 }
 
 export class ImageModelSelectorComponent extends Container implements Focusable {
@@ -24,15 +24,15 @@ export class ImageModelSelectorComponent extends Container implements Focusable 
   private allModels: ImageModelItem[] = [];
   private filteredModels: ImageModelItem[] = [];
   private selectedIndex = 0;
-  private currentModel?: ImagesModel<any>;
-  private onSelectCallback: (model: ImagesModel<any>) => void;
+  private currentModel?: ImagesModel<ImagesApi>;
+  private onSelectCallback: (model: ImagesModel<ImagesApi>) => void;
   private onCancelCallback: () => void;
   private tui: TUI;
 
   constructor(
     tui: TUI,
-    currentModel: ImagesModel<any> | undefined,
-    onSelect: (model: ImagesModel<any>) => void,
+    currentModel: ImagesModel<ImagesApi> | undefined,
+    onSelect: (model: ImagesModel<ImagesApi>) => void,
     onCancel: () => void,
     initialSearch?: string,
   ) {
@@ -83,6 +83,16 @@ export class ImageModelSelectorComponent extends Container implements Focusable 
           model,
         });
       }
+    }
+    if (
+      this.currentModel &&
+      !items.some((item) => item.provider === this.currentModel?.provider && item.id === this.currentModel.id)
+    ) {
+      items.push({
+        provider: this.currentModel.provider,
+        id: this.currentModel.id,
+        model: this.currentModel,
+      });
     }
 
     this.allModels = items;

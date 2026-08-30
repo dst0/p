@@ -1,9 +1,11 @@
+import { getImageModel } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import {
   parseAspectRatio,
   parseSize,
   resolveAspectRatio,
   resolveDimensions,
+  validateDimensionsForModel,
 } from "../src/core/tools/image-dimensions.ts";
 
 describe("image-dimensions calculation and validation", () => {
@@ -65,5 +67,23 @@ describe("image-dimensions calculation and validation", () => {
     expect(parseSize("1024×1024")).toEqual({ width: 1024, height: 1024, ratio: 1 });
     expect(parseSize("invalid")).toBeUndefined();
     expect(parseSize("")).toBeUndefined();
+  });
+
+  it("rejects malformed explicit dimensions instead of forwarding them to a provider", () => {
+    expect(() => resolveDimensions("invalid")).toThrow("Invalid size format");
+    expect(() => resolveDimensions("0x1024")).toThrow("Invalid size format");
+    expect(() => resolveDimensions("1024x0")).toThrow("Invalid size format");
+  });
+
+  it("applies GPT Image 2 limits without constraining llm-orchestrator dimensions", () => {
+    const openaiModel = getImageModel("openai", "gpt-image-2");
+    const orchestratorModel = getImageModel("llm-orchestrator", "flux2-klein-4b");
+    expect(openaiModel).toBeDefined();
+    expect(orchestratorModel).toBeDefined();
+
+    expect(() => validateDimensionsForModel(openaiModel!, "1024x1024")).not.toThrow();
+    expect(() => validateDimensionsForModel(openaiModel!, "1234x567")).toThrow("multiples of 16");
+    expect(() => validateDimensionsForModel(openaiModel!, "4096x1024")).toThrow("3840 pixels");
+    expect(() => validateDimensionsForModel(orchestratorModel!, "1234x567")).not.toThrow();
   });
 });

@@ -66,6 +66,14 @@ export function resolveAspectRatio(aspectRatio?: string): string | undefined {
 }
 
 export function resolveDimensions(size?: string, aspectRatio?: string): string | undefined {
+  const normalizedSize = size?.trim();
+  if (normalizedSize === "auto") {
+    if (aspectRatio) {
+      throw new Error('Cannot combine size "auto" with an explicit aspectRatio');
+    }
+    return "auto";
+  }
+
   if (size && aspectRatio) {
     const parsedRatio = parseAspectRatio(aspectRatio);
     const parsedSize = parseSize(size);
@@ -79,9 +87,43 @@ export function resolveDimensions(size?: string, aspectRatio?: string): string |
         );
       }
     }
+    if (!parsedSize) {
+      throw new Error(`Invalid size format "${size}". Expected positive dimensions like "1024x1024" or "auto"`);
+    }
     return size;
   }
 
-  if (size) return size;
+  if (size) {
+    if (!parseSize(size)) {
+      throw new Error(`Invalid size format "${size}". Expected positive dimensions like "1024x1024" or "auto"`);
+    }
+    return size;
+  }
   return resolveAspectRatio(aspectRatio);
 }
+
+export function validateDimensionsForModel(model: ImagesModel<ImagesApi>, dimensions?: string): void {
+  if (!dimensions || dimensions === "auto" || model.provider !== "openai" || model.id !== "gpt-image-2") {
+    return;
+  }
+  const parsed = parseSize(dimensions);
+  if (!parsed) {
+    throw new Error(`Invalid size format "${dimensions}"`);
+  }
+  const { width, height } = parsed;
+  const pixels = width * height;
+  if (width % 16 !== 0 || height % 16 !== 0) {
+    throw new Error("GPT Image 2 dimensions must be multiples of 16 pixels");
+  }
+  if (Math.max(width, height) > 3840) {
+    throw new Error("GPT Image 2 dimensions must not exceed 3840 pixels on either edge");
+  }
+  if (Math.max(width, height) / Math.min(width, height) > 3) {
+    throw new Error("GPT Image 2 dimensions must not exceed a 3:1 aspect ratio");
+  }
+  if (pixels < 655_360 || pixels > 8_294_400) {
+    throw new Error("GPT Image 2 dimensions must contain between 655360 and 8294400 total pixels");
+  }
+}
+
+import type { ImagesApi, ImagesModel } from "@dst0/p-ai";

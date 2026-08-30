@@ -1,4 +1,4 @@
-import type { Model } from "@dst0/p-ai";
+import { getImageModel, type ImagesApi, type ImagesModel, type Model } from "@dst0/p-ai";
 import { findExactModelReferenceMatch } from "../../../../core/model-resolver.ts";
 import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../../../../core/trust-manager.ts";
 import { ImageModelSelectorComponent } from "../../components/image-model-selector.ts";
@@ -160,11 +160,24 @@ export async function do_handleImageModelCommand(self: InteractiveMode, searchTe
   self.showImageModelSelector(searchTerm);
 }
 
+function configuredDefaultImageModel(self: InteractiveMode): ImagesModel<ImagesApi> | undefined {
+  const provider = self.settingsManager.getDefaultImageProvider();
+  const modelId = self.settingsManager.getDefaultImageModel();
+  if (!provider || !modelId) return undefined;
+  const configuredProviderModel = self.session.modelRegistry
+    .getAll()
+    .find((candidate) => candidate.provider === provider);
+  return getImageModel(provider, modelId, {
+    ...(configuredProviderModel?.baseUrl ? { baseUrl: configuredProviderModel.baseUrl } : {}),
+    ...(configuredProviderModel?.headers ? { headers: configuredProviderModel.headers } : {}),
+  });
+}
+
 export function do_showImageModelSelector(self: InteractiveMode, searchTerm?: string): void {
   self.showSelector((done) => {
     const selector = new ImageModelSelectorComponent(
       self.ui,
-      self.session.getImageModel(),
+      self.session.getImageModel() ?? configuredDefaultImageModel(self),
       (model) => {
         self.session.setImageModel(model);
         self.settingsManager.setDefaultImageModelAndProvider(model.provider, model.id);

@@ -1,6 +1,8 @@
 import { IMAGE_MODELS } from "./image-models.generated.ts";
 import type { ImagesApi, ImagesModel, KnownImagesProvider } from "./types.ts";
 
+const DEFAULT_LLM_ORCHESTRATOR_BASE_URL = "http://127.0.0.1:11450/v1";
+
 const imageModelRegistry: Map<string, Map<string, ImagesModel<ImagesApi>>> = new Map();
 
 for (const [provider, models] of Object.entries(IMAGE_MODELS)) {
@@ -23,14 +25,37 @@ type ImageModelApi<TProvider extends string, TModelId extends string> = TProvide
     : ImagesApi
   : ImagesApi;
 
-export function getImageModel<TProvider extends KnownImagesProvider, TModelId extends string>(
+export interface ImageModelLookupOptions {
+  baseUrl?: string;
+  headers?: Record<string, string>;
+}
+
+export function resolveLlmOrchestratorImageBaseUrl(
+  environment: Record<string, string | undefined> = process.env,
+): string {
+  const configured = environment.LLM_ORC_URL ?? environment.P_LLM_ORC_URL ?? environment.LLM_ORCHESTRATOR_URL;
+  if (!configured) return DEFAULT_LLM_ORCHESTRATOR_BASE_URL;
+  const withoutTrailingSlash = configured.replace(/\/+$/, "");
+  return withoutTrailingSlash.endsWith("/v1") ? withoutTrailingSlash : `${withoutTrailingSlash}/v1`;
+}
+
+export function getImageModel<TProvider extends string, TModelId extends string>(
   provider: TProvider,
   modelId: TModelId,
+  options?: ImageModelLookupOptions,
 ): ImagesModel<ImageModelApi<TProvider, TModelId>> | undefined {
   const providerModels = imageModelRegistry.get(provider);
   const staticModel = providerModels?.get(modelId);
   if (staticModel) {
-    return staticModel as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+    return {
+      ...staticModel,
+      ...(provider === "llm-orchestrator"
+        ? { baseUrl: options?.baseUrl ?? resolveLlmOrchestratorImageBaseUrl() }
+        : options?.baseUrl
+          ? { baseUrl: options.baseUrl }
+          : {}),
+      ...(options?.headers ? { headers: options.headers } : {}),
+    } as ImagesModel<ImageModelApi<TProvider, TModelId>>;
   }
 
   // Dynamic fallback for custom model IDs for openai / llm-orchestrator
@@ -40,7 +65,8 @@ export function getImageModel<TProvider extends KnownImagesProvider, TModelId ex
       name: `OpenAI: ${modelId}`,
       api: "openai-images",
       provider: "openai",
-      baseUrl: "https://api.openai.com/v1",
+      baseUrl: options?.baseUrl ?? "https://api.openai.com/v1",
+      ...(options?.headers ? { headers: options.headers } : {}),
       input: ["text"],
       output: ["image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -53,7 +79,22 @@ export function getImageModel<TProvider extends KnownImagesProvider, TModelId ex
       name: `LLM Orchestrator: ${modelId}`,
       api: "openai-images",
       provider: "llm-orchestrator",
-      baseUrl: "https://llm-orc.dst.lan/v1",
+      baseUrl: options?.baseUrl ?? resolveLlmOrchestratorImageBaseUrl(),
+      ...(options?.headers ? { headers: options.headers } : {}),
+      input: ["text"],
+      output: ["image"],
+      cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    } as unknown as ImagesModel<ImageModelApi<TProvider, TModelId>>;
+  }
+
+  if (options?.baseUrl) {
+    return {
+      id: modelId,
+      name: `${provider}: ${modelId}`,
+      api: "openai-images",
+      provider,
+      baseUrl: options.baseUrl,
+      ...(options.headers ? { headers: options.headers } : {}),
       input: ["text"],
       output: ["image"],
       cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -67,7 +108,7 @@ export function getImageProviders(): KnownImagesProvider[] {
   return Array.from(imageModelRegistry.keys()) as KnownImagesProvider[];
 }
 
-export function getImageModels<TProvider extends KnownImagesProvider>(provider: TProvider): ImagesModel<ImagesApi>[] {
+export function getImageModels(provider: string): ImagesModel<ImagesApi>[] {
   const models = imageModelRegistry.get(provider);
   return models ? (Array.from(models.values()) as ImagesModel<ImagesApi>[]) : [];
 }

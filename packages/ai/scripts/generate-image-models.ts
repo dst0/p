@@ -3,7 +3,7 @@
 import { writeFileSync } from "fs";
 import { dirname, join } from "path";
 import { fileURLToPath } from "url";
-import type { ImagesModel } from "../src/types.ts";
+import type { ImagesApi, ImagesModel } from "../src/types.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
@@ -37,55 +37,15 @@ const STATIC_OPENAI_MODELS: ImagesModel<"openai-images">[] = [
 		output: ["image"],
 		cost: { input: 0, output: 0.04, cacheRead: 0, cacheWrite: 0 },
 	},
-	{
-		id: "dall-e-3",
-		name: "OpenAI: DALL-E 3",
-		api: "openai-images",
-		provider: "openai",
-		baseUrl: "https://api.openai.com/v1",
-		input: ["text"],
-		output: ["image"],
-		cost: { input: 0, output: 0.04, cacheRead: 0, cacheWrite: 0 },
-	},
-	{
-		id: "dall-e-2",
-		name: "OpenAI: DALL-E 2",
-		api: "openai-images",
-		provider: "openai",
-		baseUrl: "https://api.openai.com/v1",
-		input: ["text"],
-		output: ["image"],
-		cost: { input: 0, output: 0.02, cacheRead: 0, cacheWrite: 0 },
-	},
 ];
 
 const STATIC_LLM_ORC_MODELS: ImagesModel<"openai-images">[] = [
 	{
-		id: "dall-e-3",
-		name: "LLM Orchestrator: DALL-E 3",
+		id: "flux2-klein-4b",
+		name: "LLM Orchestrator: FLUX.2 Klein 4B",
 		api: "openai-images",
 		provider: "llm-orchestrator",
-		baseUrl: "https://llm-orc.dst.lan/v1",
-		input: ["text"],
-		output: ["image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
-	{
-		id: "flux.1-schnell",
-		name: "LLM Orchestrator: FLUX.1 Schnell",
-		api: "openai-images",
-		provider: "llm-orchestrator",
-		baseUrl: "https://llm-orc.dst.lan/v1",
-		input: ["text"],
-		output: ["image"],
-		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
-	},
-	{
-		id: "flux.1-dev",
-		name: "LLM Orchestrator: FLUX.1 Dev",
-		api: "openai-images",
-		provider: "llm-orchestrator",
-		baseUrl: "https://llm-orc.dst.lan/v1",
+		baseUrl: "http://127.0.0.1:11450/v1",
 		input: ["text"],
 		output: ["image"],
 		cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
@@ -142,10 +102,10 @@ async function fetchOpenRouterImageModels(): Promise<ImagesModel<"openrouter-ima
 	}
 }
 
-function serializeModelMap(models: ImagesModel<any>[]): Record<string, string> {
+function serializeModelMap(models: ImagesModel<ImagesApi>[]): Record<string, string> {
 	const serializeStringArray = (values: readonly string[]): string =>
 		`[${values.map((value) => JSON.stringify(value)).join(", ")}]`;
-	const serializeCost = (cost: ImagesModel<any>["cost"]): string => `{
+	const serializeCost = (cost: ImagesModel<ImagesApi>["cost"]): string => `{
 				input: ${cost.input},
 				output: ${cost.output},
 				cacheRead: ${cost.cacheRead},

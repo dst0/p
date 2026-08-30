@@ -29,15 +29,34 @@ describe("Images Registry and Models Unit Tests", () => {
     expect(model?.id).toBe("google/gemini-2.5-flash-image");
     expect(model?.provider).toBe("openrouter");
 
-    const openaiModel = getImageModel("openai", "dall-e-3");
+    const openaiModel = getImageModel("openai", "gpt-image-2");
     expect(openaiModel).toBeDefined();
-    expect(openaiModel?.id).toBe("dall-e-3");
+    expect(openaiModel?.id).toBe("gpt-image-2");
     expect(openaiModel?.api).toBe("openai-images");
 
-    const llmOrcModel = getImageModel("llm-orchestrator", "flux.1-dev");
+    const llmOrcModel = getImageModel("llm-orchestrator", "flux2-klein-4b");
     expect(llmOrcModel).toBeDefined();
-    expect(llmOrcModel?.id).toBe("flux.1-dev");
+    expect(llmOrcModel?.id).toBe("flux2-klein-4b");
     expect(llmOrcModel?.api).toBe("openai-images");
+    expect(llmOrcModel?.baseUrl).toBe("http://127.0.0.1:11450/v1");
+  });
+
+  it("creates image models from configured OpenAI-compatible provider endpoints", () => {
+    const model = getImageModel("mini-pc-11450", "flux2-klein-4b", {
+      baseUrl: "https://192.168.8.167:11450/v1",
+    });
+    expect(model).toMatchObject({
+      id: "flux2-klein-4b",
+      provider: "mini-pc-11450",
+      api: "openai-images",
+      baseUrl: "https://192.168.8.167:11450/v1",
+    });
+  });
+
+  it("does not advertise OpenAI image models removed from the API", () => {
+    const openaiModelIds = getImageModels("openai").map((model) => model.id);
+    expect(openaiModelIds).not.toContain("dall-e-2");
+    expect(openaiModelIds).not.toContain("dall-e-3");
   });
 
   it("registers and retrieves custom images API provider", async () => {

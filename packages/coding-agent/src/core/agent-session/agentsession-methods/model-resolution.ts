@@ -1,5 +1,5 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
-import { getImageModel, getImageModels, getImageProviders, type ImagesModel } from "@dst0/p-ai";
+import { getImageModel, getImageModels, getImageProviders, type ImagesApi, type ImagesModel } from "@dst0/p-ai";
 import type { AgentSession } from "../agentsession.ts";
 
 export async function do__runAgentPrompt(self: AgentSession, messages: AgentMessage | AgentMessage[]): Promise<void> {
@@ -43,24 +43,34 @@ export async function do__handlePostAgentRun(self: AgentSession): Promise<boolea
   return self.agent.hasQueuedMessages();
 }
 
-export function do_getImageModel(self: AgentSession): ImagesModel<any> | undefined {
-  return (self as any)._imageModel;
+export interface ResolvedImageModel {
+  model: ImagesModel<ImagesApi>;
+  apiKey?: string;
+  headers?: Record<string, string>;
 }
 
-export function do_setImageModel(self: AgentSession, model: ImagesModel<any>): void {
-  (self as any)._imageModel = model;
+export function do_getImageModel(self: AgentSession): ImagesModel<ImagesApi> | undefined {
+  return self._imageModel;
 }
 
-export async function do_resolveImageModel(
-  self: AgentSession,
-): Promise<{ model: ImagesModel<any>; apiKey?: string } | undefined> {
-  let model = (self as any)._imageModel as ImagesModel<any> | undefined;
+export function do_setImageModel(self: AgentSession, model: ImagesModel<ImagesApi>): void {
+  self._imageModel = model;
+}
+
+export async function do_resolveImageModel(self: AgentSession): Promise<ResolvedImageModel | undefined> {
+  let model = self._imageModel;
 
   if (!model) {
     const defaultProvider = self.settingsManager.getDefaultImageProvider();
     const defaultModelId = self.settingsManager.getDefaultImageModel();
     if (defaultProvider && defaultModelId) {
-      model = getImageModel(defaultProvider as any, defaultModelId as any);
+      const configuredProviderModel = self.modelRegistry
+        .getAll()
+        .find((candidate) => candidate.provider === defaultProvider);
+      model = getImageModel(defaultProvider, defaultModelId, {
+        ...(configuredProviderModel?.baseUrl ? { baseUrl: configuredProviderModel.baseUrl } : {}),
+        ...(configuredProviderModel?.headers ? { headers: configuredProviderModel.headers } : {}),
+      });
     }
   }
 
@@ -80,6 +90,19 @@ export async function do_resolveImageModel(
 
   if (!model) {
     return undefined;
+  }
+
+  const configuredProviderModel = self.modelRegistry
+    .getAll()
+    .find((candidate) => candidate.provider === model.provider);
+  if (configuredProviderModel) {
+    const auth = await self.modelRegistry.getApiKeyAndHeaders(configuredProviderModel);
+    if (!auth.ok) throw new Error(auth.error);
+    return {
+      model,
+      apiKey: auth.apiKey,
+      headers: auth.headers,
+    };
   }
 
   const apiKey = await self.modelRegistry.getApiKeyForProvider(model.provider);

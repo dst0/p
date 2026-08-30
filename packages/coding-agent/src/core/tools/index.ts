@@ -148,7 +148,7 @@ import type { LsToolOptions } from "./ls.ts";
 import type { ProcessToolOptions } from "./process.ts";
 import type { ReadToolOptions } from "./read.ts";
 import type { GrepToolOptions } from "./rg.ts";
-import { createAllToolDefinitions, createAllTools } from "./tool-factories.ts";
+import { createAllToolDefinitions, createNamedTool, createNamedToolDefinition } from "./tool-factories.ts";
 import type { SubmitPlanToolOptions } from "./user-input.ts";
 import type { WriteToolOptions } from "./write.ts";
 
@@ -211,21 +211,11 @@ export interface ToolsOptions {
 }
 
 export function createToolDefinition(toolName: ToolName, cwd: string, options?: ToolsOptions): ToolDef {
-  const definitions = createAllToolDefinitions(cwd, options);
-  const def = definitions[toolName];
-  if (!def) {
-    throw new Error(`Unknown tool name: ${toolName}`);
-  }
-  return def;
+  return createNamedToolDefinition(toolName, cwd, options);
 }
 
 export function createTool(toolName: ToolName, cwd: string, options?: ToolsOptions): Tool {
-  const tools = createAllTools(cwd, options);
-  const tool = tools[toolName];
-  if (!tool) {
-    throw new Error(`Unknown tool name: ${toolName}`);
-  }
-  return tool;
+  return createNamedTool(toolName, cwd, options);
 }
 
 export function createCodingToolDefinitions(cwd: string, options?: ToolsOptions): ToolDef[] {

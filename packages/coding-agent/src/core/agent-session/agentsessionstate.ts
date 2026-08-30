@@ -1,5 +1,5 @@
 import type { Agent, AgentMessage, AgentState, AgentTool, CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
-import type { AssistantMessage, Model } from "@dst0/p-ai";
+import type { AssistantMessage, ImagesApi, ImagesModel, Model } from "@dst0/p-ai";
 import type {
   ExtensionCommandContextActions,
   ExtensionErrorListener,
@@ -40,6 +40,7 @@ export class AgentSessionState {
     model: Model<any>;
     thinkingLevel?: ThinkingLevel;
   }>;
+  public _imageModel?: ImagesModel<ImagesApi>;
   public _unsubscribeAgent?: () => void;
   public _eventListeners: AgentSessionEventListener[] = [];
   public _steeringMessages: string[] = [];

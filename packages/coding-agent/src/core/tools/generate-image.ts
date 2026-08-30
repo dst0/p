@@ -1,12 +1,21 @@
+import { randomUUID } from "node:crypto";
 import type { AgentTool } from "@dst0/p-agent-core";
-import { detectImageMimeType, generateImages, type ImagesModel } from "@dst0/p-ai";
+import {
+  decodeImageBase64Safely,
+  detectImageMimeType,
+  generateImages,
+  type ImagesApi,
+  type ImagesModel,
+  type ProviderImagesOptions,
+} from "@dst0/p-ai";
+import { downloadImageSafely } from "@dst0/p-ai/utils/image-download";
 import { Container, Text } from "@dst0/p-tui";
 import { mkdir as fsMkdir, rename as fsRename, unlink as fsUnlink, writeFile as fsWriteFile } from "fs/promises";
 import { dirname, extname, relative } from "path";
 import { type Static, Type } from "typebox";
 import type { ToolDefinition } from "../extensions/types.ts";
 import { withFileMutationQueue } from "./file-mutation-queue.ts";
-import { resolveDimensions } from "./image-dimensions.ts";
+import { resolveDimensions, validateDimensionsForModel } from "./image-dimensions.ts";
 import { resolveToCwd } from "./path-utils.ts";
 import { normalizeDisplayText, renderToolPath, str, stripHarnessMessages } from "./render-utils.ts";
 import { wrapToolDefinition } from "./tool-definition-wrapper.ts";
@@ -30,7 +39,7 @@ export const generateImageSchema = Type.Object({
   ),
   quality: Type.Optional(
     Type.String({
-      description: "Image quality level ('standard' or 'hd')",
+      description: "Provider-supported image quality (for example 'low', 'medium', 'high', 'auto', or 'hd')",
     }),
   ),
   style: Type.Optional(
@@ -68,13 +77,15 @@ const defaultGenerateImageOperations: GenerateImageOperations = {
 };
 
 export interface GenerateImageModelResolution {
-  model: ImagesModel<any>;
+  model: ImagesModel<ImagesApi>;
   apiKey?: string;
+  headers?: Record<string, string>;
 }
 
 export interface GenerateImageToolOptions {
-  model?: ImagesModel<any>;
+  model?: ImagesModel<ImagesApi>;
   apiKey?: string;
+  headers?: Record<string, string>;
   resolveModel?: () => Promise<GenerateImageModelResolution | undefined> | GenerateImageModelResolution | undefined;
   operations?: GenerateImageOperations;
 }
@@ -89,6 +100,22 @@ function mimeToExtension(mime: string): string {
       return "gif";
     default:
       return "png";
+  }
+}
+
+function extensionToMime(extension: string): string | undefined {
+  switch (extension.toLowerCase()) {
+    case ".jpg":
+    case ".jpeg":
+      return "image/jpeg";
+    case ".png":
+      return "image/png";
+    case ".webp":
+      return "image/webp";
+    case ".gif":
+      return "image/gif";
+    default:
+      return undefined;
   }
 }
 
@@ -110,6 +137,7 @@ export function createGenerateImageToolDefinition(
       const resolved = options?.resolveModel ? await options.resolveModel() : undefined;
       const model = resolved?.model ?? options?.model;
       const apiKey = resolved?.apiKey ?? options?.apiKey;
+      const headers = resolved?.headers ?? options?.headers;
 
       if (!model) {
         throw new Error(
@@ -118,18 +146,22 @@ export function createGenerateImageToolDefinition(
       }
 
       const targetDimensions = resolveDimensions(params.size, params.aspectRatio);
+      validateDimensionsForModel(model, targetDimensions);
+      const generationOptions: ProviderImagesOptions = {
+        apiKey,
+        headers,
+        signal,
+        downloadImage: downloadImageSafely,
+        ...(targetDimensions ? { size: targetDimensions } : {}),
+        ...(params.quality ? { quality: params.quality } : {}),
+        ...(params.style ? { style: params.style } : {}),
+      };
       const res = await generateImages(
         model,
         {
           input: [{ type: "text", text: params.prompt }],
         },
-        {
-          apiKey,
-          signal,
-          ...(targetDimensions ? { size: targetDimensions } : {}),
-          ...(params.quality ? { quality: params.quality } : {}),
-          ...(params.style ? { style: params.style } : {}),
-        } as any,
+        generationOptions,
       );
 
       if (res.stopReason === "error") {
@@ -144,14 +176,27 @@ export function createGenerateImageToolDefinition(
         throw new Error("No image data returned from provider");
       }
 
-      const buffer = Buffer.from(imagePart.data, "base64");
+      const buffer = decodeImageBase64Safely(imagePart.data);
       const detectedMime = detectImageMimeType(buffer);
       if (!detectedMime) {
         throw new Error("Generated image data contains unrecognized or invalid binary format");
       }
 
       const ext = mimeToExtension(detectedMime);
-      const randomSuffix = Math.random().toString(36).slice(2, 8);
+      const requestedExtension = params.outputPath ? extname(params.outputPath) : "";
+      if (requestedExtension) {
+        const requestedMime = extensionToMime(requestedExtension);
+        if (!requestedMime) {
+          throw new Error(`Unsupported image output extension "${requestedExtension}"`);
+        }
+        if (requestedMime !== detectedMime) {
+          throw new Error(
+            `Output extension "${requestedExtension}" does not match generated image type ${detectedMime}`,
+          );
+        }
+      }
+
+      const randomSuffix = randomUUID().replaceAll("-", "").slice(0, 16);
       const defaultName = `assets/generated_${Date.now()}_${randomSuffix}.${ext}`;
       const rawPath = params.outputPath
         ? extname(params.outputPath)

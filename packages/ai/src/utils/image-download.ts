@@ -1,181 +1,230 @@
+import { promises as dnsPromises, type LookupAddress } from "node:dns";
+import { type ClientRequest, get as httpGet, type IncomingMessage, type RequestOptions } from "node:http";
+import { get as httpsGet } from "node:https";
+import type { LookupFunction } from "node:net";
 import {
   detectImageMimeType,
-  parseIPv4Strict,
+  MAX_IMAGE_BYTES,
   validateImageUrlForDownload,
   validateIpAddressForDownload,
 } from "./image-mime.ts";
 
-export const MAX_IMAGE_DOWNLOAD_BYTES = 50 * 1024 * 1024; // 50MB
+export const MAX_IMAGE_DOWNLOAD_BYTES = MAX_IMAGE_BYTES;
 const MAX_REDIRECTS = 5;
+const DEFAULT_DOWNLOAD_TIMEOUT_MS = 30_000;
+const REDIRECT_STATUS_CODES = new Set([301, 302, 303, 307, 308]);
 
 export interface SafeImageDownloadResult {
   buffer: Buffer;
   mimeType: string;
 }
 
-let _dnsLookup:
-  | ((hostname: string, options: { all: boolean }) => Promise<{ address: string; family: number }[]>)
-  | null = null;
-const dynamicImport = (specifier: string) => import(specifier);
-const NODE_DNS_SPECIFIER = "node:" + "dns";
+export type ImageHostnameResolver = (hostname: string) => Promise<readonly LookupAddress[]>;
+export type ImageRequest = (
+  url: URL,
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void,
+) => ClientRequest;
 
-if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-  dynamicImport(NODE_DNS_SPECIFIER)
-    .then((m: any) => {
-      _dnsLookup = m.promises?.lookup || m.lookup;
-    })
-    .catch(() => {});
+export interface ImageDownloadDependencies {
+  resolveHostname?: ImageHostnameResolver;
+  request?: ImageRequest;
+}
+
+async function resolveHostnameDefault(hostname: string): Promise<readonly LookupAddress[]> {
+  return dnsPromises.lookup(hostname, { all: true, verbatim: true });
+}
+
+function validateResolvedAddresses(hostname: string, addresses: readonly LookupAddress[]): void {
+  if (addresses.length === 0) {
+    throw new Error(`DNS lookup returned no addresses for hostname: ${hostname}`);
+  }
+  for (const record of addresses) {
+    const check = validateIpAddressForDownload(record.address);
+    if (!check.valid) {
+      throw new Error(`DNS resolved ${hostname} to private/unallowed IP ${record.address}: ${check.reason}`);
+    }
+  }
 }
 
 /**
- * Resolves a hostname via DNS and validates all returned IP addresses.
+ * Creates the lookup function used by the actual HTTP socket connection. Validation
+ * and connection therefore use the same DNS result, closing DNS-rebinding races.
  */
-async function validateHostnameDns(hostname: string): Promise<{ valid: boolean; reason?: string }> {
-  // If it's already an IP address, validation already ran
-  if (parseIPv4Strict(hostname) !== null || hostname.startsWith("[") || hostname.includes(":")) {
-    return { valid: true };
-  }
+export function createValidatedImageLookup(
+  resolveHostname: ImageHostnameResolver = resolveHostnameDefault,
+): LookupFunction {
+  return (hostname, options, callback) => {
+    void resolveHostname(hostname)
+      .then((addresses) => {
+        validateResolvedAddresses(hostname, addresses);
+        if (options.all) {
+          callback(null, [...addresses]);
+          return;
+        }
+        const first = addresses[0];
+        callback(null, first.address, first.family);
+      })
+      .catch((error: unknown) => {
+        const reason = error instanceof Error ? error : new Error(String(error));
+        callback(reason, "", 0);
+      });
+  };
+}
 
-  if (!_dnsLookup) {
-    if (typeof process !== "undefined" && (process.versions?.node || process.versions?.bun)) {
-      try {
-        const m = (await dynamicImport(NODE_DNS_SPECIFIER)) as any;
-        _dnsLookup = m.promises?.lookup || m.lookup;
-      } catch {
-        // DNS lookup unavailable in this environment
-      }
-    }
-  }
+function requestDefault(
+  url: URL,
+  options: RequestOptions,
+  callback: (response: IncomingMessage) => void,
+): ClientRequest {
+  return url.protocol === "https:" ? httpsGet(url, options, callback) : httpGet(url, options, callback);
+}
 
-  if (!_dnsLookup) {
-    // In browser or non-Node environments where DNS lookup is unavailable,
-    // hostname string validation is the primary defense.
-    return { valid: true };
-  }
-
-  try {
-    const addresses = await _dnsLookup(hostname, { all: true });
-    if (!addresses || addresses.length === 0) {
-      return { valid: false, reason: `DNS lookup failed for hostname: ${hostname}` };
-    }
-    for (const record of addresses) {
-      const check = validateIpAddressForDownload(record.address);
-      if (!check.valid) {
-        return {
-          valid: false,
-          reason: `DNS resolved ${hostname} to private/unallowed IP ${record.address}: ${check.reason}`,
-        };
-      }
-    }
-    return { valid: true };
-  } catch (err) {
-    return {
-      valid: false,
-      reason: `DNS resolution failed for ${hostname}: ${err instanceof Error ? err.message : String(err)}`,
+function requestResponse(
+  url: URL,
+  signal: AbortSignal | undefined,
+  dependencies: ImageDownloadDependencies,
+): Promise<IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const finish = (callback: () => void): void => {
+      signal?.removeEventListener("abort", onAbort);
+      callback();
     };
+    const onAbort = (): void => finish(() => reject(signal?.reason ?? new Error("Download aborted")));
+    const request = (dependencies.request ?? requestDefault)(
+      url,
+      {
+        lookup: createValidatedImageLookup(dependencies.resolveHostname),
+        ...(signal ? { signal } : {}),
+      },
+      (response) => finish(() => resolve(response)),
+    );
+    signal?.addEventListener("abort", onAbort, { once: true });
+    request.once("error", (error) => finish(() => reject(error)));
+  });
+}
+
+function parseContentLength(response: IncomingMessage): number | undefined {
+  const rawValue = response.headers["content-length"];
+  const value = Array.isArray(rawValue) ? rawValue[0] : rawValue;
+  if (value === undefined) return undefined;
+  if (!/^\d+$/.test(value)) {
+    throw new Error(`Invalid Content-Length header received while downloading image: ${value}`);
   }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    throw new Error(`Invalid Content-Length header received while downloading image: ${value}`);
+  }
+  return parsed;
+}
+
+async function readLimitedImageBody(response: IncomingMessage, signal?: AbortSignal): Promise<Buffer> {
+  if (signal?.aborted) {
+    response.destroy();
+    throw signal.reason ?? new Error("Download aborted");
+  }
+  let contentLength: number | undefined;
+  try {
+    contentLength = parseContentLength(response);
+  } catch (error) {
+    response.destroy();
+    throw error;
+  }
+  if (contentLength !== undefined && contentLength > MAX_IMAGE_DOWNLOAD_BYTES) {
+    response.destroy();
+    throw new Error(`Image size exceeds maximum limit of ${MAX_IMAGE_DOWNLOAD_BYTES} bytes`);
+  }
+
+  const chunks: Buffer[] = [];
+  let totalBytes = 0;
+  const onAbort = (): void => {
+    response.destroy(signal?.reason ?? new Error("Download aborted"));
+  };
+  signal?.addEventListener("abort", onAbort, { once: true });
+  try {
+    for await (const chunk of response) {
+      if (signal?.aborted) throw signal.reason ?? new Error("Download aborted");
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      totalBytes += buffer.length;
+      if (totalBytes > MAX_IMAGE_DOWNLOAD_BYTES) {
+        response.destroy();
+        throw new Error(`Image download size exceeds maximum limit of ${MAX_IMAGE_DOWNLOAD_BYTES} bytes`);
+      }
+      chunks.push(buffer);
+    }
+  } finally {
+    signal?.removeEventListener("abort", onAbort);
+  }
+  return Buffer.concat(chunks, totalBytes);
 }
 
 /**
- * Downloads an image safely with DNS inspection, redirect revalidation,
- * streaming size limits (aborts after 50MB), and magic byte verification.
+ * Downloads an image with socket-bound DNS validation, redirect revalidation,
+ * a streaming 50MB limit, and structural image-envelope validation.
  */
 export async function downloadImageSafely(
   initialUrl: string,
-  options?: { signal?: AbortSignal },
+  options?: { signal?: AbortSignal; timeoutMs?: number; dependencies?: ImageDownloadDependencies },
 ): Promise<SafeImageDownloadResult> {
+  const timeoutMs = options?.timeoutMs ?? DEFAULT_DOWNLOAD_TIMEOUT_MS;
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error("Image download timeout must be positive");
+  const timeoutController = new AbortController();
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    timeoutController.abort(new Error(`Image download timed out after ${timeoutMs}ms`));
+  }, timeoutMs);
+  timeout.unref();
+  const signal = options?.signal
+    ? AbortSignal.any([options.signal, timeoutController.signal])
+    : timeoutController.signal;
   let currentUrl = initialUrl;
-  let redirectCount = 0;
 
-  while (redirectCount <= MAX_REDIRECTS) {
-    if (options?.signal?.aborted) {
-      throw new Error("Download aborted");
-    }
+  try {
+    for (let redirectCount = 0; redirectCount <= MAX_REDIRECTS; redirectCount++) {
+      if (signal.aborted) throw signal.reason ?? new Error("Download aborted");
 
-    const urlCheck = validateImageUrlForDownload(currentUrl);
-    if (!urlCheck.valid) {
-      throw new Error(`Rejected image download URL for security: ${urlCheck.reason} (${currentUrl})`);
-    }
-
-    const parsed = new URL(currentUrl);
-    const dnsCheck = await validateHostnameDns(parsed.hostname);
-    if (!dnsCheck.valid) {
-      throw new Error(`Rejected image download URL for security: ${dnsCheck.reason} (${currentUrl})`);
-    }
-
-    const fetchRes = await fetch(currentUrl, {
-      signal: options?.signal,
-      redirect: "manual",
-    });
-
-    // Handle redirects manually to revalidate each hop
-    if ([301, 302, 303, 307, 308].includes(fetchRes.status)) {
-      const location = fetchRes.headers.get("location");
-      if (!location) {
-        throw new Error(`HTTP redirect ${fetchRes.status} received without Location header from ${currentUrl}`);
+      const urlCheck = validateImageUrlForDownload(currentUrl);
+      if (!urlCheck.valid) {
+        throw new Error(`Rejected image download URL for security: ${urlCheck.reason} (${currentUrl})`);
       }
-      currentUrl = new URL(location, currentUrl).href;
-      redirectCount++;
-      if (redirectCount > MAX_REDIRECTS) {
-        throw new Error(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) downloading image`);
-      }
-      continue;
-    }
 
-    if (!fetchRes.ok) {
-      throw new Error(`Failed to download image from URL: ${fetchRes.status} ${fetchRes.statusText}`);
-    }
+      const parsed = new URL(currentUrl);
+      const response = await requestResponse(parsed, signal, options?.dependencies ?? {});
+      const statusCode = response.statusCode ?? 0;
 
-    // Check early Content-Length header if present
-    const contentLength = fetchRes.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > MAX_IMAGE_DOWNLOAD_BYTES) {
-      throw new Error(`Image size exceeds maximum limit of ${MAX_IMAGE_DOWNLOAD_BYTES} bytes`);
-    }
-
-    // Stream download with byte counter to prevent memory exhaustion
-    if (!fetchRes.body) {
-      throw new Error("No response body received for image download");
-    }
-
-    const reader = fetchRes.body.getReader();
-    const chunks: Uint8Array[] = [];
-    let totalBytes = 0;
-
-    try {
-      while (true) {
-        if (options?.signal?.aborted) {
-          await reader.cancel();
-          throw new Error("Download aborted");
+      if (REDIRECT_STATUS_CODES.has(statusCode)) {
+        const location = response.headers.location;
+        response.destroy();
+        if (!location) {
+          throw new Error(`HTTP redirect ${statusCode} received without Location header from ${currentUrl}`);
         }
-
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        if (value) {
-          totalBytes += value.byteLength;
-          if (totalBytes > MAX_IMAGE_DOWNLOAD_BYTES) {
-            await reader.cancel();
-            throw new Error(`Image download size exceeds maximum limit of ${MAX_IMAGE_DOWNLOAD_BYTES} bytes`);
-          }
-          chunks.push(value);
+        if (redirectCount === MAX_REDIRECTS) {
+          throw new Error(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) downloading image`);
         }
+        currentUrl = new URL(location, currentUrl).href;
+        continue;
       }
-    } catch (err) {
-      await reader.cancel().catch(() => {});
-      throw err;
+
+      if (statusCode < 200 || statusCode >= 300) {
+        response.destroy();
+        throw new Error(`Failed to download image from URL: ${statusCode} ${response.statusMessage ?? ""}`.trim());
+      }
+
+      const buffer = await readLimitedImageBody(response, signal);
+      const mimeType = detectImageMimeType(buffer);
+      if (!mimeType) {
+        throw new Error("Downloaded content is not a valid recognized image format (PNG, JPEG, WebP, GIF)");
+      }
+      return { buffer, mimeType };
     }
 
-    const buffer = Buffer.concat(chunks);
-    const detectedMime = detectImageMimeType(buffer);
-    if (!detectedMime) {
-      throw new Error("Downloaded content is not a valid recognized image format (PNG, JPEG, WebP, GIF)");
-    }
-
-    return {
-      buffer,
-      mimeType: detectedMime,
-    };
+    throw new Error(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) downloading image`);
+  } catch (error) {
+    if (timedOut) throw new Error(`Image download timed out after ${timeoutMs}ms`, { cause: error });
+    if (options?.signal?.aborted) throw new Error("Download aborted", { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
   }
-
-  throw new Error(`Exceeded maximum redirect limit (${MAX_REDIRECTS}) downloading image`);
 }

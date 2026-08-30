@@ -20,7 +20,7 @@ describe("ImageModelSelectorComponent", () => {
   };
 
   it("renders image models and marks current selection", () => {
-    const currentModel = getImageModel("openai", "dall-e-3");
+    const currentModel = getImageModel("openai", "gpt-image-2");
     const selector = new ImageModelSelectorComponent(
       mockTui as any,
       currentModel,
@@ -40,12 +40,12 @@ describe("ImageModelSelectorComponent", () => {
       undefined,
       () => {},
       () => {},
-      "dall-e",
+      "flux2",
     );
 
     const output = stripAnsi(selector.render(120).join("\n"));
-    expect(output).toContain("DALL-E 3");
-    expect(output).toContain("[openai]");
+    expect(output).toContain("FLUX.2 Klein 4B");
+    expect(output).toContain("[llm-orchestrator]");
   });
 
   it("selects model on confirm key", () => {

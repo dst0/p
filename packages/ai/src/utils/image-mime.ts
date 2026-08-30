@@ -1,48 +1,29 @@
+export { detectImageMimeType } from "./image-envelope.ts";
+export const MAX_IMAGE_BYTES = 50 * 1024 * 1024;
+
 /**
- * Detects image MIME type from binary buffer magic bytes.
- * Returns undefined for empty, truncated, or unrecognized buffers.
+ * Decodes provider-controlled base64 without allocating beyond the shared image limit.
  */
-export function detectImageMimeType(buffer: Uint8Array | Buffer): string | undefined {
-  if (buffer.length < 3) return undefined;
-  // JPEG: FF D8 FF (only needs 3 bytes)
-  if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
-    return "image/jpeg";
+export function decodeImageBase64Safely(encoded: string, requestedMaximumBytes = MAX_IMAGE_BYTES): Buffer {
+  const maximumBytes = Math.max(0, Math.min(requestedMaximumBytes, MAX_IMAGE_BYTES));
+  const maximumEncodedLength = Math.ceil(maximumBytes / 3) * 4;
+  if (encoded.length > maximumEncodedLength) {
+    throw new Error(`Image data exceeds maximum limit of ${maximumBytes} bytes`);
   }
-  if (buffer.length < 4) return undefined;
-  // PNG: 89 50 4E 47 0D 0A 1A 0A
-  if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
-    if (buffer.length >= 8 && buffer[4] === 0x0d && buffer[5] === 0x0a && buffer[6] === 0x1a && buffer[7] === 0x0a) {
-      return "image/png";
-    }
-    return undefined;
+  const normalized = encoded.replace(/\s/g, "");
+  if (normalized.length === 0 || normalized.length % 4 === 1 || !/^[A-Za-z0-9+/]*={0,2}$/.test(normalized)) {
+    throw new Error("Provider returned malformed base64 image data");
   }
-  // GIF: GIF87a or GIF89a
-  if (
-    buffer.length >= 6 &&
-    buffer[0] === 0x47 && // G
-    buffer[1] === 0x49 && // I
-    buffer[2] === 0x46 && // F
-    buffer[3] === 0x38 && // 8
-    (buffer[4] === 0x37 || buffer[4] === 0x39) && // 7 or 9
-    buffer[5] === 0x61 // a
-  ) {
-    return "image/gif";
+  const paddingBytes = normalized.endsWith("==") ? 2 : normalized.endsWith("=") ? 1 : 0;
+  const decodedLength = Math.floor((normalized.length * 3) / 4) - paddingBytes;
+  if (decodedLength > maximumBytes) {
+    throw new Error(`Image data exceeds maximum limit of ${maximumBytes} bytes`);
   }
-  // WebP: RIFF .... WEBP
-  if (
-    buffer.length >= 12 &&
-    buffer[0] === 0x52 && // R
-    buffer[1] === 0x49 && // I
-    buffer[2] === 0x46 && // F
-    buffer[3] === 0x46 && // F
-    buffer[8] === 0x57 && // W
-    buffer[9] === 0x45 && // E
-    buffer[10] === 0x42 && // B
-    buffer[11] === 0x50 // P
-  ) {
-    return "image/webp";
+  const buffer = Buffer.from(normalized, "base64");
+  if (buffer.length > maximumBytes) {
+    throw new Error(`Image data exceeds maximum limit of ${maximumBytes} bytes`);
   }
-  return undefined;
+  return buffer;
 }
 
 /**
@@ -70,6 +51,7 @@ export function parseIPv4Strict(hostname: string): number | null {
 export function isPrivateIPv4(ip: number): { blocked: boolean; reason?: string } {
   const o1 = (ip >>> 24) & 0xff;
   const o2 = (ip >>> 16) & 0xff;
+  const o3 = (ip >>> 8) & 0xff;
   if (o1 === 127) return { blocked: true, reason: "Loopback IPv4 addresses are not allowed" };
   if (o1 === 10) return { blocked: true, reason: "Private IPv4 addresses (10.0.0.0/8) are not allowed" };
   if (o1 === 172 && o2 >= 16 && o2 <= 31) {
@@ -83,6 +65,21 @@ export function isPrivateIPv4(ip: number): { blocked: boolean; reason?: string }
   }
   if (o1 === 100 && o2 >= 64 && o2 <= 127) {
     return { blocked: true, reason: "Carrier-grade NAT addresses (100.64.0.0/10) are not allowed" };
+  }
+  if (o1 === 192 && o2 === 0 && (o3 === 0 || o3 === 2)) {
+    return { blocked: true, reason: "Reserved IPv4 addresses are not allowed" };
+  }
+  if (o1 === 192 && o2 === 88 && o3 === 99) {
+    return { blocked: true, reason: "Reserved IPv4 addresses are not allowed" };
+  }
+  if (o1 === 198 && (o2 === 18 || o2 === 19)) {
+    return { blocked: true, reason: "Benchmarking IPv4 addresses are not allowed" };
+  }
+  if (o1 === 198 && o2 === 51 && o3 === 100) {
+    return { blocked: true, reason: "Documentation-only IPv4 addresses are not allowed" };
+  }
+  if (o1 === 203 && o2 === 0 && o3 === 113) {
+    return { blocked: true, reason: "Documentation-only IPv4 addresses are not allowed" };
   }
   if (o1 === 0) return { blocked: true, reason: "Non-routable 0.0.0.0 IPv4 address is not allowed" };
   if (o1 >= 224) return { blocked: true, reason: "Multicast or reserved IPv4 addresses are not allowed" };
@@ -109,9 +106,9 @@ export function expandIPv6(addr: string): string | null {
   const left = sides[0] ? sides[0].split(":") : [];
   const right = sides.length === 2 ? (sides[1] ? sides[1].split(":") : []) : [];
   const missing = 8 - left.length - right.length;
-  if (missing < 0) return null;
+  if (missing < 0 || (sides.length === 1 && missing !== 0) || (sides.length === 2 && missing === 0)) return null;
   const groups = [...left, ...Array(missing).fill("0"), ...right];
-  if (groups.length !== 8) return null;
+  if (groups.length !== 8 || groups.some((group) => !/^[0-9a-f]{1,4}$/i.test(group))) return null;
   return groups.map((g) => g.padStart(4, "0").toLowerCase()).join(":");
 }
 
@@ -147,6 +144,17 @@ export function validateIpAddressForDownload(ipStr: string): { valid: boolean; r
     }
     if (expanded.startsWith("ff")) {
       return { valid: false, reason: "Multicast IPv6 addresses are not allowed" };
+    }
+    if (
+      expanded.startsWith("0100:0000:0000:0000:") ||
+      expanded.startsWith("2001:0002:") ||
+      expanded.startsWith("2001:0db8:")
+    ) {
+      return { valid: false, reason: "Non-global IPv6 addresses are not allowed" };
+    }
+    const secondGroup = parseInt(expanded.slice(5, 9), 16);
+    if (expanded.startsWith("2001:") && secondGroup >= 0x20 && secondGroup <= 0x2f) {
+      return { valid: false, reason: "Non-global ORCHID IPv6 addresses are not allowed" };
     }
     if (expanded.startsWith("0000:0000:0000:0000:0000:ffff:")) {
       const lastTwo = expanded.split(":").slice(6);

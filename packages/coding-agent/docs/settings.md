@@ -253,6 +253,8 @@ Strict CI/testing profile:
 | `terminal.showHarnessMessages`  | boolean | `false` | Show internal harness and completion protocol repair messages                        |
 | `images.autoResize`             | boolean | `true`  | Resize images to 2000x2000 max                                                       |
 | `images.blockImages`            | boolean | `false` | Block all images from being sent to LLM                                              |
+| `defaultImageProvider`          | string  | -       | Provider used by the built-in `generate_image` tool                                  |
+| `defaultImageModel`             | string  | -       | Image model ID sent to the provider's `/v1/images/generations` endpoint              |
 
 ### Shell
 

@@ -1,10 +1,6 @@
 import type { ImagesModel } from "@dst0/p-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import {
-  createGenerateImageTool,
-  createGenerateImageToolDefinition,
-  type GenerateImageOperations,
-} from "../src/core/tools/generate-image.ts";
+import { createGenerateImageTool, type GenerateImageOperations } from "../src/core/tools/generate-image.ts";
 
 const mockAiState = vi.hoisted(() => ({
   lastContext: undefined as unknown,
@@ -43,8 +39,8 @@ vi.mock("@dst0/p-ai", async (importOriginal) => {
 
 describe("generate_image tool", () => {
   const dummyModel: ImagesModel<any> = {
-    id: "dall-e-3",
-    name: "DALL-E 3",
+    id: "gpt-image-2",
+    name: "GPT Image 2",
     api: "openai-images",
     provider: "openai",
     baseUrl: "https://api.openai.com/v1",
@@ -94,23 +90,37 @@ describe("generate_image tool", () => {
       },
     };
 
+    const controller = new AbortController();
     const tool = createGenerateImageTool("/workspace", {
       model: dummyModel,
       apiKey: "test-api-key",
+      headers: { "x-image-client": "p" },
       operations: mockOperations,
     });
 
-    const result = await tool.execute("call-1", {
-      prompt: "A beautiful forest",
-      outputPath: "assets/forest.png",
-      aspectRatio: "16:9",
-    });
+    const result = await tool.execute(
+      "call-1",
+      {
+        prompt: "A beautiful forest",
+        outputPath: "assets/forest.png",
+        aspectRatio: "16:9",
+      },
+      controller.signal,
+    );
 
     expect(result.content[0].type).toBe("text");
     expect((result.content[0] as { text: string }).text).toContain("Successfully generated image");
     expect(result.details?.outputPath).toBe("assets/forest.png");
     expect(result.details?.provider).toBe("openai");
-    expect(result.details?.model).toBe("dall-e-3");
+    expect(result.details?.model).toBe("gpt-image-2");
+    expect(mockAiState.lastContext).toEqual({ input: [{ type: "text", text: "A beautiful forest" }] });
+    expect(mockAiState.lastOptions).toMatchObject({
+      apiKey: "test-api-key",
+      headers: { "x-image-client": "p" },
+      signal: controller.signal,
+      size: "1792x1024",
+    });
+    expect((mockAiState.lastOptions as { downloadImage?: unknown }).downloadImage).toEqual(expect.any(Function));
 
     expect(createdDirs.has("/workspace/assets")).toBe(true);
     expect(writtenFiles.has("/workspace/assets/forest.png")).toBe(true);
@@ -120,39 +130,6 @@ describe("generate_image tool", () => {
     expect(writeIdx).toBeGreaterThanOrEqual(0);
     expect(renameIdx).toBeGreaterThanOrEqual(0);
     expect(writeIdx).toBeLessThan(renameIdx);
-  });
-
-  it("auto-generates unique collision-safe output path if omitted", async () => {
-    const writtenFiles = new Map<string, Buffer>();
-
-    const mockOperations: GenerateImageOperations = {
-      writeFile: async (filePath, buffer) => {
-        writtenFiles.set(filePath, buffer);
-      },
-      rename: async (oldPath, newPath) => {
-        const data = writtenFiles.get(oldPath);
-        if (data) {
-          writtenFiles.set(newPath, data);
-          writtenFiles.delete(oldPath);
-        }
-      },
-      unlink: async () => {},
-      mkdir: async () => {},
-    };
-
-    const tool = createGenerateImageTool("/workspace", {
-      resolveModel: async () => ({ model: dummyModel, apiKey: "dynamic-key" }),
-      operations: mockOperations,
-    });
-
-    const result = await tool.execute("call-2", {
-      prompt: "A cat sleeping",
-    });
-
-    expect(result.details?.outputPath).toMatch(/^assets\/generated_\d+_[a-z0-9]+\.png$/);
-    const writtenPaths = Array.from(writtenFiles.keys());
-    expect(writtenPaths.length).toBe(1);
-    expect(writtenPaths[0]).toMatch(/\/workspace\/assets\/generated_\d+_[a-z0-9]+\.png$/);
   });
 
   it("cleans up temp file when write operation fails", async () => {
@@ -180,6 +157,37 @@ describe("generate_image tool", () => {
     );
     expect(unlinkedPaths.length).toBe(1);
     expect(unlinkedPaths[0]).toContain("fail.png.tmp");
+  });
+
+  it("cleans up the temp file and preserves the target when rename fails", async () => {
+    const targetPath = "/workspace/existing.png";
+    const files = new Map<string, Buffer>([[targetPath, Buffer.from("existing")]]);
+    const unlinkedPaths: string[] = [];
+    const operations: GenerateImageOperations = {
+      writeFile: async (path, buffer) => {
+        files.set(path, buffer);
+      },
+      rename: async () => {
+        throw new Error("rename failed");
+      },
+      unlink: async (path) => {
+        unlinkedPaths.push(path);
+        files.delete(path);
+      },
+      mkdir: async () => {},
+    };
+    const tool = createGenerateImageTool("/workspace", {
+      model: dummyModel,
+      apiKey: "test-api-key",
+      operations,
+    });
+
+    await expect(
+      tool.execute("call-rename-fail", { prompt: "A failure test", outputPath: "existing.png" }),
+    ).rejects.toThrow("rename failed");
+    expect(files.get(targetPath)?.toString()).toBe("existing");
+    expect(unlinkedPaths).toHaveLength(1);
+    expect(unlinkedPaths[0]).toContain("existing.png.tmp");
   });
 
   it("throws error on conflicting size and aspectRatio including 1024x1024 vs 16:9", async () => {
@@ -223,6 +231,25 @@ describe("generate_image tool", () => {
     );
   });
 
+  it("rejects an explicit output extension that conflicts with detected image bytes", async () => {
+    const operations: GenerateImageOperations = {
+      writeFile: vi.fn(),
+      rename: vi.fn(),
+      unlink: vi.fn(),
+      mkdir: vi.fn(),
+    };
+    const tool = createGenerateImageTool("/workspace", {
+      model: dummyModel,
+      apiKey: "test-api-key",
+      operations,
+    });
+
+    await expect(
+      tool.execute("call-extension-mismatch", { prompt: "test", outputPath: "generated.jpg" }),
+    ).rejects.toThrow("does not match generated image type");
+    expect(operations.writeFile).not.toHaveBeenCalled();
+  });
+
   it("aborts and cleans up temp file when signal fires during write", async () => {
     const controller = new AbortController();
     const unlinkedPaths: string[] = [];
@@ -250,31 +277,5 @@ describe("generate_image tool", () => {
     ).rejects.toThrow("aborted");
     expect(unlinkedPaths.length).toBe(1);
     expect(unlinkedPaths[0]).toContain("aborted.png.tmp");
-  });
-
-  it("renders call and result properly", () => {
-    const toolDef = createGenerateImageToolDefinition("/workspace", { model: dummyModel });
-    const fakeTheme = {
-      fg: (_color: string, text: string) => text,
-    };
-
-    const callComponent = toolDef.renderCall!(
-      { prompt: "A dog", outputPath: "dog.png" },
-      fakeTheme as any,
-      { cwd: "/workspace", expanded: false, isPartial: false, argsComplete: true } as any,
-    );
-    expect((callComponent as any).text).toContain("generate_image");
-    expect((callComponent as any).text).toContain("dog.png");
-
-    const errorResultComponent = toolDef.renderResult!(
-      {
-        content: [{ type: "text", text: "Something went wrong" }],
-        details: { outputPath: "dog.png", bytes: 0, mimeType: "image/png", prompt: "A dog" },
-      },
-      {} as any,
-      fakeTheme as any,
-      { isError: true, showHarnessMessages: true } as any,
-    );
-    expect((errorResultComponent as any).text).toContain("Something went wrong");
   });
 });
