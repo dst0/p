@@ -1,7 +1,11 @@
 import type { Model } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { streamSimpleOpenAICompletions } from "../../ai/src/providers/openai-completions/stream-simple-openai-completions.ts";
-import { enforceProjectInstructionCompilerReasoningControl } from "../src/core/project-instructions/compiler-reasoning-control.ts";
+import {
+  buildProjectInstructionCompilerModelIdentity,
+  enforceProjectInstructionCompilerReasoningControl,
+  matchesProjectInstructionCompilerModelIdentity,
+} from "../src/core/project-instructions/compiler-reasoning-control.ts";
 
 function model(overrides: Partial<Model<"openai-completions">> = {}): Model<"openai-completions"> {
   return {
@@ -20,6 +24,38 @@ function model(overrides: Partial<Model<"openai-completions">> = {}): Model<"ope
 }
 
 describe("project instruction compiler reasoning control", () => {
+  it("binds cache identity to the exact compiler reasoning-control metadata", () => {
+    const input = model({ compat: { thinkingFormat: "qwen" } });
+    const identity = buildProjectInstructionCompilerModelIdentity(input, "contract-v1");
+
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, input, "contract-v1")).toBe(true);
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, input, "contract-v2")).toBe(false);
+    expect(
+      matchesProjectInstructionCompilerModelIdentity(
+        identity,
+        model({ compat: { thinkingFormat: "qwen-chat-template" } }),
+        "contract-v1",
+      ),
+    ).toBe(false);
+    expect(matchesProjectInstructionCompilerModelIdentity(identity, model({ reasoning: false }), "contract-v1")).toBe(
+      false,
+    );
+    expect(
+      matchesProjectInstructionCompilerModelIdentity(
+        identity,
+        model({ compat: { thinkingFormat: "qwen" }, thinkingLevelMap: { off: "disabled" } }),
+        "contract-v1",
+      ),
+    ).toBe(false);
+    expect(
+      matchesProjectInstructionCompilerModelIdentity(
+        identity,
+        { ...input, api: "anthropic-messages" } as Model<"anthropic-messages">,
+        "contract-v1",
+      ),
+    ).toBe(false);
+  });
+
   it("materializes a Qwen thinking-disable field through the actual simple-stream boundary", async () => {
     const controlled = enforceProjectInstructionCompilerReasoningControl(model({ compat: { thinkingFormat: "qwen" } }));
     let payload: Record<string, unknown> | undefined;

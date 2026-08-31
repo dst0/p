@@ -11,6 +11,21 @@ const EXPLICIT_DISABLE_FORMATS = new Set([
   "zai",
 ]);
 
+export function buildProjectInstructionCompilerModelIdentity<TApi extends Api>(
+  model: Model<TApi>,
+  contractRevision: string,
+): string {
+  return `${model.provider}/${model.id}:${contractRevision}:${getProjectInstructionCompilerReasoningControlIdentity(model)}`;
+}
+
+export function matchesProjectInstructionCompilerModelIdentity<TApi extends Api>(
+  identity: string,
+  model: Model<TApi>,
+  contractRevision: string,
+): boolean {
+  return identity === buildProjectInstructionCompilerModelIdentity(model, contractRevision);
+}
+
 export function getProjectInstructionCompilerReasoningControlIdentity<TApi extends Api>(model: Model<TApi>): string {
   const openAIModel = model as Model<"openai-completions">;
   const control =

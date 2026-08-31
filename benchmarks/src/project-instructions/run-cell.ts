@@ -145,6 +145,7 @@ export async function runPairedBenchmarkCell(
       seedMaterialization = await operations.materializeCompiled({
         runtimeSnapshot,
         sourceFile: options.projectInstructionsFile,
+        modelsFile: options.privateSnapshots.models.path,
         scratchOutput,
         task: pair.task,
         seed: options.seed,

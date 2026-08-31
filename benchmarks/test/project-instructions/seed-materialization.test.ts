@@ -5,7 +5,14 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { PROJECT_INSTRUCTION_COMPILER_VERSION } from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
+import { AuthStorage } from "../../../packages/coding-agent/dist/core/auth-storage.js";
+import { ModelRegistry } from "../../../packages/coding-agent/dist/core/model-registry.js";
+import { buildProjectInstructionCompilerModelIdentity } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
+import {
+  PROJECT_INSTRUCTION_COMPILER_VERSION,
+  prepareProjectInstructions,
+} from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
+import { DEFAULT_MODEL_COMPILER_CONTRACT_REVISION } from "../../../packages/coding-agent/dist/core/project-instructions/session-controller.js";
 import { captureVerifiedCompiledCache } from "../../src/project-instructions/cache.ts";
 import { assertSeededManifestEvidence } from "../../src/project-instructions/seed-manifest.ts";
 import {
@@ -44,6 +51,60 @@ test("materializer creates a path-correct provider-free cache bound to the certi
   }
 });
 
+test("live compiler identity reuses the exact seed cache without invoking the provider", async () => {
+  const root = mkdtempSync(join(tmpdir(), "p-benchmark-seed-live-reuse-"));
+  try {
+    const fixture = createSeedMaterializationFixture(root);
+    const execution = materializeSeedFixture(fixture);
+    assert.equal(execution.status, 0, execution.stdout);
+    const before = captureVerifiedCompiledCache(fixture.workspace, fixture.sourceSha256);
+    assert.ok(before);
+    const registry = ModelRegistry.create(AuthStorage.inMemory(), fixture.modelsPath);
+    const model = registry.find("provider", "model");
+    assert.ok(model);
+    const liveIdentity = buildProjectInstructionCompilerModelIdentity(model, DEFAULT_MODEL_COMPILER_CONTRACT_REVISION);
+    assert.equal(liveIdentity, fixture.compilerIdentity);
+    const agentsPath = join(fixture.workspace, "AGENTS.md");
+    const content = readFileSync(agentsPath, "utf8");
+    let compilerCalls = 0;
+    await prepareProjectInstructions({
+      cwd: fixture.workspace,
+      cacheDir: join(fixture.workspace, ".pdev", "instructions"),
+      contextFiles: [{ path: agentsPath, content }],
+      skills: [],
+      compilerIdentity: liveIdentity,
+      compiler: async () => {
+        compilerCalls += 1;
+        return fixture.result;
+      },
+    });
+    assert.equal(compilerCalls, 0);
+    const after = captureVerifiedCompiledCache(fixture.workspace, fixture.sourceSha256);
+    assert.ok(after);
+    assert.equal(after.evidence.cacheClosureSha256, before.evidence.cacheClosureSha256);
+    assert.deepEqual(after.evidence.authorizedPromptHashes, before.evidence.authorizedPromptHashes);
+
+    const changedIdentity = buildProjectInstructionCompilerModelIdentity(
+      { ...model, reasoning: !model.reasoning },
+      DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+    );
+    await prepareProjectInstructions({
+      cwd: fixture.workspace,
+      cacheDir: join(fixture.workspace, ".pdev", "instructions"),
+      contextFiles: [{ path: agentsPath, content }],
+      skills: [],
+      compilerIdentity: changedIdentity,
+      compiler: async () => {
+        compilerCalls += 1;
+        return fixture.result;
+      },
+    });
+    assert.equal(compilerCalls, 1);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test("materializer rejects stale compiler, model-contract identity, and source without publishing cache", () => {
   for (const kind of ["compiler", "identity", "source"]) {
     const root = mkdtempSync(join(tmpdir(), "p-benchmark-seed-reject-"));
@@ -75,6 +136,7 @@ test("one immutable certificate seeds repeated compiled cells while legacy remai
         materializeBenchmarkProjectInstructions({
           runtimeSnapshot: fileURLToPath(new URL("../../..", import.meta.url)),
           sourceFile: fixture.sourcePath,
+          modelsFile: fixture.modelsPath,
           scratchOutput: join(root, `cell-${index}`),
           task: "task",
           seed: {

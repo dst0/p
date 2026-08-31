@@ -30,6 +30,7 @@ type MaterializationOptions = SeedRunControl & {
   scratchOutput: string;
   task: string;
   sourceFile: string;
+  modelsFile: string;
   runtimeSnapshot: string;
   seed: { seedPath: string; certificatePath: string; certificate: SeedCertificate };
 };
@@ -125,6 +126,8 @@ export async function materializeBenchmarkProjectInstructions(
       "materialize",
       "--source",
       options.sourceFile,
+      "--models-file",
+      options.modelsFile,
       "--workspace",
       workspace,
       "--seed",
