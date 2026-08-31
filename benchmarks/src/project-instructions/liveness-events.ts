@@ -28,6 +28,10 @@ export function processSemanticLine(state: SemanticEventState, line: string): vo
     return;
   }
   if (!isRecord(event)) return;
+  if (event.type === "turn_end") {
+    state.taskVerificationTracker.endTurn();
+    return;
+  }
   if (event.type === "tool_execution_end") {
     state.taskVerificationTracker.end(event);
     const key = String(event.toolCallId ?? event.benchmarkEventOrdinal ?? "");

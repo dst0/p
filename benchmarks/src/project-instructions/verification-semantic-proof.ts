@@ -52,7 +52,12 @@ export function createTaskVerificationSemanticTracker() {
       const args = isRecord(event.args) ? event.args : {};
       const action = typeof args.action === "string" ? args.action : undefined;
       const key = typeof event.toolCallId === "string" ? event.toolCallId : "";
-      const submittedCertificate = event.toolName === "finish_work" && typeof args.verification_token === "string";
+      const issuedCertificate = evidence.evidenceCertificateCount > 0 || evidence.auditCertificateCount > 0;
+      const submittedCertificate =
+        event.toolName === "finish_work" &&
+        args.status === "success" &&
+        ((typeof args.verification_token === "string" && args.verification_token.trim().length > 0) ||
+          issuedCertificate);
       if (event.toolName === "record_task_verification" && action === "ready_to_finish") {
         evidence.readinessAttemptCount += 1;
       }
@@ -70,7 +75,8 @@ export function createTaskVerificationSemanticTracker() {
       const call = pending.get(event.toolCallId);
       if (!call) return;
       pending.delete(event.toolCallId);
-      if (event.isError === true) return;
+      if (event.toolName !== call.toolName) return;
+      if (event.isError !== false) return;
       const hasCertificate = TOKEN_PATTERN.test(resultText(event.result));
       if (call.toolName === "record_task_verification" && call.action === "ready_to_finish" && hasCertificate) {
         evidence.evidenceCertificateCount += 1;
@@ -82,6 +88,9 @@ export function createTaskVerificationSemanticTracker() {
     },
     snapshot(): TaskVerificationSemanticEvidence {
       return { ...evidence };
+    },
+    endTurn(): void {
+      pending.clear();
     },
     reset(): void {
       evidence = emptyEvidence();

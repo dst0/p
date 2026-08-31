@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Make the benchmark watchdog distinguish its fixture marker from P's accepted task-verification terminal handshake."
+}

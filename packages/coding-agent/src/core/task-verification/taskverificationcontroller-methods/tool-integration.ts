@@ -20,6 +20,7 @@ import {
   shellCommand,
 } from "../tool-classification.ts";
 import { snapshotNativeToolCallContext } from "./native-tool-result-context.ts";
+import { isNonRequirementNudge } from "./non-requirement-nudge.ts";
 import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
@@ -36,12 +37,6 @@ import { focusedTestInvocation } from "./test-command-invocation.ts";
 import { captureTestWorkspaceSnapshot } from "./test-workspace-snapshot.ts";
 import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
 import { unknownEffectGate } from "./unknown-effect-gate.ts";
-
-const NON_REQUIREMENT_NUDGE_PATTERN =
-  /^(?:(?:any\s+)?(?:progress|status|update)|so|how(?:'s|\s+is)\s+it\s+going|where\s+are\s+we|what(?:'s|\s+is)\s+the\s+status|(?:please\s+)?(?:continue|proceed|go\s+on|keep\s+going|carry\s+on)|(?:please\s+)?(?:report|show|give\s+me)\s+(?:the\s+)?(?:progress|status|update))\s*[?!.]*$/iu;
-const COMPLETION_NUDGE_PATTERN =
-  /^are\s+you\s+(?:done|finished)(?:\s+with\s+(?:the\s+)?task)?\s+or\s+is\s+there\s+(?:anything|something)\s+left\s*[?!.]*\s*if\s+you\s+are\s+finished\s*,?\s*(?:ensure|make\s+sure)(?:\s+that)?\s+all\s+requirements\s+(?:are\s+)?(?:satisfied|met)(?:\s+and\s+(?:create|write)\s+[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt))?\s*[?!.]*$/iu;
-const NUDGE_DOCUMENT_PATH_PATTERN = /[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt)\b/giu;
 export function do_install(self: TaskVerificationController, agent: Agent): void {
   if (self.installed || self.mode === "off") return;
   self.installed = true;
@@ -203,18 +198,6 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
-}
-
-function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text: string }[]): boolean {
-  const normalized = promptText.trim();
-  if (NON_REQUIREMENT_NUDGE_PATTERN.test(normalized)) return true;
-  if (!COMPLETION_NUDGE_PATTERN.test(normalized) || taskPrompts.length === 0) return false;
-  const priorText = taskPrompts
-    .map((prompt) => prompt.text)
-    .join("\n")
-    .toLowerCase();
-  const mentionedPaths = [...normalized.matchAll(NUDGE_DOCUMENT_PATH_PATTERN)].map((match) => match[0].toLowerCase());
-  return mentionedPaths.every((path) => priorText.includes(path));
 }
 
 function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {

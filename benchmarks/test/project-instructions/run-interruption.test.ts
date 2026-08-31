@@ -84,7 +84,7 @@ function completedTaskVerificationProof(mode: "evidence" | "audit") {
     complete("define", "record_requirement_audit", { action: "define" }, "Requirements defined");
     complete("verdict", "record_requirement_audit", { action: "verdict" }, "verification_token: audit-token");
   }
-  complete("finish", "finish_work", { verification_token: "accepted-token" }, "Work completed");
+  complete("finish", "finish_work", { status: "success", verification_token: "accepted-token" }, "Work completed");
   return tracker.snapshot();
 }
 
