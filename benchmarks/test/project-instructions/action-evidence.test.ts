@@ -129,6 +129,8 @@ test("records conservative phase-less actions and suppresses builtin description
     ["remote_operation", { target: "primary" }, undefined],
     ["list_skills", { query: "testing" }, "Deploy production services"],
     ["record_requirement_audit", { action: "define" }, "Define authoritative user requirements"],
+    ["record_task_verification", { action: "ready_to_finish" }, "Check finish readiness"],
+    ["record_task_verification", { action: "unknown" }, "Unknown verification action"],
   ];
   const events = calls.flatMap(([toolName, args, toolDescription], index) => [
     {
@@ -154,6 +156,7 @@ test("records conservative phase-less actions and suppresses builtin description
     [
       { toolName: "bash", phases: [] },
       { toolName: "remote_operation", phases: [] },
+      { toolName: "record_task_verification", phases: ["verification"] },
     ],
   );
   assert.deepEqual(metrics.phaseRelevantToolCalls[0].actionQueries, ['bash\n{"command":"echo hello"}']);

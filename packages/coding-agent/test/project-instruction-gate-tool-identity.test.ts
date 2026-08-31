@@ -123,11 +123,18 @@ describe("compiled project-instruction tool identity gate", () => {
     try {
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
       expect(turn.projectRuleLinks?.length).toBeGreaterThan(0);
-      await expect(
-        session.agent.beforeToolCall?.(
-          projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "status" }),
-        ),
-      ).resolves.toBeUndefined();
+      for (const action of [
+        "declare_task",
+        "authorize_baseline_test",
+        "record_baseline",
+        "record_final",
+        "ready_to_finish",
+        "status",
+      ]) {
+        await expect(
+          session.agent.beforeToolCall?.(projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action })),
+        ).resolves.toBeUndefined();
+      }
       await expect(
         session.agent.beforeToolCall?.(
           projectInstructionToolHookInput(REQUIREMENT_AUDIT_TOOL_NAME, {
@@ -136,10 +143,32 @@ describe("compiled project-instruction tool identity gate", () => {
         ),
       ).resolves.toBeUndefined();
       await expect(
+        session.agent.beforeToolCall?.(projectInstructionToolHookInput("write", { path: "src/auth.ts" })),
+      ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("read_rules") });
+      await expect(
         session.agent.beforeToolCall?.(
-          projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "ready_to_finish" }),
+          projectInstructionToolHookInput("finish_work", { status: "success", summary: "Done" }),
         ),
-      ).resolves.toMatchObject({ block: true });
+      ).resolves.toBeUndefined();
+      const controller = session._taskVerificationRuntime?.controller;
+      expect(controller).toBeDefined();
+      controller!.applyInput({ action: "declare_task", task_kind: "feature", task_summary: "Edit auth source" });
+      const completedWrite = projectInstructionToolHookInput("write", { path: "src/auth.ts" });
+      await controller!.afterToolCall(
+        {
+          ...completedWrite,
+          result: { content: [{ type: "text", text: "written" }], details: {} },
+          isError: false,
+          context: { messages: [] },
+        } as never,
+        undefined,
+      );
+      expect(controller!.currentState.mutationRevision).toBe(1);
+      expect(
+        controller!.beforeToolCall(
+          projectInstructionToolHookInput("finish_work", { status: "success", summary: "Done" }),
+        ),
+      ).toMatchObject({ block: true });
     } finally {
       session.dispose();
     }

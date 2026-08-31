@@ -66,12 +66,19 @@ describe("project instruction lifecycle phases", () => {
     expect(isProjectInstructionVerificationControlPlaneAction("record_requirement_audit", { action: "define" })).toBe(
       true,
     );
-    expect(isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action: "status" })).toBe(
-      true,
+    for (const action of [
+      "declare_task",
+      "authorize_baseline_test",
+      "record_baseline",
+      "record_final",
+      "ready_to_finish",
+      "status",
+    ]) {
+      expect(isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action })).toBe(true);
+    }
+    expect(isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action: "unknown" })).toBe(
+      false,
     );
-    expect(
-      isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action: "ready_to_finish" }),
-    ).toBe(false);
     expect(
       isProjectInstructionVerificationControlPlaneAction(
         "record_task_verification",
