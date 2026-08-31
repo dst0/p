@@ -1,7 +1,7 @@
 {
   "packages/agent/src/harness/agent-harness.ts": {
     "classes": 1,
-    "lines": 1094
+    "lines": 1092
   },
   "packages/agent/src/harness/compaction/compaction.ts": {
     "classes": 0,

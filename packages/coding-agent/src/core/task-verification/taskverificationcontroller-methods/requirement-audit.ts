@@ -145,6 +145,7 @@ function do_recordRequirementVerdicts(
       userRequirementsHash,
       requirementSetHash,
       certificateHash,
+      completionSummary: self.state.readiness?.completionSummary,
     },
     updatedAt: new Date().toISOString(),
   };
@@ -154,7 +155,7 @@ function do_recordRequirementVerdicts(
       `Requirement audit passed: ${requirements.length}/${requirements.length}.`,
       `completion_certificate_hash: ${certificateHash}`,
       `verification_token: ${token}`,
-      "Pass this token unchanged to finish_work.",
+      "The controller accepted verified terminal completion; no additional model turn is required.",
     ].join("\n"),
     false,
   );

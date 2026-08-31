@@ -8,6 +8,7 @@ import {
   createRuntimeHost,
   createToolResult,
 } from "./print-mode-test-support.ts";
+import { createVerifiedCompletionResult } from "./terminal-completion-test-support.ts";
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -29,6 +30,21 @@ describe("runPrintMode", () => {
     ]);
 
     expect(output).toEqual({ text: "blocked by missing dependency", exitCode: 1 });
+  });
+
+  it("uses the reserved verified audit marker instead of arbitrary tool-result text", () => {
+    const output = getTextModeFinalOutput([createVerifiedCompletionResult("Verified final summary")]);
+
+    expect(output).toEqual({ text: "Verified final summary", exitCode: 0 });
+  });
+
+  it("does not let a stale verified marker hide a later terminal error", () => {
+    const output = getTextModeFinalOutput([
+      createVerifiedCompletionResult("stale success"),
+      createAssistantMessage({ stopReason: "error", errorMessage: "later provider failure" }),
+    ]);
+
+    expect(output).toEqual({ error: "later provider failure", exitCode: 1 });
   });
 
   it("concatenates every assistant segment in a length-continued response exactly once", () => {

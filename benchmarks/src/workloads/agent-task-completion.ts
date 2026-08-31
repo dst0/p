@@ -3,7 +3,7 @@ import type { AgentId, TaskVerificationMode } from "./runner-options.ts";
 
 type SemanticEvent = Record<string, unknown>;
 
-function requiresAcceptedFinish(agent: AgentId, mode: TaskVerificationMode | undefined): boolean {
+function requiresAcceptedCompletion(agent: AgentId, mode: TaskVerificationMode | undefined): boolean {
   return agent === "p" && mode !== "off";
 }
 
@@ -17,12 +17,16 @@ function parseSemanticEvent(line: string): SemanticEvent | undefined {
 }
 
 export function createAgentTaskCompletionGuard(agent: AgentId, mode: TaskVerificationMode | undefined) {
-  const requireAcceptedFinish = requiresAcceptedFinish(agent, mode);
+  const requireAcceptedCompletion = requiresAcceptedCompletion(agent, mode);
   const verification = createTaskVerificationSemanticTracker();
+  const acceptedCompletionCount = (): number => {
+    const evidence = verification.snapshot();
+    return evidence.acceptedFinishCount + (mode === "audit" ? evidence.acceptedTerminalCompletionCount : 0);
+  };
   let acceptedBeforeMarker = 0;
   return {
     observe(metricOutput: string): void {
-      if (!requireAcceptedFinish) return;
+      if (!requireAcceptedCompletion) return;
       for (const line of metricOutput.split("\n")) {
         const event = parseSemanticEvent(line);
         if (!event) continue;
@@ -38,17 +42,13 @@ export function createAgentTaskCompletionGuard(agent: AgentId, mode: TaskVerific
     shouldStop(turnFailed: boolean, finishNotesCreated: boolean): boolean {
       if (turnFailed) return true;
       if (!finishNotesCreated) {
-        acceptedBeforeMarker = verification.snapshot().acceptedFinishCount;
+        acceptedBeforeMarker = acceptedCompletionCount();
         return false;
       }
-      return !requireAcceptedFinish || verification.snapshot().acceptedFinishCount > acceptedBeforeMarker;
+      return !requireAcceptedCompletion || acceptedCompletionCount() > acceptedBeforeMarker;
     },
-    waitingForAcceptedFinish(finishNotesCreated: boolean): boolean {
-      return (
-        finishNotesCreated &&
-        requireAcceptedFinish &&
-        verification.snapshot().acceptedFinishCount <= acceptedBeforeMarker
-      );
+    waitingForAcceptedCompletion(finishNotesCreated: boolean): boolean {
+      return finishNotesCreated && requireAcceptedCompletion && acceptedCompletionCount() <= acceptedBeforeMarker;
     },
   };
 }

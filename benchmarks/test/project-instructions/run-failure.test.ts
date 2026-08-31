@@ -82,6 +82,23 @@ test("passed samples hard-fail when expected semantic evidence is incomplete", (
   });
 });
 
+test("explicit timeout and provider termination precede secondary semantic failures", () => {
+  const incompleteLiveness = { semanticEvidenceAvailable: false, semanticEvidenceComplete: false };
+  assert.deepEqual(assessSample({ status: "timed_out", liveness: incompleteLiveness }), {
+    passed: false,
+    reason: "run status timed_out",
+  });
+  assert.deepEqual(
+    assessSample({
+      status: "failed",
+      metrics: { errors: ["upstream provider stopped"] },
+      liveness: incompleteLiveness,
+    }),
+    { passed: false, reason: "provider terminated before successful completion" },
+  );
+  assert.equal(classifyPairedBenchmarkFailure("provider terminated before successful completion"), "provider");
+});
+
 test("capture overflow is an infrastructure failure before status, quality, or startup diagnosis", () => {
   const captureOverflow = {
     kind: "capture_overflow",

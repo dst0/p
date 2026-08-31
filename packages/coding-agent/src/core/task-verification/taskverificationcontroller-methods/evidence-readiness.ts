@@ -116,7 +116,7 @@ export function readyToFinishWithEvidence(
     [
       `Evidence readiness passed for mutation revision ${self.state.mutationRevision}.`,
       `verification_token: ${token}`,
-      "Pass this token unchanged to finish_work.",
+      "Call finish_work minimally; the controller binds this certificate to the successful completion.",
     ].join("\n"),
     false,
   );

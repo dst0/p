@@ -140,6 +140,13 @@ export const VerificationSchema = Type.Object({
   final_status: Type.Optional(Type.Union([Type.Literal("passed"), Type.Literal("failed")])),
   unresolved_failures: Type.Optional(Type.Array(Type.String())),
   acceptance_checks: Type.Optional(Type.Array(AcceptanceCheckSchema, { minItems: 1, maxItems: 32 })),
+  completion_summary: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 500,
+      description: "ready_to_finish only: concise user-visible summary for verified terminal completion.",
+    }),
+  ),
 });
 
 export const KNOWN_EVIDENCE_TOOLS = new Set(["read", "bash", "rg", "grep", "find", "ls", "semantic_search"]);

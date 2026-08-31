@@ -15,7 +15,8 @@ export function readinessIsValid(
     !optionalString(value.userRequirementsHash) ||
     !optionalString(value.requirementSetHash) ||
     !optionalString(value.certificateHash) ||
-    !optionalString(value.effectStateHash)
+    !optionalString(value.effectStateHash) ||
+    !optionalBoundedString(value.completionSummary, 500)
   ) {
     return false;
   }
@@ -57,6 +58,10 @@ function nonempty(value: unknown): value is string {
 
 function optionalString(value: unknown): boolean {
   return value === undefined || typeof value === "string";
+}
+
+function optionalBoundedString(value: unknown, maxLength: number): boolean {
+  return value === undefined || (typeof value === "string" && value.trim().length > 0 && value.length <= maxLength);
 }
 
 function isInteger(value: unknown): value is number {

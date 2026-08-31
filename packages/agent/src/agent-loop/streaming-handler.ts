@@ -83,6 +83,7 @@ export async function finalizeExecutedToolCall(
           details: afterResult.details ?? result.details,
           progress: afterResult.progress ?? result.progress,
           terminate: afterResult.terminate ?? result.terminate,
+          completion: afterResult.completion ?? result.completion,
         };
         isError = afterResult.isError ?? isError;
       }
@@ -129,7 +130,10 @@ export async function emitToolResultMessage(toolResultMessage: ToolResultMessage
 }
 
 export function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
-  return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
+  return (
+    finalizedCalls.length > 0 &&
+    finalizedCalls.every((finalized) => !finalized.isError && finalized.result.terminate === true)
+  );
 }
 
 export function createExecutedToolCallBatch(
@@ -139,13 +143,18 @@ export function createExecutedToolCallBatch(
   const madeProgress = finalizedCalls.some(
     (finalized) => !finalized.isError && finalized.result.progress !== "waiting",
   );
+  const terminate = shouldTerminateToolBatch(finalizedCalls);
+  const completions = finalizedCalls.flatMap((finalized) =>
+    !finalized.isError && finalized.result.completion ? [finalized.result.completion] : [],
+  );
   return {
     messages,
-    terminate: shouldTerminateToolBatch(finalizedCalls),
+    terminate,
     madeProgress,
     waiting:
       !madeProgress &&
       finalizedCalls.some((finalized) => !finalized.isError && finalized.result.progress === "waiting"),
+    ...(terminate && finalizedCalls.length === 1 && completions.length === 1 ? { completion: completions[0] } : {}),
   };
 }
 

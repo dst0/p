@@ -8,11 +8,24 @@ import { streamOpenAICompletions } from "../src/providers/openai-completions/str
 import { streamSimpleOpenAICompletions } from "../src/providers/openai-completions/stream-simple-openai-completions.ts";
 import type { AssistantMessage, Context, Model } from "../src/types.ts";
 import { AssistantMessageEventStream } from "../src/utils/event-stream.ts";
+import type * as JsonParseModule from "../src/utils/json-parse.ts";
 
 const openAIState = vi.hoisted(() => ({
   abortController: undefined as AbortController | undefined,
   chunks: [] as unknown[],
+  parsedArgumentLengths: [] as number[],
 }));
+
+vi.mock("../src/utils/json-parse.ts", async (importOriginal) => {
+  const actual = await importOriginal<typeof JsonParseModule>();
+  return {
+    ...actual,
+    parseStreamingJson<T = Record<string, unknown>>(partialJson: string | undefined): T {
+      openAIState.parsedArgumentLengths.push(partialJson?.length ?? 0);
+      return actual.parseStreamingJson<T>(partialJson);
+    },
+  };
+});
 
 vi.mock("openai", () => {
   class FakeOpenAI {
@@ -85,6 +98,7 @@ function anthropicUsage() {
 beforeEach(() => {
   openAIState.abortController = undefined;
   openAIState.chunks = [];
+  openAIState.parsedArgumentLengths = [];
 });
 
 describe("Anthropic split stream edge cases", () => {
@@ -176,6 +190,55 @@ describe("OpenAI split stream edge cases", () => {
       },
     ]);
     expect(onPayload).toHaveBeenCalled();
+  });
+
+  it("bounds cumulative parsing work for many small tool argument deltas", async () => {
+    const expectedArguments = {
+      edits: Array.from({ length: 160 }, (_, index) => ({
+        path: `src/generated/file-${index}.ts`,
+        replacement: `export const value${index} = ${index * 7919};`,
+      })),
+    };
+    const serializedArguments = JSON.stringify(expectedArguments);
+    openAIState.chunks = [...serializedArguments].map((delta, index, deltas) => ({
+      id: "chat",
+      choices: [
+        {
+          index: 0,
+          delta: {
+            tool_calls: [
+              {
+                index: 0,
+                ...(index === 0 ? { id: "call", type: "function" } : {}),
+                function: {
+                  ...(index === 0 ? { name: "edit" } : {}),
+                  arguments: delta,
+                },
+              },
+            ],
+          },
+          finish_reason: index === deltas.length - 1 ? "tool_calls" : null,
+        },
+      ],
+    }));
+
+    const stream = streamOpenAICompletions(openAIModel, context, { apiKey: "test" });
+    let populatedPartialUpdates = 0;
+    for await (const event of stream) {
+      if (event.type !== "toolcall_delta") continue;
+      const block = event.partial.content[event.contentIndex];
+      if (block?.type === "toolCall" && Object.keys(block.arguments).length > 0) populatedPartialUpdates++;
+    }
+    const result = await stream.result();
+    const parsedBytes = openAIState.parsedArgumentLengths.reduce((total, length) => total + length, 0);
+    const checkpointCount = Math.ceil(serializedArguments.length / 256);
+
+    expect(result.content).toEqual([{ type: "toolCall", id: "call", name: "edit", arguments: expectedArguments }]);
+    expect(openAIState.parsedArgumentLengths).toHaveLength(7);
+    expect(openAIState.parsedArgumentLengths.at(-1)).toBe(serializedArguments.length);
+    expect(openAIState.parsedArgumentLengths.length).toBeLessThanOrEqual(checkpointCount + 2);
+    expect(parsedBytes).toBeLessThanOrEqual(serializedArguments.length * 4);
+    expect(populatedPartialUpdates).toBeGreaterThan(0);
   });
 
   it("maps cancellation after the provider stream to an aborted result", async () => {

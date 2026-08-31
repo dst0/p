@@ -26,7 +26,23 @@ type SampleAssessment = {
   };
   status?: string;
   taskVerificationMode?: "evidence" | "audit" | "off";
+  metrics?: object;
 };
+
+type ExplicitRunTermination = { metrics?: unknown; status?: unknown };
+
+export function describeExplicitRunTermination(sample: ExplicitRunTermination): string | undefined {
+  if (sample.status === "timed_out" || sample.status === "skipped") return `run status ${sample.status}`;
+  const metrics = sample.metrics as Record<string, unknown> | undefined;
+  if (
+    sample.status === "failed" &&
+    Array.isArray(metrics?.errors) &&
+    metrics.errors.some((error) => typeof error === "string" && error.trim().length > 0)
+  ) {
+    return "provider terminated before successful completion";
+  }
+  return undefined;
+}
 
 export function describeCaptureOverflow(
   captureOverflow: CaptureOverflow | undefined,
@@ -45,6 +61,8 @@ export function describeCaptureOverflow(
 export function assessSample(sample: SampleAssessment): { passed: boolean; reason?: string } {
   const captureFailure = describeCaptureOverflow(sample.captureOverflow);
   if (captureFailure) return { passed: false, reason: captureFailure };
+  const terminationFailure = describeExplicitRunTermination(sample);
+  if (terminationFailure) return { passed: false, reason: terminationFailure };
   if (
     sample.liveness &&
     (sample.liveness.semanticEvidenceAvailable !== true || sample.liveness.semanticEvidenceComplete !== true)
@@ -75,9 +93,6 @@ export function assessSample(sample: SampleAssessment): { passed: boolean; reaso
     quality.maxScore > 0;
   const qualityIsComplete = Array.isArray(quality?.checks) && quality.checks.length > 0 && scoresAreComplete;
   const qualityFailed = quality?.passed !== true || !checksPass || !scoresAreComplete || rawScore !== quality.maxScore;
-  if (["timed_out", "skipped"].includes(sample.status ?? "")) {
-    return { passed: false, reason: `run status ${sample.status}` };
-  }
   if (sample.status === "failed" && qualityIsComplete && qualityFailed) {
     return { passed: false, reason: `quality gate failed (${rawScore ?? 0}/${quality?.maxScore ?? 0})` };
   }

@@ -104,7 +104,7 @@ Print mode displays `summary`. After the active task-verification policy succeed
 
 ### Evidence-backed completion
 
-Task verification is independent from project-instruction delivery and completion termination:
+Task verification is independent from project-instruction delivery and uses the configured completion protocol, except that a successful experimental audit verdict can supply its own runtime-owned terminal transition:
 
 - `--project-instructions compiled|legacy|off` controls how project rules are delivered;
 - `--task-verification evidence|audit|off` controls completion evidence, with `evidence` as the default and `audit` experimental;
@@ -120,17 +120,20 @@ flowchart TD
     Evidence --> Ready{"Fresh requested evidence and no unresolved failure?"}
     Ready -->|no| Repair["Repair work or rerun the focused check"]
     Repair --> Evidence
-    Ready -->|yes| Token["Issue revision-bound completion token"]
+    Ready -->|yes| Token["Issue revision-bound evidence token"]
     Token --> Finish["finish_work"]
     Request -. "explicit structured specification only" .-> Audit["Experimental semantic audit"]
-    Audit --> Token
+    Audit --> Verdict["One complete verdict batch"]
+    Verdict --> Certified{"Controller accepts a new certificate?"}
+    Certified -->|no| Repair
+    Certified -->|yes| Terminal["Trusted terminal completion; no extra provider turn"]
 ```
 
 `audit` mode retains the semantic requirement protocol for explicitly structured specifications with stable IDs or schema. It is not the default safety path and project instructions, loaded rule modules, skills, or system-prompt prose do not become user requirements merely because they were read.
 
 ### Experimental semantic audit
 
-In `--task-verification audit`, `ready_to_finish` freezes the current acceptance checks and evidence. The model then uses `record_requirement_audit` to define stable requirement IDs from user-authored prompts and submits every verdict together in one `action: "verdict"` call. A missing, duplicate, unexpected, stale, or unsupported verdict rejects the whole batch without persisting a partial result.
+In `--task-verification audit`, `ready_to_finish` freezes the current acceptance checks and evidence. The model then uses `record_requirement_audit` to define stable requirement IDs from user-authored prompts and submits every verdict together in one `action: "verdict"` call. A missing, duplicate, unexpected, stale, or unsupported verdict rejects the whole batch without persisting a partial result. A newly accepted verdict must be the sole tool call in its assistant turn; the controller validates the native result, current task and mutation revision, certificate hash, verification ledger, and session finish gate, then emits a structured terminal completion without another provider request. Rejected, duplicate, mixed, stale, or errored verdict calls remain nonterminal. Evidence mode still uses `finish_work`, preserving time for requested commit, push, or other delivery actions after readiness.
 
 Before the first mutating action, the controller automatically records a task kind only when the dominant requested effect is unambiguous. Mixed documentation and non-documentation requests that cannot be classified safely are not guessed: the mutation is blocked without running, and the response supplies one exact `record_task_verification` `declare_task` call. After the model chooses the dominant effect in that structured call, it retries the original mutation through the normal source, baseline, and requirement gates. This keeps free-form coding and non-coding requests supported without silently selecting weaker documentation verification from an incidental docs reference.
 
@@ -152,7 +155,7 @@ Task reclassification retains a hash-valid frozen definition only while every pr
 
 The controller derives proof policies for recognized high-risk relationships. Newline-terminated artifacts that reject truncation require a complete truncation requirement and focused evidence naming exact final-byte removal. Its witness is valid only when the original ends in LF (`0x0A`) and the rejected candidate is exactly the original minus that byte. Corruption evidence must identify a changed artifact, and failed-operation rollback claims for state, log, version, position, and command identity must be split into independently verifiable requirements. Rollback witnesses must record a thrown failure; monotonic counters must remain unchanged on failure and advance by exactly one on success. Each matching focused test emits a bounded one-line `P_PROOF_V1` frame. Before invoking earlier result hooks, the controller snapshots the native tool identity, validated arguments, content, and error state used for evidence. It validates proof frames only from that snapshot, independently of hooks that may redact, omit, inject, or mutate model-visible content. Error status is monotonic: a hook may promote a native success to failed evidence but cannot demote a native failure, while mutation settlement always follows the native outcome so a presentation-only error cannot hide a successful mutation. The controller reports rejected or duplicate frame counts immediately, persists only each accepted digest bound to the requirement-set hash and mutation revision, and redacts raw frame values from both returned tool content and durable evidence summaries. The proof policies are checked in the single verdict batch. They improve honest-agent evidence quality; arbitrary test code can still fabricate its observations, so this is not a cryptographic proof of production behavior.
 
-Every passing verdict needs current non-error evidence. Security, integrity, durability, persistence, lifecycle, transaction, and concurrency requirements additionally need a focused executable test selector and an independently positive result matching the invariant's concrete behavior, subject, qualifiers, and polarity. A generic `npm test` or `npm run check`, manual reproduction, output prose, or same-domain test for a different behavior is insufficient. Only a completely passing batch issues the completion token supplied unchanged to `finish_work`.
+Every passing verdict needs current non-error evidence. Security, integrity, durability, persistence, lifecycle, transaction, and concurrency requirements additionally need a focused executable test selector and an independently positive result matching the invariant's concrete behavior, subject, qualifiers, and polarity. A generic `npm test` or `npm run check`, manual reproduction, output prose, or same-domain test for a different behavior is insufficient. Only a completely passing batch issues the certificate and trusted terminal completion.
 
 Use `--completion-mode implicit` for the old behavior or `--completion-mode hybrid` during migration.
 

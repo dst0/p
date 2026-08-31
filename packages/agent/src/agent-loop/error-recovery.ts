@@ -40,11 +40,9 @@ export async function runLoop(
   let currentContext = withCompletionProtocolTools(initialContext, completionMode);
   let firstTurn = true;
   let pendingMessages: AgentMessage[] = (await config.getSteeringMessages?.()) || [];
-
   if (isCompletionProtocolEnabled(completionMode)) {
     await emit({ type: "completion_protocol", completionMode, event: "completion_mode" });
   }
-
   while (true) {
     let hasMoreToolCalls = true;
 
@@ -131,6 +129,8 @@ export async function runLoop(
         executedToolBatch?.terminate &&
         !toolResults.some((result) => isFinishWorkToolResult(result) && !result.isError)
       ) {
+        if (executedToolBatch.completion && isCompletionProtocolEnabled(completionMode))
+          await emit({ type: "completion_protocol", completionMode, event: "verified_completion_called" });
         await emit({ type: "agent_end", messages: newMessages });
         return;
       }
