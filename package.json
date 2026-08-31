@@ -27,7 +27,7 @@
     "test:cli": "node --test scripts/p-test-wrapper.test.js",
     "test:release-audit": "node --test --test-concurrency=1 scripts/release-change-fragments.test.js scripts/release-change-fragment-provenance.test.js scripts/release-changelog-audit.test.js scripts/release-audit-certificate.test.js scripts/release-flow-certificate.test.js scripts/release-major-authorization.test.js scripts/release-origin-ancestry.test.js scripts/release-pr-version-policy.test.js scripts/release-receipt-verification.test.js scripts/release-recovery.test.js scripts/release-target-policy.test.js scripts/release-workflow.test.js scripts/version-bump-authorization.test.js",
     "test:benchmarks": "node --test --test-concurrency=4 \"benchmarks/test/**/*.test.ts\"",
-    "test:scripts": "npm run test:benchmarks && node --test scripts/apple-coreai-generation-path.test.js scripts/install-apple-coreai.test.js scripts/install-apple-coreai-artifact-recovery.test.js scripts/bounded-process-command.test.js scripts/pre-commit-restage.test.js scripts/indexing-python-environment.test.js scripts/indexing-service-health.test.js scripts/check-biome-scope.test.js",
+    "test:scripts": "npm run test:benchmarks && node --test scripts/apple-coreai-generation-path.test.js scripts/install-apple-coreai.test.js scripts/install-apple-coreai-artifact-recovery.test.js scripts/bounded-process-command.test.js scripts/pre-commit-restage.test.js scripts/indexing-python-environment.test.js scripts/indexing-python-discovery.test.js scripts/indexing-service-health.test.js scripts/check-biome-scope.test.js",
     "test:coverage": "npm run test:coverage --workspaces --if-present",
     "test:unit": "./test.sh",
     "test:unit:coverage": "./test.sh test:coverage",
