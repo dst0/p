@@ -73,21 +73,39 @@ export function collectResourceFiles(dir: string, resourceType: ResourceType): s
 }
 
 export function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[], baseDir: string): boolean {
-  const rel = toPosixPath(relative(baseDir, filePath));
-  const name = basename(filePath);
-  const filePathPosix = toPosixPath(filePath);
-  const isSkillFile = name === "SKILL.md";
-  const parentDir = isSkillFile ? dirname(filePath) : undefined;
-  const parentRel = isSkillFile ? toPosixPath(relative(baseDir, parentDir!)) : undefined;
-  const parentName = isSkillFile ? basename(parentDir!) : undefined;
-  const parentDirPosix = isSkillFile ? toPosixPath(parentDir!) : undefined;
+  if (compiledPatterns.length === 0) return false;
+
+  let rel: string | undefined;
+  let name: string | undefined;
+  let filePathPosix: string | undefined;
+  let isSkillFile: boolean | undefined;
+
+  let parentDir: string | undefined;
+  let parentRel: string | undefined;
+  let parentName: string | undefined;
+  let parentDirPosix: string | undefined;
 
   for (let i = 0; i < compiledPatterns.length; i++) {
     const compiled = compiledPatterns[i];
-    if (compiled.match(rel) || compiled.match(name) || compiled.match(filePathPosix)) {
+
+    if (rel === undefined) {
+      rel = toPosixPath(relative(baseDir, filePath));
+      name = basename(filePath);
+      filePathPosix = toPosixPath(filePath);
+      isSkillFile = name === "SKILL.md";
+    }
+
+    if (compiled.match(rel) || compiled.match(name!) || compiled.match(filePathPosix!)) {
       return true;
     }
+
     if (isSkillFile) {
+      if (parentDir === undefined) {
+        parentDir = dirname(filePath);
+        parentRel = toPosixPath(relative(baseDir, parentDir));
+        parentName = basename(parentDir);
+        parentDirPosix = toPosixPath(parentDir);
+      }
       if (compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!)) {
         return true;
       }
@@ -103,17 +121,21 @@ export function normalizeExactPattern(pattern: string): string {
 
 export function matchesAnyExactPattern(filePath: string, normalizedPatterns: Set<string>, baseDir: string): boolean {
   if (normalizedPatterns.size === 0) return false;
-  const rel = toPosixPath(relative(baseDir, filePath));
-  const name = basename(filePath);
+
   const filePathPosix = toPosixPath(filePath);
+  if (normalizedPatterns.has(filePathPosix)) return true;
 
-  if (normalizedPatterns.has(rel) || normalizedPatterns.has(filePathPosix)) return true;
+  const rel = toPosixPath(relative(baseDir, filePath));
+  if (normalizedPatterns.has(rel)) return true;
 
+  const name = basename(filePath);
   if (name === "SKILL.md") {
     const parentDir = dirname(filePath);
-    const parentRel = toPosixPath(relative(baseDir, parentDir));
     const parentDirPosix = toPosixPath(parentDir);
-    if (normalizedPatterns.has(parentRel) || normalizedPatterns.has(parentDirPosix)) return true;
+    if (normalizedPatterns.has(parentDirPosix)) return true;
+
+    const parentRel = toPosixPath(relative(baseDir, parentDir));
+    if (normalizedPatterns.has(parentRel)) return true;
   }
   return false;
 }
