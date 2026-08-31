@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep benchmark project-rule evidence classification aligned with the runtime's trusted requirement-audit control plane."
+}

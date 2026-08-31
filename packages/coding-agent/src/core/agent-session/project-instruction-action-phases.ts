@@ -1,5 +1,6 @@
 import type { ProjectInstructionWorkPhase } from "../project-instructions/work-phases.ts";
 import { inferProjectInstructionPhases } from "../project-instructions/work-phases.ts";
+import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../task-verification/constants.ts";
 import { tokenizeShellCommands } from "../task-verification/git-command-classification.ts";
 import {
   isDirectMutationTool,
@@ -28,6 +29,14 @@ const VERIFICATION_COMMAND_PATTERN = /^(?:benchmark|build|check(?::[^\s]+)?|lint
 const DELIVERY_COMMAND_PATTERN = /^(?:deploy|publish|release|version-bump)$/u;
 const DELIVERY_GIT_SUBCOMMANDS = new Set(["commit", "merge", "push", "rebase", "tag"]);
 const DISCOVERY_GIT_SUBCOMMANDS = new Set(["diff", "log", "show", "status"]);
+
+export function isProjectInstructionVerificationControlPlaneAction(toolName: string, args: unknown): boolean {
+  if (toolName === REQUIREMENT_AUDIT_TOOL_NAME) return true;
+  if (toolName !== TASK_VERIFICATION_TOOL_NAME || args === null || typeof args !== "object" || Array.isArray(args)) {
+    return false;
+  }
+  return (args as { action?: unknown }).action === "status";
+}
 
 export function inferProjectInstructionActionPhases(
   toolName: string,

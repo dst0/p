@@ -1,6 +1,9 @@
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { inferProjectInstructionActionPhases } from "../src/core/agent-session/project-instruction-action-phases.ts";
+import {
+  inferProjectInstructionActionPhases,
+  isProjectInstructionVerificationControlPlaneAction,
+} from "../src/core/agent-session/project-instruction-action-phases.ts";
 import { renderRulesCatalog } from "../src/core/project-instructions/prompt.ts";
 import { selectProjectInstructionRuleLinks } from "../src/core/project-instructions/routing.ts";
 import type { ProjectInstructionRuleRecord } from "../src/core/project-instructions/types.ts";
@@ -57,6 +60,25 @@ describe("project instruction lifecycle phases", () => {
     ]);
     expect(inferProjectInstructionActionPhases("finish_work", { status: "success" })).toEqual(["closure"]);
     expect(inferProjectInstructionActionPhases("read_rules", { links: ["rules/a.md"] })).toEqual([]);
+  });
+
+  it("identifies only runtime-safe verification control-plane actions", () => {
+    expect(isProjectInstructionVerificationControlPlaneAction("record_requirement_audit", { action: "define" })).toBe(
+      true,
+    );
+    expect(isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action: "status" })).toBe(
+      true,
+    );
+    expect(
+      isProjectInstructionVerificationControlPlaneAction("record_task_verification", { action: "ready_to_finish" }),
+    ).toBe(false);
+    expect(
+      isProjectInstructionVerificationControlPlaneAction(
+        "record_task_verification",
+        Object.assign([], { action: "status" }),
+      ),
+    ).toBe(false);
+    expect(isProjectInstructionVerificationControlPlaneAction("extension_tool", { action: "status" })).toBe(false);
   });
 
   it("uses a phase match only when no stronger lexical route exists", () => {

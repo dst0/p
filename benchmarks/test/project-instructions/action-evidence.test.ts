@@ -128,6 +128,7 @@ test("records conservative phase-less actions and suppresses builtin description
     ["bash", { command: "echo hello" }, "Deploy production services"],
     ["remote_operation", { target: "primary" }, undefined],
     ["list_skills", { query: "testing" }, "Deploy production services"],
+    ["record_requirement_audit", { action: "define" }, "Define authoritative user requirements"],
   ];
   const events = calls.flatMap(([toolName, args, toolDescription], index) => [
     {
