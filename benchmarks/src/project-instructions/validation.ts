@@ -46,6 +46,7 @@ type UserTurn = {
 type RuntimeRoute = { eventOrdinal: number; routeInputHash?: string; routeLinkCount: number; routeLinks: string[] };
 type ReadRulesBatch = { succeeded?: boolean; startOrdinal: number; endOrdinal: number; links: string[] };
 type ActionCall = {
+  toolName?: string;
   eventOrdinal: number;
   endOrdinal: number;
   selectionVerified?: boolean;

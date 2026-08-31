@@ -89,6 +89,7 @@ export async function do__emitExtensionEvent(self: AgentSession, event: AgentEve
       toolName: event.toolName,
       result: event.result,
       isError: event.isError,
+      executed: event.executed,
     };
     await self._extensionRunner.emit(extensionEvent);
   }

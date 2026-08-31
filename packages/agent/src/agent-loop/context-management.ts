@@ -43,6 +43,7 @@ export async function executeToolCallsParallel(
         toolCall,
         result: preparation.result,
         isError: preparation.isError,
+        executed: false,
       } satisfies FinalizedToolCallOutcome;
       await emitToolExecutionEnd(finalized, emit);
       finalizedCalls.push(finalized);

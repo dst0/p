@@ -23,6 +23,7 @@ export interface BenchmarkRecordingEvent {
   args?: Record<string, unknown>;
   benchmarkEventOrdinal?: number;
   isError?: boolean;
+  executed?: boolean;
   result?: unknown;
   success?: boolean;
   finalError?: string;
@@ -114,8 +115,10 @@ export function parsePRecording(events: readonly BenchmarkRecordingEvent[], extr
       if (action) {
         const text = resultText(event.result);
         action.endOrdinal = event.benchmarkEventOrdinal;
-        action.blockedByProjectRuleGate = event.isError === true && RULE_GATE_BLOCK.test(text);
-        if (action.blockedByProjectRuleGate) {
+        const blockedByProjectRuleGate =
+          event.isError === true && event.executed !== true && RULE_GATE_BLOCK.test(text);
+        if (blockedByProjectRuleGate) {
+          action.blockedByProjectRuleGate = true;
           action.projectRuleGateBlockKind = CAP_RULE_GATE_BLOCK.test(text)
             ? "cap"
             : PENDING_RULE_GATE_BLOCK.test(text)
@@ -125,6 +128,8 @@ export function parsePRecording(events: readonly BenchmarkRecordingEvent[], extr
                 : "state";
           const pendingBatches = parsePendingRuleBatches(text);
           if (pendingBatches.length > 0) action.pendingRuleBatches = pendingBatches;
+        } else if (event.executed !== false) {
+          action.blockedByProjectRuleGate = false;
         }
         if (typeof event.toolCallId === "string") pendingPhaseRelevantCalls.delete(event.toolCallId);
       }

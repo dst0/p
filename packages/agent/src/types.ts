@@ -463,14 +463,7 @@ export interface AgentContext {
   /** Tools available for this run. */
   tools?: AgentTool<any>[];
 }
-
-/**
- * Events emitted by the Agent for UI updates.
- *
- * `agent_end` is the last event emitted for a run, but awaited `Agent.subscribe()`
- * listeners for that event are still part of run settlement. The agent becomes
- * idle only after those listeners finish.
- */
+/** Agent UI events; `agent_end` settles before idle, and tool end `executed` reports execute-function invocation. */
 export type AgentEvent =
   // Agent lifecycle
   | { type: "agent_start" }
@@ -505,4 +498,11 @@ export type AgentEvent =
   // Tool execution lifecycle
   | { type: "tool_execution_start"; toolCallId: string; toolName: string; toolDescription?: string; args: any }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }
-  | { type: "tool_execution_end"; toolCallId: string; toolName: string; result: any; isError: boolean };
+  | {
+      type: "tool_execution_end";
+      toolCallId: string;
+      toolName: string;
+      result: any;
+      isError: boolean;
+      executed: boolean;
+    };

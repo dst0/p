@@ -1,0 +1,22 @@
+# 2026-09-01 — Pre-execution blocks are not completed mutations
+
+- **Status:** Resolved
+- **Task/context:** Repair the compiled project-instruction benchmark after rc.61 identified `bash` as the action lacking an authoritative rule batch.
+- **Unexpected observation or failure:** The audit workload passed all six correctness checks, but the outer validator treated an early shell call blocked by the task-verification controller as a successfully completed mutation.
+- **Evidence:** rc.61 reported `tool=bash, event=387`. Live recording inspection showed the first shell attempt was followed by `record_requirement_audit(prepare_definition)` calls before the later project-rule block and successful `read_rules` batch. The agent event exposed only `isError`, so the benchmark could not distinguish pre-execution rejection from an executed tool failure.
+- **Approaches tried:**
+  - **Attempt:** Exempt additional verification control-plane actions from mutation routing.
+    - **Outcome:** Did not work
+    - **Why:** rc.60 already excluded the full trusted verification protocol, while aggregate telemetry proved the disputed actions were ordinary tool calls.
+  - **Attempt:** Infer completion from `isError` and project-rule error text.
+    - **Outcome:** Did not work
+    - **Why:** A different guardrail can reject the same mutating tool before the project-rule hook runs; `isError` describes the result, not whether execution began.
+  - **Attempt:** Carry explicit execution provenance from tool preparation into `tool_execution_end`.
+    - **Outcome:** Worked
+    - **Why:** The agent loop knows whether preparation returned an immediate rejection or invoked the tool's execute function, so downstream evidence can distinguish those states without parsing mutable error prose.
+- **Root cause:** `tool_execution_end` collapsed pre-execution rejection and executed failure into the same error shape. The benchmark assigned `blockedByProjectRuleGate: false` to every non-project-rule error, which the validator interpreted as a completed mutation.
+- **Resolution:** Add an `executed` boolean to tool completion events and extension events. Benchmark parsing omits completion evidence for `executed: false` unless the result is an identified project-rule block; `executed: true` always remains fail-closed even when its error text resembles a gate message. Historical recordings without the field retain the prior text-compatible behavior.
+- **Verification:** Red/green agent-loop tests prove sequential and parallel immediate outcomes emit `executed: false`, while successful and throwing invocations emit `true`. Benchmark regressions prove verification blocks are not completed actions, executed failures cannot masquerade as project-rule blocks, and current plus historical project-rule blocks retain their authoritative batch evidence. Live rc.62 replay remains pending.
+- **Prevention/follow-up:** Model lifecycle provenance explicitly whenever downstream policy depends on whether an operation started; never infer execution from success or error status alone.
+- **Reusable learning:** Result status and execution provenance are separate facts; preserve both at the source.
+- **References:** `packages/agent/src/agent-loop/streaming-handler.ts`, `packages/agent/src/types.ts`, `benchmarks/src/harness/p-recording.ts`, `benchmarks/test/harness/p-recording-execution-provenance.test.ts`
