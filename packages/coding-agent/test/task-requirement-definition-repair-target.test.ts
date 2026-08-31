@@ -30,6 +30,7 @@ describe("controller-selected singular requirement repair target", () => {
   it.each([
     "Source clause S2-C3 is normative and cannot be ignored as informational.",
     "Source clause S2-C3 cannot be both mapped and ignored.",
+    "Source clause S2-C3 is not structurally informational.",
   ])("selects the exact ignored-clause removal for %s", (diagnostic) => {
     expect(selectRequirementDefinitionRepairTarget(errors(diagnostic))).toEqual({
       kind: "ignored_clause_removal",
@@ -161,7 +162,7 @@ describe("controller-selected singular requirement repair target", () => {
   });
 
   it("binds ignored-clause removal to the exact selected clause", () => {
-    const target = targetFrom(errors("Source clause S2-C3 cannot be both mapped and ignored."));
+    const target = targetFrom(errors("Source clause S2-C3 is not structurally informational."));
 
     expect(
       requirementAuditInputTargetsSelectedRepair(repair({ ignored_source_clause_removals: ["S2-C3"] }), target),

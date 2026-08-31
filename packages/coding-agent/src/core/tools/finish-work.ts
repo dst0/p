@@ -136,6 +136,7 @@ export function createFinishWorkToolDefinition(
     name: "finish_work",
     label: "Finish Work",
     description: "Terminate the agent run with an explicit final status and summary.",
+    effect: { kind: "read", risk: "normal" },
     promptSnippet: "Explicitly terminate the task with final status and user-visible result",
     promptGuidelines: [
       "Call finish_work exactly once when the task is complete, partially complete, or blocked.",

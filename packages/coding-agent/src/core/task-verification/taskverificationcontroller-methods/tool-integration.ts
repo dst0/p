@@ -35,13 +35,13 @@ import {
 import { focusedTestInvocation } from "./test-command-invocation.ts";
 import { captureTestWorkspaceSnapshot } from "./test-workspace-snapshot.ts";
 import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
+import { unknownEffectGate } from "./unknown-effect-gate.ts";
 
 const NON_REQUIREMENT_NUDGE_PATTERN =
   /^(?:(?:any\s+)?(?:progress|status|update)|so|how(?:'s|\s+is)\s+it\s+going|where\s+are\s+we|what(?:'s|\s+is)\s+the\s+status|(?:please\s+)?(?:continue|proceed|go\s+on|keep\s+going|carry\s+on)|(?:please\s+)?(?:report|show|give\s+me)\s+(?:the\s+)?(?:progress|status|update))\s*[?!.]*$/iu;
 const COMPLETION_NUDGE_PATTERN =
   /^are\s+you\s+(?:done|finished)(?:\s+with\s+(?:the\s+)?task)?\s+or\s+is\s+there\s+(?:anything|something)\s+left\s*[?!.]*\s*if\s+you\s+are\s+finished\s*,?\s*(?:ensure|make\s+sure)(?:\s+that)?\s+all\s+requirements\s+(?:are\s+)?(?:satisfied|met)(?:\s+and\s+(?:create|write)\s+[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt))?\s*[?!.]*$/iu;
 const NUDGE_DOCUMENT_PATH_PATTERN = /[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt)\b/giu;
-
 export function do_install(self: TaskVerificationController, agent: Agent): void {
   if (self.installed || self.mode === "off") return;
   self.installed = true;
@@ -192,6 +192,7 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
         text: promptText,
       },
     ],
+    final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
     readiness: emptyReadiness(),
     requirementAudit:
       self.mode === "audit"
@@ -242,6 +243,8 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
   if (self.mode === "audit" && self.rejectedRequirementDefinitionDraft && guardedEffect) {
     return self.blocked(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
   }
+  const effectGate = unknownEffectGate(self, effect, toolName);
+  if (effectGate) return effectGate;
   if (publish) {
     if (!isSafePublishCommandSequence(shellCommand(context.args))) {
       return self.blocked(

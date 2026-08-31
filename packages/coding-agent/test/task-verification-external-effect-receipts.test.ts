@@ -1,7 +1,15 @@
-import { Agent } from "@dst0/p-agent-core";
+import { Agent, createFinishWorkTool, resolveToolEffect } from "@dst0/p-agent-core";
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
+import {
+  callRequirementAudit,
+  callTaskVerification,
+  createRequirementAuditHarness,
+  nextModelTurn,
+  reachAuditEvidenceReady,
+  sendAuditUserPrompt,
+} from "./task-requirement-audit-test-harness.ts";
 
 type EffectKind = "external_write" | "unknown";
 
@@ -66,7 +74,13 @@ function evidenceHandle(text: string): string {
 async function beforeFinish(agent: Agent, token: string | undefined) {
   const args = { status: "success", verification_token: token };
   const toolCall = { type: "toolCall" as const, id: "finish", name: "finish_work", arguments: args };
-  return agent.beforeToolCall?.({ assistantMessage: {} as never, toolCall, args, context: {} as never } as never);
+  return agent.beforeToolCall?.({
+    assistantMessage: {} as never,
+    toolCall,
+    args,
+    effect: resolveToolEffect(createFinishWorkTool().effect),
+    context: {} as never,
+  } as never);
 }
 
 describe("evidence-mode external effect receipts", () => {
@@ -114,6 +128,87 @@ describe("evidence-mode external effect receipts", () => {
       source: "default_unknown",
     });
     expect(ready).toContain("verification_token:");
+  });
+
+  it("blocks an unknown effect after completion evidence without invalidating readiness", async () => {
+    const agent = new Agent();
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
+    controller.install(agent);
+    const evidenceRef = evidenceHandle(await runEffect(agent, "known-1", "external_write"));
+    await callVerification(controller, {
+      action: "ready_to_finish",
+      acceptance_checks: [{ criterion: "The requested effect completed", evidence_refs: [evidenceRef] }],
+      unresolved_failures: [],
+    });
+
+    const args = {};
+    const toolCall = { type: "toolCall" as const, id: "unknown-after-ready", name: "opaque_reader", arguments: args };
+    const before = await agent.beforeToolCall?.({
+      assistantMessage: {} as never,
+      toolCall,
+      args,
+      effect: { kind: "unknown", risk: "high", domains: [], source: "default_unknown" },
+      context: {} as never,
+    } as never);
+
+    expect(before?.block).toBe(true);
+    expect(before?.reason).toContain("has no declared effect");
+    expect(controller.currentState.mutationRevision).toBe(1);
+    expect(controller.currentState.readiness?.status).toBe("completion_ready");
+  });
+
+  it("allows unknown effects before audit evidence and blocks them after the evidence boundary", async () => {
+    const preEvidence = createRequirementAuditHarness();
+    await sendAuditUserPrompt(preEvidence, "Add a completion gate backed by focused verification.", 100);
+    await callTaskVerification(preEvidence.controller, {
+      action: "declare_task",
+      task_kind: "feature",
+      task_summary: "Add a completion gate backed by focused verification",
+    });
+    await nextModelTurn(preEvidence);
+    await callRequirementAudit(preEvidence.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The completion gate enforces the requested behavior",
+          acceptance_criterion: "Focused evidence passes and premature finish is blocked",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    expect(preEvidence.controller.currentState).toMatchObject({
+      mutationRevision: 0,
+      readiness: { status: "pending" },
+      requirementAudit: { status: "verifying" },
+    });
+    await expect(
+      runEffect(preEvidence.agent, "unknown-pre-evidence", "unknown", false, "opaque_reader"),
+    ).resolves.toContain("Verification evidence handle:");
+
+    const postEvidence = createRequirementAuditHarness();
+    await reachAuditEvidenceReady(postEvidence);
+    await nextModelTurn(postEvidence);
+    await callRequirementAudit(postEvidence.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The completion gate enforces the requested behavior",
+          acceptance_criterion: "Focused evidence passes and premature finish is blocked",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    expect(postEvidence.controller.currentState).toMatchObject({
+      readiness: { status: "evidence_ready" },
+      requirementAudit: { status: "verifying" },
+    });
+    await expect(
+      runEffect(postEvidence.agent, "unknown-post-evidence", "unknown", false, "opaque_reader"),
+    ).rejects.toThrow("after completion evidence");
   });
 
   it("does not record failed external effects", async () => {

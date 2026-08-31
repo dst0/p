@@ -1,0 +1,22 @@
+# 2026-08-31 — Unknown tool effects must not silently reset completion
+
+- **Status:** Resolved
+- **Task/context:** Live-proof the exact ignored-clause repair fix before starting another three-condition project-instruction benchmark candidate.
+- **Unexpected observation or failure:** After the requirement definition was accepted, three read-only `ctx_read` calls advanced mutation revision 1 to 4, reset final verification and the audit, and forced a complete second verification cycle.
+- **Evidence:** The tool registry supplied no effect declaration for `ctx_read`, so each successful call resolved to `unknown` with `default_unknown` provenance. The controller recorded three metadata-only external-effect receipts and reset completion state even though the Git workspace retained only the requested artifact and `.pdev` runtime state. The live unit eventually passed 5/5 only after repeating verification.
+- **Approaches tried:**
+  - **Attempt:** Infer read-only behavior from a tool name containing `read`.
+    - **Outcome:** Did not use
+    - **Why:** Arbitrary custom tools cannot gain mutation authority merely by choosing a trusted-looking name.
+  - **Attempt:** Treat every unknown effect as harmless when no workspace file changes.
+    - **Outcome:** Did not use
+    - **Why:** Unknown tools can mutate external persistent state without changing the local workspace.
+  - **Attempt:** Permit unknown effects during normal work, but block them after completion evidence exists until the tool declares `read`, `workspace_write`, or `external_write`.
+    - **Outcome:** Worked in focused tests
+    - **Why:** The controller remains conservative without destroying evidence in a silent retry loop; declared mutations retain their normal invalidation behavior.
+- **Root cause:** Third-party tools that omit the effect contract resolve safely to `unknown`, but the completion lifecycle had no pre-call boundary for unknown effects. Post-call handling therefore had to assume a successful external mutation and invalidate evidence. A related state transition reset readiness and audit after a substantive user follow-up but incorrectly retained `final: passed`, which could make a correct gate block the newly expanded task.
+- **Resolution:** A generic pre-call gate now blocks unknown-effect tools once final evidence or readiness actually exists. Its actionable diagnostic requires an explicit effect declaration or a declared alternative and confirms that completed evidence was preserved. A substantive user follow-up now resets final evidence together with readiness and audit, while pure status and continuation nudges preserve completion state.
+- **Verification:** Regressions first showed that an unknown call was allowed after `completion_ready`, that pre-implementation audit verification was incorrectly blocked, and that a substantive follow-up retained stale final evidence. The focused lifecycle suites pass 16 tests. Installed live session `01a05581-1098-7c9f-a0e7-c7e8614827aa` then proved that repeated undeclared `ctx_read` calls were rejected without advancing mutation revision 1 or resetting final, readiness, or audit state; a declared `read` completed successfully without repeating the completion definition or verifier; and the preserved certificate subsequently completed through `finish_work`.
+- **Prevention/follow-up:** Extension and MCP adapters should propagate explicit effect metadata. Never add trusted-name heuristics for custom tools. Preserve this installed post-compaction path as a focused live canary before expensive benchmark runs.
+- **Reusable learning:** Fail closed before an unknown effect crosses a completion boundary; do not discover its uncertainty only after invalidating the evidence it was meant to inspect.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/unknown-effect-gate.ts`, `packages/coding-agent/test/task-verification-external-effect-receipts.test.ts`, live sessions `01a05569-1261-7483-a52e-5ff67ee16288` and `01a05581-1098-7c9f-a0e7-c7e8614827aa`
