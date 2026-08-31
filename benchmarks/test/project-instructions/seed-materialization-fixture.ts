@@ -3,7 +3,9 @@ import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
+import type { Model } from "@dst0/p-ai";
 import { buildProjectInstructionConstraints } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-constraints.js";
+import { buildProjectInstructionCompilerModelIdentity } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
 import { materializeProjectInstructionCompilerResult } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-validation.js";
 import { splitInstructionSources } from "../../../packages/coding-agent/dist/core/project-instructions/content.js";
 import { PROJECT_INSTRUCTION_COMPILER_VERSION } from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
@@ -13,11 +15,28 @@ import { createCertifiedSeedRecord, createSeedCertificate } from "../../src/proj
 
 const helper = fileURLToPath(new URL("../../src/project-instructions/seed.ts", import.meta.url));
 const sha256 = (value: string | Buffer): string => createHash("sha256").update(value).digest("hex");
+const compilerModel: Model<"openai-completions"> = {
+  id: "model",
+  name: "Compiler model",
+  api: "openai-completions",
+  provider: "provider",
+  baseUrl: "https://compiler.invalid/v1",
+  reasoning: true,
+  input: ["text"],
+  cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+  contextWindow: 65_536,
+  maxTokens: 4_096,
+  thinkingLevelMap: { off: "disabled" },
+  compat: { thinkingFormat: "qwen" },
+};
 
 export function createSeedMaterializationFixture(
   root: string,
   compilerVersion = PROJECT_INSTRUCTION_COMPILER_VERSION,
-  compilerIdentity = `provider/model:${DEFAULT_MODEL_COMPILER_CONTRACT_REVISION}`,
+  compilerIdentity = buildProjectInstructionCompilerModelIdentity(
+    compilerModel,
+    DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+  ),
 ) {
   const content = `# Rules\n${Array.from({ length: 240 }, (_, index) => `- When code changes, run focused check ${index}.`).join("\n")}\n`;
   const sourcePath = join(root, "source-AGENTS.md");
@@ -25,7 +44,29 @@ export function createSeedMaterializationFixture(
   const seedPath = join(root, "seed.json");
   const certificatePath = join(root, "certificate.json");
   const receiptPath = join(root, "receipt.json");
+  const modelsPath = join(root, "models.json");
   writeFileSync(sourcePath, content, { mode: 0o600 });
+  writeFileSync(
+    modelsPath,
+    `${JSON.stringify({
+      providers: {
+        provider: {
+          baseUrl: compilerModel.baseUrl,
+          apiKey: "test-key",
+          api: compilerModel.api,
+          models: [
+            {
+              id: compilerModel.id,
+              reasoning: compilerModel.reasoning,
+              thinkingLevelMap: compilerModel.thinkingLevelMap,
+              compat: compilerModel.compat,
+            },
+          ],
+        },
+      },
+    })}\n`,
+    { mode: 0o600 },
+  );
   const sources = [{ path: sourcePath, content }];
   const modules = splitInstructionSources(sources);
   const constraints = buildProjectInstructionConstraints(modules);
@@ -37,11 +78,11 @@ export function createSeedMaterializationFixture(
   const result = materializeProjectInstructionCompilerResult(classifications, triggers, constraints);
   const seed = createCertifiedSeedRecord({
     sourceSha256: sha256(content),
-    modelsSha256: "b".repeat(64),
+    modelsSha256: sha256(readFileSync(modelsPath)),
     runtimeSha256: "c".repeat(64),
     compilerVersion,
     compilerIdentity,
-    compilerModel: { provider: "provider", id: "model", api: "custom-api" },
+    compilerModel: { provider: compilerModel.provider, id: compilerModel.id, api: compilerModel.api },
     result,
     usage: { input: 10, output: 2, cacheRead: 0, cacheWrite: 0, total: 12 },
     elapsedMs: 100,
@@ -51,11 +92,14 @@ export function createSeedMaterializationFixture(
   writeFileSync(certificatePath, `${JSON.stringify(certificate)}\n`, { mode: 0o600 });
   return {
     sourcePath,
+    modelsPath,
     workspace,
     seedPath,
     certificatePath,
     receiptPath,
     certificate,
+    compilerIdentity,
+    result,
     sourceSha256: sha256(content),
   };
 }
@@ -68,6 +112,8 @@ export function materializeSeedFixture(fixture: ReturnType<typeof createSeedMate
       "materialize",
       "--source",
       fixture.sourcePath,
+      "--models-file",
+      fixture.modelsPath,
       "--workspace",
       fixture.workspace,
       "--seed",

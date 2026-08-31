@@ -18,6 +18,10 @@ import { ModelRegistry } from "../../../packages/coding-agent/dist/core/model-re
 import { getProjectInstructionCompilerFailureTelemetry } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-attempt-diagnostics.js";
 import { buildProjectInstructionConstraints } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-constraints.js";
 import { classifyProjectInstructionCompilerError } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-diagnostics.js";
+import {
+  buildProjectInstructionCompilerModelIdentity,
+  matchesProjectInstructionCompilerModelIdentity,
+} from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
 import { validateProjectInstructionCompilerResult } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-validation.js";
 import { splitInstructionSources } from "../../../packages/coding-agent/dist/core/project-instructions/content.js";
 import { compileProjectInstructionsWithModel } from "../../../packages/coding-agent/dist/core/project-instructions/model-compiler.js";
@@ -102,7 +106,10 @@ async function certify(options: Record<string, string>): Promise<void> {
   if (!compiled.usage) throw new Error("Seed compiler did not report usage");
   const { usage, ...result } = compiled;
   validateProjectInstructionCompilerResult(result, modules, constraints);
-  const compilerIdentity = `${model.provider}/${model.id}:${DEFAULT_MODEL_COMPILER_CONTRACT_REVISION}`;
+  const compilerIdentity = buildProjectInstructionCompilerModelIdentity(
+    model,
+    DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+  );
   const seed = createCertifiedSeedRecord({
     sourceSha256,
     modelsSha256,
@@ -119,16 +126,25 @@ async function certify(options: Record<string, string>): Promise<void> {
 }
 
 async function materialize(options: Record<string, string>): Promise<void> {
-  for (const name of ["source", "workspace", "seed", "certificate", "receipt"]) {
+  for (const name of ["source", "models-file", "workspace", "seed", "certificate", "receipt"]) {
     if (!options[name]) throw new Error(`Seed materialization is missing --${name}`);
   }
   const certificate = assertSeedCertificate(JSON.parse(readFileSync(options.certificate, "utf8")));
   const preparation = certificate.compilerPreparation;
   const seed = assertCertifiedSeedRecord(JSON.parse(readFileSync(options.seed, "utf8")), preparation);
-  const expectedCompilerIdentity = `${seed.compilerModel.provider}/${seed.compilerModel.id}:${DEFAULT_MODEL_COMPILER_CONTRACT_REVISION}`;
+  if (hashFile(options["models-file"]) !== seed.modelsSha256) {
+    throw new Error("Certified seed models changed");
+  }
+  const registry = ModelRegistry.create(AuthStorage.inMemory(), options["models-file"]);
+  const compilerModel = registry.find(seed.compilerModel.provider, seed.compilerModel.id);
   if (
     seed.compilerVersion !== PROJECT_INSTRUCTION_COMPILER_VERSION ||
-    seed.compilerIdentity !== expectedCompilerIdentity
+    !compilerModel ||
+    !matchesProjectInstructionCompilerModelIdentity(
+      seed.compilerIdentity,
+      compilerModel,
+      DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+    )
   ) {
     throw new Error("Certified seed compiler identity does not match this runtime");
   }
