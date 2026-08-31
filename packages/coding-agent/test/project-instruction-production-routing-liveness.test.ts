@@ -65,6 +65,7 @@ describe("production project-instruction routing", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: async (request) => compileSparseOmission(request),
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts(
@@ -107,6 +108,7 @@ describe("production project-instruction routing", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: async (request) => compileSparseOmission(request),
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts("zzqqvv", session.systemPrompt);

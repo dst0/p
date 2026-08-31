@@ -2,12 +2,14 @@ import { type AgentTool, type CompletionMode, FINISH_WORK_TOOL_NAME, type Thinki
 import type { Model } from "@dst0/p-ai";
 import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { buildSystemPrompt } from "../../system-prompt.ts";
+import { reconcileTaskVerificationRuntime } from "../../task-verification-session-runtime.ts";
 import type { AgentSession } from "../agentsession.ts";
 
 export function do_setActiveToolsByName(self: AgentSession, toolNames: string[]): void {
+  const reconciledToolNames = reconcileTaskVerificationRuntime(self, toolNames);
   const tools: AgentTool[] = [];
   const validToolNames: string[] = [];
-  for (const name of toolNames) {
+  for (const name of reconciledToolNames) {
     const tool = self._toolRegistry.get(name);
     if (tool) {
       tools.push(tool);
@@ -165,6 +167,7 @@ export function do__rebuildSystemPrompt(
     toolSnippets,
     promptGuidelines,
     completionMode,
+    taskVerificationMode: self._taskVerificationMode,
   };
   return buildSystemPrompt(self._baseSystemPromptOptions);
 }

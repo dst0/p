@@ -64,6 +64,19 @@ describe("finish_work tool", () => {
     const rendered = toolDef.renderResult?.(res as any, { expanded: true } as any, dummyTheme, dummyContext);
     expect(rendered).toBeDefined();
   });
+
+  it("describes the selected task verification protocol without promoting audit by default", () => {
+    const evidenceGuidance = createFinishWorkToolDefinition().promptGuidelines?.join(" ") ?? "";
+    const auditGuidance =
+      createFinishWorkToolDefinition({ taskVerificationMode: "audit" }).promptGuidelines?.join(" ") ?? "";
+    const offGuidance =
+      createFinishWorkToolDefinition({ taskVerificationMode: "off" }).promptGuidelines?.join(" ") ?? "";
+
+    expect(evidenceGuidance).toContain("one concise completion checklist");
+    expect(evidenceGuidance).not.toContain("record_requirement_audit");
+    expect(auditGuidance).toContain("record_requirement_audit");
+    expect(offGuidance).not.toContain("record_task_verification");
+  });
 });
 
 describe("sleep tool", () => {

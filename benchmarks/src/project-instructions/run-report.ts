@@ -1,8 +1,8 @@
 import { escapeMarkdownTableCell, escapeMarkdownText, markdownCodeSpan } from "../harness/markdown.ts";
 import { renderBenchmarkCompilerFailureTelemetry } from "./failure.ts";
 import { assessSample } from "./run-assessment.ts";
-import type { PairedSample, ProjectInstructionMode } from "./run-core.ts";
-import { PROJECT_INSTRUCTION_MODES } from "./run-core.ts";
+import type { PairedSample, ProjectInstructionCondition } from "./run-core.ts";
+import { PROJECT_INSTRUCTION_CONDITIONS, PROJECT_INSTRUCTION_TASKS } from "./run-core.ts";
 import { formatRequirementDefinitionCount, renderGateFailureLiveness } from "./run-report-liveness.ts";
 
 export function median(values: Array<number | undefined>): number | undefined {
@@ -19,8 +19,8 @@ function qualityPercent(sample: PairedSample): number {
   return sample.quality.maxScore > 0 ? (score / sample.quality.maxScore) * 100 : 0;
 }
 
-function summarizeMode(samples: PairedSample[], mode: string) {
-  const rows = samples.filter((sample) => sample.mode === mode);
+function summarizeCondition(samples: PairedSample[], condition: string) {
+  const rows = samples.filter((sample) => sample.condition === condition);
   return {
     samples: rows.length,
     qualityPasses: rows.filter((sample) => assessSample(sample).passed).length,
@@ -30,52 +30,92 @@ function summarizeMode(samples: PairedSample[], mode: string) {
   };
 }
 
-function percentageDelta(compiled: number, legacy: number): number | undefined {
-  return legacy === 0 ? undefined : ((compiled - legacy) / legacy) * 100;
+function percentageDelta(candidate: number, reference: number): number | undefined {
+  return reference === 0 ? undefined : ((candidate - reference) / reference) * 100;
 }
 
-function summarizePairs(samples: PairedSample[]) {
-  const pairs = new Map<string, Partial<Record<ProjectInstructionMode, PairedSample>>>();
+function summarizeComparison(
+  samples: PairedSample[],
+  candidate: ProjectInstructionCondition,
+  reference: ProjectInstructionCondition,
+) {
+  const pairs = new Map<string, Partial<Record<ProjectInstructionCondition, PairedSample>>>();
   for (const sample of samples) {
     const key = `${sample.run}\0${sample.task}`;
     const pair = pairs.get(key) ?? {};
-    pair[sample.mode] = sample;
+    pair[sample.condition] = sample;
     pairs.set(key, pair);
   }
   const complete = [...pairs.values()].filter(
-    (pair): pair is Record<ProjectInstructionMode, PairedSample> =>
-      pair.compiled !== undefined && pair.legacy !== undefined,
+    (pair): pair is Record<ProjectInstructionCondition, PairedSample> =>
+      pair[candidate] !== undefined && pair[reference] !== undefined,
   );
   return {
     samples: complete.length,
     medianTokenDeltaPercent: median(
       complete.map((pair) =>
-        percentageDelta(pair.compiled.metrics.usage.totalTokens, pair.legacy.metrics.usage.totalTokens),
+        percentageDelta(pair[candidate].metrics.usage.totalTokens, pair[reference].metrics.usage.totalTokens),
       ),
     ),
     medianRuntimeDeltaPercent: median(
-      complete.map((pair) => percentageDelta(pair.compiled.elapsedMs, pair.legacy.elapsedMs)),
+      complete.map((pair) => percentageDelta(pair[candidate].elapsedMs, pair[reference].elapsedMs)),
     ),
   };
 }
 
-export function createPairedSummary(samples: PairedSample[], gatePassed: boolean) {
-  if (!gatePassed) return undefined;
+function hasCompleteComparisonScope(samples: PairedSample[], tasks: string[], runs: number): boolean {
+  if (
+    tasks.length !== PROJECT_INSTRUCTION_TASKS.length ||
+    !PROJECT_INSTRUCTION_TASKS.every((task) => tasks.includes(task)) ||
+    samples.length !== PROJECT_INSTRUCTION_TASKS.length * runs * PROJECT_INSTRUCTION_CONDITIONS.length
+  ) {
+    return false;
+  }
+  for (const task of PROJECT_INSTRUCTION_TASKS) {
+    for (let run = 1; run <= runs; run += 1) {
+      const rows = samples.filter((sample) => sample.task === task && sample.run === run);
+      if (
+        rows.length !== PROJECT_INSTRUCTION_CONDITIONS.length ||
+        !PROJECT_INSTRUCTION_CONDITIONS.every(
+          (condition) => rows.filter((sample) => sample.condition === condition).length === 1,
+        )
+      ) {
+        return false;
+      }
+    }
+  }
+  return true;
+}
+
+function comparisons(samples: PairedSample[]) {
+  return {
+    compiledEvidenceVsLegacy: summarizeComparison(samples, "compiled-evidence", "legacy"),
+    compiledAuditVsCompiledEvidence: summarizeComparison(samples, "compiled-audit", "compiled-evidence"),
+    compiledAuditVsLegacy: summarizeComparison(samples, "compiled-audit", "legacy"),
+  };
+}
+
+export function createPairedSummary(samples: PairedSample[], gatePassed: boolean, tasks: string[], runs: number) {
+  if (!gatePassed || !hasCompleteComparisonScope(samples, tasks, runs)) return undefined;
   const byTask = Object.fromEntries(
     [...new Set(samples.map((sample) => sample.task))].map((task) => {
       const rows = samples.filter((sample) => sample.task === task);
       return [
         task,
         {
-          byMode: Object.fromEntries(PROJECT_INSTRUCTION_MODES.map((mode) => [mode, summarizeMode(rows, mode)])),
-          paired: summarizePairs(rows),
+          byCondition: Object.fromEntries(
+            PROJECT_INSTRUCTION_CONDITIONS.map((condition) => [condition, summarizeCondition(rows, condition)]),
+          ),
+          comparisons: comparisons(rows),
         },
       ];
     }),
   );
   return {
-    byMode: Object.fromEntries(PROJECT_INSTRUCTION_MODES.map((mode) => [mode, summarizeMode(samples, mode)])),
-    paired: summarizePairs(samples),
+    byCondition: Object.fromEntries(
+      PROJECT_INSTRUCTION_CONDITIONS.map((condition) => [condition, summarizeCondition(samples, condition)]),
+    ),
+    comparisons: comparisons(samples),
     byTask,
   };
 }
@@ -113,11 +153,13 @@ type PairedReportDocument = {
       compilerFailure?: Parameters<typeof renderBenchmarkCompilerFailureTelemetry>[0];
     };
   };
-  schedule: Array<{ run: number; task: string; modes: string[] }>;
+  schedule: Array<{ run: number; task: string; conditions: string[] }>;
   samples: Array<{
     run: number;
     task: string;
+    condition: string;
     mode: string;
+    taskVerificationMode: string;
     status: string;
     elapsedMs: number;
     quality: { rawScore?: number; score?: number; maxScore: number };
@@ -133,7 +175,7 @@ export function renderPairedReport(document: PairedReportDocument): string {
   const runStatus =
     document.runStatus ??
     (document.completed && document.gate.passed ? "completed" : document.gate.passed ? "running" : "failed");
-  let report = "# Project-instruction paired benchmark\n\n";
+  let report = "# Project-instruction three-condition benchmark\n\n";
   report += `Generated: ${escapeMarkdownText(document.generatedAt)}\n\nTask model: ${markdownCodeSpan(document.model)}\n\nCompiler model: ${markdownCodeSpan(document.compilerModel ?? document.model)}\n\n`;
   report += `P runtime-closure SHA-256: ${markdownCodeSpan(document.binarySha256)}\n\nSeed: ${markdownCodeSpan(document.seed)}\n\n`;
   report += `Candidate version: ${markdownCodeSpan(document.candidateVersion)}\n\n`;
@@ -146,6 +188,10 @@ export function renderPairedReport(document: PairedReportDocument): string {
   }
   if (runStatus === "completed" && document.completed && document.gate.passed) {
     report += "Correctness gate: **PASSED**. Every sample completed and passed every quality check.\n\n";
+    if (!document.summary) {
+      report +=
+        "Performance conclusions are suppressed because the configured canary did not cover all four canonical tasks, repetitions, and conditions.\n\n";
+    }
   } else if (runStatus === "running") {
     report += "Correctness gate: **RUNNING**. Performance conclusions remain suppressed until every sample passes.\n\n";
   } else {
@@ -156,29 +202,37 @@ export function renderPairedReport(document: PairedReportDocument): string {
     report += renderGateFailureLiveness(failure.liveness);
     report += renderBenchmarkCompilerFailureTelemetry(failure.compilerFailure);
   }
-  report += "## Randomized pair order\n\n| Run | Task | First | Second |\n| ---: | --- | --- | --- |\n";
+  report +=
+    "## Randomized condition order\n\n| Run | Task | First | Second | Third |\n| ---: | --- | --- | --- | --- |\n";
   for (const pair of document.schedule) {
-    report += `| ${formatNumber(pair.run)} | ${escapeMarkdownTableCell(pair.task)} | ${escapeMarkdownTableCell(pair.modes[0])} | ${escapeMarkdownTableCell(pair.modes[1])} |\n`;
+    report += `| ${formatNumber(pair.run)} | ${escapeMarkdownTableCell(pair.task)} | ${escapeMarkdownTableCell(pair.conditions[0])} | ${escapeMarkdownTableCell(pair.conditions[1])} | ${escapeMarkdownTableCell(pair.conditions[2])} |\n`;
   }
   report +=
-    "\n## Samples\n\n| Run | Task | Mode | Status | Quality | Session tokens | Runtime | First mutation | Requirement definitions |\n| ---: | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n";
+    "\n## Samples\n\n| Run | Task | Condition | Instruction mode | Verification | Status | Quality | Session tokens | Runtime | First mutation | Requirement definitions |\n| ---: | --- | --- | --- | --- | --- | --- | ---: | ---: | ---: | ---: |\n";
   for (const sample of document.samples) {
     const score = formatNumber(sample.quality.rawScore ?? sample.quality.score);
-    report += `| ${formatNumber(sample.run)} | ${escapeMarkdownTableCell(sample.task)} | ${escapeMarkdownTableCell(sample.mode)} | ${escapeMarkdownTableCell(sample.status)} | ${score}/${formatNumber(sample.quality.maxScore)} | ${formatNumber(sample.metrics.usage.totalTokens)} | ${formatNumber(sample.elapsedMs)} ms | ${formatNumber(sample.liveness?.firstMutationElapsedMs)} ms | ${formatRequirementDefinitionCount(sample.liveness)} |\n`;
+    report += `| ${formatNumber(sample.run)} | ${escapeMarkdownTableCell(sample.task)} | ${escapeMarkdownTableCell(sample.condition)} | ${escapeMarkdownTableCell(sample.mode)} | ${escapeMarkdownTableCell(sample.taskVerificationMode)} | ${escapeMarkdownTableCell(sample.status)} | ${score}/${formatNumber(sample.quality.maxScore)} | ${formatNumber(sample.metrics.usage.totalTokens)} | ${formatNumber(sample.elapsedMs)} ms | ${formatNumber(sample.liveness?.firstMutationElapsedMs)} ms | ${formatRequirementDefinitionCount(sample.liveness)} |\n`;
   }
   if (!document.summary) return report;
   report += "\n## Performance after correctness\n\n";
   report +=
     "| Mode | Quality passes | Median quality | Median session tokens | Median runtime |\n| --- | ---: | ---: | ---: | ---: |\n";
-  for (const mode of PROJECT_INSTRUCTION_MODES) {
-    const data = document.summary.byMode[mode];
-    report += `| ${escapeMarkdownTableCell(mode)} | ${formatNumber(data.qualityPasses)}/${formatNumber(data.samples)} | ${formatPercent(data.medianQualityPercent)} | ${formatNumber(data.medianTotalTokens)} | ${formatNumber(data.medianElapsedMs)} ms |\n`;
+  for (const condition of PROJECT_INSTRUCTION_CONDITIONS) {
+    const data = document.summary.byCondition[condition];
+    report += `| ${escapeMarkdownTableCell(condition)} | ${formatNumber(data.qualityPasses)}/${formatNumber(data.samples)} | ${formatPercent(data.medianQualityPercent)} | ${formatNumber(data.medianTotalTokens)} | ${formatNumber(data.medianElapsedMs)} ms |\n`;
   }
-  report += `\nMedian paired compiled-vs-legacy delta: **${formatPercent(document.summary.paired.medianTokenDeltaPercent)} tokens**, **${formatPercent(document.summary.paired.medianRuntimeDeltaPercent)} runtime**. Negative is better for compiled mode.\n`;
+  report += "\nWithin-block median deltas (negative is better for the first condition):\n\n";
+  for (const [label, data] of [
+    ["compiled-evidence vs legacy", document.summary.comparisons.compiledEvidenceVsLegacy],
+    ["compiled-audit vs compiled-evidence", document.summary.comparisons.compiledAuditVsCompiledEvidence],
+    ["compiled-audit vs legacy", document.summary.comparisons.compiledAuditVsLegacy],
+  ] as const) {
+    report += `- ${label}: **${formatPercent(data.medianTokenDeltaPercent)} tokens**, **${formatPercent(data.medianRuntimeDeltaPercent)} runtime**.\n`;
+  }
   report +=
-    "\n## Per-task medians\n\n| Task | Legacy session tokens | Compiled session tokens | Paired token delta | Legacy runtime | Compiled runtime | Paired runtime delta |\n| --- | ---: | ---: | ---: | ---: | ---: | ---: |\n";
+    "\n## Per-task medians\n\n| Task | Legacy tokens | Compiled-evidence tokens | Compiled-audit tokens | Evidence vs legacy | Audit vs evidence |\n| --- | ---: | ---: | ---: | ---: | ---: |\n";
   for (const [task, data] of Object.entries(document.summary.byTask)) {
-    report += `| ${escapeMarkdownTableCell(task)} | ${formatNumber(data.byMode.legacy.medianTotalTokens)} | ${formatNumber(data.byMode.compiled.medianTotalTokens)} | ${formatPercent(data.paired.medianTokenDeltaPercent)} | ${formatNumber(data.byMode.legacy.medianElapsedMs)} ms | ${formatNumber(data.byMode.compiled.medianElapsedMs)} ms | ${formatPercent(data.paired.medianRuntimeDeltaPercent)} |\n`;
+    report += `| ${escapeMarkdownTableCell(task)} | ${formatNumber(data.byCondition.legacy.medianTotalTokens)} | ${formatNumber(data.byCondition["compiled-evidence"].medianTotalTokens)} | ${formatNumber(data.byCondition["compiled-audit"].medianTotalTokens)} | ${formatPercent(data.comparisons.compiledEvidenceVsLegacy.medianTokenDeltaPercent)} | ${formatPercent(data.comparisons.compiledAuditVsCompiledEvidence.medianTokenDeltaPercent)} |\n`;
   }
   return report;
 }

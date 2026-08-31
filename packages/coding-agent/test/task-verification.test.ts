@@ -18,7 +18,7 @@ function createInstalledController(): {
 } {
   const agent = new Agent();
   const sessionManager = SessionManager.inMemory();
-  const controller = createTaskVerificationController(sessionManager);
+  const controller = createTaskVerificationController(sessionManager, "audit");
   controller.install(agent);
   return { agent, controller, sessionManager };
 }
@@ -612,7 +612,7 @@ describe("task verification controller", () => {
   it("restores verification state and evidence from durable session entries", async () => {
     const sessionManager = SessionManager.inMemory();
     const firstAgent = new Agent();
-    const first = createTaskVerificationController(sessionManager);
+    const first = createTaskVerificationController(sessionManager, "audit");
     first.install(firstAgent);
     await callVerificationTool(first, {
       action: "declare_task",
@@ -622,7 +622,7 @@ describe("task verification controller", () => {
     const handle = evidenceHandle(await afterTool(firstAgent, "read", { path: "state.ts" }));
     expect(handle).toBe("verification-evidence-1");
 
-    const restored = createTaskVerificationController(sessionManager);
+    const restored = createTaskVerificationController(sessionManager, "audit");
     const status = await callVerificationTool(restored, { action: "status" });
     expect(status.text).toContain("Persist verification state");
     expect(status.text).toContain(handle);
@@ -659,7 +659,7 @@ describe("task verification controller", () => {
   it("restores exact regression commands and repair payloads after session reconstruction", async () => {
     const sessionManager = SessionManager.inMemory();
     const firstAgent = new Agent();
-    const first = createTaskVerificationController(sessionManager);
+    const first = createTaskVerificationController(sessionManager, "audit");
     first.install(firstAgent);
     await callVerificationTool(first, {
       action: "declare_task",
@@ -679,7 +679,7 @@ describe("task verification controller", () => {
       await afterTool(firstAgent, "bash", { command }, { isError: true, text: "expected failure" }),
     );
 
-    const restoredBaseline = createTaskVerificationController(sessionManager);
+    const restoredBaseline = createTaskVerificationController(sessionManager, "audit");
     const baselineStatus = await callVerificationTool(restoredBaseline, { action: "status" });
     expect(baselineStatus.text).toContain(command);
     expect(baselineStatus.text).toContain(failedHandle);
@@ -700,7 +700,7 @@ describe("task verification controller", () => {
       edits: [{ oldText: "old", newText: "new" }],
     });
 
-    const restoredFinal = createTaskVerificationController(sessionManager);
+    const restoredFinal = createTaskVerificationController(sessionManager, "audit");
     const finalStatus = await callVerificationTool(restoredFinal, { action: "status" });
     expect(finalStatus.text).toContain(`Required exact replay command: ${command}`);
     expect(finalStatus.text).toContain("mutation revision 1");
@@ -715,7 +715,7 @@ describe("task verification controller", () => {
   it("does not suggest unrelated passing evidence when an exact baseline replay is required", async () => {
     const sessionManager = SessionManager.inMemory();
     const baselineAgent = new Agent();
-    const baselineController = createTaskVerificationController(sessionManager);
+    const baselineController = createTaskVerificationController(sessionManager, "audit");
     baselineController.install(baselineAgent);
     await callVerificationTool(baselineController, {
       action: "declare_task",
@@ -750,7 +750,7 @@ describe("task verification controller", () => {
       await afterTool(baselineAgent, "bash", { command: "vitest -t unrelated" }, { text: "Tests 1 passed (1)" }),
     );
 
-    const restored = createTaskVerificationController(sessionManager);
+    const restored = createTaskVerificationController(sessionManager, "audit");
     const beforeReplay = await callVerificationTool(restored, { action: "status" });
     expect(beforeReplay.text).toContain(`Required exact replay command: ${replayCommand}`);
     expect(beforeReplay.text).toContain("Do not substitute another focused test");
@@ -782,7 +782,7 @@ describe("task verification controller", () => {
       unresolved_failures: [],
     });
     const token = await completeSingleRequirementAudit(restored, replayHandle);
-    const readinessRestored = createTaskVerificationController(sessionManager);
+    const readinessRestored = createTaskVerificationController(sessionManager, "audit");
     const readinessAgent = new Agent();
     readinessRestored.install(readinessAgent);
     expect(

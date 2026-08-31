@@ -150,6 +150,13 @@ test("active recording preserves semantic mutation after the worktree is committ
         toolName: "record_requirement_audit",
         args: { action: "verdict" },
       },
+      {
+        type: "tool_execution_end",
+        toolCallId: "verdict-1",
+        toolName: "record_requirement_audit",
+        isError: false,
+        result: { content: [{ type: "text", text: "verification_token: audit-token" }] },
+      },
       { type: "message_end", message: { toolName: "record_requirement_audit", args: { action: "define" } } },
     ];
     const streamedEvents = `${events.map((event) => JSON.stringify(event)).join("\n")}\n`;
@@ -178,6 +185,8 @@ test("active recording preserves semantic mutation after the worktree is committ
     assert.equal(evidence.semanticSequence, 6);
     assert.equal(evidence.semanticEvidenceAvailable, true);
     assert.equal(evidence.mutationCount, 1);
+    assert.equal(evidence.taskVerification?.auditVerdictAttemptCount, 1);
+    assert.equal(evidence.taskVerification?.auditCertificateCount, 1);
   } finally {
     rmSync(directory, { recursive: true, force: true });
   }

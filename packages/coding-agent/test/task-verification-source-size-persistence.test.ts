@@ -122,7 +122,7 @@ describe("task verification source-size persistence", () => {
       await mkdir(join(cwd, "src"));
       const sessionManager = SessionManager.inMemory(cwd);
       const agent = new Agent();
-      const controller = createTaskVerificationController(sessionManager);
+      const controller = createTaskVerificationController(sessionManager, "audit");
       controller.install(agent);
       await declareTask(controller);
 
@@ -138,7 +138,7 @@ describe("task verification source-size persistence", () => {
       expect(controller.currentState.mutatedSourcePaths).toContain("src/pathless.ts");
       const evidence = await recordFinal(agent, controller);
 
-      const restored = createTaskVerificationController(sessionManager);
+      const restored = createTaskVerificationController(sessionManager, "audit");
       expect(restored.currentState.mutatedSourcePaths).toContain("src/pathless.ts");
       const ready = await callVerificationTool(restored, {
         action: "ready_to_finish",
@@ -157,7 +157,7 @@ describe("task verification source-size persistence", () => {
       await mkdir(join(cwd, "src"));
       const sessionManager = SessionManager.inMemory(cwd);
       const agent = new Agent();
-      const controller = createTaskVerificationController(sessionManager);
+      const controller = createTaskVerificationController(sessionManager, "audit");
       controller.install(agent);
       await declareTask(controller);
 
@@ -175,9 +175,9 @@ describe("task verification source-size persistence", () => {
       expect(mutationResult ?? "").not.toContain("could not bound every mutated source path");
       expect(controller.currentState.mutatedSourcePaths).toContain("src/pathless.ts");
       expect(controller.currentState.mutatedSourcePathOverflow).toBe(false);
+      expect(controller.currentState.taskOwnedPathTrackingFailed).toBe(true);
       const evidence = await recordFinal(agent, controller);
-
-      const restored = createTaskVerificationController(sessionManager);
+      const restored = createTaskVerificationController(sessionManager, "audit");
       expect(restored.currentState.mutatedSourcePathOverflow).toBe(false);
       const ready = await callVerificationTool(restored, {
         action: "ready_to_finish",
@@ -216,7 +216,7 @@ describe("task verification source-size persistence", () => {
       expect(mutationResult).toContain("user explicitly overrides the file-size constraint");
       const evidence = await recordFinal(agent, controller);
 
-      const restored = createTaskVerificationController(sessionManager);
+      const restored = createTaskVerificationController(sessionManager, "audit");
       const ready = await callVerificationTool(restored, {
         action: "ready_to_finish",
         acceptance_checks: [{ criterion: "Generated source behaves correctly", evidence_refs: [evidence] }],
@@ -284,7 +284,7 @@ describe("task verification source-size persistence", () => {
       expect(mutationResult ?? "").not.toContain("Completion remains blocked");
       const evidence = await recordFinal(agent, controller);
 
-      const restored = createTaskVerificationController(sessionManager);
+      const restored = createTaskVerificationController(sessionManager, "audit");
       expect(restored.currentState.mutatedSourcePathOverflow).toBe(true);
       const ready = await callVerificationTool(restored, {
         action: "ready_to_finish",

@@ -1,10 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { test } from "node:test";
-import { configureProjectInstructionProbe } from "../../src/project-instructions/evidence.ts";
 import { createBaseSystemModeProof } from "../../src/project-instructions/probe.ts";
 import {
   bindProjectInstructionProofToTurn,
@@ -14,7 +10,6 @@ import {
   sendProjectInstructionProof,
   validateProjectInstructionProofSequence,
 } from "../../src/project-instructions/proof-ipc.ts";
-import { buildBenchmarkArgs } from "../../src/project-instructions/run-core.ts";
 
 type IpcTarget = NonNullable<Parameters<typeof sendProjectInstructionProof>[2]>;
 
@@ -23,6 +18,12 @@ const hash = (character: string): string => character.repeat(64);
 function canonicalProof(): Record<string, unknown> {
   return {
     requestedMode: "compiled",
+    requestedTaskVerificationMode: "evidence",
+    effectiveTaskVerificationMode: "evidence",
+    registeredVerificationTools: ["record_task_verification"],
+    activeVerificationTools: ["record_task_verification"],
+    verificationToolSurfaceRegistered: true,
+    verificationToolSurfaceActive: true,
     sourceSha256: hash("e"),
     systemPromptSha256: hash("f"),
     systemPromptBytes: 100,
@@ -46,6 +47,7 @@ test("receipt hash binds runtime, run, task, mode, source, and nonce", () => {
     run: 2,
     task: "inventory",
     mode: "compiled",
+    taskVerificationMode: "evidence",
     sourceSha256: hash("b"),
   };
   const receipt = createProjectInstructionProofReceipt(identity, hash("c"));
@@ -54,6 +56,7 @@ test("receipt hash binds runtime, run, task, mode, source, and nonce", () => {
     { run: 3 },
     { task: "saga" },
     { mode: "legacy" },
+    { taskVerificationMode: "audit" },
     { sourceSha256: hash("e") },
   ]) {
     assert.notEqual(createProjectInstructionProofReceipt({ ...identity, ...change }, hash("c")).sha256, receipt.sha256);
@@ -65,6 +68,7 @@ test("reserved proof environment is consumed once and fully scrubbed", () => {
   const env = {
     P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT: hash("1"),
     P_BENCHMARK_PROJECT_INSTRUCTION_MODE: "compiled",
+    P_BENCHMARK_PROJECT_INSTRUCTION_TASK_VERIFICATION_MODE: "evidence",
     P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_SHA256: hash("2"),
     P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_PATH: "/workspace/AGENTS.md",
     P_BENCHMARK_PROJECT_INSTRUCTION_UNRECOGNIZED: "must-also-be-removed",
@@ -73,6 +77,7 @@ test("reserved proof environment is consumed once and fully scrubbed", () => {
   assert.deepEqual(consumeProjectInstructionProofEnvironment(env), {
     receiptSha256: hash("1"),
     requestedMode: "compiled",
+    requestedTaskVerificationMode: "evidence",
     sourceSha256: hash("2"),
     sourcePath: "/workspace/AGENTS.md",
   });
@@ -223,54 +228,6 @@ test("sender rejects transport failures without treating the proof as delivered"
     message: "Project instruction startup-proof IPC send failed",
     cause: sendFailure,
   });
-});
-
-test("paired child arguments and probe environment carry only the receipt SHA", () => {
-  const root = mkdtempSync(join(tmpdir(), "p-proof-ipc-config-"));
-  try {
-    const sourceFile = join(root, "source.md");
-    writeFileSync(sourceFile, "# Rules\n");
-    const receipt = { sha256: hash("7") };
-    const args = buildBenchmarkArgs(
-      {
-        model: "provider/model",
-        modelsFile: "/runtime/models.json",
-        tasks: ["inventory"],
-        runs: 1,
-        maxRuntimeSeconds: 456,
-        help: false,
-        compilerModel: "compiler-provider/compiler-model",
-        pCli: "/runtime/p.js",
-        projectInstructionProbe: "/runtime/probe.js",
-        projectInstructionsFile: sourceFile,
-        timeoutSeconds: 123,
-        thinking: "off",
-      },
-      { task: "inventory" },
-      "compiled",
-      "/output",
-      456,
-      receipt,
-    );
-    assert.deepEqual(args.slice(10, 12), ["--project-instruction-proof-receipt", receipt.sha256]);
-    assert.deepEqual(args.slice(-2), ["--thinking", "off"]);
-    const env: NodeJS.ProcessEnv = {};
-    configureProjectInstructionProbe(
-      args,
-      env,
-      {
-        projectInstructions: "compiled",
-        projectInstructionProbe: "/runtime/probe.js",
-        projectInstructionsFile: sourceFile,
-      },
-      root,
-      receipt.sha256,
-    );
-    assert.equal(env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT, receipt.sha256);
-    assert.equal(Object.hasOwn(env, "P_BENCHMARK_PROJECT_INSTRUCTION_PROOF"), false);
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
 });
 
 test("legacy proof rejects a hash-identical fallback source path", () => {

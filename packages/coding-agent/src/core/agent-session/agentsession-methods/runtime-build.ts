@@ -93,6 +93,7 @@ export function do__buildRuntime(
     run_subagent: self._createRunSubagentToolDefinition() as unknown as ToolDefinition,
     [TOOL_SEARCH_TOOL_NAME]: self._createToolSearchToolDefinition() as unknown as ToolDefinition,
     finish_work: createFinishWorkToolDefinition({
+      taskVerificationMode: self._taskVerificationMode,
       gateCheck: {
         check: (input) => {
           if (input.status !== "success") return null;

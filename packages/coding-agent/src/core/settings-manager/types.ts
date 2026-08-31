@@ -1,5 +1,6 @@
 import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
 import type { Transport } from "@dst0/p-ai";
+import type { TaskVerificationMode } from "../task-verification/mode.ts";
 
 export interface CompactionSettings {
   enabled?: boolean; // default: true
@@ -107,6 +108,7 @@ export interface Settings {
   steeringMode?: "all" | "one-at-a-time";
   followUpMode?: "all" | "one-at-a-time";
   completionMode?: CompletionMode | "explicit"; // default: "explicit"
+  taskVerificationMode?: TaskVerificationMode; // default: "evidence"
   completionLimits?: CompletionProtocolLimits;
   enableToolResultContextExtraction?: boolean; // default: false - extract summaries from large tool results via service model
   theme?: string;

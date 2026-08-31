@@ -4,9 +4,15 @@ import { hashFile, validateProjectInstructionEvidence } from "./evidence.ts";
 import { projectProjectInstructionEvidence } from "./evidence-projection.ts";
 import { applyProjectInstructionOuterAuthority } from "./outer-authority.ts";
 import { BenchmarkChildResultError } from "./run-child-result.ts";
-import type { PairedSample, ProjectInstructionMode } from "./run-core.ts";
+import type {
+  PairedSample,
+  ProjectInstructionCondition,
+  ProjectInstructionMode,
+  TaskVerificationMode,
+} from "./run-core.ts";
 import { assertChildSampleMetrics, assertNoStartupProbeCaptureOverflow, verifyResolvedPModel } from "./run-core.ts";
 import { projectPairedChildSample } from "./run-sample-projection.ts";
+import { projectRuntimeTaskVerificationProof } from "./verification-sample-proof.ts";
 
 type ChildResult = Record<string, unknown> & {
   run: number;
@@ -23,6 +29,7 @@ type ChildResult = Record<string, unknown> & {
 type ChildDocument = Record<string, unknown> & {
   startupProbes?: unknown;
   projectInstructions?: unknown;
+  taskVerificationMode?: unknown;
   runs?: unknown;
   agents?: unknown[];
   models?: { p?: unknown };
@@ -30,7 +37,9 @@ type ChildDocument = Record<string, unknown> & {
 
 export type PairedSampleContext = {
   proofReceiptSha256: string;
+  condition: ProjectInstructionCondition;
   mode: ProjectInstructionMode;
+  taskVerificationMode: TaskVerificationMode;
   pair: { run: number; task: string };
   scratchOutput: string;
   runtimeSha256: string;
@@ -71,6 +80,9 @@ export function createValidatedPairedSample(
   }
   if (document.projectInstructions !== context.mode) {
     invalid("invalid_mode", "child benchmark project-instruction mode is invalid");
+  }
+  if (document.taskVerificationMode !== context.taskVerificationMode) {
+    invalid("invalid_verification_mode", "child benchmark task-verification mode is invalid");
   }
   if (
     document.runs !== 1 ||
@@ -113,9 +125,14 @@ export function createValidatedPairedSample(
         }
       : undefined,
     context.proofReceiptSha256,
+    context.taskVerificationMode,
   );
   if (!instructionAssessment.passed) {
     invalid("invalid_instruction_evidence", "child benchmark project-instruction evidence is invalid");
+  }
+  const taskVerificationProof = projectRuntimeTaskVerificationProof(projectInstructionEvidence);
+  if (!taskVerificationProof) {
+    invalid("invalid_verification_proof", "child benchmark runtime task-verification proof is invalid");
   }
   const resolvedModel = verifyResolvedPModel(context.options.model, result.metrics, {
     requireResponseModel: result.status === "passed",
@@ -126,7 +143,9 @@ export function createValidatedPairedSample(
     ...publicResult,
     run: context.pair.run,
     childRun: result.run,
+    condition: context.condition,
     mode: context.mode,
+    taskVerificationMode: context.taskVerificationMode,
     runtimeSha256: context.runtimeSha256,
     resolvedModel,
     tokenAccounting: { session: publicResult.metrics.usage },
@@ -135,6 +154,7 @@ export function createValidatedPairedSample(
       expectedTurnCount: context.projectInstructionAuthority.expectedTurnCount,
       resultSha256: context.projectInstructionAuthority.resultSha256,
     },
+    taskVerificationProof,
     seedEvidence:
       context.mode === "compiled"
         ? {
@@ -142,6 +162,6 @@ export function createValidatedPairedSample(
             cacheClosureSha256: context.seedMaterialization?.receipt.cacheClosureSha256,
           }
         : undefined,
-    evidence: join("cells", `run-${context.pair.run}`, context.pair.task, context.mode),
+    evidence: join("cells", `run-${context.pair.run}`, context.pair.task, context.condition),
   };
 }

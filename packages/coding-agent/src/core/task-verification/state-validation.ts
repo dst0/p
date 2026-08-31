@@ -1,4 +1,5 @@
 import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "./constants.ts";
+import { TASK_VERIFICATION_MODES } from "./mode.ts";
 import { isPersistedRejectedDefinitionDraft } from "./rejected-definition-state-validation.ts";
 import { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 import { areProofWitnesses } from "./requirement-proof-witnesses.ts";
@@ -9,13 +10,14 @@ import {
   sourceIdentitiesAreUnique,
 } from "./requirement-source-state-validation.ts";
 import { isMutatedSourcePaths } from "./source-path-state.ts";
+import { readinessIsValid } from "./state-readiness-validation.ts";
+import { taskEffectStateIsValid } from "./task-effect-state-validation.ts";
 import { isUnverifiedTestPaths } from "./test-authoring-state-validation.ts";
 import type {
   IgnoredSourceClause,
   IgnoredSourcePrompt,
   TaskRequirement,
   TaskRequirementVerdict,
-  TaskVerificationAcceptanceCheck,
   TaskVerificationEvidence,
   TaskVerificationSourcePrompt,
   TaskVerificationState,
@@ -54,9 +56,6 @@ function isSourcePrompt(value: unknown): value is TaskVerificationSourcePrompt {
     isOptionalString(value.path) &&
     isOptionalString(value.sha256)
   );
-}
-function isAcceptanceCheck(value: unknown): value is TaskVerificationAcceptanceCheck {
-  return isRecord(value) && isString(value.criterion) && isStringArray(value.evidenceRefs);
 }
 function isRequirementVerdict(value: unknown): value is TaskRequirementVerdict {
   return (
@@ -160,36 +159,6 @@ function isFinal(value: unknown): value is TaskVerificationState["final"] {
     (value.status !== "passed" || unresolvedFailures.length === 0)
   );
 }
-function isReadiness(value: unknown): value is NonNullable<TaskVerificationState["readiness"]> {
-  if (!isRecord(value)) return false;
-  const acceptanceChecks = value.acceptanceChecks;
-  if (
-    !isOneOf(value.status, ["pending", "evidence_ready", "completion_ready"]) ||
-    !isOptionalString(value.token) ||
-    !Array.isArray(acceptanceChecks) ||
-    !acceptanceChecks.every(isAcceptanceCheck) ||
-    !isOptionalNonnegativeInteger(value.verifiedMutationRevision) ||
-    !isOptionalString(value.userRequirementsHash) ||
-    !isOptionalString(value.requirementSetHash) ||
-    !isOptionalString(value.certificateHash)
-  ) {
-    return false;
-  }
-  if (value.status === "pending") return acceptanceChecks.length === 0;
-  if (
-    acceptanceChecks.length === 0 ||
-    !isNonnegativeInteger(value.verifiedMutationRevision) ||
-    !isNonemptyString(value.userRequirementsHash)
-  ) {
-    return false;
-  }
-  return (
-    value.status !== "completion_ready" ||
-    (isNonemptyString(value.token) &&
-      isNonemptyString(value.requirementSetHash) &&
-      isNonemptyString(value.certificateHash))
-  );
-}
 function isRequirementAudit(value: unknown): value is TaskVerificationState["requirementAudit"] {
   if (
     !isRecord(value) ||
@@ -239,6 +208,7 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
   return (
     isRecord(value) &&
     value.version === 2 &&
+    (value.mode === undefined || isOneOf(value.mode, TASK_VERIFICATION_MODES)) &&
     isString(value.taskId) &&
     (value.taskKind === undefined || isOneOf(value.taskKind, TASK_KINDS)) &&
     isOptionalString(value.taskSummary) &&
@@ -257,6 +227,7 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     (value.unverifiedTestPathOverflow === undefined || typeof value.unverifiedTestPathOverflow === "boolean") &&
     isMutatedSourcePaths(value.mutatedSourcePaths) &&
     (value.mutatedSourcePathOverflow === undefined || typeof value.mutatedSourcePathOverflow === "boolean") &&
+    taskEffectStateIsValid(value) &&
     (value.requirementDefinitionPolicy === undefined || value.requirementDefinitionPolicy === 1) &&
     ((value.requirementDefinitionRepairPending === undefined &&
       value.rejectedRequirementDefinitionDraft === undefined) ||
@@ -268,7 +239,7 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     isNonnegativeInteger(value.mutationRevision) &&
     isBaseline(value.baseline) &&
     isFinal(value.final) &&
-    (value.readiness === undefined || isReadiness(value.readiness)) &&
+    (value.readiness === undefined || readinessIsValid(value.readiness, value.mode)) &&
     isRequirementAudit(value.requirementAudit) &&
     isString(value.updatedAt)
   );

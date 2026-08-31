@@ -1,20 +1,33 @@
-import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { resolve } from "node:path";
 import { isThinkingLevel, type ThinkingLevel } from "../workloads/thinking-level.ts";
 import { describeCaptureOverflow } from "./run-assessment.ts";
+import {
+  buildBalancedConditionOrders,
+  conditionConfiguration,
+  PROJECT_INSTRUCTION_CONDITIONS,
+  type ProjectInstructionCondition,
+  type ProjectInstructionMode,
+  type TaskVerificationMode,
+} from "./run-conditions.ts";
+import type { TaskVerificationSemanticEvidence } from "./verification-semantic-proof.ts";
 
 export { createBenchmarkGateFailure } from "./failure.ts";
 export { assessSample } from "./run-assessment.ts";
 
-export const PROJECT_INSTRUCTION_MODES = ["compiled", "legacy"] as const;
+export {
+  PROJECT_INSTRUCTION_CONDITIONS,
+  type ProjectInstructionCondition,
+  type ProjectInstructionMode,
+  type TaskVerificationMode,
+  conditionConfiguration,
+};
 export const PROJECT_INSTRUCTION_TASKS = [
   "typescript-calculator",
   "monolith-split",
   "event-sourced-inventory",
   "durable-workflow-saga",
 ];
-export type ProjectInstructionMode = "compiled" | "legacy";
 export type PairedBenchmarkArgs = {
   model?: string;
   compilerModel?: string;
@@ -28,7 +41,7 @@ export type PairedBenchmarkArgs = {
   thinking?: ThinkingLevel;
   help: boolean;
 };
-export type PairedScheduleCell = { run: number; task: string; modes: ProjectInstructionMode[] };
+export type PairedScheduleCell = { run: number; task: string; conditions: ProjectInstructionCondition[] };
 export type RunOptions = PairedBenchmarkArgs & {
   model: string;
   compilerModel: string;
@@ -39,7 +52,9 @@ export type RunOptions = PairedBenchmarkArgs & {
 export type PairedSample = {
   run: number;
   task: string;
+  condition: ProjectInstructionCondition;
   mode: ProjectInstructionMode;
+  taskVerificationMode: TaskVerificationMode;
   status: string;
   elapsedMs: number;
   quality: {
@@ -62,6 +77,7 @@ export type PairedSample = {
     observedRequirementDefinitionRepairAttemptCount?: number;
     semanticEvidenceAvailable?: unknown;
     semanticEvidenceComplete?: unknown;
+    taskVerification?: TaskVerificationSemanticEvidence | null;
   };
   captureOverflow?: { kind?: unknown; captureName?: unknown; limitBytes?: unknown; limitCount?: unknown };
   [key: string]: unknown;
@@ -139,41 +155,27 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
 }
 
 export function buildPairedSchedule(tasks: string[], runs: number, seed: string): PairedScheduleCell[] {
-  const schedulesByTask = new Map<string, ProjectInstructionMode[]>();
+  const schedulesByTask = new Map<string, ProjectInstructionCondition[][]>();
   for (const task of tasks) {
-    const starts: ProjectInstructionMode[] = [];
-    for (let index = 0; index < Math.floor(runs / 2); index += 1) starts.push("compiled", "legacy");
-    if (runs % 2 === 1) {
-      const extra = createHash("sha256").update(`${seed}\0${task}\0extra`).digest()[0] % 2;
-      starts.push(PROJECT_INSTRUCTION_MODES[extra]);
-    }
-    const randomized = starts
-      .map((mode, index) => ({
-        mode,
-        order: createHash("sha256").update(`${seed}\0${task}\0${mode}\0${index}`).digest("hex"),
-      }))
-      .sort((left, right) => left.order.localeCompare(right.order))
-      .map(({ mode }) => mode);
-    schedulesByTask.set(task, randomized);
+    schedulesByTask.set(task, buildBalancedConditionOrders(seed, task, runs));
   }
   return Array.from({ length: runs }, (_, index) =>
     tasks.map((task) => {
-      const first = schedulesByTask.get(task)?.[index];
-      if (!first) throw new Error(`Missing randomized schedule for ${task}`);
-      const second = PROJECT_INSTRUCTION_MODES.find((mode) => mode !== first);
-      if (!second) throw new Error(`Missing counterbalanced mode for ${task}`);
-      return { run: index + 1, task, modes: [first, second] };
+      const conditions = schedulesByTask.get(task)?.[index];
+      if (!conditions) throw new Error(`Missing randomized schedule for ${task}`);
+      return { run: index + 1, task, conditions };
     }),
   ).flat();
 }
 export function buildBenchmarkArgs(
   options: Omit<RunOptions, "seed">,
   pair: { task: string },
-  mode: ProjectInstructionMode,
+  condition: ProjectInstructionCondition,
   output: string,
   remainingSeconds: number,
   proofReceipt: { sha256: string },
 ): string[] {
+  const configuration = conditionConfiguration(condition);
   const args = [
     "--agents",
     "p",
@@ -186,7 +188,9 @@ export function buildBenchmarkArgs(
     "--project-instruction-proof-receipt",
     proofReceipt.sha256,
   ];
-  if (mode === "compiled") args.splice(4, 0, "--project-instruction-compiler-model", options.compilerModel);
+  if (configuration.projectInstructionMode === "compiled") {
+    args.splice(4, 0, "--project-instruction-compiler-model", options.compilerModel);
+  }
   if (options.modelsFile) args.push("--models-file", options.modelsFile);
   args.push(
     "--task",
@@ -198,7 +202,9 @@ export function buildBenchmarkArgs(
     "--max-runtime-seconds",
     String(remainingSeconds),
     "--project-instructions",
-    mode,
+    configuration.projectInstructionMode,
+    "--task-verification",
+    configuration.taskVerificationMode,
     "--project-instructions-file",
     options.projectInstructionsFile,
     "--output",

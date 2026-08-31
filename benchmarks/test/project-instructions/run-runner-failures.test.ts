@@ -15,7 +15,7 @@ import { runPairedBenchmarkSchedule } from "../../src/project-instructions/run-s
 const pair: PairedScheduleCell = {
   run: 1,
   task: "typescript-calculator",
-  modes: ["legacy", "compiled"],
+  conditions: ["legacy", "compiled-evidence", "compiled-audit"],
 };
 const privateSnapshots = {
   models: { path: "", present: false, sha256: "", dispose() {} },
@@ -63,7 +63,7 @@ async function runInvalidExitZeroChild(resultText: string | undefined) {
       {
         options: cellOptions,
         pair,
-        mode: "legacy",
+        condition: "legacy",
         cellOutput,
         scratchOutput,
         remainingSeconds: 60,
@@ -187,7 +187,7 @@ test("exit-zero child with valid metadata but active-only recording is untrusted
       {
         options: cellOptions,
         pair,
-        mode: "legacy",
+        condition: "legacy",
         cellOutput,
         scratchOutput,
         remainingSeconds: 60,
@@ -208,7 +208,9 @@ test("exit-zero child with valid metadata but active-only recording is untrusted
         createSample: () => ({
           run: 1,
           task: pair.task,
+          condition: "legacy",
           mode: "legacy",
+          taskVerificationMode: "evidence",
           status: "passed",
           elapsedMs: 1,
           quality: { passed: true, rawScore: 1, maxScore: 1, checks: [{ passed: true }] },

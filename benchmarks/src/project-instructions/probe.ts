@@ -1,6 +1,11 @@
 import { createHash } from "node:crypto";
 import { parseCompiledProjectInstructionMarker } from "./marker.ts";
 import { consumeProjectInstructionProofEnvironment, sendProjectInstructionProof } from "./proof-ipc.ts";
+import {
+  captureVerificationStartupProof,
+  taskVerificationStartupFailure,
+  type VerificationToolSurface,
+} from "./verification-startup-proof.ts";
 
 const LEGACY_MARKER = /<project_context>|<project_instructions path="/u;
 const PROJECT_INSTRUCTION_PREFLIGHT_EXIT_CODE = 86;
@@ -21,11 +26,17 @@ type ProbeRuntime = {
 type ContextFile = { path?: string; content?: string };
 type BaseSystemEvent = {
   systemPrompt?: unknown;
-  systemPromptOptions?: { contextFiles?: unknown; projectInstructions?: unknown };
+  systemPromptOptions?: { contextFiles?: unknown; projectInstructions?: unknown; taskVerificationMode?: unknown };
 };
 
 export type BaseSystemModeProof = {
   requestedMode: string;
+  requestedTaskVerificationMode?: string;
+  effectiveTaskVerificationMode?: string;
+  registeredVerificationTools: string[];
+  activeVerificationTools: string[];
+  verificationToolSurfaceRegistered: boolean;
+  verificationToolSurfaceActive: boolean;
   sourceSha256: string;
   systemPromptSha256: string;
   systemPromptBytes: number;
@@ -42,7 +53,9 @@ export type BaseSystemModeProof = {
   legacyExpectedBlockHashes: string[];
 };
 
-type ProbeHost = { on(event: "before_agent_start", listener: (event: BaseSystemEvent) => Promise<void>): unknown };
+type ProbeHost = VerificationToolSurface & {
+  on(event: "before_agent_start", listener: (event: BaseSystemEvent) => Promise<void>): unknown;
+};
 
 function hardStopProjectInstructionPreflight(runtime: ProbeRuntime, message: string): void {
   if (runtime.connected === true && typeof runtime.disconnect === "function") {
@@ -131,14 +144,22 @@ export function createBaseSystemModeProof(
   requestedMode: string,
   expectedSourceSha256: string,
   expectedSourcePath?: string,
+  expectedTaskVerificationMode?: string,
+  toolSurface?: VerificationToolSurface,
 ): BaseSystemModeProof {
   const systemPrompt = typeof event?.systemPrompt === "string" ? event.systemPrompt : "";
   const options = event?.systemPromptOptions ?? {};
   const contextFiles = Array.isArray(options.contextFiles) ? (options.contextFiles as ContextFile[]) : [];
   const projectInstructions = typeof options.projectInstructions === "string" ? options.projectInstructions : undefined;
   const compiled = parseCompiledProjectInstructionMarker(systemPrompt);
+  const verification = captureVerificationStartupProof(
+    typeof options.taskVerificationMode === "string" ? options.taskVerificationMode : undefined,
+    toolSurface,
+  );
   return {
     requestedMode,
+    requestedTaskVerificationMode: expectedTaskVerificationMode,
+    ...verification,
     sourceSha256: expectedSourceSha256,
     systemPromptSha256: hashText(systemPrompt),
     systemPromptBytes: Buffer.byteLength(systemPrompt, "utf8"),
@@ -154,6 +175,8 @@ export function createBaseSystemModeProof(
 }
 
 export function projectInstructionPreflightFailure(proof: BaseSystemModeProof): string | undefined {
+  const verificationFailure = taskVerificationStartupFailure(proof);
+  if (verificationFailure) return verificationFailure;
   if (
     proof.requestedMode === "compiled" &&
     (proof.hasLegacyMarker ||
@@ -180,7 +203,14 @@ export default function projectInstructionBenchmarkProbe(p: ProbeHost, runtime: 
   const config = consumeProjectInstructionProofEnvironment(runtime.env);
   if (!config) return;
   p.on("before_agent_start", async (event) => {
-    const proof = createBaseSystemModeProof(event, config.requestedMode, config.sourceSha256, config.sourcePath);
+    const proof = createBaseSystemModeProof(
+      event,
+      config.requestedMode,
+      config.sourceSha256,
+      config.sourcePath,
+      config.requestedTaskVerificationMode,
+      p,
+    );
     try {
       await sendProjectInstructionProof(config, proof, runtime);
     } catch {

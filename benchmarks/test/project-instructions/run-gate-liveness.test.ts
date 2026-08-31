@@ -20,6 +20,7 @@ const expectedLivenessKeys = [
   "semanticEvidenceAvailable",
   "semanticEvidenceComplete",
   "semanticSequence",
+  "taskVerification",
 ];
 
 test("every pre-cell and assessed gate failure carries the uniform unavailable liveness schema", () => {

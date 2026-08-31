@@ -17,7 +17,7 @@ export function createRequirementAuditToolControllerDouble(
   applyRequirementAudit: ApplyRequirementAudit,
   options: RequirementAuditToolControllerDoubleOptions = {},
 ): { controller: TaskVerificationController; state: TaskVerificationState } {
-  const state = emptyState(options.taskId ?? "requirement-audit-tool-test");
+  const state = emptyState(options.taskId ?? "requirement-audit-tool-test", "audit");
   state.requirementAudit.status = "awaiting_definition";
   const controller = {
     applyRequirementAudit: (input: RequirementAuditInput) => applyRequirementAudit(input, state),
@@ -25,6 +25,7 @@ export function createRequirementAuditToolControllerDouble(
       return state;
     },
     formatNextRequirement: () => "NEXT REQUIRED ACTION: define requirements.",
+    mode: "audit",
     persistState: () => {},
     rejected: (message: string): VerificationResult => ({ status: "needs_action", message, state }),
     state,

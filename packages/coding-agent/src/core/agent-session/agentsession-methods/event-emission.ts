@@ -155,15 +155,24 @@ export function do_getActiveToolNames(self: AgentSession): string[] {
 }
 
 export function do_getAllTools(self: AgentSession): ToolInfo[] {
-  return Array.from(self._toolDefinitions.values()).map(({ definition, sourceInfo }) => ({
-    name: definition.name,
-    description: definition.description,
-    parameters: definition.parameters,
-    promptGuidelines: definition.promptGuidelines,
-    sourceInfo,
-  }));
+  return Array.from(self._toolDefinitions.values())
+    .filter(
+      ({ definition }) =>
+        self._taskVerificationRuntime?.enabled !== false ||
+        !self._taskVerificationRuntime.managedToolNames.has(definition.name),
+    )
+    .map(({ definition, sourceInfo }) => ({
+      name: definition.name,
+      description: definition.description,
+      parameters: definition.parameters,
+      promptGuidelines: definition.promptGuidelines,
+      sourceInfo,
+    }));
 }
 
 export function do_getToolDefinition(self: AgentSession, name: string): ToolDefinition | undefined {
+  if (self._taskVerificationRuntime?.enabled === false && self._taskVerificationRuntime.managedToolNames.has(name)) {
+    return undefined;
+  }
   return self._toolDefinitions.get(name)?.definition;
 }

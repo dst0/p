@@ -111,20 +111,6 @@ describe("compiled project-instruction tool identity gate", () => {
 
   it("trusts identity-bound verification control-plane actions without bypassing completion gates", async () => {
     const workspace = createProjectInstructionModeWorkspace();
-    const verificationTool = {
-      name: TASK_VERIFICATION_TOOL_NAME,
-      label: "Task verification",
-      description: "Inspect or update task verification state",
-      parameters: Type.Object({ action: Type.String() }),
-      execute: async () => ({ content: [{ type: "text" as const, text: "status" }], details: {} }),
-    };
-    const requirementAuditTool = {
-      name: REQUIREMENT_AUDIT_TOOL_NAME,
-      label: "Requirement audit",
-      description: "Prepare and record the internal requirement definition",
-      parameters: Type.Object({ action: Type.String() }),
-      execute: async () => ({ content: [{ type: "text" as const, text: "prepared" }], details: {} }),
-    };
     const { session } = await createAgentSession({
       cwd: workspace.root,
       agentDir: join(workspace.root, ".agent-verification-status"),
@@ -132,11 +118,9 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
-      customTools: [verificationTool, requirementAuditTool],
+      taskVerificationMode: "audit",
     });
     try {
-      session._projectRuleSafeToolDefinitions.add(verificationTool);
-      session._projectRuleSafeToolDefinitions.add(requirementAuditTool);
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
       expect(turn.projectRuleLinks?.length).toBeGreaterThan(0);
       await expect(

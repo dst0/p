@@ -100,11 +100,37 @@ finish_work({
 })
 ```
 
-Print mode displays `summary`. After a successful requirement audit, the controller can populate an omitted `verification_token`; a supplied token must match exactly. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
+Print mode displays `summary`. After the active task-verification policy succeeds, the controller can populate an omitted `verification_token`; a supplied token must match exactly. Malformed or truncated tool-call-looking output is retried with a short internal correction prompt. Safety limits such as `maxNoProgressTurns` and `maxMalformedToolRetries` stop weak models from looping forever.
 
 ### Evidence-backed completion
 
-Before `finish_work`, `ready_to_finish` freezes the current acceptance checks and evidence. The model then uses `record_requirement_audit` to define stable requirement IDs from user-authored prompts and submits every verdict together in one `action: "verdict"` call. A missing, duplicate, unexpected, stale, or unsupported verdict rejects the whole batch without persisting a partial result.
+Task verification is independent from project-instruction delivery and completion termination:
+
+- `--project-instructions compiled|legacy|off` controls how project rules are delivered;
+- `--task-verification evidence|audit|off` controls completion evidence, with `evidence` as the default and `audit` experimental;
+- `--completion-mode explicit_finish|hybrid|implicit` controls how a run terminates.
+
+In default `evidence` mode, free-form user text produces one concise model-generated completion checklist mapped to fresh evidence. p does not attempt to decompose arbitrary prose into an exhaustive clause-to-requirement matrix. Deterministic checks retain authoritative exit status, effect-revision freshness, requested tests and typechecks, changed-test verification, actual changed scope, metadata-only external-effect receipts, and any explicitly selected rule-module receipts. Completion readiness is invalidated by any later workspace or external effect.
+
+```mermaid
+flowchart TD
+    Request["Free-form user request"] --> Checklist["One concise completion checklist"]
+    Checklist --> Work["Read rules when routed, then perform work"]
+    Work --> Evidence["Capture real outcomes, changed scope, and current revision"]
+    Evidence --> Ready{"Fresh requested evidence and no unresolved failure?"}
+    Ready -->|no| Repair["Repair work or rerun the focused check"]
+    Repair --> Evidence
+    Ready -->|yes| Token["Issue revision-bound completion token"]
+    Token --> Finish["finish_work"]
+    Request -. "explicit structured specification only" .-> Audit["Experimental semantic audit"]
+    Audit --> Token
+```
+
+`audit` mode retains the semantic requirement protocol for explicitly structured specifications with stable IDs or schema. It is not the default safety path and project instructions, loaded rule modules, skills, or system-prompt prose do not become user requirements merely because they were read.
+
+### Experimental semantic audit
+
+In `--task-verification audit`, `ready_to_finish` freezes the current acceptance checks and evidence. The model then uses `record_requirement_audit` to define stable requirement IDs from user-authored prompts and submits every verdict together in one `action: "verdict"` call. A missing, duplicate, unexpected, stale, or unsupported verdict rejects the whole batch without persisting a partial result.
 
 Before the first mutating action, the controller automatically records a task kind only when the dominant requested effect is unambiguous. Mixed documentation and non-documentation requests that cannot be classified safely are not guessed: the mutation is blocked without running, and the response supplies one exact `record_task_verification` `declare_task` call. After the model chooses the dominant effect in that structured call, it retries the original mutation through the normal source, baseline, and requirement gates. This keeps free-form coding and non-coding requests supported without silently selecting weaker documentation verification from an incidental docs reference.
 

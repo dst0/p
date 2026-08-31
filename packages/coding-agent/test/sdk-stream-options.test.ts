@@ -121,6 +121,7 @@ describe("createAgentSession stream options", () => {
       maxTokens: sessionOptions.maxTokens,
       resourceLoader,
       completionMode: "implicit",
+      taskVerificationMode: "off",
     });
     try {
       if (sessionOptions.probe) {

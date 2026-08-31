@@ -342,6 +342,8 @@ Completion modes:
 - `hybrid`: asks for `finish_work`, retries missing completion, then falls back to old implicit completion behavior.
 - `implicit`: old behavior. Assistant text without tool calls may end the run.
 
+Task verification is a separate axis. `--task-verification evidence` (default) uses one concise model-generated completion checklist plus deterministic fresh evidence such as real exit status, requested checks, mutation revision, and changed scope. `--task-verification audit` enables the experimental semantic requirement protocol for structured specifications; it is not the default for arbitrary prose. `--task-verification off` disables task verification without changing project-instruction delivery. See [Evidence-backed completion](docs/usage.md#evidence-backed-completion).
+
 This is especially useful for local or quantized models that may stop after planning text without actually calling a tool. Example:
 
 ```text
@@ -753,6 +755,9 @@ p --thinking high "Solve this complex problem"
 
 # Opt out of mandatory finish_work for one run
 p --completion-mode implicit -p "Say exactly: ok"
+
+# Compare the experimental semantic audit with default evidence verification
+p --task-verification audit -p "Implement the structured specification in spec.md"
 ```
 
 ### Environment Variables

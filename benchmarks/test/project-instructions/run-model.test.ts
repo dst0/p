@@ -4,7 +4,9 @@ import { assessSample, verifyResolvedPModel } from "../../src/project-instructio
 
 test("non-passed samples preserve model identity without hiding their run status", () => {
   const timedOut = {
+    condition: "legacy" as const,
     mode: "legacy",
+    taskVerificationMode: "evidence" as const,
     run: 1,
     task: "typescript-calculator",
     status: "timed_out",

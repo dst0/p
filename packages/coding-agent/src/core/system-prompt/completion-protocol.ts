@@ -1,16 +1,25 @@
 import { type CompletionMode, FINISH_WORK_TOOL_NAME } from "@dst0/p-agent-core";
+import { DEFAULT_TASK_VERIFICATION_MODE, type TaskVerificationMode } from "../task-verification/mode.ts";
+import { formatTaskVerificationCompletionInstruction } from "./task-verification-guidance.ts";
 
-export function formatCompletionProtocolInstructions(mode: CompletionMode | undefined): string {
+export function formatCompletionProtocolInstructions(
+  mode: CompletionMode | undefined,
+  taskVerificationMode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE,
+): string {
+  const taskVerificationInstruction = formatTaskVerificationCompletionInstruction(taskVerificationMode);
   const sessionStateInstructions = [
     `Before calling \`${FINISH_WORK_TOOL_NAME}\`, reconcile the visible working state.`,
     "Examine the <working_state> block to check current plan items and their statuses.",
-    "Call finish_work with status 'success' only when the requested work is genuinely complete. For code changes when task verification is active, call record_task_verification with action 'ready_to_finish' before calling finish_work.",
+    "Call finish_work with status 'success' only when the requested work is genuinely complete.",
+    taskVerificationInstruction,
     "A successful call automatically reconciles stale not_started or in_progress plan statuses; failed or blocked items must be resolved, or reported with status 'partial'/'failed' and remaining_work.",
     "A next action must be a specific unfinished action; never use completed or status-only entries such as `Done`, `Complete`, or `All done`. Record completed work as progress, and leave next actions empty when no work remains.",
     "Use `initial_plan` only for a fresh task with no active plan; otherwise use `replan` to replace the complete current plan.",
     `If \`${FINISH_WORK_TOOL_NAME}\` is rejected for unresolved state or unverified code changes, do not retry it unchanged: complete readiness or update state, or finish as partial/failed with remaining work.`,
     "Use session-state tools to update that state. Never edit `.pdev` state or snapshot files directly; they do not update the running session.",
-  ].join(" ");
+  ]
+    .filter((instruction) => instruction.length > 0)
+    .join(" ");
 
   if (mode === "explicit_finish") {
     return [

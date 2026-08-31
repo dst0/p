@@ -1,4 +1,5 @@
 import type { ToolResultMessage } from "@dst0/p-ai";
+import type { ResolvedToolEffect } from "../tool-effects.ts";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolCall, AgentToolResult } from "../types.ts";
 
 export type AgentEventSink = (event: AgentEvent) => Promise<void> | void;
@@ -42,6 +43,7 @@ export type PreparedToolCall = {
   toolCall: AgentToolCall;
   tool: AgentTool<any>;
   args: unknown;
+  effect: ResolvedToolEffect;
 };
 
 export type ImmediateToolCallOutcome = {

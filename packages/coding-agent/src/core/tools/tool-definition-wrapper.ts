@@ -1,14 +1,17 @@
 import type { AgentTool } from "@dst0/p-agent-core";
 import type { ExtensionContext, ToolDefinition } from "../extensions/types.ts";
+import { resolveToolDefinitionEffect } from "./tool-effects.ts";
 
 /** Wrap a ToolDefinition into an AgentTool for the core runtime. */
 export function wrapToolDefinition<TDetails = unknown>(
   definition: ToolDefinition<any, TDetails>,
   ctxFactory?: () => ExtensionContext,
+  source: "builtin" | "declared" = "builtin",
 ): AgentTool<any, TDetails> {
   return {
     name: definition.name,
     label: definition.label,
+    effect: resolveToolDefinitionEffect(definition, source),
     description: definition.description,
     parameters: definition.parameters,
     prepareArguments: definition.prepareArguments,
@@ -22,8 +25,9 @@ export function wrapToolDefinition<TDetails = unknown>(
 export function wrapToolDefinitions(
   definitions: ToolDefinition<any, any>[],
   ctxFactory?: () => ExtensionContext,
+  source: "builtin" | "declared" = "builtin",
 ): AgentTool<any>[] {
-  return definitions.map((definition) => wrapToolDefinition(definition, ctxFactory));
+  return definitions.map((definition) => wrapToolDefinition(definition, ctxFactory, source));
 }
 
 /**
@@ -36,6 +40,7 @@ export function createToolDefinitionFromAgentTool(tool: AgentTool<any>): ToolDef
   return {
     name: tool.name,
     label: tool.label,
+    effect: tool.effect,
     description: tool.description,
     parameters: tool.parameters as any,
     prepareArguments: tool.prepareArguments,

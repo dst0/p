@@ -27,7 +27,7 @@ The harness is an internal, strictly checked TypeScript project:
 - `src/run-agents.ts` and `src/run-project-instructions.ts` are thin executable entrypoints.
 - `src/agents/` owns agent-turn policy and lifecycle behavior.
 - `src/harness/` owns shared execution, recording, security, reporting, and immutable-runtime infrastructure.
-- `src/project-instructions/` owns the paired project-instruction protocol.
+- `src/project-instructions/` owns the three-condition project-instruction protocol.
 - `src/workloads/` owns task metadata and verification; `fixtures/` contains only static task inputs.
 - `test/` mirrors those runtime boundaries, while `results/` remains append-only benchmark evidence and is never part of a runtime snapshot.
 
@@ -58,8 +58,8 @@ private temporary file with Brotli Q6, verifies the decoded byte length and
 SHA-256 against the raw source, fsyncs, and atomically publishes `.jsonl.br`.
 Token counts, tool calls, and wall times are extracted from these recordings.
 
-Paired project-instruction runs also emit a sanitized heartbeat every 50
-seconds under `progress/`. Paired liveness comes from deduplicated semantic
+Project-instruction runs also emit a sanitized heartbeat every 50 seconds
+under `progress/`. Liveness comes from deduplicated semantic
 `tool_execution_start` events in the active recording, not Git dirtiness. The
 live progress file contains elapsed time, coarse semantic phase, semantic and
 potentially-mutating-action counts, first mutation-tool timing, and evidence
@@ -88,9 +88,20 @@ through the same verified compression lifecycle for diagnosis.
 
 ### Pi / P
 
-Uses `~/.p/agent/models.json` (or `--models-file`). The paired project-instruction benchmark snapshots it once into private ephemeral storage, verifies its hash for every cell, records only presence, the hash, and resolved model identity, and deletes the snapshot. An absent source is preserved as one explicit private nonexistent path, so a live file appearing later cannot change the run. It also snapshots present or absent `~/.p/agent/auth.json`; each cell receives a private writable copy while auth content, paths, and hashes stay out of results, and every copy is deleted on exit. The paired harness snapshots and hashes both TypeScript entrypoints, their complete local import closure, and the exact benchmark fixtures; every cell executes only that copied runtime. Tests and historical results are excluded from the snapshot. The model alias must resolve to an accessible provider.
+Uses `~/.p/agent/models.json` (or `--models-file`). The project-instruction benchmark snapshots it once into private ephemeral storage, verifies its hash for every cell, records only presence, the hash, and resolved model identity, and deletes the snapshot. An absent source is preserved as one explicit private nonexistent path, so a live file appearing later cannot change the run. It also snapshots present or absent `~/.p/agent/auth.json`; each cell receives a private writable copy while auth content, paths, and hashes stay out of results, and every copy is deleted on exit. The harness snapshots and hashes both TypeScript entrypoints, their complete local import closure, and the exact benchmark fixtures; every cell executes only that copied runtime. Tests and historical results are excluded from the snapshot. The model alias must resolve to an accessible provider.
 
-Before retaining a cell, the paired harness redacts initial or refreshed auth
+Every `(repetition, task)` block runs the same immutable candidate binary in
+three conditions: `legacy` uses legacy project instructions with evidence
+verification, `compiled-evidence` uses compiled instructions with evidence
+verification, and `compiled-audit` uses compiled instructions with full audit
+verification. Condition order is seeded, randomized, and position-balanced
+across three to five repetitions. Each cell records the requested and effective
+verification mode; a missing or collapsed effective mode invalidates the cell.
+The first incorrect sample stops the run. Performance medians are suppressed
+unless every repetition of all four canonical tasks passes in all three
+conditions.
+
+Before retaining a cell, the harness redacts initial or refreshed auth
 paths, values, and hashes from plain-text and Brotli recordings, diagnostics,
 results, and final workspaces, then scans the copied tree again. Unsafe or
 unreadable artifacts are removed and fail the run rather than being published.
@@ -111,7 +122,7 @@ Results are written to `benchmarks/results/<timestamp>/` containing:
 
 - `report.md` — Human-readable summary table
 - `results.json` — Machine-readable results
-- `progress/` — Sanitized paired-cell liveness evidence
+- `progress/` — Sanitized three-condition cell liveness evidence
 - `recordings/` — Compressed JSONL session recordings
 - `stderr/` — Independently Brotli-Q6-compressed bounded task/startup
   diagnostics (`*.log.br`)

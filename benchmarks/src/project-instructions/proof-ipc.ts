@@ -5,6 +5,12 @@ const RESERVED_PREFIX = "P_BENCHMARK_PROJECT_INSTRUCTION_";
 const MAX_PROOF_MESSAGE_BYTES = 32_768;
 const PROOF_KEYS = new Set([
   "requestedMode",
+  "requestedTaskVerificationMode",
+  "effectiveTaskVerificationMode",
+  "registeredVerificationTools",
+  "activeVerificationTools",
+  "verificationToolSurfaceRegistered",
+  "verificationToolSurfaceActive",
   "sourceSha256",
   "systemPromptSha256",
   "systemPromptBytes",
@@ -22,6 +28,12 @@ const PROOF_KEYS = new Set([
 ]);
 const REQUIRED_PROOF_KEYS = [
   "requestedMode",
+  "requestedTaskVerificationMode",
+  "effectiveTaskVerificationMode",
+  "registeredVerificationTools",
+  "activeVerificationTools",
+  "verificationToolSurfaceRegistered",
+  "verificationToolSurfaceActive",
   "sourceSha256",
   "systemPromptSha256",
   "systemPromptBytes",
@@ -39,6 +51,7 @@ type ProofIdentity = {
   run: number;
   task: string;
   mode: string;
+  taskVerificationMode: string;
   sourceSha256: string;
   nonce?: string;
 };
@@ -61,6 +74,7 @@ function stableIdentity(identity: ProofIdentity & { nonce: string }): string {
     run: identity.run,
     task: identity.task,
     mode: identity.mode,
+    taskVerificationMode: identity.taskVerificationMode,
     sourceSha256: identity.sourceSha256,
     nonce: identity.nonce,
   });
@@ -78,6 +92,7 @@ export function createProjectInstructionProofReceipt(
     typeof receipt.task !== "string" ||
     receipt.task.length === 0 ||
     !["compiled", "legacy", "off"].includes(receipt.mode) ||
+    !["evidence", "audit", "off"].includes(receipt.taskVerificationMode) ||
     !HASH_PATTERN.test(receipt.sourceSha256) ||
     !HASH_PATTERN.test(receipt.nonce)
   ) {
@@ -86,11 +101,18 @@ export function createProjectInstructionProofReceipt(
   return { ...receipt, sha256: createHash("sha256").update(stableIdentity(receipt)).digest("hex") };
 }
 
-export function consumeProjectInstructionProofEnvironment(
-  env: ProofEnvironment,
-): { receiptSha256: string; requestedMode: string; sourceSha256: string; sourcePath: string } | undefined {
+export function consumeProjectInstructionProofEnvironment(env: ProofEnvironment):
+  | {
+      receiptSha256: string;
+      requestedMode: string;
+      requestedTaskVerificationMode: string;
+      sourceSha256: string;
+      sourcePath: string;
+    }
+  | undefined {
   const receiptSha256 = env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT;
   const requestedMode = env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE;
+  const requestedTaskVerificationMode = env.P_BENCHMARK_PROJECT_INSTRUCTION_TASK_VERIFICATION_MODE;
   const sourceSha256 = env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_SHA256;
   const sourcePath = env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_PATH;
   for (const key of Object.keys(env)) {
@@ -101,6 +123,8 @@ export function consumeProjectInstructionProofEnvironment(
     !HASH_PATTERN.test(receiptSha256) ||
     typeof requestedMode !== "string" ||
     !["compiled", "legacy", "off"].includes(requestedMode) ||
+    typeof requestedTaskVerificationMode !== "string" ||
+    !["evidence", "audit", "off"].includes(requestedTaskVerificationMode) ||
     typeof sourceSha256 !== "string" ||
     !HASH_PATTERN.test(sourceSha256) ||
     typeof sourcePath !== "string" ||
@@ -108,7 +132,7 @@ export function consumeProjectInstructionProofEnvironment(
   ) {
     return undefined;
   }
-  return { receiptSha256, requestedMode, sourceSha256, sourcePath };
+  return { receiptSha256, requestedMode, requestedTaskVerificationMode, sourceSha256, sourcePath };
 }
 
 function exactEnvelope(message: unknown, expectedReceiptSha256: string): ProofRecord | undefined {

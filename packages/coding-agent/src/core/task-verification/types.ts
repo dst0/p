@@ -6,8 +6,11 @@ import type {
   TASK_KINDS,
   VerificationSchema,
 } from "./constants.ts";
+import type { TaskVerificationExternalEffectReceipt } from "./external-effect-state.ts";
+import type { TaskVerificationMode } from "./mode.ts";
 import type { RequirementAuditInputSchema } from "./requirement-audit-schema.ts";
 import type { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
+import type { TaskOwnedPathBaseline } from "./workspace-effect-state.ts";
 
 export type TaskKind = (typeof TASK_KINDS)[number];
 
@@ -121,6 +124,7 @@ export interface PersistedRejectedRequirementDefinitionDraft {
 
 export interface TaskVerificationState {
   version: 2;
+  mode?: TaskVerificationMode;
   taskId: string;
   taskKind?: TaskKind;
   taskSummary?: string;
@@ -140,6 +144,19 @@ export interface TaskVerificationState {
   mutatedSourcePaths?: string[];
   /** Source mutation scope exceeded bounds or could not be observed safely. */
   mutatedSourcePathOverflow?: boolean;
+  /** Bounded, actual workspace paths changed by successful mutations in this task. */
+  taskOwnedPaths?: string[];
+  /** Pre-task path states used to avoid claiming unrelated pre-existing dirty paths. */
+  taskOwnedPathBaselines?: TaskOwnedPathBaseline[];
+  /** More task-owned paths changed than the deterministic ledger can retain. */
+  taskOwnedPathOverflow?: boolean;
+  /** At least one successful workspace mutation could not be identified safely. */
+  taskOwnedPathTrackingFailed?: boolean;
+  /** Metadata-only receipts for successful external effects in this task. */
+  externalEffectReceipts?: TaskVerificationExternalEffectReceipt[];
+  externalEffectReceiptOverflow?: boolean;
+  /** A successful unknown effect could not be classified safely. */
+  effectTrackingFailed?: boolean;
   /** Enables fail-closed requirement redefinition before later mutations when direct user requirements change. */
   requirementDefinitionPolicy?: 1;
   /** Durable fail-closed marker paired with the exact rejected definition repair draft. */
@@ -173,6 +190,8 @@ export interface TaskVerificationState {
     userRequirementsHash?: string;
     requirementSetHash?: string;
     certificateHash?: string;
+    /** Stable hash of task-owned workspace state and metadata-only external receipts. */
+    effectStateHash?: string;
   };
   requirementAudit: TaskRequirementAuditState;
   updatedAt: string;

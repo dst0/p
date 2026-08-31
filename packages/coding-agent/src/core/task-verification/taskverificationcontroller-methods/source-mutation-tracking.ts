@@ -4,11 +4,17 @@ import { tokenizeShellCommands } from "../git-command-classification.ts";
 import { updatedMutatedSourcePaths } from "../source-path-state.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, pathArgument, shellCommand } from "../tool-classification.ts";
-import { captureSourceWorkspaceSnapshot, changedSourcePaths } from "./source-workspace-snapshot.ts";
+import {
+  captureSourceWorkspaceSnapshot,
+  changedSourcePaths,
+  type SourceWorkspaceSnapshot,
+} from "./source-workspace-snapshot.ts";
 
 export interface SourceWorkspaceMutation {
   paths: string[];
   trackingFailed: boolean;
+  before?: SourceWorkspaceSnapshot;
+  after?: SourceWorkspaceSnapshot;
 }
 
 export function recordSourceMutationPaths(
@@ -45,6 +51,13 @@ export function mutationSourcePaths(self: TaskVerificationController, context: A
   ];
 }
 
+export function runtimeWorkspaceExclusions(self: TaskVerificationController): string[] {
+  const sessionFile = self.sessionManager.getSessionFile();
+  if (!sessionFile) return [];
+  const filePath = relative(self.sessionManager.getCwd(), sessionFile).replaceAll("\\", "/");
+  return filePath === ".." || filePath.startsWith("../") ? [] : [filePath];
+}
+
 export async function settleSourceWorkspaceMutation(
   self: TaskVerificationController,
   context: AfterToolCallContext,
@@ -53,9 +66,14 @@ export async function settleSourceWorkspaceMutation(
   const before = self.workspaceSourceSnapshots.get(context.toolCall.id);
   self.workspaceSourceSnapshots.delete(context.toolCall.id);
   if (!captured) return { paths: [], trackingFailed: false };
-  const after = await captureSourceWorkspaceSnapshot(self.sessionManager.getCwd());
+  const directPath = pathArgument(context.args);
+  const after = await captureSourceWorkspaceSnapshot(
+    self.sessionManager.getCwd(),
+    directPath ? [directPath] : [],
+    runtimeWorkspaceExclusions(self),
+  );
   if (!after) return { paths: [], trackingFailed: true };
   return before
-    ? { paths: changedSourcePaths(before, after), trackingFailed: false }
-    : { paths: [...after.keys()], trackingFailed: false };
+    ? { paths: changedSourcePaths(before, after), trackingFailed: false, before, after }
+    : { paths: [...after.keys()], trackingFailed: false, after };
 }

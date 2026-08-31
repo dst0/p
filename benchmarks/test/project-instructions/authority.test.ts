@@ -219,7 +219,7 @@ test("paired cell accepts proof authority only from the outer IPC capture", asyn
       sourceSha256: hash("5"),
     },
     pair: { run: 1, task: "authority-fixture" },
-    mode: "legacy",
+    condition: "legacy",
     scratchOutput: "/tmp/p-authority-scratch",
     cellOutput: "/tmp/p-authority-cell",
     remainingSeconds: 60,
@@ -238,7 +238,21 @@ test("paired cell accepts proof authority only from the outer IPC capture", asyn
     buildEnvironment: () => ({}),
     runChild: async () => ({ status: 0, signal: null, projectInstructionAuthority: authority }),
     createMonitor: () => ({
-      finalize: async () => ({ semanticEvidenceAvailable: true, semanticEvidenceComplete: true }),
+      finalize: async () => ({
+        semanticEvidenceAvailable: true,
+        semanticEvidenceComplete: true,
+        taskVerification: {
+          readinessAttemptCount: 1,
+          evidenceCertificateCount: 1,
+          auditToolCallCount: 0,
+          auditDefinitionAttemptCount: 0,
+          auditRepairAttemptCount: 0,
+          auditVerdictAttemptCount: 0,
+          auditCertificateCount: 0,
+          finishCertificateSubmissionCount: 1,
+          acceptedFinishCount: 1,
+        },
+      }),
     }),
     readResult: () => ({
       recordingCapture: { format: "chunked-brotli-v1" },

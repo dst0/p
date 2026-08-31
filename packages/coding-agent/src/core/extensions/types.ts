@@ -13,6 +13,7 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ThinkingLevel,
+  ToolEffectDeclaration,
   ToolExecutionMode,
 } from "@dst0/p-agent-core";
 import type {
@@ -460,6 +461,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
   name: string;
   /** Human-readable label for UI */
   label: string;
+  /** Declares observable effects; omission means unknown and high risk for custom tools. */
+  effect?: ToolEffectDeclaration;
   /** Description for LLM */
   description: string;
   /** Optional one-line snippet for the Available tools section in the default system prompt. Custom tools are omitted from that section when this is not provided. */
@@ -470,10 +473,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
   parameters: TParams;
   /** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
   renderShell?: "default" | "self";
-
   /** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
   prepareArguments?: (args: unknown) => Static<TParams>;
-
   /**
    * Per-tool execution mode override.
    * - "sequential": this tool must execute one at a time with other tool calls.
@@ -482,7 +483,6 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
    * If omitted, the default execution mode applies.
    */
   executionMode?: ToolExecutionMode;
-
   /** Execute the tool. */
   execute(
     toolCallId: string,

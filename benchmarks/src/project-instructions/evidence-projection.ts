@@ -65,6 +65,12 @@ export function projectBaseSystemModeProof(proof: ProjectionInput | null | undef
   if (!injectedHashes || !expectedHashes) return undefined;
   return {
     requestedMode: text(proof?.requestedMode),
+    requestedTaskVerificationMode: text(proof?.requestedTaskVerificationMode),
+    effectiveTaskVerificationMode: text(proof?.effectiveTaskVerificationMode),
+    registeredVerificationTools: strings(proof?.registeredVerificationTools, true),
+    activeVerificationTools: strings(proof?.activeVerificationTools, true),
+    verificationToolSurfaceRegistered: boolean(proof?.verificationToolSurfaceRegistered),
+    verificationToolSurfaceActive: boolean(proof?.verificationToolSurfaceActive),
     receiptSha256: text(proof?.receiptSha256),
     turnOrdinal: number(proof?.turnOrdinal),
     userEventOrdinal: number(proof?.userEventOrdinal),
@@ -218,6 +224,7 @@ function projectCacheEvidence(cache: ProjectionInput | null | undefined) {
 export function projectProjectInstructionEvidence(evidence: ProjectionInput | null | undefined) {
   return {
     requestedMode: text(evidence?.requestedMode),
+    requestedTaskVerificationMode: text(evidence?.requestedTaskVerificationMode),
     sourceSha256: text(evidence?.sourceSha256),
     proofReceiptSha256: text(evidence?.proofReceiptSha256),
     proofExpectedTurnCount: number(evidence?.proofExpectedTurnCount),

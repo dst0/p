@@ -7,6 +7,7 @@ import {
   TYPECHECK_OPT_OUT_PATTERN,
   TYPECHECK_REQUEST_PATTERN,
 } from "./constants.ts";
+import { DEFAULT_TASK_VERIFICATION_MODE, type TaskVerificationMode } from "./mode.ts";
 import { TaskVerificationController } from "./taskverificationcontroller.ts";
 import type { TaskKind } from "./types.ts";
 
@@ -36,6 +37,9 @@ export function typecheckRequested(taskText: string): boolean {
   return TYPECHECK_REQUEST_PATTERN.test(taskText) && !TYPECHECK_OPT_OUT_PATTERN.test(taskText);
 }
 
-export function createTaskVerificationController(sessionManager: SessionManager): TaskVerificationController {
-  return new TaskVerificationController(sessionManager);
+export function createTaskVerificationController(
+  sessionManager: SessionManager,
+  mode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE,
+): TaskVerificationController {
+  return new TaskVerificationController(sessionManager, mode);
 }

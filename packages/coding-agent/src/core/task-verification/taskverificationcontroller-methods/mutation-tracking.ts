@@ -2,7 +2,6 @@ import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-co
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
-import { baselineRequired } from "../requirement-checks.ts";
 import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
 import { emptyReadiness, emptyState } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -14,11 +13,10 @@ import {
   isPublishCommand,
   isRecognizedBashMutation,
   isShellTool,
-  isTaskKind,
-  normalizeText,
   summarizeOutput,
 } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import { externalEffectStateUpdate, recordSuccessfulExternalEffect } from "./external-effect-receipt.ts";
 import { isVerificationCommand } from "./failed-verification-resolution.ts";
 import { isZeroExitRuntimeAssertionFailure } from "./runtime-assertion-failure.ts";
 import {
@@ -27,13 +25,14 @@ import {
   settleSourceWorkspaceMutation,
 } from "./source-mutation-tracking.ts";
 import { mutationSourceSizeGuidance } from "./source-size-guidance.ts";
-import { requirementAuditAfterTaskDeclaration } from "./task-declaration-requirement-audit.ts";
 import {
   appendTestMutationGuidance,
   clearVerifiedTestPaths,
   settleTestAuthoringMutation,
 } from "./test-authoring-gate.ts";
 import { classifyTestEvidence } from "./test-evidence-outcome.ts";
+import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
+import { updatedWorkspaceEffectLedger } from "./workspace-effect-ledger.ts";
 
 export { do_authorizeBaselineTest } from "./baseline-test-authorization.ts";
 export async function do_afterToolCall(
@@ -52,7 +51,7 @@ export async function do_afterToolCall(
   const descriptor = describeToolCall(context.toolCall.name, context.args);
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
     self.rejectedRequirementDefinitionDraft = undefined;
-    self.state = emptyState();
+    self.state = emptyState(undefined, self.mode);
     self.evidence.clear();
     self.bashFingerprints.clear();
     self.testMutationReservations.clear();
@@ -65,27 +64,45 @@ export async function do_afterToolCall(
     self.persistState();
     return effectivePreviousResult;
   }
-  const initialMutation = await self.detectMutation(context, nativeIsError);
+  const effect = resolvedTaskVerificationToolEffect(context);
+  const successfulExternalEffect = !effectiveIsError && (effect.kind === "external_write" || effect.kind === "unknown");
+  const workspaceEffect = effect.kind === "workspace_write" || effect.kind === "unknown";
+  const initialMutation = workspaceEffect ? await self.detectMutation(context, nativeIsError) : false;
   const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
   const sourceMutation = await settleSourceWorkspaceMutation(self, context);
-  const detectedMutation =
+  const workspaceMutation =
     initialMutation ||
     testAuthoring.workspaceMutated ||
     sourceMutation.paths.length > 0 ||
     sourceMutation.trackingFailed;
+  const detectedMutation = workspaceMutation || successfulExternalEffect;
   if (detectedMutation) {
     self.rejectedRequirementDefinitionDraft = undefined;
-    recordSourceMutationPaths(
-      self,
-      [...mutationSourcePaths(self, context), ...sourceMutation.paths],
-      sourceMutation.trackingFailed,
-    );
-    const mutationGuidance = [testAuthoring.guidance, mutationSourceSizeGuidance(self)]
+    const workspaceEffectLedger = workspaceMutation
+      ? updatedWorkspaceEffectLedger(self.state, sourceMutation.before, sourceMutation.after)
+      : undefined;
+    if (workspaceMutation) {
+      recordSourceMutationPaths(
+        self,
+        [...mutationSourcePaths(self, context), ...sourceMutation.paths],
+        sourceMutation.trackingFailed,
+      );
+    }
+    const nextMutationRevision = self.state.mutationRevision + 1;
+    const externalEffect = successfulExternalEffect
+      ? recordSuccessfulExternalEffect(self, context, effect, nextMutationRevision)
+      : undefined;
+    const mutationGuidance = [
+      testAuthoring.guidance,
+      self.mode === "audit" ? mutationSourceSizeGuidance(self) : undefined,
+    ]
       .filter((message): message is string => message !== undefined && message.length > 0)
       .join("\n");
     if (self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
       self.state = {
         ...self.state,
+        ...workspaceEffectLedger,
+        ...externalEffectStateUpdate(externalEffect),
         baseline: { ...self.state.baseline, testSetupChanged: true },
         updatedAt: new Date().toISOString(),
       };
@@ -94,29 +111,44 @@ export async function do_afterToolCall(
     }
     self.state = {
       ...self.state,
-      mutationRevision: self.state.mutationRevision + 1,
+      ...workspaceEffectLedger,
+      ...externalEffectStateUpdate(externalEffect),
+      mutationRevision: nextMutationRevision,
       final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
       readiness: emptyReadiness(),
-      requirementAudit: resetRequirementAuditAfterMutation(self.state.requirementAudit),
+      requirementAudit:
+        self.mode === "audit"
+          ? resetRequirementAuditAfterMutation(self.state.requirementAudit)
+          : self.state.requirementAudit,
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
-    return appendTestMutationGuidance(context, effectivePreviousResult, mutationGuidance);
+    const externalEvidenceGuidance = externalEffect?.evidence
+      ? `Verification evidence handle: ${externalEffect.evidence.ref} (@${externalEffect.evidence.toolCallId}, ${externalEffect.evidence.toolName}, mutation revision ${externalEffect.evidence.mutationRevision}). Metadata-only external-effect receipt recorded.`
+      : undefined;
+    return appendTestMutationGuidance(
+      context,
+      effectivePreviousResult,
+      [mutationGuidance, externalEvidenceGuidance].filter(Boolean).join("\n"),
+    );
   }
   if (!isEvidenceTool(context.toolCall.name)) return effectivePreviousResult;
-  const proofWitnesses = collectProofWitnesses(
-    nativeContent,
-    self.state.requirementAudit.requirements,
-    self.state.requirementAudit.requirementSetHash,
-    self.state.mutationRevision,
-  );
-  const proofFrameCount = countProofFrameMarkers(nativeContent);
+  const proofWitnesses =
+    self.mode === "audit"
+      ? collectProofWitnesses(
+          nativeContent,
+          self.state.requirementAudit.requirements,
+          self.state.requirementAudit.requirementSetHash,
+          self.state.mutationRevision,
+        )
+      : undefined;
+  const proofFrameCount = self.mode === "audit" ? countProofFrameMarkers(nativeContent) : 0;
   const recordedProofCount = proofWitnesses?.length ?? 0;
   const proofFrameFeedback =
     proofFrameCount > recordedProofCount
       ? `Recorded ${recordedProofCount} of ${proofFrameCount} P_PROOF_V1 frames; rejected or duplicate frames were not persisted. Compare every frame with the controller proof template before submitting verdicts.`
       : undefined;
-  const redactedContent = redactProofFrames(content);
+  const redactedContent = self.mode === "audit" ? redactProofFrames(content) : content;
   const fullOutput = redactedContent
     .filter((part) => part.type === "text")
     .map((part) => part.text)
@@ -142,8 +174,11 @@ export async function do_afterToolCall(
   self.sessionManager.appendCustomEntry(TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, evidence);
   const testBatchVerification = clearVerifiedTestPaths(self, evidence, fullOutput);
   const invalidation = invalidateAfterFailedVerification(self, evidence);
-  const autoFinalized = self.tryAutoFinalizeExactReplay(evidence) ?? self.tryAutoFinalizeFocusedTest(evidence);
-  const acceptanceAudit = autoFinalized ? undefined : self.highRiskAcceptanceAudit(evidence);
+  const autoFinalized =
+    self.mode === "audit"
+      ? (self.tryAutoFinalizeExactReplay(evidence) ?? self.tryAutoFinalizeFocusedTest(evidence))
+      : undefined;
+  const acceptanceAudit = self.mode === "audit" && !autoFinalized ? self.highRiskAcceptanceAudit(evidence) : undefined;
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
     proofFrameFeedback,
@@ -213,7 +248,10 @@ function invalidateAfterFailedVerification(
   self.state = {
     ...self.state,
     readiness: emptyReadiness(),
-    requirementAudit: resetRequirementAuditAfterMutation(self.state.requirementAudit),
+    requirementAudit:
+      self.mode === "audit"
+        ? resetRequirementAuditAfterMutation(self.state.requirementAudit)
+        : self.state.requirementAudit,
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
@@ -255,46 +293,4 @@ export function do_applyInput(self: TaskVerificationController, input: Verificat
     case "status":
       return self.updated(self.formatStatus(), false);
   }
-}
-export function do_declareTask(self: TaskVerificationController, input: VerificationInput): VerificationResult {
-  if (!isTaskKind(input.task_kind) || !normalizeText(input.task_summary)) {
-    return self.rejected("declare_task requires task_kind and a concrete task_summary.");
-  }
-  if (self.state.mutationRevision > 0)
-    return self.rejected("Cannot replace the task declaration after mutation; finish the current task first.");
-  const taskSummary = normalizeText(input.task_summary);
-  const currentPrompts = self.state.taskPrompts?.length
-    ? self.state.taskPrompts
-    : self.latestUserPrompt.trim()
-      ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
-      : [];
-  const promptContext = currentPrompts.map((prompt) => prompt.text).join("\n") || self.latestUserPrompt;
-  const required = baselineRequired(input.task_kind, `${promptContext}\n${taskSummary}`);
-  self.rejectedRequirementDefinitionDraft = undefined;
-  self.state = {
-    ...emptyState(self.state.taskId),
-    taskKind: input.task_kind,
-    taskSummary,
-    taskContext: promptContext.slice(0, 2_000) || undefined,
-    taskPrompts: currentPrompts,
-    requirementSourceRefs: self.state.requirementSourceRefs ?? [],
-    ignoredRequirementSources: self.state.ignoredRequirementSources ?? [],
-    requirementDefinitionPolicy: self.state.requirementDefinitionPolicy,
-    baseline: {
-      required,
-      status: required ? "pending" : "not_required",
-      evidenceRefs: [],
-      authorizedTestPaths: [],
-      testSetupChanged: false,
-    },
-    requirementAudit: requirementAuditAfterTaskDeclaration(self, taskSummary, currentPrompts),
-    updatedAt: new Date().toISOString(),
-  };
-  if (!self.restoreError?.startsWith("requirement-source snapshot")) self.restoreError = undefined;
-  self.persistState();
-  return self.updated(
-    required
-      ? "Task declared; baseline verification is required before production mutation."
-      : "Task declared; final verification is required after mutation.",
-  );
 }

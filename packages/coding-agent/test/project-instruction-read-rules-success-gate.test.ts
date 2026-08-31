@@ -9,6 +9,7 @@ import type { ProjectInstructionCompiler } from "../src/core/project-instruction
 import type { ResourceLoader } from "../src/core/resource-loader.ts";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { resolveBuiltinToolEffect } from "../src/core/tools/tool-effects.ts";
 import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const extensionContext = {} as ExtensionContext;
@@ -49,6 +50,7 @@ function hookInput(name: string, id: string, args: Record<string, unknown>): Bef
   return {
     toolCall: { type: "toolCall", id, name, arguments: args },
     args,
+    effect: name === "read_rules" ? resolveBuiltinToolEffect(name) : undefined,
     assistantMessage: {} as BeforeToolCallContext["assistantMessage"],
     context: {} as BeforeToolCallContext["context"],
   };
@@ -212,7 +214,7 @@ describe("compiled read_rules success gate", () => {
         isError: false,
       } as AfterToolCallContext);
       expect(replacedFinalResult).toMatchObject({
-        content: [{ type: "text", text: "replacement" }],
+        content: expect.arrayContaining([{ type: "text", text: "replacement" }]),
         isError: false,
       });
       await expect(

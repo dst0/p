@@ -15,7 +15,7 @@ export function createRequirementAuditHarness(
   sessionManager: SessionManager = SessionManager.inMemory(),
 ): RequirementAuditHarness {
   const agent = new Agent();
-  const controller = createTaskVerificationController(sessionManager);
+  const controller = createTaskVerificationController(sessionManager, "audit");
   let subscriber: Parameters<Agent["subscribe"]>[0] | undefined;
   const originalSubscribe = agent.subscribe.bind(agent);
   agent.subscribe = (listener: Parameters<Agent["subscribe"]>[0]) => {

@@ -123,7 +123,7 @@ function harness(priorHook: NonNullable<Agent["afterToolCall"]>): {
 } {
   const agent = new Agent();
   agent.afterToolCall = priorHook;
-  const controller = createTaskVerificationController(SessionManager.inMemory());
+  const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
   controller.install(agent);
   return { agent, controller };
 }

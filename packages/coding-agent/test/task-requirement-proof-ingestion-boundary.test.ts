@@ -106,7 +106,7 @@ function harnessWithPriorHook(priorHook: NonNullable<Agent["afterToolCall"]>): {
 } {
   const agent = new Agent();
   agent.afterToolCall = priorHook;
-  const controller = createTaskVerificationController(SessionManager.inMemory());
+  const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
   const requirement = proofRequirement();
   controller.state.requirementAudit = {
     status: "verifying",

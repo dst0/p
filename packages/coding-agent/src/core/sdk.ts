@@ -1,15 +1,10 @@
 import { join } from "node:path";
-import {
-  Agent,
-  type AgentMessage,
-  type CompletionMode,
-  type CompletionProtocolLimits,
-  type ThinkingLevel,
-} from "@dst0/p-agent-core";
+import { Agent, type AgentMessage, type ThinkingLevel } from "@dst0/p-agent-core";
 import { clampThinkingLevel, type Message, type Model, streamSimple } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
 import { AgentSession } from "./agent-session.ts";
+import type { AgentSessionPolicyOptions } from "./agent-session-policy-options.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
 import { guardProviderPayloadBudget } from "./compaction/index.ts";
@@ -24,9 +19,10 @@ import type { ProjectInstructionCompiler, ProjectInstructionDeliveryMode } from 
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
-import { resolveSdkToolPolicy } from "./sdk-tool-policy.ts";
+import { prepareSdkSessionPolicy } from "./sdk-session-policy.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
+import { installTaskVerificationRuntime } from "./task-verification-session-runtime.ts";
 import { time } from "./timings.ts";
 import {
   createAskUserTool,
@@ -45,7 +41,7 @@ import {
   createWriteTool,
   withFileMutationQueue,
 } from "./tools/index.ts";
-export interface CreateAgentSessionOptions {
+export interface CreateAgentSessionOptions extends AgentSessionPolicyOptions {
   cwd?: string;
   agentDir?: string;
   /** Auth storage for credentials. Default: AuthStorage.create(agentDir/auth.json) */
@@ -105,10 +101,6 @@ export interface CreateAgentSessionOptions {
   settingsManager?: SettingsManager;
   /** Session start event metadata for extension runtime startup. */
   sessionStartEvent?: SessionStartEvent;
-  /** Completion protocol. Defaults to settings, then explicit_finish. */
-  completionMode?: CompletionMode;
-  /** Safety limits for explicit and hybrid completion modes. */
-  completionLimits?: CompletionProtocolLimits;
   /** Default provider output token limit for each model request. */
   maxTokens?: number;
 }
@@ -118,6 +110,7 @@ export interface CreateAgentSessionResult {
   modelFallbackMessage?: string;
 }
 export type { InteractionMode } from "./agent-session.ts";
+export type { AgentSessionPolicyOptions } from "./agent-session-policy-options.ts";
 export * from "./agent-session-runtime.ts";
 export type {
   ExtensionAPI,
@@ -130,10 +123,11 @@ export type {
 } from "./extensions/index.ts";
 export type { PromptTemplate } from "./prompt-templates.ts";
 export type { Skill } from "./skills.ts";
+export type { TaskVerificationMode } from "./task-verification/mode.ts";
+export type * from "./tool-effects.ts";
 export type { Tool } from "./tools/index.ts";
 export {
   withFileMutationQueue,
-  // Tool factories (for custom cwd)
   createAskUserTool,
   createCodingTools,
   createConfirmUserTool,
@@ -197,7 +191,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
   const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
   const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
-  const configuredCompletionMode = options.completionMode ?? settingsManager.getCompletionMode();
   const completionLimits = options.completionLimits ?? settingsManager.getCompletionLimits();
   const projectInstructionMode = options.projectInstructionMode ?? "compiled";
   const projectInstructionCompilerModel = resolveSessionProjectInstructionCompilerModel({
@@ -212,6 +205,14 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     await resourceLoader.reload();
     time("resourceLoader.reload");
   }
+  const extensionsResult = resourceLoader.getExtensions();
+  const sessionPolicy = prepareSdkSessionPolicy({
+    options,
+    projectInstructionMode,
+    extensionsResult,
+    sessionManager,
+    settingsManager,
+  });
   // Check if session has existing data to restore. Do not truncate restored
   // messages here: changing provider-visible history outside a recorded
   // compaction boundary breaks prefix cache reuse for reopened sessions.
@@ -277,15 +278,10 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
   }
 
-  const { allowedToolNames, excludedToolNames, initialActiveToolNames, explicitlyToolless } = resolveSdkToolPolicy({
-    projectInstructionMode,
-    tools: options.tools,
-    noTools: options.noTools,
-    excludeTools: options.excludeTools,
-    userInputTools: options.userInputTools,
-  });
   const completionMode =
-    options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
+    options.completionMode === undefined && sessionPolicy.explicitlyToolless
+      ? "implicit"
+      : sessionPolicy.taskVerification.completionMode;
   const defaultMaxTokens = options.maxTokens;
   let agent: Agent;
 
@@ -440,18 +436,18 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     resourceLoader,
     projectInstructions,
     projectInstructionMode,
-    customTools: options.customTools,
+    customTools: sessionPolicy.taskVerification.customTools,
     includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
     modelRegistry,
-    initialActiveToolNames,
-    allowedToolNames,
-    excludedToolNames,
+    initialActiveToolNames: sessionPolicy.initialActiveToolNames,
+    allowedToolNames: sessionPolicy.allowedToolNames,
+    excludedToolNames: sessionPolicy.excludedToolNames,
     extensionRunnerRef,
     sessionStartEvent: options.sessionStartEvent,
     completionMode,
+    taskVerificationMode: sessionPolicy.taskVerification.effectiveMode,
   });
-  const extensionsResult = resourceLoader.getExtensions();
-
+  installTaskVerificationRuntime(session, sessionPolicy.taskVerification);
   return {
     session,
     extensionsResult,

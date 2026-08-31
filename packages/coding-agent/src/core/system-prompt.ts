@@ -8,6 +8,8 @@ import { LearningsStore } from "./learnings/learnings-store.ts";
 import { formatSkillsForPrompt, type Skill } from "./skills.ts";
 import { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 import { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
+import { formatTaskVerificationGuideline } from "./system-prompt/task-verification-guidance.ts";
+import type { TaskVerificationMode } from "./task-verification/mode.ts";
 
 export { formatCompletionProtocolInstructions } from "./system-prompt/completion-protocol.ts";
 export { formatContextFileForPrompt } from "./system-prompt/context-formatting.ts";
@@ -33,6 +35,8 @@ export interface BuildSystemPromptOptions {
   projectInstructions?: string;
   /** Completion protocol to instruct the model about. */
   completionMode?: CompletionMode;
+  /** Evidence policy to describe in completion guidance. */
+  taskVerificationMode?: TaskVerificationMode;
 }
 
 /** Build the system prompt with tools, guidelines, and context */
@@ -48,6 +52,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
     skills: providedSkills,
     projectInstructions,
     completionMode,
+    taskVerificationMode,
   } = options;
   const resolvedCwd = cwd;
   const promptCwd = resolvedCwd.replace(/\\/g, "/");
@@ -59,7 +64,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   const date = `${year}-${month}-${day}`;
 
   const appendSection = appendSystemPrompt ? `\n\n${appendSystemPrompt}` : "";
-  const completionProtocolSection = formatCompletionProtocolInstructions(completionMode);
+  const completionProtocolSection = formatCompletionProtocolInstructions(completionMode, taskVerificationMode);
   const completionSection = completionProtocolSection ? `\n\n${completionProtocolSection}` : "";
 
   const contextFiles = providedContextFiles ?? [];
@@ -171,9 +176,7 @@ export function buildSystemPrompt(options: BuildSystemPromptOptions): string {
   addGuideline(
     "Preserve declared transaction, rollback, irreversibility, and append-only semantics. Never invent rollback for irreversible effects or rewrite audit history; when rollback is required, restore only contract-declared reversible state.",
   );
-  addGuideline(
-    "Before completion, re-read the original request and authoritative sources, then audit every requirement, boundary, negative case, requested format, and verification condition against direct evidence.",
-  );
+  addGuideline(formatTaskVerificationGuideline(taskVerificationMode));
   addGuideline(
     "Preserve exact requested formats and boundaries. When whitespace, framing, ordering, units, or byte-level representation is material, verify the raw artifact rather than an implicitly normalized view.",
   );

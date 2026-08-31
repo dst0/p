@@ -19,7 +19,7 @@ test("benchmark candidate version is required on the authorized prerelease line"
 test("benchmark output paths contain the exact candidate identity", () => {
   assert.equal(
     resolveBenchmarkCandidateOutput("/repo", undefined, "5.0.1-rc.12", "2026-08-24T00-00-00-000Z"),
-    "/repo/benchmarks/results/2026-08-24T00-00-00-000Z-v5.0.1-rc.12-project-instructions-paired",
+    "/repo/benchmarks/results/2026-08-24T00-00-00-000Z-v5.0.1-rc.12-project-instructions-three-condition",
   );
   assert.equal(
     resolveBenchmarkCandidateOutput("/repo", "/results/v5.0.1-rc.12/run", "5.0.1-rc.12", "unused"),

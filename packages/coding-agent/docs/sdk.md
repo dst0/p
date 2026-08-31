@@ -571,6 +571,7 @@ const myTool = defineTool({
   name: "my_tool",
   label: "My Tool",
   description: "Does something useful",
+  effect: { kind: "read", risk: "normal" },
   parameters: Type.Object({
     input: Type.String({ description: "Input value" }),
   }),
@@ -589,6 +590,8 @@ const { session } = await createAgentSession({
 Use `defineTool()` for standalone definitions and arrays like `customTools: [myTool]`. Inline `p.registerTool({ ... })` already infers parameter types correctly.
 
 Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `p.registerTool()`.
+
+Declare every custom tool's `effect` explicitly. `kind` is `read`, `workspace_write`, `external_write`, or `unknown`; `risk` is `normal` or `high`; optional `domains` identify `credentials`, `destructive`, `deployment`, `network_send`, `persistent_state`, or `publication` effects. An omitted or malformed declaration resolves to `unknown`/`high`, so the default evidence controller remains active and records a conservative effect receipt. Only `{ kind: "read", risk: "normal" }` is verification-dormant.
 
 If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
 
@@ -1199,6 +1202,7 @@ createGrepTool, createFindTool, createLsTool
 // Types
 type CreateAgentSessionOptions
 type CreateAgentSessionResult
+type TaskVerificationMode
 type ExtensionFactory
 type ExtensionAPI
 type ToolDefinition
@@ -1206,5 +1210,7 @@ type Skill
 type PromptTemplate
 type Tool
 ```
+
+`createAgentSession()` accepts `taskVerificationMode: "evidence" | "audit" | "off"`. `evidence` is the default, `audit` is the experimental semantic protocol for structured specifications, and `off` installs no task-verification controller. Active evidence or audit verification requires `completionMode: "explicit_finish"`.
 
 For extension types, see [extensions.md](extensions.md) for the full API.

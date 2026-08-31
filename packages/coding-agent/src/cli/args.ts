@@ -1,17 +1,21 @@
 /** CLI argument parsing and help display. */
 import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
 import chalk from "chalk";
-import { APP_NAME, CONFIG_DIR_NAME, ENV_AGENT_DIR, ENV_SESSION_DIR } from "../config.ts";
+import { APP_NAME, CONFIG_DIR_NAME } from "../config.ts";
 import type { ExtensionFlag } from "../core/extensions/types.ts";
 import {
   COMPLETION_MODE_LABELS,
   isProjectInstructionMode,
+  isTaskVerificationMode,
   isValidThinkingLevel,
   PROJECT_INSTRUCTION_MODES,
   type ProjectInstructionDeliveryMode,
   parseCompletionMode,
   parsePositiveIntegerFlag,
+  TASK_VERIFICATION_MODES,
+  type TaskVerificationMode,
 } from "./argument-values.ts";
+import { ENVIRONMENT_HELP } from "./environment-help.ts";
 
 export { isValidThinkingLevel } from "./argument-values.ts";
 export type Mode = "text" | "json" | "rpc";
@@ -25,6 +29,7 @@ export interface Args {
   maxTokens?: number;
   completionMode?: CompletionMode;
   projectInstructionMode?: ProjectInstructionDeliveryMode;
+  taskVerificationMode?: TaskVerificationMode;
   projectInstructionCompilerModel?: string;
   continue?: boolean;
   resume?: boolean;
@@ -175,6 +180,18 @@ export function parseArgs(args: string[]): Args {
           message: "--project-instruction-compiler-model requires a provider/id value",
         });
       } else result.projectInstructionCompilerModel = args[++i];
+    } else if (arg === "--task-verification") {
+      const mode = args[i + 1];
+      if (mode && !mode.startsWith("-") && isTaskVerificationMode(mode)) {
+        result.taskVerificationMode = mode;
+        i++;
+      } else {
+        if (mode && !mode.startsWith("-")) i++;
+        result.diagnostics.push({
+          type: "error",
+          message: `--task-verification requires one of: ${TASK_VERIFICATION_MODES.join(", ")}`,
+        });
+      }
     } else if (arg === "--completion-mode" && i + 1 < args.length) {
       const mode = args[++i];
       const completionMode = parseCompletionMode(mode);
@@ -309,6 +326,7 @@ ${chalk.bold("Options:")}
   --max-tokens <n>               Limit provider output tokens for each model request
   --completion-mode <mode>       Completion mode: explicit (default), hybrid, implicit
   --project-instructions <mode>  Project rules: compiled (default), legacy, or off
+  --task-verification <mode>     Task verification: evidence (default), audit (experimental), or off
   --project-instruction-compiler-model <provider/id>  Dedicated compiler model (default: task model)
   --extension, -e <path>         Load an extension file (can be used multiple times)
   --no-extensions, -ne           Disable extension discovery (explicit -e paths still work)
@@ -389,50 +407,7 @@ ${chalk.bold("Examples:")}
   ${APP_NAME} --export session.jsonl output.html
 
 ${chalk.bold("Environment Variables:")}
-  ANTHROPIC_API_KEY                - Anthropic Claude API key
-  ANTHROPIC_OAUTH_TOKEN            - Anthropic OAuth token (alternative to API key)
-  ANT_LING_API_KEY                 - Ant Ling API key
-  OPENAI_API_KEY                   - OpenAI GPT API key
-  AZURE_OPENAI_API_KEY             - Azure OpenAI API key
-  AZURE_OPENAI_BASE_URL            - Azure OpenAI/Cognitive Services base URL (e.g. https://{resource}.openai.azure.com)
-  AZURE_OPENAI_RESOURCE_NAME       - Azure OpenAI resource name (alternative to base URL)
-  AZURE_OPENAI_API_VERSION         - Azure OpenAI API version (default: v1)
-  AZURE_OPENAI_DEPLOYMENT_NAME_MAP - Azure OpenAI model=deployment map (comma-separated)
-  DEEPSEEK_API_KEY                 - DeepSeek API key
-  NVIDIA_API_KEY                   - NVIDIA NIM API key
-  GEMINI_API_KEY                   - Google Gemini API key
-  GROQ_API_KEY                     - Groq API key
-  CEREBRAS_API_KEY                 - Cerebras API key
-  XAI_API_KEY                      - xAI Grok API key
-  FIREWORKS_API_KEY                - Fireworks API key
-  TOGETHER_API_KEY                 - Together AI API key
-  OPENROUTER_API_KEY               - OpenRouter API key
-  AI_GATEWAY_API_KEY               - Vercel AI Gateway API key
-  ZAI_API_KEY                      - ZAI API key
-  ZAI_CODING_CN_API_KEY            - ZAI Coding Plan API key (China)
-  MISTRAL_API_KEY                  - Mistral API key
-  MINIMAX_API_KEY                  - MiniMax API key
-  MOONSHOT_API_KEY                 - Moonshot AI API key
-  OPENCODE_API_KEY                 - OpenCode Zen/OpenCode Go API key
-  KIMI_API_KEY                     - Kimi For Coding API key
-  CLOUDFLARE_API_KEY               - Cloudflare API token (Workers AI and AI Gateway)
-  CLOUDFLARE_ACCOUNT_ID            - Cloudflare account id (required for both)
-  CLOUDFLARE_GATEWAY_ID            - Cloudflare AI Gateway slug (required for AI Gateway)
-  XIAOMI_API_KEY                   - Xiaomi MiMo API key (api.xiaomimimo.com billing)
-  XIAOMI_TOKEN_PLAN_CN_API_KEY     - Xiaomi MiMo Token Plan API key (China region)
-  XIAOMI_TOKEN_PLAN_AMS_API_KEY    - Xiaomi MiMo Token Plan API key (Amsterdam region)
-  XIAOMI_TOKEN_PLAN_SGP_API_KEY    - Xiaomi MiMo Token Plan API key (Singapore region)
-  AWS_PROFILE                      - AWS profile for Amazon Bedrock
-  AWS_ACCESS_KEY_ID                - AWS access key for Amazon Bedrock
-  AWS_SECRET_ACCESS_KEY            - AWS secret key for Amazon Bedrock
-  AWS_BEARER_TOKEN_BEDROCK         - Bedrock API key (bearer token)
-  AWS_REGION                       - AWS region for Amazon Bedrock (e.g., us-east-1)
-  ${ENV_AGENT_DIR.padEnd(32)} - Config directory (default: ~/${CONFIG_DIR_NAME}/agent)
-  ${ENV_SESSION_DIR.padEnd(32)} - Session storage directory (overridden by --session-dir)
-  P_PACKAGE_DIR                   - Override package directory (for Nix/Guix store paths)
-  P_OFFLINE                       - Disable startup network operations when set to 1/true/yes
-  P_TELEMETRY                     - Override install telemetry when set to 1/true/yes or 0/false/no
-  P_SHARE_VIEWER_URL              - Base URL for /share command (default: https://p.dev/session/)
+${ENVIRONMENT_HELP}
 
 ${chalk.bold("Built-in Tool Names:")}
   read         - Read file contents\n  list_skills  - Discover cataloged skills in bounded pages\n  read_rules   - Read integrity-checked project instruction modules\n  read_skills  - Read cataloged skills and skill-relative resources

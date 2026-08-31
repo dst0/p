@@ -13,6 +13,7 @@ import type {
 import type { Static, TSchema } from "typebox";
 import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
 import type { ModelCallPreparationConfig } from "./model-call-preparation.ts";
+import type { ResolvedToolEffect, ToolEffectDeclaration } from "./tool-effects.ts";
 
 /**
  * Stream function used by the agent loop.
@@ -47,7 +48,6 @@ export type QueueMode = "all" | "one-at-a-time";
 
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
-
 /**
  * Result returned from `beforeToolCall`.
  *
@@ -58,7 +58,6 @@ export interface BeforeToolCallResult {
   block?: boolean;
   reason?: string;
 }
-
 /**
  * Partial override returned from `afterToolCall`.
  *
@@ -87,7 +86,6 @@ export interface AfterToolCallResult {
    */
   terminate?: boolean;
 }
-
 /** Context passed to `beforeToolCall`. */
 export interface BeforeToolCallContext {
   /** The assistant message that requested the tool call. */
@@ -96,10 +94,11 @@ export interface BeforeToolCallContext {
   toolCall: AgentToolCall;
   /** Validated tool arguments for the target tool schema. */
   args: unknown;
+  /** Deterministic, fail-conservative effect classification when supplied by the runtime. */
+  effect?: ResolvedToolEffect;
   /** Current agent context at the time the tool call is prepared. */
   context: AgentContext;
 }
-
 /** Context passed to `afterToolCall`. */
 export interface AfterToolCallContext {
   /** The assistant message that requested the tool call. */
@@ -108,6 +107,8 @@ export interface AfterToolCallContext {
   toolCall: AgentToolCall;
   /** Validated tool arguments for the target tool schema. */
   args: unknown;
+  /** The same deterministic effect classification used by the before hook. */
+  effect?: ResolvedToolEffect;
   /** The executed tool result before any `afterToolCall` overrides are applied. */
   result: AgentToolResult<any>;
   /** Whether the executed tool result is currently treated as an error. */
@@ -397,7 +398,6 @@ export interface AgentState {
   /** Error message from the most recent failed or aborted assistant turn, if any. */
   readonly errorMessage?: string;
 }
-
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T> {
   /** Text or image content returned to the model. */
@@ -419,7 +419,6 @@ export interface AgentToolResult<T> {
 }
 
 export type AgentToolProgress = "made_progress" | "waiting";
-
 /**
  * Callback used by tools to stream partial execution updates.
  *
@@ -432,6 +431,7 @@ export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T
 export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
   /** Human-readable label for UI display. */
   label: string;
+  effect?: ToolEffectDeclaration | ResolvedToolEffect; // Omission means unknown/high risk.
   /**
    * Optional compatibility shim for raw tool-call arguments before schema validation.
    * Must return an object that matches `TParameters`.

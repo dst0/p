@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Changed",
+  "summary": "Use deterministic evidence verification with one concise completion checklist by default while keeping semantic requirement audits as an experimental opt-in mode."
+}

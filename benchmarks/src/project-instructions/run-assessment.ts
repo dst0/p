@@ -1,3 +1,8 @@
+import {
+  type TaskVerificationSemanticEvidence,
+  taskVerificationSemanticFailure,
+} from "./verification-semantic-proof.ts";
+
 type CaptureOverflow = {
   kind?: unknown;
   captureName?: unknown;
@@ -7,7 +12,11 @@ type CaptureOverflow = {
 
 type SampleAssessment = {
   captureOverflow?: CaptureOverflow;
-  liveness?: { semanticEvidenceAvailable?: unknown; semanticEvidenceComplete?: unknown };
+  liveness?: {
+    semanticEvidenceAvailable?: unknown;
+    semanticEvidenceComplete?: unknown;
+    taskVerification?: TaskVerificationSemanticEvidence | null;
+  };
   quality?: {
     checks?: Array<{ passed?: unknown }>;
     maxScore?: number;
@@ -16,6 +25,7 @@ type SampleAssessment = {
     score?: number;
   };
   status?: string;
+  taskVerificationMode?: "evidence" | "audit" | "off";
 };
 
 export function describeCaptureOverflow(
@@ -40,6 +50,16 @@ export function assessSample(sample: SampleAssessment): { passed: boolean; reaso
     (sample.liveness.semanticEvidenceAvailable !== true || sample.liveness.semanticEvidenceComplete !== true)
   ) {
     return { passed: false, reason: "child benchmark semantic evidence is incomplete" };
+  }
+  if (sample.liveness) {
+    if (!sample.taskVerificationMode) {
+      return { passed: false, reason: "child benchmark task-verification profile is missing" };
+    }
+    if (!sample.liveness.taskVerification) {
+      return { passed: false, reason: "child benchmark task-verification semantic evidence is missing" };
+    }
+    const failure = taskVerificationSemanticFailure(sample.taskVerificationMode, sample.liveness.taskVerification);
+    if (failure) return { passed: false, reason: failure };
   }
   const quality = sample.quality;
   const checksPass =

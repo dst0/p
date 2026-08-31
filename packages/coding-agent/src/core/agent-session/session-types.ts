@@ -26,6 +26,7 @@ import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
 import type { SourceInfo } from "../source-info.ts";
+import type { TaskVerificationMode } from "../task-verification/mode.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 
 export interface ToolSearchMatch {
@@ -131,6 +132,8 @@ export interface AgentSessionConfig {
   sessionStartEvent?: SessionStartEvent;
   /** Completion protocol used by this session. */
   completionMode?: CompletionMode;
+  /** Task verification policy used by this session. */
+  taskVerificationMode?: TaskVerificationMode;
 }
 
 export interface ExtensionBindings {

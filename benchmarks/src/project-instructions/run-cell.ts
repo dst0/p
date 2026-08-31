@@ -14,8 +14,8 @@ import { createProjectInstructionOuterAuthorityCapture } from "./outer-authority
 import { createProjectInstructionProofReceipt } from "./proof-ipc.ts";
 import { runBenchmarkChild } from "./run-child-process.ts";
 import { BenchmarkChildResultError, readBenchmarkChildResult } from "./run-child-result.ts";
-import type { PairedSample, ProjectInstructionMode, RunOptions } from "./run-core.ts";
-import { buildBenchmarkArgs } from "./run-core.ts";
+import type { PairedSample, ProjectInstructionCondition, RunOptions } from "./run-core.ts";
+import { buildBenchmarkArgs, conditionConfiguration } from "./run-core.ts";
 import { attachPairedBenchmarkLiveness } from "./run-failure.ts";
 import { createCellLivenessMonitor } from "./run-liveness.ts";
 import { createValidatedPairedSample } from "./run-sample.ts";
@@ -24,6 +24,7 @@ import {
   materializeBenchmarkProjectInstructions,
   verifyBenchmarkProjectInstructionMaterialization,
 } from "./seed-runner.ts";
+import { taskVerificationSemanticFailure } from "./verification-semantic-proof.ts";
 
 const defaultOperations = {
   verifyPrivateInputs: privateInputs.verifyBenchmarkPrivateInputSnapshots,
@@ -54,7 +55,7 @@ type CellOptions = Omit<RunOptions, "seed"> & {
 export type PairedCellContext = {
   options: CellOptions;
   pair: { run: number; task: string };
-  mode: ProjectInstructionMode;
+  condition: ProjectInstructionCondition;
   cellOutput: string;
   scratchOutput: string;
   remainingSeconds: number;
@@ -126,7 +127,8 @@ export async function runPairedBenchmarkCell(
   operationOverrides: Partial<CellOperations> = {},
 ): Promise<PairedSample> {
   const operations = { ...defaultOperations, ...operationOverrides };
-  const { options, pair, mode, scratchOutput, runtimeSnapshot, runtimeSha256 } = context;
+  const { options, pair, condition, scratchOutput, runtimeSnapshot, runtimeSha256 } = context;
+  const configuration = conditionConfiguration(condition);
   let trustedChildCompletion = false;
   let livenessFinalized = false;
   let liveness: Awaited<ReturnType<ReturnType<typeof createCellLivenessMonitor>["finalize"]>> | undefined;
@@ -139,7 +141,7 @@ export async function runPairedBenchmarkCell(
       throw new Error("ephemeral private benchmark inputs changed before the benchmark cell");
     }
     let seedMaterialization: Awaited<ReturnType<typeof materializeBenchmarkProjectInstructions>> | undefined;
-    if (mode === "compiled") {
+    if (configuration.projectInstructionMode === "compiled") {
       seedMaterialization = await operations.materializeCompiled({
         runtimeSnapshot,
         sourceFile: options.projectInstructionsFile,
@@ -159,11 +161,12 @@ export async function runPairedBenchmarkCell(
       runtimeSha256,
       run: pair.run,
       task: pair.task,
-      mode,
+      mode: configuration.projectInstructionMode,
+      taskVerificationMode: configuration.taskVerificationMode,
       sourceSha256: options.sourceSha256,
     });
     const authorityCapture = createProjectInstructionOuterAuthorityCapture(proofReceipt.sha256);
-    const args = operations.buildArgs(options, pair, mode, scratchOutput, context.remainingSeconds, proofReceipt);
+    const args = operations.buildArgs(options, pair, condition, scratchOutput, context.remainingSeconds, proofReceipt);
     const finalRecordingPath = join(scratchOutput, "recordings", `p-run-1-${pair.task}.jsonl.br`);
     const recordingPaths = benchmarkRecordingPaths(finalRecordingPath);
     monitor = operations.createMonitor({
@@ -174,7 +177,7 @@ export async function runPairedBenchmarkCell(
       manifestPath: recordingPaths.manifestPath,
       progressPath: context.progressPath,
       evidenceRoot: context.output,
-      label: `run ${pair.run} ${pair.task}/${mode}`,
+      label: `run ${pair.run} ${pair.task}/${condition}`,
     });
     const child = await operations.runChild(
       process.execPath,
@@ -208,6 +211,8 @@ export async function runPairedBenchmarkCell(
     capture = { recordingCapture: parsed.recordingCapture, captureOverflow: parsed.captureOverflow };
     const sample = operations.createSample(parsed as unknown as Parameters<typeof createValidatedPairedSample>[0], {
       ...context,
+      mode: configuration.projectInstructionMode,
+      taskVerificationMode: configuration.taskVerificationMode,
       seedMaterialization,
       proofReceiptSha256: proofReceipt.sha256,
       projectInstructionAuthority: authority,
@@ -217,6 +222,10 @@ export async function runPairedBenchmarkCell(
     if (liveness.semanticEvidenceAvailable !== true || liveness.semanticEvidenceComplete !== true) {
       throw new Error("child benchmark semantic evidence is incomplete");
     }
+    const verificationFailure = liveness.taskVerification
+      ? taskVerificationSemanticFailure(configuration.taskVerificationMode, liveness.taskVerification)
+      : "child benchmark task-verification semantic evidence is missing";
+    if (verificationFailure) throw new Error(verificationFailure);
     rmSync(recordingPaths.manifestPath, { force: true });
     trustedChildCompletion = true;
     return { ...sample, liveness };

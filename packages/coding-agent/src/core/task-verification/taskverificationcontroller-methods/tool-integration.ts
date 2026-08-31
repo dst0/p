@@ -5,16 +5,13 @@ import type {
   BeforeToolCallContext,
   BeforeToolCallResult,
 } from "@dst0/p-agent-core";
-import type { ToolDefinition } from "../../extensions/types.ts";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
-import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME, VerificationSchema } from "../constants.ts";
 import { isSafePublishCommandSequence } from "../git-command-classification.ts";
 import { rejectedDefinitionNextActionGuardMessage } from "../requirement-definition-repair.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
-  isDirectMutationTool,
   isPotentialMutationTool,
   isPublishCommand,
   isRecord,
@@ -22,11 +19,11 @@ import {
   pathArgument,
   shellCommand,
 } from "../tool-classification.ts";
-import type { VerificationResult } from "../types.ts";
 import { snapshotNativeToolCallContext } from "./native-tool-result-context.ts";
 import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
+import { runtimeWorkspaceExclusions } from "./source-mutation-tracking.ts";
 import { captureSourceWorkspaceSnapshot } from "./source-workspace-snapshot.ts";
 import { automaticTaskDeclarationGate } from "./task-declaration-gate.ts";
 import {
@@ -37,14 +34,16 @@ import {
 } from "./test-authoring-gate.ts";
 import { focusedTestInvocation } from "./test-command-invocation.ts";
 import { captureTestWorkspaceSnapshot } from "./test-workspace-snapshot.ts";
+import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
 
 const NON_REQUIREMENT_NUDGE_PATTERN =
   /^(?:(?:any\s+)?(?:progress|status|update)|so|how(?:'s|\s+is)\s+it\s+going|where\s+are\s+we|what(?:'s|\s+is)\s+the\s+status|(?:please\s+)?(?:continue|proceed|go\s+on|keep\s+going|carry\s+on)|(?:please\s+)?(?:report|show|give\s+me)\s+(?:the\s+)?(?:progress|status|update))\s*[?!.]*$/iu;
 const COMPLETION_NUDGE_PATTERN =
   /^are\s+you\s+(?:done|finished)(?:\s+with\s+(?:the\s+)?task)?\s+or\s+is\s+there\s+(?:anything|something)\s+left\s*[?!.]*\s*if\s+you\s+are\s+finished\s*,?\s*(?:ensure|make\s+sure)(?:\s+that)?\s+all\s+requirements\s+(?:are\s+)?(?:satisfied|met)(?:\s+and\s+(?:create|write)\s+[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt))?\s*[?!.]*$/iu;
 const NUDGE_DOCUMENT_PATH_PATTERN = /[\p{L}\p{N}_./-]+\.(?:adoc|md|mdx|rst|txt)\b/giu;
+
 export function do_install(self: TaskVerificationController, agent: Agent): void {
-  if (self.installed) return;
+  if (self.installed || self.mode === "off") return;
   self.installed = true;
   const previousBeforeToolCall = agent.beforeToolCall;
   const previousAfterToolCall = agent.afterToolCall;
@@ -65,8 +64,13 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     const testInvocation = isShellTool(context.toolCall.name)
       ? focusedTestInvocation(shellCommand(context.args))
       : undefined;
-    const potentialWorkspaceMutation = canPotentiallyChangeWorkspace(context.toolCall.name, context.args);
-    const mutationAttempt = potentialWorkspaceMutation && !testInvocation;
+    const effect = resolvedTaskVerificationToolEffect(context);
+    const potentialWorkspaceMutation =
+      canPotentiallyChangeWorkspace(context.toolCall.name, context.args) ||
+      effect.kind === "workspace_write" ||
+      effect.kind === "unknown";
+    const workspaceMutationAttempt = potentialWorkspaceMutation && !testInvocation;
+    const mutationAttempt = workspaceMutationAttempt || effect.kind === "external_write";
     if (mutationAttempt) {
       self.activeMutationAttempts.add(context.toolCall.id);
       self.mutationAttemptRevision += 1;
@@ -74,24 +78,35 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     const captureShellSnapshots =
       isShellTool(context.toolCall.name) &&
       !isPublishCommand(context.toolCall.name, context.args) &&
-      (potentialWorkspaceMutation || testInvocation !== undefined);
+      (workspaceMutationAttempt || testInvocation !== undefined);
     if (captureShellSnapshots) {
       captureTestVerificationStart(self, context);
       const sessionFile = self.sessionManager.getSessionFile();
       const [fingerprint, testSnapshot, sourceSnapshot] = await Promise.all([
         captureWorkspaceFingerprint(self.sessionManager.getCwd(), sessionFile ? [sessionFile] : []),
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
-        mutationAttempt ? captureSourceWorkspaceSnapshot(self.sessionManager.getCwd()) : undefined,
+        workspaceMutationAttempt
+          ? captureSourceWorkspaceSnapshot(
+              self.sessionManager.getCwd(),
+              pathArgument(context.args) ? [pathArgument(context.args)!] : [],
+              runtimeWorkspaceExclusions(self),
+            )
+          : undefined,
       ]);
       self.bashFingerprints.set(context.toolCall.id, fingerprint);
       self.workspaceTestSnapshots.set(context.toolCall.id, testSnapshot);
-      if (mutationAttempt) {
+      if (workspaceMutationAttempt) {
         self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
       }
-    } else if (mutationAttempt && (!isDirectMutationTool(context.toolCall.name) || !pathArgument(context.args))) {
+    } else if (workspaceMutationAttempt) {
+      const directPath = pathArgument(context.args);
       const [testSnapshot, sourceSnapshot] = await Promise.all([
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
-        captureSourceWorkspaceSnapshot(self.sessionManager.getCwd()),
+        captureSourceWorkspaceSnapshot(
+          self.sessionManager.getCwd(),
+          directPath ? [directPath] : [],
+          runtimeWorkspaceExclusions(self),
+        ),
       ]);
       self.workspaceTestSnapshots.set(context.toolCall.id, testSnapshot);
       self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
@@ -139,6 +154,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
     captureUserPrompt(self, event.message);
   });
 }
+
 function captureUserPrompt(self: TaskVerificationController, message: Extract<AgentMessage, { role: "user" }>): void {
   if (isRecord(message.metadata) && message.metadata.pInternal !== undefined) return;
   const promptText =
@@ -166,7 +182,9 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
   self.state = {
     ...self.state,
     requirementDefinitionPolicy:
-      self.state.requirementDefinitionPolicy ?? (self.state.mutationRevision > 0 ? 1 : undefined),
+      self.mode === "audit"
+        ? (self.state.requirementDefinitionPolicy ?? (self.state.mutationRevision > 0 ? 1 : undefined))
+        : undefined,
     taskPrompts: [
       ...taskPrompts,
       {
@@ -175,11 +193,17 @@ function captureUserPrompt(self: TaskVerificationController, message: Extract<Ag
       },
     ],
     readiness: emptyReadiness(),
-    requirementAudit: activeRejectedDraft ? self.state.requirementAudit : emptyRequirementAudit(),
+    requirementAudit:
+      self.mode === "audit"
+        ? activeRejectedDraft
+          ? self.state.requirementAudit
+          : emptyRequirementAudit()
+        : self.state.requirementAudit,
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
 }
+
 function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text: string }[]): boolean {
   const normalized = promptText.trim();
   if (NON_REQUIREMENT_NUDGE_PATTERN.test(normalized)) return true;
@@ -191,6 +215,7 @@ function isNonRequirementNudge(promptText: string, taskPrompts: readonly { text:
   const mentionedPaths = [...normalized.matchAll(NUDGE_DOCUMENT_PATH_PATTERN)].map((match) => match[0].toLowerCase());
   return mentionedPaths.every((path) => priorText.includes(path));
 }
+
 function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {
   return typeof message.content === "string"
     ? message.content
@@ -199,61 +224,22 @@ function userMessageText(message: Extract<AgentMessage, { role: "user" }>): stri
         .map((part) => part.text)
         .join("\n");
 }
-export function do_createToolDefinition(
-  self: TaskVerificationController,
-): ToolDefinition<typeof VerificationSchema, VerificationResult> {
-  return {
-    name: TASK_VERIFICATION_TOOL_NAME,
-    label: "Task Verification",
-    description:
-      'Record or inspect evidence-backed baseline, final semantic verification, and finish readiness for mutating tasks. Use action "status" whenever the required next step is unclear, especially after compaction or session restore.',
-    promptSnippet:
-      "record_task_verification(action, ...): declare mutation intent, prove baseline and final behavior, then call ready_to_finish with requirement-to-evidence mappings before successful finish_work.",
-    promptGuidelines: [
-      `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" at any time to recover the exact current requirement, eligible evidence handles, and next tool-call shape. Do this after compaction or whenever a gate is unclear.`,
-      `The controller automatically records unambiguous mutation intent before the first mutating tool call. If that gate reports an ambiguous mixed effect, call ${TASK_VERIFICATION_TOOL_NAME} once with action "declare_task" and the dominant requested effect, then retry the mutation.`,
-      "Workflow steps: 1. freeze selected requirement sources and collect the required baseline -> 2. apply file edits -> 3. rerun the exact baseline command -> 4. obtain the accepted complete requirement definition and verdict batch. Source-free tasks define before mutation; selecting any authoritative source defers the combined source-and-direct definition until evidence readiness. A successful exact replay automatically records final verification.",
-      'When using static_trace for record_baseline, you MUST provide at least two non-error inspection evidence handles (e.g. evidence_refs: ["verification-evidence-1", "verification-evidence-2"]).',
-      "Bug fixes, behavior changes, and refactors require evidence-backed baseline verification before production mutation.",
-      'To create a failing regression test before implementation, authorize exact test paths with action "authorize_baseline_test"; only those test files may be edited until the failing focused test is recorded.',
-      "Signal, restart, persistence, recovery, transaction, concurrency, migration, and indexing tasks require runtime reproduction or a failing focused regression test.",
-      "Final verification must rerun the exact same reproduction command or focused regression test that established the baseline. Do not substitute static_review or generic npm run check.",
-      "Evidence handles from prior mutation revisions become stale after any file edit. Re-run your verification command after editing to produce fresh handles for the current revision.",
-      "Complete all requested file deliverables before final verification; any later write or edit advances the mutation revision and invalidates earlier evidence and readiness.",
-      "When no exact baseline replay exists, record_final may omit evidence_refs and descriptive fields; the controller selects the latest eligible current-revision evidence and derives the method and observations.",
-      "After final verification passes, call action 'ready_to_finish' with acceptance_checks and fresh evidence_refs. This opens finalization operations but does not issue a finish token.",
-      `Then follow ${REQUIREMENT_AUDIT_TOOL_NAME}: record one complete evidence-backed verdict batch for the existing set; define only when the controller explicitly reports that no reusable definition exists.`,
-      "Git commit/push require evidence readiness. Successful finish_work requires the later completion certificate and exact verification_token.",
-    ],
-    parameters: VerificationSchema,
-    executionMode: "sequential",
-    execute: async (_id, params) => {
-      if (params.action !== "status" && self.restoreError) {
-        const result = self.rejected(`Cannot update task verification: ${self.restoreError}.`);
-        return { content: [{ type: "text", text: result.message }], details: result };
-      }
-      if (params.action !== "status" && self.rejectedRequirementDefinitionDraft) {
-        const result = self.rejected(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
-        return { content: [{ type: "text", text: result.message }], details: result };
-      }
-      const result = self.applyInput(params);
-      const message = result.status === "needs_action" ? self.withGuidance(result.message) : result.message;
-      return { content: [{ type: "text", text: message }], details: result };
-    },
-  };
-}
 export function do_beforeToolCall(self: TaskVerificationController, context: BeforeToolCallContext) {
   const toolName = context.toolCall.name;
+  const effect = resolvedTaskVerificationToolEffect(context);
   const publish = isPublishCommand(toolName, context.args);
   const successfulFinish =
     toolName === "finish_work" &&
     argsRecord(context.args).status !== "partial" &&
     argsRecord(context.args).status !== "failed";
-  const guardedEffect = publish || successfulFinish || canPotentiallyChangeWorkspace(toolName, context.args);
+  const mutatingEffect =
+    effect.kind === "workspace_write" || effect.kind === "external_write" || effect.kind === "unknown";
+  const guardedEffect =
+    publish || successfulFinish || canPotentiallyChangeWorkspace(toolName, context.args) || mutatingEffect;
   if (self.restoreError && guardedEffect) {
-    return self.blocked(`Cannot change the workspace: ${self.restoreError}.`);
+    return self.blocked(`Cannot perform this effect: ${self.restoreError}.`);
   }
-  if (self.rejectedRequirementDefinitionDraft && guardedEffect) {
+  if (self.mode === "audit" && self.rejectedRequirementDefinitionDraft && guardedEffect) {
     return self.blocked(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
   }
   if (publish) {
@@ -267,8 +253,13 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
   if (successfulFinish) {
     const testPathsGate = unverifiedTestPathsGate(self, "finish successfully");
     if (testPathsGate) return testPathsGate;
-    const token = argsRecord(context.args).verification_token;
-    const gate = self.completionGate("finish successfully", typeof token === "string" ? token : undefined);
+    const finishArgs = argsRecord(context.args);
+    const token = finishArgs.verification_token;
+    const gate = self.completionGate(
+      "finish successfully",
+      typeof token === "string" ? token : undefined,
+      finishArgs.files_changed,
+    );
     if (gate) return gate;
     if (isRecord(context.args) && typeof context.args.verification_token !== "string") {
       const readinessToken = self.state.readiness?.token;
@@ -278,19 +269,25 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
     }
     return undefined;
   }
-  if (canPotentiallyChangeWorkspace(toolName, context.args) && !self.state.taskKind) {
+  if (
+    self.mode === "audit" &&
+    (canPotentiallyChangeWorkspace(toolName, context.args) || mutatingEffect) &&
+    !self.state.taskKind
+  ) {
     const declarationGate = automaticTaskDeclarationGate(self);
     if (declarationGate) return declarationGate;
   }
-  const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
-  if (sourceGate) return sourceGate;
-  const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
-  if (proofCommandGate) return proofCommandGate;
-  const definitionGate = requirementDefinitionMutationGate(self, toolName, context.args);
-  if (definitionGate) return definitionGate;
-  if (!isPotentialMutationTool(toolName, context.args)) return undefined;
+  if (self.mode === "audit") {
+    const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
+    if (sourceGate) return sourceGate;
+    const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
+    if (proofCommandGate) return proofCommandGate;
+    const definitionGate = requirementDefinitionMutationGate(self, toolName, context.args);
+    if (definitionGate) return definitionGate;
+  }
+  if (!isPotentialMutationTool(toolName, context.args) && !mutatingEffect) return undefined;
   const authorizedBaselineTestMutation = self.isAuthorizedBaselineTestMutation(toolName, context.args);
-  if (self.state.baseline.required && self.state.baseline.status !== "satisfied") {
+  if (self.mode === "audit" && self.state.baseline.required && self.state.baseline.status !== "satisfied") {
     if (isShellTool(toolName)) return undefined;
     if (!authorizedBaselineTestMutation) {
       return self.blocked("Collect baseline evidence or authorize exact regression-test paths before implementation.");

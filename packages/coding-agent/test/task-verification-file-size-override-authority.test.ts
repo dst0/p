@@ -23,7 +23,7 @@ async function declaredHarness(userPrompt: string) {
 describe("task verification file-size override authority", () => {
   it("does not treat a negated override as authorization after restore", async () => {
     const { sessionManager } = await declaredHarness("Do not ignore the file-size limit.");
-    const restored = createTaskVerificationController(sessionManager);
+    const restored = createTaskVerificationController(sessionManager, "audit");
 
     expect(userFileSizeOverrideIsAuthorized(restored.state, restored.latestUserPrompt)).toBe(false);
   });
@@ -31,7 +31,7 @@ describe("task verification file-size override authority", () => {
   it("lets a later user revocation supersede an earlier grant after restore", async () => {
     const { harness, sessionManager } = await declaredHarness("Explicitly ignore the file-size limit.");
     await sendAuditUserPrompt(harness, "Revoke the file-size override and enforce the normal limit.", 2);
-    const restored = createTaskVerificationController(sessionManager);
+    const restored = createTaskVerificationController(sessionManager, "audit");
 
     expect(userFileSizeOverrideIsAuthorized(restored.state, restored.latestUserPrompt)).toBe(false);
   });
@@ -39,7 +39,7 @@ describe("task verification file-size override authority", () => {
   it("lets a later explicit grant supersede an earlier revocation", async () => {
     const { harness, sessionManager } = await declaredHarness("Enforce the normal file-size limit.");
     await sendAuditUserPrompt(harness, "Explicitly ignore the file-size limit for this task.", 2);
-    const restored = createTaskVerificationController(sessionManager);
+    const restored = createTaskVerificationController(sessionManager, "audit");
 
     expect(userFileSizeOverrideIsAuthorized(restored.state, restored.latestUserPrompt)).toBe(true);
   });

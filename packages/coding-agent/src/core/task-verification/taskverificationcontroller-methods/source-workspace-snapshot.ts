@@ -1,67 +1,47 @@
 import { execFile } from "node:child_process";
-import { readdir, stat } from "node:fs/promises";
+import { createHash } from "node:crypto";
+import { closeSync, createReadStream, lstatSync, openSync, readlinkSync, readSync } from "node:fs";
+import { lstat, readdir, readlink } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
-import { isCheckedSourcePath } from "../source-file-classification.ts";
+import {
+  isSkippedWorkspaceEffectPath,
+  normalizeWorkspaceEffectPath,
+  WORKSPACE_EFFECT_SKIPPED_SEGMENTS,
+} from "../workspace-effect-state.ts";
 
-export type SourceWorkspaceSnapshot = Map<string, string>;
+export interface SourceWorkspaceSnapshot extends Map<string, string> {
+  gitRepository: boolean;
+}
 
-const SKIPPED_DIRECTORIES = new Set([
-  ".git",
-  ".pdev",
-  ".p",
-  ".pi",
-  ".pnpm-store",
-  "coverage",
-  "dist",
-  "node_modules",
-  "target",
-]);
-const MAX_VISITED_ENTRIES = 50_000;
-const MAX_SOURCE_FILES = 5_000;
+const MAX_WORKSPACE_PATHS = 5_000;
 const execFileAsync = promisify(execFile);
 
-export async function captureSourceWorkspaceSnapshot(cwd: string): Promise<SourceWorkspaceSnapshot | undefined> {
-  const snapshot = new Map<string, string>();
-  let visitedEntries = 0;
+export async function captureSourceWorkspaceSnapshot(
+  cwd: string,
+  hintedPaths: readonly string[] = [],
+  excludedPaths: readonly string[] = [],
+): Promise<SourceWorkspaceSnapshot | undefined> {
   try {
-    const [gitPaths, ignoredPaths] = await Promise.all([gitChangedSourcePaths(cwd), gitIgnoredSourcePaths(cwd)]);
-    if (gitPaths && ignoredPaths) {
-      const relevantPaths = [...new Set([...gitPaths, ...ignoredPaths])];
-      if (relevantPaths.length > MAX_SOURCE_FILES) throw new Error("workspace snapshot source-file limit exceeded");
-      await Promise.all(relevantPaths.map((filePath) => recordPath(filePath)));
-    } else {
-      await walk(cwd, "");
-    }
+    await execFileAsync("git", ["rev-parse", "--is-inside-work-tree"], { cwd, encoding: "utf8" });
+  } catch {
+    return captureFallbackSourceSnapshot(cwd, hintedPaths, excludedPaths);
+  }
+  try {
+    const [statusPaths, ignoredPaths] = await Promise.all([gitChangedPaths(cwd), gitIgnoredPaths(cwd)]);
+    const exclusions = new Set(excludedPaths.map(normalizeWorkspaceEffectPath).filter(isString));
+    const paths = [
+      ...new Set([...statusPaths, ...ignoredPaths, ...hintedPaths.map(normalizeWorkspaceEffectPath).filter(isString)]),
+    ].filter((filePath) => !exclusions.has(filePath));
+    if (paths.length > MAX_WORKSPACE_PATHS) return undefined;
+    const entries = await Promise.all(
+      paths.map(async (filePath) => [filePath, await readPathState(cwd, filePath)] as const),
+    );
+    const snapshot = new Map(entries) as SourceWorkspaceSnapshot;
+    snapshot.gitRepository = true;
     return snapshot;
   } catch {
     return undefined;
-  }
-
-  async function walk(directory: string, prefix: string): Promise<void> {
-    const entries = await readdir(directory, { withFileTypes: true });
-    for (const entry of entries) {
-      visitedEntries += 1;
-      if (visitedEntries > MAX_VISITED_ENTRIES) throw new Error("workspace snapshot entry limit exceeded");
-      if (entry.isSymbolicLink()) continue;
-      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
-      const absolutePath = join(directory, entry.name);
-      if (entry.isDirectory()) {
-        if (!SKIPPED_DIRECTORIES.has(entry.name)) await walk(absolutePath, relativePath);
-        continue;
-      }
-      if (entry.isFile() && isCheckedSourcePath(relativePath)) await recordPath(relativePath, absolutePath);
-    }
-  }
-
-  async function recordPath(relativePath: string, absolutePath = join(cwd, relativePath)): Promise<void> {
-    if (snapshot.size >= MAX_SOURCE_FILES) throw new Error("workspace snapshot source-file limit exceeded");
-    try {
-      const metadata = await stat(absolutePath, { bigint: true });
-      snapshot.set(relativePath, `${metadata.size}:${metadata.mtimeNs}:${metadata.ctimeNs}`);
-    } catch {
-      snapshot.set(relativePath, "missing");
-    }
   }
 }
 
@@ -70,44 +50,171 @@ export function changedSourcePaths(before: SourceWorkspaceSnapshot, after: Sourc
   return [...allPaths].filter((filePath) => before.get(filePath) !== after.get(filePath)).sort();
 }
 
-async function gitChangedSourcePaths(cwd: string): Promise<string[] | undefined> {
+export function computeWorkspaceEffectHash(cwd: string, paths: readonly string[]): string | undefined {
   try {
-    const result = await execFileAsync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
-      cwd,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    const records = String(result.stdout).split("\0").filter(Boolean);
-    const paths = new Set<string>();
-    for (let index = 0; index < records.length; index++) {
-      const record = records[index]!;
-      const status = record.slice(0, 2);
-      const filePath = record.slice(3).replaceAll("\\", "/");
-      if (isCheckedSourcePath(filePath)) paths.add(filePath);
-      if (/[RC]/u.test(status)) {
-        const sourcePath = records[index + 1]?.replaceAll("\\", "/");
-        if (sourcePath && isCheckedSourcePath(sourcePath)) paths.add(sourcePath);
-        index += 1;
-      }
+    const hash = createHash("sha256");
+    for (const filePath of [...paths].sort()) {
+      const normalized = normalizeWorkspaceEffectPath(filePath);
+      if (!normalized || normalized !== filePath) return undefined;
+      hash.update(normalized).update("\0").update(readPathStateSync(cwd, normalized)).update("\0");
     }
-    return [...paths].slice(0, MAX_SOURCE_FILES + 1);
+    return hash.digest("hex");
   } catch {
     return undefined;
   }
 }
 
-async function gitIgnoredSourcePaths(cwd: string): Promise<string[] | undefined> {
+async function gitChangedPaths(cwd: string): Promise<string[]> {
+  const result = await execFileAsync("git", ["status", "--porcelain=v1", "-z", "--untracked-files=all"], {
+    cwd,
+    maxBuffer: 16 * 1024 * 1024,
+  });
+  const records = decodeGitOutput(result.stdout).split("\0").filter(Boolean);
+  const paths = new Set<string>();
+  for (let index = 0; index < records.length; index++) {
+    const record = records[index]!;
+    const status = record.slice(0, 2);
+    addPath(paths, record.slice(3));
+    if (/[RC]/u.test(status)) {
+      addPath(paths, records[index + 1] ?? "");
+      index += 1;
+    }
+  }
+  return [...paths];
+}
+
+async function gitIgnoredPaths(cwd: string): Promise<string[]> {
+  const skippedPathspecs = WORKSPACE_EFFECT_SKIPPED_SEGMENTS.map((segment) => `:(exclude,glob)**/${segment}/**`);
+  const result = await execFileAsync(
+    "git",
+    ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ".", ...skippedPathspecs],
+    { cwd, maxBuffer: 16 * 1024 * 1024 },
+  );
+  const paths = new Set<string>();
+  for (const filePath of decodeGitOutput(result.stdout).split("\0")) addPath(paths, filePath);
+  return [...paths];
+}
+
+function addPath(paths: Set<string>, value: string): void {
+  if (!value) return;
+  const normalized = normalizeWorkspaceEffectPath(value);
+  if (normalized) {
+    paths.add(normalized);
+    return;
+  }
+  if (!isSkippedWorkspaceEffectPath(value)) throw new Error("unrepresentable workspace path");
+}
+
+function decodeGitOutput(value: string | Buffer): string {
+  if (typeof value === "string") return value;
+  return new TextDecoder("utf-8", { fatal: true }).decode(value);
+}
+
+async function readPathState(cwd: string, filePath: string): Promise<string> {
+  const absolutePath = join(cwd, filePath);
   try {
-    const result = await execFileAsync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], {
-      cwd,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
-    return String(result.stdout)
-      .split("\0")
-      .filter((filePath) => isCheckedSourcePath(filePath.replaceAll("\\", "/")))
-      .slice(0, MAX_SOURCE_FILES + 1);
+    const metadata = await lstat(absolutePath);
+    if (metadata.isSymbolicLink()) return `symlink:${digest(await readlink(absolutePath))}`;
+    if (metadata.isFile()) return `file:${metadata.mode & 0o111 ? "x" : "-"}:${await digestFile(absolutePath)}`;
+    if (metadata.isDirectory()) return "directory";
+    return `other:${metadata.mode}`;
+  } catch (error) {
+    if (isMissing(error)) return "missing";
+    throw error;
+  }
+}
+
+function readPathStateSync(cwd: string, filePath: string): string {
+  const absolutePath = join(cwd, filePath);
+  try {
+    const metadata = lstatSync(absolutePath);
+    if (metadata.isSymbolicLink()) return `symlink:${digest(readlinkSync(absolutePath))}`;
+    if (metadata.isFile()) return `file:${metadata.mode & 0o111 ? "x" : "-"}:${digestFileSync(absolutePath)}`;
+    if (metadata.isDirectory()) return "directory";
+    return `other:${metadata.mode}`;
+  } catch (error) {
+    if (isMissing(error)) return "missing";
+    throw error;
+  }
+}
+
+function digest(value: string | Buffer): string {
+  return createHash("sha256").update(value).digest("hex");
+}
+
+async function digestFile(filePath: string): Promise<string> {
+  const hash = createHash("sha256");
+  for await (const chunk of createReadStream(filePath)) hash.update(chunk as Buffer);
+  return hash.digest("hex");
+}
+
+function digestFileSync(filePath: string): string {
+  const descriptor = openSync(filePath, "r");
+  const hash = createHash("sha256");
+  const buffer = Buffer.allocUnsafe(64 * 1024);
+  try {
+    let bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+    while (bytesRead > 0) {
+      hash.update(buffer.subarray(0, bytesRead));
+      bytesRead = readSync(descriptor, buffer, 0, buffer.length, null);
+    }
+    return hash.digest("hex");
+  } finally {
+    closeSync(descriptor);
+  }
+}
+
+function isMissing(error: unknown): boolean {
+  return error instanceof Error && "code" in error && error.code === "ENOENT";
+}
+
+function isString(value: string | undefined): value is string {
+  return value !== undefined;
+}
+
+async function captureFallbackSourceSnapshot(
+  cwd: string,
+  hintedPaths: readonly string[],
+  excludedPaths: readonly string[],
+): Promise<SourceWorkspaceSnapshot | undefined> {
+  const exclusions = new Set(excludedPaths.map(normalizeWorkspaceEffectPath).filter(isString));
+  const paths = new Set(
+    hintedPaths
+      .map(normalizeWorkspaceEffectPath)
+      .filter(isString)
+      .filter((filePath) => !exclusions.has(filePath)),
+  );
+  if (paths.size > MAX_WORKSPACE_PATHS) return undefined;
+  let visited = 0;
+  try {
+    await walk(cwd, "");
+    const entries = await Promise.all(
+      [...paths]
+        .filter((filePath) => !exclusions.has(filePath))
+        .map(async (filePath) => [filePath, await readPathState(cwd, filePath)] as const),
+    );
+    const snapshot = new Map(entries) as SourceWorkspaceSnapshot;
+    snapshot.gitRepository = false;
+    return snapshot;
   } catch {
     return undefined;
+  }
+
+  async function walk(directory: string, prefix: string): Promise<void> {
+    for (const entry of await readdir(directory, { withFileTypes: true })) {
+      visited += 1;
+      if (visited > 50_000 || paths.size > MAX_WORKSPACE_PATHS) throw new Error("workspace snapshot limit exceeded");
+      const filePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const normalized = normalizeWorkspaceEffectPath(filePath);
+      if (!normalized) {
+        if (isSkippedWorkspaceEffectPath(filePath)) continue;
+        throw new Error("unrepresentable workspace path");
+      }
+      if (entry.isDirectory()) await walk(join(directory, entry.name), normalized);
+      else if ((entry.isFile() || entry.isSymbolicLink()) && !exclusions.has(normalized)) {
+        paths.add(normalized);
+        if (paths.size > MAX_WORKSPACE_PATHS) throw new Error("workspace snapshot path limit exceeded");
+      }
+    }
   }
 }

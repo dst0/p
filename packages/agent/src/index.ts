@@ -42,5 +42,6 @@ export * from "./harness/utils/truncate.ts";
 export * from "./model-call-preparation.ts";
 // Proxy utilities
 export * from "./proxy.ts";
+export * from "./tool-effects.ts";
 // Types
 export * from "./types.ts";

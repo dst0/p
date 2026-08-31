@@ -51,7 +51,7 @@ test("interrupted cell publishes sanitized Q6 progress and discards private scra
       {
         options: cellOptions,
         pair: { run: 1, task: "event-sourced-inventory" },
-        mode: "legacy",
+        condition: "legacy",
         cellOutput,
         scratchOutput,
         remainingSeconds: 60,
@@ -125,7 +125,7 @@ test("cell finalization failures remain secondary to interruption", async () => 
       {
         options: cellOptions,
         pair: { run: 1, task: "event-sourced-inventory" },
-        mode: "legacy",
+        condition: "legacy",
         cellOutput: join(root, "cell"),
         scratchOutput: join(root, "scratch"),
         remainingSeconds: 60,

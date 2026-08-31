@@ -29,6 +29,7 @@ type EvidenceInput = ProjectionInput & {
 type CaptureEvidenceOptions = {
   workspace: string;
   mode: string;
+  taskVerificationMode?: string;
   sourceFile: string;
   proofReceiptSha256?: string;
   proofExpectedTurnCount?: number;
@@ -51,6 +52,7 @@ type RecordedMetrics = { readRulesBatches?: EvidenceInput[]; phaseRelevantToolCa
 
 type ProbeOptions = {
   projectInstructions?: string;
+  taskVerificationMode?: string;
   projectInstructionProbe: string;
   projectInstructionCompilerModel?: string;
   projectInstructionsFile: string;
@@ -158,6 +160,7 @@ export function captureProjectInstructionEvidence(options: CaptureEvidenceOption
   });
   return {
     requestedMode: options.mode,
+    requestedTaskVerificationMode: options.taskVerificationMode,
     sourceSha256,
     proofReceiptSha256: options.proofReceiptSha256,
     proofExpectedTurnCount: options.proofExpectedTurnCount,
@@ -187,6 +190,7 @@ export function captureProjectInstructionEvidence(options: CaptureEvidenceOption
 export function captureRecordedProjectInstructionEvidence(
   workspace: string,
   mode: string,
+  taskVerificationMode: string | undefined,
   sourceFile: string,
   runResult: RecordedRunResult,
   metrics: RecordedMetrics,
@@ -194,6 +198,7 @@ export function captureRecordedProjectInstructionEvidence(
   return captureProjectInstructionEvidence({
     workspace,
     mode,
+    taskVerificationMode,
     sourceFile,
     proofReceiptSha256: runResult.proofReceiptSha256,
     proofExpectedTurnCount: runResult.proofExpectedTurnCount,
@@ -221,6 +226,9 @@ export function configureProjectInstructionProbe(
     args.push("--project-instruction-compiler-model", options.projectInstructionCompilerModel);
   env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT = receiptSha256;
   env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE = options.projectInstructions;
+  if (options.taskVerificationMode) {
+    env.P_BENCHMARK_PROJECT_INSTRUCTION_TASK_VERIFICATION_MODE = options.taskVerificationMode;
+  }
   env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_SHA256 = hashFile(options.projectInstructionsFile);
   env.P_BENCHMARK_PROJECT_INSTRUCTION_SOURCE_PATH = join(workspace, "AGENTS.md");
 }

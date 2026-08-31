@@ -8,8 +8,14 @@ import { createTaskVerificationController } from "../src/core/task-verification.
 import { callTaskVerification } from "./task-requirement-audit-test-harness.ts";
 
 describe("task verification audit context boundaries", () => {
-  it("rejects baseline authorization before declaration, without paths, and for traversal paths", async () => {
+  it("defaults the low-level controller factory to evidence verification", () => {
     const controller = createTaskVerificationController(SessionManager.inMemory());
+
+    expect(controller.mode).toBe("evidence");
+  });
+
+  it("rejects baseline authorization before declaration, without paths, and for traversal paths", async () => {
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
 
     await expect(
       callTaskVerification(controller, {
@@ -34,7 +40,7 @@ describe("task verification audit context boundaries", () => {
   });
 
   it("reports inactive audit and undeclared definition contexts precisely", () => {
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
 
     expect(auditContextError(controller)).toContain("Requirement audit is not active");
     expect(definitionContextError(controller)).toBe("Declare the task before defining requirements.");

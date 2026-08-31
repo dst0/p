@@ -78,7 +78,13 @@ function failedDocument(
     seed: "seed",
     runs: 3,
     tasks: ["typescript-calculator"],
-    schedule: [{ run: 1, task: "typescript-calculator", modes: ["compiled", "legacy"] }],
+    schedule: [
+      {
+        run: 1,
+        task: "typescript-calculator",
+        conditions: ["compiled-evidence", "legacy", "compiled-audit"],
+      },
+    ],
     samples: [],
     completed: false,
     gate: { passed: false, failure },

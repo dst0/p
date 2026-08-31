@@ -99,7 +99,7 @@ describe("task verification workspace enforcement", () => {
       await execFileAsync("git", ["commit", "-m", "initial"], { cwd });
 
       const agent = new Agent();
-      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "audit");
       controller.install(agent);
       await callVerificationTool(controller, {
         action: "declare_task",
@@ -129,7 +129,7 @@ describe("task verification workspace enforcement", () => {
     try {
       await mkdir(join(cwd, "src"));
       const agent = new Agent();
-      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "audit");
       controller.install(agent);
       await callVerificationTool(controller, {
         action: "declare_task",
@@ -174,7 +174,7 @@ describe("task verification workspace enforcement", () => {
     try {
       await mkdir(join(cwd, "src"));
       const agent = new Agent();
-      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "audit");
       controller.install(agent);
       await callVerificationTool(controller, {
         action: "declare_task",
@@ -221,7 +221,7 @@ describe("task verification workspace enforcement", () => {
     const cwd = await mkdtemp(join(tmpdir(), "p-verification-baseline-replay-"));
     try {
       const agent = new Agent();
-      const controller = createTaskVerificationController(SessionManager.inMemory(cwd));
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "audit");
       controller.install(agent);
       await callVerificationTool(controller, {
         action: "declare_task",
