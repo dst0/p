@@ -128,7 +128,10 @@ export function createValidatedPairedSample(
     context.taskVerificationMode,
   );
   if (!instructionAssessment.passed) {
-    invalid("invalid_instruction_evidence", "child benchmark project-instruction evidence is invalid");
+    invalid(
+      "invalid_instruction_evidence",
+      `child benchmark project-instruction evidence is invalid: ${instructionAssessment.reason ?? "unspecified validation failure"}`,
+    );
   }
   const taskVerificationProof = projectRuntimeTaskVerificationProof(projectInstructionEvidence);
   if (!taskVerificationProof) {

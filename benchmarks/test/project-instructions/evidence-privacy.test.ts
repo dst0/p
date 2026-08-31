@@ -11,6 +11,7 @@ import {
 } from "../../src/project-instructions/evidence.ts";
 import { projectProjectInstructionEvidence } from "../../src/project-instructions/evidence-projection.ts";
 import { createBaseSystemModeProof } from "../../src/project-instructions/probe.ts";
+import { BenchmarkChildResultError } from "../../src/project-instructions/run-child-result.ts";
 import { createValidatedPairedSample } from "../../src/project-instructions/run-sample.ts";
 import {
   bindProjectInstructionTurnAuthority,
@@ -114,7 +115,6 @@ test("captured project-instruction evidence exact-picks nested public fields", (
     rmSync(fixture.root, { recursive: true, force: true });
   }
 });
-
 test("malformed high-risk evidence arrays are dropped whole", () => {
   const fixture = createCompiledFixture();
   const privateMarker = "private-array-marker";
@@ -161,7 +161,6 @@ test("malformed high-risk evidence arrays are dropped whole", () => {
     rmSync(fixture.root, { recursive: true, force: true });
   }
 });
-
 test("validated parent samples replace contaminated child instruction evidence", () => {
   const root = mkdtempSync(join(tmpdir(), "benchmark-evidence-privacy-"));
   const privateMarker = "private-child-evidence-marker";
@@ -284,6 +283,16 @@ test("validated parent samples replace contaminated child instruction evidence",
           },
         }),
       /outer authority/iu,
+    );
+    (parsed.result.projectInstructionEvidence as Record<string, unknown>).requestedMode = privateMarker;
+    assert.throws(
+      () => createValidatedPairedSample(parsed, context),
+      (error: unknown) =>
+        error instanceof BenchmarkChildResultError &&
+        error.code === "invalid_instruction_evidence" &&
+        error.message ===
+          "child benchmark project-instruction evidence is invalid: requested project-instruction mode is invalid" &&
+        !error.message.includes(privateMarker),
     );
   } finally {
     rmSync(root, { recursive: true, force: true });

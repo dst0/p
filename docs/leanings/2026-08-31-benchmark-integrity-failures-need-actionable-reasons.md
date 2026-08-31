@@ -1,0 +1,22 @@
+# 2026-08-31 — Benchmark integrity failures need actionable reasons
+
+- **Status:** Resolved
+- **Task/context:** Diagnosing the `5.0.1-rc.56` project-instruction benchmark hard stop after a successful compiled-audit child run.
+- **Unexpected observation or failure:** The parent harness reported only `child benchmark project-instruction evidence is invalid`, even though the validator had already identified a specific failed invariant. Cell cleanup then removed the private child evidence, making the retained result insufficient for root-cause analysis.
+- **Evidence:** A focused regression supplied an invalid task-verification profile. `validateProjectInstructionEvidence()` returned `requested task-verification profile is invalid`, while `createValidatedPairedSample()` replaced it with the generic message.
+- **Approaches tried:**
+  - **Attempt:** Infer the failed invariant from sanitized liveness counters.
+    - **Outcome:** Did not work
+    - **Why:** Liveness proved that audit certification and terminal acceptance occurred, but it does not contain prompt, cache, turn-authority, or routing validation details.
+  - **Attempt:** Preserve the validator's bounded, sanitized reason in the parent error.
+    - **Outcome:** Partial
+    - **Why:** Most reasons were fixed integrity diagnostics, but the requested-mode reason interpolated child-controlled text and could leak it into retained reports.
+  - **Attempt:** Make every surfaced validator reason parent-owned, then preserve it at the final boundary.
+    - **Outcome:** Worked
+    - **Why:** The requested-mode diagnostic is now constant; the remaining reasons are closed integrity messages or certificate assertions that do not embed child evidence.
+- **Root cause:** `createValidatedPairedSample()` discarded `instructionAssessment.reason` at the final parent validation boundary, while one upstream reason was not safe to retain verbatim.
+- **Resolution:** Convert the child-controlled requested-mode reason to a constant, then include the validator reason in the `invalid_instruction_evidence` error while retaining the same fail-closed error code and hard gate.
+- **Verification:** One regression fails when the reason is generic. Its adversarial form injects a private marker as `requestedMode` and passes only when the parent error has the expected type/code, exact bounded safe message, and no marker.
+- **Prevention/follow-up:** Keep hard gates strict, but require every retained integrity failure to identify its violated invariant. Use a focused live cell to diagnose the original rc.56 producer/validator mismatch before rerunning the full benchmark.
+- **Reusable learning:** A fail-closed validator is operationally incomplete if cleanup destroys the evidence and the retained error omits the already-known safe invariant failure.
+- **References:** `benchmarks/src/project-instructions/run-sample.ts`; `benchmarks/test/project-instructions/evidence-privacy.test.ts`

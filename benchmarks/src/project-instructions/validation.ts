@@ -204,7 +204,7 @@ export function validateProjectInstructionEvidence(
   if (evidence?.requestedMode !== expectedMode) {
     return {
       passed: false,
-      reason: `requested mode ${evidence?.requestedMode ?? "missing"}; expected ${expectedMode}`,
+      reason: "requested project-instruction mode is invalid",
     };
   }
   if (!evidence) return { passed: false, reason: "project instruction evidence is missing" };
