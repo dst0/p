@@ -6,7 +6,6 @@ import {
   matchesProjectInstructionRuleBatch,
   type PreparedProjectInstructions,
 } from "../../project-instructions/index.ts";
-import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../../task-verification/constants.ts";
 import {
   isConfidentlyReadOnlyShellTool,
   isPotentialMutationTool,
@@ -14,6 +13,7 @@ import {
 import type { AgentSession } from "../agentsession.ts";
 import { MARK_SESSION_PROGRESS_TOOL_NAME, UPDATE_SESSION_STATE_TOOL_NAME } from "../constants.ts";
 import { getFinishWorkStatus, isRecord } from "../message-utils.ts";
+import { isProjectInstructionVerificationControlPlaneAction } from "../project-instruction-action-phases.ts";
 import { stageProjectInstructionActionBatch } from "../project-instruction-action-routing.ts";
 import { PROJECT_RULE_RECEIPT_CUSTOM_TYPE } from "../project-instruction-integrity.ts";
 
@@ -282,8 +282,7 @@ function isTrustedProjectRuleSafeTool(self: AgentSession, toolName: string): boo
 function isTrustedVerificationControlPlaneTool(self: AgentSession, toolName: string, args: unknown): boolean {
   const entry = self._toolDefinitions.get(toolName);
   if (!entry || !self._projectRuleSafeToolDefinitions.has(entry.definition)) return false;
-  if (toolName === REQUIREMENT_AUDIT_TOOL_NAME) return true;
-  return toolName === TASK_VERIFICATION_TOOL_NAME && isRecord(args) && args.action === "status";
+  return isProjectInstructionVerificationControlPlaneAction(toolName, args);
 }
 
 function isTrustedProjectRuleReadOnlyShellTool(self: AgentSession, toolName: string, args: unknown): boolean {
