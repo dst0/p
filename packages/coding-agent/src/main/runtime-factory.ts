@@ -184,6 +184,7 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
       completionMode: sessionOptions.completionMode,
       completionLimits: sessionOptions.completionLimits,
       maxTokens: sessionOptions.maxTokens,
+      taskVerificationMode: sessionOptions.taskVerificationMode,
       projectInstructionMode: sessionOptions.projectInstructionMode,
       projectInstructionCompilerModel: sessionOptions.projectInstructionCompilerModel,
     });

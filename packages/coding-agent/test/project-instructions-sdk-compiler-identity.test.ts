@@ -183,6 +183,7 @@ describe("SDK project instruction compiler identity", () => {
       authStorage,
       modelRegistry,
       completionMode: "implicit" as const,
+      taskVerificationMode: "off" as const,
     };
 
     const first = await createAgentSession({

@@ -102,6 +102,9 @@ export function commandForAgent(
     "--no-themes",
   ];
   if (agent === "p" && options.thinking) commonArgs.push("--thinking", options.thinking);
+  if (agent === "p" && options.taskVerificationMode) {
+    commonArgs.push("--task-verification", options.taskVerificationMode);
+  }
   if (!(agent === "p" && options.projectInstructions)) commonArgs.push("--no-context-files");
   if (isContinue) commonArgs.push("--continue");
   const env: NodeJS.ProcessEnv = sanitizeBenchmarkGitEnvironment();

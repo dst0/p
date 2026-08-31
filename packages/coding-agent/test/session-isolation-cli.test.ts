@@ -207,6 +207,8 @@ describe("real CLI session isolation", () => {
       ...commonArgs,
       "--completion-mode",
       "implicit",
+      "--task-verification",
+      "off",
       "--no-tools",
       "--session-id",
       "session-a",

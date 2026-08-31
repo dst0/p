@@ -31,8 +31,9 @@ describe("buildSystemPrompt", () => {
       "Never invent rollback for irreversible effects",
       "restore only contract-declared reversible state",
       "re-read the original request and authoritative sources",
-      "every requirement, boundary, negative case, requested format, and verification condition",
-      "against direct evidence",
+      "one concise completion checklist",
+      "map each checklist item to direct evidence",
+      "Do not expand free text into an exhaustive formal clause matrix",
       "Preserve exact requested formats and boundaries",
       "whitespace, framing, ordering, units, or byte-level representation",
       "verify the raw artifact",
@@ -85,6 +86,15 @@ describe("buildSystemPrompt", () => {
     expect(prompt).not.toContain("full test suite to 100% green");
     expect(prompt).not.toContain("revert state changes, external mutations, caches, logs, and tracking registries");
     expect(prompt).toContain("Preserve declared transaction, rollback, irreversibility, and append-only semantics");
+  });
+
+  it("keeps exhaustive semantic auditing behind the audit verification mode", () => {
+    const evidencePrompt = buildSystemPrompt(baseOptions);
+    const auditPrompt = buildSystemPrompt({ ...baseOptions, taskVerificationMode: "audit" });
+
+    expect(evidencePrompt).toContain("one concise completion checklist");
+    expect(evidencePrompt).not.toContain("audit every requirement");
+    expect(auditPrompt).toContain("audit every requirement");
   });
 
   it("does not mistake local semantic search for web research capability", () => {

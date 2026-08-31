@@ -70,6 +70,7 @@ export async function finalizeExecutedToolCall(
           assistantMessage,
           toolCall: prepared.toolCall,
           args: prepared.args,
+          effect: prepared.effect,
           result,
           isError,
           context: currentContext,

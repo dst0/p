@@ -80,6 +80,7 @@ describe("createAgentSession model switching", () => {
       projectInstructionMode: "off",
       customTools: [noopTool],
       completionMode: "implicit",
+      taskVerificationMode: "off",
     });
     cleanupFns.push(() => session.dispose());
 
@@ -141,6 +142,7 @@ describe("createAgentSession model switching", () => {
       resourceLoader: createTestResourceLoader(),
       noTools: "all",
       completionMode: "implicit",
+      taskVerificationMode: "off",
     });
     cleanupFns.push(() => session.dispose());
     const longOutput = Array.from(

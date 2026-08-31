@@ -98,6 +98,7 @@ describe("model-keyed project instruction compilation", () => {
         sessionManager: SessionManager.inMemory(workspace),
         resourceLoader,
         completionMode: "implicit",
+        taskVerificationMode: "off",
       });
       cleanupCallbacks.push(() => session.dispose());
 

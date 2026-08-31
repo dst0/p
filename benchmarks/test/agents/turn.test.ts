@@ -222,7 +222,7 @@ test("project-instruction turns use IPC once and do not expose it to grandchildr
   const receipt = "a".repeat(64);
   const source = `
     const { spawnSync } = require("node:child_process");
-    process.send({ schemaVersion: 1, kind: "project-instruction-startup-proof", receiptSha256: ${JSON.stringify(receipt)}, proof: { requestedMode: "compiled", sourceSha256: "b".repeat(64), systemPromptSha256: "c".repeat(64), systemPromptBytes: 10, hasLegacyMarker: false, hasCompiledMarker: true, compiledInstructionsInjected: true, sourceLoaded: true, legacySourceInjected: false, legacyInjectedBlockHashes: [], legacyExpectedBlockHashes: [] } });
+    process.send({ schemaVersion: 1, kind: "project-instruction-startup-proof", receiptSha256: ${JSON.stringify(receipt)}, proof: { requestedMode: "compiled", requestedTaskVerificationMode: "evidence", effectiveTaskVerificationMode: "evidence", registeredVerificationTools: ["record_task_verification"], activeVerificationTools: ["record_task_verification"], verificationToolSurfaceRegistered: true, verificationToolSurfaceActive: true, sourceSha256: "b".repeat(64), systemPromptSha256: "c".repeat(64), systemPromptBytes: 10, hasLegacyMarker: false, hasCompiledMarker: true, compiledInstructionsInjected: true, sourceLoaded: true, legacySourceInjected: false, legacyInjectedBlockHashes: [], legacyExpectedBlockHashes: [] } });
     process.disconnect();
     const grandchild = spawnSync(process.execPath, ["-e", "process.stdout.write(String(typeof process.send))"], { encoding: "utf8" });
     process.stderr.write(grandchild.stdout);

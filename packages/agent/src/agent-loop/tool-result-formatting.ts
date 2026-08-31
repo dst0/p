@@ -1,5 +1,6 @@
 import { type AssistantMessage, validateToolArguments } from "@dst0/p-ai";
 import { FINISH_WORK_TOOL_NAME } from "../completion-protocol.ts";
+import { resolveToolEffect } from "../tool-effects.ts";
 import type { AgentContext, AgentLoopConfig, AgentTool, AgentToolCall, AgentToolResult } from "../types.ts";
 import {
   MALFORMED_TOOL_CALL_REPAIR_MESSAGE,
@@ -180,12 +181,14 @@ export async function prepareToolCall(
   try {
     const preparedToolCall = prepareToolCallArguments(tool, toolCall);
     const validatedArgs = validateToolArguments(tool, preparedToolCall);
+    const effect = resolveToolEffect(tool.effect);
     if (config.beforeToolCall) {
       const beforeResult = await config.beforeToolCall(
         {
           assistantMessage,
           toolCall,
           args: validatedArgs,
+          effect,
           context: currentContext,
         },
         signal,
@@ -217,6 +220,7 @@ export async function prepareToolCall(
       toolCall,
       tool,
       args: validatedArgs,
+      effect,
     };
   } catch (error) {
     return {

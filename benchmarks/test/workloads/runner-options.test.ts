@@ -95,6 +95,17 @@ test("passes an explicit thinking level to P but not PI", () => {
   );
 });
 
+test("passes the requested task-verification profile only to P", () => {
+  const options = parseRunnerArgs(["--agents", "p", "--model", "provider/model", "--task-verification", "evidence"]);
+  const pCommand = commandForAgent("p", options, task, configDir, workspace);
+  const profileIndex = pCommand.args.indexOf("--task-verification");
+  assert.deepEqual(pCommand.args.slice(profileIndex, profileIndex + 2), ["--task-verification", "evidence"]);
+  assert.throws(
+    () => parseRunnerArgs(["--agents", "p", "--model", "provider/model", "--task-verification", "invalid"]),
+    /must be evidence, audit, or off/u,
+  );
+});
+
 test("constructs exact commands for every supported agent", () => {
   const options = parseRunnerArgs([
     "--agents",
@@ -240,12 +251,16 @@ test("preserves continuation, probe, model-resolution, and project-instruction c
     "provider/model",
     "--project-instructions",
     "compiled",
+    "--task-verification",
+    "evidence",
     "--project-instruction-proof-receipt",
     receipt,
   ]);
   const projectCommand = commandForAgent("p", projectOptions, task, configDir, workspace, true);
   assert.equal(projectCommand.args.includes("--no-context-files"), false);
-  assert.deepEqual(projectCommand.args.slice(-6), [
+  assert.deepEqual(projectCommand.args.slice(-8), [
+    "--task-verification",
+    "evidence",
     "--continue",
     "--extension",
     projectOptions.projectInstructionProbe,
@@ -255,6 +270,7 @@ test("preserves continuation, probe, model-resolution, and project-instruction c
   ]);
   assert.equal(projectCommand.env.P_BENCHMARK_PROJECT_INSTRUCTION_RECEIPT, receipt);
   assert.equal(projectCommand.env.P_BENCHMARK_PROJECT_INSTRUCTION_MODE, "compiled");
+  assert.equal(projectCommand.env.P_BENCHMARK_PROJECT_INSTRUCTION_TASK_VERIFICATION_MODE, "evidence");
 });
 
 test("the TypeScript entrypoint exposes help and rejects incomplete CLI arguments", () => {

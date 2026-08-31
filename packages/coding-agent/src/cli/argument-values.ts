@@ -1,5 +1,10 @@
 import type { CompletionMode, ThinkingLevel } from "@dst0/p-agent-core";
 import type { ProjectInstructionDeliveryMode } from "../core/project-instructions/index.ts";
+import {
+  isTaskVerificationMode,
+  TASK_VERIFICATION_MODES,
+  type TaskVerificationMode,
+} from "../core/task-verification/mode.ts";
 
 const THINKING_LEVELS = ["off", "minimal", "low", "medium", "high", "xhigh"] as const;
 const COMPLETION_MODE_ALIASES = {
@@ -11,7 +16,8 @@ const COMPLETION_MODE_ALIASES = {
 
 export const COMPLETION_MODE_LABELS = ["implicit", "explicit", "explicit_finish", "hybrid"] as const;
 export const PROJECT_INSTRUCTION_MODES = ["compiled", "legacy", "off"] as const;
-export type { ProjectInstructionDeliveryMode };
+export { isTaskVerificationMode, TASK_VERIFICATION_MODES };
+export type { ProjectInstructionDeliveryMode, TaskVerificationMode };
 
 export function isValidThinkingLevel(level: string): level is ThinkingLevel {
   return THINKING_LEVELS.includes(level as ThinkingLevel);

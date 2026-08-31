@@ -1,5 +1,6 @@
 import { describeBenchmarkProjectInstructionAction, inferBenchmarkProjectInstructionActionPhases } from "./routing.ts";
 import type { RequirementRepairTelemetry } from "./run-repair-telemetry.ts";
+import type { createTaskVerificationSemanticTracker } from "./verification-semantic-proof.ts";
 
 export type SemanticTool = { phase: string; settledPhase: string };
 
@@ -15,6 +16,7 @@ export type SemanticEventState = {
   seenToolEvents: Set<string>;
   activeTools: Map<string, SemanticTool>;
   requirementRepairTelemetry: RequirementRepairTelemetry;
+  taskVerificationTracker: ReturnType<typeof createTaskVerificationSemanticTracker>;
   onProgress?: (event: string, extra?: Record<string, unknown>) => void;
 };
 
@@ -27,6 +29,7 @@ export function processSemanticLine(state: SemanticEventState, line: string): vo
   }
   if (!isRecord(event)) return;
   if (event.type === "tool_execution_end") {
+    state.taskVerificationTracker.end(event);
     const key = String(event.toolCallId ?? event.benchmarkEventOrdinal ?? "");
     const completed = state.activeTools.get(key);
     if (!completed) return;
@@ -43,6 +46,7 @@ export function processSemanticLine(state: SemanticEventState, line: string): vo
     if (state.seenToolEvents.has(key)) return;
     state.seenToolEvents.add(key);
   }
+  state.taskVerificationTracker.start(event);
   state.semanticEventCount += 1;
   state.requirementRepairTelemetry.start(event, key, Math.max(0, state.now() - state.startedAt));
   if (event.toolName === "record_requirement_audit") {

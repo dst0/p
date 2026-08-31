@@ -2,26 +2,34 @@ import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { test } from "node:test";
 import { didAgentTurnFail } from "../../src/agents/turn-policy.ts";
-import type { PairedSample, ProjectInstructionMode } from "../../src/project-instructions/run-core.ts";
+import type { PairedSample, ProjectInstructionCondition } from "../../src/project-instructions/run-core.ts";
 import {
   assertChildSampleMetrics,
   assessSample,
   buildPairedSchedule,
+  conditionConfiguration,
   createBenchmarkGateFailure,
   describeProjectInstructionStartupFailure,
   parsePairedArgs,
   verifyResolvedPModel,
 } from "../../src/project-instructions/run-core.ts";
-import { createPairedSummary, renderPairedReport } from "../../src/project-instructions/run-report.ts";
+import { renderPairedReport } from "../../src/project-instructions/run-report.ts";
 
-function sample(mode: ProjectInstructionMode, run: number, overrides: Record<string, unknown> = {}): PairedSample {
+function sample(
+  condition: ProjectInstructionCondition,
+  run: number,
+  overrides: Record<string, unknown> = {},
+): PairedSample {
+  const configuration = conditionConfiguration(condition);
   return {
-    mode,
+    condition,
+    mode: configuration.projectInstructionMode,
+    taskVerificationMode: configuration.taskVerificationMode,
     run,
     task: "typescript-calculator",
     status: "passed",
-    elapsedMs: mode === "compiled" ? 800 : 1000,
-    metrics: { usage: { totalTokens: mode === "compiled" ? 80 : 100 } },
+    elapsedMs: condition === "legacy" ? 1000 : 800,
+    metrics: { usage: { totalTokens: condition === "legacy" ? 100 : 80 } },
     quality: {
       passed: true,
       rawScore: 10,
@@ -101,22 +109,13 @@ test("sample model identity must resolve to the requested provider and model", (
   );
 });
 
-test("paired schedule randomizes order reproducibly inside every pair", () => {
+test("three-condition schedule randomizes order reproducibly inside every block", () => {
   const first = buildPairedSchedule(["one", "two"], 3, "reproducible-seed");
   const second = buildPairedSchedule(["one", "two"], 3, "reproducible-seed");
   assert.deepEqual(first, second);
   assert.equal(first.length, 6);
-  for (const pair of first) {
-    assert.deepEqual([...pair.modes].sort(), ["compiled", "legacy"]);
-  }
-  for (const task of ["one", "two"]) {
-    const starts = first.filter((pair) => pair.task === task).map((pair) => pair.modes[0]);
-    assert.ok(
-      Math.abs(
-        starts.filter((mode) => mode === "compiled").length - starts.filter((mode) => mode === "legacy").length,
-      ) <= 1,
-    );
-  }
+  for (const pair of first)
+    assert.deepEqual([...pair.conditions].sort(), ["compiled-audit", "compiled-evidence", "legacy"]);
 });
 
 test("base benchmark runner accepts the explicit P instruction mode", () => {
@@ -145,21 +144,22 @@ test("base benchmark runner accepts the explicit P instruction mode", () => {
 });
 
 test("correctness gate rejects incomplete, timed-out, and failed-quality samples", () => {
-  assert.deepEqual(assessSample(sample("compiled", 1)), { passed: true });
-  assert.match(assessSample(sample("compiled", 1, { status: "timed_out" })).reason ?? "", /status timed_out/u);
+  assert.deepEqual(assessSample(sample("compiled-evidence", 1)), { passed: true });
+  assert.match(assessSample(sample("compiled-evidence", 1, { status: "timed_out" })).reason ?? "", /status timed_out/u);
   assert.match(
-    assessSample(sample("compiled", 1, { quality: { passed: false, rawScore: 9, maxScore: 10, checks: [] } })).reason ??
-      "",
-    /quality gate/u,
-  );
-  assert.match(
-    assessSample(sample("compiled", 1, { quality: { passed: true, rawScore: 10, maxScore: 10, checks: [] } })).reason ??
-      "",
-    /quality gate/u,
-  );
-  assert.match(
-    assessSample(sample("compiled", 1, { quality: { passed: true, checks: [{ name: "contract", passed: true }] } }))
+    assessSample(sample("compiled-evidence", 1, { quality: { passed: false, rawScore: 9, maxScore: 10, checks: [] } }))
       .reason ?? "",
+    /quality gate/u,
+  );
+  assert.match(
+    assessSample(sample("compiled-evidence", 1, { quality: { passed: true, rawScore: 10, maxScore: 10, checks: [] } }))
+      .reason ?? "",
+    /quality gate/u,
+  );
+  assert.match(
+    assessSample(
+      sample("compiled-evidence", 1, { quality: { passed: true, checks: [{ name: "contract", passed: true }] } }),
+    ).reason ?? "",
     /quality gate/u,
   );
 });
@@ -209,27 +209,6 @@ test("compiler certification gate rejects forged telemetry and raw errors", () =
   assert.doesNotMatch(JSON.stringify(failure), /Authorization|private-secret|envelope/u);
 });
 
-test("summary reports medians and paired percentage deltas only after correctness passes", () => {
-  const samples = [
-    sample("legacy", 1, { elapsedMs: 1000, metrics: { usage: { totalTokens: 100 } } }),
-    sample("compiled", 1, { elapsedMs: 800, metrics: { usage: { totalTokens: 80 } } }),
-    sample("compiled", 2, { elapsedMs: 1200, metrics: { usage: { totalTokens: 250 } } }),
-    sample("legacy", 2, { elapsedMs: 1000, metrics: { usage: { totalTokens: 200 } } }),
-    sample("legacy", 3, { elapsedMs: 2000, metrics: { usage: { totalTokens: 400 } } }),
-    sample("compiled", 3, { elapsedMs: 1500, metrics: { usage: { totalTokens: 300 } } }),
-  ];
-  const summary = createPairedSummary(samples, true);
-  assert.ok(summary);
-  assert.equal(summary.byMode.legacy.medianTotalTokens, 200);
-  assert.equal(summary.byMode.compiled.medianTotalTokens, 250);
-  assert.equal(summary.byMode.legacy.medianElapsedMs, 1000);
-  assert.equal(summary.byMode.compiled.medianElapsedMs, 1200);
-  assert.equal(summary.paired.medianTokenDeltaPercent, -20);
-  assert.equal(summary.paired.medianRuntimeDeltaPercent, -20);
-  assert.equal(summary.byMode.compiled.qualityPasses, 3);
-  assert.equal(createPairedSummary(samples.slice(0, 1), false), undefined);
-});
-
 test("failed report suppresses performance conclusions", () => {
   const compilerFailure = {
     attemptCount: 2,
@@ -247,8 +226,14 @@ test("failed report suppresses performance conclusions", () => {
     binarySha256: "abc",
     candidateVersion: "5.0.1-rc.1",
     completed: false,
-    schedule: [{ run: 1, task: "typescript-calculator", modes: ["compiled", "legacy"] }],
-    samples: [sample("compiled", 1, { status: "failed" })],
+    schedule: [
+      {
+        run: 1,
+        task: "typescript-calculator",
+        conditions: ["compiled-evidence", "legacy", "compiled-audit"],
+      },
+    ],
+    samples: [sample("compiled-evidence", 1, { status: "failed" })],
     gate: {
       passed: false,
       failure: {

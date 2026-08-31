@@ -21,16 +21,18 @@ import { runBenchmarkChild } from "../../src/project-instructions/run-child-proc
 import type {
   PairedSample,
   PairedScheduleCell,
-  ProjectInstructionMode,
+  ProjectInstructionCondition,
 } from "../../src/project-instructions/run-core.ts";
+import { conditionConfiguration } from "../../src/project-instructions/run-core.ts";
 import { createCellLivenessMonitor } from "../../src/project-instructions/run-liveness.ts";
 import { runPairedBenchmarkSchedule } from "../../src/project-instructions/run-schedule.ts";
+import { createTaskVerificationSemanticTracker } from "../../src/project-instructions/verification-semantic-proof.ts";
 import { runProjectInstructionsBenchmark } from "../../src/run-project-instructions.ts";
 
 const pair: PairedScheduleCell = {
   run: 1,
   task: "event-sourced-inventory",
-  modes: ["legacy", "compiled"],
+  conditions: ["legacy", "compiled-evidence", "compiled-audit"],
 };
 const privateSnapshots = {
   models: { path: "", present: false, sha256: "", dispose() {} },
@@ -38,17 +40,52 @@ const privateSnapshots = {
   dispose() {},
 };
 
-function passedSample(mode: ProjectInstructionMode): PairedSample {
+function passedSample(condition: ProjectInstructionCondition): PairedSample {
+  const configuration = conditionConfiguration(condition);
+  const verificationMode = configuration.taskVerificationMode;
+  if (verificationMode === "off") throw new Error(`${condition} must exercise task verification`);
   return {
     run: 1,
     task: pair.task,
-    mode,
+    condition,
+    mode: configuration.projectInstructionMode,
+    taskVerificationMode: verificationMode,
     status: "passed",
     elapsedMs: 1,
     metrics: { usage: { totalTokens: 1 } },
     quality: { passed: true, rawScore: 1, maxScore: 1, checks: [{ passed: true }] },
-    liveness: { semanticEvidenceAvailable: true, semanticEvidenceComplete: true },
+    liveness: {
+      semanticEvidenceAvailable: true,
+      semanticEvidenceComplete: true,
+      taskVerification: completedTaskVerificationProof(verificationMode),
+    },
   };
+}
+
+function completedTaskVerificationProof(mode: "evidence" | "audit") {
+  const tracker = createTaskVerificationSemanticTracker();
+  const complete = (id: string, toolName: string, args: Record<string, unknown>, text: string) => {
+    tracker.start({ type: "tool_execution_start", toolCallId: id, toolName, args });
+    tracker.end({
+      type: "tool_execution_end",
+      toolCallId: id,
+      toolName,
+      isError: false,
+      result: { content: [{ type: "text", text }] },
+    });
+  };
+  complete(
+    "ready",
+    "record_task_verification",
+    { action: "ready_to_finish" },
+    mode === "evidence" ? "verification_token: evidence-token" : "Define requirements",
+  );
+  if (mode === "audit") {
+    complete("define", "record_requirement_audit", { action: "define" }, "Requirements defined");
+    complete("verdict", "record_requirement_audit", { action: "verdict" }, "verification_token: audit-token");
+  }
+  complete("finish", "finish_work", { verification_token: "accepted-token" }, "Work completed");
+  return tracker.snapshot();
 }
 
 function scheduleDocument(): Parameters<typeof runPairedBenchmarkSchedule>[0]["document"] {
@@ -140,9 +177,9 @@ test("schedule marks complete and interrupted runs explicitly", async () => {
       },
       {
         hashRuntime: () => "a".repeat(64),
-        runCell: async ({ mode }) => {
+        runCell: async ({ condition }) => {
           if (scenario === "interrupted") throw new BenchmarkInterruptedError("SIGINT");
-          return passedSample(mode);
+          return passedSample(condition);
         },
         writeEvidence: () => {},
         setExitCode: (value) => {

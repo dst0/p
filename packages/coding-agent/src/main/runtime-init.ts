@@ -111,6 +111,9 @@ export function buildSessionOptions(
   if (parsed.completionMode) {
     options.completionMode = parsed.completionMode;
   }
+  if (parsed.taskVerificationMode) {
+    options.taskVerificationMode = parsed.taskVerificationMode;
+  }
   if (parsed.maxTokens !== undefined) {
     options.maxTokens = parsed.maxTokens;
   }

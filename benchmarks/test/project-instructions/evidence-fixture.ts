@@ -13,6 +13,7 @@ import type {
 } from "../../../packages/coding-agent/src/core/project-instructions/types.ts";
 import { computeBenchmarkProjectInstructionResultHash } from "../../src/project-instructions/cache.ts";
 import { hashFile } from "../../src/project-instructions/evidence.ts";
+import { createBaseSystemModeProof } from "../../src/project-instructions/probe.ts";
 
 type CompiledFixtureOptions = {
   compilerDiagnostic?: ProjectInstructionCompilerDiagnostic;
@@ -23,6 +24,20 @@ type CompiledFixtureOptions = {
   markerInputHash?: string;
   sourceScenario?: "wrong-path" | "wrong-hash" | "duplicate";
 };
+
+export function createEvidenceModeProof(systemPrompt: string, path: string, content: string, sourceSha256: string) {
+  return createBaseSystemModeProof(
+    { systemPrompt, systemPromptOptions: { contextFiles: [{ path, content }], taskVerificationMode: "evidence" } },
+    "legacy",
+    sourceSha256,
+    path,
+    "evidence",
+    {
+      getAllTools: () => [{ name: "record_task_verification" }],
+      getActiveTools: () => ["record_task_verification"],
+    },
+  );
+}
 
 export function createCompiledFixture(options: CompiledFixtureOptions = {}) {
   const root = mkdtempSync(join(tmpdir(), "benchmark-instruction-evidence-"));

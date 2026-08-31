@@ -1,5 +1,7 @@
+import type { ResolvedToolEffect } from "@dst0/p-agent-core";
 import { TOOL_SEARCH_TOOL_NAME } from "./agent-session/constants.ts";
 import type { ProjectInstructionDeliveryMode } from "./project-instructions/index.ts";
+import { toolEffectMapHasMutation } from "./sdk-tool-effect-inventory.ts";
 
 interface SdkToolPolicyOptions {
   projectInstructionMode: ProjectInstructionDeliveryMode;
@@ -7,6 +9,7 @@ interface SdkToolPolicyOptions {
   noTools?: "all" | "builtin";
   excludeTools?: string[];
   userInputTools?: boolean;
+  toolEffects: ReadonlyMap<string, ResolvedToolEffect>;
 }
 
 interface SdkToolPolicy {
@@ -15,21 +18,6 @@ interface SdkToolPolicy {
   initialActiveToolNames: string[];
   explicitlyToolless: boolean;
 }
-
-const READ_ONLY_EXPLICIT_TOOLS = new Set([
-  "ask_user",
-  "confirm_user",
-  "find",
-  "grep",
-  "list_skills",
-  "ls",
-  "read",
-  "read_rules",
-  "read_skills",
-  "semantic_search",
-  "session_recall",
-  TOOL_SEARCH_TOOL_NAME,
-]);
 
 export function resolveSdkToolPolicy(options: SdkToolPolicyOptions): SdkToolPolicy {
   const defaultActiveToolNames = [
@@ -53,7 +41,9 @@ export function resolveSdkToolPolicy(options: SdkToolPolicyOptions): SdkToolPoli
   const excludedToolNames = options.excludeTools;
   const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
   const requestedToolNames = options.tools ? [...options.tools] : undefined;
-  const explicitToolsMayMutate = requestedToolNames?.some((name) => !READ_ONLY_EXPLICIT_TOOLS.has(name)) ?? false;
+  const explicitToolsMayMutate = requestedToolNames
+    ? toolEffectMapHasMutation(requestedToolNames, options.toolEffects)
+    : false;
   const defaultToolsMayMutate = !requestedToolNames && options.noTools === undefined;
   if (
     options.projectInstructionMode === "compiled" &&

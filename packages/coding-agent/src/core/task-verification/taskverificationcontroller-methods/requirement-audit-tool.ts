@@ -61,6 +61,11 @@ export function do_createRequirementAuditToolDefinition(
     parameters: RequirementAuditSchema,
     executionMode: "sequential",
     execute: async (_id, params) => {
+      if (self.mode !== "audit") {
+        const message = "Requirement audit is available only when task verification mode is audit.";
+        const result: VerificationResult = { status: "needs_action", message, state: self.currentState };
+        return { content: [{ type: "text", text: message }], details: result };
+      }
       if (self.restoreError) {
         const result = self.rejected(`Cannot use the requirement audit: ${self.restoreError}.`);
         return {

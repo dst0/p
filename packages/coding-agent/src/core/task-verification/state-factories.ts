@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import { DEFAULT_TASK_VERIFICATION_MODE, type TaskVerificationMode } from "./mode.ts";
 import type { TaskVerificationState } from "./types.ts";
 
 export function emptyReadiness(): NonNullable<TaskVerificationState["readiness"]> {
@@ -18,9 +19,13 @@ export function emptyRequirementAudit(): TaskVerificationState["requirementAudit
   };
 }
 
-export function emptyState(taskId: string = randomUUID()): TaskVerificationState {
+export function emptyState(
+  taskId: string = randomUUID(),
+  mode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE,
+): TaskVerificationState {
   return {
     version: 2,
+    mode,
     taskId,
     mutationRevision: 0,
     taskPrompts: [],
@@ -28,6 +33,13 @@ export function emptyState(taskId: string = randomUUID()): TaskVerificationState
     unverifiedTestPathOverflow: false,
     mutatedSourcePaths: [],
     mutatedSourcePathOverflow: false,
+    taskOwnedPaths: [],
+    taskOwnedPathBaselines: [],
+    taskOwnedPathOverflow: false,
+    taskOwnedPathTrackingFailed: false,
+    externalEffectReceipts: [],
+    externalEffectReceiptOverflow: false,
+    effectTrackingFailed: false,
     baseline: {
       required: false,
       status: "not_required",

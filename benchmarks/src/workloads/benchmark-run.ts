@@ -165,6 +165,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
             ? captureRecordedProjectInstructionEvidence(
                 workspace,
                 options.projectInstructions,
+                options.taskVerificationMode,
                 options.projectInstructionsFile,
                 result,
                 metrics,
@@ -241,6 +242,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
       timeoutSeconds: options.timeoutSeconds,
       maxRuntimeSeconds: options.maxRuntimeSeconds,
       projectInstructions: options.projectInstructions,
+      taskVerificationMode: options.taskVerificationMode,
       tasks: selectedTasks.map(({ id, description, timeoutSeconds }) => ({
         id,
         description,

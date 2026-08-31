@@ -199,7 +199,8 @@ describe("task declaration requirement preservation", () => {
         edits: [{ oldText: "before", newText: "after" }],
       });
       expect(gate?.block).toBe(true);
-      expect(gate?.reason).toContain("Cannot change the workspace");
+      expect(gate?.reason).toContain("Cannot perform this effect");
+      expect(gate?.reason).toContain("requirement-source snapshot README.md is missing or corrupt");
     } finally {
       rmSync(fixture.cwd, { recursive: true, force: true });
     }

@@ -11,7 +11,7 @@ import type { TaskVerificationController } from "../taskverificationcontroller.t
 import { MAX_UNVERIFIED_TEST_PATHS } from "../test-authoring-state-validation.ts";
 import { isDirectMutationTool, isShellTool, pathArgument, shellCommand } from "../tool-classification.ts";
 import type { TaskVerificationEvidence } from "../types.ts";
-import { focusedTestInvocation } from "./test-command-invocation.ts";
+import { commandContainsTestInvocation, focusedTestInvocation } from "./test-command-invocation.ts";
 import { hasPositivePassingTestResult, testInvocationSelection } from "./test-invocation-selection.ts";
 import { captureTestWorkspaceSnapshot, changedTestPaths } from "./test-workspace-snapshot.ts";
 
@@ -232,10 +232,13 @@ function validStoredTestPath(filePath: string): boolean {
 
 function mutationTestPaths(self: TaskVerificationController, context: BeforeToolCallContext): string[] {
   const directPath = isDirectMutationTool(context.toolCall.name) ? pathArgument(context.args) : undefined;
+  const command = isShellTool(context.toolCall.name) ? shellCommand(context.args) : undefined;
   const candidates = directPath
     ? [directPath]
-    : isShellTool(context.toolCall.name)
-      ? tokenizeShellCommands(shellCommand(context.args)).flat()
+    : command !== undefined
+      ? tokenizeShellCommands(command)
+          .flat()
+          .filter((value) => value !== "test" || !commandContainsTestInvocation(command))
       : [];
   return [
     ...new Set(candidates.map((value) => normalizedTestPath(self, value)).filter((value) => value !== undefined)),

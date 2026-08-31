@@ -17,7 +17,7 @@ function failedDocument(failure: ReportFailure): ReportDocument {
     candidateVersion: "5.0.1-rc.1",
     runs: 3,
     tasks: [pair.task],
-    schedule: [{ ...pair, modes: ["compiled", "legacy"] }],
+    schedule: [{ ...pair, conditions: ["compiled-evidence", "legacy", "compiled-audit"] }],
     samples: [],
     completed: false,
     gate: { passed: false, failure },
@@ -78,7 +78,9 @@ test("sample rows distinguish exact and observed lower-bound definition counts",
   const document = failedDocument(createClassifiedBenchmarkGateFailure(pair, "compiled", "quality gate failed"));
   document.samples.push({
     ...pair,
+    condition: "compiled-evidence",
     mode: "compiled",
+    taskVerificationMode: "evidence",
     status: "failed",
     elapsedMs: 1,
     metrics: { usage: { totalTokens: 1 } },

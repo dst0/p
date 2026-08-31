@@ -100,6 +100,8 @@ For a short same-model comparison between this fork and the upstream agent, see
 
 For repository instruction handling, including `compiled`, `legacy`, and `off` modes, bounded `list_skills`/`read_rules`/`read_skills` retrieval, and lifecycle-aware action gating, see [Project instructions](packages/coding-agent/docs/project-instructions.md).
 
+For the independent `evidence`, experimental `audit`, and `off` task-verification modes, see [Evidence-backed completion](packages/coding-agent/docs/usage.md#evidence-backed-completion).
+
 ## Supply-chain hardening
 
 We treat npm dependency changes as reviewed code changes.

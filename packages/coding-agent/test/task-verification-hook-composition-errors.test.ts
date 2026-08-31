@@ -8,7 +8,7 @@ import { callTaskVerification } from "./task-requirement-audit-test-harness.ts";
 describe("task verification hook composition errors", () => {
   it("releases test mutation reservations when an earlier before hook throws", async () => {
     const priorError = new Error("prior hook failed");
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
     let reservationObserved = false;
     const agent = new Agent();
     agent.beforeToolCall = async () => {
@@ -26,7 +26,7 @@ describe("task verification hook composition errors", () => {
   });
 
   it("releases test mutation reservations when an earlier before hook blocks", async () => {
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
     let reservationObserved = false;
     const agent = new Agent();
     agent.beforeToolCall = async () => {
@@ -50,7 +50,7 @@ describe("task verification hook composition errors", () => {
     agent.afterToolCall = async () => {
       throw priorError;
     };
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
     controller.install(agent);
 
     await expect(agent.afterToolCall?.(afterContext(), new AbortController().signal)).rejects.toBe(priorError);
@@ -64,7 +64,7 @@ describe("task verification hook composition errors", () => {
     agent.afterToolCall = async () => {
       throw priorError;
     };
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
     controller.afterToolCall = async () => {
       throw controllerError;
     };

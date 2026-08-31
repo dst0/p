@@ -1,6 +1,8 @@
-import type { AgentTool } from "@dst0/p-agent-core";
+import { type AgentTool, resolveToolEffect, toolEffectRequiresVerification } from "@dst0/p-agent-core";
 import { wrapRegisteredTools } from "../../extensions/index.ts";
 import { createSyntheticSourceInfo } from "../../source-info.ts";
+import { REQUIREMENT_AUDIT_TOOL_NAME, TASK_VERIFICATION_TOOL_NAME } from "../../task-verification.ts";
+import { assertReservedTaskVerificationToolNames } from "../../task-verification-session-runtime.ts";
 import type { AgentSession } from "../agentsession.ts";
 import type { ToolDefinitionEntry } from "../session-types.ts";
 
@@ -11,11 +13,13 @@ export function do__refreshToolRegistry(
   const previousActiveToolNames = self.getActiveToolNames();
   const allowedToolNames = self._allowedToolNames;
   const excludedToolNames = self._excludedToolNames;
+  const managedVerificationToolNames = new Set([TASK_VERIFICATION_TOOL_NAME, REQUIREMENT_AUDIT_TOOL_NAME]);
   const isAllowedTool = (name: string): boolean =>
     (!allowedToolNames || allowedToolNames.has(name)) && !excludedToolNames?.has(name);
 
   const registeredTools = self._extensionRunner.getAllRegisteredTools();
-  const allCustomTools = [
+  assertReservedTaskVerificationToolNames(registeredTools.map(({ definition }) => definition));
+  const customToolCandidates = [
     ...registeredTools,
     ...self._customTools.map((definition) => ({
       definition,
@@ -23,7 +27,8 @@ export function do__refreshToolRegistry(
         source: "sdk",
       }),
     })),
-  ].filter((tool) => isAllowedTool(tool.definition.name));
+  ];
+  const allCustomTools = customToolCandidates.filter((tool) => isAllowedTool(tool.definition.name));
   const reservedProjectInstructionTool = allCustomTools.find(
     (tool) =>
       ["list_skills", "read_rules", "read_skills"].includes(tool.definition.name) &&
@@ -92,7 +97,7 @@ export function do__refreshToolRegistry(
 
   if (allowedToolNames) {
     for (const toolName of self._toolRegistry.keys()) {
-      if (allowedToolNames.has(toolName)) {
+      if (allowedToolNames.has(toolName) && !managedVerificationToolNames.has(toolName)) {
         nextActiveToolNames.push(toolName);
       }
     }
@@ -100,22 +105,24 @@ export function do__refreshToolRegistry(
     // Always activate extension tools that have promptSnippet —
     // providing a promptSnippet signals the tool should be visible in the system prompt's tool listing.
     for (const tool of wrappedExtensionTools) {
-      if (self._toolPromptSnippets.has(tool.name)) {
+      if (self._toolPromptSnippets.has(tool.name) && !managedVerificationToolNames.has(tool.name)) {
         nextActiveToolNames.push(tool.name);
       }
     }
     if (options?.includeAllExtensionTools) {
       for (const tool of wrappedExtensionTools) {
-        nextActiveToolNames.push(tool.name);
+        if (!managedVerificationToolNames.has(tool.name)) nextActiveToolNames.push(tool.name);
       }
     }
   }
 
   const uniqueActiveToolNames = new Set(nextActiveToolNames);
-  const activatesCustomTool = Array.from(uniqueActiveToolNames).some(
-    (name) => definitionRegistry.get(name)?.sourceInfo.source !== "builtin",
+  const activatesCustomMutatingTool = Array.from(uniqueActiveToolNames).some(
+    (name) =>
+      definitionRegistry.get(name)?.sourceInfo.source !== "builtin" &&
+      toolEffectRequiresVerification(resolveToolEffect(toolRegistry.get(name)?.effect)),
   );
-  if (self._projectInstructionMode === "compiled" && activatesCustomTool) {
+  if (self._projectInstructionMode === "compiled" && activatesCustomMutatingTool) {
     if (!toolRegistry.has("read_rules")) {
       throw new Error("Compiled project instructions require read_rules when custom or extension tools are active");
     }

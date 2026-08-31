@@ -2,11 +2,18 @@ import { hashBenchmarkProjectInstructionCacheState } from "./cache.ts";
 import { validateRoutedTurns } from "./routed-turn-validation.ts";
 import { assertSeededManifestEvidence } from "./seed-manifest.ts";
 import { validateProjectInstructionTurnAuthoritySequence } from "./turn-authority.ts";
+import { taskVerificationStartupFailure } from "./verification-startup-proof.ts";
 
 const HASH_PATTERN = /^[a-f0-9]{64}$/u;
 
 type BaseProof = {
   requestedMode?: string;
+  requestedTaskVerificationMode?: string;
+  effectiveTaskVerificationMode?: string;
+  registeredVerificationTools?: string[];
+  activeVerificationTools?: string[];
+  verificationToolSurfaceRegistered?: boolean;
+  verificationToolSurfaceActive?: boolean;
   sourceSha256?: string;
   systemPromptSha256?: string;
   systemPromptBytes?: number;
@@ -67,6 +74,7 @@ type EvidenceCache = {
 };
 type ProjectInstructionEvidence = {
   requestedMode?: string;
+  requestedTaskVerificationMode?: string;
   sourceSha256?: string;
   proofReceiptSha256?: string;
   proofExpectedTurnCount?: number;
@@ -98,6 +106,7 @@ function validateBaseProofs(
   userTurns: UserTurn[],
   trustedReceiptSha256: string | undefined,
   expectedTurnCount: number | undefined,
+  expectedTaskVerificationMode: string | undefined,
 ): string | undefined {
   if (!Array.isArray(proofs) || proofs.length === 0 || proofs.length !== userTurns.length) {
     return "base-system mode proof is missing for one or more user turns";
@@ -115,6 +124,9 @@ function validateBaseProofs(
     if (mode === "compiled" && !cache) return "compiled cache evidence is missing";
     if (
       proof.requestedMode !== mode ||
+      (expectedTaskVerificationMode !== undefined &&
+        (proof.requestedTaskVerificationMode !== expectedTaskVerificationMode ||
+          proof.effectiveTaskVerificationMode !== expectedTaskVerificationMode)) ||
       proof.sourceSha256 !== sourceSha256 ||
       typeof proof.systemPromptSha256 !== "string" ||
       !HASH_PATTERN.test(proof.systemPromptSha256) ||
@@ -123,6 +135,11 @@ function validateBaseProofs(
       proof.systemPromptBytes <= 0
     ) {
       return "base-system mode proof identity is invalid";
+    }
+    if (expectedTaskVerificationMode !== undefined) {
+      if (taskVerificationStartupFailure(proof as Parameters<typeof taskVerificationStartupFailure>[0])) {
+        return "task-verification tool inventory or controller activation is invalid";
+      }
     }
     if (
       mode === "legacy" &&
@@ -182,6 +199,7 @@ export function validateProjectInstructionEvidence(
   expectedSourceSha256: string,
   seeded?: SeededEvidence,
   trustedReceiptSha256?: string,
+  expectedTaskVerificationMode?: string,
 ): { passed: boolean; reason?: string } {
   if (evidence?.requestedMode !== expectedMode) {
     return {
@@ -190,6 +208,12 @@ export function validateProjectInstructionEvidence(
     };
   }
   if (!evidence) return { passed: false, reason: "project instruction evidence is missing" };
+  if (
+    expectedTaskVerificationMode !== undefined &&
+    evidence.requestedTaskVerificationMode !== expectedTaskVerificationMode
+  ) {
+    return { passed: false, reason: "requested task-verification profile is invalid" };
+  }
   if (evidence.sourceSha256 !== expectedSourceSha256) {
     return { passed: false, reason: "fixture source SHA-256 does not match the immutable input" };
   }
@@ -224,6 +248,7 @@ export function validateProjectInstructionEvidence(
     userTurns,
     trustedReceiptSha256,
     evidence.proofExpectedTurnCount,
+    expectedTaskVerificationMode,
   );
   if (proofFailure) return { passed: false, reason: proofFailure };
   if (expectedMode === "legacy" || expectedMode === "off") return { passed: true };

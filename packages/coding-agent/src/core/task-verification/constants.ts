@@ -108,6 +108,15 @@ export const AcceptanceCheckSchema = Type.Object({
   evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
 });
 
+export const EvidenceVerificationSchema = Type.Object(
+  {
+    action: Type.Union([Type.Literal("ready_to_finish"), Type.Literal("status")]),
+    unresolved_failures: Type.Optional(Type.Array(Type.String())),
+    acceptance_checks: Type.Optional(Type.Array(AcceptanceCheckSchema, { minItems: 1, maxItems: 32 })),
+  },
+  { additionalProperties: false },
+);
+
 export const VerificationSchema = Type.Object({
   action: Type.Union([
     Type.Literal("declare_task"),

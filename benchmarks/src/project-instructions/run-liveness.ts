@@ -5,8 +5,13 @@ import { replacePrivateBrotliText } from "../harness/private-brotli.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import type { SemanticEventState, SemanticTool } from "./liveness-events.ts";
 import { processSemanticLine } from "./liveness-events.ts";
+import { semanticCaptureIsPartial } from "./recording-semantic-evidence.ts";
 import { createSemanticRecordingFollower } from "./run-recording-follower.ts";
 import { createRequirementRepairTelemetry } from "./run-repair-telemetry.ts";
+import {
+  createTaskVerificationSemanticTracker,
+  type TaskVerificationSemanticEvidence,
+} from "./verification-semantic-proof.ts";
 
 export { runBenchmarkChild } from "./run-child-process.ts";
 
@@ -27,6 +32,7 @@ export type CellLiveness = {
   semanticEvidenceAvailable: boolean;
   semanticEvidenceComplete: boolean;
   progressEvidence: string | null;
+  taskVerification: TaskVerificationSemanticEvidence | null;
 };
 
 type SemanticCapture = {
@@ -100,6 +106,7 @@ export function createUnavailableCellLiveness(): CellLiveness {
     semanticEvidenceAvailable: false,
     semanticEvidenceComplete: false,
     progressEvidence: null,
+    taskVerification: null,
   };
 }
 
@@ -147,18 +154,6 @@ function appendProgress(state: MonitorState, event: string, extra?: Record<strin
   appendFileSync(state.progressPath, `${JSON.stringify(progressRecord(state, event, extra))}\n`, "utf8");
 }
 
-function semanticCaptureIsPartial(
-  recordingCapture: SemanticCapture | undefined,
-  captureOverflow: CaptureOverflow | undefined,
-): boolean {
-  if (recordingCapture?.partial === true) return true;
-  return (
-    captureOverflow?.kind === "capture_overflow" &&
-    (["raw recording", "recording storage", "recording archive"].includes(captureOverflow.captureName ?? "") ||
-      recordingCapture === undefined)
-  );
-}
-
 export function createCellLivenessMonitor(options: MonitorOptions): {
   observe(): void;
   heartbeat(): void;
@@ -183,6 +178,7 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
     seenToolEvents: new Set<string>(),
     activeTools: new Map<string, SemanticTool>(),
     requirementRepairTelemetry: createRequirementRepairTelemetry(),
+    taskVerificationTracker: createTaskVerificationSemanticTracker(),
     onProgress: (event, extra) => appendProgress(state, event, extra),
     finalized: false,
   };
@@ -201,6 +197,7 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
       state.seenToolEvents.clear();
       state.activeTools.clear();
       state.requirementRepairTelemetry.resetReplayState();
+      state.taskVerificationTracker.reset();
     },
   });
   mkdirSync(dirname(state.progressPath), { recursive: true });
@@ -290,6 +287,7 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
         semanticEvidenceAvailable: state.semanticEvidenceAvailable,
         semanticEvidenceComplete: state.semanticEvidenceComplete,
         progressEvidence: state.progressEvidence,
+        taskVerification: state.semanticEvidenceComplete ? state.taskVerificationTracker.snapshot() : null,
       };
     },
   };

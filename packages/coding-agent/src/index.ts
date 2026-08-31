@@ -1,7 +1,5 @@
 // Core session management
-
 export { type Args, parseArgs } from "./cli/args.ts";
-
 // Config paths
 export { getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION } from "./config.ts";
 export {
@@ -200,6 +198,7 @@ export {
   createSubmitPlanTool,
   createWriteTool,
   type PromptTemplate,
+  type TaskVerificationMode,
 } from "./core/sdk.ts";
 export {
   type BranchSummaryEntry,
@@ -244,6 +243,7 @@ export {
   type SkillFrontmatter,
 } from "./core/skills.ts";
 export { createSyntheticSourceInfo } from "./core/source-info.ts";
+export type * from "./core/tool-effects.ts";
 // Tools
 export {
   type AskUserToolDetails,

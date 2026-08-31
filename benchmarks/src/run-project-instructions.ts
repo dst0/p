@@ -123,7 +123,7 @@ export async function runProjectInstructionsBenchmark({
     registerCandidate(root, candidateVersion, runtimeSha256);
     const schedule = buildPairedSchedule(baseOptions.tasks, baseOptions.runs, seed);
     document = {
-      schemaVersion: 1,
+      schemaVersion: 2,
       candidateVersion,
       generatedAt: new Date().toISOString(),
       model: baseOptions.model,
@@ -142,7 +142,7 @@ export async function runProjectInstructionsBenchmark({
       completed: false,
     };
     writeEvidence(output, document);
-    console.log(`Paired benchmark output: ${output}`);
+    console.log(`Three-condition benchmark output: ${output}`);
     console.log(`Immutable P runtime SHA-256: ${runtimeSha256}`);
     console.log(`Project instruction source SHA-256: ${sourceSha256}`);
     console.log(`Randomization seed: ${seed}`);

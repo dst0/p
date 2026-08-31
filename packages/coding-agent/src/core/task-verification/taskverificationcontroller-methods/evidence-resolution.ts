@@ -5,6 +5,7 @@ import {
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   TASK_VERIFICATION_TOOL_NAME,
 } from "../constants.ts";
+import { reconcileTaskVerificationModeState } from "../mode-state.ts";
 import {
   computeCertificateHash,
   computeRequirementSetHash,
@@ -216,6 +217,13 @@ export function do_restore(self: TaskVerificationController): void {
       unverifiedTestPathOverflow: latestStateData.unverifiedTestPathOverflow ?? false,
       mutatedSourcePaths: latestStateData.mutatedSourcePaths ?? [],
       mutatedSourcePathOverflow: latestStateData.mutatedSourcePathOverflow ?? false,
+      taskOwnedPaths: latestStateData.taskOwnedPaths ?? [],
+      taskOwnedPathBaselines: latestStateData.taskOwnedPathBaselines ?? [],
+      taskOwnedPathOverflow: latestStateData.taskOwnedPathOverflow ?? false,
+      taskOwnedPathTrackingFailed: latestStateData.taskOwnedPathTrackingFailed ?? false,
+      externalEffectReceipts: latestStateData.externalEffectReceipts ?? [],
+      externalEffectReceiptOverflow: latestStateData.externalEffectReceiptOverflow ?? false,
+      effectTrackingFailed: latestStateData.effectTrackingFailed ?? false,
       readiness: latestStateData.readiness ?? emptyReadiness(),
       requirementAudit: latestStateData.requirementAudit ?? emptyRequirementAudit(),
     };
@@ -226,7 +234,9 @@ export function do_restore(self: TaskVerificationController): void {
       "the latest persisted task-verification state is invalid; declare the task again before continuing";
   }
 
-  if (!self.restoreError) {
+  reconcileTaskVerificationModeState(self, hasPersistedState);
+
+  if (!self.restoreError && self.mode === "audit") {
     const sourceRestoreError = restoreRequirementSourceTexts(branch, self.state, self.requirementSourceTexts);
     if (sourceRestoreError) self.restoreError = sourceRestoreError;
   }
@@ -248,6 +258,7 @@ export function do_persistState(self: TaskVerificationController): void {
   const rejectedDraft = structuredClone(self.rejectedRequirementDefinitionDraft);
   self.state = {
     ...self.state,
+    mode: self.mode,
     requirementDefinitionRepairPending: rejectedDraft ? 1 : undefined,
     rejectedRequirementDefinitionDraft: rejectedDraft,
   };

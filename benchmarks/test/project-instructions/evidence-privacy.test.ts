@@ -16,7 +16,7 @@ import {
   bindProjectInstructionTurnAuthority,
   createProjectInstructionTurnChallenge,
 } from "../../src/project-instructions/turn-authority.ts";
-import { createCompiledFixture } from "./evidence-fixture.ts";
+import { createCompiledFixture, createEvidenceModeProof } from "./evidence-fixture.ts";
 
 test("captured project-instruction evidence exact-picks nested public fields", () => {
   const fixture = createCompiledFixture();
@@ -178,11 +178,7 @@ test("validated parent samples replace contaminated child instruction evidence",
     writeFileSync(workspaceAgents, source);
     writeFileSync(sourceFile, source);
     const systemPrompt = `<project_context>\n<project_instructions path="${workspaceAgents}">\n${source}\n</project_instructions>\n</project_context>`;
-    const proof = createBaseSystemModeProof(
-      { systemPrompt, systemPromptOptions: { contextFiles: [{ path: workspaceAgents, content: source }] } },
-      "legacy",
-      sourceSha256,
-    );
+    const proof = createEvidenceModeProof(systemPrompt, workspaceAgents, source, sourceSha256);
     const turn = captureUserTurnEvidence(
       { type: "message_start", message: { role: "user", content: "inspect the fixture" } },
       1,
@@ -194,6 +190,7 @@ test("validated parent samples replace contaminated child instruction evidence",
     const evidence = captureProjectInstructionEvidence({
       workspace,
       mode: "legacy",
+      taskVerificationMode: "evidence",
       sourceFile,
       proofReceiptSha256,
       proofExpectedTurnCount: 1,
@@ -215,6 +212,7 @@ test("validated parent samples replace contaminated child instruction evidence",
       document: {
         startupProbes: {},
         projectInstructions: "legacy",
+        taskVerificationMode: "evidence",
         runs: 1,
         agents: ["p"],
         models: { p: "provider/model" },
@@ -264,7 +262,9 @@ test("validated parent samples replace contaminated child instruction evidence",
     const context = {
       options: { model: "provider/model", sourceSha256 },
       pair: { run: 2, task },
+      condition: "legacy",
       mode: "legacy",
+      taskVerificationMode: "evidence",
       scratchOutput,
       runtimeSha256: "runtime-sha",
       proofReceiptSha256,

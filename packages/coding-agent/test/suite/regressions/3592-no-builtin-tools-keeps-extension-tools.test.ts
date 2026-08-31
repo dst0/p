@@ -98,6 +98,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "read_skills",
       "recall_learnings",
       "record_learning",
+      "record_task_verification",
       "rg",
       "run_subagent",
       "semantic_search",
@@ -108,7 +109,7 @@ describe("regression #3592: no-builtin-tools keeps extension tools enabled", () 
       "update_session_state",
       "write",
     ]);
-    expect(session.getActiveToolNames()).toEqual(["dynamic_tool", "read_rules"]);
+    expect(session.getActiveToolNames()).toEqual(["dynamic_tool", "read_rules", "record_task_verification"]);
     const activeRuleReader = session.agent.state.tools.find((tool) => tool.name === "read_rules");
     expect(activeRuleReader).toBeDefined();
     expect(activeRuleReader?.execute).toBeTypeOf("function");

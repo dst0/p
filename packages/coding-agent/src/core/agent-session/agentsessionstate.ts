@@ -22,6 +22,7 @@ import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
 import type { BuildSystemPromptOptions } from "../system-prompt.ts";
+import { DEFAULT_TASK_VERIFICATION_MODE, type TaskVerificationMode } from "../task-verification/mode.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 import { createVerificationLedger, type VerificationLedger } from "../verification-ledger.ts";
 import { isInternalAgentMessage } from "./message-utils.ts";
@@ -37,6 +38,7 @@ import type {
   RuntimeContextPrompts,
   WorkingStatePromptInsertion,
 } from "./state-types.ts";
+import type { InstalledTaskVerificationRuntime } from "./task-verification-runtime-state.ts";
 
 export class AgentSessionState {
   readonly agent: Agent;
@@ -75,9 +77,7 @@ export class AgentSessionState {
   public _baseToolDefinitions: Map<string, ToolDefinition> = new Map();
   public _projectRuleSafeToolDefinitions = new Set<ToolDefinition>();
   public _cwd: string;
-  public _extensionRunnerRef?: {
-    current?: ExtensionRunner;
-  };
+  public _extensionRunnerRef?: { current?: ExtensionRunner };
   public _initialActiveToolNames?: string[];
   public _allowedToolNames?: Set<string>;
   public _excludedToolNames?: Set<string>;
@@ -92,6 +92,8 @@ export class AgentSessionState {
   public _extensionErrorListener?: ExtensionErrorListener;
   public _extensionErrorUnsubscriber?: () => void;
   public _completionMode: CompletionMode;
+  public _taskVerificationMode: TaskVerificationMode;
+  public _taskVerificationRuntime?: InstalledTaskVerificationRuntime;
   public _interactionMode: InteractionMode = "normal";
   public _planModePreviousActiveToolNames: string[] | undefined;
   public _stateUpdateRequiredForCurrentUserTurn = false;
@@ -136,6 +138,7 @@ export class AgentSessionState {
       reason: "startup",
     };
     this._completionMode = config.completionMode ?? this.agent.completionMode;
+    this._taskVerificationMode = config.taskVerificationMode ?? DEFAULT_TASK_VERIFICATION_MODE;
     // Verification ledger for tracking required pre-commit/pre-push checks
     this._verificationLedger = createVerificationLedger();
   }

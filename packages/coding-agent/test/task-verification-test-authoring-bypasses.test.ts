@@ -256,7 +256,7 @@ describe("task verification test-authoring bypass resistance", () => {
     agent.afterToolCall = async () => {
       throw new Error("earlier hook failed");
     };
-    const controller = createTaskVerificationController(SessionManager.inMemory());
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "audit");
     controller.install(agent);
     declareTestOnlyTask(controller);
 

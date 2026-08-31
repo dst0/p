@@ -6,6 +6,7 @@ import { isThinkingLevel, type ThinkingLevel } from "./thinking-level.ts";
 export const supportedAgents = ["pi", "p", "kilo", "codex", "agy"] as const;
 export type AgentId = (typeof supportedAgents)[number];
 export type ProjectInstructionMode = "compiled" | "legacy" | "off";
+export type TaskVerificationMode = "evidence" | "audit" | "off";
 
 export type RunnerOptions = {
   model?: string;
@@ -15,6 +16,7 @@ export type RunnerOptions = {
   projectInstructionProofReceipt?: string;
   projectInstructionsFile: string;
   projectInstructions?: ProjectInstructionMode;
+  taskVerificationMode?: TaskVerificationMode;
   agents: AgentId[];
   modelsFile: string;
   piVersion: string;
@@ -80,6 +82,7 @@ Options:
   --agy-model <model-id>      Google Antigravity model (required when AGY is selected)
   --task <id>                 Run only one fixture (optional)
   --project-instructions <mode> P-only mode: compiled, legacy, or off
+  --task-verification <mode>   P-only verification: evidence, audit, or off
   --project-instruction-compiler-model <provider/id> Dedicated P compiler model
   --project-instructions-file <path> Authoritative source copied into each P fixture
   --thinking <level>           P reasoning level: off, minimal, low, medium, high, or xhigh
@@ -143,6 +146,11 @@ function assignStringOption(options: RunnerOptions, argument: string, value: str
     options.projectInstructions = value;
   } else if (argument === "--project-instruction-compiler-model") {
     options.projectInstructionCompilerModel = value;
+  } else if (argument === "--task-verification") {
+    if (value !== "evidence" && value !== "audit" && value !== "off") {
+      throw new Error("--task-verification must be evidence, audit, or off");
+    }
+    options.taskVerificationMode = value;
   } else if (argument === "--project-instructions-file") options.projectInstructionsFile = resolve(value);
   else if (argument === "--thinking") {
     if (!isThinkingLevel(value)) throw new Error("--thinking must be off, minimal, low, medium, high, or xhigh");
@@ -190,6 +198,7 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
     "--task",
     "--project-instructions",
     "--project-instruction-compiler-model",
+    "--task-verification",
     "--project-instructions-file",
     "--thinking",
     "--output",

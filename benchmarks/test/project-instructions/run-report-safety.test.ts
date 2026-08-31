@@ -23,12 +23,14 @@ test("paired report safely renders every dynamic prose, code-span, and table val
     candidateVersion: "5.0.1-rc.1",
     runs: 3,
     tasks: [payload],
-    schedule: [{ run: 1, task: payload, modes: [payload, payload] }],
+    schedule: [{ run: 1, task: payload, conditions: [payload, payload, payload] }],
     samples: [
       {
         run: 1,
         task: payload,
+        condition: payload,
         mode: payload,
+        taskVerificationMode: payload,
         status: payload,
         quality: { rawScore: 1, maxScore: 2 },
         metrics: { usage: { totalTokens: 3 } },
@@ -50,10 +52,14 @@ test("paired report safely renders every dynamic prose, code-span, and table val
   const html = marked.parse(report);
   assert.equal(typeof html, "string");
   if (typeof html !== "string") throw new Error("marked unexpectedly returned an asynchronous result");
-  assert.deepEqual(headings, ["Project-instruction paired benchmark", "Randomized pair order", "Samples"]);
+  assert.deepEqual(headings, [
+    "Project-instruction three-condition benchmark",
+    "Randomized condition order",
+    "Samples",
+  ]);
   assert.deepEqual(
     tables.map((table) => table.header.length),
-    [4, 9],
+    [5, 11],
   );
   assert.ok(tables.every((table) => table.rows.every((row) => row.length === table.header.length)));
   assert.doesNotMatch(html, /<script>|forged\(\)<\/script>/iu);

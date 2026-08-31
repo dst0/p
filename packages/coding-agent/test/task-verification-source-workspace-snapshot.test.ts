@@ -27,7 +27,7 @@ describe("task verification source workspace snapshots", () => {
 
       expect(before).toBeDefined();
       expect(after?.get("src/value.ts")).toBe("missing");
-      expect(changedSourcePaths(before!, after!)).toEqual(["src/value.ts"]);
+      expect(changedSourcePaths(before!, after!)).toEqual(["docs/value.md", "src/value.ts"]);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

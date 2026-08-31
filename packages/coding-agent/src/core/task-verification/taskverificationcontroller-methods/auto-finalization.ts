@@ -245,7 +245,7 @@ export function do_updated(
     status: "updated",
     message: includeGuidance ? `${message}\n\n${self.formatNextRequirement()}` : message,
     state: self.currentState,
-    contextExtract: taskVerificationContextExtract(formatTaskVerificationCompactionNextAction(self), self.currentState),
+    contextExtract: taskVerificationContextExtract(compactionNextAction(self), self.currentState),
   };
 }
 
@@ -254,6 +254,10 @@ export function do_rejected(self: TaskVerificationController, message: string): 
     status: "needs_action",
     message,
     state: self.currentState,
-    contextExtract: taskVerificationContextExtract(formatTaskVerificationCompactionNextAction(self), self.currentState),
+    contextExtract: taskVerificationContextExtract(compactionNextAction(self), self.currentState),
   };
+}
+
+function compactionNextAction(self: TaskVerificationController): string {
+  return self.mode === "audit" ? formatTaskVerificationCompactionNextAction(self) : self.formatNextRequirement();
 }

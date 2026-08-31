@@ -1,0 +1,22 @@
+# 2026-08-31 — Natural-language audit is not a default verification boundary
+
+- **Status:** Partial
+- **Task/context:** Validate compiled project instructions and task verification against the four-task project-instructions benchmark before the 5.0.1 release.
+- **Unexpected observation or failure:** A small implementation completed with passing focused tests and typecheck, but the mandatory semantic completion audit spent most of the run interpreting procedural repository prose. It classified a fallback test command as a high-risk product invariant and induced an unrelated proof test, worsening scope despite a successful process exit.
+- **Evidence:** The affected live canary made its useful mutation in roughly one minute, then spent roughly nine additional minutes in requirement-definition and proof work. The final workspace contained an unrequested recovery-oriented test even though the requested implementation tests passed. Repeated release candidates also failed to produce a complete trustworthy paired benchmark result.
+- **Approaches tried:**
+  - **Attempt:** Move semantic audit work until after implementation.
+    - **Outcome:** Partial
+    - **Why:** It restored implementation liveness but moved the bottleneck to completion.
+  - **Attempt:** Restrict repairs to one selected item and add stagnation, capacity, proof, and authoring guards.
+    - **Outcome:** Partial
+    - **Why:** Each guard handled one failure shape while adjacent natural-language classifications continued to create new false obligations.
+  - **Attempt:** Expand procedural-command and high-risk lexical grammar.
+    - **Outcome:** Did not work
+    - **Why:** The space of equivalent free-form wording is unbounded, so classifier growth increased protocol complexity without proving user-outcome correctness.
+- **Root cause:** The default controller boundary attempted to deterministically convert arbitrary user and project prose into an exhaustive formal specification. Internal grammar consistency was treated as a completion requirement even when deterministic execution evidence already proved the requested outcome.
+- **Resolution:** Make deterministic `evidence` verification the default. Free text produces one concise model-generated completion checklist mapped to fresh evidence. Keep semantic `audit` as an explicit experimental mode for structured specifications, independent from project-instruction delivery and completion termination.
+- **Verification:** Focused prompt/tool tests prove the default guidance requests one checklist and does not mention `record_requirement_audit`. Runtime, live-canary, and three-condition four-task benchmark verification remain pending.
+- **Prevention/follow-up:** Require correctness on legacy, compiled-evidence, and compiled-audit conditions before comparing median runtime or tokens. Derive high-risk policy from explicit tool effects and machine-readable action policy rather than incidental words in procedural prose.
+- **Reusable learning:** Deterministic guards should enforce observable effects and fresh evidence; do not make an inferred exhaustive formalization of arbitrary natural language the universal default completion gate.
+- **References:** `packages/coding-agent/src/core/task-verification/`, `packages/coding-agent/docs/usage.md`, `benchmarks/src/project-instructions/`
