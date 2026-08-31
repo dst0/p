@@ -248,3 +248,47 @@ test("records process and custom potentially mutating tools with semantic labels
     true,
   );
 });
+
+test("keeps accepted finish and trusted controller terminal counts distinct", () => {
+  const events = [
+    {
+      type: "tool_execution_start",
+      toolCallId: "finish",
+      toolName: "finish_work",
+      args: { status: "success", verification_token: "finish-token" },
+    },
+    { type: "tool_execution_end", toolCallId: "finish", toolName: "finish_work", isError: false },
+    {
+      type: "tool_execution_start",
+      toolCallId: "terminal",
+      toolName: "record_requirement_audit",
+      args: { action: "verdict" },
+    },
+    {
+      type: "tool_execution_end",
+      toolCallId: "terminal",
+      toolName: "record_requirement_audit",
+      isError: false,
+      result: {
+        details: {
+          verifiedCompletion: {
+            kind: "task_verification_completion",
+            version: 1,
+            status: "success",
+            summary: "Verified benchmark completion.",
+            files_changed: ["finish_notes.md"],
+            certificate_hash: "a".repeat(64),
+          },
+        },
+      },
+    },
+  ];
+
+  const finishOnly = parsePRecording(events.slice(0, 2), () => "");
+  const terminalOnly = parsePRecording(events.slice(2), () => "");
+
+  assert.equal(finishOnly.acceptedFinishCount, 1);
+  assert.equal(finishOnly.acceptedTerminalCompletionCount, 0);
+  assert.equal(terminalOnly.acceptedFinishCount, 0);
+  assert.equal(terminalOnly.acceptedTerminalCompletionCount, 1);
+});

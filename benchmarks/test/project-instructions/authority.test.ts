@@ -255,6 +255,7 @@ test("paired cell accepts proof authority only from the outer IPC capture", asyn
       }),
     }),
     readResult: () => ({
+      result: { status: "passed", metrics: {} },
       recordingCapture: { format: "chunked-brotli-v1" },
       captureOverflow: undefined,
       resultSha256: authority.resultSha256,

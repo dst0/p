@@ -12,6 +12,7 @@ import { benchmarkRunnerPath, hashRuntimeSnapshot } from "../harness/runtime-sna
 import type { ProjectInstructionAuthority } from "./outer-authority.ts";
 import { createProjectInstructionOuterAuthorityCapture } from "./outer-authority.ts";
 import { createProjectInstructionProofReceipt } from "./proof-ipc.ts";
+import { describeExplicitRunTermination } from "./run-assessment.ts";
 import { runBenchmarkChild } from "./run-child-process.ts";
 import { BenchmarkChildResultError, readBenchmarkChildResult } from "./run-child-result.ts";
 import type { PairedSample, ProjectInstructionCondition, RunOptions } from "./run-core.ts";
@@ -220,6 +221,11 @@ export async function runPairedBenchmarkCell(
     });
     livenessFinalized = true;
     liveness = await monitor.finalize(finalizationOptions("process_completed", capture));
+    const terminationFailure = describeExplicitRunTermination({
+      status: parsed.result.status,
+      metrics: parsed.result.metrics,
+    });
+    if (terminationFailure) throw new Error(terminationFailure);
     if (liveness.semanticEvidenceAvailable !== true || liveness.semanticEvidenceComplete !== true) {
       throw new Error("child benchmark semantic evidence is incomplete");
     }

@@ -6,7 +6,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool, CompletionMode } from "@dst0/p-agent-core";
-import { Agent } from "@dst0/p-agent-core";
+import { Agent, resolveToolEffect } from "@dst0/p-agent-core";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@dst0/p-ai";
 import { registerFauxProvider } from "@dst0/p-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
@@ -17,6 +17,11 @@ import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
+import type { TaskVerificationMode } from "../../src/core/task-verification/mode.ts";
+import {
+  installTaskVerificationRuntime,
+  prepareTaskVerificationRuntime,
+} from "../../src/core/task-verification-session-runtime.ts";
 import type { ExtensionFactory, ResourceLoader } from "../../src/index.ts";
 import {
   type CreateTestExtensionsResultInput,
@@ -69,6 +74,7 @@ export interface HarnessOptions {
   extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
   withConfiguredAuth?: boolean;
   completionMode?: CompletionMode;
+  taskVerificationMode?: TaskVerificationMode;
 }
 
 export interface Harness {
@@ -158,8 +164,19 @@ async function buildHarness(
   const withConfiguredAuth = options.withConfiguredAuth ?? true;
   const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-  const sessionManager = SessionManager.inMemory();
+  const sessionManager = SessionManager.inMemory(options.taskVerificationMode ? tempDir : undefined);
   const settingsManager = SettingsManager.inMemory(options.settings);
+  const taskVerificationRuntime = options.taskVerificationMode
+    ? prepareTaskVerificationRuntime(
+        {
+          taskVerificationMode: options.taskVerificationMode,
+          completionMode,
+          activeToolEffects: [resolveToolEffect({ kind: "workspace_write", risk: "normal" }, "builtin")],
+        },
+        sessionManager,
+        settingsManager,
+      )
+    : undefined;
 
   const authStorage = AuthStorage.inMemory();
   if (withConfiguredAuth) {
@@ -231,14 +248,17 @@ async function buildHarness(
     cwd: tempDir,
     modelRegistry,
     resourceLoader,
+    customTools: taskVerificationRuntime?.customTools,
     baseToolsOverride: toolMap,
     initialActiveToolNames: options.initialActiveToolNames,
     allowedToolNames: options.allowedToolNames,
     excludedToolNames: options.excludedToolNames,
     extensionRunnerRef,
     completionMode,
+    taskVerificationMode: taskVerificationRuntime?.effectiveMode,
   });
   construction.session = session;
+  if (taskVerificationRuntime) installTaskVerificationRuntime(session, taskVerificationRuntime);
 
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => {

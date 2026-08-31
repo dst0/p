@@ -155,6 +155,7 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
   const requirementSetHash = reuseRequirements
     ? computeRequirementSetHash(requirements, ignoredSourcePrompts, ignoredSourceClauses)
     : undefined;
+  const completionSummary = input.completion_summary?.trim().slice(0, 500);
   self.state = {
     ...self.state,
     readiness: {
@@ -163,6 +164,7 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
       verifiedMutationRevision: self.state.mutationRevision,
       userRequirementsHash,
       requirementSetHash,
+      ...(completionSummary ? { completionSummary } : {}),
     },
     requirementAudit: {
       status: reuseRequirements ? "verifying" : "awaiting_definition",

@@ -1,4 +1,5 @@
 import type { ToolResultMessage } from "@dst0/p-ai";
+import type { FinishWorkPayload } from "../completion-protocol.ts";
 import type { ResolvedToolEffect } from "../tool-effects.ts";
 import type { AgentEvent, AgentLoopConfig, AgentTool, AgentToolCall, AgentToolResult } from "../types.ts";
 
@@ -36,6 +37,7 @@ export type ExecutedToolCallBatch = {
   terminate: boolean;
   madeProgress: boolean;
   waiting: boolean;
+  completion?: FinishWorkPayload;
 };
 
 export type PreparedToolCall = {

@@ -1,4 +1,5 @@
 import { describeBenchmarkProjectInstructionAction } from "../project-instructions/routing.ts";
+import { createTaskVerificationSemanticTracker } from "../project-instructions/verification-semantic-proof.ts";
 
 const RULE_GATE_BLOCK =
   /Call read_rules with each selected authoritative batch|maximum three project-rule links|already fixed its authoritative project-rule batch|restored authoritative project-rule batch|Project instruction routes changed|Compiled project instructions are unavailable|Unable to verify current project instructions|No project instruction freshness checkpoint|Restart in legacy mode before mutating work/u;
@@ -71,12 +72,18 @@ export function parsePRecording(events: readonly BenchmarkRecordingEvent[], extr
     [];
   const phaseRelevantToolCalls: PhaseRelevantAction[] = [];
   const pendingPhaseRelevantCalls = new Map<string, PhaseRelevantAction>();
+  const taskVerification = createTaskVerificationSemanticTracker();
   const errors: string[] = [];
   let assistantMessageCount = 0;
   let model: BenchmarkRecordingEvent["model"];
   let responseModel: string | undefined;
   let toolErrors = 0;
   for (const event of events) {
+    if (event.type === "turn_end") taskVerification.endTurn();
+    else {
+      taskVerification.start(event as Record<string, unknown>);
+      taskVerification.end(event as Record<string, unknown>);
+    }
     if (typeof event.type === "string") counts[event.type] = (counts[event.type] ?? 0) + 1;
     if (event.type === "request_start" && event.model) model = event.model;
     if (event.message?.responseModel) responseModel = event.message.responseModel;
@@ -159,6 +166,7 @@ export function parsePRecording(events: readonly BenchmarkRecordingEvent[], extr
       errors.push(event.finalError ?? "retry failed");
     }
   }
+  const verificationEvidence = taskVerification.snapshot();
   return {
     eventCount: events.length,
     eventTypes: counts,
@@ -174,6 +182,8 @@ export function parsePRecording(events: readonly BenchmarkRecordingEvent[], extr
     phaseRelevantToolCalls,
     stopReasons,
     errors,
+    acceptedFinishCount: verificationEvidence.acceptedFinishCount,
+    acceptedTerminalCompletionCount: verificationEvidence.acceptedTerminalCompletionCount,
     finalText: assistantTexts.at(-1) || finishSummaries.at(-1) || "",
   };
 }

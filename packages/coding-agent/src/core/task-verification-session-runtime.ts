@@ -5,6 +5,10 @@ import type { ToolDefinition } from "./extensions/index.ts";
 import type { SessionManager } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import type { TaskVerificationMode } from "./task-verification/mode.ts";
+import {
+  finalizeTaskVerificationCompletion,
+  taskVerificationFinalizerBatchError,
+} from "./task-verification/verified-completion-runtime.ts";
 import type { TaskVerificationController } from "./task-verification.ts";
 import {
   createTaskVerificationController,
@@ -132,12 +136,23 @@ function installControllerHookGate(session: AgentSession, runtime: InstalledTask
   runtime.controller.install(session.agent);
   const controlledBeforeToolCall = session.agent.beforeToolCall;
   const controlledAfterToolCall = session.agent.afterToolCall;
-  session.agent.beforeToolCall = async (context, signal) =>
-    runtime.enabled ? await controlledBeforeToolCall?.(context, signal) : await nativeBeforeToolCall?.(context, signal);
+  session.agent.beforeToolCall = async (context, signal) => {
+    if (!runtime.enabled) return await nativeBeforeToolCall?.(context, signal);
+    const finalizerBatchError = taskVerificationFinalizerBatchError(runtime, context);
+    if (finalizerBatchError) return { block: true, reason: finalizerBatchError };
+    return await controlledBeforeToolCall?.(context, signal);
+  };
   session.agent.afterToolCall = async (context, signal) => {
     const result = runtime.enabled
       ? await controlledAfterToolCall?.(context, signal)
       : await nativeAfterToolCall?.(context, signal);
+    const verifiedCompletion = runtime.enabled
+      ? finalizeTaskVerificationCompletion(session, runtime, context, result)
+      : undefined;
+    if (verifiedCompletion) {
+      session.setActiveToolsByName(session.getActiveToolNames());
+      return verifiedCompletion;
+    }
     if (
       runtime.enabled &&
       context.toolCall.name === "finish_work" &&

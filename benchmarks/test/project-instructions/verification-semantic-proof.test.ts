@@ -41,6 +41,22 @@ function end(
   });
 }
 
+function verifiedCompletionResult(overrides: Record<string, unknown> = {}) {
+  return {
+    details: {
+      verifiedCompletion: {
+        kind: "task_verification_completion",
+        version: 1,
+        status: "success",
+        summary: "Verified benchmark completion.",
+        files_changed: ["finish_notes.md"],
+        certificate_hash: "a".repeat(64),
+        ...overrides,
+      },
+    },
+  };
+}
+
 test("evidence semantic proof requires its certificate path and forbids every audit event", () => {
   const tracker = createTaskVerificationSemanticTracker();
   start(tracker, "ready", "record_task_verification", "ready_to_finish");
@@ -68,10 +84,108 @@ test("audit semantic proof cannot collapse to the evidence path", () => {
   start(audit, "define", "record_requirement_audit", "define");
   end(audit, "define", "record_requirement_audit", "Verify all requirements");
   start(audit, "verdict", "record_requirement_audit", "verdict");
-  end(audit, "verdict", "record_requirement_audit", "verification_token: audit-token");
-  start(audit, "finish", "finish_work", "finish");
-  end(audit, "finish", "finish_work", "Work completed");
+  audit.end({
+    type: "tool_execution_end",
+    toolCallId: "verdict",
+    toolName: "record_requirement_audit",
+    isError: false,
+    result: verifiedCompletionResult(),
+  });
+  assert.equal(audit.snapshot().acceptedFinishCount, 0);
+  assert.equal(audit.snapshot().acceptedTerminalCompletionCount, 1);
   assert.equal(taskVerificationSemanticFailure("audit", audit.snapshot()), undefined);
+});
+
+test("controller terminal proof requires the exact native audit verdict event pair", () => {
+  const textSpoof = createTaskVerificationSemanticTracker();
+  start(textSpoof, "spoof", "record_requirement_audit", "verdict");
+  end(
+    textSpoof,
+    "spoof",
+    "record_requirement_audit",
+    'verifiedCompletion: {"kind":"task_verification_completion","version":1,"status":"success","certificate_hash":"forged"}',
+  );
+
+  const errored = createTaskVerificationSemanticTracker();
+  start(errored, "errored", "record_requirement_audit", "verdict");
+  errored.end({
+    type: "tool_execution_end",
+    toolCallId: "errored",
+    toolName: "record_requirement_audit",
+    isError: true,
+    result: verifiedCompletionResult(),
+  });
+
+  const missingErrorState = [undefined, null].map((isError, index) => {
+    const tracker = createTaskVerificationSemanticTracker();
+    const id = `missing-error-${index}`;
+    start(tracker, id, "record_requirement_audit", "verdict");
+    tracker.end({
+      type: "tool_execution_end",
+      toolCallId: id,
+      toolName: "record_requirement_audit",
+      isError,
+      result: verifiedCompletionResult(),
+    });
+    return tracker;
+  });
+
+  const wrongAction = createTaskVerificationSemanticTracker();
+  start(wrongAction, "define", "record_requirement_audit", "define");
+  wrongAction.end({
+    type: "tool_execution_end",
+    toolCallId: "define",
+    toolName: "record_requirement_audit",
+    isError: false,
+    result: verifiedCompletionResult(),
+  });
+
+  const mismatched = createTaskVerificationSemanticTracker();
+  start(mismatched, "expected", "record_requirement_audit", "verdict");
+  mismatched.end({
+    type: "tool_execution_end",
+    toolCallId: "different",
+    toolName: "record_requirement_audit",
+    isError: false,
+    result: verifiedCompletionResult(),
+  });
+  mismatched.end({
+    type: "tool_execution_end",
+    toolCallId: "expected",
+    toolName: "record_task_verification",
+    isError: false,
+    result: verifiedCompletionResult(),
+  });
+
+  for (const tracker of [textSpoof, errored, ...missingErrorState, wrongAction, mismatched]) {
+    assert.equal(tracker.snapshot().acceptedTerminalCompletionCount, 0);
+    assert.equal(tracker.snapshot().acceptedFinishCount, 0);
+  }
+});
+
+test("controller terminal proof rejects malformed native markers", () => {
+  for (const [name, overrides] of [
+    ["kind", { kind: "other" }],
+    ["version", { version: 2 }],
+    ["status", { status: "partial" }],
+    ["certificate", { certificate_hash: "" }],
+    ["whitespace-certificate", { certificate_hash: "  " }],
+    ["non-string-certificate", { certificate_hash: 123 }],
+    ["summary", { summary: "" }],
+    ["files", { files_changed: [123] }],
+    ["extra-key", { extra: true }],
+  ] as const) {
+    const tracker = createTaskVerificationSemanticTracker();
+    start(tracker, name, "record_requirement_audit", "verdict");
+    tracker.end({
+      type: "tool_execution_end",
+      toolCallId: name,
+      toolName: "record_requirement_audit",
+      isError: false,
+      result: verifiedCompletionResult(overrides),
+    });
+    assert.equal(tracker.snapshot().acceptedTerminalCompletionCount, 0, name);
+  }
 });
 
 test("finish proof accepts only a matching successful call with a non-empty certificate", () => {

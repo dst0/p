@@ -11,7 +11,7 @@ import type {
   ToolResultMessage,
 } from "@dst0/p-ai";
 import type { Static, TSchema } from "typebox";
-import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
+import type { CompletionMode, CompletionProtocolLimits, FinishWorkPayload } from "./completion-protocol.ts";
 import type { ModelCallPreparationConfig } from "./model-call-preparation.ts";
 import type { ResolvedToolEffect, ToolEffectDeclaration } from "./tool-effects.ts";
 
@@ -45,7 +45,6 @@ export type ToolExecutionMode = "sequential" | "parallel";
  * - "one-at-a-time": drain and inject only the oldest queued message, leaving the rest queued for later drain points.
  */
 export type QueueMode = "all" | "one-at-a-time";
-
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
 /**
@@ -85,6 +84,7 @@ export interface AfterToolCallResult {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  completion?: FinishWorkPayload;
 }
 /** Context passed to `beforeToolCall`. */
 export interface BeforeToolCallContext {
@@ -416,8 +416,8 @@ export interface AgentToolResult<T> {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  completion?: FinishWorkPayload;
 }
-
 export type AgentToolProgress = "made_progress" | "waiting";
 /**
  * Callback used by tools to stream partial execution updates.
@@ -426,7 +426,6 @@ export type AgentToolProgress = "made_progress" | "waiting";
  * the tool promise settles are ignored.
  */
 export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T>) => void;
-
 /** Tool definition used by the agent runtime. */
 export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
   /** Human-readable label for UI display. */
@@ -485,6 +484,7 @@ export type AgentEvent =
       event:
         | "completion_mode"
         | "finish_work_called"
+        | "verified_completion_called"
         | "missing_finish_work_retry"
         | "malformed_tool_call_retry"
         | "max_turns_without_finish_work"

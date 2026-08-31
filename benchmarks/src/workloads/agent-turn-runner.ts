@@ -19,7 +19,7 @@ import type { BenchmarkTask } from "./task-definition.ts";
 const nudgeMessage =
   "Are you done with the task or is there anything left? If you are finished, ensure all requirements are satisfied and create finish_notes.md.";
 const terminalRecoveryNudgeMessage =
-  "finish_notes.md exists, but P has not completed its terminal verification. Complete fresh verification, then call finish_work with the current verification_token.";
+  "finish_notes.md exists, but P has not completed its terminal verification. Complete fresh verification and its terminal action.";
 
 export const nudgePenaltyPerNudge = 15;
 
@@ -211,21 +211,21 @@ export async function runAgentTask(
       const remainingUsableMs = Math.min(remainingAfterTurn, overallRemainingAfterTurn);
       if (remainingUsableMs <= 5000 || nudges >= maxNudges) {
         lastCode = undefined;
-        lastError = completion.waitingForAcceptedFinish(finishNotesCreated)
+        lastError = completion.waitingForAcceptedCompletion(finishNotesCreated)
           ? "agent exited before the required terminal completion protocol was accepted"
           : "agent exited before creating finish_notes.md";
         break;
       }
       nudges += 1;
-      const waitingForAcceptedFinish = completion.waitingForAcceptedFinish(finishNotesCreated);
-      const reason = waitingForAcceptedFinish
-        ? "finish_notes.md exists but finish_work was not accepted"
+      const waitingForAcceptedCompletion = completion.waitingForAcceptedCompletion(finishNotesCreated);
+      const reason = waitingForAcceptedCompletion
+        ? "finish_notes.md exists but terminal completion was not accepted"
         : "premature exit without finish_notes.md";
       console.log(
         `[watchdog] ${agent}/${task.id}: ${reason}; sending nudge #${nudges} (${Math.round(remainingUsableMs / 1000)}s remaining)`,
       );
       isContinue = true;
-      currentPrompt = waitingForAcceptedFinish ? terminalRecoveryNudgeMessage : nudgeMessage;
+      currentPrompt = waitingForAcceptedCompletion ? terminalRecoveryNudgeMessage : nudgeMessage;
     }
     await recording.finalize();
   } catch (error) {

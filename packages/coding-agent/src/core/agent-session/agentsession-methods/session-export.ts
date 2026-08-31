@@ -4,6 +4,7 @@ import type { AssistantMessage } from "@dst0/p-ai";
 import { resolvePath } from "../../../utils/paths.ts";
 import type { ReplacedSessionContext } from "../../extensions/index.ts";
 import { CURRENT_SESSION_VERSION, type SessionHeader } from "../../session-manager.ts";
+import { getTaskVerificationCompletionPayload } from "../../task-verification/verified-completion.ts";
 import type { AgentSession } from "../agentsession.ts";
 
 export function do_exportToJsonl(self: AgentSession, outputPath?: string): string {
@@ -40,6 +41,10 @@ export function do_exportToJsonl(self: AgentSession, outputPath?: string): strin
 }
 
 export function do_getLastAssistantText(self: AgentSession): string | undefined {
+  const lastMessage = self.agent.state.messages[self.agent.state.messages.length - 1];
+  const verifiedCompletion = getTaskVerificationCompletionPayload(lastMessage ? [lastMessage] : []);
+  if (verifiedCompletion) return verifiedCompletion.summary;
+
   const lastAssistant = self.agent.state.messages
     .slice()
     .reverse()

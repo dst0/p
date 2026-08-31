@@ -1,6 +1,7 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import type { AssistantMessage, ToolResultMessage } from "@dst0/p-ai";
 import { vi } from "vitest";
+import type { AgentSessionEvent } from "../src/core/agent-session/session-types.ts";
 import type { SessionShutdownEvent } from "../src/index.ts";
 
 type FakeExtensionRunner = {
@@ -28,11 +29,7 @@ type FakeRuntimeHost = {
   setRebindSession: ReturnType<typeof vi.fn>;
 };
 
-type AgentEndEvent = {
-  type: "agent_end";
-  messages: AgentMessage[];
-  willRetry: boolean;
-};
+type AgentEndEvent = Extract<AgentSessionEvent, { type: "agent_end" }>;
 
 export function createAssistantMessage(options?: {
   text?: string;
@@ -69,6 +66,7 @@ export function createRuntimeHost(
     stateMessages?: AgentMessage[];
     promptAgentEnds?: AgentMessage[][];
     promptAgentEndBatches?: AgentEndEvent[][];
+    promptEventBatches?: AgentSessionEvent[][];
   } = {},
 ): FakeRuntimeHost {
   const extensionRunner: FakeExtensionRunner = {
@@ -78,20 +76,26 @@ export function createRuntimeHost(
   const state = { messages: options.stateMessages ?? [stateMessage] };
   const promptAgentEnds = [...(options.promptAgentEnds ?? [])];
   const promptAgentEndBatches = [...(options.promptAgentEndBatches ?? [])];
-  let eventListener: ((event: AgentEndEvent) => void) | undefined;
+  const promptEventBatches = [...(options.promptEventBatches ?? [])];
+  let eventListener: ((event: AgentSessionEvent) => void) | undefined;
   const session: FakeSession = {
     sessionManager: { getHeader: () => undefined },
     agent: { waitForIdle: async () => {} },
     state,
     extensionRunner,
     bindExtensions: vi.fn(async () => {}),
-    subscribe: vi.fn((listener: (event: AgentEndEvent) => void) => {
+    subscribe: vi.fn((listener: (event: AgentSessionEvent) => void) => {
       eventListener = listener;
       return () => {
         eventListener = undefined;
       };
     }),
     prompt: vi.fn(async () => {
+      const promptEvents = promptEventBatches.shift();
+      if (promptEvents) {
+        for (const event of promptEvents) eventListener?.(event);
+        return;
+      }
       const eventBatch = promptAgentEndBatches.shift();
       if (eventBatch) {
         for (const event of eventBatch) eventListener?.(event);

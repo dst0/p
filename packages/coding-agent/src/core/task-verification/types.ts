@@ -192,6 +192,8 @@ export interface TaskVerificationState {
     certificateHash?: string;
     /** Stable hash of task-owned workspace state and metadata-only external receipts. */
     effectStateHash?: string;
+    /** Bounded user-visible summary captured before the terminal certificate transition. */
+    completionSummary?: string;
   };
   requirementAudit: TaskRequirementAuditState;
   updatedAt: string;
@@ -232,4 +234,14 @@ export interface VerificationResult {
   state: TaskVerificationState;
   contextExtract?: { summary: string; relevantLines: string[] };
   requirementDefinitionDiagnosticCount?: number;
+  verifiedCompletion?: TaskVerificationCompletionPayload;
+}
+
+export interface TaskVerificationCompletionPayload {
+  kind: "task_verification_completion";
+  version: 1;
+  status: "success";
+  summary: string;
+  files_changed: string[];
+  certificate_hash: string;
 }

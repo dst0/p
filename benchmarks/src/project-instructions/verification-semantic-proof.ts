@@ -8,6 +8,7 @@ export type TaskVerificationSemanticEvidence = {
   auditCertificateCount: number;
   finishCertificateSubmissionCount: number;
   acceptedFinishCount: number;
+  acceptedTerminalCompletionCount: number;
 };
 
 type SemanticEvent = Record<string, unknown>;
@@ -29,6 +30,25 @@ function resultText(result: unknown): string {
     .join("\n");
 }
 
+function hasVerifiedCompletionMarker(result: unknown): boolean {
+  if (!isRecord(result) || !isRecord(result.details) || !isRecord(result.details.verifiedCompletion)) return false;
+  const completion = result.details.verifiedCompletion;
+  const keys = Object.keys(completion).sort();
+  return (
+    JSON.stringify(keys) ===
+      JSON.stringify(["certificate_hash", "files_changed", "kind", "status", "summary", "version"]) &&
+    completion.kind === "task_verification_completion" &&
+    completion.version === 1 &&
+    completion.status === "success" &&
+    typeof completion.summary === "string" &&
+    completion.summary.trim().length > 0 &&
+    Array.isArray(completion.files_changed) &&
+    completion.files_changed.every((filePath) => typeof filePath === "string") &&
+    typeof completion.certificate_hash === "string" &&
+    /^[a-f0-9]{64}$/u.test(completion.certificate_hash)
+  );
+}
+
 function emptyEvidence(): TaskVerificationSemanticEvidence {
   return {
     readinessAttemptCount: 0,
@@ -40,6 +60,7 @@ function emptyEvidence(): TaskVerificationSemanticEvidence {
     auditCertificateCount: 0,
     finishCertificateSubmissionCount: 0,
     acceptedFinishCount: 0,
+    acceptedTerminalCompletionCount: 0,
   };
 }
 
@@ -85,6 +106,13 @@ export function createTaskVerificationSemanticTracker() {
         evidence.auditCertificateCount += 1;
       }
       if (call.toolName === "finish_work" && call.submittedCertificate) evidence.acceptedFinishCount += 1;
+      if (
+        call.toolName === "record_requirement_audit" &&
+        call.action === "verdict" &&
+        hasVerifiedCompletionMarker(event.result)
+      ) {
+        evidence.acceptedTerminalCompletionCount += 1;
+      }
     },
     snapshot(): TaskVerificationSemanticEvidence {
       return { ...evidence };
@@ -109,8 +137,9 @@ export function taskVerificationSemanticFailure(
       : undefined;
   }
   if (evidence.readinessAttemptCount < 1) return "task-verification readiness path was not observed";
-  if (evidence.finishCertificateSubmissionCount < 1 || evidence.acceptedFinishCount < 1) {
-    return "task-verification certificate was not accepted by finish_work";
+  const acceptedFinish = evidence.finishCertificateSubmissionCount > 0 && evidence.acceptedFinishCount > 0;
+  if (!acceptedFinish && evidence.acceptedTerminalCompletionCount < 1) {
+    return "task-verification completion was not accepted by finish_work or the trusted controller terminal";
   }
   if (mode === "evidence") {
     if (evidence.evidenceCertificateCount < 1) return "evidence completion certificate path was not observed";
@@ -125,8 +154,11 @@ export function taskVerificationSemanticFailure(
     }
     return undefined;
   }
-  if (evidence.auditVerdictAttemptCount < 1 || evidence.auditCertificateCount < 1) {
-    return "audit verdict and certificate path was not observed";
+  if (
+    evidence.auditVerdictAttemptCount < 1 ||
+    (evidence.auditCertificateCount < 1 && evidence.acceptedTerminalCompletionCount < 1)
+  ) {
+    return "audit verdict and certificate or trusted terminal path was not observed";
   }
   return undefined;
 }

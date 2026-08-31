@@ -10,7 +10,9 @@ import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
 import type { AssistantMessage, ImageContent } from "@dst0/p-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
+import { getTaskVerificationCompletionPayload } from "../core/task-verification/verified-completion.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
+import { projectJsonEvent } from "./json-event-projection.ts";
 
 /**
  * Options for print mode.
@@ -81,6 +83,10 @@ export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextM
       text: finishPayload.summary,
       exitCode: finishPayload.status === "failed" ? 1 : 0,
     };
+  }
+  const verifiedCompletion = getTaskVerificationCompletionPayload(messages);
+  if (verifiedCompletion) {
+    return { text: verifiedCompletion.summary, exitCode: 0 };
   }
 
   const assistantMessages = getFinalResponseAssistantMessages(messages);
@@ -208,7 +214,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
         latestAgentEndMessages = event.messages;
       }
       if (mode === "json") {
-        writeRawStdout(`${JSON.stringify(event)}\n`);
+        writeRawStdout(`${JSON.stringify(projectJsonEvent(event))}\n`);
       }
     });
   };

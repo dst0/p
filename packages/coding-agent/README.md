@@ -318,7 +318,7 @@ Use `--offline` or `P_OFFLINE=1` to disable all startup network operations descr
 
 ## Completion Protocol
 
-p defaults to the Explicit Completion Protocol. The model must call the terminal tool `finish_work` before p considers the task complete. A normal assistant message such as "I will inspect the file" is treated as incomplete work, even if the provider reports `finish_reason: "stop"`.
+p defaults to the Explicit Completion Protocol. The model normally calls the terminal tool `finish_work` before p considers the task complete. A normal assistant message such as "I will inspect the file" is treated as incomplete work, even if the provider reports `finish_reason: "stop"`. In experimental `audit` verification, one newly accepted, sole verdict batch is itself a trusted terminal transition, so p does not request a redundant provider turn merely to repeat the certified result through `finish_work`.
 
 The built-in terminal tool accepts:
 
@@ -338,7 +338,7 @@ finish_work({
 
 Completion modes:
 
-- `explicit_finish` (default): only `finish_work` completes the task. Plain assistant text, malformed tool-call-looking output, and truncated tool calls trigger a corrective continuation until `finish_work` or safety limits stop the run.
+- `explicit_finish` (default): `finish_work`, or a runtime-owned verified terminal transition, completes the task. Plain assistant text, malformed tool-call-looking output, and truncated tool calls trigger a corrective continuation until a trusted completion or safety limits stop the run.
 - `hybrid`: asks for `finish_work`, retries missing completion, then falls back to old implicit completion behavior.
 - `implicit`: old behavior. Assistant text without tool calls may end the run.
 

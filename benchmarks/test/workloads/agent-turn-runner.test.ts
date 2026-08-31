@@ -10,7 +10,6 @@ import type { RunnerOptions } from "../../src/workloads/runner-options.ts";
 import type { BenchmarkTask } from "../../src/workloads/task-definition.ts";
 
 const roots: string[] = [];
-
 afterEach(() => {
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });
@@ -49,8 +48,33 @@ test("P continues past finish_notes until finish_work accepts the verification c
   assert.equal(invocations[1]?.continued, true);
   assert.equal(
     invocations[1]?.prompt,
-    "finish_notes.md exists, but P has not completed its terminal verification. Complete fresh verification, then call finish_work with the current verification_token.",
+    "finish_notes.md exists, but P has not completed its terminal verification. Complete fresh verification and its terminal action.",
   );
+});
+
+test("P accepts a fresh trusted controller audit terminal without a finish_work call", async () => {
+  const root = temporaryRoot();
+  const workspace = join(root, "workspace");
+  const config = join(root, "config");
+  mkdirSync(workspace);
+  mkdirSync(config);
+  mkdirSync(join(root, "recordings"));
+  const fakeCli = join(root, "audit-terminal-p.js");
+  writeFileSync(fakeCli, auditTerminalPSource());
+  const result = await runAgentTask(
+    "p",
+    { ...runnerOptions(fakeCli), taskVerificationMode: "audit" },
+    task,
+    config,
+    workspace,
+    join(root, "recordings", "audit-terminal.jsonl.br"),
+    60,
+    performance.now() + 90_000,
+  );
+
+  assert.equal(result.nudges, 0);
+  assert.equal(result.code, 0);
+  assert.equal(Number(readFileSync(join(workspace, "invocations.txt"), "utf8")), 1);
 });
 
 test("P fails closed when the terminal handshake is still absent after all nudges", async () => {
@@ -100,7 +124,43 @@ test("P requires a fresh accepted finish after the last marker-free turn", () =>
   guard.observe(finishEvents("fresh", true, false));
   assert.equal(guard.shouldStop(false, true), true);
 });
-
+test("P requires a fresh controller terminal after the last marker-free turn", () => {
+  const guard = createAgentTaskCompletionGuard("p", "audit");
+  const terminalEvents = (id: string) =>
+    [
+      {
+        type: "tool_execution_start",
+        toolCallId: id,
+        toolName: "record_requirement_audit",
+        args: { action: "verdict" },
+      },
+      {
+        type: "tool_execution_end",
+        toolCallId: id,
+        toolName: "record_requirement_audit",
+        isError: false,
+        result: {
+          details: {
+            verifiedCompletion: {
+              kind: "task_verification_completion",
+              version: 1,
+              status: "success",
+              summary: `Verified ${id}.`,
+              files_changed: ["finish_notes.md"],
+              certificate_hash: (id === "stale" ? "a" : "b").repeat(64),
+            },
+          },
+        },
+      },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n");
+  guard.observe(terminalEvents("stale"));
+  assert.equal(guard.shouldStop(false, false), false);
+  assert.equal(guard.shouldStop(false, true), false);
+  guard.observe(terminalEvents("fresh"));
+  assert.equal(guard.shouldStop(false, true), true);
+});
 test("P does not pair a dangling finish start with an end from a later subprocess turn", () => {
   const guard = createAgentTaskCompletionGuard("p", "evidence");
   guard.observe(
@@ -209,6 +269,17 @@ const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const count = existsSync("invocations.txt") ? Number(readFileSync("invocations.txt", "utf8")) : 0;
 writeFileSync("invocations.txt", String(count + 1));
 writeFileSync("finish_notes.md", "Implementation complete; terminal verification is pending.\\n");
+`;
+}
+
+function auditTerminalPSource(): string {
+  return `
+const { writeFileSync } = require("node:fs");
+writeFileSync("invocations.txt", "1");
+writeFileSync("finish_notes.md", "Implementation and controller verification complete.\\n");
+const emit = (event) => process.stdout.write(JSON.stringify(event) + "\\n");
+emit({ type: "tool_execution_start", toolCallId: "terminal", toolName: "record_requirement_audit", args: { action: "verdict" } });
+emit({ type: "tool_execution_end", toolCallId: "terminal", toolName: "record_requirement_audit", isError: false, result: { details: { verifiedCompletion: { kind: "task_verification_completion", version: 1, status: "success", summary: "Verified benchmark completion.", files_changed: ["finish_notes.md"], certificate_hash: "${"a".repeat(64)}" } } } });
 `;
 }
 
