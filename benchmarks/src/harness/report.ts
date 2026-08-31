@@ -202,7 +202,7 @@ export function createBenchmarkReport(
     "- Cache hit percentage is cached-read tokens divided by input, cached-read, and cache-write prompt tokens.\n";
   report +=
     "- Completed passes require a clean agent exit before the timeout. Quality passes report the final workspace checks independently, so a timed-out agent can still leave a passing artifact.\n";
-  report += `- Nudge watchdog monitors agent task completion: if an agent exits before timeout without creating \`finish_notes.md\`, a reminder is sent to continue. Each nudge incurs a ${nudgePenaltyPerNudge}-point penalty from the raw weighted score.\n`;
+  report += `- Nudge watchdog monitors agent task completion: other agents stop at \`finish_notes.md\`; P in explicit task-verification modes must also complete an accepted \`finish_work\` handshake after the marker becomes current. Premature exits receive a continuation reminder. Each nudge incurs a ${nudgePenaltyPerNudge}-point penalty from the raw weighted score.\n`;
   report +=
     "- Fixture checks run the TypeScript test suite and typecheck; advanced fixtures score each hidden invariant independently. Inventory emphasizes atomicity and tamper safety; durable workflow adds DAG scheduling, lease fencing, retry timing, compensation, and adversarial recovery.\n";
   report +=
