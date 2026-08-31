@@ -23,6 +23,14 @@ const PHASE_NEUTRAL_TOOLS = new Set([
   "tool_search",
   "update_session_state",
 ]);
+const TASK_VERIFICATION_CONTROL_PLANE_ACTIONS = new Set([
+  "declare_task",
+  "authorize_baseline_test",
+  "record_baseline",
+  "record_final",
+  "ready_to_finish",
+  "status",
+]);
 const DISCOVERY_COMMANDS = new Set(["cat", "find", "grep", "head", "ls", "rg", "sed", "tail", "wc"]);
 const TEST_COMMAND_PATTERN = /^(?:jest|pytest|rspec|test(?::[^\s]+)?|vitest)$/u;
 const VERIFICATION_COMMAND_PATTERN = /^(?:benchmark|build|check(?::[^\s]+)?|lint|smoke|tsc|typecheck)$/u;
@@ -35,7 +43,8 @@ export function isProjectInstructionVerificationControlPlaneAction(toolName: str
   if (toolName !== TASK_VERIFICATION_TOOL_NAME || args === null || typeof args !== "object" || Array.isArray(args)) {
     return false;
   }
-  return (args as { action?: unknown }).action === "status";
+  const action = (args as { action?: unknown }).action;
+  return typeof action === "string" && TASK_VERIFICATION_CONTROL_PLANE_ACTIONS.has(action);
 }
 
 export function inferProjectInstructionActionPhases(
