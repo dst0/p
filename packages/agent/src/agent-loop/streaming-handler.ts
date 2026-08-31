@@ -96,6 +96,7 @@ export async function finalizeExecutedToolCall(
     toolCall: prepared.toolCall,
     result,
     isError,
+    executed: true,
   };
 }
 
@@ -106,6 +107,7 @@ export async function emitToolExecutionEnd(finalized: FinalizedToolCallOutcome, 
     toolName: finalized.toolCall.name,
     result: finalized.result,
     isError: finalized.isError,
+    executed: finalized.executed,
   });
 }
 
@@ -174,6 +176,7 @@ export async function executeToolCallsSequential(
         toolCall,
         result: preparation.result,
         isError: preparation.isError,
+        executed: false,
       };
     } else {
       const executed = await executePreparedToolCall(preparation, signal, emit);

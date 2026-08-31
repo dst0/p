@@ -16,6 +16,7 @@ type ReadRulesBatch = {
   links: string[];
 };
 type ActionCall = {
+  toolName?: string;
   eventOrdinal: number;
   endOrdinal: number;
   selectionVerified?: boolean;
@@ -31,6 +32,21 @@ type RoutedTurnEvidence = {
   readRulesBatches?: ReadRulesBatch[];
   phaseRelevantToolCalls?: ActionCall[];
 };
+
+const DIAGNOSTIC_BUILTIN_TOOL_NAMES = new Set([
+  "bash",
+  "edit",
+  "generate_image",
+  "process",
+  "recall_learnings",
+  "record_learning",
+  "record_requirement_audit",
+  "record_task_verification",
+  "rg",
+  "run_subagent",
+  "submit_plan",
+  "write",
+]);
 
 export function validateRoutedTurns(
   evidence: RoutedTurnEvidence,
@@ -127,7 +143,9 @@ export function validateRoutedTurns(
       if (action.blockedByProjectRuleGate !== false) continue;
       const requiredLinks = authoritativeBatchLinks(turn.expectedRouteLinks, action.expectedActionRuleLinks);
       if (requiredLinks.length === 0) continue;
-      if (!authoritativeLinks) return "completed mutating action had no authoritative rule batch";
+      if (!authoritativeLinks) {
+        return `completed mutating action had no authoritative rule batch: ${actionIdentity(action)}`;
+      }
       if (!authoritativeRead || authoritativeRead.endOrdinal >= action.eventOrdinal) {
         return "authoritative read_rules call did not complete before the mutating action";
       }
@@ -163,4 +181,13 @@ function sameOrderedLinks(left: unknown, right: unknown): boolean {
 
 function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
+}
+
+function actionIdentity(action: ActionCall): string {
+  const toolName =
+    typeof action.toolName === "string" && DIAGNOSTIC_BUILTIN_TOOL_NAMES.has(action.toolName)
+      ? action.toolName
+      : "custom";
+  const eventOrdinal = Number.isInteger(action.eventOrdinal) ? String(action.eventOrdinal) : "unknown";
+  return `tool=${toolName}, event=${eventOrdinal}`;
 }

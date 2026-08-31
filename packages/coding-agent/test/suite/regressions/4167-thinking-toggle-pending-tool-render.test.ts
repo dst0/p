@@ -143,6 +143,7 @@ describe("InteractiveMode.renderSessionContext", () => {
       toolName: TOOL_NAME,
       result: { content: [{ type: "text", text: "FINAL_RESULT" }], details: undefined },
       isError: false,
+      executed: true,
     });
 
     expect(fakeThis.pendingTools.has(TOOL_CALL_ID)).toBe(false);

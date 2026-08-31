@@ -61,6 +61,7 @@ export type FinalizedToolCallOutcome = {
   toolCall: AgentToolCall;
   result: AgentToolResult<any>;
   isError: boolean;
+  executed: boolean;
 };
 
 export type FinalizedToolCallEntry = FinalizedToolCallOutcome | (() => Promise<FinalizedToolCallOutcome>);

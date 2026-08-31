@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Expose whether a tool result was rejected before execution so verification evidence cannot mistake guardrail blocks for completed mutations."
+}

@@ -751,15 +751,15 @@ export interface ToolExecutionUpdateEvent {
   partialResult: any;
 }
 
-/** Fired when a tool finishes executing */
+/** Fired when a tool call settles; `executed` reports whether its execute function was invoked. */
 export interface ToolExecutionEndEvent {
   type: "tool_execution_end";
   toolCallId: string;
   toolName: string;
   result: any;
   isError: boolean;
+  executed: boolean;
 }
-
 // ============================================================================
 // Model Events
 // ============================================================================
