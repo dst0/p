@@ -14,6 +14,7 @@ describe("finish_work tool", () => {
     expect(tool.name).toBe("finish_work");
     expect(tool.label).toBe("Finish Work");
     expect(tool.description).toContain("Terminate the agent run");
+    expect(tool.effect).toEqual({ kind: "read", risk: "normal" });
   });
 
   it("has promptSnippet", () => {

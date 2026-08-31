@@ -1,0 +1,22 @@
+# 2026-08-31 — CLI child tests need full-suite timeout margin
+
+- **Status:** Resolved
+- **Task/context:** Run the final non-e2e suite before registering the project-instruction rc.55 benchmark candidate.
+- **Unexpected observation or failure:** The session-id validation regression timed out at 30 seconds only in the aggregate coding-agent suite even though it passed when run alone.
+- **Evidence:** The focused file completed in 17.8 seconds. Under full-suite load, the test's two sequential CLI children exhausted Vitest's default timeout at 30.028 seconds while 3,778 other coding-agent tests passed.
+- **Approaches tried:**
+  - **Attempt:** Treat the aggregate failure as a product regression.
+    - **Outcome:** Did not work
+    - **Why:** The exact focused regression passed without changing product code, and the aggregate failure ended at the test runner's deadline rather than a CLI assertion.
+  - **Attempt:** Give the child-process regression an explicit outer full-suite budget only.
+    - **Outcome:** Did not work
+    - **Why:** A runner timeout rejects the test but does not guarantee that the spawned CLI is terminated and joined before fixture cleanup.
+  - **Attempt:** Add a 60-second per-child kill-and-close watchdog plus a 150-second outer budget.
+    - **Outcome:** Worked
+    - **Why:** This preserves the assertions, bounds each child lifecycle, and gives two sequential children measured aggregate-load margin.
+- **Root cause:** The test launches two CLI child processes sequentially but inherited Vitest's 30-second default timeout. Its focused runtime already consumed most of that budget, leaving no margin for full-suite CPU and process-start contention.
+- **Resolution:** Each CLI child is force-terminated after 60 seconds and the promise waits for its close event before rejecting. The two-child test has a separate 150-second outer deadline. No behavioral assertion was weakened.
+- **Verification:** The focused session-id file passed 4/4. The repeated full non-e2e suite then passed all packages, including 3,780 coding-agent tests with the child-process regression completing inside the bounded watchdog; auth restoration also completed with mode 0600 and no backup left behind.
+- **Prevention/follow-up:** Measure child-process regressions under aggregate load and set an explicit bounded timeout with substantial margin over the focused runtime.
+- **Reusable learning:** A green focused child-process test is not evidence that the runner's default timeout has enough full-suite load margin.
+- **References:** `packages/coding-agent/test/session-id-readonly.test.ts`, `/tmp/p-rc55-final-test.active.log.br`

@@ -79,9 +79,15 @@ export function selectRequirementDefinitionRepairTarget(
     }
   }
 
-  const ignoredClause = diagnostic.match(
-    /^Source clause\s+([^\s,.;:]+)\s+(?:is normative and cannot be ignored\b|cannot be both mapped and ignored\b)/u,
-  )?.[1];
+  const ignoredClause =
+    diagnostic.match(/^Ignored source clause\s+([^\s,.;:()]+)\s+is invalid or lacks a reason\.$/u)?.[1] ??
+    diagnostic.match(
+      /^Source clause\s+([^\s,.;:()]+)\s+(?:must use classification unsafe_instruction|is not a controller-detected unsafe instruction and cannot use unsafe_instruction|is normative and cannot be ignored as (?:informational|example)|is not structurally (?:informational|an example)|may name superseded_by_source_prompt_index only with classification superseded|cannot be both mapped and ignored|is ignored twice)\.$/u,
+    )?.[1] ??
+    diagnostic.match(/^Superseded source clause\s+([^\s,.;:()]+)\s+requires a direct user prompt index\.$/u)?.[1] ??
+    diagnostic.match(
+      /^Direct user prompt\s+\d+\s+does not conflict with or supersede source clause\s+([^\s,.;:()]+)\.$/u,
+    )?.[1];
   if (ignoredClause) return { kind: "ignored_clause_removal", sourceClauseId: ignoredClause, diagnostic };
 
   const unclassifiedClause = diagnostic.match(/unclassified source_clause_ids:\s*([^,\s.]+)/iu)?.[1];

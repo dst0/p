@@ -591,7 +591,7 @@ Use `defineTool()` for standalone definitions and arrays like `customTools: [myT
 
 Custom tools passed via `customTools` are combined with extension-registered tools. Extensions loaded by the ResourceLoader can also register tools via `p.registerTool()`.
 
-Declare every custom tool's `effect` explicitly. `kind` is `read`, `workspace_write`, `external_write`, or `unknown`; `risk` is `normal` or `high`; optional `domains` identify `credentials`, `destructive`, `deployment`, `network_send`, `persistent_state`, or `publication` effects. An omitted or malformed declaration resolves to `unknown`/`high`, so the default evidence controller remains active and records a conservative effect receipt. Only `{ kind: "read", risk: "normal" }` is verification-dormant.
+Declare every custom tool's `effect` explicitly. `kind` is `read`, `workspace_write`, `external_write`, or `unknown`; `risk` is `normal` or `high`; optional `domains` identify `credentials`, `destructive`, `deployment`, `network_send`, `persistent_state`, or `publication` effects. An omitted or malformed declaration resolves to `unknown`/`high`, so the default evidence controller remains active and records a conservative effect receipt during normal work. Once completion evidence exists, unknown-effect tools are blocked before execution until their declaration identifies the effect; this preserves the evidence without trusting tool names. Only `{ kind: "read", risk: "normal" }` is verification-dormant.
 
 If you pass `tools`, include each custom or extension tool name you want enabled, for example `tools: ["read", "bash", "my_tool"]`.
 

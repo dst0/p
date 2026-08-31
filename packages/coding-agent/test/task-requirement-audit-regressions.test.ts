@@ -140,7 +140,9 @@ describe("requirement-audit completion regressions", () => {
     expect(harness.controller.currentState.taskKind).toBe("feature");
     expect(harness.controller.currentState.mutationRevision).toBe(1);
     expect((harness.controller.currentState as unknown as { taskId?: string }).taskId).toBe(taskId);
+    expect(harness.controller.currentState.final.status).toBe("pending");
     expect(harness.controller.currentState.readiness?.status).toBe("pending");
+    expect((await beforeAuditTool(harness.agent, "opaque_sender", {}))?.block).not.toBe(true);
   });
 
   it("returns every verbatim source prompt for authoritative decomposition without invented policy", async () => {

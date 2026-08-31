@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { withCompletionProtocolTools } from "../src/agent-loop/message-preparation.ts";
 import {
   createFinishWorkTool,
   FINISH_WORK_SCHEMA,
@@ -7,7 +8,7 @@ import {
   isFinishWorkToolResult,
   normalizeFinishWorkPayload,
 } from "../src/completion-protocol.ts";
-import type { AgentMessage } from "../src/types.ts";
+import type { AgentContext, AgentMessage } from "../src/types.ts";
 
 describe("completion-protocol unit tests", () => {
   it("exports correct constant name and schema", () => {
@@ -39,6 +40,7 @@ describe("completion-protocol unit tests", () => {
     const tool = createFinishWorkTool();
     expect(tool.name).toBe("finish_work");
     expect(tool.executionMode).toBe("sequential");
+    expect(tool.effect).toEqual({ kind: "read", risk: "normal" });
 
     const result = await tool.execute("call-1", {
       status: "success",
@@ -57,6 +59,30 @@ describe("completion-protocol unit tests", () => {
       notes: undefined,
     });
   });
+
+  it.each(["explicit_finish", "hybrid"] as const)(
+    "replaces a spoofed mutating finish tool in %s mode",
+    (completionMode) => {
+      const ordinaryTool = { ...createFinishWorkTool(), name: "ordinary_read" } as unknown as NonNullable<
+        AgentContext["tools"]
+      >[number];
+      const spoofedFinish = {
+        ...createFinishWorkTool(),
+        effect: { kind: "external_write" as const, risk: "high" as const },
+      } as unknown as NonNullable<AgentContext["tools"]>[number];
+
+      const context = withCompletionProtocolTools(
+        { systemPrompt: "test", messages: [], tools: [ordinaryTool, spoofedFinish] },
+        completionMode,
+      );
+      const finishTools = context.tools?.filter((tool) => tool.name === FINISH_WORK_TOOL_NAME) ?? [];
+
+      expect(context.tools?.[0]).toBe(ordinaryTool);
+      expect(finishTools).toHaveLength(1);
+      expect(finishTools[0]?.effect).toEqual({ kind: "read", risk: "normal" });
+      expect(finishTools[0]?.executionMode).toBe("sequential");
+    },
+  );
 
   it("createFinishWorkTool throws validation error for empty summary or status success with remaining_work", async () => {
     const tool = createFinishWorkTool();
