@@ -1,56 +1,73 @@
 import fs from "node:fs";
+import path from "node:path";
 
 import { captureCommand, findOnPath, runCommand } from "./npu-install-utils.js";
 
+export function indexingPythonCandidateNames({ platform = process.platform, requiredMinor } = {}) {
+  if (requiredMinor !== undefined) return [`python3.${requiredMinor}`, "python3"];
+  if (platform === "darwin") return ["python3.12", "python3"];
+  return ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
+}
+
 export function findCompatiblePython(options = {}) {
   const allowInstall = options.allowInstall ?? true;
-  const requiredMinor = options.requiredMinor;
+  const platform = options.platform ?? process.platform;
+  const requiredMinor = options.requiredMinor ?? (platform === "darwin" ? 12 : undefined);
+  const locate = options.findOnPath ?? findOnPath;
+  const capture = options.captureCommand ?? captureCommand;
+  const install = options.installPython ?? tryAutoInstallIndexingPython;
+  let installedCandidates = [];
   const search = () => {
-    const names = requiredMinor !== undefined
-      ? [`python3.${requiredMinor}`, "python3"]
-      : process.platform === "darwin" && process.arch === "x64"
-        ? ["python3.12", "python3.11", "python3.10", "python3"]
-        : ["python3", "python3.14", "python3.13", "python3.12", "python3.11", "python3.10"];
-    const candidates = [...new Set(names.map(findOnPath).filter(Boolean))];
+    const names = indexingPythonCandidateNames({ platform, requiredMinor });
+    const candidates = [...new Set([
+      ...names.map(locate),
+      ...installedCandidates,
+    ].filter(Boolean))];
     for (const candidate of candidates) {
-      const version = captureCommand(candidate, [
+      const version = capture(candidate, [
         "-c", "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')",
       ], { allowFailure: true }).trim();
       const [major, minor] = version.split(".").map(Number);
       if (major !== 3 || minor < 10) continue;
       if (requiredMinor !== undefined && minor !== requiredMinor) continue;
-      if (process.platform === "darwin" && process.arch === "x64" && minor > 12) continue;
       return candidate;
     }
     return undefined;
   };
   let found = search();
   if (!found && allowInstall) {
-    tryAutoInstallPython(requiredMinor);
+    installedCandidates = install(requiredMinor, platform) ?? [];
     found = search();
   }
   if (found) return found;
   throw new Error(
     requiredMinor !== undefined
       ? `Code indexing requires Python 3.${requiredMinor} for the selected backend.`
-      : process.platform === "darwin" && process.arch === "x64"
-        ? "Code indexing requires Python 3.10-3.12 on Intel macOS. Please install Python 3."
-        : "Code indexing requires Python 3.10 or newer. Please install Python 3.",
+      : "Code indexing requires Python 3.10 or newer. Please install Python 3.",
   );
 }
 
-function tryAutoInstallPython(requiredMinor) {
+export function tryAutoInstallIndexingPython(requiredMinor, platform = process.platform, dependencies = {}) {
+  const locate = dependencies.findOnPath ?? findOnPath;
+  const capture = dependencies.captureCommand ?? captureCommand;
+  const run = dependencies.runCommand ?? runCommand;
   console.log("No compatible Python 3 found on PATH. Attempting automatic installation...");
-  if (process.platform === "darwin") {
-    const brew = findOnPath("brew")
-      || (fs.existsSync("/opt/homebrew/bin/brew") ? "/opt/homebrew/bin/brew" : undefined);
+  if (platform === "darwin") {
+    const brew = locate("brew")
+      || ["/opt/homebrew/bin/brew", "/usr/local/bin/brew"].find((candidate) => fs.existsSync(candidate));
     if (brew) {
-      const pkg = requiredMinor === 12 || process.arch === "x64" ? "python@3.12" : "python3";
-      runCommand(brew, ["install", pkg], { allowFailure: true });
+      const minor = requiredMinor ?? 12;
+      const pkg = `python@3.${minor}`;
+      run(brew, ["install", pkg], { allowFailure: true });
+      const prefix = capture(brew, ["--prefix", pkg], { allowFailure: true }).trim();
+      return prefix
+        ? [path.join(prefix, "bin", `python3.${minor}`)]
+        : [path.join(path.dirname(brew), `python3.${minor}`)];
     }
-  } else if (process.platform === "linux") {
+  } else if (platform === "linux") {
     installLinuxPython();
   }
+  return [];
 }
 
 function installLinuxPython() {

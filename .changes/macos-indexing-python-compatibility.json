@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep macOS indexing fallbacks on Python versions supported by pinned Core ML dependencies."
+}
