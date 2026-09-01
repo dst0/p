@@ -102,10 +102,19 @@ function evidenceHandle(text: string): string {
   return handle;
 }
 
+async function recordWorkspaceChecklist(controller: TaskVerificationController, taskText = "Update the workspace.") {
+  controller.state.taskPrompts = [{ id: "user-1", text: taskText }];
+  await callVerification(controller, {
+    action: "record_completion_checklist",
+    completion_checklist: ["The requested workspace update behaves correctly"],
+  });
+}
+
 async function readyEvidenceTask(cwd: string, sessionManager = SessionManager.inMemory(cwd)) {
   const agent = new Agent();
   const controller = createTaskVerificationController(sessionManager, "evidence");
   controller.install(agent);
+  await recordWorkspaceChecklist(controller);
   await writeFile(join(cwd, "README.md"), "pre-existing dirty change\n");
   await runTool(
     agent,
@@ -125,25 +134,13 @@ async function readyEvidenceTask(cwd: string, sessionManager = SessionManager.in
   );
   const ready = await callVerification(controller, {
     action: "ready_to_finish",
-    acceptance_checks: [{ criterion: "The requested workspace update works", evidence_refs: [evidenceRef] }],
+    evidence_refs_by_check: [[evidenceRef]],
     unresolved_failures: [],
   });
   return { agent, controller, ready, sessionManager };
 }
 
 describe("evidence-mode workspace effect ledger", () => {
-  it("exposes only status and one-checklist readiness actions to the provider", () => {
-    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
-    const schema = JSON.stringify(controller.toolDefinition.parameters);
-    expect(schema).toContain('"const":"status"');
-    expect(schema).toContain('"const":"ready_to_finish"');
-    expect(schema).toContain('"acceptance_checks"');
-    expect(schema).not.toContain('"const":"declare_task"');
-    expect(schema).not.toContain('"task_kind"');
-    expect(schema).not.toContain('"baseline_method"');
-    expect(schema).not.toContain('"final_method"');
-  });
-
   it("tracks actual task-owned docs, config, and assets without claiming pre-existing dirty files", async () => {
     const cwd = await createRepository();
     const { controller, ready } = await readyEvidenceTask(cwd);
@@ -216,6 +213,7 @@ describe("evidence-mode workspace effect ledger", () => {
     const agent = new Agent();
     const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "evidence");
     controller.install(agent);
+    await recordWorkspaceChecklist(controller);
     await runTool(
       agent,
       "bash",
@@ -236,7 +234,7 @@ describe("evidence-mode workspace effect ledger", () => {
     );
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      acceptance_checks: [{ criterion: "The workspace update is complete", evidence_refs: [evidenceRef] }],
+      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     const exact = ["settings.json", "docs/guide.md", "public/logo.svg", "public/current-logo.svg"];
@@ -279,7 +277,7 @@ describe("evidence-mode workspace effect ledger", () => {
     const agent = new Agent();
     const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "evidence");
     controller.install(agent);
-    controller.state.taskPrompts = [{ id: "user-1", text: "Update the guide and run tests." }];
+    await recordWorkspaceChecklist(controller, "Update the guide and run tests.");
     await runTool(agent, "write", { path: "docs/guide.md", content: "updated\n" }, () =>
       writeFile(join(cwd, "docs/guide.md"), "updated\n"),
     );
@@ -287,7 +285,7 @@ describe("evidence-mode workspace effect ledger", () => {
     expect(controller.evidence.get(evidenceRef)?.testOutcome).toBe("unconfirmed");
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      acceptance_checks: [{ criterion: "The requested test suite passed", evidence_refs: [evidenceRef] }],
+      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     expect(ready).toContain("maps no successful current-revision test evidence");

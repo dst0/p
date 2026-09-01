@@ -134,11 +134,39 @@ describe("task verification custom tool effects", () => {
       session.setActiveToolsByName(["lookup_ticket", "send_email"]);
       expect(session._taskVerificationMode).toBe("evidence");
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
+      const controller = session._taskVerificationRuntime?.controller;
+      if (!controller) throw new Error("Expected active evidence controller");
+      controller.state = {
+        ...controller.state,
+        taskPrompts: [{ id: "user-1", text: "Send the requested email." }],
+      };
 
       const sendTool = session.agent.state.tools.find((tool) => tool.name === "send_email")!;
       expect(sendTool.effect).toMatchObject({ kind: "external_write", source: "declared" });
       const args = {};
       const toolCall = { type: "toolCall" as const, id: "send-1", name: "send_email", arguments: args };
+      expect(
+        (
+          await session.agent.beforeToolCall?.({
+            assistantMessage: {} as never,
+            toolCall,
+            args,
+            effect: sendTool.effect as never,
+            context: {} as never,
+          })
+        )?.block,
+      ).toBe(true);
+      const verification = session.getToolDefinition(TASK_VERIFICATION_TOOL_NAME)!;
+      await verification.execute(
+        "checklist",
+        {
+          action: "record_completion_checklist",
+          completion_checklist: ["The requested email is sent"],
+        },
+        undefined,
+        undefined,
+        {} as never,
+      );
       expect(
         (
           await session.agent.beforeToolCall?.({
@@ -174,12 +202,11 @@ describe("task verification custom tool effects", () => {
       expect(session._taskVerificationMode).toBe("evidence");
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
 
-      const verification = session.getToolDefinition(TASK_VERIFICATION_TOOL_NAME)!;
       const readyResult = await verification.execute(
         "ready",
         {
           action: "ready_to_finish",
-          acceptance_checks: [{ criterion: "Email sent", evidence_refs: [evidenceRef!] }],
+          evidence_refs_by_check: [[evidenceRef!]],
           unresolved_failures: [],
         } as never,
         undefined,

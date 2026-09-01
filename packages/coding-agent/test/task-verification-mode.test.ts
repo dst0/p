@@ -6,6 +6,10 @@ import { Agent, type AgentEvent, type ResolvedToolEffect, resolveToolEffect } fr
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
+import {
+  callEvidenceVerification as callVerification,
+  evidenceHandle,
+} from "./task-verification-evidence-test-harness.ts";
 
 function createHarness(mode: "evidence" | "audit" | "off", cwd?: string) {
   const agent = new Agent();
@@ -81,29 +85,6 @@ async function afterTool(
   );
 }
 
-function evidenceHandle(text: string): string {
-  const match = text.match(/Verification evidence handle: (verification-evidence-\d+)/u);
-  if (!match) throw new Error(`Missing evidence handle in: ${text}`);
-  return match[1];
-}
-
-async function callVerification(
-  controller: TaskVerificationController,
-  params: Record<string, unknown>,
-): Promise<string> {
-  const result = await controller.toolDefinition.execute(
-    "verification-call",
-    params as never,
-    undefined,
-    undefined,
-    {} as never,
-  );
-  return result.content
-    .filter((part): part is { type: "text"; text: string } => part.type === "text")
-    .map((part) => part.text)
-    .join("\n");
-}
-
 async function callRequirementAudit(
   controller: TaskVerificationController,
   params: Record<string, unknown>,
@@ -135,6 +116,12 @@ describe("task verification modes", () => {
         harness,
         "Implement the behavior described by SPEC.md, then run the focused tests and typecheck.",
       );
+      expect(
+        await callVerification(harness.controller, {
+          action: "record_completion_checklist",
+          completion_checklist: ["Feature returns parsed records in the canonical order specified by SPEC.md"],
+        }),
+      ).toContain("Completion checklist recorded");
 
       const writeArgs = { path: "src/feature.ts", content: "export {};\n" };
       const writeCall = toolCall("write", writeArgs);
@@ -166,14 +153,8 @@ describe("task verification modes", () => {
       );
       const ready = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        acceptance_checks: [
-          {
-            criterion: "The requested implementation and checks completed successfully",
-            evidence_refs: [testEvidence, typecheckEvidence],
-          },
-        ],
+        evidence_refs_by_check: [[testEvidence, typecheckEvidence]],
         unresolved_failures: [],
-        files_changed: ["src/feature.ts"],
       });
 
       expect(ready).toContain("verification_token:");
@@ -195,7 +176,7 @@ describe("task verification modes", () => {
     }
   });
 
-  it("requires the free-text completion checklist to cover multiple explicit guarantees", async () => {
+  it("keeps the one free-text completion checklist stable while evidence is refreshed", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "p-task-verification-checklist-"));
     execFileSync("git", ["init", "-q"], { cwd });
     execFileSync("git", ["config", "maintenance.auto", "false"], { cwd });
@@ -203,35 +184,63 @@ describe("task verification modes", () => {
     const harness = createHarness("evidence", cwd);
     try {
       await sendUserPrompt(harness, "Implement exact atomic behavior that rejects stale input.");
+      expect(
+        await callVerification(harness.controller, {
+          action: "record_completion_checklist",
+          completion_checklist: [
+            "Parser returns the canonical normalized value for valid input",
+            "Atomic rejected batches leave all records unchanged",
+            "Stale input is rejected",
+            "Generated report contains every requested result section",
+          ],
+        }),
+      ).toContain("Completion checklist recorded");
       const writeArgs = { path: "src/feature.ts", content: "export {};\n" };
       const writeCall = toolCall("write", writeArgs);
       expect((await beforeTool(harness.agent, "write", writeArgs, writeCall))?.block).not.toBe(true);
       writeFileSync(join(cwd, writeArgs.path), writeArgs.content);
       await afterTool(harness.agent, "write", writeArgs, "wrote file", writeCall);
       const exactEvidence = evidenceHandle(
-        await afterTool(harness.agent, "bash", { command: "node verify-exact-output.js" }, "exact output passed"),
+        await afterTool(
+          harness.agent,
+          "bash",
+          { command: "vitest --run test/feature.test.ts -t 'returns canonical normalized value for valid input'" },
+          "Tests 1 passed (1)",
+        ),
       );
       const atomicEvidence = evidenceHandle(
-        await afterTool(harness.agent, "bash", { command: "node verify-atomicity.js" }, "atomicity passed"),
+        await afterTool(
+          harness.agent,
+          "bash",
+          { command: "vitest --run test/feature.test.ts -t 'atomic rejected batches leave all records unchanged'" },
+          "Tests 1 passed (1)",
+        ),
       );
       const staleEvidence = evidenceHandle(
         await afterTool(
           harness.agent,
           "bash",
-          { command: "node verify-stale-input.js" },
-          "stale input rejection passed",
+          { command: "vitest --run test/feature.test.ts -t 'rejects stale input'" },
+          "Tests 1 passed (1)",
         ),
       );
       const completeEvidence = evidenceHandle(
-        await afterTool(harness.agent, "bash", { command: "node verify-complete-output.js" }, "complete output passed"),
+        await afterTool(
+          harness.agent,
+          "bash",
+          {
+            command: "vitest --run test/feature.test.ts -t 'generated report contains every requested result section'",
+          },
+          "Tests 1 passed (1)",
+        ),
       );
 
       const incomplete = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        acceptance_checks: [{ criterion: "Feature works", evidence_refs: [exactEvidence] }],
+        evidence_refs_by_check: [[exactEvidence]],
         unresolved_failures: [],
       });
-      expect(incomplete).toContain("at least 4 distinct acceptance_checks");
+      expect(incomplete).toContain("exactly one evidence_refs_by_check entry for each of the 4 frozen");
       expect(harness.controller.currentState.readiness?.status ?? "pending").toBe("pending");
       expect(
         (
@@ -244,12 +253,7 @@ describe("task verification modes", () => {
 
       const ready = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        acceptance_checks: [
-          { criterion: "Exact behavior", evidence_refs: [exactEvidence] },
-          { criterion: "Atomic behavior", evidence_refs: [atomicEvidence] },
-          { criterion: "Stale input is rejected", evidence_refs: [staleEvidence] },
-          { criterion: "Requested output is complete", evidence_refs: [completeEvidence] },
-        ],
+        evidence_refs_by_check: [[exactEvidence], [atomicEvidence], [staleEvidence], [completeEvidence]],
         unresolved_failures: [],
       });
       expect(ready).toContain("verification_token:");

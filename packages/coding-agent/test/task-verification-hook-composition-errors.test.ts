@@ -44,6 +44,45 @@ describe("task verification hook composition errors", () => {
     expect(controller.testMutationReservations.has("edit-block")).toBe(false);
   });
 
+  it("prioritizes a read_rules block over a missing evidence checklist and releases the reservation", async () => {
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
+    let reservationObserved = false;
+    const agent = new Agent();
+    agent.beforeToolCall = async () => {
+      reservationObserved = controller.testMutationReservations.has("edit-read-rules");
+      return { block: true, reason: "Call read_rules before mutation" };
+    };
+    controller.install(agent);
+    await emitUserPrompt(agent);
+
+    await expect(
+      agent.beforeToolCall?.(beforeContext("edit-read-rules"), new AbortController().signal),
+    ).resolves.toEqual({ block: true, reason: "Call read_rules before mutation" });
+    expect(reservationObserved).toBe(true);
+    expect(controller.testMutationReservations.has("edit-read-rules")).toBe(false);
+  });
+
+  it("releases a provisional reservation when the evidence checklist blocks after the prior hook", async () => {
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
+    let reservationObserved = false;
+    const agent = new Agent();
+    agent.beforeToolCall = async () => {
+      reservationObserved = controller.testMutationReservations.has("edit-checklist");
+      return undefined;
+    };
+    controller.install(agent);
+    await emitUserPrompt(agent);
+
+    await expect(
+      agent.beforeToolCall?.(beforeContext("edit-checklist"), new AbortController().signal),
+    ).resolves.toEqual({
+      block: true,
+      reason: expect.stringContaining("record one completion checklist"),
+    });
+    expect(reservationObserved).toBe(true);
+    expect(controller.testMutationReservations.has("edit-checklist")).toBe(false);
+  });
+
   it("preserves an earlier after-hook error when controller settlement succeeds", async () => {
     const priorError = new Error("prior result hook failed");
     const agent = new Agent();
@@ -90,6 +129,15 @@ async function prepareTestEdit(controller: TaskVerificationController): Promise<
     action: "declare_task",
     task_kind: "feature",
     task_summary: "Exercise hook composition across test edits",
+  });
+}
+
+async function emitUserPrompt(agent: Agent): Promise<void> {
+  const message = { role: "user" as const, content: "Update the parser and its tests.", timestamp: Date.now() };
+  await agent.runWithLifecycle(async () => {
+    await agent.processEvents({ type: "turn_start" });
+    await agent.processEvents({ type: "message_start", message });
+    await agent.processEvents({ type: "message_end", message });
   });
 }
 

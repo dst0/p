@@ -28,6 +28,7 @@ async function createCompiledSession(workspace: Workspace, manager: SessionManag
     agentDir: join(workspace.root, `.agent-gate-restart-${suffix}`),
     resourceLoader: workspace.resourceLoader,
     sessionManager: manager,
+    taskVerificationMode: "off",
     projectInstructionMode: "compiled",
     projectInstructionCompiler: workspace.compiler,
     projectInstructionCompilerIdentity: "gate-restart-test",

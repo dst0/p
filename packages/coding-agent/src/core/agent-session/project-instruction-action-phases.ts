@@ -27,6 +27,7 @@ const TASK_VERIFICATION_CONTROL_PLANE_ACTIONS = new Set([
   "declare_task",
   "authorize_baseline_test",
   "record_baseline",
+  "record_completion_checklist",
   "record_final",
   "ready_to_finish",
   "status",

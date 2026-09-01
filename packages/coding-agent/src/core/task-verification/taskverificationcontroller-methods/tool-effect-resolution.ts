@@ -9,6 +9,8 @@ interface ToolEffectContext {
   args: unknown;
 }
 
+const PROJECT_INSTRUCTION_READ_TOOLS = new Set(["list_skills", "read_rules", "read_skills"]);
+
 export function resolvedTaskVerificationToolEffect(context: ToolEffectContext): TaskVerificationResolvedToolEffect {
   const toolName = context.toolCall.name;
   const declared = (context as ToolEffectContext & { effect?: unknown }).effect;
@@ -34,6 +36,7 @@ export function resolvedTaskVerificationToolEffect(context: ToolEffectContext): 
   if (resolvedToolEffectIsValid(declared)) return structuredClone(declared);
   if (
     KNOWN_EVIDENCE_TOOLS.has(toolName) ||
+    PROJECT_INSTRUCTION_READ_TOOLS.has(toolName) ||
     toolName === TASK_VERIFICATION_TOOL_NAME ||
     toolName === REQUIREMENT_AUDIT_TOOL_NAME
   ) {

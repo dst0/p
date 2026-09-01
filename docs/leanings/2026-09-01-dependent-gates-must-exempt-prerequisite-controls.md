@@ -1,0 +1,22 @@
+# 2026-09-01 — Dependent gates must exempt prerequisite controls
+
+- **Status:** Resolved
+- **Task/context:** Compiled project-instruction routing and evidence-mode completion checklists were enabled together before the first mutation.
+- **Unexpected observation or failure:** The project-rule gate blocked `record_completion_checklist` and demanded `read_rules`, even though recording the checklist is a safe prerequisite control action rather than a mutation.
+- **Evidence:** A real-session integration regression delivered a user prompt, selected a three-link compiled route, and called the public task-verification tool path. The checklist call was blocked by the exact pending `read_rules` batch before any mutation was attempted.
+- **Approaches tried:**
+  - **Attempt:** Disable evidence mode in project-instruction-only unit tests.
+    - **Outcome:** Partial
+    - **Why:** This correctly isolated those tests but could not prove that both production gates coexist.
+  - **Attempt:** Execute the checklist tool definition directly in the integration test.
+    - **Outcome:** Did not work
+    - **Why:** It would bypass the public `beforeToolCall` composition and hide the production deadlock.
+  - **Attempt:** Classify `record_completion_checklist` as a verification control-plane action.
+    - **Outcome:** Worked
+    - **Why:** The checklist can now be recorded without satisfying project-rule reads, while the first mutation remains blocked until the selected authoritative batch is read.
+- **Root cause:** The new checklist action was omitted from the explicit task-verification control-plane allowlist used by project-instruction action gating.
+- **Resolution:** Add only `record_completion_checklist` to the control-plane action set and preserve all mutation and completion gates.
+- **Verification:** The regression failed before the fix and passed afterward through the real session, user-event, public hook, checklist tool, batched `read_rules`, and mutation paths.
+- **Prevention/follow-up:** Every new prerequisite control action must have a coexistence regression covering all gates that can run before it.
+- **Reusable learning:** When one gate requires a control action supplied by another subsystem, that prerequisite action must be explicitly phase-neutral; test the composed public hook path, not only each gate in isolation.
+- **References:** `packages/coding-agent/test/project-instruction-evidence-verification-coexistence.test.ts`

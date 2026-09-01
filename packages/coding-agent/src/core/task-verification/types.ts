@@ -1,6 +1,7 @@
 import type { Static } from "typebox";
 import type {
   BASELINE_METHODS,
+  EvidenceVerificationSchema,
   FINAL_METHODS,
   REQUIREMENT_TYPES,
   TASK_KINDS,
@@ -112,6 +113,21 @@ export interface TaskVerificationAcceptanceCheck {
   evidenceRefs: string[];
 }
 
+export interface TaskVerificationCompletionChecklist {
+  version: 1;
+  criteria: string[];
+  sourcePromptIds: string[];
+  createdAtMutationRevision: number;
+}
+
+export interface TaskVerificationCriticalProofObligation {
+  id: string;
+  policy: "remove_exact_final_byte";
+  sourcePath: string;
+  sourceSha256: string;
+  artifactDomain: string;
+}
+
 export interface PersistedRejectedRequirementDefinitionDraft {
   revision: string;
   diagnostics: string;
@@ -195,6 +211,11 @@ export interface TaskVerificationState {
     /** Bounded user-visible summary captured before the terminal certificate transition. */
     completionSummary?: string;
   };
+  /** One current model-generated behavioral checklist, retained independently from evidence freshness. */
+  completionChecklist?: TaskVerificationCompletionChecklist;
+  /** Bounded proof obligations recognized from explicitly referenced authoritative text. */
+  criticalProofObligations?: TaskVerificationCriticalProofObligation[];
+  criticalProofObligationOverflow?: boolean;
   requirementAudit: TaskRequirementAuditState;
   updatedAt: string;
 }
@@ -225,6 +246,8 @@ export interface TaskVerificationProofWitness {
 }
 
 export type VerificationInput = Static<typeof VerificationSchema>;
+
+export type EvidenceVerificationInput = Static<typeof EvidenceVerificationSchema>;
 
 export type RequirementAuditInput = Static<typeof RequirementAuditInputSchema>;
 

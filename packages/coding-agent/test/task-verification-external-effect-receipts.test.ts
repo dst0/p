@@ -71,6 +71,18 @@ function evidenceHandle(text: string): string {
   return handle;
 }
 
+async function createEvidenceHarness(sessionManager = SessionManager.inMemory()) {
+  const agent = new Agent();
+  const controller = createTaskVerificationController(sessionManager, "evidence");
+  controller.install(agent);
+  controller.state.taskPrompts = [{ id: "user-1", text: "Complete the requested external effect." }];
+  await callVerification(controller, {
+    action: "record_completion_checklist",
+    completion_checklist: ["The requested external effect completes successfully"],
+  });
+  return { agent, controller };
+}
+
 async function beforeFinish(agent: Agent, token: string | undefined) {
   const args = { status: "success", verification_token: token };
   const toolCall = { type: "toolCall" as const, id: "finish", name: "finish_work", arguments: args };
@@ -84,15 +96,37 @@ async function beforeFinish(agent: Agent, token: string | undefined) {
 }
 
 describe("evidence-mode external effect receipts", () => {
+  it("blocks a declared external write named like a test command until the checklist exists", async () => {
+    const agent = new Agent();
+    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
+    controller.install(agent);
+    controller.state.taskPrompts = [{ id: "user-1", text: "Send the requested notification." }];
+    const args = { command: "npm test" };
+    const call = { type: "toolCall" as const, id: "declared-test-write", name: "bash", arguments: args };
+    const before = await agent.beforeToolCall?.({
+      assistantMessage: {} as never,
+      toolCall: call,
+      args,
+      effect: {
+        kind: "external_write",
+        risk: "high",
+        domains: ["network_send"],
+        source: "declared",
+      },
+      context: {} as never,
+    } as never);
+
+    expect(before?.block).toBe(true);
+    expect(before?.reason).toContain("record one completion checklist");
+  });
+
   it("persists external-only readiness without payloads and invalidates it after a later effect", async () => {
     const sessionManager = SessionManager.inMemory();
-    const agent = new Agent();
-    const controller = createTaskVerificationController(sessionManager, "evidence");
-    controller.install(agent);
+    const { agent, controller } = await createEvidenceHarness(sessionManager);
     const evidenceRef = evidenceHandle(await runEffect(agent, "email-1", "external_write"));
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      acceptance_checks: [{ criterion: "The requested email was sent", evidence_refs: [evidenceRef] }],
+      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     expect(ready).toContain("verification_token:");
@@ -112,13 +146,11 @@ describe("evidence-mode external effect receipts", () => {
   });
 
   it("allows an unknown successful effect through a high-risk metadata-only receipt", async () => {
-    const agent = new Agent();
-    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
-    controller.install(agent);
+    const { agent, controller } = await createEvidenceHarness();
     const evidenceRef = evidenceHandle(await runEffect(agent, "unknown-1", "unknown"));
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      acceptance_checks: [{ criterion: "The effect completed", evidence_refs: [evidenceRef] }],
+      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     expect(controller.currentState.effectTrackingFailed).toBe(false);
@@ -131,13 +163,11 @@ describe("evidence-mode external effect receipts", () => {
   });
 
   it("blocks an unknown effect after completion evidence without invalidating readiness", async () => {
-    const agent = new Agent();
-    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
-    controller.install(agent);
+    const { agent, controller } = await createEvidenceHarness();
     const evidenceRef = evidenceHandle(await runEffect(agent, "known-1", "external_write"));
     await callVerification(controller, {
       action: "ready_to_finish",
-      acceptance_checks: [{ criterion: "The requested effect completed", evidence_refs: [evidenceRef] }],
+      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
 
@@ -212,18 +242,14 @@ describe("evidence-mode external effect receipts", () => {
   });
 
   it("does not record failed external effects", async () => {
-    const agent = new Agent();
-    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
-    controller.install(agent);
+    const { agent, controller } = await createEvidenceHarness();
     await runEffect(agent, "email-failed", "external_write", true);
     expect(controller.currentState.externalEffectReceipts).toEqual([]);
     expect(controller.currentState.mutationRevision).toBe(0);
   });
 
   it.each(["bash", "write"])("honors declared external effects for a custom tool named %s", async (name) => {
-    const agent = new Agent();
-    const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
-    controller.install(agent);
+    const { agent, controller } = await createEvidenceHarness();
 
     await runEffect(agent, `custom-${name}`, "external_write", false, name);
 

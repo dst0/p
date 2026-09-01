@@ -69,6 +69,20 @@ describe("task verification test invocation parsing", () => {
     });
   });
 
+  it("recognizes npm test through option-safe npx wrappers without admitting arbitrary packages", () => {
+    const directInvocation = focusedTestInvocation("npm test");
+
+    expect(focusedTestInvocation("npx npm test")).toEqual(directInvocation);
+    expect(focusedTestInvocation("npx --yes npm test")).toEqual(directInvocation);
+    expect(focusedTestInvocation("npx --package npm npm test")).toEqual(directInvocation);
+    expect(commandContainsTestInvocation("npx npm test")).toBe(true);
+    expect(focusedTestInvocation("npx --package evil npm test")).toBeUndefined();
+    expect(focusedTestInvocation("npx --package=evil npm test")).toBeUndefined();
+    expect(commandContainsTestInvocation("npx --package evil npm test")).toBe(false);
+    expect(focusedTestInvocation("npx eslint test")).toBeUndefined();
+    expect(commandContainsTestInvocation("npx eslint test")).toBe(false);
+  });
+
   it.each([
     ["pytest test_parser.py", "python", false],
     ["python -m unittest test_parser.py", "python", false],

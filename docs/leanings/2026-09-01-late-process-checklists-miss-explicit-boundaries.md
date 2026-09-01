@@ -1,0 +1,22 @@
+# 2026-09-01 — Late process checklists miss explicit boundaries
+
+- **Status:** Partial
+- **Task/context:** Validate default compiled project instructions with evidence-mode completion on the four-task benchmark before release 5.0.1.
+- **Unexpected observation or failure:** The event-sourced inventory cell performed substantial implementation work and passed its visible suite, but hidden validation rejected removal of exactly the final JSONL newline byte.
+- **Evidence:** Candidate 5.0.1-rc.64 reached 29 of 30 hidden invariants (95/100 raw quality) after 1,837,969 ms and 1,988,889 tokens. Its parser used `trimEnd()`, while its truncation regression removed a whole record rather than only the terminal LF. The completion checklist was generated after implementation and contained process proxies such as passing tests and completed files.
+- **Approaches tried:**
+  - **Attempt:** Keep a late checklist and increase its required item count from prompt signal words.
+    - **Outcome:** Did not work
+    - **Why:** More generic items did not force the model to preserve a specific cross-statement boundary, and the count caused avoidable readiness retries.
+  - **Attempt:** Restore exhaustive semantic clause auditing for free text.
+    - **Outcome:** Rejected
+    - **Why:** Earlier candidates showed that definition and repair loops destroyed liveness without providing a practical release gate for arbitrary requests.
+  - **Attempt:** Freeze one behavioral checklist before mutation and add only bounded, recognized critical proof obligations from explicitly referenced text.
+    - **Outcome:** Partial
+    - **Why:** The implementation preserves the model's task understanding while requiring focused evidence for the exact composed boundary without constructing a clause matrix, but live AI-unit and paired benchmark validation are still pending.
+- **Root cause:** Verification was temporally and semantically misplaced: a post-implementation checklist described tool/process success instead of preserving observable requirements and their exact failure boundaries before code was written.
+- **Resolution:** The current candidate records one checklist after discovery and before mutation, preserves it across evidence refresh, rejects process-only checklists, recognizes the terminal-delimiter plus universal-truncation composition from canonical source bytes, and requires a focused exact-final-byte witness. It also recognizes scoped `npx npm test` evidence and auto-fills omitted authoritative changed paths to avoid unrelated retry loops.
+- **Verification:** Focused regressions cover pre-mutation gating, prompt-epoch invalidation, domain-isolated boundary recognition, broad-evidence rejection, exact-final-byte witnesses, external effects, workspace ledger persistence, and nested npm test invocation. Live AI-unit and paired benchmark validation remain pending.
+- **Prevention/follow-up:** Keep free-text evidence mode checklist-based and bounded. Add new deterministic proof obligations only for well-defined cross-statement invariants with focused evidence semantics; do not grow them into clause decomposition.
+- **Reusable learning:** Freeze user-visible behavior before implementation; treat passing commands as evidence, and prove exact boundary compositions with exact boundary tests.
+- **References:** `packages/coding-agent/test/task-verification-evidence-critical-proof-lifecycle.test.ts`, `packages/coding-agent/src/core/task-verification/evidence-critical-proof-observation.ts`

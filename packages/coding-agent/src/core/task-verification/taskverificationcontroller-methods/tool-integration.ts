@@ -1,14 +1,7 @@
-import type {
-  AfterToolCallResult,
-  Agent,
-  AgentMessage,
-  BeforeToolCallContext,
-  BeforeToolCallResult,
-} from "@dst0/p-agent-core";
+import type { AfterToolCallResult, Agent, BeforeToolCallContext, BeforeToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { isSafePublishCommandSequence } from "../git-command-classification.ts";
 import { rejectedDefinitionNextActionGuardMessage } from "../requirement-definition-repair.ts";
-import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
@@ -19,8 +12,8 @@ import {
   pathArgument,
   shellCommand,
 } from "../tool-classification.ts";
+import { evidenceMutationChecklistGate } from "./completion-checklist.ts";
 import { snapshotNativeToolCallContext } from "./native-tool-result-context.ts";
-import { isNonRequirementNudge } from "./non-requirement-nudge.ts";
 import { requirementDefinitionMutationGate } from "./requirement-definition-mutation-gate.ts";
 import { requirementProofCommandGate } from "./requirement-proof-command-gate.ts";
 import { canPotentiallyChangeWorkspace, requirementSourceMutationGate } from "./requirement-source-gate.ts";
@@ -37,14 +30,16 @@ import { focusedTestInvocation } from "./test-command-invocation.ts";
 import { captureTestWorkspaceSnapshot } from "./test-workspace-snapshot.ts";
 import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
 import { unknownEffectGate } from "./unknown-effect-gate.ts";
+import { captureUserPrompt } from "./user-prompt-capture.ts";
 export function do_install(self: TaskVerificationController, agent: Agent): void {
   if (self.installed || self.mode === "off") return;
   self.installed = true;
   const previousBeforeToolCall = agent.beforeToolCall;
   const previousAfterToolCall = agent.afterToolCall;
   agent.beforeToolCall = async (context, signal) => {
-    const verificationGate = self.beforeToolCall(context);
-    if (verificationGate?.block) return verificationGate;
+    if (!self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
+      reserveTestMutation(self, context);
+    }
     let previousResult: BeforeToolCallResult | undefined;
     try {
       previousResult = await previousBeforeToolCall?.(context, signal);
@@ -56,6 +51,12 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       releaseTestMutationReservation(self, context.toolCall.id);
       return previousResult;
     }
+    releaseTestMutationReservation(self, context.toolCall.id);
+    const verificationGate = self.beforeToolCall(context);
+    if (verificationGate?.block) {
+      releaseTestMutationReservation(self, context.toolCall.id);
+      return verificationGate;
+    }
     const testInvocation = isShellTool(context.toolCall.name)
       ? focusedTestInvocation(shellCommand(context.args))
       : undefined;
@@ -64,7 +65,8 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       canPotentiallyChangeWorkspace(context.toolCall.name, context.args) ||
       effect.kind === "workspace_write" ||
       effect.kind === "unknown";
-    const workspaceMutationAttempt = potentialWorkspaceMutation && !testInvocation;
+    const workspaceMutationAttempt =
+      effect.kind === "workspace_write" || (potentialWorkspaceMutation && !testInvocation);
     const mutationAttempt = workspaceMutationAttempt || effect.kind === "external_write";
     if (mutationAttempt) {
       self.activeMutationAttempts.add(context.toolCall.id);
@@ -80,7 +82,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       const [fingerprint, testSnapshot, sourceSnapshot] = await Promise.all([
         captureWorkspaceFingerprint(self.sessionManager.getCwd(), sessionFile ? [sessionFile] : []),
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
-        workspaceMutationAttempt
+        workspaceMutationAttempt || testInvocation !== undefined
           ? captureSourceWorkspaceSnapshot(
               self.sessionManager.getCwd(),
               pathArgument(context.args) ? [pathArgument(context.args)!] : [],
@@ -90,7 +92,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       ]);
       self.bashFingerprints.set(context.toolCall.id, fingerprint);
       self.workspaceTestSnapshots.set(context.toolCall.id, testSnapshot);
-      if (workspaceMutationAttempt) {
+      if (workspaceMutationAttempt || testInvocation !== undefined) {
         self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
       }
     } else if (workspaceMutationAttempt) {
@@ -150,64 +152,6 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
   });
 }
 
-function captureUserPrompt(self: TaskVerificationController, message: Extract<AgentMessage, { role: "user" }>): void {
-  if (isRecord(message.metadata) && message.metadata.pInternal !== undefined) return;
-  const promptText =
-    typeof message.content === "string"
-      ? message.content
-      : message.content
-          .filter((part) => part.type === "text")
-          .map((part) => part.text)
-          .join("\n");
-  if (!promptText.trim()) return;
-  self.latestUserPrompt = promptText;
-  if (self.restoreError) return;
-  const taskPrompts = self.state.taskPrompts ?? [];
-  if (isNonRequirementNudge(promptText, taskPrompts)) return;
-  const activeRejectedDraft = self.rejectedRequirementDefinitionDraft;
-  const persistedId = [...self.sessionManager.getBranch()]
-    .reverse()
-    .find(
-      (entry) =>
-        entry.type === "message" &&
-        entry.message.role === "user" &&
-        entry.message.timestamp === message.timestamp &&
-        userMessageText(entry.message) === promptText,
-    )?.id;
-  self.state = {
-    ...self.state,
-    requirementDefinitionPolicy:
-      self.mode === "audit"
-        ? (self.state.requirementDefinitionPolicy ?? (self.state.mutationRevision > 0 ? 1 : undefined))
-        : undefined,
-    taskPrompts: [
-      ...taskPrompts,
-      {
-        id: persistedId ?? `user-${message.timestamp}-${taskPrompts.length + 1}`,
-        text: promptText,
-      },
-    ],
-    final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
-    readiness: emptyReadiness(),
-    requirementAudit:
-      self.mode === "audit"
-        ? activeRejectedDraft
-          ? self.state.requirementAudit
-          : emptyRequirementAudit()
-        : self.state.requirementAudit,
-    updatedAt: new Date().toISOString(),
-  };
-  self.persistState();
-}
-
-function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {
-  return typeof message.content === "string"
-    ? message.content
-    : message.content
-        .filter((part) => part.type === "text")
-        .map((part) => part.text)
-        .join("\n");
-}
 export function do_beforeToolCall(self: TaskVerificationController, context: BeforeToolCallContext) {
   const toolName = context.toolCall.name;
   const effect = resolvedTaskVerificationToolEffect(context);
@@ -234,7 +178,11 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
         "Cannot combine a workspace mutation with git commit or push; run them as separate commands.",
       );
     }
-    return unverifiedTestPathsGate(self, "publish changes") ?? self.publishGate("publish changes");
+    return (
+      evidenceMutationChecklistGate(self, "publish changes") ??
+      unverifiedTestPathsGate(self, "publish changes") ??
+      self.publishGate("publish changes")
+    );
   }
   if (successfulFinish) {
     const testPathsGate = unverifiedTestPathsGate(self, "finish successfully");
@@ -252,6 +200,9 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
       if (readinessToken) {
         context.args.verification_token = readinessToken;
       }
+    }
+    if (isRecord(context.args) && context.args.files_changed === undefined) {
+      context.args.files_changed = [...(self.state.taskOwnedPaths ?? [])].sort();
     }
     return undefined;
   }
@@ -272,6 +223,12 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
     if (definitionGate) return definitionGate;
   }
   if (!isPotentialMutationTool(toolName, context.args) && !mutatingEffect) return undefined;
+  const testInvocation = isShellTool(toolName) ? focusedTestInvocation(shellCommand(context.args)) : undefined;
+  const declaredMutation = effect.kind === "workspace_write" || effect.kind === "external_write";
+  if (declaredMutation || !testInvocation) {
+    const checklistGate = evidenceMutationChecklistGate(self, "perform this mutation");
+    if (checklistGate) return checklistGate;
+  }
   const authorizedBaselineTestMutation = self.isAuthorizedBaselineTestMutation(toolName, context.args);
   if (self.mode === "audit" && self.state.baseline.required && self.state.baseline.status !== "satisfied") {
     if (isShellTool(toolName)) return undefined;

@@ -211,6 +211,7 @@ describe("compiled fallback tool routing", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const prepared = session._projectInstructions.state.current;

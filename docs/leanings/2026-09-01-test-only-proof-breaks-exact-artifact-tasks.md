@@ -1,0 +1,22 @@
+# 2026-09-01 — Test-only proof breaks exact artifact tasks
+
+- **Status:** Resolved
+- **Task/context:** A live evidence-mode AI-unit created a two-line non-code status artifact under compiled project instructions.
+- **Unexpected observation or failure:** The agent produced the requested bytes and ran an exact `diff`, but completion repeatedly rejected the current proof because high-risk checklist evidence accepted only focused test-runner results.
+- **Evidence:** The session reached one successful workspace mutation, recorded current-revision read and byte-level shell evidence, and then looped on the same high-risk rejection. A regression reproduced the rejection without a provider.
+- **Approaches tried:**
+  - **Attempt:** Treat any successful shell assertion with overlapping requirement words as focused evidence.
+    - **Outcome:** Did not work
+    - **Why:** Fuzzy overlap could let expected file contents semantically launder temporal, authentication, or source-code behavior.
+  - **Attempt:** Reuse the focused-test selector matcher for `diff` process substitution.
+    - **Outcome:** Did not work
+    - **Why:** The test parser intentionally rejects process substitution and does not describe exact artifact state.
+  - **Attempt:** Add a separate controller-derived exact-artifact claim.
+    - **Outcome:** Worked
+    - **Why:** A strict `diff` or `cmp` grammar supplies literal expected bytes and one task-owned target, while the controller independently rereads the current file and binds its hash to a narrow artifact-state checklist grammar.
+- **Root cause:** The evidence policy conflated all high-risk outcomes with executable behavior, even when the requested invariant was the exact current state of a non-code artifact.
+- **Resolution:** Preserve focused tests and critical proof witnesses, but add a bounded exact-artifact path for common non-code formats. It rejects source extensions, shell composition, interpolation, symlinks, oversized files, unrelated paths, changed bytes, and temporal or runtime criteria.
+- **Verification:** Focused regressions cover the live `created with exactly` wording, canonical byte binding, wrong bytes, unrelated paths, source formats, large files, shell abuse, post-evidence drift, and the unchanged critical `P_PROOF` boundary.
+- **Prevention/follow-up:** Every universal verification policy must include at least one non-coding live AI-unit before a benchmark. New assertion families must produce typed controller-derived claims instead of trusting shell output or generic semantic overlap.
+- **Reusable learning:** Match proof type to the requested outcome: focused tests prove behavior, while exact artifact state requires an independently revalidated path-and-bytes claim.
+- **References:** `packages/coding-agent/test/task-verification-evidence-exact-content-shell.test.ts`, `packages/coding-agent/test/task-verification-exact-file-assertion.test.ts`

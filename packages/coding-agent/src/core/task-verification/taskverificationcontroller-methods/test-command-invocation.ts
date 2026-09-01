@@ -1,5 +1,6 @@
 import { tokenizeShellCommands } from "../git-command-classification.ts";
 import { focusedShellInvocation } from "./focused-shell-command.ts";
+import { npxPackageSelectionsAreNpm } from "./npx-package-selection.ts";
 
 export type TestEcosystem = "go" | "javascript" | "project" | "python" | "rust";
 
@@ -202,6 +203,9 @@ function directTestInvocation(words: readonly string[]): TestCommandInvocation |
   }
   if (executable === "npx") {
     const index = packageSubcommandIndex(words, NPX_OPTIONS_WITH_VALUE);
+    if (words[index] === "npm" && npxPackageSelectionsAreNpm(words, index)) {
+      return packageManagerTestInvocation("npm", words.slice(index));
+    }
     return ["vitest", "jest"].includes(words[index] ?? "")
       ? {
           args: testRunnerArgs(words.slice(index + 1)),

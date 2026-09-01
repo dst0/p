@@ -1,3 +1,7 @@
+import {
+  persistedCompletionChecklistIsValid,
+  persistedCriticalProofObligationsAreValid,
+} from "./completion-proof-state-validation.ts";
 import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "./constants.ts";
 import { TASK_VERIFICATION_MODES } from "./mode.ts";
 import { isPersistedRejectedDefinitionDraft } from "./rejected-definition-state-validation.ts";
@@ -240,6 +244,12 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
     isBaseline(value.baseline) &&
     isFinal(value.final) &&
     (value.readiness === undefined || readinessIsValid(value.readiness, value.mode)) &&
+    (value.completionChecklist === undefined ||
+      persistedCompletionChecklistIsValid(value.completionChecklist, value.taskPrompts, value.mutationRevision)) &&
+    (value.criticalProofObligations === undefined ||
+      persistedCriticalProofObligationsAreValid(value.criticalProofObligations)) &&
+    (value.criticalProofObligationOverflow === undefined ||
+      typeof value.criticalProofObligationOverflow === "boolean") &&
     isRequirementAudit(value.requirementAudit) &&
     isString(value.updatedAt)
   );

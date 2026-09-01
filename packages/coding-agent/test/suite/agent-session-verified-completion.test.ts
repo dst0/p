@@ -25,6 +25,16 @@ describe("AgentSession verified completion", () => {
     harness.setResponses([
       () => {
         providerCalls++;
+        return fauxAssistantMessage(
+          fauxToolCall("record_task_verification", {
+            action: "record_completion_checklist",
+            completion_checklist: ["The requested file contains the exact content"],
+          }),
+          { stopReason: "toolUse" },
+        );
+      },
+      () => {
+        providerCalls++;
         return fauxAssistantMessage(fauxToolCall("write", { path: "result.txt", content: "done\n" }), {
           stopReason: "toolUse",
         });
@@ -44,12 +54,7 @@ describe("AgentSession verified completion", () => {
         return fauxAssistantMessage(
           fauxToolCall("record_task_verification", {
             action: "ready_to_finish",
-            acceptance_checks: [
-              {
-                criterion: "The requested file contains the verified content",
-                evidence_refs: ["verification-evidence-1"],
-              },
-            ],
+            evidence_refs_by_check: [["verification-evidence-1"]],
             unresolved_failures: [],
           }),
           { stopReason: "toolUse" },
@@ -72,7 +77,8 @@ describe("AgentSession verified completion", () => {
 
     const readinessEnd = harness
       .eventsOfType("tool_execution_end")
-      .find((event) => event.toolName === "record_task_verification");
+      .filter((event) => event.toolName === "record_task_verification")
+      .at(-1);
     expect(readinessEnd?.isError).toBe(false);
     expect(readinessEnd?.result.terminate).toBeUndefined();
     expect(readinessEnd?.result.details).not.toHaveProperty("verifiedCompletion");
@@ -80,7 +86,7 @@ describe("AgentSession verified completion", () => {
     expect(
       harness.eventsOfType("completion_protocol").some((event) => event.event === "missing_finish_work_retry"),
     ).toBe(false);
-    expect(providerCalls).toBe(4);
+    expect(providerCalls).toBe(5);
     expect(harness.getPendingResponseCount()).toBe(0);
   });
 
