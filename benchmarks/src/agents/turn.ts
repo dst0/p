@@ -51,7 +51,6 @@ export interface BenchmarkRecordingCapture {
   storageBytes: number;
   storageLimitBytes: number;
 }
-
 interface BenchmarkProofCapture {
   accept(message: unknown): void;
   finish(): Record<string, unknown> | undefined;
@@ -68,13 +67,15 @@ export interface BenchmarkTurnOptions {
   interruptionKillGraceMs?: number;
   failureKillGraceMs?: number;
   hardTimeoutMs?: number;
+  maxMetricEvents?: number;
+  onMetricEvent?: (event: Record<string, unknown>) => void;
   progressEventTypes?: ReadonlySet<string>;
   progressGraceMs?: number;
+  retainMetricOutput?: boolean;
   signal?: AbortSignal;
   timeoutMode?: BenchmarkTimeoutMode;
   turn?: number;
 }
-
 export interface BenchmarkAgentTurnResult {
   stdout: string;
   stderr: string;
@@ -105,6 +106,9 @@ export function runBenchmarkAgentTurn(
   metricEventTypes: ReadonlySet<string>,
   options: BenchmarkTurnOptions = {},
 ): Promise<BenchmarkAgentTurnResult> {
+  if (options.retainMetricOutput === false && !options.onMetricEvent) {
+    throw new Error("non-retained metric output requires an event observer");
+  }
   return new Promise((resolveResult, rejectResult) => {
     const limits = resolveBenchmarkOutputLimits(options.outputLimits);
     const startedAt = performance.now();
@@ -132,9 +136,11 @@ export function runBenchmarkAgentTurn(
     const stderr = createBoundedTextCapture("stderr", limits.maxStderrBytes);
     const eventCapture = createBenchmarkEventCapture(new Set(metricEventTypes), options.eventOrdinalBase, {
       maxMetricBytes: limits.maxMetricBytes,
-      maxMetricEvents: limits.maxMetricEvents,
+      maxMetricEvents: options.maxMetricEvents ?? limits.maxMetricEvents,
       maxRuntimeContexts: limits.maxRuntimeContexts,
+      onMetricEvent: options.onMetricEvent,
       progressEventTypes: options.progressEventTypes,
+      retainMetricOutput: options.retainMetricOutput,
       stopMarker: options.stopOnMarker,
     }) as BenchmarkEventCapture;
     let failure: string | undefined;

@@ -1,0 +1,22 @@
+# 2026-09-02 — Benchmark metrics must be reduced online
+
+- **Status:** Partial
+- **Task/context:** Running the rc.68 paired project-instruction benchmark through the long `event-sourced-inventory` legacy cell after fixing oversized cumulative `agent_end` records.
+- **Unexpected observation or failure:** The agent remained active for more than four hours and completed hundreds of mutations, but the benchmark killed it after retained metric JSON reached 16 MiB.
+- **Evidence:** The cell ran for 15,640,650 ms, emitted 1,012 metric events and 567 potentially mutating actions, and reached 125 verification-readiness attempts before failing with `capture overflow: metric output exceeded 16777216 bytes`. The earlier 1 MiB `agent_end` failure did not recur, confirming that rc.68 passed the line-level failure and exposed a separate cumulative buffer.
+- **Approaches tried:**
+  - **Attempt:** Raise the 16 MiB per-turn limit.
+    - **Outcome:** Did not work
+    - **Why:** Completed turn output was copied into a second 32 MiB combined buffer, so raising one threshold would only postpone the same linear-memory failure.
+  - **Attempt:** Drop additional event types or retain a compact text projection.
+    - **Outcome:** Did not work
+    - **Why:** Dropping semantic events loses completion and routing evidence, while any cumulative text projection still grows with task duration.
+  - **Attempt:** Feed parsed P events directly into one task-scoped metrics accumulator and completion tracker, then discard each metric line from memory.
+    - **Outcome:** Worked
+    - **Why:** Counters and required correlations remain available across nudge turns while the exact raw JSONL bytes continue through the independently bounded Brotli recording lifecycle.
+- **Root cause:** The harness parsed every selected event, serialized it again into a 16 MiB per-turn string, copied completed turns into a 32 MiB aggregate string, and reparsed the aggregate at task completion. Those strings duplicated the lossless raw recording and made valid task duration an accidental memory-limit failure.
+- **Resolution:** P task turns now stream ordinal-annotated parsed events into one metrics accumulator and the terminal-completion tracker. The turn and combined text buffers stay empty for that path, while the per-line limit, global event-count limit, raw-recording limits, semantic liveness, ordinals, runtime contexts, user-turn evidence, and failure propagation remain enforced. Derived P evidence has a separate 16 MiB byte budget, 8,192-entry collection caps, and bounded terminal-verification correlations. The canonical oversized `agent_end` recognizer now validates the complete streaming JSON grammar of `messages` before discarding the redundant event.
+- **Verification:** A regression first reproduced both the 16 MiB aggregate failure and the malformed `agent_end` acceptance. Focused tests now pass with more than 16 MiB of individually bounded metric records, exact derived usage/tool/final-text metrics, byte-for-byte raw Brotli evidence, continued failure for one metric line above 1 MiB, and rejection of malformed adjacent numbers, exponents, containers, commas, colons, and bare tokens. Byte/count retention limits, the exact cross-turn event budget, observer failure propagation, completion, and multi-turn runner behavior also pass focused regressions. The benchmark suite passes 396/396, `npm run check` and `./test.sh` exit zero, auth state is restored at mode `0600`, and `./reinstall.sh`, `p --version`, and `p --list-models` verify the installed 0.4.224 CLI. A live rc.69 paired benchmark remains pending.
+- **Prevention/follow-up:** Keep correctness-bearing event reduction online whenever exact raw output is already durably recorded. The rc.69 paired run must confirm that no later infrastructure buffer terminates the long Task 3 or Task 4 cells.
+- **Reusable learning:** Durable raw recording and online metric reduction are separate responsibilities; never duplicate the entire evidence stream in an in-memory aggregate merely to calculate terminal counters.
+- **References:** `benchmarks/src/project-instructions/stream.ts`, `benchmarks/src/workloads/agent-turn-runner.ts`, `benchmarks/src/harness/p-recording.ts`, `benchmarks/test/agents/metric-output-aggregation.test.ts`, `docs/leanings/2026-09-01-cumulative-agent-end-capture-must-be-non-semantic.md`

@@ -13,6 +13,7 @@ import {
 } from "../project-instructions/turn-authority.ts";
 import { type AgentCommand, commandForAgent } from "./agent-command.ts";
 import { createAgentTaskCompletionGuard } from "./agent-task-completion.ts";
+import { createPRecordingMetricsAccumulator, type RecordingMetrics } from "./recording-metrics.ts";
 import type { AgentId, RunnerOptions } from "./runner-options.ts";
 import type { BenchmarkTask } from "./task-definition.ts";
 
@@ -86,6 +87,7 @@ export type AgentTaskResult = {
   baseSystemModeProofs: EvidenceInput[];
   elapsedMs: number;
   nudges: number;
+  metrics?: RecordingMetrics;
 };
 
 type EvidenceInput = Record<string, unknown> & {
@@ -161,6 +163,7 @@ export async function runAgentTask(
   const taskTimeoutMs = taskTimeoutSeconds * 1000;
   const recording = benchmarkRunnerRecordingFactory.task(recordingPath, options);
   const completion = createAgentTaskCompletionGuard(agent, options.taskVerificationMode);
+  const metricsAccumulator = agent === "p" ? createPRecordingMetricsAccumulator() : undefined;
   try {
     let isContinue = false;
     let currentPrompt = task.prompt;
@@ -190,10 +193,18 @@ export async function runAgentTask(
         ...turnOptions,
         allowCanonicalPAgentEnd: allowsCanonicalPAgentEnd(agent),
         hardTimeoutMs: remainingOverallMs,
+        maxMetricEvents: combined.remainingMetricEvents,
         progressEventTypes: semanticProgressEventTypes,
         signal: options.signal,
         timeoutMode: "semantic_progress",
         eventOrdinalBase: totalRawEventCount,
+        onMetricEvent: metricsAccumulator
+          ? (event) => {
+              metricsAccumulator.observe(event);
+              completion.observeEvent(event);
+            }
+          : undefined,
+        retainMetricOutput: metricsAccumulator ? false : undefined,
         turn: turnOrdinal,
       })) as TurnResult;
       totalRawEventCount += turnResult.rawEventCount;
@@ -216,7 +227,10 @@ export async function runAgentTask(
       lastTimeoutKind = turnResult.timeoutKind;
       try {
         combined.append(turnResult);
-        completion.observe(turnResult.stdout);
+        if (metricsAccumulator) {
+          metricsAccumulator.endTurn();
+          completion.endTurn();
+        } else completion.observe(turnResult.stdout);
       } catch (error) {
         lastCode = undefined;
         lastError = error instanceof Error ? error.message : String(error);
@@ -278,5 +292,6 @@ export async function runAgentTask(
     baseSystemModeProofs,
     elapsedMs: performance.now() - startedAt,
     nudges,
+    metrics: metricsAccumulator?.snapshot(),
   };
 }

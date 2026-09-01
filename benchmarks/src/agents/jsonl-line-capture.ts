@@ -1,4 +1,5 @@
 import { BenchmarkOutputOverflowError } from "../harness/output-capture.ts";
+import { createStreamingJsonArrayValidator } from "./streaming-json-array.ts";
 
 const CANONICAL_P_AGENT_END_PREFIX = '{"type":"agent_end","messages":[';
 const CANONICAL_P_AGENT_END_SUFFIXES = [',"willRetry":false}', ',"willRetry":true}'] as const;
@@ -23,11 +24,9 @@ interface CanonicalAgentEndTracker {
 
 function createCanonicalAgentEndTracker(enabled: boolean): CanonicalAgentEndTracker {
   let prefixOffset = 0;
-  let arrayDepth = 0;
   let suffix = "";
-  let inString = false;
-  let escaped = false;
   let possible = enabled;
+  const messages = createStreamingJsonArrayValidator();
 
   const suffixIsPossible = (): boolean =>
     CANONICAL_P_AGENT_END_SUFFIXES.some((candidate) => candidate.startsWith(suffix));
@@ -42,10 +41,9 @@ function createCanonicalAgentEndTracker(enabled: boolean): CanonicalAgentEndTrac
             return;
           }
           prefixOffset += 1;
-          if (prefixOffset === CANONICAL_P_AGENT_END_PREFIX.length) arrayDepth = 1;
           continue;
         }
-        if (arrayDepth === 0) {
+        if (messages.complete) {
           suffix += character;
           if (!suffixIsPossible()) {
             possible = false;
@@ -53,22 +51,18 @@ function createCanonicalAgentEndTracker(enabled: boolean): CanonicalAgentEndTrac
           }
           continue;
         }
-        if (inString) {
-          if (escaped) escaped = false;
-          else if (character === "\\") escaped = true;
-          else if (character === '"') inString = false;
-          continue;
+        messages.append(character);
+        if (!messages.possible) {
+          possible = false;
+          return;
         }
-        if (character === '"') inString = true;
-        else if (character === "[") arrayDepth += 1;
-        else if (character === "]") arrayDepth -= 1;
       }
     },
     get complete() {
       return (
         possible &&
         prefixOffset === CANONICAL_P_AGENT_END_PREFIX.length &&
-        arrayDepth === 0 &&
+        messages.complete &&
         CANONICAL_P_AGENT_END_SUFFIXES.some((candidate) => candidate === suffix)
       );
     },

@@ -160,7 +160,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
             deadline,
           );
           const stderrName = writeBenchmarkStderrLog(join(output, "stderr"), stderrStem, result.stderr);
-          const metrics = parseRecording(result.stdout, agent);
+          const metrics = result.metrics ?? parseRecording(result.stdout, agent);
           metrics.rawEventCount = result.rawEventCount;
           const projectInstructionEvidence = options.projectInstructions
             ? captureRecordedProjectInstructionEvidence(

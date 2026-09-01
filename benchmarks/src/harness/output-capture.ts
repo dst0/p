@@ -148,5 +148,8 @@ export function createBenchmarkTurnAggregate(overrides: Partial<BenchmarkOutputL
     stderr,
     stdout,
     userTurns,
+    get remainingMetricEvents() {
+      return limits.maxMetricEvents - metricEventCount;
+    },
   };
 }

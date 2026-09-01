@@ -11,7 +11,9 @@ type EventCaptureOptions = {
   maxMetricBytes?: number;
   maxRuntimeContexts?: number;
   maxMetricEvents?: number;
+  onMetricEvent?: (event: Record<string, unknown>) => void;
   progressEventTypes?: ReadonlySet<string>;
+  retainMetricOutput?: boolean;
   stopMarker?: string;
 };
 export type BenchmarkEventCapture = {
@@ -45,6 +47,7 @@ function captureBenchmarkStreamLine(
     if (eventType && metricEventTypes.has(eventType)) {
       event.benchmarkEventOrdinal = eventOrdinal;
       return {
+        metricEvent: event,
         metricLine: `${JSON.stringify(event)}\n`,
         progress: progressEventTypes.has(eventType),
         runtimeContext,
@@ -62,6 +65,9 @@ export function createBenchmarkEventCapture(
   eventOrdinalBase = 0,
   options: EventCaptureOptions = {},
 ): BenchmarkEventCapture {
+  if (options.retainMetricOutput === false && !options.onMetricEvent) {
+    throw new Error("non-retained metric output requires an event observer");
+  }
   const metricOutput = createBoundedTextCapture(
     "metric output",
     options.maxMetricBytes ?? DEFAULT_BENCHMARK_OUTPUT_LIMITS.maxMetricBytes,
@@ -104,7 +110,8 @@ export function createBenchmarkEventCapture(
         throw new BenchmarkCollectionOverflowError("metric events", maxMetricEvents, capture.metricEventCount + 1);
       }
       capture.metricEventCount += 1;
-      metricOutput.append(event.metricLine);
+      options.onMetricEvent?.(event.metricEvent);
+      if (options.retainMetricOutput !== false) metricOutput.append(event.metricLine);
       if (options.stopMarker && event.metricLine.includes(options.stopMarker)) capture.stopMarkerSeen = true;
     }
     return event.progress === true;

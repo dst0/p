@@ -87,13 +87,16 @@ during long cells, and do not treat a single increase in raw diagnostic
 instances as degradation: atomic splits can expose more specific obligations.
 
 Captures are explicitly bounded: by default, raw recordings are limited to
-512 MiB, lines to 1 MiB, per-turn metric output to 16 MiB and 65,536 events,
-combined metric output to 32 MiB, runtime contexts to 256, per-turn/combined
-stderr to 4/8 MiB, and raw stdout probes to 8 MiB. Overflow terminates the
-child and produces structured `capture_overflow` infrastructure evidence, so
-no correctness or performance conclusion is reported. A raw-recording
-overflow retains and marks only its bounded partial prefix, then publishes it
-through the same verified compression lifecycle for diagnosis.
+512 MiB, lines to 1 MiB, metric events to 65,536, runtime contexts to 256,
+per-turn/combined stderr to 4/8 MiB, and raw stdout probes to 8 MiB. P task
+metrics are reduced incrementally across turns without retaining cumulative
+metric JSON text; derived P evidence is separately capped at 16 MiB and 8,192
+entries per retained collection. Other agents and bounded probes retain at most
+16 MiB per turn and 32 MiB combined. Overflow terminates the child and produces structured
+`capture_overflow` infrastructure evidence, so no correctness or performance
+conclusion is reported. A raw-recording overflow retains and marks only its
+bounded partial prefix, then publishes it through the same verified compression
+lifecycle for diagnosis.
 
 ## Configuration
 

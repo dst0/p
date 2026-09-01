@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Reduce long-running P benchmark metrics incrementally while preserving bounded raw evidence and fail-closed line and event limits."
+}

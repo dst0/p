@@ -325,10 +325,15 @@ Capture is fail-closed and bounded. Defaults are 8 GiB for decoded raw
 recording bytes, 256 MiB for live/chunk scratch, 256 MiB for the final archive
 and its terminal receipt, and 32 MiB for one active raw chunk. The two physical
 budgets enforce a 512 MiB peak across crash-safe source and final publication.
-Other defaults are 1 MiB for one JSONL line, 16 MiB and 65,536 events for retained per-turn
-metric output, 32 MiB for combined metric output, 256 retained runtime
-contexts, 4 MiB of stderr per turn, 8 MiB of combined stderr, and 8 MiB for a
-raw stdout probe. Separating decoded and physical limits allows highly
+Other defaults are 1 MiB for one JSONL line, 65,536 metric events, 256 retained
+runtime contexts, 4 MiB of stderr per turn, 8 MiB of combined stderr, and 8 MiB
+for a raw stdout probe. P task metrics are reduced incrementally across all
+nudge turns and retain only derived counters, correlations, evidence, and the
+latest terminal text. Derived evidence is independently capped at 16 MiB, each
+retained collection at 8,192 entries, and verification correlation IDs at
+16 MiB; their complete JSON remains in the bounded raw recording.
+Other agents and bounded probes retain at most 16 MiB of metric output per turn
+and 32 MiB combined. Separating decoded, retained-evidence, and physical limits allows highly
 compressible cumulative model snapshots to progress without allowing
 incompressible output to exhaust disk.
 An oversized P `agent_end` line from the explicitly selected canonical P JSON
