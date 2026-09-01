@@ -7,7 +7,7 @@ import {
 } from "../constants.ts";
 import { rejectedDefinitionNextActionGuardMessage } from "../requirement-definition-repair.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import type { VerificationInput, VerificationResult } from "../types.ts";
+import type { EvidenceVerificationInput, VerificationInput, VerificationResult } from "../types.ts";
 
 export function createTaskVerificationToolDefinition(
   self: TaskVerificationController,
@@ -35,7 +35,7 @@ export function createTaskVerificationToolDefinition(
         const result = self.rejected(rejectedDefinitionNextActionGuardMessage(self.rejectedRequirementDefinitionDraft));
         return { content: [{ type: "text" as const, text: result.message }], details: result };
       }
-      const result = self.applyInput(params as VerificationInput);
+      const result = self.applyInput(params as VerificationInput | EvidenceVerificationInput);
       const message = result.status === "needs_action" ? self.withGuidance(result.message) : result.message;
       return { content: [{ type: "text" as const, text: message }], details: result };
     },
@@ -45,12 +45,17 @@ export function createTaskVerificationToolDefinition(
 function evidenceGuidelines(): string[] {
   return [
     `Call ${TASK_VERIFICATION_TOOL_NAME} with action "status" after compaction or whenever the completion gate is unclear.`,
+    "After discovery and before the first workspace, external, or publication mutation, record exactly one concise completion_checklist of observable requested outcomes and failure boundaries. Batch that tool call immediately before the first mutation when possible.",
+    "The checklist is not a clause matrix: group related behavior, omit clause IDs, and keep test commands, typechecks, builds, and generic file completeness as evidence rather than acceptance behavior.",
+    'For an exact non-code file artifact, use the anchored checklist form `relative/path has exact bytes with a terminal newline; exact_file_bytes("relative/path","JSON-escaped UTF-8 text")` (or `with no terminal newline`) without repeating quoted content; later prove it with a literal diff or cmp assertion against that same task-owned path.',
+    "When an authoritative format contract requires both a terminal delimiter and rejection of any truncation, include the exact boundary: removing only the final delimiter byte must be rejected.",
     "Evidence handles from prior mutation revisions become stale after any file edit. Rerun verification after the final mutation.",
     "Changed tests must pass a direct applicable test command before publication or successful completion.",
+    "Complete every explicitly requested named artifact before final verification; a later write invalidates readiness.",
     "When the user requests tests or type checking, map successful current-revision evidence for each requested check.",
-    "Call action 'ready_to_finish' once with one concise model-generated completion checklist in acceptance_checks. Map each checklist item to fresh evidence_refs.",
+    "Call action 'ready_to_finish' once with evidence_refs_by_check aligned by index to the frozen completion checklist. Critical boundaries require focused selectors and the controller-provided same-run proof witness; a generic full-suite result or matching test name alone is insufficient.",
     "Do not classify task kinds, define atomic requirements, infer high-risk clauses, or call record_requirement_audit in evidence mode.",
-    "Successful finish_work requires the exact verification_token returned by ready_to_finish.",
+    "Successful finish_work may omit verification_token for controller autofill; if supplied, it must exactly match the token returned by ready_to_finish.",
   ];
 }
 

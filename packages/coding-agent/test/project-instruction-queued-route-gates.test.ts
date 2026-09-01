@@ -31,6 +31,7 @@ describe("queued compiled project-instruction route gates", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session.agent.steeringMode = "all";
@@ -83,6 +84,7 @@ describe("queued compiled project-instruction route gates", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts("ceruleanquartz", session.systemPrompt);
@@ -129,6 +131,7 @@ describe("queued compiled project-instruction route gates", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts("ceruleanquartz", session.systemPrompt);
@@ -170,6 +173,7 @@ describe("queued compiled project-instruction route gates", () => {
         projectInstructionMode: "compiled",
         projectInstructionCompiler: workspace.compiler,
         projectInstructionCompilerIdentity: "queued-route-restart-test",
+        taskVerificationMode: "off",
       });
     const initial = await createSession("initial");
     let initialBatch: string[] = [];
@@ -221,6 +225,7 @@ describe("queued compiled project-instruction route gates", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const initialTurn = session._createRuntimeContextPrompts(

@@ -84,6 +84,7 @@ describe("project instruction delivery modes", () => {
       sessionManager: manager,
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const turn = session._createRuntimeContextPrompts("edit security credential handling", session.systemPrompt);
@@ -138,6 +139,7 @@ describe("project instruction delivery modes", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const turn = session._createRuntimeContextPrompts("fix the bug", session.systemPrompt);
@@ -178,6 +180,7 @@ describe("project instruction delivery modes", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const turn = session._createRuntimeContextPrompts(

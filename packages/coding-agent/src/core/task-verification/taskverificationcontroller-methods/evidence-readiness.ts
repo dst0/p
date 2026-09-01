@@ -1,22 +1,28 @@
 import { randomUUID } from "node:crypto";
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
-import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { revalidateCriticalProofSources } from "../evidence-critical-proof-observation.ts";
+import { testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
-import { isShellTool, normalizeStrings, normalizeText } from "../tool-classification.ts";
+import { isShellTool, normalizeStrings } from "../tool-classification.ts";
 import type {
+  EvidenceVerificationInput,
   TaskVerificationAcceptanceCheck,
   TaskVerificationEvidence,
-  VerificationInput,
   VerificationResult,
 } from "../types.ts";
 import { normalizedFilesChanged } from "../workspace-effect-state.ts";
+import { currentCompletionChecklist, formatCompletionChecklist } from "./completion-checklist.ts";
+import {
+  validateCriticalProofEvidence,
+  validateHighRiskChecklistEvidence,
+} from "./evidence-focused-proof-validation.ts";
 import { computeTaskEffectStateHash } from "./task-effect-state-hash.ts";
 import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
 
 export function readyToFinishWithEvidence(
   self: TaskVerificationController,
-  input: VerificationInput,
+  input: EvidenceVerificationInput,
 ): VerificationResult {
   if (self.state.mutationRevision === 0) {
     return self.rejected("ready_to_finish requires at least one successful effect.");
@@ -63,16 +69,17 @@ export function readyToFinishWithEvidence(
   if (normalizeStrings(input.unresolved_failures).length > 0) {
     return self.rejected("ready_to_finish cannot pass with unresolved_failures.");
   }
+  const criticalSourceError = revalidateCriticalProofSources(self);
+  if (criticalSourceError) return self.rejected(criticalSourceError);
 
-  const requestedChecks = input.acceptance_checks ?? [];
-  const requiredCheckCount = requiredAcceptanceCheckCount(self.taskText());
-  if (requestedChecks.length < requiredCheckCount) {
-    return self.rejected(
-      `ready_to_finish requires at least ${requiredCheckCount} distinct acceptance_checks for the explicit guarantees in this task; received ${requestedChecks.length}.`,
-    );
-  }
-  const mapped = validateCompletionChecklist(self, requestedChecks);
+  const checklist = currentCompletionChecklist(self);
+  if (typeof checklist === "string") return self.rejected(checklist);
+  const mapped = validateCompletionChecklist(self, checklist.criteria, input.evidence_refs_by_check ?? []);
   if (typeof mapped === "string") return self.rejected(mapped);
+  const criticalProofError = validateCriticalProofEvidence(self, mapped.checks, mapped.evidence);
+  if (criticalProofError) return self.rejected(criticalProofError);
+  const focusedEvidenceError = validateHighRiskChecklistEvidence(self, mapped.checks, mapped.evidence);
+  if (focusedEvidenceError) return self.rejected(focusedEvidenceError);
   const failedVerifications = self.latestFailedVerificationEvidence();
   if (failedVerifications.length > 0) {
     return self.rejected(
@@ -123,7 +130,8 @@ export function readyToFinishWithEvidence(
     [
       `Evidence readiness passed for mutation revision ${self.state.mutationRevision}.`,
       `verification_token: ${token}`,
-      "Call finish_work minimally; the controller binds this certificate to the successful completion.",
+      `Recorded task-owned paths: ${taskOwnedPaths.join(", ") || "none"}.`,
+      "Call finish_work minimally with status success; verification_token and omitted files_changed are filled from controller-owned state.",
     ].join("\n"),
     false,
   );
@@ -154,7 +162,7 @@ export function completionGateWithEvidence(
     );
   }
   const expected = [...(self.state.taskOwnedPaths ?? [])].sort();
-  const normalized = filesChanged === undefined && expected.length === 0 ? [] : normalizedFilesChanged(filesChanged);
+  const normalized = filesChanged === undefined ? expected : normalizedFilesChanged(filesChanged);
   if (
     !normalized ||
     normalized.length !== expected.length ||
@@ -169,33 +177,36 @@ export function completionGateWithEvidence(
 
 export function formatEvidenceStatus(self: TaskVerificationController): string {
   const readiness = self.state.readiness;
+  const eligibleEvidence = [...self.evidence.values()]
+    .filter((item) => !item.isError && item.mutationRevision === self.state.mutationRevision)
+    .slice(-12);
   return [
     self.formatNextRequirement(),
     "Verification mode: evidence",
     `Mutation revision: ${self.state.mutationRevision}`,
     `Readiness: ${readiness?.status ?? "pending"}`,
+    ...formatCompletionChecklist(self),
     `Unverified test paths: ${(self.state.unverifiedTestPaths ?? []).join(", ") || "none"}`,
     `Recent failed verification commands: ${self.latestFailedVerificationEvidence().length}`,
+    "Eligible current-revision evidence:",
+    ...(eligibleEvidence.length > 0
+      ? eligibleEvidence.map((item) => `- ${item.ref}: ${item.descriptor} (${item.outputSummary || "no summary"})`)
+      : ["- none"]),
   ].join("\n");
 }
 
 function validateCompletionChecklist(
   self: TaskVerificationController,
-  requestedChecks: readonly { criterion: string; evidence_refs: string[] }[],
+  criteria: readonly string[],
+  evidenceRefsByCheck: readonly string[][],
 ): { checks: TaskVerificationAcceptanceCheck[]; evidence: Map<string, TaskVerificationEvidence> } | string {
-  if (requestedChecks.length === 0) {
-    return "ready_to_finish requires one model-generated completion checklist with evidence-backed acceptance_checks.";
+  if (evidenceRefsByCheck.length !== criteria.length) {
+    return `ready_to_finish requires exactly one evidence_refs_by_check entry for each of the ${criteria.length} frozen completion checklist items.`;
   }
   const checks: TaskVerificationAcceptanceCheck[] = [];
   const evidence = new Map<string, TaskVerificationEvidence>();
-  const seenCriteria = new Set<string>();
-  for (const requestedCheck of requestedChecks) {
-    const criterion = normalizeText(requestedCheck.criterion);
-    if (!criterion) return "Every completion checklist item requires a concrete criterion.";
-    const criterionKey = criterion.toLowerCase();
-    if (seenCriteria.has(criterionKey)) return `Duplicate completion checklist criterion: ${criterion}`;
-    seenCriteria.add(criterionKey);
-    const resolved = self.resolveEvidence(requestedCheck.evidence_refs);
+  for (const [index, criterion] of criteria.entries()) {
+    const resolved = self.resolveEvidence(evidenceRefsByCheck[index]);
     if (typeof resolved === "string") return `${criterion}: ${resolved}`;
     if (resolved.some((item) => item.mutationRevision !== self.state.mutationRevision)) {
       return `${criterion}: all evidence must come from mutation revision ${self.state.mutationRevision}.`;
@@ -208,6 +219,10 @@ function validateCompletionChecklist(
 }
 
 function evidenceReadinessError(self: TaskVerificationController, action: string): string | undefined {
+  const criticalSourceError = revalidateCriticalProofSources(self);
+  if (criticalSourceError) return `Cannot ${action}: ${criticalSourceError}`;
+  const checklist = currentCompletionChecklist(self);
+  if (typeof checklist === "string") return `Cannot ${action}: ${checklist}.`;
   const readiness = self.state.readiness;
   if (
     readiness?.status !== "completion_ready" ||
@@ -228,6 +243,13 @@ function evidenceReadinessError(self: TaskVerificationController, action: string
     self.persistState();
     return `Cannot ${action}: the task effect hash changed after readiness; collect fresh evidence and call ready_to_finish again.`;
   }
+  if (
+    readiness.acceptanceChecks.length !== checklist.criteria.length ||
+    readiness.acceptanceChecks.some((check, index) => check.criterion !== checklist.criteria[index])
+  ) {
+    return `Cannot ${action}: the completion checklist changed after readiness; collect fresh evidence and call ready_to_finish again.`;
+  }
+  const currentEvidence = new Map<string, TaskVerificationEvidence>();
   for (const check of readiness.acceptanceChecks) {
     const evidence = self.resolveEvidence(check.evidenceRefs);
     if (
@@ -236,7 +258,12 @@ function evidenceReadinessError(self: TaskVerificationController, action: string
     ) {
       return `Cannot ${action}: completion evidence for "${check.criterion}" is missing, failed, or stale.`;
     }
+    for (const item of evidence) currentEvidence.set(item.ref, item);
   }
+  const criticalProofError = validateCriticalProofEvidence(self, readiness.acceptanceChecks, currentEvidence);
+  if (criticalProofError) return `Cannot ${action}: ${criticalProofError}`;
+  const focusedEvidenceError = validateHighRiskChecklistEvidence(self, readiness.acceptanceChecks, currentEvidence);
+  if (focusedEvidenceError) return `Cannot ${action}: ${focusedEvidenceError}`;
   if (self.latestFailedVerificationEvidence().length > 0) {
     return `Cannot ${action}: rerun the latest failed verification successfully first.`;
   }

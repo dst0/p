@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Freeze one behavioral completion checklist before mutation, with focused critical proof and controller-checked exact non-code artifacts."
+}

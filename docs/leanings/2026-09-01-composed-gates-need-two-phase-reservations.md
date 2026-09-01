@@ -1,0 +1,22 @@
+# 2026-09-01 — Composed gates need two-phase reservations
+
+- **Status:** Resolved
+- **Task/context:** Task-verification hooks were composed with project-instruction hooks so `read_rules` diagnostics could take precedence over a missing completion checklist.
+- **Unexpected observation or failure:** Moving the prior hook before task verification fixed diagnostic precedence but made existing prior hooks unable to observe in-flight test-mutation reservations; two full-suite regressions failed.
+- **Evidence:** Both regressions observed `false` instead of `true` for the expected reservation during prior-hook throw and block paths. The reservation was created only later inside the task-verification gate.
+- **Approaches tried:**
+  - **Attempt:** Run the complete task-verification gate before the prior hook and immediately return its block.
+    - **Outcome:** Did not work
+    - **Why:** A missing checklist masked the actionable project-specific `read_rules` batch.
+  - **Attempt:** Run the prior hook before all task-verification preparation.
+    - **Outcome:** Did not work
+    - **Why:** It removed the established in-flight reservation contract seen by prior hooks.
+  - **Attempt:** Provisionally reserve test mutations, run the prior hook, release the provisional state, then recompute the canonical verification gate.
+    - **Outcome:** Worked
+    - **Why:** Prior hooks retain reservation visibility and diagnostic precedence, while the final decision is recomputed from any arguments changed by the prior hook.
+- **Root cause:** Gate ordering coupled a reversible preparation side effect with the final blocking decision, so changing precedence unintentionally changed the hook lifecycle contract.
+- **Resolution:** Split the composition into provisional reservation and canonical decision phases, with cleanup on prior throw, prior block, or later verification rejection.
+- **Verification:** The original throw/block regressions and new evidence-mode precedence/cleanup regressions pass together with the real compiled-rules coexistence test.
+- **Prevention/follow-up:** When composing independently stateful hooks, enumerate preparation, precedence, recomputation, and cleanup contracts explicitly and test each exit path.
+- **Reusable learning:** Diagnostic precedence and lifecycle preparation are separate concerns; use reversible provisional state before earlier hooks, then discard and recompute before authorizing the effect.
+- **References:** `packages/coding-agent/test/task-verification-hook-composition-errors.test.ts`

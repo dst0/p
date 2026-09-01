@@ -138,6 +138,57 @@ describe("restored task-verification state validation", () => {
     expect(isTaskVerificationState(state)).toBe(false);
   });
 
+  it("requires canonical current-epoch checklists and bounded critical proof identities", () => {
+    const state = emptyState("validation-task", "evidence");
+    state.taskPrompts = [
+      { id: "user-1", text: "Implement the event log." },
+      { id: "user-2", text: "Also reject terminal-byte truncation." },
+    ];
+    state.completionChecklist = {
+      version: 1,
+      criteria: ["JSONL import rejects exact final-byte truncation"],
+      sourcePromptIds: ["user-1", "user-2"],
+      createdAtMutationRevision: 0,
+    };
+    state.criticalProofObligations = [
+      {
+        id: "evidence-boundary-1",
+        policy: "remove_exact_final_byte",
+        sourcePath: "SPEC.md",
+        sourceSha256: "a".repeat(64),
+        artifactDomain: "event-log",
+      },
+    ];
+    expect(isTaskVerificationState(state)).toBe(true);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        completionChecklist: { ...state.completionChecklist, sourcePromptIds: ["user-1"] },
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        completionChecklist: { ...state.completionChecklist, criteria: ["All tests pass"] },
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        criticalProofObligations: [
+          ...state.criticalProofObligations,
+          { ...state.criticalProofObligations[0]!, id: "duplicate-path-domain" },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        criticalProofObligations: [{ ...state.criticalProofObligations[0]!, sourceSha256: "BAD" }],
+      }),
+    ).toBe(false);
+  });
+
   it("validates source-identity overlap and mutated-path container shape directly", () => {
     expect(
       sourceIdentitiesAreUnique(

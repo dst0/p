@@ -30,6 +30,7 @@ describe("compiled project instruction single-batch gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const turn = session._createRuntimeContextPrompts(

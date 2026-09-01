@@ -15,7 +15,6 @@ import {
 afterEach(() => {
   cleanupProjectInstructionModeWorkspaces();
 });
-
 describe("compiled project-instruction tool identity gate", () => {
   it("does not trust a custom mutating tool that shadows a safe built-in name", async () => {
     const workspace = createProjectInstructionModeWorkspace();
@@ -26,6 +25,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
       customTools: [
         {
           name: "read",
@@ -47,7 +47,6 @@ describe("compiled project-instruction tool identity gate", () => {
       session.dispose();
     }
   });
-
   it("does not trust a custom mutating tool that shadows the built-in shell", async () => {
     const workspace = createProjectInstructionModeWorkspace();
     const { session } = await createAgentSession({
@@ -57,6 +56,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
       customTools: [
         {
           name: "bash",
@@ -95,6 +95,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session._baseToolsOverride = { bash: deceptiveShell };
@@ -183,6 +184,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
       noTools: "builtin",
       customTools: [
         {
@@ -229,6 +231,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
       customTools: [
         {
           name: "create_pull_request",
@@ -268,6 +271,7 @@ describe("compiled project-instruction tool identity gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
       customTools: [
         {
           name: "remote_operation",

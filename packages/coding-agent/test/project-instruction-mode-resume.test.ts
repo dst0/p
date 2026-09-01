@@ -42,6 +42,7 @@ async function resumeWithMode(
     agentDir: join(workspace.root, `.agent-resume-${mode}`),
     resourceLoader: workspace.resourceLoader,
     sessionManager: manager,
+    taskVerificationMode: "off",
     projectInstructionMode: mode,
     projectInstructionCompiler: workspace.compiler,
   });
@@ -93,6 +94,7 @@ describe("project-instruction delivery mode resume isolation", () => {
       agentDir: join(workspace.root, ".agent-summary-resume"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: manager,
+      taskVerificationMode: "off",
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
     });
@@ -113,6 +115,7 @@ describe("project-instruction delivery mode resume isolation", () => {
       agentDir: join(workspace.root, ".agent-compiled-before-restart"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: manager,
+      taskVerificationMode: "off",
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
       projectInstructionCompilerIdentity: "resume-gate-test",
@@ -146,6 +149,7 @@ describe("project-instruction delivery mode resume isolation", () => {
       agentDir: join(workspace.root, ".agent-compiled-unread-resume"),
       resourceLoader: workspace.resourceLoader,
       sessionManager: manager,
+      taskVerificationMode: "off",
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
       projectInstructionCompilerIdentity: "resume-gate-test",

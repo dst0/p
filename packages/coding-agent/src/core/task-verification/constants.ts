@@ -110,9 +110,18 @@ export const AcceptanceCheckSchema = Type.Object({
 
 export const EvidenceVerificationSchema = Type.Object(
   {
-    action: Type.Union([Type.Literal("ready_to_finish"), Type.Literal("status")]),
+    action: Type.Union([
+      Type.Literal("record_completion_checklist"),
+      Type.Literal("ready_to_finish"),
+      Type.Literal("status"),
+    ]),
     unresolved_failures: Type.Optional(Type.Array(Type.String())),
-    acceptance_checks: Type.Optional(Type.Array(AcceptanceCheckSchema, { minItems: 1, maxItems: 32 })),
+    completion_checklist: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 300 }), { minItems: 1, maxItems: 12 }),
+    ),
+    evidence_refs_by_check: Type.Optional(
+      Type.Array(Type.Array(Type.String(), { minItems: 1, maxItems: 8 }), { minItems: 1, maxItems: 12 }),
+    ),
   },
   { additionalProperties: false },
 );
@@ -169,7 +178,7 @@ export const HIGH_RISK_PATTERN =
   /\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;
 
 export const HIGH_RISK_REQUIREMENT_PATTERN =
-  /\b(?:access\s+controls?|auth(?:entication|orization)?|authenticate(?:d)?|unauthenticated|authorize|authorized\s+(?:access|actors?|clients?|requests?|users?)|atomic\w*|backoff\w*|clock\w*|command[-\s]?ids?|compensat\w*|concurr\w*|credential\w*|deadlock\w*|deep\s+cop(?:y|ies)|durab\w*|encrypt\w*|event[-\s]?logs?|fenc\w*|hash(?:es|ed|ing)?\b|idempoten\w*|immutab\w*|integrity\w*|lease\w*|manifest\w*|newline[-\s]?terminat\w*|permission\w*|persist\w*|privacy\w*|race\w*|recover\w*|(?:event[-\s]?log|state|command|restore)\s+replay|replay\s+(?:integrity|recovery|validation)|retr(?:y|ies|ied|ying)|reverse[-\s]+order|rollback\w*|schedul\w*|secret\w*|secur\w*|stream\s+versions?|tamper\w*|terminal\s+newlines?|transaction\w*|traversal\w*|truncat\w*|virtual[-\s]+time)\b|(?:атомар|аутентиф|авторизац|безопас|восстанов|гонк|доступ|идемпотент|конкурент|откат|персист|подмен|приват|секрет|транзакц|целостн)/iu;
+  /\b(?:access\s+controls?|auth(?:entication|orization)?|authenticate(?:d)?|unauthenticated|authorize|authorized\s+(?:access|actors?|clients?|requests?|users?)|atomic\w*|backoff\w*|clock\w*|command[-\s]?ids?|compensat\w*|concurr\w*|credential\w*|deadlock\w*|deep\s+cop(?:y|ies)|durab\w*|encrypt\w*|event[-\s]?logs?|exact_file_bytes|fenc\w*|hash(?:es|ed|ing)?\b|idempoten\w*|immutab\w*|integrity\w*|lease\w*|manifest\w*|newline[-\s]?terminat\w*|permission\w*|persist\w*|privacy\w*|race\w*|recover\w*|(?:event[-\s]?log|state|command|restore)\s+replay|replay\s+(?:integrity|recovery|validation)|retr(?:y|ies|ied|ying)|reverse[-\s]+order|rollback\w*|schedul\w*|secret\w*|secur\w*|stream\s+versions?|tamper\w*|terminal\s+newlines?|transaction\w*|traversal\w*|truncat\w*|virtual[-\s]+time)\b|(?:атомар|аутентиф|авторизац|безопас|восстанов|гонк|доступ|идемпотент|конкурент|откат|персист|подмен|приват|секрет|транзакц|целостн)/iu;
 
 export const BASH_MUTATION_PATTERN =
   /(?:^|[;&|]\s*)(?:sed\s+-i|perl\s+-[a-z]*i|patch\b|git\s+(?:apply|am|cherry-pick|merge|rebase|checkout|switch|reset|restore)\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|truncate\b|tee\b|npm\s+(?:install|uninstall|update)\b|pnpm\s+(?:add|remove|install|update)\b|yarn\s+(?:add|remove|install|upgrade)\b|bun\s+(?:add|remove|install|update)\b|cargo\s+(?:add|remove|update)\b|node\s+scripts\/version-bump\.js\b|\.\/reinstall\.sh\b)/iu;

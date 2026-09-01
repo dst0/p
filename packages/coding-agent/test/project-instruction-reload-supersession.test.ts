@@ -24,6 +24,7 @@ async function createCompiledSession(workspace: Workspace, manager: SessionManag
     agentDir: join(workspace.root, `.agent-reload-${suffix}`),
     resourceLoader: workspace.resourceLoader,
     sessionManager: manager,
+    taskVerificationMode: "off",
     projectInstructionMode: "compiled",
     projectInstructionCompiler: workspace.compiler,
     projectInstructionCompilerIdentity: "reload-supersession-test",

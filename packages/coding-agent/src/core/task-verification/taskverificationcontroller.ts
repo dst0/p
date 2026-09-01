@@ -26,6 +26,8 @@ import {
   do_withGuidance,
 } from "./taskverificationcontroller-methods/auto-finalization.ts";
 import { do_recordBaseline } from "./taskverificationcontroller-methods/baseline-recording.ts";
+import { applyEvidenceInput } from "./taskverificationcontroller-methods/evidence-input.ts";
+import { formatEvidenceNextAction } from "./taskverificationcontroller-methods/evidence-next-action.ts";
 import {
   completionGateWithEvidence,
   formatEvidenceStatus,
@@ -70,6 +72,7 @@ import { createTaskVerificationToolDefinition } from "./taskverificationcontroll
 import type { TestWorkspaceSnapshot } from "./taskverificationcontroller-methods/test-workspace-snapshot.ts";
 import { do_beforeToolCall, do_install } from "./taskverificationcontroller-methods/tool-integration.ts";
 import type {
+  EvidenceVerificationInput,
   FinalMethod,
   RequirementAuditInput,
   TaskVerificationEvidence,
@@ -142,15 +145,10 @@ export class TaskVerificationController {
   async detectMutation(context: AfterToolCallContext, isError: boolean): Promise<boolean> {
     return do_detectMutation(this, context, isError);
   }
-  applyInput(input: VerificationInput): VerificationResult {
+  applyInput(input: VerificationInput | EvidenceVerificationInput): VerificationResult {
     if (this.mode === "off") return this.rejected("Task verification is disabled for this session.");
-    if (this.mode === "evidence" && input.action !== "ready_to_finish" && input.action !== "status") {
-      return this.updated(
-        'This semantic verification action is not required in evidence mode. Collect fresh evidence, then call action "ready_to_finish" with one completion checklist.',
-        false,
-      );
-    }
-    return do_applyInput(this, input);
+    if (this.mode === "evidence") return applyEvidenceInput(this, input);
+    return do_applyInput(this, input as VerificationInput);
   }
 
   applyRequirementAudit(input: RequirementAuditInput): VerificationResult {
@@ -180,7 +178,9 @@ export class TaskVerificationController {
   }
 
   readyToFinish(input: VerificationInput): VerificationResult {
-    return this.mode === "evidence" ? readyToFinishWithEvidence(this, input) : do_readyToFinish(this, input);
+    return this.mode === "evidence"
+      ? readyToFinishWithEvidence(this, input as EvidenceVerificationInput)
+      : do_readyToFinish(this, input);
   }
   isAuthorizedBaselineTestMutation(toolName: string, args: unknown): boolean {
     return do_isAuthorizedBaselineTestMutation(this, toolName, args);
@@ -231,16 +231,7 @@ export class TaskVerificationController {
     return this.mode === "evidence" ? formatEvidenceStatus(this) : do_formatStatus(this);
   }
   formatNextRequirement(): string {
-    if (this.mode === "evidence") {
-      if (this.state.readiness?.status === "completion_ready" && this.state.readiness.token) {
-        return `Call finish_work with verification_token "${this.state.readiness.token}".`;
-      }
-      if (this.state.mutationRevision === 0) {
-        return "Apply the requested change; evidence mode does not require task classification or semantic definition.";
-      }
-      return 'Collect fresh verification evidence, then call record_task_verification with action "ready_to_finish" and one evidence-backed completion checklist.';
-    }
-    return do_formatNextRequirement(this);
+    return this.mode === "evidence" ? formatEvidenceNextAction(this) : do_formatNextRequirement(this);
   }
 
   baselineReplayInstruction(): string {

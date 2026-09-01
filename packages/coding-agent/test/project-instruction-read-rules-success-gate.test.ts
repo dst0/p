@@ -70,6 +70,7 @@ describe("compiled read_rules success gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       vi.spyOn(session, "_maybeCreateToolResultContextExtract").mockResolvedValue({
@@ -102,6 +103,7 @@ describe("compiled read_rules success gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);
@@ -133,6 +135,7 @@ describe("compiled read_rules success gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       session._createRuntimeContextPrompts("explain arithmetic", session.systemPrompt);
@@ -180,6 +183,7 @@ describe("compiled read_rules success gate", () => {
       sessionManager: SessionManager.inMemory(workspace.root),
       projectInstructionMode: "compiled",
       projectInstructionCompiler: workspace.compiler,
+      taskVerificationMode: "off",
     });
     try {
       const turn = session._createRuntimeContextPrompts("edit security credentials", session.systemPrompt);

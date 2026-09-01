@@ -28,7 +28,7 @@ const HIGH_RISK_DOMAINS = [
   // A completion token is an authorization capability, so its exact phrase identifies this domain without an auth prefix.
   /\b(?:access|auth\w*|completion\s+tokens?|permission\w*)\b|(?:аутентиф|авторизац|доступ)/iu,
   /\b(?:credential\w*|encrypt\w*|privacy|secret\w*)\b|(?:приват|секрет)/iu,
-  /\b(?:event[-\s]?logs?|hash\w*|integrity|manifest\w*|newline[-\s]?terminat\w*|replay\w*|stream\s+versions?|tamper\w*|terminal\s+newlines?|traversal|truncat\w*)\b|(?:подмен|целостн)/iu,
+  /\b(?:event[-\s]?logs?|exact\s+file\s+bytes|hash\w*|integrity|manifest\w*|newline[-\s]?terminat\w*|replay\w*|stream\s+versions?|tamper\w*|terminal\s+newlines?|traversal|truncat\w*)\b|(?:подмен|целостн)/iu,
   /\b(?:atomic\w*|concurr\w*|deadlock\w*|fenc\w*|lock\w*|race\w*)\b|(?:атомар|гонк|конкурент)/iu,
   /\b(?:checkpoint\w*|crash\w*|daemon\w*|lifecycle|recover\w*|restart\w*|resume\w*|shutdown\w*|sig(?:int|kill|term)|signal\w*)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт)/iu,
   /\b(?:durab\w*|idempoten\w*|index\w*|manifest\w*|migrat\w*|persist\w*|refresh\w*|rollback\w*|transaction\w*)\b|(?:идемпотент|индекс|манифест|миграц|откат|персист|транзакц)/iu,

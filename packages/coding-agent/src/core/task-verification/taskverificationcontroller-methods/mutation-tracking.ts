@@ -1,6 +1,8 @@
 import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
+import { evidenceCriticalProofRequirement, evidenceCriticalProofSetHash } from "../evidence-critical-proof.ts";
+import { recordCriticalProofObservation } from "../evidence-critical-proof-observation.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
 import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
 import { emptyReadiness } from "../state-factories.ts";
@@ -56,7 +58,8 @@ export async function do_afterToolCall(
   }
   const effect = resolvedTaskVerificationToolEffect(context);
   const successfulExternalEffect = !effectiveIsError && (effect.kind === "external_write" || effect.kind === "unknown");
-  const workspaceEffect = effect.kind === "workspace_write" || effect.kind === "unknown";
+  const capturedSourceSnapshot = self.workspaceSourceSnapshots.has(context.toolCall.id);
+  const workspaceEffect = effect.kind === "workspace_write" || effect.kind === "unknown" || capturedSourceSnapshot;
   const initialMutation = workspaceEffect ? await self.detectMutation(context, nativeIsError) : false;
   const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
   const sourceMutation = await settleSourceWorkspaceMutation(self, context);
@@ -84,6 +87,9 @@ export async function do_afterToolCall(
       : undefined;
     const mutationGuidance = [
       testAuthoring.guidance,
+      effect.kind === "read" && capturedSourceSnapshot && workspaceMutation
+        ? "A test-like read command changed workspace source files. The mutation was recorded, the command was not accepted as verification evidence, and completion readiness was invalidated."
+        : undefined,
       self.mode === "audit" ? mutationSourceSizeGuidance(self) : undefined,
     ]
       .filter((message): message is string => message !== undefined && message.length > 0)
@@ -123,28 +129,35 @@ export async function do_afterToolCall(
     );
   }
   if (!isEvidenceTool(context.toolCall.name)) return effectivePreviousResult;
-  const proofWitnesses =
+  const proofRequirements =
     self.mode === "audit"
-      ? collectProofWitnesses(
-          nativeContent,
-          self.state.requirementAudit.requirements,
-          self.state.requirementAudit.requirementSetHash,
-          self.state.mutationRevision,
-        )
-      : undefined;
-  const proofFrameCount = self.mode === "audit" ? countProofFrameMarkers(nativeContent) : 0;
+      ? self.state.requirementAudit.requirements
+      : (self.state.criticalProofObligations ?? []).map(evidenceCriticalProofRequirement);
+  const proofSetHash =
+    self.mode === "audit"
+      ? self.state.requirementAudit.requirementSetHash
+      : evidenceCriticalProofSetHash(self.state.criticalProofObligations ?? []);
+  const proofWitnesses = collectProofWitnesses(
+    nativeContent,
+    proofRequirements,
+    proofSetHash,
+    self.state.mutationRevision,
+  );
+  const proofFrameCount = countProofFrameMarkers(nativeContent);
   const recordedProofCount = proofWitnesses?.length ?? 0;
   const proofFrameFeedback =
     proofFrameCount > recordedProofCount
       ? `Recorded ${recordedProofCount} of ${proofFrameCount} P_PROOF_V1 frames; rejected or duplicate frames were not persisted. Compare every frame with the controller proof template before submitting verdicts.`
       : undefined;
-  const redactedContent = self.mode === "audit" ? redactProofFrames(content) : content;
+  const redactedContent = redactProofFrames(content);
   const fullOutput = redactedContent
     .filter((part) => part.type === "text")
     .map((part) => part.text)
     .join("\n");
   const runtimeAssertionFailed = isZeroExitRuntimeAssertionFailure(context, fullOutput, nativeIsError);
   const verificationIsError = effectiveIsError || runtimeAssertionFailed;
+  const criticalProofGuidance =
+    !verificationIsError && effect.kind === "read" ? recordCriticalProofObservation(self, context.args) : undefined;
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -172,6 +185,7 @@ export async function do_afterToolCall(
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
     proofFrameFeedback,
+    criticalProofGuidance,
     runtimeAssertionFailed
       ? "Runtime assertion failure detected despite a zero process exit; this evidence is failed. Use throwing assertions so the command exits non-zero."
       : undefined,
