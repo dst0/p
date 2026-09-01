@@ -1,4 +1,4 @@
-import { parsePRecording } from "../harness/p-recording.ts";
+import { type BenchmarkRecordingEvent, createPRecordingAccumulator, parsePRecording } from "../harness/p-recording.ts";
 import type { AgentId } from "./runner-options.ts";
 
 type JsonRecord = Record<string, unknown>;
@@ -30,6 +30,12 @@ export type RecordingMetrics = {
   phaseRelevantToolCalls?: JsonRecord[];
 };
 
+export interface RecordingMetricsAccumulator {
+  endTurn(): void;
+  observe(event: JsonRecord): void;
+  snapshot(): RecordingMetrics;
+}
+
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null ? (value as JsonRecord) : undefined;
 }
@@ -58,6 +64,19 @@ function extractText(content: unknown): string {
     .filter((block): block is JsonRecord => block?.type === "text" && typeof block.text === "string")
     .map((block) => String(block.text))
     .join("\n");
+}
+
+export function createPRecordingMetricsAccumulator(): RecordingMetricsAccumulator {
+  const accumulator = createPRecordingAccumulator(extractText);
+  return {
+    endTurn: accumulator.endTurn,
+    observe(event) {
+      accumulator.observe(event as BenchmarkRecordingEvent);
+    },
+    snapshot() {
+      return accumulator.snapshot() as unknown as RecordingMetrics;
+    },
+  };
 }
 
 export function parseAgyRecording(events: readonly JsonRecord[]): RecordingMetrics {

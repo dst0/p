@@ -24,21 +24,30 @@ export function createAgentTaskCompletionGuard(agent: AgentId, mode: TaskVerific
     return evidence.acceptedFinishCount + (mode === "audit" ? evidence.acceptedTerminalCompletionCount : 0);
   };
   let acceptedBeforeMarker = 0;
+  const observeEvent = (event: SemanticEvent): void => {
+    if (!requireAcceptedCompletion) return;
+    if (event.type === "turn_end") {
+      verification.endTurn();
+      return;
+    }
+    verification.start(event);
+    verification.end(event);
+  };
+  const endTurn = (): void => {
+    if (requireAcceptedCompletion) verification.endTurn();
+  };
   return {
     observe(metricOutput: string): void {
       if (!requireAcceptedCompletion) return;
       for (const line of metricOutput.split("\n")) {
         const event = parseSemanticEvent(line);
         if (!event) continue;
-        if (event.type === "turn_end") {
-          verification.endTurn();
-          continue;
-        }
-        verification.start(event);
-        verification.end(event);
+        observeEvent(event);
       }
-      verification.endTurn();
+      endTurn();
     },
+    observeEvent,
+    endTurn,
     shouldStop(turnFailed: boolean, finishNotesCreated: boolean): boolean {
       if (turnFailed) return true;
       if (!finishNotesCreated) {

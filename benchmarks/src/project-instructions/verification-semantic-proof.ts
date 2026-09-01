@@ -15,9 +15,21 @@ type SemanticEvent = Record<string, unknown>;
 type PendingCall = { action?: string; submittedCertificate: boolean; toolName: string };
 
 const TOKEN_PATTERN = /\bverification_token:\s*\S+/u;
+const MAX_PENDING_CALLS = 8_192;
+const MAX_PENDING_CALL_ID_BYTES = 16 * 1024 * 1024;
+interface TaskVerificationTrackerOptions {
+  maxPendingCallIdBytes?: number;
+  maxPendingCalls?: number;
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function verificationAction(value: unknown): string | undefined {
+  return value === "define" || value === "repair_definition" || value === "verdict" || value === "ready_to_finish"
+    ? value
+    : undefined;
 }
 
 function resultText(result: unknown): string {
@@ -64,14 +76,23 @@ function emptyEvidence(): TaskVerificationSemanticEvidence {
   };
 }
 
-export function createTaskVerificationSemanticTracker() {
+export function createTaskVerificationSemanticTracker(options: TaskVerificationTrackerOptions = {}) {
+  const maxPendingCalls = options.maxPendingCalls ?? MAX_PENDING_CALLS;
+  const maxPendingCallIdBytes = options.maxPendingCallIdBytes ?? MAX_PENDING_CALL_ID_BYTES;
   let evidence = emptyEvidence();
   const pending = new Map<string, PendingCall>();
+  const pendingKeyBytes = new Map<string, number>();
+  let pendingBytes = 0;
+  const clearPending = (): void => {
+    pending.clear();
+    pendingKeyBytes.clear();
+    pendingBytes = 0;
+  };
   return {
     start(event: SemanticEvent): void {
       if (event.type !== "tool_execution_start" || typeof event.toolName !== "string") return;
       const args = isRecord(event.args) ? event.args : {};
-      const action = typeof args.action === "string" ? args.action : undefined;
+      const action = verificationAction(args.action);
       const key = typeof event.toolCallId === "string" ? event.toolCallId : "";
       const issuedCertificate = evidence.evidenceCertificateCount > 0 || evidence.auditCertificateCount > 0;
       const submittedCertificate =
@@ -89,13 +110,40 @@ export function createTaskVerificationSemanticTracker() {
         if (action === "verdict") evidence.auditVerdictAttemptCount += 1;
       }
       if (submittedCertificate) evidence.finishCertificateSubmissionCount += 1;
-      if (key) pending.set(key, { action, submittedCertificate, toolName: event.toolName });
+      const relevant =
+        event.toolName === "finish_work" ||
+        event.toolName === "record_requirement_audit" ||
+        event.toolName === "record_task_verification";
+      if (key && relevant) {
+        const previousBytes = pendingKeyBytes.get(key) ?? 0;
+        if (previousBytes === 0 && pending.size >= maxPendingCalls) {
+          throw new BenchmarkCollectionOverflowError(
+            "task verification pending calls",
+            maxPendingCalls,
+            pending.size + 1,
+          );
+        }
+        const keyBytes = Buffer.byteLength(key, "utf8");
+        const observedBytes = pendingBytes - previousBytes + keyBytes;
+        if (observedBytes > maxPendingCallIdBytes) {
+          throw new BenchmarkOutputOverflowError(
+            "task verification pending call IDs",
+            maxPendingCallIdBytes,
+            observedBytes,
+          );
+        }
+        pendingBytes = observedBytes;
+        pendingKeyBytes.set(key, keyBytes);
+        pending.set(key, { action, submittedCertificate, toolName: event.toolName });
+      }
     },
     end(event: SemanticEvent): void {
       if (event.type !== "tool_execution_end" || typeof event.toolCallId !== "string") return;
       const call = pending.get(event.toolCallId);
       if (!call) return;
       pending.delete(event.toolCallId);
+      pendingBytes -= pendingKeyBytes.get(event.toolCallId) ?? 0;
+      pendingKeyBytes.delete(event.toolCallId);
       if (event.toolName !== call.toolName) return;
       if (event.isError !== false) return;
       const hasCertificate = TOKEN_PATTERN.test(resultText(event.result));
@@ -118,11 +166,11 @@ export function createTaskVerificationSemanticTracker() {
       return { ...evidence };
     },
     endTurn(): void {
-      pending.clear();
+      clearPending();
     },
     reset(): void {
       evidence = emptyEvidence();
-      pending.clear();
+      clearPending();
     },
   };
 }
@@ -162,3 +210,5 @@ export function taskVerificationSemanticFailure(
   }
   return undefined;
 }
+
+import { BenchmarkCollectionOverflowError, BenchmarkOutputOverflowError } from "../harness/output-capture.ts";
