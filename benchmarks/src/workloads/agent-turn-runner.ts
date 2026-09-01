@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { abortBenchmarkRecording } from "../agents/resources-finalization.ts";
-import { runBenchmarkAgentTurn } from "../agents/turn.ts";
+import { type BenchmarkTimeoutKind, runBenchmarkAgentTurn } from "../agents/turn.ts";
 import { didAgentTurnFail } from "../agents/turn-policy.ts";
 import { throwIfBenchmarkInterrupted } from "../harness/interruption.ts";
 import { captureOverflowEvidence, createBenchmarkTurnAggregate } from "../harness/output-capture.ts";
@@ -39,6 +39,16 @@ export const metricEventTypes = new Set([
   "turn_end",
 ]);
 
+const semanticProgressEventTypes = new Set([
+  ...metricEventTypes,
+  "compaction_end",
+  "compaction_progress",
+  "compaction_start",
+  "message_start",
+  "message_update",
+  "turn_start",
+]);
+
 type TurnResult = {
   stdout: string;
   stderr: string;
@@ -48,6 +58,7 @@ type TurnResult = {
   captureOverflow?: unknown;
   recordingCapture?: unknown;
   timedOut: boolean;
+  timeoutKind?: BenchmarkTimeoutKind;
   rawEventCount: number;
   metricEventCount: number;
   runtimeContexts: EvidenceInput[];
@@ -66,6 +77,7 @@ export type AgentTaskResult = {
   captureOverflow?: unknown;
   recordingCapture?: unknown;
   timedOut: boolean;
+  timeoutKind?: BenchmarkTimeoutKind;
   rawEventCount: number;
   runtimeContexts: EvidenceInput[];
   userTurns: UserTurn[];
@@ -139,6 +151,7 @@ export async function runAgentTask(
   let lastCaptureOverflow: unknown;
   let lastRecordingCapture: unknown;
   let timedOut = false;
+  let lastTimeoutKind: BenchmarkTimeoutKind | undefined;
   let nudges = 0;
   const maxNudges = 5;
   const taskTimeoutMs = taskTimeoutSeconds * 1000;
@@ -154,6 +167,7 @@ export async function runAgentTask(
       const turnTimeoutMs = Math.min(remainingTaskMs, remainingOverallMs);
       if (turnTimeoutMs <= 0) {
         timedOut = true;
+        lastTimeoutKind = remainingOverallMs <= 0 ? "hard_deadline" : "inactivity";
         break;
       }
       const turnOrdinal = nudges + 1;
@@ -170,7 +184,10 @@ export async function runAgentTask(
       const command = commandForAgent(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
       const turnResult = (await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
         ...turnOptions,
+        hardTimeoutMs: remainingOverallMs,
+        progressEventTypes: semanticProgressEventTypes,
         signal: options.signal,
+        timeoutMode: "semantic_progress",
         eventOrdinalBase: totalRawEventCount,
         turn: turnOrdinal,
       })) as TurnResult;
@@ -191,6 +208,7 @@ export async function runAgentTask(
       lastError = turnResult.error;
       lastCaptureOverflow = turnResult.captureOverflow;
       lastRecordingCapture = turnResult.recordingCapture;
+      lastTimeoutKind = turnResult.timeoutKind;
       try {
         combined.append(turnResult);
         completion.observe(turnResult.stdout);
@@ -208,6 +226,11 @@ export async function runAgentTask(
       if (completion.shouldStop(didAgentTurnFail(turnResult), finishNotesCreated)) break;
       const remainingAfterTurn = taskTimeoutMs - (performance.now() - startedAt);
       const overallRemainingAfterTurn = overallDeadline - performance.now();
+      if (remainingAfterTurn <= 0) {
+        lastCode = undefined;
+        lastError = "agent completed an active turn after the nominal task budget without accepted terminal completion";
+        break;
+      }
       const remainingUsableMs = Math.min(remainingAfterTurn, overallRemainingAfterTurn);
       if (remainingUsableMs <= 5000 || nudges >= maxNudges) {
         lastCode = undefined;
@@ -241,6 +264,7 @@ export async function runAgentTask(
     captureOverflow: lastCaptureOverflow,
     recordingCapture: lastRecordingCapture,
     timedOut,
+    timeoutKind: lastTimeoutKind,
     rawEventCount: totalRawEventCount,
     runtimeContexts: combined.runtimeContexts as EvidenceInput[],
     userTurns: combined.userTurns as UserTurn[],

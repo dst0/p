@@ -18,7 +18,15 @@ import {
 import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "../harness/process-control.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import { createProjectInstructionProofIpcCapture } from "../project-instructions/proof-ipc.ts";
-import { createBenchmarkEventCapture } from "../project-instructions/stream.ts";
+import { type BenchmarkEventCapture, createBenchmarkEventCapture } from "../project-instructions/stream.ts";
+import {
+  type BenchmarkTerminationReason,
+  type BenchmarkTimeoutKind,
+  type BenchmarkTimeoutMode,
+  BenchmarkTurnTimeoutController,
+} from "./turn-timeout.ts";
+
+export type { BenchmarkTimeoutKind } from "./turn-timeout.ts";
 
 interface BenchmarkTurnCommand {
   executable: string;
@@ -44,16 +52,6 @@ export interface BenchmarkRecordingCapture {
   storageLimitBytes: number;
 }
 
-interface BenchmarkEventCapture {
-  process(text: string): void;
-  readonly metricOutput: string;
-  readonly metricEventCount: number;
-  readonly rawEventCount: number;
-  readonly runtimeContexts: unknown[];
-  readonly stopMarkerSeen: boolean;
-  readonly userTurns: unknown[];
-}
-
 interface BenchmarkProofCapture {
   accept(message: unknown): void;
   finish(): Record<string, unknown> | undefined;
@@ -68,7 +66,11 @@ export interface BenchmarkTurnOptions {
   terminateProcessTree?: (child: ChildProcess, graceMs: number) => Promise<boolean>;
   interruptionKillGraceMs?: number;
   failureKillGraceMs?: number;
+  hardTimeoutMs?: number;
+  progressEventTypes?: ReadonlySet<string>;
+  progressGraceMs?: number;
   signal?: AbortSignal;
+  timeoutMode?: BenchmarkTimeoutMode;
   turn?: number;
 }
 
@@ -80,6 +82,7 @@ export interface BenchmarkAgentTurnResult {
   error: string | undefined;
   captureOverflow: ReturnType<typeof captureOverflowEvidence>;
   timedOut: boolean;
+  timeoutKind: BenchmarkTimeoutKind | undefined;
   rawEventCount: number;
   metricEventCount: number;
   runtimeContexts: unknown[];
@@ -130,27 +133,36 @@ export function runBenchmarkAgentTurn(
       maxMetricBytes: limits.maxMetricBytes,
       maxMetricEvents: limits.maxMetricEvents,
       maxRuntimeContexts: limits.maxRuntimeContexts,
+      progressEventTypes: options.progressEventTypes,
       stopMarker: options.stopOnMarker,
     }) as BenchmarkEventCapture;
     let stdoutBuffer = "";
     let failure: string | undefined;
     let timedOut = false;
+    let timeoutKind: BenchmarkTimeoutKind | undefined;
     let stoppedByMarker = false;
     let childError: string | undefined;
     let terminationPromise: Promise<boolean | { terminationError: unknown }> | undefined;
     let captureOverflow: ReturnType<typeof captureOverflowEvidence>;
     let interruption: BenchmarkInterruptedError | undefined;
+    let failedCleanupTimer: ReturnType<typeof setTimeout> | undefined;
+    let settled = false;
+    let terminationReason: BenchmarkTerminationReason | undefined;
+    let timeoutController: BenchmarkTurnTimeoutController | undefined;
     const terminateTree = options.terminateProcessTree ?? terminateBenchmarkProcessTree;
 
-    const terminate = (
-      error: unknown,
-      reason: "timeout" | "marker" | "interruption" | "recording" | "capture",
-    ): void => {
+    const terminate = (error: unknown, reason: BenchmarkTerminationReason): void => {
+      if (terminationReason) return;
+      terminationReason = reason;
+      timeoutController?.stop();
       if (error) {
-        failure ??= errorMessage(error);
-        captureOverflow ??= captureOverflowEvidence(error, options.turn);
+        failure = errorMessage(error);
+        captureOverflow = captureOverflowEvidence(error, options.turn);
       }
-      if (reason === "timeout") timedOut = true;
+      if (reason === "hard_deadline" || reason === "inactivity" || reason === "wall_clock") {
+        timedOut = true;
+        timeoutKind = reason;
+      }
       if (reason === "marker") stoppedByMarker = true;
       const killGraceMs =
         reason === "interruption"
@@ -158,15 +170,36 @@ export function runBenchmarkAgentTurn(
           : error
             ? (options.failureKillGraceMs ?? 250)
             : 5_000;
-      terminationPromise ??= Promise.resolve()
+      terminationPromise = Promise.resolve()
         .then(() => terminateTree(child, killGraceMs))
         .catch((terminationError) => ({ terminationError }));
+      void terminationPromise.then((termination) => {
+        if (termination === true) return;
+        child.stdout.unpipe(recording.stream);
+        child.stdout.destroy();
+        child.stderr.destroy();
+        if (child.connected) child.disconnect();
+        child.unref();
+        failedCleanupTimer = setTimeout(() => {
+          void settleResult(child.exitCode, child.signalCode);
+        }, 100);
+      });
     };
     const interrupt = () => {
       interruption ??= benchmarkInterruptionFromSignal(options.signal);
       terminate(undefined, "interruption");
     };
-    const timer = setTimeout(() => terminate(undefined, "timeout"), timeoutMs);
+    const timeoutMode = options.timeoutMode ?? "wall_clock";
+    const progressGraceMs = options.progressGraceMs ?? Math.min(timeoutMs, 300_000);
+    timeoutController = new BenchmarkTurnTimeoutController({
+      hardTimeoutMs: options.hardTimeoutMs,
+      onTimeout: (kind) => terminate(undefined, kind),
+      progressGraceMs,
+      startedAt,
+      timeoutMode,
+      timeoutMs,
+    });
+    child.once("exit", () => timeoutController?.stop());
     const removeFailureHandler = recording.onFailure((error) => terminate(error, "recording"));
 
     const processText = (text: string): void => {
@@ -179,7 +212,7 @@ export function runBenchmarkAgentTurn(
         if (lineBytes > limits.maxLineBytes) {
           throw new BenchmarkOutputOverflowError("stdout line", limits.maxLineBytes, lineBytes);
         }
-        eventCapture.process(line);
+        if (eventCapture.process(line)) timeoutController?.renewSemanticProgress();
       }
       const bufferedLineBytes = Buffer.byteLength(stdoutBuffer, "utf8");
       if (bufferedLineBytes > limits.maxLineBytes) {
@@ -207,22 +240,28 @@ export function runBenchmarkAgentTurn(
     child.once("error", (error) => {
       childError = errorMessage(error);
     });
-    child.once("close", async (code, signal) => {
+    async function settleResult(code: number | null, signal: NodeJS.Signals | null): Promise<void> {
+      if (settled) return;
+      settled = true;
+      if (failedCleanupTimer) clearTimeout(failedCleanupTimer);
       child.stdout.unpipe(recording.stream);
-      clearTimeout(timer);
+      timeoutController?.stop();
       const termination = terminationPromise ? await terminationPromise : true;
+      if (failedCleanupTimer) clearTimeout(failedCleanupTimer);
       const terminationError = typeof termination === "object" ? termination.terminationError : undefined;
       const treeStopped = typeof termination === "boolean" ? termination : false;
+      const cleanupError =
+        terminationError ??
+        (terminationPromise && !treeStopped ? new Error("benchmark process tree did not terminate") : undefined);
       removeFailureHandler();
       options.signal?.removeEventListener("abort", interrupt);
-      if (terminationError) {
-        if (interruption) attachBenchmarkCleanupError(interruption, terminationError);
-        else failure ??= errorMessage(terminationError);
-      }
+      if (cleanupError && interruption) attachBenchmarkCleanupError(interruption, cleanupError);
       if (interruption) {
-        if (!terminationError && !treeStopped)
-          attachBenchmarkCleanupError(interruption, new Error("benchmark process tree did not terminate"));
         rejectResult(interruption);
+        return;
+      }
+      if (cleanupError) {
+        rejectResult(cleanupError);
         return;
       }
       try {
@@ -241,6 +280,7 @@ export function runBenchmarkAgentTurn(
         error: failure ?? childError,
         captureOverflow,
         timedOut,
+        timeoutKind,
         rawEventCount: eventCapture.rawEventCount,
         metricEventCount: eventCapture.metricEventCount,
         runtimeContexts: eventCapture.runtimeContexts,
@@ -250,7 +290,8 @@ export function runBenchmarkAgentTurn(
         projectInstructionProof: proofCapture?.finish(),
         elapsedMs: performance.now() - startedAt,
       });
-    });
+    }
+    child.once("close", (code, signal) => void settleResult(code, signal));
     options.signal?.addEventListener("abort", interrupt, { once: true });
     if (options.signal?.aborted) interrupt();
   });

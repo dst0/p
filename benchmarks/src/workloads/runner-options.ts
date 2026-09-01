@@ -87,7 +87,8 @@ Options:
   --project-instructions-file <path> Authoritative source copied into each P fixture
   --thinking <level>           P reasoning level: off, minimal, low, medium, high, or xhigh
   --runs <n>                  Complete repetitions (default: 1)
-  --timeout-seconds <n>       Per-agent task timeout (default: ${defaultTimeoutSeconds})
+  --timeout-seconds <n>       Per-agent nominal budget and semantic-inactivity watchdog
+                              (default: ${defaultTimeoutSeconds})
   --minimum-timeout-seconds <n> Raise shorter fixture timeouts to at least this value
   --max-runtime-seconds <n>   Overall deadline (default: ${defaultMaxRuntimeSeconds})
   --output <dir>              Results directory

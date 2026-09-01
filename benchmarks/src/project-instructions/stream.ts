@@ -11,23 +11,29 @@ type EventCaptureOptions = {
   maxMetricBytes?: number;
   maxRuntimeContexts?: number;
   maxMetricEvents?: number;
+  progressEventTypes?: ReadonlySet<string>;
   stopMarker?: string;
 };
-type BenchmarkEventCapture = {
+export type BenchmarkEventCapture = {
   metricEventCount: number;
   rawEventCount: number;
   runtimeContexts: RuntimeContextEvidence[];
   stopMarkerSeen: boolean;
   userTurns: UserTurnEvidence[];
   readonly metricOutput: string;
-  process(line: string): void;
+  process(line: string): boolean;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function captureBenchmarkStreamLine(line: string, eventOrdinal: number, metricEventTypes: Set<string>) {
+function captureBenchmarkStreamLine(
+  line: string,
+  eventOrdinal: number,
+  metricEventTypes: Set<string>,
+  progressEventTypes: ReadonlySet<string>,
+) {
   try {
     const event: unknown = JSON.parse(line);
     if (!isRecord(event)) return {};
@@ -37,9 +43,14 @@ function captureBenchmarkStreamLine(line: string, eventOrdinal: number, metricEv
       typeof event.type === "string" ? event.type : typeof event.event === "string" ? event.event : undefined;
     if (eventType && metricEventTypes.has(eventType)) {
       event.benchmarkEventOrdinal = eventOrdinal;
-      return { metricLine: `${JSON.stringify(event)}\n`, runtimeContext, userTurn };
+      return {
+        metricLine: `${JSON.stringify(event)}\n`,
+        progress: progressEventTypes.has(eventType),
+        runtimeContext,
+        userTurn,
+      };
     }
-    return { runtimeContext, userTurn };
+    return { progress: eventType !== undefined && progressEventTypes.has(eventType), runtimeContext, userTurn };
   } catch {
     return {};
   }
@@ -56,19 +67,25 @@ export function createBenchmarkEventCapture(
   );
   const maxRuntimeContexts = options.maxRuntimeContexts ?? DEFAULT_BENCHMARK_OUTPUT_LIMITS.maxRuntimeContexts;
   const maxMetricEvents = options.maxMetricEvents ?? DEFAULT_BENCHMARK_OUTPUT_LIMITS.maxMetricEvents;
+  const progressEventTypes = options.progressEventTypes ?? metricEventTypes;
   const capture = {
     metricEventCount: 0,
     rawEventCount: 0,
     runtimeContexts: [] as RuntimeContextEvidence[],
     stopMarkerSeen: false,
     userTurns: [] as UserTurnEvidence[],
-    process: (_line: string) => {},
+    process: (_line: string) => false,
   } as BenchmarkEventCapture;
   Object.defineProperty(capture, "metricOutput", { get: () => metricOutput.value() });
   capture.process = (line: string) => {
-    if (!line.trim()) return;
+    if (!line.trim()) return false;
     capture.rawEventCount += 1;
-    const event = captureBenchmarkStreamLine(line, eventOrdinalBase + capture.rawEventCount, metricEventTypes);
+    const event = captureBenchmarkStreamLine(
+      line,
+      eventOrdinalBase + capture.rawEventCount,
+      metricEventTypes,
+      progressEventTypes,
+    );
     if (event.runtimeContext) {
       if (capture.runtimeContexts.length >= maxRuntimeContexts) {
         throw new BenchmarkCollectionOverflowError(
@@ -88,6 +105,7 @@ export function createBenchmarkEventCapture(
       metricOutput.append(event.metricLine);
       if (options.stopMarker && event.metricLine.includes(options.stopMarker)) capture.stopMarkerSeen = true;
     }
+    return event.progress === true;
   };
   return capture;
 }
