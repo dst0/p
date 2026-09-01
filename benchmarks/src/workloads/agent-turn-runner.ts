@@ -107,6 +107,10 @@ export type CommandRunOptions = {
   outputLimits?: Readonly<Record<string, number>>;
 };
 
+export function allowsCanonicalPAgentEnd(agent: AgentId): boolean {
+  return agent === "p";
+}
+
 export async function runRecordedCommand(
   command: AgentCommand,
   timeoutMs: number,
@@ -184,6 +188,7 @@ export async function runAgentTask(
       const command = commandForAgent(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
       const turnResult = (await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
         ...turnOptions,
+        allowCanonicalPAgentEnd: allowsCanonicalPAgentEnd(agent),
         hardTimeoutMs: remainingOverallMs,
         progressEventTypes: semanticProgressEventTypes,
         signal: options.signal,

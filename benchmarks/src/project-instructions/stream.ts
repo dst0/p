@@ -22,6 +22,7 @@ export type BenchmarkEventCapture = {
   userTurns: UserTurnEvidence[];
   readonly metricOutput: string;
   process(line: string): boolean;
+  skipNonMetricLine(): void;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -75,6 +76,7 @@ export function createBenchmarkEventCapture(
     stopMarkerSeen: false,
     userTurns: [] as UserTurnEvidence[],
     process: (_line: string) => false,
+    skipNonMetricLine: () => undefined,
   } as BenchmarkEventCapture;
   Object.defineProperty(capture, "metricOutput", { get: () => metricOutput.value() });
   capture.process = (line: string) => {
@@ -106,6 +108,9 @@ export function createBenchmarkEventCapture(
       if (options.stopMarker && event.metricLine.includes(options.stopMarker)) capture.stopMarkerSeen = true;
     }
     return event.progress === true;
+  };
+  capture.skipNonMetricLine = () => {
+    capture.rawEventCount += 1;
   };
   return capture;
 }

@@ -331,6 +331,18 @@ contexts, 4 MiB of stderr per turn, 8 MiB of combined stderr, and 8 MiB for a
 raw stdout probe. Separating decoded and physical limits allows highly
 compressible cumulative model snapshots to progress without allowing
 incompressible output to exhaust disk.
+An oversized P `agent_end` line from the explicitly selected canonical P JSON
+producer is a special non-semantic case: its cumulative transcript is already
+represented by earlier events, so the parser discards that duplicate while the
+raw recorder still preserves every byte. A bounded streaming recognizer requires
+the exact `type`, `messages`, and `willRetry` envelope and a terminating LF or
+CRLF; a prefix match alone is insufficient. The event ordinal advances exactly
+once, but the discarded line cannot renew semantic progress or enter retained
+metrics. Other agents, an invalid or duplicate `type`, an unterminated line, a
+different event type, or any oversized event needed for metrics, routing, or
+completion evidence still fails closed. CR in a CRLF delimiter is not counted
+against the JSON record's byte limit, including when CR and LF arrive in separate
+stream chunks.
 Exceeding a byte or collection cap terminates the child and records structured
 `capture_overflow` evidence naming the capture, configured byte or entry limit,
 minimum observed byte or entry count, and turn when known. It is an
