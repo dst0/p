@@ -14,8 +14,13 @@ type PairedBenchmarkDocument = Parameters<typeof renderPairedReport>[0] & {
 export function writePairedBenchmarkEvidence(output: string, document: PairedBenchmarkDocument): void {
   document.candidateVersion = parseBenchmarkCandidateVersion(document.candidateVersion);
   document.summary =
-    createPairedSummary(document.samples, document.gate.passed && document.completed, document.tasks, document.runs) ??
-    null;
+    createPairedSummary(
+      document.samples,
+      document.gate.passed && document.completed,
+      document.tasks,
+      document.runs,
+      document.conditions,
+    ) ?? null;
   writeFileSync(join(output, "results.json"), `${JSON.stringify(document, null, 2)}\n`, "utf8");
   writeFileSync(join(output, "report.md"), renderPairedReport(document), "utf8");
 }

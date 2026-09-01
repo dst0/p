@@ -39,12 +39,44 @@ type ScheduleContext = {
 };
 type ScheduleOperations = typeof defaultOperations;
 
+function sampleIdentity(sample: { run: number; task: string; condition: string }): string {
+  return `${sample.run}\0${sample.task}\0${sample.condition}`;
+}
+
+function expectedScheduleIdentities(schedule: readonly PairedScheduleCell[]): Set<string> {
+  const identities = new Set<string>();
+  for (const pair of schedule) {
+    for (const condition of pair.conditions) {
+      const identity = sampleIdentity({ run: pair.run, task: pair.task, condition });
+      if (identities.has(identity))
+        throw new Error(`Duplicate scheduled benchmark cell: ${pair.task}/${condition}/run-${pair.run}`);
+      identities.add(identity);
+    }
+  }
+  return identities;
+}
+
+function assertReturnedSampleIdentity(
+  pair: PairedScheduleCell,
+  condition: PairedScheduleCell["conditions"][number],
+  sample: { run: number; task: string; condition: string },
+): void {
+  const expected = sampleIdentity({ run: pair.run, task: pair.task, condition });
+  const actual = sampleIdentity(sample);
+  if (actual !== expected) {
+    throw new Error(
+      `benchmark child returned mismatched cell identity: expected ${pair.task}/${condition}/run-${pair.run}, received ${sample.task}/${sample.condition}/run-${sample.run}`,
+    );
+  }
+}
+
 export async function runPairedBenchmarkSchedule(
   context: ScheduleContext,
   operationOverrides: Partial<ScheduleOperations> = {},
 ): Promise<ScheduleDocument> {
   const operations = { ...defaultOperations, ...operationOverrides };
   const { options, output, scratchRoot, runtimeSnapshot, runtimeSha256, schedule, document, deadline } = context;
+  const expectedIdentities = expectedScheduleIdentities(schedule);
   let stopped = false;
   let stopError: unknown;
   outer: for (const pair of schedule) {
@@ -76,6 +108,7 @@ export async function runPairedBenchmarkSchedule(
           signal: context.signal,
         });
         throwIfBenchmarkInterrupted(context.signal);
+        assertReturnedSampleIdentity(pair, condition, sample);
         document.samples.push(sample);
         const assessment = assessSample(sample);
         if (!assessment.passed) {
@@ -106,7 +139,13 @@ export async function runPairedBenchmarkSchedule(
       operations.writeEvidence(output, document);
     }
   }
-  document.completed = !stopped && document.samples.length === schedule.length * 3;
+  const actualIdentities = document.samples.map(sampleIdentity);
+  const actualIdentitySet = new Set(actualIdentities);
+  document.completed =
+    !stopped &&
+    actualIdentities.length === expectedIdentities.size &&
+    actualIdentitySet.size === expectedIdentities.size &&
+    [...expectedIdentities].every((identity) => actualIdentitySet.has(identity));
   if (document.completed) {
     document.gate = { passed: true };
     document.runStatus = "completed";

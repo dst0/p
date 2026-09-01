@@ -195,6 +195,79 @@ describe("task verification modes", () => {
     }
   });
 
+  it("requires the free-text completion checklist to cover multiple explicit guarantees", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "p-task-verification-checklist-"));
+    execFileSync("git", ["init", "-q"], { cwd });
+    execFileSync("git", ["config", "maintenance.auto", "false"], { cwd });
+    mkdirSync(join(cwd, "src"));
+    const harness = createHarness("evidence", cwd);
+    try {
+      await sendUserPrompt(harness, "Implement exact atomic behavior that rejects stale input.");
+      const writeArgs = { path: "src/feature.ts", content: "export {};\n" };
+      const writeCall = toolCall("write", writeArgs);
+      expect((await beforeTool(harness.agent, "write", writeArgs, writeCall))?.block).not.toBe(true);
+      writeFileSync(join(cwd, writeArgs.path), writeArgs.content);
+      await afterTool(harness.agent, "write", writeArgs, "wrote file", writeCall);
+      const exactEvidence = evidenceHandle(
+        await afterTool(harness.agent, "bash", { command: "node verify-exact-output.js" }, "exact output passed"),
+      );
+      const atomicEvidence = evidenceHandle(
+        await afterTool(harness.agent, "bash", { command: "node verify-atomicity.js" }, "atomicity passed"),
+      );
+      const staleEvidence = evidenceHandle(
+        await afterTool(
+          harness.agent,
+          "bash",
+          { command: "node verify-stale-input.js" },
+          "stale input rejection passed",
+        ),
+      );
+      const completeEvidence = evidenceHandle(
+        await afterTool(harness.agent, "bash", { command: "node verify-complete-output.js" }, "complete output passed"),
+      );
+
+      const incomplete = await callVerification(harness.controller, {
+        action: "ready_to_finish",
+        acceptance_checks: [{ criterion: "Feature works", evidence_refs: [exactEvidence] }],
+        unresolved_failures: [],
+      });
+      expect(incomplete).toContain("at least 4 distinct acceptance_checks");
+      expect(harness.controller.currentState.readiness?.status ?? "pending").toBe("pending");
+      expect(
+        (
+          await beforeTool(harness.agent, "finish_work", {
+            status: "success",
+            files_changed: ["src/feature.ts"],
+          })
+        )?.block,
+      ).toBe(true);
+
+      const ready = await callVerification(harness.controller, {
+        action: "ready_to_finish",
+        acceptance_checks: [
+          { criterion: "Exact behavior", evidence_refs: [exactEvidence] },
+          { criterion: "Atomic behavior", evidence_refs: [atomicEvidence] },
+          { criterion: "Stale input is rejected", evidence_refs: [staleEvidence] },
+          { criterion: "Requested output is complete", evidence_refs: [completeEvidence] },
+        ],
+        unresolved_failures: [],
+      });
+      expect(ready).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.status).toBe("completion_ready");
+      expect(
+        (
+          await beforeTool(harness.agent, "finish_work", {
+            status: "success",
+            verification_token: harness.controller.currentState.readiness?.token,
+            files_changed: ["src/feature.ts"],
+          })
+        )?.block,
+      ).not.toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("keeps audit mode baseline and semantic gates unchanged", async () => {
     const harness = createHarness("audit");
     await callVerification(harness.controller, {

@@ -121,9 +121,9 @@ export async function runProjectInstructionsBenchmark({
     const seed = parsedOptions.seed ?? randomBytes(16).toString("hex");
     const runtimeSha256 = hashRuntime(runtimeSnapshot, process.execPath);
     registerCandidate(root, candidateVersion, runtimeSha256);
-    const schedule = buildPairedSchedule(baseOptions.tasks, baseOptions.runs, seed);
+    const schedule = buildPairedSchedule(baseOptions.tasks, baseOptions.runs, seed, baseOptions.conditions);
     document = {
-      schemaVersion: 2,
+      schemaVersion: 3,
       candidateVersion,
       generatedAt: new Date().toISOString(),
       model: baseOptions.model,
@@ -135,6 +135,7 @@ export async function runProjectInstructionsBenchmark({
       seed,
       runs: baseOptions.runs,
       tasks: baseOptions.tasks,
+      conditions: baseOptions.conditions,
       schedule,
       samples: [],
       runStatus: "running",
@@ -142,7 +143,7 @@ export async function runProjectInstructionsBenchmark({
       completed: false,
     };
     writeEvidence(output, document);
-    console.log(`Three-condition benchmark output: ${output}`);
+    console.log(`${baseOptions.conditions.length === 2 ? "Paired" : "Audit-canary"} benchmark output: ${output}`);
     console.log(`Immutable P runtime SHA-256: ${runtimeSha256}`);
     console.log(`Project instruction source SHA-256: ${sourceSha256}`);
     console.log(`Randomization seed: ${seed}`);

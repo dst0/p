@@ -2,9 +2,9 @@ export function printPairedBenchmarkHelp() {
   console.log(`Usage:
   npm run benchmark:project-instructions -- --model <provider/id> [options]
 
-Run randomized, counterbalanced three-condition blocks against the same P build.
-Every block runs legacy/evidence, compiled/evidence, and compiled/audit on fresh
-copies of the same fixture.
+Run randomized, counterbalanced paired blocks against the same P build.
+Every release-gate block runs legacy/evidence and compiled/evidence on fresh
+copies of the same fixture. The semantic audit is an explicit experimental canary.
 
 Options:
   --model <provider/id>       P model alias (required)
@@ -16,10 +16,11 @@ Options:
   --timeout-seconds <n>       Minimum per-cell timeout; raises shorter fixture caps
   --max-runtime-seconds <n>   Overall deadline (default: 54000)
   --thinking <level>          P reasoning level: off, minimal, low, medium, high, or xhigh
+  --include-audit             Add the experimental compiled/audit canary to every block
   --output <dir>              Evidence directory
   --help                      Show this help
 
 The harness stops on the first incomplete or incorrect sample. Token and runtime
-medians require every repetition of all three conditions on all four canonical tasks.
+medians require every repetition of every selected condition on all four canonical tasks.
 `);
 }
