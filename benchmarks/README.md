@@ -14,7 +14,7 @@ npm run benchmark:agents -- --model qwen36-35b-iq2m-mtp --agents pi,p,kilo --kil
 # Include Codex CLI as well
 npm run benchmark:agents -- --model qwen36-35b-iq2m-mtp --agents pi,p,kilo,codex --kilo-model llm-orchestrator/sokann-qwen-27b --codex-model qwen36-q4.25
 
-# Custom timeout (per-task) and overall deadline
+# Custom nominal task budget/inactivity watchdog and overall deadline
 npm run benchmark:agents -- --model qwen36-35b-iq2m-mtp --agents kilo --kilo-model llm-orchestrator/sokann-qwen-27b --timeout-seconds 600 --max-runtime-seconds 3600
 ```
 
@@ -45,9 +45,20 @@ The harness is an internal, strictly checked TypeScript project:
 
 Each fixture runs automated checks after the agent completes (or times out):
 
-- **Completed pass**: Agent exited cleanly before timeout
+- **Completed pass**: Agent exited cleanly after satisfying the terminal protocol
 - **Quality pass**: Final workspace checks pass regardless of timeout
 - **Weighted score**: Points based on checks passed, with higher weights for atomicity and safety invariants
+
+The per-task timeout is a nominal budget and semantic-inactivity watchdog, not
+an unconditional wall-clock kill. Before the nominal budget expires, supported
+agent events can extend the active turn with a rolling lease of at most five
+minutes. Arbitrary stdout does not renew the lease. A silent or non-semantic
+child still times out, and `--max-runtime-seconds` remains the absolute
+run-wide safety deadline even while progress continues. If an over-budget turn
+exits without accepted terminal completion, the harness does not start another
+nudge turn. A process-tree cleanup failure is fatal: the harness releases
+stdio, IPC, and child-handle references and does not inspect or verify a
+workspace that a surviving agent could still mutate.
 
 ### Recording
 

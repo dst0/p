@@ -37,6 +37,7 @@ type BenchmarkResultRow = BenchmarkResult & {
   exitCode?: number | null | undefined;
   signal?: NodeJS.Signals | null;
   timedOut?: boolean;
+  timeoutKind?: "hard_deadline" | "inactivity" | "wall_clock";
   error?: string;
   captureOverflow?: unknown;
   recordingCapture?: unknown;
@@ -194,6 +195,7 @@ export async function runAgentBenchmark(signal: AbortSignal): Promise<void> {
             exitCode: result.code,
             signal: result.signal,
             timedOut: result.timedOut,
+            timeoutKind: result.timeoutKind,
             error: result.error,
             captureOverflow: result.captureOverflow,
             recordingCapture: result.recordingCapture,
