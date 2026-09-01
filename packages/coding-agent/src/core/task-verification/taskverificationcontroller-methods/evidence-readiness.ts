@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
 import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
-import { testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, normalizeStrings, normalizeText } from "../tool-classification.ts";
 import type {
@@ -64,7 +64,14 @@ export function readyToFinishWithEvidence(
     return self.rejected("ready_to_finish cannot pass with unresolved_failures.");
   }
 
-  const mapped = validateCompletionChecklist(self, input.acceptance_checks ?? []);
+  const requestedChecks = input.acceptance_checks ?? [];
+  const requiredCheckCount = requiredAcceptanceCheckCount(self.taskText());
+  if (requestedChecks.length < requiredCheckCount) {
+    return self.rejected(
+      `ready_to_finish requires at least ${requiredCheckCount} distinct acceptance_checks for the explicit guarantees in this task; received ${requestedChecks.length}.`,
+    );
+  }
+  const mapped = validateCompletionChecklist(self, requestedChecks);
   if (typeof mapped === "string") return self.rejected(mapped);
   const failedVerifications = self.latestFailedVerificationEvidence();
   if (failedVerifications.length > 0) {

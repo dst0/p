@@ -67,7 +67,13 @@ test("paired arguments require three to five repetitions", () => {
   assert.equal(parsed.runs, 5);
   assert.equal(parsed.compilerModel, "provider/model");
   assert.deepEqual(parsed.tasks, ["monolith-split"]);
+  assert.deepEqual(parsed.conditions, ["legacy", "compiled-evidence"]);
   assert.equal(parsed.thinking, "off");
+  assert.deepEqual(parsePairedArgs(["--model", "provider/model", "--include-audit"]).conditions, [
+    "legacy",
+    "compiled-evidence",
+    "compiled-audit",
+  ]);
   assert.equal(
     parsePairedArgs(["--model", "task-provider/task-model", "--compiler-model", "compiler-provider/compiler/model"])
       .compilerModel,
@@ -109,13 +115,12 @@ test("sample model identity must resolve to the requested provider and model", (
   );
 });
 
-test("three-condition schedule randomizes order reproducibly inside every block", () => {
+test("paired schedule randomizes order reproducibly inside every block", () => {
   const first = buildPairedSchedule(["one", "two"], 3, "reproducible-seed");
   const second = buildPairedSchedule(["one", "two"], 3, "reproducible-seed");
   assert.deepEqual(first, second);
   assert.equal(first.length, 6);
-  for (const pair of first)
-    assert.deepEqual([...pair.conditions].sort(), ["compiled-audit", "compiled-evidence", "legacy"]);
+  for (const pair of first) assert.deepEqual([...pair.conditions].sort(), ["compiled-evidence", "legacy"]);
 });
 
 test("base benchmark runner accepts the explicit P instruction mode", () => {

@@ -31,7 +31,6 @@ export function resolveBenchmarkCandidateOutput(
 ): string {
   const candidate = parseBenchmarkCandidateVersion(candidateVersion);
   const output =
-    requestedOutput ??
-    join(repoRoot, "benchmarks", "results", `${timestamp}-v${candidate}-project-instructions-three-condition`);
+    requestedOutput ?? join(repoRoot, "benchmarks", "results", `${timestamp}-v${candidate}-project-instructions`);
   return assertBenchmarkCandidateOutputPath(output, candidate);
 }

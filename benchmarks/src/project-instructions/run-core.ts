@@ -3,8 +3,10 @@ import { resolve } from "node:path";
 import { isThinkingLevel, type ThinkingLevel } from "../workloads/thinking-level.ts";
 import { describeCaptureOverflow } from "./run-assessment.ts";
 import {
-  buildBalancedConditionOrders,
+  buildPairedSchedule,
   conditionConfiguration,
+  DEFAULT_PROJECT_INSTRUCTION_CONDITIONS,
+  type PairedScheduleCell,
   PROJECT_INSTRUCTION_CONDITIONS,
   type ProjectInstructionCondition,
   type ProjectInstructionMode,
@@ -17,8 +19,11 @@ export { assessSample } from "./run-assessment.ts";
 
 export {
   PROJECT_INSTRUCTION_CONDITIONS,
+  DEFAULT_PROJECT_INSTRUCTION_CONDITIONS,
+  buildPairedSchedule,
   type ProjectInstructionCondition,
   type ProjectInstructionMode,
+  type PairedScheduleCell,
   type TaskVerificationMode,
   conditionConfiguration,
 };
@@ -33,6 +38,7 @@ export type PairedBenchmarkArgs = {
   compilerModel?: string;
   modelsFile: string;
   tasks: string[];
+  conditions: ProjectInstructionCondition[];
   runs: number;
   seed?: string;
   timeoutSeconds: number;
@@ -41,7 +47,6 @@ export type PairedBenchmarkArgs = {
   thinking?: ThinkingLevel;
   help: boolean;
 };
-export type PairedScheduleCell = { run: number; task: string; conditions: ProjectInstructionCondition[] };
 export type RunOptions = PairedBenchmarkArgs & {
   model: string;
   compilerModel: string;
@@ -98,6 +103,7 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
     compilerModel: process.env.PI_BENCHMARK_COMPILER_MODEL,
     modelsFile: resolve(homedir(), ".p", "agent", "models.json"),
     tasks: [] as string[],
+    conditions: [...DEFAULT_PROJECT_INSTRUCTION_CONDITIONS],
     runs: 3,
     seed: process.env.P_BENCHMARK_SEED,
     timeoutSeconds: 300,
@@ -122,6 +128,10 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
     const arg = argv[index];
     if (arg === "--help" || arg === "-h") {
       options.help = true;
+      continue;
+    }
+    if (arg === "--include-audit") {
+      options.conditions = [...PROJECT_INSTRUCTION_CONDITIONS];
       continue;
     }
     if (!valueOptions.has(arg)) throw new Error(`Unknown option: ${arg}`);
@@ -154,21 +164,8 @@ export function parsePairedArgs(argv: string[]): PairedBenchmarkArgs {
   return options;
 }
 
-export function buildPairedSchedule(tasks: string[], runs: number, seed: string): PairedScheduleCell[] {
-  const schedulesByTask = new Map<string, ProjectInstructionCondition[][]>();
-  for (const task of tasks) {
-    schedulesByTask.set(task, buildBalancedConditionOrders(seed, task, runs));
-  }
-  return Array.from({ length: runs }, (_, index) =>
-    tasks.map((task) => {
-      const conditions = schedulesByTask.get(task)?.[index];
-      if (!conditions) throw new Error(`Missing randomized schedule for ${task}`);
-      return { run: index + 1, task, conditions };
-    }),
-  ).flat();
-}
 export function buildBenchmarkArgs(
-  options: Omit<RunOptions, "seed">,
+  options: Omit<RunOptions, "seed" | "conditions">,
   pair: { task: string },
   condition: ProjectInstructionCondition,
   output: string,
