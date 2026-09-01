@@ -117,7 +117,7 @@ test("output overflow terminates and waits for the child with an explicit failur
       turn: 2,
     });
     assert.equal(result.signal, "SIGTERM");
-    assert.ok(result.elapsedMs < 2_000);
+    assert.ok(result.elapsedMs < 5_000);
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });

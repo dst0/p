@@ -10,7 +10,6 @@ import {
 } from "../harness/interruption.ts";
 import type { BenchmarkOutputLimits } from "../harness/output-capture.ts";
 import {
-  BenchmarkOutputOverflowError,
   captureOverflowEvidence,
   createBoundedTextCapture,
   resolveBenchmarkOutputLimits,
@@ -19,6 +18,7 @@ import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "../
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import { createProjectInstructionProofIpcCapture } from "../project-instructions/proof-ipc.ts";
 import { type BenchmarkEventCapture, createBenchmarkEventCapture } from "../project-instructions/stream.ts";
+import { createBenchmarkJsonlLineCapture } from "./jsonl-line-capture.ts";
 import {
   type BenchmarkTerminationReason,
   type BenchmarkTimeoutKind,
@@ -58,6 +58,7 @@ interface BenchmarkProofCapture {
 }
 
 export interface BenchmarkTurnOptions {
+  allowCanonicalPAgentEnd?: boolean;
   outputLimits?: Partial<BenchmarkOutputLimits>;
   projectInstructionProofReceipt?: string;
   collectRawStdout?: boolean;
@@ -136,7 +137,6 @@ export function runBenchmarkAgentTurn(
       progressEventTypes: options.progressEventTypes,
       stopMarker: options.stopOnMarker,
     }) as BenchmarkEventCapture;
-    let stdoutBuffer = "";
     let failure: string | undefined;
     let timedOut = false;
     let timeoutKind: BenchmarkTimeoutKind | undefined;
@@ -205,21 +205,18 @@ export function runBenchmarkAgentTurn(
     const processText = (text: string): void => {
       if (failure || stoppedByMarker) return;
       rawStdout?.append(text);
-      const lines = `${stdoutBuffer}${text}`.split(/\r?\n/u);
-      stdoutBuffer = lines.pop() ?? "";
-      for (const line of lines) {
-        const lineBytes = Buffer.byteLength(line, "utf8");
-        if (lineBytes > limits.maxLineBytes) {
-          throw new BenchmarkOutputOverflowError("stdout line", limits.maxLineBytes, lineBytes);
-        }
-        if (eventCapture.process(line)) timeoutController?.renewSemanticProgress();
-      }
-      const bufferedLineBytes = Buffer.byteLength(stdoutBuffer, "utf8");
-      if (bufferedLineBytes > limits.maxLineBytes) {
-        throw new BenchmarkOutputOverflowError("stdout line", limits.maxLineBytes, bufferedLineBytes);
-      }
-      if (eventCapture.stopMarkerSeen) terminate(undefined, "marker");
+      stdoutLines.append(text);
     };
+
+    const stdoutLines = createBenchmarkJsonlLineCapture({
+      allowCanonicalPAgentEnd: options.allowCanonicalPAgentEnd,
+      maxLineBytes: limits.maxLineBytes,
+      onLine: (line) => {
+        if (eventCapture.process(line)) timeoutController?.renewSemanticProgress();
+        if (eventCapture.stopMarkerSeen) terminate(undefined, "marker");
+      },
+      onOversizedNonMetricLine: () => eventCapture.skipNonMetricLine(),
+    });
 
     child.stdout.pipe(recording.stream, { end: false });
     child.stdout.on("data", (chunk) => {
@@ -265,8 +262,7 @@ export function runBenchmarkAgentTurn(
         return;
       }
       try {
-        processText(stdoutDecoder.end());
-        if (!failure && !stoppedByMarker) eventCapture.process(stdoutBuffer);
+        if (!failure && !stoppedByMarker) stdoutLines.finish(stdoutDecoder.end());
         if (!failure) stderr.append(stderrDecoder.end());
       } catch (error) {
         failure ??= errorMessage(error);
