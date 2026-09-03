@@ -3,6 +3,7 @@ import {
   containsGitPublishCommand,
   isSafePublishCommandSequence,
 } from "../src/core/task-verification/git-command-classification.ts";
+import { shellCommandActionIdentities } from "../src/core/task-verification/shell-command-action-identities.ts";
 
 describe("task-verification Git publication classification", () => {
   it("recognizes escaped shell words used by Git publication commands", () => {
@@ -36,5 +37,26 @@ describe("task-verification Git publication classification", () => {
     expect(isSafePublishCommandSequence("bash -c 'git push origin HEAD'")).toBe(true);
     expect(containsGitPublishCommand("sh -c 'node generator.js && git push'")).toBe(true);
     expect(isSafePublishCommandSequence("sh -c 'node generator.js && git push'")).toBe(false);
+  });
+
+  it("extracts structural action identities without operand vocabulary", () => {
+    expect(shellCommandActionIdentities('env git -C /repo commit -m "release benchmark install"')).toEqual([
+      { executable: "git", action: "commit" },
+    ]);
+    expect(shellCommandActionIdentities("npm run release -- --note git")).toEqual([
+      { executable: "npm", action: "run", script: "release" },
+    ]);
+    expect(shellCommandActionIdentities("npm install release-benchmark")).toEqual([
+      { executable: "npm", action: "install" },
+    ]);
+    expect(shellCommandActionIdentities("npm --prefix install run release")).toEqual([
+      { executable: "npm", action: "run", script: "release" },
+    ]);
+    expect(shellCommandActionIdentities("npm --loglevel install run release")).toEqual([
+      { executable: "npm", action: "run", script: "release" },
+    ]);
+    expect(shellCommandActionIdentities("npm --future-option install run release")).toEqual([{ executable: "npm" }]);
+    expect(shellCommandActionIdentities("npm exec tool install")).toEqual([{ executable: "npm" }]);
+    expect(shellCommandActionIdentities("rm git-commit-version-release.txt")).toEqual([{ executable: "rm" }]);
   });
 });
