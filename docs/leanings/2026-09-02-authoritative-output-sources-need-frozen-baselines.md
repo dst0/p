@@ -1,0 +1,34 @@
+# 2026-09-02 — Authoritative output sources need frozen baselines
+
+- **Status:** Partial
+- **Task/context:** Support tasks that both follow an authoritative file and explicitly edit, move, or delete that same file.
+- **Unexpected observation or failure:** The source stayed authoritative, but finish required its original SHA at the live path after the requested mutation, making a valid task impossible to complete. Pathless Git shell mutations also recorded a null pre-task baseline for clean tracked files. A later review found that clause-wide action regexes could authorize the wrong path and rejected otherwise valid languages outside a finite vocabulary. The first marker design then let an old authorization survive a new substantive prompt, while the first stale-epoch fix made restart recovery impossible because `restoreError` blocked both prompt capture and redeclaration.
+- **Evidence:** The lifecycle regression preserved the original obligation and completed the edit, then readiness rejected the changed source. A shell-deletion regression demonstrated that explicit snapshot hints are required to retain the original canonical file state. `Edit README.md according to SPEC.md` incorrectly authorized `SPEC.md`, while an Arabic request could not authorize any source output. A restored-controller regression proved that the documented marker recovery could not run until a narrow recovery transition was introduced.
+- **Approaches tried:**
+  - **Attempt:** Skip revalidation for every task-owned authoritative source.
+    - **Outcome:** Did not work
+    - **Why:** Accidental source mutation would silently weaken immutable authority.
+  - **Attempt:** Rebase authority onto post-mutation bytes.
+    - **Outcome:** Did not work
+    - **Why:** Implementation output would rewrite its own requirements and move/delete could not be represented.
+  - **Attempt:** Declare a bounded pre-mutation `source_output_paths` transition.
+    - **Outcome:** Worked
+    - **Why:** The controller freezes prompt epoch, canonical file baseline, and critical domains while normal task evidence proves the requested final output.
+  - **Attempt:** Infer per-path mutation authority from action words anywhere in the same clause.
+    - **Outcome:** Did not work
+    - **Why:** The action could target a different path, and finite language vocabularies are not universal.
+  - **Attempt:** Bind `source_output_paths` to a standalone user-authored `[source-output:relative/path]` marker in the latest prompt epoch and an output-specific checklist criterion containing the same canonical path.
+    - **Outcome:** Worked in focused verification
+    - **Why:** The user-owned marker is the language-neutral mutation capability; the model-owned checklist only maps that capability to the requested outcome and cannot manufacture permission by repeating a path.
+  - **Attempt:** Treat stale prompt authorization as a generic restore failure.
+    - **Outcome:** Did not work
+    - **Why:** Generic restore guards correctly blocked effects but also blocked the exact fresh marker and checklist transition required to recover.
+  - **Attempt:** Permit only a stale-output marker prompt and a matching `source_output_paths` checklist transition while every mutation/readiness path stays blocked.
+    - **Outcome:** Worked in focused verification
+    - **Why:** The restored controller can update only the authorization epoch and criterion; the original baseline and critical domains remain byte-for-byte unchanged.
+- **Root cause:** Immutable source authority and requested output lifecycle were conflated, shell snapshots did not hint clean tracked source paths before mutation, authorization tried to recover grammar from clause co-occurrence or model-authored text, and restore handling lacked a capability-scoped recovery state.
+- **Resolution:** Persist marker-, prompt-epoch-, and checklist-criterion-bound source-output authorizations, include them in effect hashing and restore validation, hint them into every mutation snapshot, retain runtime obligations against original bytes, and verify exact ledger baseline plus a changed regular-file or missing final state. A later substantive prompt invalidates the epoch; recovery captures only a valid fresh marker prompt and accepts only the matching redeclaration, preserving the frozen baseline/domains. Non-runtime content keeps the frozen SHA without acquiring runtime proof debt.
+- **Verification:** Failing-first edit, undeclared-control, forged-checklist, marker-only, quoted, fenced, stale, noncanonical, Arabic authorization, restored-controller recovery, baseline/domain preservation, non-runtime restore, combined-proof, and pathless shell-deletion regressions pass; the combined verification-domain run passed 1,353 tests and the bounded full repository suite passed. Reinstall and live verification remain pending.
+- **Prevention/follow-up:** Keep restore corruption, move, deletion, overflow, and post-mutation declaration cases covered.
+- **Reusable learning:** When authority is also an output, freeze the authority before mutation; never weaken it or reconstruct it from the resulting output.
+- **References:** `packages/coding-agent/test/task-verification-authoritative-source-output-lifecycle.test.ts`

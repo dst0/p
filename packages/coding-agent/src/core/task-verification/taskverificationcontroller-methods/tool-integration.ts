@@ -76,6 +76,9 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
       isShellTool(context.toolCall.name) &&
       !isPublishCommand(context.toolCall.name, context.args) &&
       (workspaceMutationAttempt || testInvocation !== undefined);
+    const sourceOutputPaths = (self.state.criticalProofSourceOutputs ?? []).map((output) => output.sourcePath);
+    const directPath = pathArgument(context.args);
+    const sourceSnapshotHints = directPath ? [...sourceOutputPaths, directPath] : sourceOutputPaths;
     if (captureShellSnapshots) {
       captureTestVerificationStart(self, context);
       const sessionFile = self.sessionManager.getSessionFile();
@@ -85,7 +88,7 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
         workspaceMutationAttempt || testInvocation !== undefined
           ? captureSourceWorkspaceSnapshot(
               self.sessionManager.getCwd(),
-              pathArgument(context.args) ? [pathArgument(context.args)!] : [],
+              sourceSnapshotHints,
               runtimeWorkspaceExclusions(self),
             )
           : undefined,
@@ -96,12 +99,11 @@ export function do_install(self: TaskVerificationController, agent: Agent): void
         self.workspaceSourceSnapshots.set(context.toolCall.id, sourceSnapshot);
       }
     } else if (workspaceMutationAttempt) {
-      const directPath = pathArgument(context.args);
       const [testSnapshot, sourceSnapshot] = await Promise.all([
         captureTestWorkspaceSnapshot(self.sessionManager.getCwd()),
         captureSourceWorkspaceSnapshot(
           self.sessionManager.getCwd(),
-          directPath ? [directPath] : [],
+          sourceSnapshotHints,
           runtimeWorkspaceExclusions(self),
         ),
       ]);
@@ -217,8 +219,10 @@ export function do_beforeToolCall(self: TaskVerificationController, context: Bef
   if (self.mode === "audit") {
     const sourceGate = requirementSourceMutationGate(self, toolName, context.args);
     if (sourceGate) return sourceGate;
-    const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
-    if (proofCommandGate) return proofCommandGate;
+  }
+  const proofCommandGate = requirementProofCommandGate(self, toolName, context.args);
+  if (proofCommandGate) return proofCommandGate;
+  if (self.mode === "audit") {
     const definitionGate = requirementDefinitionMutationGate(self, toolName, context.args);
     if (definitionGate) return definitionGate;
   }

@@ -1,4 +1,5 @@
 import type { Static } from "typebox";
+import type { CompletionVerificationScope } from "./completion-verification-scope.ts";
 import type {
   BASELINE_METHODS,
   EvidenceVerificationSchema,
@@ -7,14 +8,18 @@ import type {
   TASK_KINDS,
   VerificationSchema,
 } from "./constants.ts";
-import type { TaskVerificationExternalEffectReceipt } from "./external-effect-state.ts";
+import type { TaskVerificationCriticalProofSourceOutput } from "./critical-proof-source-output-state.ts";
+import type {
+  TaskVerificationExternalEffectReceipt,
+  TaskVerificationResolvedToolEffect,
+} from "./external-effect-state.ts";
 import type { TaskVerificationMode } from "./mode.ts";
 import type { RequirementAuditInputSchema } from "./requirement-audit-schema.ts";
 import type { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
 import type { TaskOwnedPathBaseline } from "./workspace-effect-state.ts";
 
+export type { TaskVerificationCriticalProofSourceOutput } from "./critical-proof-source-output-state.ts";
 export type TaskKind = (typeof TASK_KINDS)[number];
-
 export type BaselineMethod = (typeof BASELINE_METHODS)[number];
 
 export type FinalMethod = (typeof FINAL_METHODS)[number];
@@ -115,6 +120,7 @@ export interface TaskVerificationAcceptanceCheck {
 
 export interface TaskVerificationCompletionChecklist {
   version: 1;
+  verificationScope?: CompletionVerificationScope;
   criteria: string[];
   sourcePromptIds: string[];
   createdAtMutationRevision: number;
@@ -126,6 +132,17 @@ export interface TaskVerificationCriticalProofObligation {
   sourcePath: string;
   sourceSha256: string;
   artifactDomain: string;
+}
+
+export interface TaskVerificationCriticalProofDiscoveryFailure {
+  sourcePath: string;
+  reason: string;
+}
+
+export interface TaskVerificationCriticalProofSourceSelection {
+  sourcePath: string;
+  selectedAtPromptId: string;
+  sourceSha256: string;
 }
 
 export interface PersistedRejectedRequirementDefinitionDraft {
@@ -216,6 +233,14 @@ export interface TaskVerificationState {
   /** Bounded proof obligations recognized from explicitly referenced authoritative text. */
   criticalProofObligations?: TaskVerificationCriticalProofObligation[];
   criticalProofObligationOverflow?: boolean;
+  /** Bounded authoritative sources whose critical boundaries could not be inspected safely. */
+  criticalProofDiscoveryFailures?: TaskVerificationCriticalProofDiscoveryFailure[];
+  /** Model-selected source paths de-authorized by the user's current instructions. */
+  criticalProofDeauthorizedSourcePaths?: string[];
+  /** Durable identity and prompt epoch for selected critical-proof sources, including zero-domain sources. */
+  criticalProofSourceSelections?: TaskVerificationCriticalProofSourceSelection[];
+  /** Authoritative sources explicitly frozen before the task mutates those same paths. */
+  criticalProofSourceOutputs?: TaskVerificationCriticalProofSourceOutput[];
   requirementAudit: TaskRequirementAuditState;
   updatedAt: string;
 }
@@ -230,6 +255,11 @@ export interface TaskVerificationEvidence {
   outputSummary: string;
   testOutcome?: "passed" | "unconfirmed";
   verificationFailureKind?: "missing_test_script";
+  externalEffectReceiptId?: string;
+  externalReadbackReceiptId?: string;
+  externalReadbackCriterionSha256?: string;
+  externalReadbackOutcome?: "confirmed" | "not_confirmed";
+  toolEffect?: TaskVerificationResolvedToolEffect;
   proofWitnesses?: TaskVerificationProofWitness[];
   isError: boolean;
   nativeIsError?: boolean;

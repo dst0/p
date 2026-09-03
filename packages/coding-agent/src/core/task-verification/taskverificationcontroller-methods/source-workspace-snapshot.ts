@@ -138,6 +138,14 @@ function readPathStateSync(cwd: string, filePath: string): string {
   }
 }
 
+export function readWorkspaceEffectPathState(cwd: string, filePath: string): string | undefined {
+  try {
+    return readPathStateSync(cwd, filePath);
+  } catch {
+    return undefined;
+  }
+}
+
 function digest(value: string | Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }

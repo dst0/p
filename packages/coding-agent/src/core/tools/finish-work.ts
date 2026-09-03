@@ -19,7 +19,10 @@ const finishWorkSchema = Type.Object({
   status: Type.Union([Type.Literal("success"), Type.Literal("partial"), Type.Literal("failed")], {
     description: "Final status of the task",
   }),
-  summary: Type.String({ description: "Concise summary of the completed work" }),
+  summary: Type.String({
+    description:
+      "The complete final user-visible response. Preserve requested structure, formatting, content, and language; do not merely describe it.",
+  }),
   verification_token: Type.Optional(
     Type.String({
       description: "Completion certificate returned by the active task-verification policy",
@@ -50,7 +53,7 @@ function verificationPromptGuideline(mode: TaskVerificationMode): string | undef
   if (mode === "audit") {
     return "For successful mutating tasks, call record_task_verification with action 'ready_to_finish', submit one complete record_requirement_audit verdict batch, then pass the resulting verification_token unchanged.";
   }
-  return "For successful mutating tasks, call record_task_verification with action 'ready_to_finish' using one concise completion checklist mapped to fresh evidence, then pass the resulting verification_token unchanged; do not construct an exhaustive clause-to-requirement matrix.";
+  return "In evidence mode, for response-only tasks first call record_task_verification with action 'record_completion_checklist' and verification_scope 'response_only' to record one concise completion checklist, then call finish_work without ready_to_finish. For mutating or effectful tasks, record the checklist before the first effect; after the final effect, call ready_to_finish with evidence_refs_by_check, then pass the resulting verification_token unchanged. Do not construct an exhaustive clause-to-requirement matrix.";
 }
 
 function validateFinishWorkInput(input: FinishWorkInput): string | null {
@@ -141,6 +144,7 @@ export function createFinishWorkToolDefinition(
     promptGuidelines: [
       "Call finish_work exactly once when the task is complete, partially complete, or blocked.",
       verificationGuideline,
+      "summary is printed verbatim as the final response; preserve the user's requested structure and content. Do not rely on an earlier assistant message.",
       "status 'success' is incompatible with non-empty remaining_work.",
       "summary is required and must not be empty.",
     ].filter((guideline): guideline is string => guideline !== undefined),

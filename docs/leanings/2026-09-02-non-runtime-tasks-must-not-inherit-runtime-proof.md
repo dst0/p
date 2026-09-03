@@ -1,0 +1,22 @@
+# 2026-09-02 — Non-runtime tasks must not inherit runtime proof
+
+- **Status:** Partial
+- **Task/context:** Keep authoritative-source selection universal across runtime work, non-runtime content, and external operations in any prompt language.
+- **Unexpected observation or failure:** Selecting a specification containing an exact-final-byte contract made docs-only and investigation-only tasks require a product runtime test and proof witness.
+- **Evidence:** Failing-first docs and investigation regressions acquired an event-log critical obligation; the docs readiness call demanded `P_PROOF_V1` instead of accepting current artifact evidence.
+- **Approaches tried:**
+  - **Attempt:** Enforce every recognized source boundary regardless of task effect.
+    - **Outcome:** Did not work
+    - **Why:** Reading or documenting a runtime contract does not request implementing or executing it.
+  - **Attempt:** Preserve source selection but suppress runtime obligations for docs and investigation task kinds.
+    - **Outcome:** Did not work universally
+    - **Why:** Lexical task-kind inference recognized only a bounded set of languages and could not represent non-code external operations reliably.
+  - **Attempt:** Freeze a model-owned, language-neutral verification scope with the completion checklist.
+    - **Outcome:** Worked in focused verification
+    - **Why:** `runtime_behavior`, `non_runtime_content`, and `external_operation` describe the requested effect directly while deterministic guards still enforce artifact evidence and external receipt/readback invariants.
+- **Root cause:** Runtime proof relevance was inferred from prompt vocabulary instead of being declared as structured task-effect metadata; explicit source selection then inherited the wrong proof policy.
+- **Resolution:** Persist `verification_scope` on the frozen checklist, default missing legacy values to fail-closed runtime behavior, forbid same-prompt scope changes, and recompute source obligations from durable selections when the checklist is recorded.
+- **Verification:** Failing-first Japanese documentation and Spanish investigation regressions pass, scope restoration and laundering checks pass, and an external-operation regression proves receipt-only rejection plus receipt-bound confirmed-readback success. Full repository and live verification remain pending.
+- **Prevention/follow-up:** Test proof-policy classification by structured effect across languages; never add another prompt-language classifier for verification scope.
+- **Reusable learning:** Source authority determines what informs a task; task effect determines which proof obligations are relevant.
+- **References:** `packages/coding-agent/test/task-verification-non-runtime-source-selection.test.ts`

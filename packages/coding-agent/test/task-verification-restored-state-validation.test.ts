@@ -10,6 +10,18 @@ describe("restored task-verification state validation", () => {
     const state = emptyState("validation-task");
     state.requirementAudit.ignoredSourcePrompts = [{ sourcePromptIndex: 1, reason: "Non-requirement context." }];
     expect(isTaskVerificationState(state)).toBe(true);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        completionChecklist: { ...state.completionChecklist, verificationScope: "unknown" },
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        completionChecklist: { ...state.completionChecklist, verificationScope: "non_runtime_content" },
+      }),
+    ).toBe(false);
   });
 
   it("rejects malformed nested final and readiness collections", () => {
@@ -185,6 +197,35 @@ describe("restored task-verification state validation", () => {
       isTaskVerificationState({
         ...state,
         criticalProofObligations: [{ ...state.criticalProofObligations[0]!, sourceSha256: "BAD" }],
+      }),
+    ).toBe(false);
+  });
+
+  it("accepts only bounded canonical critical-proof discovery failures", () => {
+    const state = emptyState("validation-task", "evidence");
+    state.criticalProofDiscoveryFailures = [
+      { sourcePath: "SPEC.md", reason: "Requirement source uses a symlink: SPEC.md" },
+    ];
+    expect(isTaskVerificationState(state)).toBe(true);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        criticalProofDiscoveryFailures: [
+          ...state.criticalProofDiscoveryFailures,
+          { sourcePath: "SPEC.md", reason: "duplicate" },
+        ],
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        criticalProofDiscoveryFailures: [{ sourcePath: "../SPEC.md", reason: "outside" }],
+      }),
+    ).toBe(false);
+    expect(
+      isTaskVerificationState({
+        ...state,
+        criticalProofDiscoveryFailures: [{ sourcePath: "SPEC.md", reason: "x".repeat(501) }],
       }),
     ).toBe(false);
   });

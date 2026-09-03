@@ -20,7 +20,12 @@ export function computeTaskEffectStateHash(self: TaskVerificationController): st
     },
     effectRevision: receipt.effectRevision,
   }));
+  const baselines = (self.state.taskOwnedPathBaselines ?? []).map((baseline) => ({ ...baseline }));
+  const sourceOutputs = (self.state.criticalProofSourceOutputs ?? []).map((output) => ({
+    ...output,
+    criticalDomains: [...output.criticalDomains].sort(),
+  }));
   return createHash("sha256")
-    .update(JSON.stringify({ workspaceHash, receipts: canonicalReceipts }))
+    .update(JSON.stringify({ workspaceHash, baselines, sourceOutputs, receipts: canonicalReceipts }))
     .digest("hex");
 }

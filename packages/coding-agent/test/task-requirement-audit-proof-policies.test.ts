@@ -88,7 +88,7 @@ describe("controller-derived requirement proof policies", () => {
       requirements: [requirement],
       requirementSetHash: "proof-set",
     };
-    const selector = "fromLog rejects truncation after removing exact final byte terminal newline";
+    const selector = "fromLog rejects any truncation after removing exact final byte terminal newline";
     expect(isFocusedEvidence(controller, evidence(selector), requirement)).toBe(false);
 
     const proofWitnesses = witnesses(requirement, "remove_exact_final_byte", {

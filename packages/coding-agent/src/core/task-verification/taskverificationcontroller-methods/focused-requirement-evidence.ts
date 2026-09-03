@@ -1,3 +1,4 @@
+import { evidenceCriticalProofSetHash } from "../evidence-critical-proof.ts";
 import { selectorsMatchProofPolicies } from "../requirement-proof-evidence.ts";
 import { evidenceHasProofWitnesses } from "../requirement-proof-witnesses.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
@@ -15,11 +16,15 @@ export function isFocusedEvidence(
 ): boolean {
   if (evidence.isError || !isShellTool(evidence.toolName)) return false;
   const selectors = focusedTestSelectors(evidence.descriptor);
+  const proofSetHash =
+    self.mode === "evidence"
+      ? evidenceCriticalProofSetHash(self.state.criticalProofObligations ?? [])
+      : self.state.requirementAudit.requirementSetHash;
   return (
     selectors !== undefined &&
     evidenceMatchesRequirement(requirement, selectors) &&
     selectorsMatchProofPolicies(requirement, selectors) &&
-    evidenceHasProofWitnesses(evidence, requirement, self.state.requirementAudit.requirementSetHash) &&
+    evidenceHasProofWitnesses(evidence, requirement, proofSetHash) &&
     evidenceHasPositivePassingTestResult(evidence)
   );
 }

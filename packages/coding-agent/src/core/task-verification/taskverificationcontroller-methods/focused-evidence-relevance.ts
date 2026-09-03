@@ -1,4 +1,5 @@
 import type { TaskRequirement } from "../types.ts";
+import { hasSemanticQualifierCoverage, SEMANTIC_QUALIFIER_TERMS } from "./semantic-qualifier-coverage.ts";
 
 const EVIDENCE_TERM_PATTERN = /[\p{L}\p{N}]+/gu;
 const GENERIC_EVIDENCE_TERM_PATTERN =
@@ -23,6 +24,8 @@ const EVIDENCE_STOP_WORDS = new Set([
   "verify",
   "with",
   "without",
+  "terminal",
+  "newline",
 ]);
 const HIGH_RISK_DOMAINS = [
   // A completion token is an authorization capability, so its exact phrase identifies this domain without an auth prefix.
@@ -73,6 +76,7 @@ const QUALIFIER_CONCEPTS = [
 ];
 const QUALIFIER_TERMS = new Set([
   ...QUALIFIER_CONCEPTS.flatMap(({ unsafe, safe }) => [...unsafe, ...safe]),
+  ...SEMANTIC_QUALIFIER_TERMS,
   "formed",
   "well",
 ]);
@@ -81,7 +85,7 @@ const QUALIFIER_NEGATION_BRIDGES = new Set(["be", "been", "being", "considered",
 const AMBIGUOUS_QUALIFIER = "ambiguous";
 const BEHAVIOR_FAMILIES = [
   /^(?:accept(?:s|ed|ing)?|allow(?:s|ed|ing)?|permit(?:s|ted|ting)?)$/iu,
-  /^(?:block(?:s|ed|ing)?|denied|denies|deny|denying|forbid(?:s|den|ding)?|prevent(?:s|ed|ing)?|refus(?:e|es|ed|ing)|reject(?:s|ed|ing)?|throw(?:s|ing)?|threw|thrown)$/iu,
+  /^(?:block(?:s|ed|ing)?|catch(?:es|ing)?|caught|denied|denies|deny|denying|forbid(?:s|den|ding)?|prevent(?:s|ed|ing)?|refus(?:e|es|ed|ing)|reject(?:s|ed|ing)?|throw(?:s|ing)?|threw|thrown)$/iu,
   /^(?:audit(?:s|ed|ing)?|log(?:s|ged|ging)?|metric|metrics|record(?:s|ed|ing)?|report(?:s|ed|ing)?|telemetry|trace(?:s|d|ing)?)$/iu,
   /^(?:display(?:s|ed|ing)?|format(?:s|ted|ting)?|preview(?:s|ed|ing)?|render(?:s|ed|ing)?|show(?:s|ed|ing|n)?)$/iu,
   /^(?:preserv(?:e|es|ed|ing)|persist(?:s|ed|ing)?|recover(?:s|ed|ing|y)?|restor(?:e|es|ed|ing)|retain(?:s|ed|ing)?|resum(?:e|es|ed|ing))$|\broll(?:s|ed|ing)?\s+back\b/iu,
@@ -108,6 +112,7 @@ export function evidenceMatchesRequirement(requirement: TaskRequirement, selecto
   const requirementQualifiers = qualifierPolarities(requirementText);
   const selectorQualifiers = qualifierPolarities(selectorText);
   if (!hasQualifierCoverage(requirementQualifiers, selectorQualifiers)) return false;
+  if (!hasSemanticQualifierCoverage(requirementText, selectorText)) return false;
 
   const requirementTerms = new Set(relevantTerms(requirementText));
   if (requirementTerms.size === 0) return true;
@@ -224,7 +229,11 @@ function hasQualifierCoverage(requirement: ReadonlySet<string>, selector: Readon
 }
 
 function relevantTerms(value: string): string[] {
-  return normalizedTerms(value).filter(
+  const withoutDomains = ALL_HIGH_RISK_DOMAIN_PATTERNS.reduce(
+    (text, pattern) => text.replace(new RegExp(pattern.source, `${pattern.flags}g`), " "),
+    value,
+  );
+  return normalizedTerms(withoutDomains).filter(
     (term) =>
       term.length >= 4 &&
       !EVIDENCE_STOP_WORDS.has(term) &&

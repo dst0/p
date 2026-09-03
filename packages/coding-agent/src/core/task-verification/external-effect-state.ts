@@ -41,12 +41,25 @@ export interface TaskVerificationExternalEffectReceipt {
 export function externalEffectReceiptsAreValid(value: unknown): value is TaskVerificationExternalEffectReceipt[] {
   if (!Array.isArray(value) || value.length > MAX_EXTERNAL_EFFECT_RECEIPTS) return false;
   const ids = new Set<string>();
+  const toolCallIds = new Set<string>();
+  const effectRevisions = new Set<number>();
   return value.every((receipt) => {
     if (!isRecord(receipt) || !isNonempty(receipt.id) || ids.has(receipt.id)) return false;
-    if (!isNonempty(receipt.toolCallId) || !isNonempty(receipt.toolName)) return false;
-    if (!Number.isSafeInteger(receipt.effectRevision) || (receipt.effectRevision as number) < 0) return false;
+    if (!isNonempty(receipt.toolCallId) || toolCallIds.has(receipt.toolCallId) || !isNonempty(receipt.toolName)) {
+      return false;
+    }
+    if (
+      !Number.isSafeInteger(receipt.effectRevision) ||
+      (receipt.effectRevision as number) <= 0 ||
+      effectRevisions.has(receipt.effectRevision as number)
+    ) {
+      return false;
+    }
     if (!resolvedToolEffectIsValid(receipt.effect)) return false;
+    if (receipt.effect.kind !== "external_write" && receipt.effect.kind !== "unknown") return false;
     ids.add(receipt.id);
+    toolCallIds.add(receipt.toolCallId);
+    effectRevisions.add(receipt.effectRevision as number);
     return true;
   });
 }

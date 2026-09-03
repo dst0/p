@@ -1,8 +1,13 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
+import {
+  frozenSourceOutputRestoreError,
+  promptCanRecoverStaleSourceOutputAuthorization,
+} from "../critical-proof-source-output-revalidation.ts";
 import { reconcileCriticalProofAfterPrompt } from "../evidence-critical-proof-observation.ts";
 import { emptyReadiness, emptyRequirementAudit } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isRecord } from "../tool-classification.ts";
+import { retainedCriticalProofSourceOutputs } from "./critical-proof-source-output.ts";
 import { isNonRequirementNudge } from "./non-requirement-nudge.ts";
 
 export function captureUserPrompt(
@@ -13,7 +18,7 @@ export function captureUserPrompt(
   const promptText = userMessageText(message);
   if (!promptText.trim()) return;
   self.latestUserPrompt = promptText;
-  if (self.restoreError) return;
+  if (self.restoreError && !promptCanRecoverStaleSourceOutputAuthorization(self, promptText)) return;
   const taskPrompts = self.state.taskPrompts ?? [];
   if (isNonRequirementNudge(promptText, taskPrompts)) return;
   const activeRejectedDraft = self.rejectedRequirementDefinitionDraft;
@@ -34,8 +39,11 @@ export function captureUserPrompt(
     },
   ];
   const criticalProof = reconcileCriticalProofAfterPrompt(self, nextTaskPrompts);
+  const selectedCriticalProofPaths = new Set((criticalProof.selections ?? []).map((selection) => selection.sourcePath));
   self.state = {
     ...self.state,
+    taskKind: self.mode === "evidence" ? undefined : self.state.taskKind,
+    taskSummary: self.mode === "evidence" ? undefined : self.state.taskSummary,
     requirementDefinitionPolicy:
       self.mode === "audit"
         ? (self.state.requirementDefinitionPolicy ?? (self.state.mutationRevision > 0 ? 1 : undefined))
@@ -44,6 +52,12 @@ export function captureUserPrompt(
     completionChecklist: undefined,
     criticalProofObligations: criticalProof.obligations,
     criticalProofObligationOverflow: criticalProof.overflow,
+    criticalProofDiscoveryFailures: criticalProof.failures,
+    criticalProofSourceSelections: criticalProof.selections,
+    criticalProofSourceOutputs: retainedCriticalProofSourceOutputs(
+      self.state.criticalProofSourceOutputs,
+      selectedCriticalProofPaths,
+    ),
     final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
     readiness: emptyReadiness(),
     requirementAudit:
@@ -55,6 +69,8 @@ export function captureUserPrompt(
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
+  const sourceOutputError = frozenSourceOutputRestoreError(self);
+  if (sourceOutputError) self.restoreError = sourceOutputError;
 }
 
 function userMessageText(message: Extract<AgentMessage, { role: "user" }>): string {

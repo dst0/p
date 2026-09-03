@@ -12,29 +12,99 @@ const PROOF_MARKER = "P_PROOF_V1 ";
 const MAX_PROOF_FRAMES = 32;
 const MAX_PROOF_FRAME_BYTES = 12_288;
 const MAX_PROOF_VALUE_BYTES = 4_096;
-
+const MAX_PROOF_REJECTION_DETAILS = 8;
+export interface ProofWitnessAnalysis {
+  frameCount: number;
+  rejectedFrameCount: number;
+  rejectionDetails: string[];
+  witnesses?: TaskVerificationProofWitness[];
+}
 export function collectProofWitnesses(
   content: AfterToolCallContext["result"]["content"],
   requirements: readonly TaskRequirement[],
   requirementSetHash: string | undefined,
   mutationRevision: number,
 ): TaskVerificationProofWitness[] | undefined {
-  if (!requirementSetHash) return undefined;
+  return analyzeProofWitnesses(content, requirements, requirementSetHash, mutationRevision).witnesses;
+}
+export function analyzeProofWitnesses(
+  content: AfterToolCallContext["result"]["content"],
+  requirements: readonly TaskRequirement[],
+  requirementSetHash: string | undefined,
+  mutationRevision: number,
+): ProofWitnessAnalysis {
   const witnesses: TaskVerificationProofWitness[] = [];
   const seen = new Set<string>();
+  const rejectionDetails: string[] = [];
+  let frameCount = 0;
+  let rejectedFrameCount = 0;
+  const reject = (frameNumber: number, reason: string): void => {
+    rejectedFrameCount++;
+    if (rejectionDetails.length < MAX_PROOF_REJECTION_DETAILS) {
+      rejectionDetails.push(`Frame ${frameNumber} rejected: ${reason}`);
+    }
+  };
   for (const part of content) {
     if (part.type !== "text") continue;
     for (const line of part.text.split(/\r?\n/u)) {
       const markerIndex = line.indexOf(PROOF_MARKER);
-      if (markerIndex < 0 || witnesses.length >= MAX_PROOF_FRAMES) continue;
+      if (markerIndex < 0) continue;
+      frameCount++;
+      if (!requirementSetHash) {
+        reject(frameCount, "the controller has no active proof requirement set");
+        continue;
+      }
+      if (witnesses.length >= MAX_PROOF_FRAMES) {
+        reject(frameCount, `the ${MAX_PROOF_FRAMES}-frame acceptance limit was already reached`);
+        continue;
+      }
       const encoded = line.slice(markerIndex + PROOF_MARKER.length).trim();
-      if (!encoded || Buffer.byteLength(encoded) > MAX_PROOF_FRAME_BYTES) continue;
-      const frame = parseFrame(encoded);
-      if (!frame) continue;
+      if (!encoded) {
+        reject(frameCount, "the JSON payload is empty");
+        continue;
+      }
+      if (Buffer.byteLength(encoded) > MAX_PROOF_FRAME_BYTES) {
+        reject(frameCount, `the JSON payload exceeds ${MAX_PROOF_FRAME_BYTES} bytes`);
+        continue;
+      }
+      const parsed = parseFrame(encoded);
+      if (!("frame" in parsed)) {
+        reject(
+          frameCount,
+          parsed.reason === "unknown policy"
+            ? `${parsed.reason}; ${authoritativePolicies(requirements)}`
+            : parsed.reason,
+        );
+        continue;
+      }
+      const frame = parsed.frame;
       const requirement = requirements.find((candidate) => candidate.id === frame.requirementId);
-      if (!requirement?.proofPolicies?.includes(frame.policy) || !validateFacts(frame.policy, frame.facts)) continue;
+      if (!requirement) {
+        reject(frameCount, `unknown requirementId; ${authoritativeRequirementIds(requirements)}`);
+        continue;
+      }
+      if (!requirement.proofPolicies?.includes(frame.policy)) {
+        reject(
+          frameCount,
+          `policy ${boundedQuoted(frame.policy)} is not required for requirementId ${boundedQuoted(requirement.id)}; authoritative expected ${formatPolicies(requirement)}`,
+        );
+        continue;
+      }
+      if (!validateFacts(frame.policy, frame.facts)) {
+        reject(
+          frameCount,
+          `facts do not satisfy policy ${boundedQuoted(frame.policy)} for requirementId ${boundedQuoted(requirement.id)}`,
+        );
+        continue;
+      }
       const key = `${frame.requirementId}\n${frame.policy}`;
-      if (seen.has(key)) continue;
+      if (seen.has(key)) {
+        reject(
+          frameCount,
+          `duplicate requirementId ${boundedQuoted(frame.requirementId)} with policy ${boundedQuoted(frame.policy)}`,
+        );
+        continue;
+      }
       seen.add(key);
       witnesses.push({
         requirementId: frame.requirementId,
@@ -47,9 +117,13 @@ export function collectProofWitnesses(
       });
     }
   }
-  return witnesses.length > 0 ? witnesses : undefined;
+  return {
+    frameCount,
+    rejectedFrameCount,
+    rejectionDetails,
+    ...(witnesses.length > 0 ? { witnesses } : {}),
+  };
 }
-
 export function redactProofFrames(
   content: AfterToolCallContext["result"]["content"],
 ): AfterToolCallContext["result"]["content"] {
@@ -65,17 +139,6 @@ export function redactProofFrames(
       : part,
   );
 }
-
-export function countProofFrameMarkers(content: AfterToolCallContext["result"]["content"]): number {
-  return content.reduce(
-    (count, part) =>
-      part.type === "text"
-        ? count + part.text.split(/\r?\n/u).filter((line) => line.includes(PROOF_MARKER)).length
-        : count,
-    0,
-  );
-}
-
 export function evidenceHasProofWitnesses(
   evidence: TaskVerificationEvidence,
   requirement: TaskRequirement,
@@ -91,7 +154,6 @@ export function evidenceHasProofWitnesses(
     ),
   );
 }
-
 export function isProofWitness(value: unknown): value is TaskVerificationProofWitness {
   if (!isRecord(value)) return false;
   return (
@@ -107,7 +169,6 @@ export function isProofWitness(value: unknown): value is TaskVerificationProofWi
     value.factsHash.length > 0
   );
 }
-
 export function areProofWitnesses(value: unknown): boolean {
   return value === undefined || (Array.isArray(value) && value.every(isProofWitness));
 }
@@ -118,20 +179,52 @@ interface ProofFrame {
   facts: Record<string, unknown>;
 }
 
-function parseFrame(value: string): ProofFrame | undefined {
+type ProofFrameParseResult = { frame: ProofFrame } | { reason: string };
+
+function parseFrame(value: string): ProofFrameParseResult {
   try {
     const parsed: unknown = JSON.parse(value);
-    if (!isRecord(parsed) || !isRecord(parsed.facts)) return undefined;
-    if (typeof parsed.requirementId !== "string" || typeof parsed.policy !== "string") return undefined;
-    if (!(REQUIREMENT_PROOF_POLICIES as readonly string[]).includes(parsed.policy)) return undefined;
+    if (!isRecord(parsed)) return { reason: "the JSON payload must be an object" };
+    if (typeof parsed.requirementId !== "string" || parsed.requirementId.length === 0) {
+      return { reason: "requirementId must be a non-empty string copied from the controller template" };
+    }
+    if (typeof parsed.policy !== "string")
+      return { reason: "policy must be a string copied from the controller template" };
+    if (!(REQUIREMENT_PROOF_POLICIES as readonly string[]).includes(parsed.policy)) {
+      return { reason: "unknown policy" };
+    }
+    if (!isRecord(parsed.facts)) return { reason: "facts must be a JSON object" };
     return {
-      requirementId: parsed.requirementId,
-      policy: parsed.policy as RequirementProofPolicy,
-      facts: parsed.facts,
+      frame: {
+        requirementId: parsed.requirementId,
+        policy: parsed.policy as RequirementProofPolicy,
+        facts: parsed.facts,
+      },
     };
   } catch {
-    return undefined;
+    return { reason: "the payload is not valid JSON" };
   }
+}
+
+function authoritativeRequirementIds(requirements: readonly TaskRequirement[]): string {
+  if (requirements.length === 0) return "the controller has no active proof obligations";
+  const ids = requirements.slice(0, 4).map((requirement) => boundedQuoted(requirement.id));
+  const suffix = requirements.length > ids.length ? `, and ${requirements.length - ids.length} more` : "";
+  return `${requirements.length === 1 ? "authoritative expected ID" : "authoritative expected IDs"}: ${ids.join(", ")}${suffix}`;
+}
+
+function formatPolicies(requirement: TaskRequirement): string {
+  const policies = requirement.proofPolicies ?? [];
+  return `${policies.length === 1 ? "policy" : "policies"}: ${policies.map(boundedQuoted).join(", ")}`;
+}
+
+function authoritativePolicies(requirements: readonly TaskRequirement[]): string {
+  const policies = [...new Set(requirements.flatMap((requirement) => requirement.proofPolicies ?? []))];
+  return `authoritative expected ${policies.length === 1 ? "policy" : "policies"}: ${policies.map(boundedQuoted).join(", ")}`;
+}
+
+function boundedQuoted(value: string): string {
+  return JSON.stringify(value.length > 128 ? `${value.slice(0, 125)}...` : value);
 }
 
 function validateFacts(policy: RequirementProofPolicy, facts: Record<string, unknown>): boolean {

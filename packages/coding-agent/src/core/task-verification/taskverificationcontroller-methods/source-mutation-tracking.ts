@@ -67,9 +67,10 @@ export async function settleSourceWorkspaceMutation(
   self.workspaceSourceSnapshots.delete(context.toolCall.id);
   if (!captured) return { paths: [], trackingFailed: false };
   const directPath = pathArgument(context.args);
+  const sourceOutputPaths = (self.state.criticalProofSourceOutputs ?? []).map((output) => output.sourcePath);
   const after = await captureSourceWorkspaceSnapshot(
     self.sessionManager.getCwd(),
-    directPath ? [directPath] : [],
+    directPath ? [...sourceOutputPaths, directPath] : sourceOutputPaths,
     runtimeWorkspaceExclusions(self),
   );
   if (!after) return { paths: [], trackingFailed: true };

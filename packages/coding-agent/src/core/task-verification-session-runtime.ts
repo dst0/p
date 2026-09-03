@@ -82,6 +82,7 @@ export function prepareTaskVerificationRuntime(
     mode: configuredMode,
     activeToolEffects: options.activeToolEffects,
     excludeTools: options.excludeTools,
+    allowReadOnlyEvidence: options.tools === undefined && options.noTools !== "all",
   });
   const completionMode = options.completionMode ?? settingsManager.getCompletionMode();
   if (configuredMode !== "off" && completionMode !== "explicit_finish") {
@@ -122,6 +123,7 @@ export function reconcileTaskVerificationRuntime(session: AgentSession, requeste
     activeToolEffects,
     excludeTools: session._excludedToolNames ? [...session._excludedToolNames] : undefined,
     retainVerification: controllerLifecycleIsPending(runtime),
+    allowReadOnlyEvidence: session._allowedToolNames === undefined,
   });
   runtime.enabled = policy.enabled;
   session._taskVerificationMode = policy.enabled ? runtime.configuredMode : "off";

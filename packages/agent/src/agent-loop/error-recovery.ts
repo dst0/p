@@ -239,7 +239,7 @@ export async function runLoop(
                     : completionLimits.maxTurns,
               reason: protocolRepair.reason,
             });
-            const repairMessage = createProtocolRepairMessage(protocolRepair.message);
+            const repairMessage = createProtocolRepairMessage(protocolRepair.message, protocolRepair.reason);
             await emit({ type: "message_start", message: repairMessage });
             await emit({ type: "message_end", message: repairMessage });
             currentContext.messages.push(repairMessage);

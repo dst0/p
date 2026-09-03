@@ -5,6 +5,8 @@ import {
   TASK_VERIFICATION_STATE_CUSTOM_TYPE,
   TASK_VERIFICATION_TOOL_NAME,
 } from "../constants.ts";
+import { frozenSourceOutputRestoreError } from "../critical-proof-source-output-revalidation.ts";
+import { revalidatePersistedCriticalProofSources } from "../evidence-critical-proof-observation.ts";
 import { reconcileTaskVerificationModeState } from "../mode-state.ts";
 import {
   computeCertificateHash,
@@ -235,6 +237,11 @@ export function do_restore(self: TaskVerificationController): void {
   }
 
   reconcileTaskVerificationModeState(self, hasPersistedState);
+
+  if (!self.restoreError && self.mode === "evidence") {
+    const sourceRestoreError = frozenSourceOutputRestoreError(self) ?? revalidatePersistedCriticalProofSources(self);
+    if (sourceRestoreError) self.restoreError = sourceRestoreError;
+  }
 
   if (!self.restoreError && self.mode === "audit") {
     const sourceRestoreError = restoreRequirementSourceTexts(branch, self.state, self.requirementSourceTexts);

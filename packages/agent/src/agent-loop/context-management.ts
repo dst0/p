@@ -12,6 +12,7 @@ import {
 import { getAssistantText, prepareToolCall } from "./tool-result-formatting.ts";
 import type {
   AgentEventSink,
+  CompletionProtocolRepair,
   CompletionProtocolState,
   ExecutedToolCallBatch,
   FinalizedToolCallEntry,
@@ -101,11 +102,14 @@ export async function executeToolCalls(
   return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
 }
 
-export function createProtocolRepairMessage(text: string): AgentMessage {
+export function createProtocolRepairMessage(text: string, reason?: CompletionProtocolRepair["reason"]): AgentMessage {
   return {
     role: "user",
     content: [{ type: "text", text }],
-    metadata: { pInternal: "completion_protocol_repair" },
+    metadata: {
+      pInternal: "completion_protocol_repair",
+      ...(reason ? { completionProtocolRepairReason: reason } : {}),
+    },
     timestamp: Date.now(),
   };
 }

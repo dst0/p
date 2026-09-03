@@ -1,8 +1,11 @@
 import {
+  persistedChecklistProofScopeIsConsistent,
   persistedCompletionChecklistIsValid,
+  persistedCriticalProofAuxiliaryStateIsValid,
   persistedCriticalProofObligationsAreValid,
 } from "./completion-proof-state-validation.ts";
 import { BASELINE_METHODS, FINAL_METHODS, REQUIREMENT_TYPES, TASK_KINDS } from "./constants.ts";
+import { resolvedToolEffectIsValid } from "./external-effect-state.ts";
 import { TASK_VERIFICATION_MODES } from "./mode.ts";
 import { isPersistedRejectedDefinitionDraft } from "./rejected-definition-state-validation.ts";
 import { REQUIREMENT_PROOF_POLICIES } from "./requirement-proof-policies.ts";
@@ -30,9 +33,7 @@ import type {
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-function isString(value: unknown): value is string {
-  return typeof value === "string";
-}
+const isString = (value: unknown): value is string => typeof value === "string";
 function isNonemptyString(value: unknown): value is string {
   return isString(value) && value.length > 0;
 }
@@ -248,8 +249,21 @@ export function isTaskVerificationState(value: unknown): value is TaskVerificati
       persistedCompletionChecklistIsValid(value.completionChecklist, value.taskPrompts, value.mutationRevision)) &&
     (value.criticalProofObligations === undefined ||
       persistedCriticalProofObligationsAreValid(value.criticalProofObligations)) &&
+    persistedChecklistProofScopeIsConsistent(value.completionChecklist, value.criticalProofObligations) &&
     (value.criticalProofObligationOverflow === undefined ||
       typeof value.criticalProofObligationOverflow === "boolean") &&
+    persistedCriticalProofAuxiliaryStateIsValid(
+      value.criticalProofDiscoveryFailures,
+      value.criticalProofDeauthorizedSourcePaths,
+      value.criticalProofObligations,
+      value.criticalProofObligationOverflow,
+      value.completionChecklist,
+      value.criticalProofSourceSelections,
+      value.criticalProofSourceOutputs,
+      value.taskPrompts,
+      value.taskOwnedPaths,
+      value.taskOwnedPathBaselines,
+    ) &&
     isRequirementAudit(value.requirementAudit) &&
     isString(value.updatedAt)
   );
@@ -266,6 +280,16 @@ export function isTaskVerificationEvidence(value: unknown): value is TaskVerific
     isString(value.outputSummary) &&
     (value.testOutcome === undefined || isOneOf(value.testOutcome, ["passed", "unconfirmed"])) &&
     (value.verificationFailureKind === undefined || value.verificationFailureKind === "missing_test_script") &&
+    (value.externalEffectReceiptId === undefined || isString(value.externalEffectReceiptId)) &&
+    (value.externalReadbackReceiptId === undefined || isString(value.externalReadbackReceiptId)) &&
+    (value.externalReadbackCriterionSha256 === undefined ||
+      (isString(value.externalReadbackCriterionSha256) &&
+        /^[a-f0-9]{64}$/u.test(value.externalReadbackCriterionSha256))) &&
+    (value.externalReadbackOutcome === undefined ||
+      isOneOf(value.externalReadbackOutcome, ["confirmed", "not_confirmed"])) &&
+    (value.externalReadbackReceiptId === undefined) === (value.externalReadbackCriterionSha256 === undefined) &&
+    (value.externalReadbackReceiptId === undefined) === (value.externalReadbackOutcome === undefined) &&
+    (value.toolEffect === undefined || resolvedToolEffectIsValid(value.toolEffect)) &&
     value.passedTestNames === undefined &&
     areProofWitnesses(value.proofWitnesses) &&
     typeof value.isError === "boolean" &&

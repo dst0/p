@@ -1,0 +1,22 @@
+# 2026-09-03 — Verification tools must respect read-only allowlists
+
+- **Status:** Resolved
+- **Task/context:** Extending evidence-mode completion to ordinary response-only work while preserving CLI and SDK tool-selection contracts.
+- **Unexpected observation or failure:** Enabling evidence verification whenever any tool was active injected `record_task_verification` into explicit read-only allowlists. A real CLI test restricted to `finish_work` then looped until its 120-second timeout because the scripted provider could not supply the newly required checklist.
+- **Evidence:** Six integration suites reported one unexpected `record_task_verification` tool beside their exact read-only allowlists. `session-isolation-cli.test.ts` reproduced the same policy error as a 120-second loop; after restoring effect-sensitive activation it passed in seconds. The failed full-suite log is stored as `/tmp/rc78-full-test.log.br`.
+- **Approaches tried:**
+  - **Attempt:** Retain evidence verification for every non-empty tool set.
+    - **Outcome:** Did not work
+    - **Why:** A control-plane tool became an undeclared exception to explicit read-only and terminal-only tool selection.
+  - **Attempt:** Enable verification for effectful tools or an already-mutated verification lifecycle only.
+    - **Outcome:** Partial
+    - **Why:** Mutations and explicit read-only sessions behaved correctly, but a session with only custom read tools and no explicit allowlist lost response-only evidence.
+  - **Attempt:** Retain read-only evidence only when no explicit allowed-tool set exists.
+    - **Outcome:** Worked
+    - **Why:** Tool-selection provenance distinguishes an exact user allowlist from a default session whose currently visible tools happen to be read-only.
+- **Root cause:** The session policy treated tool presence as equivalent to an effect requiring verification and discarded whether the active tool set came from an explicit allowlist.
+- **Resolution:** Activate verification for effectful tools and pending mutation lifecycles. For a non-empty read-only tool set, activate evidence only when the session has no explicit allowed-tool set; never use this branch for `noTools: "all"`.
+- **Verification:** Eight allowlist, project-instruction, custom-tool, and real CLI session suites pass together: 42/42 tests, including initial and dynamically narrowed tool sets.
+- **Prevention/follow-up:** Any future response-only verification activation must preserve explicit `tools`, `--no-tools`, and terminal-only contracts and must include a real CLI completion regression, not only session-construction assertions.
+- **Reusable learning:** Control-plane safety tools may augment an effectful tool set, but mere read-only tool availability is not authority to override an explicit allowlist.
+- **References:** `packages/coding-agent/src/core/task-verification-session-policy.ts`, `packages/coding-agent/test/task-verification-session-services.test.ts`, `packages/coding-agent/test/session-isolation-cli.test.ts`

@@ -15,7 +15,7 @@ import {
 
 const EXACT_LOG_CONTRACT = [
   "Export deterministic newline-terminated JSONL.",
-  "JSONL import must always reject any truncation or extra data.",
+  "JSONL import must reject removal of only the final LF byte.",
   "",
 ].join("\n");
 

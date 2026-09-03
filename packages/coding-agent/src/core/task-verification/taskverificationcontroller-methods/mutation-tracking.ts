@@ -3,8 +3,9 @@ import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
 import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
 import { evidenceCriticalProofRequirement, evidenceCriticalProofSetHash } from "../evidence-critical-proof.ts";
 import { recordCriticalProofObservation } from "../evidence-critical-proof-observation.ts";
+import { formatProofWitnessEvidenceFeedback } from "../proof-witness-evidence-feedback.ts";
 import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
-import { collectProofWitnesses, countProofFrameMarkers, redactProofFrames } from "../requirement-proof-witnesses.ts";
+import { analyzeProofWitnesses, redactProofFrames } from "../requirement-proof-witnesses.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
@@ -17,9 +18,10 @@ import {
   isShellTool,
   summarizeOutput,
 } from "../tool-classification.ts";
-import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import type { TaskVerificationEvidence } from "../types.ts";
 import { resetAfterSuccessfulCompletion } from "./completion-lifecycle.ts";
 import { externalEffectStateUpdate, recordSuccessfulExternalEffect } from "./external-effect-receipt.ts";
+import { recordDeclaredExternalReadback } from "./external-readback-evidence.ts";
 import { isVerificationCommand } from "./failed-verification-resolution.ts";
 import { isZeroExitRuntimeAssertionFailure } from "./runtime-assertion-failure.ts";
 import {
@@ -49,8 +51,7 @@ export async function do_afterToolCall(
     previousResult && previousResult.isError !== effectiveIsError
       ? { ...previousResult, isError: effectiveIsError }
       : previousResult;
-  const nativeContent = context.result.content;
-  const content = effectivePreviousResult?.content ?? nativeContent;
+  const content = effectivePreviousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
     resetAfterSuccessfulCompletion(self);
@@ -128,7 +129,12 @@ export async function do_afterToolCall(
       [mutationGuidance, externalEvidenceGuidance].filter(Boolean).join("\n"),
     );
   }
-  if (!isEvidenceTool(context.toolCall.name)) return effectivePreviousResult;
+  if (!isEvidenceTool(context.toolCall.name) && !(effect.kind === "read" && effect.source === "declared")) {
+    return effectivePreviousResult;
+  }
+  if (effect.kind === "read" && effect.source === "declared") {
+    return recordDeclaredExternalReadback(self, context, effectivePreviousResult, content, effect, effectiveIsError);
+  }
   const proofRequirements =
     self.mode === "audit"
       ? self.state.requirementAudit.requirements
@@ -137,18 +143,14 @@ export async function do_afterToolCall(
     self.mode === "audit"
       ? self.state.requirementAudit.requirementSetHash
       : evidenceCriticalProofSetHash(self.state.criticalProofObligations ?? []);
-  const proofWitnesses = collectProofWitnesses(
-    nativeContent,
+  const proofAnalysis = analyzeProofWitnesses(
+    context.result.content,
     proofRequirements,
     proofSetHash,
     self.state.mutationRevision,
   );
-  const proofFrameCount = countProofFrameMarkers(nativeContent);
-  const recordedProofCount = proofWitnesses?.length ?? 0;
-  const proofFrameFeedback =
-    proofFrameCount > recordedProofCount
-      ? `Recorded ${recordedProofCount} of ${proofFrameCount} P_PROOF_V1 frames; rejected or duplicate frames were not persisted. Compare every frame with the controller proof template before submitting verdicts.`
-      : undefined;
+  const proofWitnesses = proofAnalysis.witnesses;
+  const proofFrameFeedback = formatProofWitnessEvidenceFeedback(proofAnalysis, proofRequirements);
   const redactedContent = redactProofFrames(content);
   const fullOutput = redactedContent
     .filter((part) => part.type === "text")
@@ -156,8 +158,11 @@ export async function do_afterToolCall(
     .join("\n");
   const runtimeAssertionFailed = isZeroExitRuntimeAssertionFailure(context, fullOutput, nativeIsError);
   const verificationIsError = effectiveIsError || runtimeAssertionFailed;
+  const readText = content.length === 1 && content[0]?.type === "text" ? content[0].text : undefined;
   const criticalProofGuidance =
-    !verificationIsError && effect.kind === "read" ? recordCriticalProofObservation(self, context.args) : undefined;
+    !verificationIsError && effect.kind === "read"
+      ? recordCriticalProofObservation(self, context.args, readText)
+      : undefined;
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -281,20 +286,4 @@ export async function do_detectMutation(
     if (afterFingerprint !== undefined) return beforeFingerprint !== afterFingerprint;
   }
   return isRecognizedBashMutation(context.args);
-}
-export function do_applyInput(self: TaskVerificationController, input: VerificationInput): VerificationResult {
-  switch (input.action) {
-    case "declare_task":
-      return self.declareTask(input);
-    case "authorize_baseline_test":
-      return self.authorizeBaselineTest(input);
-    case "record_baseline":
-      return self.recordBaseline(input);
-    case "record_final":
-      return self.recordFinal(input);
-    case "ready_to_finish":
-      return self.readyToFinish(input);
-    case "status":
-      return self.updated(self.formatStatus(), false);
-  }
 }

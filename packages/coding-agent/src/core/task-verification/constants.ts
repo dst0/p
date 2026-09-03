@@ -1,4 +1,5 @@
 import { Type } from "typebox";
+import { CompletionVerificationScopeSchema } from "./completion-verification-scope.ts";
 
 export {
   IgnoredSourceClauseSchema,
@@ -108,16 +109,34 @@ export const AcceptanceCheckSchema = Type.Object({
   evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
 });
 
+export const MAX_COMPLETION_CHECKLIST_INPUT_ITEMS = 24;
+
 export const EvidenceVerificationSchema = Type.Object(
   {
     action: Type.Union([
+      Type.Literal("declare_task"),
       Type.Literal("record_completion_checklist"),
       Type.Literal("ready_to_finish"),
       Type.Literal("status"),
     ]),
     unresolved_failures: Type.Optional(Type.Array(Type.String())),
+    task_kind: Type.Optional(TaskKindSchema),
+    task_summary: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
     completion_checklist: Type.Optional(
-      Type.Array(Type.String({ minLength: 1, maxLength: 300 }), { minItems: 1, maxItems: 12 }),
+      Type.Array(Type.String({ minLength: 1, maxLength: 300 }), {
+        minItems: 1,
+        maxItems: MAX_COMPLETION_CHECKLIST_INPUT_ITEMS,
+      }),
+    ),
+    verification_scope: Type.Optional(CompletionVerificationScopeSchema),
+    authoritative_source_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
+    ),
+    deauthorized_source_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
+    ),
+    source_output_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
     ),
     evidence_refs_by_check: Type.Optional(
       Type.Array(Type.Array(Type.String(), { minItems: 1, maxItems: 8 }), { minItems: 1, maxItems: 12 }),

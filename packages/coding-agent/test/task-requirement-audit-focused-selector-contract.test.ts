@@ -3,6 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { createExactFinalByteObligation } from "../src/core/task-verification/evidence-critical-proof.ts";
 import { collectProofWitnesses } from "../src/core/task-verification/requirement-proof-witnesses.ts";
 import { isFocusedEvidence } from "../src/core/task-verification/taskverificationcontroller-methods/focused-requirement-evidence.ts";
 import {
@@ -40,6 +41,23 @@ const multiPolicyRequirement: TaskRequirement = {
   proofPolicies: ["preserve_state_on_failure", "preserve_log_on_failure"],
 };
 
+const universallyQualifiedRequirement: TaskRequirement = {
+  id: "R4",
+  type: "behavior",
+  text: "Reject truncation for all newline-terminated event logs",
+  acceptanceCriterion: "A final-byte truncation of an event log is rejected",
+  sourcePromptIndexes: [1],
+  proofPolicies: ["remove_exact_final_byte"],
+};
+
+const cardinalityQualifiedRequirement: TaskRequirement = {
+  id: "R5",
+  type: "behavior",
+  text: "Write exactly 2 manifest records in order",
+  acceptanceCriterion: "The manifest contains 2 records",
+  sourcePromptIndexes: [1],
+};
+
 describe("focused selector contract", () => {
   const workspaces: string[] = [];
 
@@ -49,6 +67,7 @@ describe("focused selector contract", () => {
 
   it("states that the selector needs the outcome and proof concepts", () => {
     const guidance = formatFocusedSelectorContract(requirement);
+    const selector = formatFocusedSelectorExample(requirement);
 
     expect(guidance).toContain("selector itself");
     expect(guidance).toContain(requirement.acceptanceCriterion);
@@ -57,7 +76,8 @@ describe("focused selector contract", () => {
     expect(guidance).toContain("Use this exact safe case name and selector");
     expect(guidance).toContain("next test command");
     expect(guidance).toContain("Do not run the whole test file or suite first");
-    expect(guidance).toContain(formatFocusedSelectorExample(requirement));
+    expect(guidance).toContain(selector);
+    expect(selector).toBe("return false for a tampered candidate whose bytes differ from the original");
   });
 
   it("repeats the exact witness schema in the verdict batch prompt", () => {
@@ -68,6 +88,13 @@ describe("focused selector contract", () => {
     expect(prompt).toContain('"originalBase64":"<base64>"');
     expect(prompt).toContain('"candidateBase64":"<base64>"');
     expect(prompt).toContain("standalone proof scripts");
+  });
+
+  it("keeps universal, exact-cardinality, and order qualifiers in concise selectors", () => {
+    expect(formatFocusedSelectorExample(universallyQualifiedRequirement)).toContain("all");
+    const cardinalitySelector = formatFocusedSelectorExample(cardinalityQualifiedRequirement);
+    expect(cardinalitySelector).toContain("exactly 2");
+    expect(cardinalitySelector).toContain("in order");
   });
 
   it("rejects a proof-only prefix and accepts the full observable case name", () => {
@@ -149,6 +176,7 @@ describe("focused selector contract", () => {
         requirements: [requirement],
         requirementSetHash: "proof-set",
       },
+      criticalProofObligations: [createExactFinalByteObligation("SPEC.md", "a".repeat(64), "event-log")],
     };
     const broad = await beforeAuditTool(harness.agent, "ctx_shell", { command: "node --test validator.test.js" });
     expect(broad).toMatchObject({ block: true });

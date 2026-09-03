@@ -1,0 +1,31 @@
+# 2026-09-02 — Proof feedback must be actionable
+
+- **Status:** Partial
+- **Task/context:** Validate compiled project instructions on the four-task paired benchmark for the 5.0.1 release candidate.
+- **Unexpected observation or failure:** The rc.69 Task 3 legacy run completed the implementation and its focused proof command, but then spent hours reconstructing verifier internals, submitted invalid proof identifiers, and changed a correct test to use a generated identifier. A later evidence-mode canary also accepted process-only checklist items with parenthesized result summaries, then repeated an unrecognized `npx node --test` command three times because changed-test feedback did not explain why the successful-looking run was ineligible.
+- **Evidence:** The stopped rc.69 run reached 21,286 seconds, 759 potential mutation starts, and 1,166 semantic events. Focused evidence 878 passed one test and emitted a proof frame, but the tool response exposed only a generic evidence handle. The later edit advanced the mutation revision from 64 to 66 and invalidated that evidence. The partial report is `benchmarks/results/2026-09-02-v5.0.1-rc.69-all-four-paired-v1/report.md`. The focused evidence-mode canary reached 42 passing tests and a clean typecheck, but its changed-test debt remained because `npx node` is intentionally not a recognized direct runner.
+- **Approaches tried:**
+  - **Attempt:** Continue waiting because implementation and tests were already complete.
+    - **Outcome:** Did not work
+    - **Why:** The missing protocol feedback caused repeated verifier archaeology and invalid submissions rather than convergence.
+  - **Attempt:** Return only generic accepted or rejected counts.
+    - **Outcome:** Did not work
+    - **Why:** Counts do not identify the authoritative requirement and policy or explain how to repair a rejected frame.
+  - **Attempt:** Echo rejected model-generated identifiers and policies in diagnostics.
+    - **Outcome:** Did not work
+    - **Why:** Untrusted payload data can leak into model-visible feedback and does not establish the controller-authoritative values.
+  - **Attempt:** Return bounded sanitized rejection reasons plus authoritative controller identifiers and policies.
+    - **Outcome:** Worked
+    - **Why:** The agent can correct one proof frame or reuse an accepted handle without reading verifier source or recomputing identifiers.
+  - **Attempt:** Treat any checklist sentence containing a test or typecheck result as behavioral when it had parenthetical detail.
+    - **Outcome:** Did not work
+    - **Why:** Verification process was duplicated as pseudo-requirements, enlarging the checklist without adding observable product behavior.
+  - **Attempt:** Report only that a changed test still needed a direct run after an unrecognized successful-looking command.
+    - **Outcome:** Did not work
+    - **Why:** The model could not distinguish stale evidence from an unsupported wrapper and repeated the same command.
+- **Root cause:** Strict verification gates were correct, but their model-visible protocol had three convergence gaps: proof ingestion hid authoritative frame results, process-only matching was too syntactically narrow, and changed-test feedback did not distinguish an unsupported `npx node` wrapper from absent evidence. Multi-policy requirements also require all policy frames on the same evidence handle, so partial acceptance needs explicit rerun guidance.
+- **Resolution:** Proof analysis now returns bounded accepted witnesses, sanitized rejection reasons, and authoritative requirement-policy guidance. Complete accepted evidence is marked reusable; partial multi-policy evidence instructs the agent to rerun the same focused command with all frames together. Evidence-mode checklist validation rejects package test/typecheck commands with parenthesized summaries, and a successful-looking `npx node` run now receives a bounded instruction to remove the wrapper while retaining the changed-test debt.
+- **Verification:** Focused proof tests pass 40 of 40, including payload redaction, diagnostic bounds, mixed complete and incomplete requirements, and same-handle multi-policy repair semantics. New failing-first regressions cover both evidence-mode convergence gaps and pass after the fixes. Static checks and the full non-e2e suite passed before these final protocol changes; an installed-agent proof canary remains pending.
+- **Prevention/follow-up:** Keep model-visible verifier feedback bounded and derived from controller state, never raw untrusted frames. Model-generated completion checklists must contain behavior or artifact state, not process evidence. When a successful command cannot satisfy a gate, identify the unsupported command shape and one bounded corrective action. Require a focused live canary before another full paired benchmark.
+- **Reusable learning:** A strict verifier needs a convergent feedback protocol: say exactly what was accepted, why a submission was rejected, which authoritative value to use next, and why a successful-looking command did not advance state without weakening validation.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-proof-witnesses.ts`, `packages/coding-agent/src/core/task-verification/proof-witness-evidence-feedback.ts`, `packages/coding-agent/src/core/task-verification/completion-checklist-policy.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/test-authoring-gate.ts`, `packages/coding-agent/test/task-requirement-audit-proof-witness-validation.test.ts`, `packages/coding-agent/test/task-requirement-proof-feedback.test.ts`, `packages/coding-agent/test/task-verification-evidence-checklist.test.ts`, `packages/coding-agent/test/task-verification-test-command-source-mutation.test.ts`

@@ -135,6 +135,16 @@ export function clearVerifiedTestPaths(
   const invocation = focusedTestInvocation(evidence.descriptor);
   const started = self.testVerificationStarts.get(evidence.toolCallId);
   self.testVerificationStarts.delete(evidence.toolCallId);
+  const unsupportedNpxPaths = npxNodeSelections(self, evidence.descriptor, pending);
+  if (
+    unsupportedNpxPaths.length > 0 &&
+    !invocation &&
+    !evidence.isError &&
+    isShellTool(evidence.toolName) &&
+    hasPositivePassingTestResult(fullOutput)
+  ) {
+    return `The successful-looking command did not clear changed-test debt because "npx node" is not a supported direct test runner. Run the same direct Node test command after removing the "npx" prefix so it starts with "node" and selects: ${unsupportedNpxPaths.join(", ")}.`;
+  }
   if (
     (pending.length === 0 && !self.state.unverifiedTestPathOverflow) ||
     evidence.isError ||
@@ -267,4 +277,23 @@ function selectionNamesPath(
   testPath: string,
 ): boolean {
   return candidates.some((candidate) => normalizedTestPath(self, candidate) === testPath);
+}
+
+function npxNodeSelections(self: TaskVerificationController, descriptor: string, pending: readonly string[]): string[] {
+  for (const words of tokenizeShellCommands(descriptor)) {
+    const npxIndex = words.findIndex((word) => word.split("/").pop() === "npx");
+    if (npxIndex < 0) continue;
+    let nodeIndex = npxIndex + 1;
+    while (words[nodeIndex]?.startsWith("-")) {
+      const option = words[nodeIndex]!;
+      nodeIndex += ["-c", "--call", "-p", "--package"].includes(option) && !option.includes("=") ? 2 : 1;
+    }
+    if (words[nodeIndex]?.split("/").pop() !== "node") continue;
+    const testIndex = words.indexOf("--test", nodeIndex + 1);
+    if (testIndex < 0) continue;
+    return pending.filter((path) =>
+      words.slice(testIndex + 1).some((candidate) => normalizedTestPath(self, candidate) === path),
+    );
+  }
+  return [];
 }

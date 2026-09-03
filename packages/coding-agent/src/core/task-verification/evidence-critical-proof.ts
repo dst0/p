@@ -27,7 +27,7 @@ export function evidenceCriticalProofRequirement(obligation: TaskVerificationCri
     id: obligation.id,
     type: "behavior",
     text: `Reject exact final-byte truncation of the newline-terminated ${artifact}`,
-    acceptanceCriterion: `Exact final-byte truncation is rejected: removing only its final LF from the ${artifact} throws instead of restoring`,
+    acceptanceCriterion: `Exact final-byte truncation is rejected: removing only its final LF byte from the ${artifact} throws instead of restoring`,
     sourcePromptIndexes: [1],
     highRisk: true,
     proofPolicies: [obligation.policy],

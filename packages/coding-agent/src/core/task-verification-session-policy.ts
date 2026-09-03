@@ -7,6 +7,7 @@ export interface TaskVerificationSessionPolicyInputs {
   activeToolEffects: readonly ResolvedToolEffect[];
   excludeTools?: string[];
   retainVerification?: boolean;
+  allowReadOnlyEvidence?: boolean;
 }
 
 export interface TaskVerificationSessionPolicy {
@@ -36,7 +37,9 @@ export function resolveTaskVerificationSessionPolicy(
 ): TaskVerificationSessionPolicy {
   const enabled =
     options.mode !== "off" &&
-    (options.retainVerification === true || options.activeToolEffects.some(toolEffectRequiresVerification));
+    (options.retainVerification === true ||
+      options.activeToolEffects.some(toolEffectRequiresVerification) ||
+      (options.mode === "evidence" && options.allowReadOnlyEvidence === true && options.activeToolEffects.length > 0));
   const requiredToolNames = enabled ? getRequiredToolNames(options.mode) : [];
   assertRequiredToolsAllowed(options.mode, requiredToolNames, options.excludeTools);
   return { enabled, requiredToolNames };
