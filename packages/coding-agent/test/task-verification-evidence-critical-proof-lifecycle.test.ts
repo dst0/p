@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { evidenceCriticalProofRequirement } from "../src/core/task-verification/evidence-critical-proof.ts";
+import { formatFocusedSelectorExample } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-prompt.ts";
 import { createTaskVerificationController } from "../src/core/task-verification.ts";
 import {
   afterEvidenceTool,
@@ -16,69 +17,68 @@ import {
 
 const EXACT_LOG_CONTRACT = [
   "Export deterministic newline-terminated JSONL.",
-  "JSONL import must always reject any truncation or extra data.",
+  "JSONL import must reject removal of only the final LF byte.",
   "",
 ].join("\n");
 
 describe("evidence-mode critical proof lifecycle", () => {
-  it("invalidates late readiness and permits only monotonic checklist augmentation", async () => {
+  it("discovers critical proof before mutation and permits only monotonic checklist augmentation", async () => {
     const cwd = createRepository({ "FORMAT.md": EXACT_LOG_CONTRACT });
     const harness = createEvidenceHarness(cwd);
     try {
       await sendPrompt(harness, "Implement the store according to FORMAT.md.", 100);
-      await callEvidenceVerification(harness.controller, {
-        action: "record_completion_checklist",
-        completion_checklist: ["Store returns the configured payload unchanged"],
-      });
-      const writeArgs = { path: "src/store.ts", content: "export {};\n" };
-      const writeCall = evidenceToolCall("write", writeArgs);
-      expect((await beforeEvidenceTool(harness.agent, "write", writeArgs, writeCall))?.block).not.toBe(true);
-      writeFileSync(join(cwd, "src/store.ts"), writeArgs.content);
-      await afterEvidenceTool(harness.agent, "write", writeArgs, "wrote file", writeCall);
-      const baseEvidence = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "bash", { command: "node verify-store.js" }, "verified"),
-      );
-      expect(
-        await callEvidenceVerification(harness.controller, {
-          action: "ready_to_finish",
-          evidence_refs_by_check: [[baseEvidence]],
-          unresolved_failures: [],
-        }),
-      ).toContain("verification_token:");
-
-      const readArgs = { path: "FORMAT.md" };
-      const readCall = evidenceToolCall("read", readArgs);
-      await beforeEvidenceTool(harness.agent, "read", readArgs, readCall);
-      const observed = await afterEvidenceTool(harness.agent, "read", readArgs, EXACT_LOG_CONTRACT, readCall);
-      expect(observed).toContain("prior readiness is invalidated");
-      expect(harness.controller.currentState.readiness?.status).toBe("pending");
-      expect((await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" }))?.block).toBe(true);
-
       const obligation = harness.controller.currentState.criticalProofObligations?.[0];
       if (!obligation) throw new Error("missing exact-byte obligation");
       const criterion = evidenceCriticalProofRequirement(obligation).acceptanceCriterion;
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "record_completion_checklist",
-          completion_checklist: [criterion],
+          completion_checklist: ["Store returns the configured payload unchanged"],
         }),
-      ).toContain("Keep every existing completion criterion");
+      ).toContain("append");
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "record_completion_checklist",
           completion_checklist: ["Store returns the configured payload unchanged", criterion],
         }),
       ).toContain("Completion checklist recorded");
+      expect(
+        await callEvidenceVerification(harness.controller, {
+          action: "record_completion_checklist",
+          completion_checklist: [criterion],
+        }),
+      ).toContain("Keep every existing completion criterion");
 
-      const selector = `${evidenceCriticalProofRequirement(obligation).text} ${criterion}`;
+      const writeArgs = { path: "src/store.ts", content: "export {};\n" };
+      const writeCall = evidenceToolCall("write", writeArgs);
+      expect((await beforeEvidenceTool(harness.agent, "write", writeArgs, writeCall))?.block).not.toBe(true);
+      writeFileSync(join(cwd, "src/store.ts"), writeArgs.content);
+      await afterEvidenceTool(harness.agent, "write", writeArgs, "wrote file", writeCall);
+      const requirement = evidenceCriticalProofRequirement(obligation);
+      const selector = formatFocusedSelectorExample(requirement);
+      const shortenedCommand = "vitest --run test/store.test.ts -t 'reject exact final byte truncation'";
+      const shortenedGate = await beforeEvidenceTool(harness.agent, "bash", { command: shortenedCommand });
+      expect(shortenedGate).toMatchObject({ block: true });
+      expect(shortenedGate?.reason).toContain(selector);
+      const focusedArgs = { command: `vitest --run test/store.test.ts -t '${selector}'` };
+      const focusedCall = evidenceToolCall("bash", focusedArgs);
+      expect(await beforeEvidenceTool(harness.agent, "bash", focusedArgs, focusedCall)).toBeUndefined();
+      const baseEvidence = evidenceHandle(
+        await afterEvidenceTool(harness.agent, "bash", { command: "node verify-store.js" }, "verified"),
+      );
       const proofEvidence = evidenceHandle(
         await afterEvidenceTool(
           harness.agent,
           "bash",
-          { command: `vitest --run test/store.test.ts -t '${selector}'` },
+          focusedArgs,
           `Tests 1 passed (1)\n${proofFrame(obligation.id)}`,
+          focusedCall,
         ),
       );
+      const broadArgs = { command: "npm test" };
+      const broadCall = evidenceToolCall("bash", broadArgs);
+      expect(await beforeEvidenceTool(harness.agent, "bash", broadArgs, broadCall)).toBeUndefined();
+      await afterEvidenceTool(harness.agent, "bash", broadArgs, "Tests 2 passed (2)", broadCall);
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
@@ -158,6 +158,13 @@ describe("evidence-mode critical proof lifecycle", () => {
     try {
       await sendPrompt(harness, "Create status.txt while implementing the FORMAT.md contract.", 100);
       await afterEvidenceTool(harness.agent, "read", { path: "FORMAT.md" }, EXACT_LOG_CONTRACT);
+      await callEvidenceVerification(harness.controller, {
+        action: "record_completion_checklist",
+        authoritative_source_paths: ["FORMAT.md"],
+        completion_checklist: [
+          'status.txt has exact bytes with a terminal newline; exact_file_bytes("status.txt","ready\\n")',
+        ],
+      });
       const obligation = harness.controller.currentState.criticalProofObligations?.[0];
       if (!obligation) throw new Error("missing exact-byte obligation");
       const criticalCriterion = evidenceCriticalProofRequirement(obligation).acceptanceCriterion;
@@ -192,13 +199,20 @@ describe("evidence-mode critical proof lifecycle", () => {
     const harness = createEvidenceHarness(cwd);
     try {
       await sendPrompt(harness, "Implement the persistence contract from SPEC.md.", 100);
+      const original = harness.controller.currentState.criticalProofObligations;
+      expect(original).toHaveLength(1);
       await afterEvidenceTool(harness.agent, "read", { path: "SPEC.md" }, "read failed", undefined, true);
-      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual(original);
       await afterEvidenceTool(harness.agent, "semantic_search", { path: "SPEC.md" }, "first output chunk only");
-      expect(harness.controller.currentState.criticalProofObligations).toHaveLength(1);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual(original);
       await sendPrompt(harness, "Do not use SPEC.md as a requirement source.", 101);
       expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
       expect(harness.controller.currentState.completionChecklist).toBeUndefined();
+      await sendPrompt(harness, "Also preserve deterministic API output.", 102);
+      await afterEvidenceTool(harness.agent, "read", { path: "SPEC.md" }, EXACT_LOG_CONTRACT);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      await sendPrompt(harness, "Use SPEC.md again as the authoritative requirement source.", 103);
+      expect(harness.controller.currentState.criticalProofObligations).toHaveLength(1);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

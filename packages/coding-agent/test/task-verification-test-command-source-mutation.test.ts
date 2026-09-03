@@ -92,7 +92,80 @@ describe("evidence-mode test command source mutations", () => {
     expect(controller.currentState.taskOwnedPaths).toEqual(["docs/guide.md", "src/store.ts"]);
     expect(controller.currentState.readiness?.status).toBe("pending");
   });
+
+  it.each([
+    ["npx option", "npx --yes node --test test/store.test.ts"],
+    ["environment wrapper", "env RUNNER_SECRET=do-not-echo npx node --test test/store.test.ts --token=do-not-echo"],
+    ["command wrapper", "command npx node --test test/store.test.ts"],
+    ["absolute executable", "/opt/homebrew/bin/npx node --test test/store.test.ts"],
+  ])(
+    "explains why a successful-looking npx node run through a %s cannot clear changed-test debt",
+    async (_, command) => {
+      const cwd = await createRepository();
+      const agent = new Agent();
+      const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "evidence");
+      controller.install(agent);
+      controller.state.taskPrompts = [{ id: "user-1", text: "Add and run a focused store regression test." }];
+      await recordChecklist(controller);
+      await mkdir(join(cwd, "test"));
+
+      const testPath = "test/store.test.ts";
+      await runTool(agent, "write", { path: testPath, content: "export {};\n" }, BUILTIN_WRITE_EFFECT, () =>
+        writeFile(join(cwd, testPath), "export {};\n"),
+      );
+      const result = await runTool(agent, "bash", { command }, BUILTIN_READ_EFFECT);
+
+      expect(result).toContain('"npx node" is not a supported direct test runner');
+      expect(result).toContain('after removing the "npx" prefix');
+      expect(result).not.toContain("do-not-echo");
+      expect(controller.currentState.unverifiedTestPaths).toEqual([testPath]);
+    },
+  );
+
+  it("does not claim that a backup path selects the exact pending test", async () => {
+    const { agent, controller, testPath } = await createPendingTestController();
+
+    const result = await runTool(agent, "bash", { command: `npx node --test ${testPath}.bak` }, BUILTIN_READ_EFFECT);
+
+    expect(result).not.toContain("not a supported direct test runner");
+    expect(controller.currentState.unverifiedTestPaths).toEqual([testPath]);
+  });
+
+  it("clears changed-test debt after following the direct node remediation", async () => {
+    const { agent, controller, testPath } = await createPendingTestController();
+
+    const unsupported = await runTool(
+      agent,
+      "bash",
+      { command: `npx --yes node --test ${testPath}` },
+      BUILTIN_READ_EFFECT,
+    );
+    expect(unsupported).toContain('after removing the "npx" prefix');
+
+    const remediated = await runTool(agent, "bash", { command: `node --test ${testPath}` }, BUILTIN_READ_EFFECT);
+    expect(remediated).toContain(`Verified the pending test-authoring batch: ${testPath}.`);
+    expect(controller.currentState.unverifiedTestPaths).toEqual([]);
+  });
 });
+
+async function createPendingTestController(): Promise<{
+  agent: Agent;
+  controller: TaskVerificationController;
+  testPath: string;
+}> {
+  const cwd = await createRepository();
+  const agent = new Agent();
+  const controller = createTaskVerificationController(SessionManager.inMemory(cwd), "evidence");
+  controller.install(agent);
+  controller.state.taskPrompts = [{ id: "user-1", text: "Add and run a focused store regression test." }];
+  await recordChecklist(controller);
+  await mkdir(join(cwd, "test"));
+  const testPath = "test/store.test.ts";
+  await runTool(agent, "write", { path: testPath, content: "export {};\n" }, BUILTIN_WRITE_EFFECT, () =>
+    writeFile(join(cwd, testPath), "export {};\n"),
+  );
+  return { agent, controller, testPath };
+}
 
 async function createRepository(): Promise<string> {
   const cwd = await mkdtemp(join(tmpdir(), "p-test-command-source-mutation-"));

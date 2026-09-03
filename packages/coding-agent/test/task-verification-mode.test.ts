@@ -110,6 +110,8 @@ describe("task verification modes", () => {
     execFileSync("git", ["config", "gc.auto", "0"], { cwd });
     execFileSync("git", ["config", "gc.autoDetach", "false"], { cwd });
     mkdirSync(join(cwd, "src"));
+    writeFileSync(join(cwd, "SPEC.md"), "# Contract\n\nReturn parsed records in canonical order.\n");
+    execFileSync("git", ["add", "SPEC.md"], { cwd });
     const harness = createHarness("evidence", cwd);
     try {
       await sendUserPrompt(

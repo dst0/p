@@ -8,6 +8,8 @@ import { SessionManager } from "../src/core/session-manager.ts";
 import {
   MAX_REQUIREMENT_SOURCE_BYTES,
   MAX_REQUIREMENT_SOURCE_CANDIDATES,
+  prepareReferencedRequirementSources,
+  referencedRequirementCandidateCatalog,
   referencedRequirementCandidates,
 } from "../src/core/task-verification/referenced-requirement-sources.ts";
 import {
@@ -248,17 +250,19 @@ describe("referenced requirement-source candidate extraction", () => {
     ).toEqual([{ path: "LOCAL.md", referencedByPromptIds: ["user-1"] }]);
   });
 
-  it("bounds candidate extraction at one overflow sentinel", () => {
+  it("bounds candidate extraction and reports overflow separately", () => {
     const paths = Array.from({ length: MAX_REQUIREMENT_SOURCE_CANDIDATES + 6 }, (_, index) => `spec-${index}.md`);
-    const candidates = referencedRequirementCandidates([{ id: "user-1", text: paths.join(" ") }]);
-
-    expect(candidates).toHaveLength(MAX_REQUIREMENT_SOURCE_CANDIDATES + 1);
-    expect(candidates.map((candidate) => candidate.path)).toEqual(
-      paths.slice(0, MAX_REQUIREMENT_SOURCE_CANDIDATES + 1),
+    const catalog = referencedRequirementCandidateCatalog([{ id: "user-1", text: paths.join(" ") }]);
+    expect(catalog.overflow).toBe(true);
+    expect(catalog.candidates).toHaveLength(MAX_REQUIREMENT_SOURCE_CANDIDATES);
+    expect(catalog.candidates.map((candidate) => candidate.path)).toEqual(
+      paths.slice(0, MAX_REQUIREMENT_SOURCE_CANDIDATES),
+    );
+    expect(prepareReferencedRequirementSources(".", [{ id: "user-1", text: paths.join(" ") }], [], [])).toContain(
+      "More than 8 requirement-source candidates were referenced",
     );
   });
 });
-
 async function setup(
   workspaces: string[],
   prompt: string,

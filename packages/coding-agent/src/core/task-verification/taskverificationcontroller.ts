@@ -30,7 +30,6 @@ import { applyEvidenceInput } from "./taskverificationcontroller-methods/evidenc
 import { formatEvidenceNextAction } from "./taskverificationcontroller-methods/evidence-next-action.ts";
 import {
   completionGateWithEvidence,
-  formatEvidenceStatus,
   publishGateWithEvidence,
   readyToFinishWithEvidence,
 } from "./taskverificationcontroller-methods/evidence-readiness.ts";
@@ -45,10 +44,10 @@ import {
   do_restore,
   do_taskText,
 } from "./taskverificationcontroller-methods/evidence-resolution.ts";
+import { formatEvidenceStatus } from "./taskverificationcontroller-methods/evidence-status.ts";
 import { do_recordFinal } from "./taskverificationcontroller-methods/final-recording.ts";
 import {
   do_afterToolCall,
-  do_applyInput,
   do_authorizeBaselineTest,
   do_detectMutation,
 } from "./taskverificationcontroller-methods/mutation-tracking.ts";
@@ -71,6 +70,7 @@ import { declareTask } from "./taskverificationcontroller-methods/task-declarati
 import { createTaskVerificationToolDefinition } from "./taskverificationcontroller-methods/task-verification-tool-definition.ts";
 import type { TestWorkspaceSnapshot } from "./taskverificationcontroller-methods/test-workspace-snapshot.ts";
 import { do_beforeToolCall, do_install } from "./taskverificationcontroller-methods/tool-integration.ts";
+import { applyVerificationInput } from "./taskverificationcontroller-methods/verification-input-dispatch.ts";
 import type {
   EvidenceVerificationInput,
   FinalMethod,
@@ -148,7 +148,7 @@ export class TaskVerificationController {
   applyInput(input: VerificationInput | EvidenceVerificationInput): VerificationResult {
     if (this.mode === "off") return this.rejected("Task verification is disabled for this session.");
     if (this.mode === "evidence") return applyEvidenceInput(this, input);
-    return do_applyInput(this, input as VerificationInput);
+    return applyVerificationInput(this, input as VerificationInput);
   }
 
   applyRequirementAudit(input: RequirementAuditInput): VerificationResult {

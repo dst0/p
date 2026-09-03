@@ -130,6 +130,18 @@ export function createProviderLengthContinuationMessage(): AgentMessage {
   };
 }
 
+export function createCompletionProtocolRepairMessage(reason: string): AgentMessage {
+  return {
+    role: "user",
+    content: [{ type: "text", text: "Internal completion protocol repair." }],
+    metadata: {
+      pInternal: "completion_protocol_repair",
+      completionProtocolRepairReason: reason,
+    },
+    timestamp: Date.now(),
+  };
+}
+
 export function createToolResult(text = "tool result"): ToolResultMessage {
   return {
     role: "toolResult",

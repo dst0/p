@@ -15,5 +15,5 @@ export function formatTaskVerificationCompletionInstruction(mode: TaskVerificati
   if (mode === "audit") {
     return "For successful mutating or effectful tasks, call record_task_verification with action 'ready_to_finish', then complete the batched requirement audit before calling finish_work.";
   }
-  return "For successful mutating or effectful tasks, call record_task_verification with action 'ready_to_finish' and provide one concise completion checklist mapped to fresh evidence before calling finish_work.";
+  return "In evidence mode, for response-only tasks first call record_task_verification with action 'record_completion_checklist' and verification_scope 'response_only' to record one concise completion checklist, then call finish_work without ready_to_finish. For mutating or effectful tasks, record the checklist before the first effect; after the final effect, call ready_to_finish with evidence_refs_by_check, then call finish_work.";
 }

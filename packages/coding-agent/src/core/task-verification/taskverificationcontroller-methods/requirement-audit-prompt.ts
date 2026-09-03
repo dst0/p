@@ -1,6 +1,8 @@
 import { REQUIREMENT_AUDIT_TOOL_NAME } from "../constants.ts";
+import { selectorsMatchProofPolicies } from "../requirement-proof-evidence.ts";
 import { isProductInvariantRequirementType } from "../requirement-risk.ts";
 import type { TaskRequirement } from "../types.ts";
+import { evidenceMatchesRequirement } from "./focused-evidence-relevance.ts";
 
 export function formatRequirementBatchPrompt(requirements: readonly TaskRequirement[]): string {
   return [
@@ -51,9 +53,26 @@ export function formatFocusedSelectorContract(requirement: TaskRequirement): str
 
 export function formatFocusedSelectorExample(requirement: TaskRequirement): string {
   const proofConcepts = activeProofPolicies(requirement).map(formatProofPolicy);
+  const candidates = [
+    requirement.text,
+    requirement.acceptanceCriterion,
+    [requirement.text, ...proofConcepts].join(" "),
+    [requirement.acceptanceCriterion, ...proofConcepts].join(" "),
+    [requirement.text, requirement.acceptanceCriterion].join(" "),
+    [requirement.text, requirement.acceptanceCriterion, ...proofConcepts].join(" "),
+  ].map(normalizedSelector);
+  const matching = [...new Set(candidates)].filter(
+    (candidate) =>
+      evidenceMatchesRequirement(requirement, [candidate]) && selectorsMatchProofPolicies(requirement, [candidate]),
+  );
+  return matching.length > 0
+    ? matching.sort((left, right) => left.length - right.length || left.localeCompare(right))[0]!
+    : candidates.at(-1)!;
+}
+
+function normalizedSelector(value: string): string {
   return (
-    [requirement.text, requirement.acceptanceCriterion, ...proofConcepts]
-      .join(" ")
+    value
       .normalize("NFKC")
       .toLocaleLowerCase("en-US")
       .match(/[\p{L}\p{N}]+/gu)

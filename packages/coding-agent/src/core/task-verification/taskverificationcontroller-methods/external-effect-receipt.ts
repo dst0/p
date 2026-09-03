@@ -7,12 +7,73 @@ import {
 } from "../external-effect-state.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import type { TaskVerificationEvidence } from "../types.ts";
+import {
+  evidenceIsConfirmedExternalReadback,
+  evidenceIsCurrentDeclaredExternalReadback,
+} from "./external-readback-evidence.ts";
+import { externalReadbackCriterionHash } from "./external-readback-proof.ts";
 
 export interface RecordedExternalEffect {
   receipts: TaskVerificationExternalEffectReceipt[];
   overflow: boolean;
   trackingFailed: boolean;
   evidence?: TaskVerificationEvidence;
+}
+
+export function evidenceHasRecordedExternalEffect(
+  self: TaskVerificationController,
+  evidence: TaskVerificationEvidence,
+): boolean {
+  return externalEffectReceiptForEvidence(self, evidence) !== undefined;
+}
+
+export function externalEffectReceiptSupportsCriterion(
+  self: TaskVerificationController,
+  evidence: TaskVerificationEvidence,
+  criterion: string,
+): boolean {
+  const receipt = externalEffectReceiptForEvidence(self, evidence);
+  if (!receipt) return false;
+  const normalized = criterion.normalize("NFKC").replace(/\s+/gu, " ").trim();
+  if (/^the (?:requested )?external effect completes successfully[.!]?$/iu.test(normalized)) return true;
+  const toolBound = normalized.match(
+    /^external effect(?: [1-9]\d{0,2})? via tool ([\p{L}\p{N}_.:/-]+) completes successfully[.!]?$/iu,
+  );
+  return toolBound?.[1] === receipt.toolName;
+}
+
+export function externalEffectReceiptHasCompatibleReadback(
+  self: TaskVerificationController,
+  evidence: TaskVerificationEvidence,
+  candidates: readonly TaskVerificationEvidence[],
+  criterion: string,
+): boolean {
+  const receipt = externalEffectReceiptForEvidence(self, evidence);
+  if (!receipt || receipt.effect.domains.length === 0) return false;
+  return candidates.some(
+    (candidate) =>
+      evidenceIsConfirmedExternalReadback(candidate) &&
+      evidenceIsCurrentDeclaredExternalReadback(self, candidate) &&
+      !candidate.isError &&
+      candidate.externalReadbackReceiptId === receipt.id &&
+      candidate.externalReadbackCriterionSha256 === externalReadbackCriterionHash(criterion) &&
+      candidate.mutationRevision >= receipt.effectRevision &&
+      candidate.toolEffect!.domains.some((domain) => receipt.effect.domains.includes(domain)),
+  );
+}
+
+function externalEffectReceiptForEvidence(
+  self: TaskVerificationController,
+  evidence: TaskVerificationEvidence,
+): TaskVerificationExternalEffectReceipt | undefined {
+  if (!evidence.externalEffectReceiptId) return undefined;
+  return (self.state.externalEffectReceipts ?? []).find(
+    (receipt) =>
+      receipt.id === evidence.externalEffectReceiptId &&
+      receipt.toolCallId === evidence.toolCallId &&
+      receipt.toolName === evidence.toolName &&
+      receipt.effectRevision === evidence.mutationRevision,
+  );
 }
 
 export function externalEffectStateUpdate(
@@ -64,6 +125,8 @@ export function recordSuccessfulExternalEffect(
     toolName: context.toolCall.name,
     descriptor: `${effect.kind} effect (${effect.domains.join(",") || "general"})`,
     outputSummary: "successful metadata-only external-effect receipt",
+    externalEffectReceiptId: receipt.id,
+    toolEffect: structuredClone(effect),
     isError: false,
     nativeIsError: false,
     mutationRevision: effectRevision,

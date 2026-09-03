@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
   isExplicitRequirementSourceDeauthorization,
+  latestRequirementSourceDeauthorization,
   requirementSourceDeauthorizationIsCurrent,
 } from "../src/core/task-verification/requirement-source-authority.ts";
 import {
@@ -98,6 +99,25 @@ describe("referenced requirement-source authority lifecycle", () => {
         "user-1",
       ),
     ).toBe(false);
+  });
+
+  it("keeps de-authorization current across unrelated prompts until explicit reauthorization", () => {
+    const deauthorization = { id: "user-2", text: "Stop using README.md as a requirement source." };
+    const prompts = [
+      { id: "user-1", text: "Implement the behavior specified by README.md." },
+      deauthorization,
+      { id: "user-3", text: "Also preserve deterministic API output." },
+      { id: "user-4", text: "Do not modify README.md; preserve it unchanged." },
+      { id: "user-5", text: "Did you use README.md?" },
+      { id: "user-6", text: "Did you read or follow README.md?" },
+    ];
+    expect(latestRequirementSourceDeauthorization(prompts, "README.md")).toEqual(deauthorization);
+    expect(
+      latestRequirementSourceDeauthorization(
+        [...prompts, { id: "user-7", text: "Follow README.md again as the authoritative specification." }],
+        "README.md",
+      ),
+    ).toBeUndefined();
   });
 });
 

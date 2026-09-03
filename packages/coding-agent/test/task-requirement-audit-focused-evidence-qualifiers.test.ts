@@ -193,4 +193,102 @@ describe("focused high-risk evidence qualifiers", () => {
     expect(evidenceMatchesRequirement(requirement, [testCase.matching])).toBe(true);
     expect(evidenceMatchesRequirement(requirement, [testCase.equivalent])).toBe(true);
   });
+
+  it("binds exactness to the metadata subject instead of accepting it elsewhere", () => {
+    const requirement = {
+      id: "R1",
+      type: "constraint" as const,
+      text: "Export starts with count metadata",
+      acceptanceCriterion:
+        'Export starts with exactly {"count":N} metadata and emits deterministic newline-terminated JSONL',
+      sourcePromptIndexes: [1],
+    };
+
+    expect(evidenceMatchesRequirement(requirement, ["export count metadata with exact newline terminated jsonl"])).toBe(
+      false,
+    );
+    expect(
+      evidenceMatchesRequirement(requirement, [
+        "export starts with count metadata and exactly one newline terminated jsonl",
+      ]),
+    ).toBe(false);
+    expect(
+      evidenceMatchesRequirement(requirement, [
+        "export starts with exactly count only metadata and deterministic newline terminated jsonl",
+      ]),
+    ).toBe(true);
+  });
+
+  it("does not treat the purpose phrase in order to as an ordering qualifier", () => {
+    const requirement = {
+      id: "R1",
+      type: "constraint" as const,
+      text: "Retry requests in order to preserve durable state",
+      acceptanceCriterion: "Retries preserve durable state",
+      sourcePromptIndexes: [1],
+    };
+
+    expect(evidenceMatchesRequirement(requirement, ["retry preserves durable state"])).toBe(true);
+  });
+
+  it("requires a separate anchored selector occurrence for every exact constraint", () => {
+    const requirement = {
+      id: "R1",
+      type: "constraint" as const,
+      text: "Manifest export starts with exactly count metadata and ends with exactly one LF byte",
+      acceptanceCriterion: "Both manifest artifact boundaries are enforced",
+      sourcePromptIndexes: [1],
+    };
+
+    expect(
+      evidenceMatchesRequirement(requirement, [
+        "manifest export starts with exactly count metadata and ends with one lf byte",
+      ]),
+    ).toBe(false);
+    expect(
+      evidenceMatchesRequirement(requirement, [
+        "manifest export starts with exactly count metadata and ends with exactly one lf byte",
+      ]),
+    ).toBe(true);
+
+    expect(
+      evidenceMatchesRequirement(
+        {
+          ...requirement,
+          text: "Manifest export starts with exactly count metadata",
+          acceptanceCriterion: "Manifest export starts with exactly count metadata",
+        },
+        ["manifest export starts with exactly count metadata"],
+      ),
+    ).toBe(true);
+  });
+
+  it("distinguishes purpose phrases and identifiers from ordering semantics", () => {
+    const purposeRequirement = {
+      id: "R1",
+      type: "constraint" as const,
+      text: "Retry requests in order for durable state to be preserved",
+      acceptanceCriterion: "Retry preserves durable state",
+      sourcePromptIndexes: [1],
+    };
+    const identifierRequirement = {
+      id: "R2",
+      type: "constraint" as const,
+      text: "Persist the order ID",
+      acceptanceCriterion: "The order ID remains persisted",
+      sourcePromptIndexes: [1],
+    };
+    const orderingRequirement = {
+      id: "R3",
+      type: "constraint" as const,
+      text: "Manifest records are preserved in order",
+      acceptanceCriterion: "Manifest record order is preserved",
+      sourcePromptIndexes: [1],
+    };
+
+    expect(evidenceMatchesRequirement(purposeRequirement, ["retry preserves durable state"])).toBe(true);
+    expect(evidenceMatchesRequirement(identifierRequirement, ["persists order id"])).toBe(true);
+    expect(evidenceMatchesRequirement(orderingRequirement, ["manifest records are preserved in sequence"])).toBe(true);
+    expect(evidenceMatchesRequirement(orderingRequirement, ["ordered manifest records are preserved"])).toBe(true);
+  });
 });

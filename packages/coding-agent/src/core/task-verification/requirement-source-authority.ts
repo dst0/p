@@ -6,32 +6,41 @@ interface RequirementSourceCandidateIdentity {
 }
 
 const SOURCE_CUE_BEFORE_PATTERN =
-  /(?:according\s+to|\bper\b|specified\s+by|defined\s+in|described\s+in|documented\s+in|(?:requirements?|specification|acceptance\s+criteria)\s+(?:in|from)|(?:read|review|follow|use|reference|consult)\s+(?:the\s+)?)\s*$/iu;
-const SOURCE_CUE_AFTER_PATTERN = /^\s*(?:contains?|defines?|describes?|documents?|specifies?|lists?)\b/iu;
-const OUTPUT_CUE_BEFORE_PATTERN =
-  /(?:write|create|generate|save|emit|output|produce|append|update|edit)\b[^.!?\n]{0,80}(?:\b(?:to|into|in|at|as)\b\s*)?$/iu;
-const OUTPUT_CUE_AFTER_PATTERN =
-  /^\s*(?:as\s+)?(?:the\s+)?(?:output|deliverable|report|summary|notes?|documentation)\b/iu;
+  /(?:according\s+to|\bper\b|specified\s+by|defined\s+in|described\s+in|documented\s+in|(?:requirements?|specification|acceptance\s+criteria|contract)\s+(?:in|from)|(?:read|review|follow|use|reference|consult|treat)\s+(?:the\s+)?)\s*$/iu;
+const SOURCE_LIST_CUE_BEFORE_PATTERN =
+  /(?:according\s+to|\bper\b|specified\s+by|defined\s+in|described\s+in|documented\s+in|(?:requirements?|specifications?|acceptance\s+criteria|contracts?)\s+(?:in|from)|(?:read|review|follow|use|reference|consult)\s+(?:the\s+)?)(?:\s+|,\s*|[^,\s]+\.(?:adoc|md|mdx|rst|txt))*$/iu;
+const SOURCE_CUE_AFTER_PATTERN =
+  /^\s*(?:(?:contains?|defines?|describes?|documents?|specifies?|lists?)\b|as\s+(?:an?\s+|the\s+)?(?:authoritative\s+)?(?:requirement\s+source|specification|requirements?)\b|is\s+(?:an?\s+|the\s+)?(?:authoritative\s+)?(?:requirement\s+source|specification|requirements?)\b)/iu;
+const EXPLICIT_REAUTHORIZATION_BEFORE_PATTERN =
+  /(?:^|[.!?]\s+)(?:please\s+)?(?:actually\s+)?(?:(?:adopt|accept|follow|use|consult|read|review)\s+(?:the\s+)?|(?:implement|build|change|fix|update)\b[^.!?\n]{0,100}(?:according\s+to|\bper\b|specified\s+by|defined\s+in|described\s+in|documented\s+in|requirements?\s+(?:in|from))\s*)$/iu;
+const EXPLICIT_REAUTHORIZATION_AFTER_PATTERN =
+  /^\s*(?:is|must\s+be|should\s+be|shall\s+be)\s+(?:again\s+)?(?:an?\s+|the\s+)?(?:authoritative\s+)?(?:requirement\s+source|specification|requirements?)\b/iu;
 
 export function isAuthoritativeRequirementSourceCandidate(
   prompts: readonly TaskVerificationSourcePrompt[],
   candidate: RequirementSourceCandidateIdentity,
 ): boolean {
   const contexts = candidateContexts(prompts, candidate);
-  if (
-    contexts.some(({ before, after }) => SOURCE_CUE_BEFORE_PATTERN.test(before) || SOURCE_CUE_AFTER_PATTERN.test(after))
-  ) {
-    return true;
-  }
-  return contexts.some(({ before, after }) => !isOutputContext(before, after));
+  return contexts.some(
+    ({ before, after }) =>
+      SOURCE_CUE_BEFORE_PATTERN.test(before) ||
+      SOURCE_LIST_CUE_BEFORE_PATTERN.test(before) ||
+      SOURCE_CUE_AFTER_PATTERN.test(after),
+  );
 }
 
 export function latestRequirementSourceDeauthorization(
   prompts: readonly TaskVerificationSourcePrompt[],
   path: string,
 ): TaskVerificationSourcePrompt | undefined {
-  const latest = [...prompts].reverse().find((prompt) => prompt.kind !== "referenced_file");
-  return latest && isExplicitRequirementSourceDeauthorization(latest.text, path) ? latest : undefined;
+  return [...prompts]
+    .reverse()
+    .find(
+      (prompt) =>
+        prompt.kind !== "referenced_file" &&
+        isExplicitRequirementSourceDeauthorization(prompt.text, path) &&
+        requirementSourceDeauthorizationIsCurrent(prompts, path, prompt.id),
+    );
 }
 
 export function isExplicitRequirementSourceDeauthorization(prompt: string, path: string): boolean {
@@ -69,13 +78,17 @@ export function requirementSourceDeauthorizationIsCurrent(
   ) {
     return false;
   }
-  return !prompts.slice(deauthorizationIndex + 1).some(
-    (prompt) =>
-      prompt.kind !== "referenced_file" &&
-      isAuthoritativeRequirementSourceCandidate(prompts, {
-        path,
-        referencedByPromptIds: [prompt.id],
-      }),
+  return !prompts
+    .slice(deauthorizationIndex + 1)
+    .some(
+      (prompt) => prompt.kind !== "referenced_file" && isExplicitRequirementSourceReauthorization(prompt.text, path),
+    );
+}
+
+function isExplicitRequirementSourceReauthorization(prompt: string, path: string): boolean {
+  return pathContexts(prompt, path).some(
+    ({ before, after }) =>
+      EXPLICIT_REAUTHORIZATION_BEFORE_PATTERN.test(before) || EXPLICIT_REAUTHORIZATION_AFTER_PATTERN.test(after),
   );
 }
 
@@ -102,8 +115,4 @@ function pathContexts(text: string, path: string): Array<{ before: string; after
     offset = index + normalizedPath.length;
   }
   return contexts;
-}
-
-function isOutputContext(before: string, after: string): boolean {
-  return OUTPUT_CUE_BEFORE_PATTERN.test(before) || OUTPUT_CUE_AFTER_PATTERN.test(after);
 }

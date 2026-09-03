@@ -7,12 +7,17 @@
  */
 
 import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
-import type { AssistantMessage, ImageContent } from "@dst0/p-ai";
+import type { ImageContent } from "@dst0/p-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
 import { getTaskVerificationCompletionPayload } from "../core/task-verification/verified-completion.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
 import { projectJsonEvent } from "./json-event-projection.ts";
+import {
+  assistantMessagesText,
+  getFinalResponseAssistantMessages,
+  getRepairedFinalResponse,
+} from "./print-mode-final-response.ts";
 
 /**
  * Options for print mode.
@@ -34,53 +39,14 @@ export interface TextModeFinalOutput {
   exitCode: number;
 }
 
-function isProviderLengthContinuationMessage(message: AgentMessage): boolean {
-  return message.role === "user" && message.metadata?.pInternal === "provider_length_continuation";
-}
-
-function getFinalResponseAssistantMessages(messages: readonly AgentMessage[]): AssistantMessage[] {
-  let lastAssistantIndex = -1;
-  for (let index = messages.length - 1; index >= 0; index--) {
-    if (messages[index]?.role === "assistant") {
-      lastAssistantIndex = index;
-      break;
-    }
-  }
-  if (lastAssistantIndex === -1) return [];
-
-  let responseStart = lastAssistantIndex;
-  let cursor = lastAssistantIndex;
-  while (cursor >= 1) {
-    const continuationMessage = messages[cursor - 1];
-    if (continuationMessage?.role === "assistant" && continuationMessage.stopReason === "length") {
-      responseStart = cursor - 1;
-      cursor = responseStart;
-      continue;
-    }
-    const precedingLengthMessage = messages[cursor - 2];
-    if (
-      cursor < 2 ||
-      !continuationMessage ||
-      !isProviderLengthContinuationMessage(continuationMessage) ||
-      precedingLengthMessage?.role !== "assistant" ||
-      precedingLengthMessage.stopReason !== "length"
-    ) {
-      break;
-    }
-    responseStart = cursor - 2;
-    cursor = responseStart;
-  }
-
-  return messages
-    .slice(responseStart, lastAssistantIndex + 1)
-    .filter((message): message is AssistantMessage => message.role === "assistant");
-}
-
 export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextModeFinalOutput {
   const finishPayload = getFinishWorkPayload(messages);
   if (finishPayload) {
     return {
-      text: finishPayload.summary,
+      text:
+        finishPayload.status === "success"
+          ? (getRepairedFinalResponse(messages) ?? finishPayload.summary)
+          : finishPayload.summary,
       exitCode: finishPayload.status === "failed" ? 1 : 0,
     };
   }
@@ -101,10 +67,7 @@ export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextM
     : undefined;
   const text = assistantMessages
     .map((message, index) => {
-      const messageText = message.content
-        .filter((content) => content.type === "text")
-        .map((content) => content.text)
-        .join("");
+      const messageText = assistantMessagesText([message]);
       const isTerminalDiagnostic = index === assistantMessages.length - 1 && error === messageText;
       return isTerminalDiagnostic ? "" : messageText;
     })

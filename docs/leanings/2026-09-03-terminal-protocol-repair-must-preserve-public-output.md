@@ -1,0 +1,22 @@
+# 2026-09-03 — Terminal protocol repair must preserve public output
+
+- **Status:** Resolved
+- **Task/context:** Live print-mode validation of the evidence completion protocol after a model produced the requested structured answer before the mandatory `finish_work` call.
+- **Unexpected observation or failure:** The model's exact two-bullet answer was present in the session, but `p -p` printed only the shorter `finish_work.summary` produced by the internal repair turn.
+- **Evidence:** The live session contained a text-only assistant answer, an internal `missing_finish_work_or_tool_call` repair, checklist/readiness repair calls, and a successful summary-only `finish_work`; the captured terminal output contained only the summary. Two high-salience prompts also incorrectly paired `ready_to_finish` with checklist creation even though response-only tasks must record the checklist separately and never call readiness.
+- **Approaches tried:**
+  - **Attempt:** Tell the model that `finish_work.summary` must repeat the complete final answer.
+    - **Outcome:** Partial
+    - **Why:** This improves future calls but cannot recover already-generated public text reliably when a protocol repair occurs.
+  - **Attempt:** Recover the pre-repair answer for every later successful finish.
+    - **Outcome:** Did not work
+    - **Why:** Intervening work, user steering, partial or failed finishes, and corrected final text can make the older answer stale.
+  - **Attempt:** Recover only an exact, tagged text-only answer through a bounded sequence of matched completion-control calls to a summary-only successful finish.
+    - **Outcome:** Worked
+    - **Why:** The repair reason, unique one-call/one-result identities, completion-only allowlist, strict eight-call cap, terminal status agreement, and absence of intervening work or user input bind the original public response to one safe terminal sequence.
+- **Root cause:** Print mode assumed `finish_work` immediately followed the repair and treated its summary as unconditionally authoritative; legitimate verification-only repair turns broke that adjacency. Contradictory completion guidance also caused the model to call readiness with an inline checklist for a response-only task.
+- **Resolution:** Make response-only guidance explicitly require `record_completion_checklist` followed by `finish_work` without readiness, preserve the full-summary instruction, and recover earlier text only through the bounded matched completion-control corridor.
+- **Verification:** `packages/agent/test/agent-loop.test.ts` verifies the repair tag; prompt tests forbid reintroducing inline-checklist readiness guidance; `packages/coding-agent/test/print-mode-finish-repair-output.test.ts` covers exact structured output, verification/audit repair, and stale, unbounded, errored, duplicate, mismatched, corrected, partial, failed, or intervening-work cases.
+- **Prevention/follow-up:** Keep protocol metadata explicit and require adversarial sequence tests whenever terminal output is reconstructed from session history.
+- **Reusable learning:** A protocol-repair wrapper must not silently replace completed public output; recovery is safe only when the original response and terminal acknowledgment are causally and structurally bound.
+- **References:** `packages/coding-agent/src/modes/print-mode.ts`, `packages/coding-agent/test/print-mode-finish-repair-output.test.ts`

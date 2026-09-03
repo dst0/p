@@ -62,7 +62,7 @@ const requirements = [
 const initialSelectors = [
   "idempotent duplicate commandId retry returns original result",
   "idempotency reused commandId different command throws ValidationError",
-  "atomic failed batch rolls back pre-batch state",
+  "atomic failed batch rolls back all pre-batch state",
   "atomic failed batch rolls back idempotency records",
   "concurrency mismatched expectedVersion throws ConcurrencyError",
   "integrity fromLog rejects malformed JSON",

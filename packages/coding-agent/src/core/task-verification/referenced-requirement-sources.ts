@@ -27,6 +27,12 @@ export interface RequirementSourceCandidate {
   referencedByPromptIds: string[];
 }
 
+export interface RequirementSourceCandidateCatalog {
+  candidates: RequirementSourceCandidate[];
+  overflow: boolean;
+  overflowCandidate?: RequirementSourceCandidate;
+}
+
 export interface IgnoredRequirementSourceCandidate {
   path: string;
   reason: string;
@@ -51,19 +57,27 @@ export interface PreparedRequirementSourceSelection {
 export function referencedRequirementCandidates(
   prompts: readonly TaskVerificationSourcePrompt[],
 ): RequirementSourceCandidate[] {
-  const candidates = new Map<string, string[]>();
-  for (const prompt of prompts) {
-    for (const match of prompt.text.matchAll(DOCUMENT_PATH_PATTERN)) {
-      if (match.index === undefined || isRemoteOrAbsoluteReference(prompt.text, match.index)) continue;
-      const normalized = normalizeRequirementSourcePath(match[0]);
-      if (!normalized) continue;
-      const promptIds = candidates.get(normalized) ?? [];
-      if (!promptIds.includes(prompt.id)) promptIds.push(prompt.id);
-      candidates.set(normalized, promptIds);
-      if (candidates.size > MAX_REQUIREMENT_SOURCE_CANDIDATES) return mapCandidates(candidates);
-    }
-  }
-  return mapCandidates(candidates);
+  const catalog = referencedRequirementCandidateCatalog(prompts);
+  return catalog.overflowCandidate ? [...catalog.candidates, catalog.overflowCandidate] : catalog.candidates;
+}
+
+export function referencedRequirementCandidateCatalog(
+  prompts: readonly TaskVerificationSourcePrompt[],
+): RequirementSourceCandidateCatalog {
+  return boundedCandidateCatalog(extractRequirementSourceCandidates(prompts));
+}
+
+export function activeRequirementSourceCandidateCatalog(
+  prompts: readonly TaskVerificationSourcePrompt[],
+  acceptedDeauthorizedPaths: readonly string[] = [],
+): RequirementSourceCandidateCatalog {
+  const accepted = new Set(acceptedDeauthorizedPaths);
+  const candidates = extractRequirementSourceCandidates(prompts).filter((candidate) => !accepted.has(candidate.path));
+  return boundedCandidateCatalog(candidates);
+}
+
+export function requirementSourcePathReferencedByPrompt(prompt: TaskVerificationSourcePrompt, path: string): boolean {
+  return extractRequirementSourceCandidates([prompt]).some((candidate) => candidate.path === path);
 }
 
 export function prepareReferencedRequirementSources(
@@ -74,7 +88,11 @@ export function prepareReferencedRequirementSources(
   reusableReferences: readonly TaskVerificationRequirementSourceRef[] = [],
   protectedPaths: readonly string[] = [],
 ): PreparedRequirementSourceSelection | string {
-  const candidates = referencedRequirementCandidates(prompts);
+  const catalog = referencedRequirementCandidateCatalog(prompts);
+  if (catalog.overflow) {
+    return `More than ${MAX_REQUIREMENT_SOURCE_CANDIDATES} requirement-source candidates were referenced. Ask the user to narrow the authoritative specification set.`;
+  }
+  const candidates = catalog.candidates;
   const selectionError = validateSelection(candidates, prompts, selectedPaths, ignoredPaths, protectedPaths);
   if (selectionError) return selectionError;
 
@@ -134,7 +152,9 @@ export function requirementSourceSelectionMatches(
   references: readonly TaskVerificationRequirementSourceRef[],
   ignoredSources: readonly IgnoredTaskVerificationRequirementSource[],
 ): boolean {
-  const sourceCandidates = referencedRequirementCandidates(prompts);
+  const catalog = referencedRequirementCandidateCatalog(prompts);
+  if (catalog.overflow) return false;
+  const sourceCandidates = catalog.candidates;
   const candidates = sourceCandidates.map((candidate) => candidate.path).sort();
   const classified = [
     ...references.map((reference) => reference.path),
@@ -191,9 +211,6 @@ function validateSelection(
   protectedPaths: readonly string[],
 ): string | undefined {
   if (candidates.length === 0) return "No explicitly referenced requirement-source path was found.";
-  if (candidates.length > MAX_REQUIREMENT_SOURCE_CANDIDATES) {
-    return `More than ${MAX_REQUIREMENT_SOURCE_CANDIDATES} requirement-source candidates were referenced. Ask the user to narrow the authoritative specification set.`;
-  }
   if (selectedPaths.length > MAX_SELECTED_REQUIREMENT_SOURCES) {
     return `Select at most ${MAX_SELECTED_REQUIREMENT_SOURCES} requirement sources.`;
   }
@@ -233,8 +250,31 @@ function isRemoteOrAbsoluteReference(text: string, matchIndex: number): boolean 
   return /:\/\//u.test(token) || token.startsWith("/") || /^[A-Za-z][A-Za-z0-9+.-]*:/u.test(token);
 }
 
-function mapCandidates(candidates: ReadonlyMap<string, string[]>): RequirementSourceCandidate[] {
+function extractRequirementSourceCandidates(
+  prompts: readonly TaskVerificationSourcePrompt[],
+): RequirementSourceCandidate[] {
+  const candidates = new Map<string, string[]>();
+  for (const prompt of prompts) {
+    for (const match of prompt.text.matchAll(DOCUMENT_PATH_PATTERN)) {
+      if (match.index === undefined || isRemoteOrAbsoluteReference(prompt.text, match.index)) continue;
+      const normalized = normalizeRequirementSourcePath(match[0]);
+      if (!normalized) continue;
+      const promptIds = candidates.get(normalized) ?? [];
+      if (!promptIds.includes(prompt.id)) promptIds.push(prompt.id);
+      candidates.set(normalized, promptIds);
+    }
+  }
   return [...candidates].map(([path, referencedByPromptIds]) => ({ path, referencedByPromptIds }));
+}
+
+function boundedCandidateCatalog(candidates: RequirementSourceCandidate[]): RequirementSourceCandidateCatalog {
+  return {
+    candidates: candidates.slice(0, MAX_REQUIREMENT_SOURCE_CANDIDATES),
+    overflow: candidates.length > MAX_REQUIREMENT_SOURCE_CANDIDATES,
+    ...(candidates[MAX_REQUIREMENT_SOURCE_CANDIDATES]
+      ? { overflowCandidate: candidates[MAX_REQUIREMENT_SOURCE_CANDIDATES] }
+      : {}),
+  };
 }
 
 function hashJson(value: unknown): string {

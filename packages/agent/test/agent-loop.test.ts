@@ -2061,7 +2061,6 @@ describe("Explicit Completion Protocol", () => {
       ],
       { config: { completionMode: "explicit_finish" } },
     );
-
     expect(contexts).toHaveLength(1);
     expect(contexts[0].tools?.map((tool) => tool.name)).toContain(FINISH_WORK_TOOL_NAME);
     expect(messages[messages.length - 1].role).toBe("toolResult");
@@ -2073,7 +2072,6 @@ describe("Explicit Completion Protocol", () => {
       events.filter((event) => event.type === "completion_protocol" && event.event === "finish_work_called"),
     ).toHaveLength(1);
   });
-
   it("continues on assistant text without tool calls in explicit_finish", async () => {
     const { messages, events, contexts } = await runScriptedAgentLoop(
       [
@@ -2094,12 +2092,14 @@ describe("Explicit Completion Protocol", () => {
       ],
       { config: { completionMode: "explicit_finish" } },
     );
-
     expect(contexts).toHaveLength(2);
     expect(messages.map((message) => message.role)).toEqual(["user", "assistant", "user", "assistant", "toolResult"]);
     expect(getMessageText(messages[2])).toContain("finish_work");
     expect(messages[2]?.role === "user" ? messages[2].metadata?.pInternal : undefined).toBe(
       "completion_protocol_repair",
+    );
+    expect(messages[2]?.role === "user" ? messages[2].metadata?.completionProtocolRepairReason : undefined).toBe(
+      "missing_finish_work_or_tool_call",
     );
     expect(messages[messages.length - 1].role).toBe("toolResult");
     expect(

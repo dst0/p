@@ -73,9 +73,27 @@ describe("finish_work tool", () => {
       createFinishWorkToolDefinition({ taskVerificationMode: "off" }).promptGuidelines?.join(" ") ?? "";
 
     expect(evidenceGuidance).toContain("one concise completion checklist");
+    expect(evidenceGuidance).toContain("first call record_task_verification with action 'record_completion_checklist'");
+    expect(evidenceGuidance).toContain("finish_work without ready_to_finish");
+    expect(evidenceGuidance).toContain("record the checklist before the first effect");
+    expect(evidenceGuidance).toContain("ready_to_finish with evidence_refs_by_check");
+    expect(evidenceGuidance).not.toMatch(/ready_to_finish[^.]*completion checklist/iu);
     expect(evidenceGuidance).not.toContain("record_requirement_audit");
     expect(auditGuidance).toContain("record_requirement_audit");
     expect(offGuidance).not.toContain("record_task_verification");
+  });
+
+  it("defines summary as the complete verbatim user-visible response", () => {
+    const definition = createFinishWorkToolDefinition();
+    const summarySchema = definition.parameters.properties.summary;
+    const summaryDescription =
+      "description" in summarySchema && typeof summarySchema.description === "string" ? summarySchema.description : "";
+    const guidance = definition.promptGuidelines?.join(" ") ?? "";
+
+    expect(summaryDescription).toContain("complete final user-visible response");
+    expect(summaryDescription).toContain("Preserve requested structure");
+    expect(guidance).toContain("printed verbatim");
+    expect(guidance).toContain("Do not rely on an earlier assistant message");
   });
 });
 

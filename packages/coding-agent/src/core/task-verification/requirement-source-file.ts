@@ -1,5 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
+import type { Stats } from "node:fs";
 import { closeSync, constants, fstatSync, lstatSync, openSync, readSync, realpathSync } from "node:fs";
 import { isAbsolute, relative, resolve, sep } from "node:path";
 
@@ -10,6 +11,37 @@ export interface InspectedRequirementSourceFile {
   bytes: Buffer;
   text: string;
   sha256: string;
+  executable: boolean;
+}
+
+export interface RequirementSourcePathIdentity {
+  absolutePath: string;
+  physicalPath: string;
+  stat: Stats;
+}
+
+export function inspectRequirementSourcePathIdentity(
+  cwd: string,
+  documentPath: string,
+): RequirementSourcePathIdentity | string {
+  const workspaceRoot = resolve(cwd);
+  const absolutePath = resolve(workspaceRoot, documentPath);
+  const rel = relative(workspaceRoot, absolutePath);
+  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return unsafePath(documentPath);
+  try {
+    if (hasSymlinkComponent(workspaceRoot, rel)) return `Requirement source uses a symlink: ${documentPath}`;
+    const stat = lstatSync(absolutePath);
+    if (!stat.isFile() || stat.nlink !== 1) return isolatedFileError(documentPath);
+    const physicalRoot = realpathSync(workspaceRoot);
+    const physicalPath = realpathSync(absolutePath);
+    const physicalRel = relative(physicalRoot, physicalPath);
+    if (!physicalRel || physicalRel === ".." || physicalRel.startsWith(`..${sep}`) || isAbsolute(physicalRel)) {
+      return unsafePath(documentPath);
+    }
+    return { absolutePath, physicalPath, stat };
+  } catch {
+    return `Cannot inspect requirement source: ${documentPath}`;
+  }
 }
 
 export function inspectRequirementSourceFile(
@@ -17,23 +49,16 @@ export function inspectRequirementSourceFile(
   documentPath: string,
   maxBytes: number,
 ): InspectedRequirementSourceFile | string {
-  const absolute = resolve(cwd, documentPath);
-  const rel = relative(cwd, absolute);
-  if (!rel || rel === ".." || rel.startsWith(`..${sep}`) || isAbsolute(rel)) return unsafePath(documentPath);
+  const identity = inspectRequirementSourcePathIdentity(cwd, documentPath);
+  if (typeof identity === "string") return identity;
+  const { absolutePath, stat: beforeOpen } = identity;
   let descriptor: number | undefined;
   try {
-    if (hasSymlinkComponent(cwd, rel)) return `Requirement source uses a symlink: ${documentPath}`;
-    const beforeOpen = lstatSync(absolute);
-    if (!beforeOpen.isFile() || beforeOpen.nlink !== 1) return isolatedFileError(documentPath);
     if (beforeOpen.size > maxBytes) {
       return `${documentPath} exceeds the ${maxBytes}-byte requirement-source limit.`;
     }
-    const physicalRel = relative(realpathSync(cwd), realpathSync(absolute));
-    if (physicalRel === ".." || physicalRel.startsWith(`..${sep}`) || isAbsolute(physicalRel)) {
-      return unsafePath(documentPath);
-    }
     if (!isGitTracked(cwd, documentPath)) return `Requirement source must be a Git-tracked file: ${documentPath}`;
-    descriptor = openSync(absolute, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    descriptor = openSync(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
     const opened = fstatSync(descriptor);
     if (!opened.isFile() || opened.nlink !== 1 || opened.dev !== beforeOpen.dev || opened.ino !== beforeOpen.ino) {
       return isolatedFileError(documentPath);
@@ -50,13 +75,13 @@ export function inspectRequirementSourceFile(
     if (readSync(descriptor, overflow, 0, 1, offset) !== 0) {
       return `Requirement source changed while it was being read: ${documentPath}`;
     }
-    const afterRead = lstatSync(absolute);
+    const afterRead = lstatSync(absolutePath);
     if (afterRead.dev !== opened.dev || afterRead.ino !== opened.ino || afterRead.size !== opened.size) {
       return `Requirement source changed while it was being read: ${documentPath}`;
     }
     const text = decodeRequirementSourceText(bytes);
     if (typeof text !== "string") return text.error;
-    return { bytes, text, sha256: hashRequirementSourceBytes(bytes) };
+    return { bytes, text, sha256: hashRequirementSourceBytes(bytes), executable: (opened.mode & 0o111) !== 0 };
   } catch {
     return `Cannot inspect requirement source: ${documentPath}`;
   } finally {

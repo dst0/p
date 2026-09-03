@@ -97,6 +97,21 @@ describe("buildSystemPrompt", () => {
     expect(auditPrompt).toContain("audit every requirement");
   });
 
+  it("states the evidence-mode response-only and effectful completion sequences explicitly", () => {
+    const prompt = buildSystemPrompt({
+      ...baseOptions,
+      completionMode: "explicit_finish",
+      taskVerificationMode: "evidence",
+    });
+
+    expect(prompt).toContain("first call record_task_verification with action 'record_completion_checklist'");
+    expect(prompt).toContain("response-only tasks");
+    expect(prompt).toContain("finish_work without ready_to_finish");
+    expect(prompt).toContain("record the checklist before the first effect");
+    expect(prompt).toContain("ready_to_finish with evidence_refs_by_check");
+    expect(prompt).not.toMatch(/ready_to_finish[^.]*completion checklist/iu);
+  });
+
   it("does not mistake local semantic search for web research capability", () => {
     const prompt = buildSystemPrompt({
       cwd: "/test",

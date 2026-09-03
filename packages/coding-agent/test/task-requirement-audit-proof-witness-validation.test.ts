@@ -158,6 +158,9 @@ describe("requirement proof witness validation", () => {
     expect(result).not.toContain(secretValue);
     expect(result).not.toContain(frame);
     expect(result).toContain("[proof witness payload omitted]");
+    expect(result).toContain("Accepted 1 of 1 P_PROOF_V1 frames");
+    expect(result).toContain('requirementId "R1" with policy "change_artifact_bytes"');
+    expect(result).toContain('Complete proof for requirementId "R1" is stored on this evidence handle');
     expect(stored?.outputSummary).not.toContain(secretValue);
     expect(stored?.proofWitnesses).toHaveLength(1);
   });
@@ -169,7 +172,7 @@ describe("requirement proof witness validation", () => {
     expect(redacted).toEqual([{ type: "text", text: "before\n[proof witness payload omitted]\nafter" }]);
   });
 
-  it("reports a rejected proof frame immediately instead of waiting for the verdict", async () => {
+  it("reports actionable proof rejection reasons and authoritative requirement IDs immediately", async () => {
     const harness = createRequirementAuditHarness();
     const requirement = proofRequirement("remove_exact_final_byte");
     harness.controller.state.requirementAudit = {
@@ -185,17 +188,28 @@ describe("requirement proof witness validation", () => {
       candidateBase64: bytes("malformed"),
       outcome: "threw",
     });
+    const wrongRequirementFrame = proofLine(
+      { ...requirement, id: "recomputed-id" },
+      {
+        originalBase64: bytes("artifact\n"),
+        candidateBase64: bytes("artifact"),
+        outcome: "threw",
+      },
+    );
 
     const result = await recordAuditToolResult(
       harness.agent,
       "bash",
       { command: "vitest --run test/integrity.test.ts" },
-      { text: `Tests 1 passed\n${invalidFrame}` },
+      { text: `Tests 1 passed\n${invalidFrame}\n${wrongRequirementFrame}` },
     );
     const stored = harness.controller.evidence.get(auditEvidenceHandle(result));
 
-    expect(result).toContain("Recorded 0 of 1 P_PROOF_V1 frames");
-    expect(result).toContain("rejected or duplicate");
+    expect(result).toContain("Rejected 2 of 2 P_PROOF_V1 frames");
+    expect(result).toContain('facts do not satisfy policy "remove_exact_final_byte"');
+    expect(result).toContain('unknown requirementId; authoritative expected ID: "R1"');
+    expect(result).not.toContain("recomputed-id");
+    expect(result).toContain("Do not recompute requirement IDs");
     expect(stored?.proofWitnesses).toBeUndefined();
   });
 

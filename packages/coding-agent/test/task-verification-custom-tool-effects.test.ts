@@ -68,14 +68,15 @@ describe("task verification custom tool effects", () => {
     }
   });
 
-  it("keeps verification dormant for an explicitly read-only custom tool", async () => {
+  it("keeps evidence verification available for an explicitly read-only custom tool", async () => {
     const { session } = await createCustomSession(
       customTool("lookup_ticket", { kind: "read", risk: "normal", domains: [] }),
     );
     try {
       expect(session.getActiveToolNames()).toContain("lookup_ticket");
-      expect(session.getAllTools().map((tool) => tool.name)).not.toContain(TASK_VERIFICATION_TOOL_NAME);
-      expect(session._taskVerificationMode).toBe("off");
+      expect(session.getAllTools().map((tool) => tool.name)).toContain(TASK_VERIFICATION_TOOL_NAME);
+      expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
+      expect(session._taskVerificationMode).toBe("evidence");
       expect(session.agent.state.tools.find((tool) => tool.name === "lookup_ticket")?.effect).toEqual({
         kind: "read",
         risk: "normal",
@@ -109,7 +110,7 @@ describe("task verification custom tool effects", () => {
     },
   );
 
-  it("activates a dormant controller for a hidden external mutator and keeps it after the effect", async () => {
+  it("keeps a read-only evidence controller active when a hidden external mutator is used", async () => {
     const lookup = customTool("lookup_ticket", { kind: "read", risk: "normal" });
     const sendEmail = customTool(
       "send_email",
@@ -128,8 +129,8 @@ describe("task verification custom tool effects", () => {
       customTools: [lookup, sendEmail],
     });
     try {
-      expect(session._taskVerificationMode).toBe("off");
-      expect(session.getActiveToolNames()).toEqual(["lookup_ticket"]);
+      expect(session._taskVerificationMode).toBe("evidence");
+      expect(session.getActiveToolNames()).toEqual(["lookup_ticket", TASK_VERIFICATION_TOOL_NAME]);
 
       session.setActiveToolsByName(["lookup_ticket", "send_email"]);
       expect(session._taskVerificationMode).toBe("evidence");
@@ -161,7 +162,7 @@ describe("task verification custom tool effects", () => {
         "checklist",
         {
           action: "record_completion_checklist",
-          completion_checklist: ["The requested email is sent"],
+          completion_checklist: ["External effect via tool send_email completes successfully"],
         },
         undefined,
         undefined,
@@ -242,14 +243,14 @@ describe("task verification custom tool effects", () => {
         isError: false,
         context: {} as never,
       });
-      expect(session._taskVerificationMode).toBe("off");
-      expect(session.getActiveToolNames()).not.toContain(TASK_VERIFICATION_TOOL_NAME);
+      expect(session._taskVerificationMode).toBe("evidence");
+      expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
     } finally {
       session.dispose();
     }
   });
 
-  it("returns dormant verification to off when a mutator is deactivated before any effect", async () => {
+  it("keeps evidence verification available when a mutator is deactivated before any effect", async () => {
     const { session } = await createAgentSession({
       cwd,
       agentDir,
@@ -268,8 +269,8 @@ describe("task verification custom tool effects", () => {
       session.setActiveToolsByName(["lookup_ticket", "send_email"]);
       expect(session._taskVerificationMode).toBe("evidence");
       session.setActiveToolsByName(["lookup_ticket"]);
-      expect(session._taskVerificationMode).toBe("off");
-      expect(session.getActiveToolNames()).not.toContain(TASK_VERIFICATION_TOOL_NAME);
+      expect(session._taskVerificationMode).toBe("evidence");
+      expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
     } finally {
       session.dispose();
     }

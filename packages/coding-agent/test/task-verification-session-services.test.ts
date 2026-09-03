@@ -140,11 +140,12 @@ describe("task verification session wiring", () => {
     },
   );
 
-  it("keeps verification dormant for an explicit read-only tool selection", async () => {
+  it("preserves an explicit read-only tool allowlist without injecting verification", async () => {
     const { session } = await createSession({ tools: ["read"] });
     try {
       expect(session.getAllTools().map((tool) => tool.name)).not.toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.getAllTools().map((tool) => tool.name)).not.toContain(REQUIREMENT_AUDIT_TOOL_NAME);
+      expect(session.getActiveToolNames()).toEqual(["read"]);
       expect(session._taskVerificationMode).toBe("off");
       expect(session._baseSystemPromptOptions.taskVerificationMode).toBe("off");
       expect(session.systemPrompt).not.toContain("Call record_task_verification");

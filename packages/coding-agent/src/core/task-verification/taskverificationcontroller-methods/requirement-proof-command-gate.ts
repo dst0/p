@@ -1,4 +1,5 @@
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
+import { evidenceCriticalProofRequirement } from "../evidence-critical-proof.ts";
 import { isProductInvariantRequirementType } from "../requirement-risk.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, shellCommand } from "../tool-classification.ts";
@@ -18,7 +19,11 @@ export function requirementProofCommandGate(
   const evidence = [...self.evidence.values()].filter(
     (item) => item.mutationRevision === self.state.mutationRevision && !item.isError,
   );
-  const pending = (self.state.requirementAudit?.requirements ?? []).filter(
+  const proofRequirements =
+    self.mode === "evidence"
+      ? (self.state.criticalProofObligations ?? []).map(evidenceCriticalProofRequirement)
+      : (self.state.requirementAudit?.requirements ?? []);
+  const pending = [...new Map(proofRequirements.map((requirement) => [requirement.id, requirement])).values()].filter(
     (requirement) =>
       isProductInvariantRequirementType(requirement.type) &&
       (requirement.proofPolicies?.length ?? 0) > 0 &&
