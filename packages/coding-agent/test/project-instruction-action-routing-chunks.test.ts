@@ -136,8 +136,8 @@ describe("chunked project-instruction action routing", () => {
   });
 
   it.each([
-    ["package-install", "npm install exact-package", "Dependency management"],
-    ["file-delete", "rm obsolete.txt", "Deletion safety"],
+    ["package-install", "npm install release-benchmark", "Dependency management"],
+    ["file-delete", "rm git-commit-version-release.txt", "Deletion safety"],
   ])("adds defensive shell semantics for %s", async (suffix, command, title) => {
     const { session } = await createCompiledSession(suffix, [
       "## Dependency management\n\nBefore dependency installation, inspect package integrity.\n",

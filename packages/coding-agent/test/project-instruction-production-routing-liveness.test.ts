@@ -98,7 +98,11 @@ describe("production project-instruction routing", () => {
 
   it.each([
     ["git commit", ["Git"]],
+    ['git commit -m "release benchmark install"', ["Git"]],
+    ['env git -C /repo commit -m "release benchmark install"', ["Git"]],
     ["npm run release", ["Version Bump", "Changelog", "Releasing"]],
+    ["npm --prefix install run release", ["Releasing"]],
+    ["npm --loglevel install run release", ["Releasing"]],
   ])("permits %s after one bounded authoritative read", async (command, requiredTitles) => {
     const workspace = createProductionWorkspace();
     const { session } = await createAgentSession({

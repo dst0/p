@@ -19,7 +19,30 @@ const ENV_OPTIONS_WITH_SEPARATE_VALUE = new Set([
 ]);
 const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 const MAX_SPLIT_STRING_DEPTH = 4;
-
+const GIT_ACTIONS = new Set([
+  "add",
+  "branch",
+  "checkout",
+  "cherry-pick",
+  "clean",
+  "clone",
+  "commit",
+  "diff",
+  "fetch",
+  "log",
+  "merge",
+  "pull",
+  "push",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "show",
+  "stash",
+  "status",
+  "switch",
+  "tag",
+]);
 function isExecutable(token: string | undefined, name: string): boolean {
   return token === name || token?.endsWith(`/${name}`) === true;
 }
@@ -79,7 +102,7 @@ export function tokenizeShellCommands(command: string): string[][] {
   return commands;
 }
 
-function commandStart(words: readonly string[]): number {
+export function commandStart(words: readonly string[]): number {
   let index = 0;
   while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   while (isExecutable(words[index], "command") || isExecutable(words[index], "env")) {
@@ -107,12 +130,27 @@ function commandStart(words: readonly string[]): number {
   return index;
 }
 
-function gitArgumentStart(words: readonly string[]): number | undefined {
+export function gitArgumentStart(words: readonly string[]): number | undefined {
   const index = commandStart(words);
   return isExecutable(words[index], "git") ? index + 1 : undefined;
 }
 
-function shellWrapperPayload(words: readonly string[]): string | undefined {
+export function gitAction(words: readonly string[], startIndex: number): string | undefined {
+  for (let index = startIndex; index < words.length; index++) {
+    const token = words[index]!;
+    if (token === "--") return words[index + 1]?.toLocaleLowerCase("en-US");
+    if (GIT_OPTIONS_WITH_SEPARATE_VALUE.has(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("-")) continue;
+    const normalized = token.toLocaleLowerCase("en-US");
+    return GIT_ACTIONS.has(normalized) ? normalized : undefined;
+  }
+  return undefined;
+}
+
+export function shellWrapperPayload(words: readonly string[]): string | undefined {
   const startIndex = commandStart(words);
   const executable = words[startIndex]?.split("/").pop();
   if (executable === "eval") return words.slice(startIndex + 1).join(" ") || undefined;
@@ -123,7 +161,7 @@ function shellWrapperPayload(words: readonly string[]): string | undefined {
   return commandIndex >= 0 ? words[commandIndex + 1] : undefined;
 }
 
-function envSplitStringPayload(words: readonly string[]): string | undefined {
+export function envSplitStringPayload(words: readonly string[]): string | undefined {
   let index = 0;
   while (index < words.length) {
     while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;

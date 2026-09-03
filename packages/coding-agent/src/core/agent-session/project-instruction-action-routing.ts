@@ -1,5 +1,6 @@
 import { type PreparedProjectInstructions, selectProjectInstructionRuleLinks } from "../project-instructions/index.ts";
 import { tokenizeShellCommands } from "../task-verification/git-command-classification.ts";
+import { shellCommandActionIdentities } from "../task-verification/shell-command-action-identities.ts";
 import {
   isDirectMutationTool,
   isRecognizedBashMutation,
@@ -13,6 +14,7 @@ import { MAX_PROJECT_RULE_LINKS_PER_TURN } from "./state-types.ts";
 
 const ACTION_ROUTING_CHUNK_LENGTH = 16_384;
 const ACTION_ROUTING_CHUNK_OVERLAP = 500;
+const PACKAGE_EXECUTABLES = new Set(["bun", "cargo", "npm", "pnpm", "yarn"]);
 
 export function stageProjectInstructionActionBatch(
   self: AgentSession,
@@ -31,12 +33,15 @@ export function stageProjectInstructionActionBatch(
   const customDescription = toolEntry?.sourceInfo.source === "builtin" ? undefined : toolEntry?.definition.description;
   const actionQuery = describeAction(toolName, args, customDescription).join("\n");
   const actionLinks = selectProjectInstructionRuleLinks(prepared.manifest.rules, actionQuery);
-  const primaryActionLink = actionLinks[0];
+  const actionIdentityLinks = isShellTool(toolName)
+    ? selectProjectInstructionRuleLinks(prepared.manifest.rules, shellActionIdentityQuery(shellCommand(args)))
+    : [];
+  const primaryActionLink = actionIdentityLinks[0] ?? actionLinks[0];
   const links = [
     ...new Set([
       ...(primaryActionLink ? [primaryActionLink] : []),
       ...(gate.candidateLinks ?? []),
-      ...actionLinks.slice(1),
+      ...actionLinks.filter((link) => link !== primaryActionLink),
     ]),
   ].slice(0, MAX_PROJECT_RULE_LINKS_PER_TURN);
   if (links.length === 0) return;
@@ -113,6 +118,22 @@ function addShellSemantics(labels: Set<string>, command: string, mutates: boolea
   }
   if ([...names].some((name) => /^(?:biome|prettier)$/u.test(name))) labels.add("format formatting");
   if ([...names].some((name) => /^(?:migrate|migration)$/u.test(name))) labels.add("database migration");
+}
+
+function shellActionIdentityQuery(command: string): string {
+  return shellCommandActionIdentities(command)
+    .map(({ executable, action, script }) => {
+      if (["rm", "rmdir", "trash", "unlink"].includes(executable)) {
+        return `${executable} file delete deletion remove removal`;
+      }
+      if (PACKAGE_EXECUTABLES.has(executable)) {
+        if (!action) return "";
+        return [executable, action, script].filter((token) => token !== undefined).join(" ");
+      }
+      return [executable, action].filter((token) => token !== undefined).join(" ");
+    })
+    .filter((identity) => identity.length > 0)
+    .join("\n");
 }
 
 function isTestInvocation(words: readonly string[]): boolean {
