@@ -139,13 +139,10 @@ function resolveWithin(root: string, relativePath: string): string {
   return realTarget;
 }
 
+const INVALID_PATH_PATTERN = /(?:^|[\\/])(?:\.\.?|)(?:[\\/]|$)/u;
+
 function assertLogicalLink(link: string): void {
-  if (
-    !link ||
-    isAbsolute(link) ||
-    link.includes("\\") ||
-    link.split("/").some((part) => !part || part === "." || part === "..")
-  ) {
+  if (!link || isAbsolute(link) || link.includes("\\") || INVALID_PATH_PATTERN.test(link)) {
     throw new ProjectInstructionReadError(`Invalid relative catalog link: ${link}`);
   }
 }

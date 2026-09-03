@@ -20,3 +20,7 @@
 **Learning:** `minimatch(filePath, pattern)` creates a new RegExp every time. Inside a loop that processes many files against many patterns (like in `matchesAnyPattern` and `applyPatterns` for package managers), this is a significant bottleneck, causing O(N*P) regex compilations. The same applies for filtering large sets of models against a glob pattern.
 **Action:** When matching against multiple items, ALWAYS use `new Minimatch(pattern)` before the loop and use `compiledMatcher.match(item)` inside the loop to avoid redundant regex recompilations.
 
+
+## 2024-07-24 - Replace path splitting with pre-compiled regex in hot loops
+**Learning:** Using `path.split(/[\\/]/).some(part => !part || part === '.' || part === '..')` inside a hot loop is very slow because it forces string allocation for the split array and iterates over it every time.
+**Action:** When validating path segments in high-frequency functions (like `readSafeVersionFile`), use a pre-compiled regex like `/(?:^|[\\/])(?:\.\.?|)(?:[\\/]|$)/u` with `.test()` to validate the structure in O(1) time without any intermediate array allocations.
