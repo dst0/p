@@ -2,5 +2,5 @@
   "schemaVersion": 1,
   "packages": ["coding-agent"],
   "type": "None",
-  "summary": "Harden non-user-facing project-instruction benchmark evidence with exact markers, source identity, trusted prompt projections, and public-schema retention."
+  "summary": "Record non-user-facing project-instruction benchmark evidence and the stop-on-regression result."
 }

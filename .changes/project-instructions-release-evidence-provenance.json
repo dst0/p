@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Harden internal benchmark marker, source-identity, prompt-projection, and public-schema evidence while preserving the immutable historical fragment."
+}
