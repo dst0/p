@@ -8,7 +8,7 @@ export function formatEvidenceNextAction(self: TaskVerificationController): stri
   }
   if (self.state.readiness?.status === "completion_ready" && self.state.readiness.token) {
     return [
-      `Call finish_work with verification_token "${self.state.readiness.token}".`,
+      "Call finish_work with status success; omit verification_token for controller autofill.",
       ...formatCompletionChecklist(self),
     ].join("\n");
   }
@@ -19,7 +19,7 @@ export function formatEvidenceNextAction(self: TaskVerificationController): stri
     ].join("\n");
   }
   return [
-    'Collect fresh verification evidence, then call record_task_verification with action "ready_to_finish" and evidence_refs_by_check aligned by index to this checklist:',
+    'Collect fresh verification evidence, then call record_task_verification once with action "ready_to_finish"; the controller selects and validates the current evidence batch:',
     ...formatCompletionChecklist(self),
   ].join("\n");
 }

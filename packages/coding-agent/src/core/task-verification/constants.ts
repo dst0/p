@@ -138,9 +138,6 @@ export const EvidenceVerificationSchema = Type.Object(
     source_output_paths: Type.Optional(
       Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
     ),
-    evidence_refs_by_check: Type.Optional(
-      Type.Array(Type.Array(Type.String(), { minItems: 1, maxItems: 8 }), { minItems: 1, maxItems: 12 }),
-    ),
   },
   { additionalProperties: false },
 );

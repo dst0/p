@@ -120,6 +120,32 @@ export function evidenceMatchesRequirement(requirement: TaskRequirement, selecto
   return overlap.size >= Math.min(2, requirementTerms.size);
 }
 
+export function evidenceBatchMatchesRequirement(requirement: TaskRequirement, selectors: readonly string[]): boolean {
+  if (selectors.some((selector) => evidenceMatchesRequirement(requirement, [selector]))) return true;
+  const text = `${requirement.text}\n${requirement.acceptanceCriterion}`;
+  const domains = domainFamilies(text);
+  const subjects = new Set(relevantTerms(text));
+  const behaviors = semanticFamilies(requirement.acceptanceCriterion, BEHAVIOR_FAMILIES);
+  const qualifiers = qualifierPolarities(text);
+  const compatible = selectors.filter((selector) => {
+    const selectorDomains = domainFamilies(selector);
+    if (![...domains].some((domain) => selectorDomains.has(domain))) return false;
+    const overlap = new Set(relevantTerms(selector).filter((term) => subjects.has(term)));
+    if (overlap.size < Math.min(2, subjects.size)) return false;
+    const selectorBehaviors = semanticFamilies(selector, BEHAVIOR_FAMILIES);
+    if (
+      behaviors.size > 0 &&
+      selectorBehaviors.size > 0 &&
+      ![...behaviors].some((behavior) => selectorBehaviors.has(behavior))
+    ) {
+      return false;
+    }
+    // Only check contradictions here; complete qualifier coverage is required for the final batch below.
+    return hasQualifierCoverage(qualifiers, new Set([...qualifiers, ...qualifierPolarities(selector)]));
+  });
+  return evidenceMatchesRequirement(requirement, compatible);
+}
+
 function domainFamilies(value: string): Set<number> {
   const specific = semanticFamilies(value, HIGH_RISK_DOMAINS);
   const normalized = normalizedTerms(value).join(" ");

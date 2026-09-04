@@ -43,6 +43,10 @@ Provider prompt-cache reuse is separate from compaction. During normal turns, pr
 
 Interrupted provider streams do not resume. After a dropped connection or killed p process, the next prompt with the same session id is a fresh provider request. Prompt-cache reuse depends on the saved provider-visible prefix and any intermediary checkpoint restore, not on continuing the previous stream. Cache-stability tests should therefore verify that post-interruption turns reuse or restore cache on the next request and that no non-compaction turn falls back to full prompt prefill.
 
+A provider response that ends at its output-token limit is persisted before the controller requests its continuation. Post-compaction truncation preserves unanswered controller-generated continuation and completion-repair messages verbatim, including when user steering follows them. These messages are execution instructions, not historical prose to summarize. A later non-error assistant response makes the earlier control message ordinary compactable history; a provider overflow error does not count as an answer, while explicit cancellation remains terminal. Copying the instruction wording into a user message does not grant this exemption. Preserved control content still counts toward the final provider capacity check.
+
+Overflow retry restores the latest user message from its authoritative branch entry at its retained position, even if truncation changed its text. It appends that message only when the entry is absent from the rebuilt context. A trailing compaction summary is not evidence that user steering is missing; recovery must not duplicate the message or identify it by matching text and timestamps.
+
 You can also trigger manually with `/compact [instructions]`, where optional instructions focus the summary.
 
 ### How It Works

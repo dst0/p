@@ -53,19 +53,18 @@ describe("external-effect readiness binding", () => {
     );
   });
 
-  it("rejects a semantic readback that omits its external-effect receipt", async () => {
+  it("automatically pairs a semantic readback with its controller-owned receipt", async () => {
     const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
     const agent = new Agent();
     controller.install(agent);
     await recordExternalEffect(controller, agent, "The meeting is scheduled");
-    const readbackRef = await recordReadback(controller, agent, "declared_connector");
+    await recordReadback(controller, agent, "declared_connector");
     expect(
       await callVerification(controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[readbackRef]],
         unresolved_failures: [],
       }),
-    ).toContain("must be paired with its compatible external-effect receipt");
+    ).toContain("verification_token:");
   });
 
   it("restores metadata-only connector readback evidence without arguments or payloads", async () => {
@@ -73,7 +72,7 @@ describe("external-effect readiness binding", () => {
     const initial = createTaskVerificationController(sessionManager, "evidence");
     const initialAgent = new Agent();
     initial.install(initialAgent);
-    const receiptRef = await recordExternalEffect(initial, initialAgent, "The meeting is scheduled");
+    await recordExternalEffect(initial, initialAgent, "The meeting is scheduled");
     const readbackRef = await recordReadback(initial, initialAgent, "declared_connector");
     const persisted = JSON.stringify(sessionManager.getBranch());
     expect(persisted).not.toContain("sensitive remote payload");
@@ -91,7 +90,6 @@ describe("external-effect readiness binding", () => {
     expect(
       await callVerification(restored, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[receiptRef, readbackRef]],
         unresolved_failures: [],
       }),
     ).toContain("verification_token:");
@@ -101,12 +99,11 @@ describe("external-effect readiness binding", () => {
     const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
     const agent = new Agent();
     controller.install(agent);
-    const receiptRef = await recordExternalEffect(controller, agent, "The meeting is scheduled");
-    const readbackRef = await recordReadback(controller, agent, "declared_connector");
+    await recordExternalEffect(controller, agent, "The meeting is scheduled");
+    await recordReadback(controller, agent, "declared_connector");
     expect(
       await callVerification(controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[receiptRef, readbackRef]],
         unresolved_failures: [],
       }),
     ).toContain("verification_token:");
@@ -116,7 +113,6 @@ describe("external-effect readiness binding", () => {
     expect(
       await callVerification(controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[receiptRef, readbackRef]],
         unresolved_failures: [],
       }),
     ).toContain("unconfirmed reads do not prove remote state");
@@ -127,11 +123,10 @@ async function readinessFor(criterion: string, readback?: ReadbackKind): Promise
   const controller = createTaskVerificationController(SessionManager.inMemory(), "evidence");
   const agent = new Agent();
   controller.install(agent);
-  const evidenceRef = await recordExternalEffect(controller, agent, criterion);
-  const readbackRef = readback ? await recordReadback(controller, agent, readback) : undefined;
+  await recordExternalEffect(controller, agent, criterion);
+  if (readback) await recordReadback(controller, agent, readback);
   return callVerification(controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: [[evidenceRef, ...(readbackRef ? [readbackRef] : [])]],
     unresolved_failures: [],
   });
 }

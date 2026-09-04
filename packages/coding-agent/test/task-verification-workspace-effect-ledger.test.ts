@@ -134,9 +134,9 @@ async function readyEvidenceTask(cwd: string, sessionManager = SessionManager.in
   );
   const ready = await callVerification(controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: [[evidenceRef]],
     unresolved_failures: [],
   });
+  expect(controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toContain(evidenceRef);
   return { agent, controller, ready, sessionManager };
 }
 
@@ -234,9 +234,9 @@ describe("evidence-mode workspace effect ledger", () => {
     );
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
+    expect(controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toContain(evidenceRef);
     const exact = ["settings.json", "docs/guide.md", "public/logo.svg", "public/current-logo.svg"];
     const token = controller.currentState.readiness?.token;
     expect(controller.currentState.taskOwnedPaths).toEqual([
@@ -285,9 +285,10 @@ describe("evidence-mode workspace effect ledger", () => {
     expect(controller.evidence.get(evidenceRef)?.testOutcome).toBe("unconfirmed");
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
-    expect(ready).toContain("maps no successful current-revision test evidence");
+    expect(ready).toContain("no successful current-revision test evidence is available");
+    expect(ready).not.toContain("verification_token:");
+    expect(controller.currentState.readiness?.status).not.toBe("completion_ready");
   });
 });

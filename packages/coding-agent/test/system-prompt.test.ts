@@ -32,7 +32,8 @@ describe("buildSystemPrompt", () => {
       "restore only contract-declared reversible state",
       "re-read the original request and authoritative sources",
       "one concise completion checklist",
-      "map each checklist item to direct evidence",
+      "collect direct evidence",
+      "or manually map evidence per checklist item",
       "Do not expand free text into an exhaustive formal clause matrix",
       "Preserve exact requested formats and boundaries",
       "whitespace, framing, ordering, units, or byte-level representation",
@@ -108,7 +109,7 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toContain("response-only tasks");
     expect(prompt).toContain("finish_work without ready_to_finish");
     expect(prompt).toContain("record the checklist before the first effect");
-    expect(prompt).toContain("ready_to_finish with evidence_refs_by_check");
+    expect(prompt).toContain("ready_to_finish once without manually mapping evidence handles");
     expect(prompt).not.toMatch(/ready_to_finish[^.]*completion checklist/iu);
   });
 

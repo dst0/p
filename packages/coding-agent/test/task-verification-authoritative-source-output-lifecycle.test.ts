@@ -24,7 +24,7 @@ const ORIGINAL_FORMAT = [
 const UPDATED_FORMAT = `${ORIGINAL_FORMAT}Clarification: preserve configured record order.\n`;
 
 describe("authoritative source requested as task output", () => {
-  it("preserves immutable source authority while allowing an explicitly declared edit", async () => {
+  it.each(["focused", "output"])("preserves immutable source authority with the %s proof first", async (first) => {
     const cwd = createRepository();
     const harness = createEvidenceHarness(cwd);
     try {
@@ -52,15 +52,22 @@ describe("authoritative source requested as task output", () => {
         harness.controller.currentState.criticalProofSourceOutputs,
       );
 
-      const proofRef = evidenceHandle(await focusedProof(harness, original.id));
-      const outputRef = evidenceHandle(await exactOutputProof(harness));
-      expect(await ready(harness, [[proofRef], [proofRef]])).not.toContain("verification_token:");
-      expect(await ready(harness, [[outputRef], [outputRef]])).not.toContain("verification_token:");
-      const readiness = await ready(harness, [
-        [proofRef, outputRef],
-        [proofRef, outputRef],
-      ]);
+      const firstRef = evidenceHandle(
+        await (first === "focused" ? focusedProof(harness, original.id) : exactOutputProof(harness)),
+      );
+      const incomplete = await ready(harness);
+      expect(incomplete).not.toContain("verification_token:");
+      expect(incomplete).toContain(first === "focused" ? exactOutputCriterion() : "P_PROOF_V1 exact-byte witness");
+      expect(harness.controller.currentState.readiness?.status).not.toBe("completion_ready");
+      const secondRef = evidenceHandle(
+        await (first === "focused" ? exactOutputProof(harness) : focusedProof(harness, original.id)),
+      );
+      const readiness = await ready(harness);
       expect(readiness).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks.map((check) => check.evidenceRefs)).toEqual([
+        [firstRef, secondRef],
+        [firstRef, secondRef],
+      ]);
       expect((await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" }))?.block).not.toBe(true);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -89,14 +96,9 @@ describe("authoritative source requested as task output", () => {
           completion_checklist: completionChecklist(original),
         }),
       ).toContain("must be declared before the task first mutates FORMAT.md");
-      const proofRef = evidenceHandle(await focusedProof(harness, original.id));
-      const outputRef = evidenceHandle(await exactOutputProof(harness));
-      expect(
-        await ready(harness, [
-          [proofRef, outputRef],
-          [proofRef, outputRef],
-        ]),
-      ).toContain("changed after its critical proof boundary was recorded");
+      evidenceHandle(await focusedProof(harness, original.id));
+      evidenceHandle(await exactOutputProof(harness));
+      expect(await ready(harness)).toContain("changed after its critical proof boundary was recorded");
       expect((await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" }))?.reason).toContain(
         "changed after its critical proof boundary was recorded",
       );
@@ -147,7 +149,11 @@ describe("authoritative source requested as task output", () => {
       const absentRef = evidenceHandle(
         await afterEvidenceTool(harness.agent, "bash", absentArgs, "FORMAT.md absent", absentCall),
       );
-      expect(await ready(harness, [[absentRef], [proofRef]])).toContain("verification_token:");
+      expect(await ready(harness)).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([
+        proofRef,
+        absentRef,
+      ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -246,13 +252,9 @@ function proofFrame(requirementId: string): string {
   })}`;
 }
 
-async function ready(
-  harness: ReturnType<typeof createEvidenceHarness>,
-  evidenceRefsByCheck: string[][],
-): Promise<string> {
+async function ready(harness: ReturnType<typeof createEvidenceHarness>): Promise<string> {
   return callEvidenceVerification(harness.controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: evidenceRefsByCheck,
     unresolved_failures: [],
   });
 }

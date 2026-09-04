@@ -76,7 +76,7 @@ describe("finish_work tool", () => {
     expect(evidenceGuidance).toContain("first call record_task_verification with action 'record_completion_checklist'");
     expect(evidenceGuidance).toContain("finish_work without ready_to_finish");
     expect(evidenceGuidance).toContain("record the checklist before the first effect");
-    expect(evidenceGuidance).toContain("ready_to_finish with evidence_refs_by_check");
+    expect(evidenceGuidance).toContain("ready_to_finish once without manually mapping evidence handles");
     expect(evidenceGuidance).not.toMatch(/ready_to_finish[^.]*completion checklist/iu);
     expect(evidenceGuidance).not.toContain("record_requirement_audit");
     expect(auditGuidance).toContain("record_requirement_audit");

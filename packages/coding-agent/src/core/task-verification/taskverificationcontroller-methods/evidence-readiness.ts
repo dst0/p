@@ -6,24 +6,14 @@ import { revalidateCriticalProofSources } from "../evidence-critical-proof-obser
 import { testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, normalizeStrings } from "../tool-classification.ts";
-import type {
-  EvidenceVerificationInput,
-  TaskVerificationAcceptanceCheck,
-  TaskVerificationEvidence,
-  VerificationResult,
-} from "../types.ts";
+import type { EvidenceVerificationInput, TaskVerificationEvidence, VerificationResult } from "../types.ts";
 import { normalizedFilesChanged } from "../workspace-effect-state.ts";
 import { currentCompletionChecklist } from "./completion-checklist.ts";
 import {
   validateCriticalProofEvidence,
   validateHighRiskChecklistEvidence,
 } from "./evidence-focused-proof-validation.ts";
-import {
-  evidenceHasRecordedExternalEffect,
-  externalEffectReceiptHasCompatibleReadback,
-  externalEffectReceiptSupportsCriterion,
-} from "./external-effect-receipt.ts";
-import { evidenceIsDeclaredExternalReadback } from "./external-readback-evidence.ts";
+import { selectEvidenceForReadiness } from "./evidence-readiness-selection.ts";
 import { computeTaskEffectStateHash } from "./task-effect-state-hash.ts";
 import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
 import { zeroEffectCompletionGate } from "./zero-effect-completion-gate.ts";
@@ -82,7 +72,7 @@ export function readyToFinishWithEvidence(
 
   const checklist = currentCompletionChecklist(self);
   if (typeof checklist === "string") return self.rejected(checklist);
-  const mapped = validateCompletionChecklist(self, checklist.criteria, input.evidence_refs_by_check ?? []);
+  const mapped = selectEvidenceForReadiness(self, checklist.criteria);
   if (typeof mapped === "string") return self.rejected(mapped);
   const criticalProofError = validateCriticalProofEvidence(self, mapped.checks, mapped.evidence);
   if (criticalProofError) return self.rejected(criticalProofError);
@@ -167,55 +157,6 @@ export function completionGateWithEvidence(
   return undefined;
 }
 
-function validateCompletionChecklist(
-  self: TaskVerificationController,
-  criteria: readonly string[],
-  evidenceRefsByCheck: readonly string[][],
-): { checks: TaskVerificationAcceptanceCheck[]; evidence: Map<string, TaskVerificationEvidence> } | string {
-  if (evidenceRefsByCheck.length !== criteria.length) {
-    return `ready_to_finish requires exactly one evidence_refs_by_check entry for each of the ${criteria.length} frozen completion checklist items.`;
-  }
-  const checks: TaskVerificationAcceptanceCheck[] = [];
-  const evidence = new Map<string, TaskVerificationEvidence>();
-  const usedExternalReceipts = new Set<string>();
-  for (const [index, criterion] of criteria.entries()) {
-    const resolved = self.resolveEvidence(evidenceRefsByCheck[index]);
-    if (typeof resolved === "string") return `${criterion}: ${resolved}`;
-    if (
-      resolved.some(
-        (item) =>
-          item.mutationRevision !== self.state.mutationRevision && !evidenceHasRecordedExternalEffect(self, item),
-      )
-    ) {
-      return `${criterion}: all evidence must come from mutation revision ${self.state.mutationRevision}.`;
-    }
-    if (resolved.some((item) => item.isError)) return `${criterion}: failed evidence cannot prove readiness.`;
-    if (
-      resolved.some(evidenceIsDeclaredExternalReadback) &&
-      !resolved.some((item) => evidenceHasRecordedExternalEffect(self, item))
-    ) {
-      return `${criterion}: a declared external readback must be paired with its compatible external-effect receipt in the same checklist item.`;
-    }
-    for (const item of resolved) {
-      if (evidenceHasRecordedExternalEffect(self, item)) {
-        if (
-          !externalEffectReceiptSupportsCriterion(self, item, criterion) &&
-          !externalEffectReceiptHasCompatibleReadback(self, item, resolved, criterion)
-        ) {
-          return `${criterion}: receipt ${item.externalEffectReceiptId} proves only successful tool execution. Use the exact item "External effect via tool ${item.toolName} completes successfully" (number it when needed), or map this item to both the receipt and a later declared readback carrying explicit confirmed readback proof for this receipt and exact criterion. Shell/file, negative, wrong-resource, and unconfirmed reads do not prove remote state.`;
-        }
-        if (usedExternalReceipts.has(item.externalEffectReceiptId!)) {
-          return `${criterion}: one external-effect receipt may prove only one checklist item; map a distinct receipt for each additional item.`;
-        }
-        usedExternalReceipts.add(item.externalEffectReceiptId!);
-      }
-      evidence.set(item.ref, item);
-    }
-    checks.push({ criterion, evidenceRefs: resolved.map((item) => item.ref) });
-  }
-  return { checks, evidence };
-}
-
 function evidenceReadinessError(self: TaskVerificationController, action: string): string | undefined {
   const criticalSourceError = sourceRevalidationError(self);
   if (criticalSourceError) return `Cannot ${action}: ${criticalSourceError}`;
@@ -229,7 +170,7 @@ function evidenceReadinessError(self: TaskVerificationController, action: string
     !readiness.effectStateHash ||
     readiness.acceptanceChecks.length === 0
   ) {
-    return `Cannot ${action}: call record_task_verification with action "ready_to_finish" and map the completion checklist to fresh evidence first.`;
+    return `Cannot ${action}: collect fresh verification evidence, then call record_task_verification with action "ready_to_finish"; the controller selects the evidence batch automatically.`;
   }
   const currentHash = computeTaskEffectStateHash(self);
   if (!currentHash || currentHash !== readiness.effectStateHash) {
@@ -247,11 +188,7 @@ function evidenceReadinessError(self: TaskVerificationController, action: string
   ) {
     return `Cannot ${action}: the completion checklist changed after readiness; collect fresh evidence and call ready_to_finish again.`;
   }
-  const revalidated = validateCompletionChecklist(
-    self,
-    checklist.criteria,
-    readiness.acceptanceChecks.map((check) => check.evidenceRefs),
-  );
+  const revalidated = selectEvidenceForReadiness(self, checklist.criteria);
   if (typeof revalidated === "string") return `Cannot ${action}: ${revalidated}`;
   const criticalProofError = validateCriticalProofEvidence(self, revalidated.checks, revalidated.evidence);
   if (criticalProofError) return `Cannot ${action}: ${criticalProofError}`;
@@ -282,13 +219,13 @@ function requestedEvidenceError(
         isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && evidenceHasPositivePassingTestResult(item),
     )
   ) {
-    return "The task explicitly requires tests, but the completion checklist maps no successful current-revision test evidence.";
+    return "The task explicitly requires tests, but no successful current-revision test evidence is available.";
   }
   if (
     typecheckRequested(taskText) &&
     !mappedEvidence.some((item) => isShellTool(item.toolName) && TYPECHECK_PATTERN.test(item.descriptor))
   ) {
-    return "The task explicitly requires type checking, but the completion checklist maps no successful current-revision typecheck evidence.";
+    return "The task explicitly requires type checking, but no successful current-revision typecheck evidence is available.";
   }
   return undefined;
 }

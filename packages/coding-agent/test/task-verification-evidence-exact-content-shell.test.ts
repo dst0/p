@@ -40,20 +40,18 @@ describe("evidence-mode exact non-code content shell proof", () => {
       const wrongCommand = "diff <(printf 'build: red\\ndeploy: blocked\\n') status.txt";
       const wrongCall = evidenceToolCall("bash", { command: wrongCommand });
       await afterEvidenceTool(harness.agent, "bash", { command: wrongCommand }, "1c1,2", wrongCall, true);
+      const rejected = await callEvidenceVerification(harness.controller, {
+        action: "ready_to_finish",
+        unresolved_failures: [],
+      });
+      expect(rejected).not.toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.status).not.toBe("completion_ready");
       const command = "diff <(printf 'build: green\\ndeploy: ready\\n') status.txt";
       const exactCall = evidenceToolCall("bash", { command });
       await afterEvidenceTool(harness.agent, "bash", { command }, "", exactCall);
 
-      const rejected = await callEvidenceVerification(harness.controller, {
-        action: "ready_to_finish",
-        evidence_refs_by_check: [[`@${wrongCall.id}`]],
-        unresolved_failures: [],
-      });
-      expect(rejected).toContain("failed evidence cannot prove readiness");
-
       const result = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[`@${exactCall.id}`]],
         unresolved_failures: [],
       });
       expect(result).toContain("verification_token:");
@@ -94,33 +92,24 @@ describe("evidence-mode exact non-code content shell proof", () => {
       writeFileSync(join(cwd, "other.txt"), STATUS_CONTENT);
       await afterEvidenceTool(harness.agent, "write", otherWriteArgs, "wrote other.txt", otherWriteCall);
 
-      const readEvidence = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "read", { path: "status.txt" }, STATUS_CONTENT),
-      );
+      await afterEvidenceTool(harness.agent, "read", { path: "status.txt" }, STATUS_CONTENT);
       const readOnly = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[readEvidence]],
         unresolved_failures: [],
       });
       expect(readOnly).toContain("requires a relevant focused passing test");
 
-      const genericEvidence = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 42 passed"),
-      );
+      await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 42 passed");
       const genericReady = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[genericEvidence]],
         unresolved_failures: [],
       });
       expect(genericReady).toContain("requires a relevant focused passing test");
 
       const unrelatedCommand = "diff <(printf 'build: green\\ndeploy: ready\\n') other.txt";
-      const unrelatedEvidence = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "bash", { command: unrelatedCommand }, ""),
-      );
+      await afterEvidenceTool(harness.agent, "bash", { command: unrelatedCommand }, "");
       const unrelatedReady = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[unrelatedEvidence]],
         unresolved_failures: [],
       });
       expect(unrelatedReady).toContain("requires a relevant focused passing test");
@@ -134,7 +123,6 @@ describe("evidence-mode exact non-code content shell proof", () => {
       );
       const exactReady = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[exactEvidence]],
         unresolved_failures: [],
       });
       expect(exactReady).toContain("verification_token:");
@@ -142,7 +130,6 @@ describe("evidence-mode exact non-code content shell proof", () => {
       writeFileSync(join(cwd, "status.txt"), "build: red\ndeploy: blocked\n");
       const changedReady = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[exactEvidence]],
         unresolved_failures: [],
       });
       expect(changedReady).toContain("requires a relevant focused passing test");

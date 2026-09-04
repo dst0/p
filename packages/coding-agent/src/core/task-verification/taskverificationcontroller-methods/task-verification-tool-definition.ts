@@ -22,7 +22,7 @@ export function createTaskVerificationToolDefinition(
         : 'Record or inspect evidence-backed baseline, final semantic verification, and finish readiness for mutating tasks. Use action "status" whenever the required next step is unclear, especially after compaction or session restore.',
     promptSnippet:
       self.mode === "evidence"
-        ? "record_task_verification(action, ...): classify only unrecognized intent, record one completion checklist, then after effects map it to fresh evidence before successful finish_work."
+        ? "record_task_verification(action, ...): classify only unrecognized intent, record one completion checklist, then let the controller validate one current evidence batch before successful finish_work."
         : "record_task_verification(action, ...): declare mutation intent, prove baseline and final behavior, then call ready_to_finish with requirement-to-evidence mappings before successful finish_work.",
     promptGuidelines: self.mode === "evidence" ? evidenceGuidelines() : auditGuidelines(),
     parameters: self.mode === "evidence" ? EvidenceVerificationSchema : VerificationSchema,
@@ -64,9 +64,9 @@ function evidenceGuidelines(): string[] {
     "Evidence handles from prior mutation revisions become stale after any file edit. Rerun verification after the final mutation.",
     "Changed tests must pass a direct applicable test command before publication or successful completion.",
     "Complete every explicitly requested named artifact before final verification; a later write invalidates readiness.",
-    "When the user requests tests or type checking, map successful current-revision evidence for each requested check.",
-    "A metadata-only external-effect receipt remains eligible after later effects and may map once only. It proves the exact checklist form `External effect [N] via tool TOOL completes successfully` (or `The requested external effect completes successfully`). A semantic remote outcome must map the same item to both that receipt and a later declared readback whose tool returns native taskVerificationReadback proof bound to the write tool call and exact checklist criterion. A later receipt-bound outcome `not_confirmed` invalidates the earlier confirmation but never proves readiness. Shell, file, negative, wrong-resource, and unconfirmed reads do not prove remote state.",
-    "After any successful effect, call action 'ready_to_finish' once with evidence_refs_by_check aligned by index to the frozen completion checklist. Critical boundaries require focused selectors and the controller-provided same-run proof witness; a generic full-suite result or matching test name alone is insufficient.",
+    "When the user requests tests or type checking, run each requested check successfully after the final mutation; the controller selects the evidence automatically.",
+    "A metadata-only external-effect receipt remains eligible after later effects. The controller associates each receipt with at most one distinct checklist item. It proves the exact checklist form `External effect [N] via tool TOOL completes successfully` (or `The requested external effect completes successfully`). A semantic remote outcome also requires a later declared readback whose tool returns native taskVerificationReadback proof bound to the write tool call and exact checklist criterion. A later receipt-bound outcome `not_confirmed` invalidates the earlier confirmation but never proves readiness. Shell, file, negative, wrong-resource, and unconfirmed reads do not prove remote state.",
+    "After the final successful effect and final verification commands, call action 'ready_to_finish' once without manually mapping evidence handles. The controller selects one current evidence batch. Critical boundaries still require focused selectors and the controller-provided same-run proof witness; a generic full-suite result or matching test name alone is insufficient.",
     "Do not classify task kinds, define atomic requirements, infer high-risk clauses, or call record_requirement_audit in evidence mode.",
     "Successful finish_work may omit verification_token for controller autofill; if supplied, it must exactly match the token returned by ready_to_finish.",
   ];

@@ -134,7 +134,6 @@ describe("evidence-mode external effect receipts", () => {
     );
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     expect(ready).toContain("verification_token:");
@@ -156,10 +155,9 @@ describe("evidence-mode external effect receipts", () => {
   });
   it("allows an unknown successful effect through a high-risk metadata-only receipt", async () => {
     const { agent, controller } = await createEvidenceHarness();
-    const evidenceRef = evidenceHandle(await runEffect(agent, "unknown-1", "unknown"));
+    evidenceHandle(await runEffect(agent, "unknown-1", "unknown"));
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
     expect(controller.currentState.effectTrackingFailed).toBe(false);
@@ -180,24 +178,20 @@ describe("evidence-mode external effect receipts", () => {
     const secondEmail = evidenceHandle(await runEffect(agent, "email-second", "external_write", false, "send_email"));
     const ready = await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[email], [secondEmail]],
       unresolved_failures: [],
     });
     expect(ready).toContain("verification_token:");
-    const reused = await callVerification(controller, {
-      action: "ready_to_finish",
-      evidence_refs_by_check: [[email], [email]],
-      unresolved_failures: [],
-    });
-    expect(reused).toContain("one external-effect receipt may prove only one checklist item");
+    expect(controller.currentState.readiness?.acceptanceChecks.map((check) => check.evidenceRefs)).toEqual([
+      [email],
+      [secondEmail],
+    ]);
   });
 
   it("blocks an unknown effect after completion evidence without invalidating readiness", async () => {
     const { agent, controller } = await createEvidenceHarness();
-    const evidenceRef = evidenceHandle(await runEffect(agent, "known-1", "external_write"));
+    evidenceHandle(await runEffect(agent, "known-1", "external_write"));
     await callVerification(controller, {
       action: "ready_to_finish",
-      evidence_refs_by_check: [[evidenceRef]],
       unresolved_failures: [],
     });
 

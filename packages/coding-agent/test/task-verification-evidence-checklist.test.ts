@@ -2,6 +2,7 @@ import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { Value } from "typebox/value";
 import { describe, expect, it } from "vitest";
 import { SessionManager } from "../src/core/session-manager.ts";
 import {
@@ -72,7 +73,15 @@ describe("evidence-mode completion checklist", () => {
     expect(schema).toContain('"completion_checklist"');
     expect(schema).toContain('"maxItems":24');
     expect(schema).toContain('"authoritative_source_paths"');
-    expect(schema).toContain('"evidence_refs_by_check"');
+    expect(schema).not.toContain('"evidence_refs_by_check"');
+    const readinessInput = { action: "ready_to_finish", unresolved_failures: [] };
+    expect(Value.Check(controller.toolDefinition.parameters, readinessInput)).toBe(true);
+    expect(
+      Value.Check(controller.toolDefinition.parameters, {
+        ...readinessInput,
+        evidence_refs_by_check: [["verification-evidence-1"]],
+      }),
+    ).toBe(false);
     expect(schema).toContain('"const":"declare_task"');
     expect(schema).toContain('"task_kind"');
     expect(schema).not.toContain('"baseline_method"');
@@ -81,7 +90,9 @@ describe("evidence-mode completion checklist", () => {
     expect(controller.toolDefinition.description).toContain("response-only or mutating tasks");
     expect(guidelines).toContain("reread the user request and authoritative sources once");
     expect(guidelines).toContain("controller does not reconstruct an exhaustive free-text clause matrix");
-    expect(controller.toolDefinition.promptSnippet).toContain("after effects");
+    expect(controller.toolDefinition.promptSnippet).toContain(
+      "let the controller validate one current evidence batch before successful finish_work",
+    );
     expect(guidelines).toContain('"response_only" only for a user-visible answer');
     expect(guidelines).toContain('set verification_scope to "response_only", and do not call ready_to_finish');
     expect(guidelines).toContain("unclassified requested intent");
@@ -164,7 +175,6 @@ describe("evidence-mode completion checklist", () => {
       );
       const broadReady = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[broadEvidence], [broadEvidence]],
         unresolved_failures: [],
       });
       expect(broadReady).toContain("same-run P_PROOF_V1 exact-byte witness");
@@ -191,10 +201,9 @@ describe("evidence-mode completion checklist", () => {
       );
       const incompleteReady = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[exportEvidence], [truncationEvidence]],
         unresolved_failures: [],
       });
-      expect(incompleteReady).toContain("did not name the complete invariant");
+      expect(incompleteReady).toContain("do not collectively cover the complete invariant");
       const exactMetadataEvidence = evidenceHandle(
         await afterTool(
           harness.agent,
@@ -208,10 +217,14 @@ describe("evidence-mode completion checklist", () => {
       );
       const ready = await callVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[exactMetadataEvidence], [truncationEvidence]],
         unresolved_failures: [],
       });
       expect(ready).toContain("verification_token:");
+      const checks = harness.controller.currentState.readiness?.acceptanceChecks;
+      expect(checks).toHaveLength(2);
+      for (const check of checks ?? []) {
+        expect(check.evidenceRefs).toEqual([broadEvidence, exportEvidence, truncationEvidence, exactMetadataEvidence]);
+      }
 
       const finishArgs: Record<string, unknown> = { status: "success" };
       expect((await beforeTool(harness.agent, "finish_work", finishArgs))?.block).not.toBe(true);

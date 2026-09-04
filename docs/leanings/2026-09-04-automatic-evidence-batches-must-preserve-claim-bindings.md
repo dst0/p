@@ -1,0 +1,22 @@
+# 2026-09-04 — Automatic evidence batches must preserve claim bindings
+
+- **Status:** Resolved
+- **Task/context:** Replace model-authored evidence-handle matrices after rc.78 exposed repeated completion-readiness attempts.
+- **Unexpected observation or failure:** A naive union of all eligible evidence let one external receipt prove multiple outcomes and an older external receipt certify a later workspace change. Pooled test names also borrowed rejection words from unrelated tests or rejected a valid negative test when a positive test was present.
+- **Evidence:** Before-fix controller regressions reproduced all three selector failures, duplicate-receipt success, order-dependent external matching failure, and missing current workspace proof. rc.78 recorded 34 compiled and 104 legacy readiness attempts; those counts identify friction but do not alone establish the runtime benefit of this fix.
+- **Approaches tried:**
+  - **Attempt:** Require the model to supply one evidence-handle list per checklist item.
+    - **Outcome:** Partial
+    - **Why:** Correctness checks remained available, but the model repeatedly managed administrative associations already known to the controller.
+  - **Attempt:** Associate every current evidence handle with every item and union all focused selectors.
+    - **Outcome:** Did not work
+    - **Why:** Eligibility does not establish relevance or distinct-effect identity; unrelated tests can contaminate a lexical union.
+  - **Attempt:** Cover every historical external receipt with a frozen checklist item.
+    - **Outcome:** Rejected before adoption
+    - **Why:** Intermediate draft/update/send operations would require predicting tool-call counts rather than describing requested outcomes.
+- **Root cause:** Removing model-owned bookkeeping also removed per-claim association boundaries. A successful tool result cannot donate its identity, revision, or semantic polarity to another claim.
+- **Resolution:** Readiness takes no evidence-handle matrix. The controller separates current ordinary evidence from external receipts, assigns a sufficient distinct compatible receipt subset to external criteria with order-independent matching, and combines only compatible focused selector contributions. An independently sufficient focused case is not poisoned by unrelated positive results. Same-run critical witnesses and final effect-state revalidation remain mandatory.
+- **Verification:** Focused controller suites passed after the pre-fix failures, including external receipt cardinality/order, intermediate effects, mixed workspace freshness, incompatible-selector donation, and positive/negative isolation. Full-suite and live performance gates remain separate release requirements; this record does not assert a benchmark speedup.
+- **Prevention/follow-up:** Preserve both success and rejection cases when removing caller-authored mappings. Prove that each individual partial boundary is insufficient before accepting their combined evidence. Use a short live coding and noncoding probe before another full benchmark.
+- **Reusable learning:** Automate evidence selection without flattening provenance. Eligibility, relevance, freshness, and distinct effect identity are separate checks.
+- **References:** `packages/coding-agent/test/task-verification-focused-evidence-batch-isolation.test.ts`, `packages/coding-agent/test/task-verification-external-effect-selection.test.ts`, `packages/coding-agent/docs/usage.md#evidence-backed-completion`.

@@ -53,7 +53,7 @@ function verificationPromptGuideline(mode: TaskVerificationMode): string | undef
   if (mode === "audit") {
     return "For successful mutating tasks, call record_task_verification with action 'ready_to_finish', submit one complete record_requirement_audit verdict batch, then pass the resulting verification_token unchanged.";
   }
-  return "In evidence mode, for response-only tasks first call record_task_verification with action 'record_completion_checklist' and verification_scope 'response_only' to record one concise completion checklist, then call finish_work without ready_to_finish. For mutating or effectful tasks, record the checklist before the first effect; after the final effect, call ready_to_finish with evidence_refs_by_check, then pass the resulting verification_token unchanged. Do not construct an exhaustive clause-to-requirement matrix.";
+  return "In evidence mode, for response-only tasks first call record_task_verification with action 'record_completion_checklist' and verification_scope 'response_only' to record one concise completion checklist, then call finish_work without ready_to_finish. For mutating or effectful tasks, record the checklist before the first effect; after the final effect and verification, call ready_to_finish once without manually mapping evidence handles, then pass the resulting verification_token unchanged. Do not construct an exhaustive clause-to-requirement matrix.";
 }
 
 function validateFinishWorkInput(input: FinishWorkInput): string | null {

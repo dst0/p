@@ -54,7 +54,6 @@ describe("AgentSession verified completion", () => {
         return fauxAssistantMessage(
           fauxToolCall("record_task_verification", {
             action: "ready_to_finish",
-            evidence_refs_by_check: [["verification-evidence-1"]],
             unresolved_failures: [],
           }),
           { stopReason: "toolUse" },

@@ -14,6 +14,60 @@ import {
 const CRITERION = "importHistory throws on any truncation and does not retain partial history";
 
 describe("evidence-mode high-risk selector feedback", () => {
+  it("assembles one controller-owned evidence batch across focused selectors", async () => {
+    const cwd = mkdtempSync(join(tmpdir(), "p-high-risk-selector-batch-"));
+    const harness = createEvidenceHarness(cwd);
+    try {
+      await harness.emit({ type: "turn_start" });
+      await harness.emit({
+        type: "message_end",
+        message: { role: "user", content: "Implement safe concurrent inventory updates.", timestamp: 100 },
+      });
+      await callEvidenceVerification(harness.controller, {
+        action: "record_completion_checklist",
+        completion_checklist: [
+          "Optimistic concurrency expectedVersion throws ConcurrencyError and inventory invariants enforce positive quantity, non-empty IDs, and available reservation limits",
+        ],
+      });
+      await recordSuccessfulMutation(harness, cwd);
+
+      const concurrencyEvidence = evidenceHandle(
+        await afterEvidenceTool(
+          harness.agent,
+          "bash",
+          {
+            command:
+              'node --test --test-name-pattern "optimistic concurrency expectedVersion throws ConcurrencyError" test/inventory.test.ts',
+          },
+          "Tests 1 passed",
+        ),
+      );
+      const inventoryEvidence = evidenceHandle(
+        await afterEvidenceTool(
+          harness.agent,
+          "bash",
+          {
+            command:
+              'node --test --test-name-pattern "inventory invariants positive quantity non empty IDs available reservation limits" test/inventory.test.ts',
+          },
+          "Tests 1 passed",
+        ),
+      );
+
+      const ready = await callEvidenceVerification(harness.controller, {
+        action: "ready_to_finish",
+        unresolved_failures: [],
+      });
+      expect(ready).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([
+        concurrencyEvidence,
+        inventoryEvidence,
+      ]);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
   it("turns a semantically incomplete focused selector into one bounded repair", async () => {
     const cwd = mkdtempSync(join(tmpdir(), "p-high-risk-selector-feedback-"));
     const harness = createEvidenceHarness(cwd);
@@ -34,18 +88,16 @@ describe("evidence-mode high-risk selector feedback", () => {
         "node --test test/calculator.truncation.test.ts",
         'node --test --test-name-pattern "truncation.*throws.*partial" test/calculator.truncation.test.ts',
       ]) {
-        const incomplete = evidenceHandle(
-          await afterEvidenceTool(harness.agent, "bash", { command }, "Tests 1 passed"),
-        );
+        evidenceHandle(await afterEvidenceTool(harness.agent, "bash", { command }, "Tests 1 passed"));
         const feedback = await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[incomplete]],
           unresolved_failures: [],
         });
 
-        expect(feedback).toContain("focused selector did not name the complete invariant");
+        expect(feedback).toContain("focused test selectors do not collectively cover the complete invariant");
         expect(feedback).toContain(CRITERION);
-        expect(feedback).toContain("run only that named case");
+        expect(feedback).toContain("one or more focused cases");
+        expect(feedback).toContain("do not rename or duplicate passing tests");
         expect(feedback).not.toContain("truncation.*throws.*partial");
         expect(feedback).not.toContain("calculator.history.test.ts");
         expect(feedback).not.toContain("calculator.truncation.test.ts");
@@ -61,10 +113,10 @@ describe("evidence-mode high-risk selector feedback", () => {
       );
       const ready = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[complete]],
         unresolved_failures: [],
       });
       expect(ready).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toContain(complete);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -84,16 +136,13 @@ describe("evidence-mode high-risk selector feedback", () => {
         completion_checklist: [CRITERION],
       });
       await recordSuccessfulMutation(harness, cwd);
-      const broad = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 48 passed"),
-      );
+      evidenceHandle(await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 48 passed"));
       const feedback = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[broad]],
         unresolved_failures: [],
       });
       expect(feedback).toContain("requires a relevant focused passing test");
-      expect(feedback).not.toContain("run only that named case");
+      expect(feedback).not.toContain("one or more focused cases");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

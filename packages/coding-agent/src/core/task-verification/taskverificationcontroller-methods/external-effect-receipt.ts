@@ -20,6 +20,10 @@ export interface RecordedExternalEffect {
   evidence?: TaskVerificationEvidence;
 }
 
+export function isExternalEffectChecklistCriterion(criterion: string): boolean {
+  return externalEffectCriterionTool(criterion) !== undefined;
+}
+
 export function evidenceHasRecordedExternalEffect(
   self: TaskVerificationController,
   evidence: TaskVerificationEvidence,
@@ -34,12 +38,16 @@ export function externalEffectReceiptSupportsCriterion(
 ): boolean {
   const receipt = externalEffectReceiptForEvidence(self, evidence);
   if (!receipt) return false;
+  const tool = externalEffectCriterionTool(criterion);
+  return tool === null || tool === receipt.toolName;
+}
+
+function externalEffectCriterionTool(criterion: string): string | null | undefined {
   const normalized = criterion.normalize("NFKC").replace(/\s+/gu, " ").trim();
-  if (/^the (?:requested )?external effect completes successfully[.!]?$/iu.test(normalized)) return true;
-  const toolBound = normalized.match(
+  if (/^the (?:requested )?external effect completes successfully[.!]?$/iu.test(normalized)) return null;
+  return normalized.match(
     /^external effect(?: [1-9]\d{0,2})? via tool ([\p{L}\p{N}_.:/-]+) completes successfully[.!]?$/iu,
-  );
-  return toolBound?.[1] === receipt.toolName;
+  )?.[1];
 }
 
 export function externalEffectReceiptHasCompatibleReadback(

@@ -9,8 +9,12 @@ import type { TaskVerificationController } from "../taskverificationcontroller.t
 import { isShellTool } from "../tool-classification.ts";
 import type { TaskRequirement, TaskVerificationAcceptanceCheck, TaskVerificationEvidence } from "../types.ts";
 import { criterionCoversCriticalProof } from "./completion-checklist.ts";
-import { evidenceHasRecordedExternalEffect } from "./external-effect-receipt.ts";
-import { evidenceMatchesRequirement } from "./focused-evidence-relevance.ts";
+import {
+  evidenceHasRecordedExternalEffect,
+  externalEffectReceiptHasCompatibleReadback,
+  externalEffectReceiptSupportsCriterion,
+} from "./external-effect-receipt.ts";
+import { evidenceBatchMatchesRequirement, evidenceMatchesRequirement } from "./focused-evidence-relevance.ts";
 import { focusedTestSelectors } from "./focused-requirement-evidence.ts";
 import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
 
@@ -87,19 +91,27 @@ export function validateHighRiskChecklistEvidence(
   if (completionVerificationScope(self.state.completionChecklist) === "non_runtime_content") return undefined;
   for (const [index, check] of checks.entries()) {
     if (!HIGH_RISK_REQUIREMENT_PATTERN.test(check.criterion)) continue;
+    const selected = check.evidenceRefs.flatMap((ref) => {
+      const item = evidence.get(ref);
+      return item && !item.isError ? [item] : [];
+    });
+    const focusedSelectors = selected.flatMap((item) => {
+      if (!isShellTool(item.toolName) || !evidenceHasPositivePassingTestResult(item)) return [];
+      return focusedTestSelectors(item.descriptor) ?? [];
+    });
     if (
-      check.evidenceRefs.some((ref) => {
-        const item = evidence.get(ref);
-        return item ? evidenceHasRecordedExternalEffect(self, item) : false;
-      })
+      selected.some(
+        (item) =>
+          evidenceHasRecordedExternalEffect(self, item) &&
+          (externalEffectReceiptSupportsCriterion(self, item, check.criterion) ||
+            externalEffectReceiptHasCompatibleReadback(self, item, selected, check.criterion)),
+      )
     ) {
       continue;
     }
     const requirement = checklistRequirement(index, check.criterion);
-    let hasIncompleteFocusedSelector = false;
-    const focused = check.evidenceRefs.some((ref) => {
-      const item = evidence.get(ref);
-      if (!item || !isShellTool(item.toolName)) return false;
+    const exactArtifact = selected.some((item) => {
+      if (!isShellTool(item.toolName)) return false;
       const exactArtifact = classifyExactFileBytesAssertion({
         cwd: self.sessionManager.getCwd(),
         taskOwnedPaths: self.state.taskOwnedPaths ?? [],
@@ -109,16 +121,11 @@ export function validateHighRiskChecklistEvidence(
       if (exactArtifact && exactFileAssertionProvesCriterion(check.criterion, exactArtifact)) {
         return true;
       }
-      if (!evidenceHasPositivePassingTestResult(item)) return false;
-      const selectors = focusedTestSelectors(item.descriptor);
-      if (selectors === undefined) return false;
-      if (evidenceMatchesRequirement(requirement, selectors)) return true;
-      hasIncompleteFocusedSelector = true;
       return false;
     });
-    if (!focused) {
-      if (hasIncompleteFocusedSelector) {
-        return `The focused selector did not name the complete invariant for high-risk checklist item "${check.criterion}". Name one test case exactly ${JSON.stringify(suggestedFocusedCaseName(check.criterion))}, then run only that named case with the runner's test-name selector and reuse its fresh evidence. The guard still requires the selector itself to name the subject, boundary, behavior, and qualifiers.`;
+    if (!exactArtifact && !evidenceBatchMatchesRequirement(requirement, focusedSelectors)) {
+      if (focusedSelectors.length > 0) {
+        return `The focused test selectors do not collectively cover the complete invariant for high-risk checklist item "${check.criterion}". Run one or more focused cases whose selected names together cover the missing subject, boundary, behavior, and qualifiers; do not rename or duplicate passing tests merely to mirror the whole checklist sentence.`;
       }
       return `High-risk checklist item "${check.criterion}" requires a relevant focused passing test or, for an exact non-source artifact, a controller-verified literal-byte assertion such as diff <(printf 'expected\\n') task-owned/path; a generic suite or unrelated selector cannot prove this invariant.`;
     }
@@ -135,12 +142,4 @@ function checklistRequirement(index: number, criterion: string): TaskRequirement
     sourcePromptIndexes: [1],
     highRisk: true,
   };
-}
-
-function suggestedFocusedCaseName(criterion: string): string {
-  return criterion
-    .normalize("NFKC")
-    .replace(/[^\p{L}\p{N}\s]+/gu, " ")
-    .replace(/\s+/gu, " ")
-    .trim();
 }

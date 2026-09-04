@@ -116,6 +116,10 @@ An exact non-code artifact may bind one common text/data path and its JSON-escap
 
 Before freezing the checklist, the model rereads the request and selected authoritative sources once and preserves the qualifiers of each behavior it chooses to represent. The controller deliberately does not claim exhaustive semantic coverage of arbitrary free text or reconstruct a clause matrix. Its hard checks are limited to deterministic boundaries, resource limits, effect identity and freshness, and focused evidence for explicitly recognized high-risk invariants.
 
+After the last effect and its verification, call `record_task_verification({ action: "ready_to_finish" })` without evidence-handle mappings. The controller selects the current successful evidence batch; `evidence_refs_by_check` is not part of the provider-facing schema. Workspace checks cannot borrow older external-effect receipts, and each external checklist item gets a distinct compatible receipt, plus its exact confirmed readback when it claims a semantic remote outcome. Matching is independent of checklist or execution order. Unused intermediate receipts, such as draft creation before a final send, remain in the effect ledger without creating extra checklist obligations. An external-only task or `external_operation` scope requires external proof for every item; mixed tasks use explicit effect criteria or receipt-bound readbacks for external claims. Arbitrary unmarked prose is not a formal proof of remote state.
+
+For recognized high-risk runtime checks, a sufficient focused case remains usable even when unrelated positive cases also pass. Related focused cases may jointly cover separate boundaries only when their domain, subject, behavior, and qualifier polarity are compatible. Unrelated selectors cannot donate missing behavior or rejection words. This is a bounded relevance check, not a proof that test names accurately describe production behavior; critical byte-boundary obligations still require their same-run witness. A generic suite never replaces focused evidence. Successful `finish_work` can omit its token and changed-path list because the controller fills and revalidates both.
+
 ```mermaid
 flowchart TD
     Request["Free-form user request"] --> Discovery["Read relevant rules and authoritative sources"]
@@ -127,7 +131,9 @@ flowchart TD
     Effect -->|no| Finish["finish_work with complete user-visible answer"]
     Effect -->|yes| Work["Perform workspace or external mutations"]
     Work --> Evidence["Capture real outcomes, changed scope, and current revision"]
-    Evidence --> Ready{"Fresh requested evidence and no unresolved failure?"}
+    Evidence --> Select["One ready_to_finish call: controller selects current evidence"]
+    Select --> Bind["Separate workspace proofs and distinct external receipts<br/>combine only compatible focused cases"]
+    Bind --> Ready{"Fresh requested evidence and no unresolved failure?"}
     Ready -->|no| Repair["Repair work or rerun the focused check"]
     Repair --> Evidence
     Ready -->|yes| Token["Issue revision-bound evidence token and authoritative changed paths"]
