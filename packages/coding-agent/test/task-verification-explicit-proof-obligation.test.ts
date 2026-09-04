@@ -90,11 +90,11 @@ describe("evidence-mode explicit controller proof obligation", () => {
         }
         const result = await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [evidenceRefs],
           unresolved_failures: [],
         });
         expect(result).not.toContain("no critical proof obligation is active");
         expect(result).toContain("verification_token:");
+        expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual(evidenceRefs);
       } finally {
         rmSync(cwd, { recursive: true, force: true });
       }
@@ -131,7 +131,7 @@ describe("evidence-mode explicit controller proof obligation", () => {
       await beforeEvidenceTool(harness.agent, "write", writeArgs, writeCall);
       writeFileSync(join(cwd, writeArgs.path), writeArgs.content);
       await afterEvidenceTool(harness.agent, "write", writeArgs, "wrote store.ts", writeCall);
-      const passing = evidenceHandle(
+      evidenceHandle(
         await afterEvidenceTool(
           harness.agent,
           "bash",
@@ -144,7 +144,6 @@ describe("evidence-mode explicit controller proof obligation", () => {
 
       const feedback = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[passing]],
         unresolved_failures: [],
       });
       expect(feedback).toContain("no critical proof obligation is active");

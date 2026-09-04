@@ -3,20 +3,11 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { TEST_PATH_PATTERN } from "../constants.ts";
+import { WORKSPACE_EFFECT_SKIPPED_SEGMENTS } from "../workspace-effect-state.ts";
 
 export type TestWorkspaceSnapshot = Map<string, string>;
 
-const SKIPPED_DIRECTORIES = new Set([
-  ".git",
-  ".pdev",
-  ".p",
-  ".pi",
-  ".pnpm-store",
-  "coverage",
-  "dist",
-  "node_modules",
-  "target",
-]);
+const SKIPPED_DIRECTORIES = new Set(WORKSPACE_EFFECT_SKIPPED_SEGMENTS);
 const MAX_VISITED_ENTRIES = 50_000;
 const MAX_TEST_FILES = 2_000;
 const execFileAsync = promisify(execFile);
@@ -68,11 +59,16 @@ export async function captureTestWorkspaceSnapshot(cwd: string): Promise<TestWor
 
 async function gitIgnoredTestPaths(cwd: string): Promise<string[] | undefined> {
   try {
-    const result = await execFileAsync("git", ["ls-files", "--others", "--ignored", "--exclude-standard", "-z"], {
-      cwd,
-      encoding: "utf8",
-      maxBuffer: 16 * 1024 * 1024,
-    });
+    const skippedPathspecs = WORKSPACE_EFFECT_SKIPPED_SEGMENTS.map((segment) => `:(exclude,glob)**/${segment}/**`);
+    const result = await execFileAsync(
+      "git",
+      ["ls-files", "--others", "--ignored", "--exclude-standard", "-z", "--", ".", ...skippedPathspecs],
+      {
+        cwd,
+        encoding: "utf8",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
     return String(result.stdout)
       .split("\0")
       .filter((filePath) => TEST_PATH_PATTERN.test(filePath.replaceAll("\\", "/")))

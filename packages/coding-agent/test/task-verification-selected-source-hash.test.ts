@@ -168,10 +168,10 @@ describe("selected authoritative-source hash binding", () => {
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[evidenceRef]],
           unresolved_failures: [],
         }),
       ).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([evidenceRef]);
 
       expect((await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" }))?.block).not.toBe(true);
     } finally {

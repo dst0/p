@@ -78,14 +78,25 @@ describe("evidence-mode critical proof lifecycle", () => {
       const broadArgs = { command: "npm test" };
       const broadCall = evidenceToolCall("bash", broadArgs);
       expect(await beforeEvidenceTool(harness.agent, "bash", broadArgs, broadCall)).toBeUndefined();
-      await afterEvidenceTool(harness.agent, "bash", broadArgs, "Tests 2 passed (2)", broadCall);
+      const broadEvidence = evidenceHandle(
+        await afterEvidenceTool(harness.agent, "bash", broadArgs, "Tests 2 passed (2)", broadCall),
+      );
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[baseEvidence], [proofEvidence]],
           unresolved_failures: [],
         }),
       ).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks).toEqual([
+        {
+          criterion: "Store returns the configured payload unchanged",
+          evidenceRefs: [baseEvidence, proofEvidence, broadEvidence],
+        },
+        {
+          criterion,
+          evidenceRefs: [baseEvidence, proofEvidence, broadEvidence],
+        },
+      ]);
       expect(harness.controller.formatNextRequirement()).toContain(criterion);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
@@ -114,10 +125,10 @@ describe("evidence-mode critical proof lifecycle", () => {
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[evidence]],
           unresolved_failures: [],
         }),
       ).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([evidence]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -137,13 +148,10 @@ describe("evidence-mode critical proof lifecycle", () => {
       await beforeEvidenceTool(harness.agent, "write", args, call);
       writeFileSync(join(cwd, "src/store.ts"), args.content);
       await afterEvidenceTool(harness.agent, "write", args, "wrote store", call);
-      const broad = evidenceHandle(
-        await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 42 passed"),
-      );
+      evidenceHandle(await afterEvidenceTool(harness.agent, "bash", { command: "npm test" }, "Tests 42 passed"));
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[broad]],
           unresolved_failures: [],
         }),
       ).toContain("requires a relevant focused passing test");
@@ -179,13 +187,12 @@ describe("evidence-mode critical proof lifecycle", () => {
       await beforeEvidenceTool(harness.agent, "write", args, call);
       writeFileSync(join(cwd, "status.txt"), args.content);
       await afterEvidenceTool(harness.agent, "write", args, "wrote status", call);
-      const exact = evidenceHandle(
+      evidenceHandle(
         await afterEvidenceTool(harness.agent, "bash", { command: "diff <(printf 'ready\\n') status.txt" }, ""),
       );
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[exact], [exact]],
           unresolved_failures: [],
         }),
       ).toContain("same-run P_PROOF_V1 exact-byte witness");

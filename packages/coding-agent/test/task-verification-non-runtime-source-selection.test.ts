@@ -64,11 +64,11 @@ describe("non-runtime tasks with explicitly selected authoritative sources", () 
         .soft(
           await callEvidenceVerification(harness.controller, {
             action: "ready_to_finish",
-            evidence_refs_by_check: [[evidence]],
             unresolved_failures: [],
           }),
         )
         .toContain("verification_token:");
+      expect.soft(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([evidence]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

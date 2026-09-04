@@ -21,14 +21,17 @@ describe("independent external readback binding", () => {
   it("rejects a readback whose criterion differs while receipt, resource, and domain match", async () => {
     const criterion = "The meeting is scheduled";
     const { controller, agent } = await preparedController([criterion]);
-    const receiptRef = await recordWrite(agent, "write-1");
-    const readbackRef = await recordReadback(agent, {
+    await recordWrite(agent, "write-1");
+    await recordReadback(agent, {
       id: "read-1",
       writeId: "write-1",
       criterion: "The room is reserved",
     });
 
-    expect(await ready(controller, [[receiptRef, readbackRef]])).toContain("explicit confirmed readback proof");
+    const result = await ready(controller);
+    expect(result).toContain("explicit confirmed readback proof");
+    expect(result).not.toContain("verification_token:");
+    expect(controller.currentState.readiness).toEqual({ status: "pending", acceptanceChecks: [] });
   });
 
   it("keeps two same-connector readbacks current when they bind different receipts", async () => {
@@ -51,12 +54,11 @@ describe("independent external readback binding", () => {
     const status = await callVerification(controller, { action: "status" });
     expect(status).toContain(`${firstReadback} [readback via get_event]`);
     expect(status).toContain(`${secondReadback} [readback via get_event]`);
-    expect(
-      await ready(controller, [
-        [firstReceipt, firstReadback],
-        [secondReceipt, secondReadback],
-      ]),
-    ).toContain("verification_token:");
+    expect(await ready(controller)).toContain("verification_token:");
+    expect(controller.currentState.readiness?.acceptanceChecks).toEqual([
+      { criterion: firstCriterion, evidenceRefs: [firstReceipt, firstReadback] },
+      { criterion: secondCriterion, evidenceRefs: [secondReceipt, secondReadback] },
+    ]);
   });
 });
 
@@ -131,13 +133,9 @@ function evidenceRef(content: Array<{ type: string; text?: string }> | undefined
   return ref;
 }
 
-async function ready(
-  controller: ReturnType<typeof createTaskVerificationController>,
-  evidenceRefsByCheck: string[][],
-): Promise<string> {
+async function ready(controller: ReturnType<typeof createTaskVerificationController>): Promise<string> {
   return callVerification(controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: evidenceRefsByCheck,
     unresolved_failures: [],
   });
 }

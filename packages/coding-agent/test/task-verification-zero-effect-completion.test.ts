@@ -246,10 +246,10 @@ describe("evidence-mode zero-effect completion", () => {
       );
       const ready = await callEvidenceVerification(harness.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[evidence]],
         unresolved_failures: [],
       });
       expect(ready).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([evidence]);
 
       const result = await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" });
 

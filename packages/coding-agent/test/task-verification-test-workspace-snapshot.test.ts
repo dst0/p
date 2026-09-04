@@ -32,4 +32,44 @@ describe("task verification test workspace snapshots", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  it("excludes ignored dependency output without losing ignored workspace tests", async () => {
+    const cwd = await mkdtemp(join(tmpdir(), "p-test-snapshot-ignored-dependencies-"));
+    try {
+      await mkdir(join(cwd, "node_modules/dependency/tests"), { recursive: true });
+      await mkdir(join(cwd, "dist/tests"), { recursive: true });
+      await mkdir(join(cwd, "test"));
+      await writeFile(join(cwd, ".gitignore"), "node_modules/\ndist/\ntest/\n");
+      for (let offset = 0; offset < 2_001; offset += 100) {
+        const count = Math.min(100, 2_001 - offset);
+        await Promise.all(
+          Array.from({ length: count }, (_, index) =>
+            writeFile(
+              join(cwd, `node_modules/dependency/tests/case-${offset + index}.test.js`),
+              "ignored dependency test\n",
+            ),
+          ),
+        );
+      }
+      await writeFile(join(cwd, "dist/tests/generated.test.js"), "ignored build test\n");
+      await writeFile(join(cwd, "test/ignored.test.js"), "export const value = 1;\n");
+      execFileSync("git", ["init", "-q"], { cwd });
+      execFileSync("git", ["add", ".gitignore"], { cwd });
+      execFileSync("git", ["-c", "user.name=Test", "-c", "user.email=test@example.invalid", "commit", "-qm", "base"], {
+        cwd,
+      });
+
+      const before = await captureTestWorkspaceSnapshot(cwd);
+      await writeFile(join(cwd, "test/ignored.test.js"), "export const value = 200;\n");
+      const after = await captureTestWorkspaceSnapshot(cwd);
+
+      expect(before).toBeDefined();
+      expect(after).toBeDefined();
+      expect([...before!.keys()]).toEqual(["test/ignored.test.js"]);
+      expect([...after!.keys()]).toEqual(["test/ignored.test.js"]);
+      expect(changedTestPaths(before!, after!)).toEqual(["test/ignored.test.js"]);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });

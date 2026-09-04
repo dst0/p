@@ -86,10 +86,13 @@ describe("evidence-mode compaction restoration", () => {
       );
       const ready = await callEvidenceVerification(restored.controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[proofEvidence], [proofEvidence]],
         unresolved_failures: [],
       });
       expect(ready).toContain("verification_token:");
+      expect(restored.controller.currentState.readiness?.acceptanceChecks).toEqual([
+        { criterion: currentCriteria[0], evidenceRefs: [proofEvidence] },
+        { criterion: currentCriteria[1], evidenceRefs: [proofEvidence] },
+      ]);
       const finishArgs: Record<string, unknown> = { status: "success" };
       expect((await beforeEvidenceTool(restored.agent, "finish_work", finishArgs))?.block).not.toBe(true);
       expect(finishArgs.files_changed).toEqual(["src/store.ts"]);

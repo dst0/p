@@ -34,10 +34,13 @@ describe("external-operation completion scope", () => {
     expect(controller.currentState.criticalProofObligations).toEqual([]);
 
     const receiptRef = await recordWrite(agent);
-    expect(await ready(controller, [receiptRef])).toContain("proves only successful tool execution");
+    expect(await ready(controller)).toContain("proves only successful tool execution");
 
     const readbackRef = await recordReadback(agent);
-    expect(await ready(controller, [receiptRef, readbackRef])).toContain("verification_token:");
+    expect(await ready(controller)).toContain("verification_token:");
+    expect(controller.currentState.readiness?.acceptanceChecks).toEqual([
+      { criterion: CRITERION, evidenceRefs: [receiptRef, readbackRef] },
+    ]);
   });
 });
 
@@ -105,13 +108,9 @@ function evidenceRef(content: Array<{ type: string; text?: string }> | undefined
   return ref;
 }
 
-async function ready(
-  controller: ReturnType<typeof createTaskVerificationController>,
-  evidenceRefs: string[],
-): Promise<string> {
+async function ready(controller: ReturnType<typeof createTaskVerificationController>): Promise<string> {
   return callVerification(controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: [evidenceRefs],
     unresolved_failures: [],
   });
 }

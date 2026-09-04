@@ -29,6 +29,9 @@ function populateMockFiles(root: string): void {
     ["packages/coding-agent/dist/core/indexing-service.js", "export const indexingService = true;\n"],
     ["packages/coding-agent/dist/core/indexed-repos.js", "export const indexedRepos = true;\n"],
     ["scripts/install-indexing-service.js", "console.log('install');\n"],
+    ["scripts/indexing-qdrant-assets.js", "export const qdrant = true;\n"],
+    ["scripts/indexing-reinstall-lock.js", "export const lock = true;\n"],
+    ["scripts/indexing-reinstall-transaction.sh", "begin_transaction() { :; }\n"],
     ["scripts/indexing-device-selection.sh", "select_indexing_device() { :; }\n"],
     ["scripts/prepare-indexing-service-reinstall.js", "console.log('prepare');\n"],
     ["scripts/compute-indexing-version.js", "console.log('compute');\n"],
@@ -74,48 +77,22 @@ describe("computeIndexingVersion", () => {
     const hash1 = computeIndexingVersion(root1);
     const hash2 = computeIndexingVersion(root2);
 
-    // Files have identical content so hashes should match
     expect(hash1).toBe(hash2);
   });
 
-  it("changes the hash when a daemon file content changes", () => {
+  it.each([
+    "packages/coding-agent/dist/core/indexing-service.js",
+    "scripts/indexing-qdrant-assets.js",
+    "scripts/indexing-reinstall-lock.js",
+    "scripts/indexing-reinstall-transaction.sh",
+    "scripts/install-indexing-service.js",
+    "scripts/indexing-device-selection.sh",
+  ])("changes the hash when runtime input %s changes", (relativePath) => {
     const root = createMockProjectRoot();
     populateMockFiles(root);
     const before = computeIndexingVersion(root);
-
-    // Modify a daemon file
-    fs.writeFileSync(
-      path.join(root, "packages", "coding-agent", "dist", "core", "indexing-service.js"),
-      "export const indexingService = true; export const changed = true;\n",
-    );
-
-    const after = computeIndexingVersion(root);
-    expect(after).not.toBe(before);
-  });
-
-  it("changes the hash when install-indexing-service.js changes", () => {
-    const root = createMockProjectRoot();
-    populateMockFiles(root);
-    const before = computeIndexingVersion(root);
-
-    fs.writeFileSync(path.join(root, "scripts", "install-indexing-service.js"), "console.log('install v2');\n");
-
-    const after = computeIndexingVersion(root);
-    expect(after).not.toBe(before);
-  });
-
-  it("changes the hash when indexing-device-selection.sh changes", () => {
-    const root = createMockProjectRoot();
-    populateMockFiles(root);
-    const before = computeIndexingVersion(root);
-
-    fs.writeFileSync(
-      path.join(root, "scripts", "indexing-device-selection.sh"),
-      "select_indexing_device() { true; }\n",
-    );
-
-    const after = computeIndexingVersion(root);
-    expect(after).not.toBe(before);
+    fs.appendFileSync(path.join(root, relativePath), "changed\n");
+    expect(computeIndexingVersion(root)).not.toBe(before);
   });
 
   it("changes the hash when a code-index Python file changes", () => {

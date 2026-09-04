@@ -290,6 +290,10 @@ Inspect `requestedBackend`, `selectedBackend`, `executionDevice`, `executionProv
 
 Reinstalling is idempotent, migrates the former `com.dst.p.code-index-embedding` service to the current combined indexing service, removes validated stale daemon and local-backend processes from older installations, and fails if the real semantic-search smoke test cannot index and retrieve a temporary source file.
 
+Install and reinstall serialize configuration and service changes using a private `~/.p/agent/indexing-reinstall.lock`. They preserve an explicit `qdrantDataDirectory`. An unchanged service is reused only when a one-shot decision still matches the reinstall owner, indexing runtime hash, and effective configuration fingerprint; a changed or missing decision fails closed instead of silently reusing stale state.
+
+Normal exit releases the lock. If an interrupted process leaves a stale lock, the next attempt reports its exact path and recorded owner. Confirm that no install or reinstall is running and that the recorded owner is gone before removing only that lock file, then rerun `./reinstall.sh`. Do not clear a live owner's lock or reuse decision; PID reuse can conservatively require additional process-identity checks.
+
 The current UI exposes status, progress, queue promotion, enable, disable, and footer-visibility controls. Dedicated manual refresh/rebuild and index-data deletion commands are not yet exposed; the watcher and periodic reconciliation perform normal refreshes automatically.
 
 ### Persisted storage recovery and collection cleanup

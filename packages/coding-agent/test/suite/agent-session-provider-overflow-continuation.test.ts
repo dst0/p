@@ -1,5 +1,6 @@
 import { type FauxResponseFactory, fauxAssistantMessage, fauxToolCall } from "@dst0/p-ai";
 import { afterEach, describe, expect, it } from "vitest";
+import { STRUCTURED_SESSION_STATE_CUSTOM_TYPE } from "../../src/core/compaction/index.ts";
 import { createHarness, getMessageText, type Harness } from "./harness.ts";
 
 describe("AgentSession provider overflow during a pending length continuation", () => {
@@ -125,4 +126,111 @@ describe("AgentSession provider overflow during a pending length continuation", 
       expect(assistantTexts.join("")).toBe(prefix + continuation);
     },
   );
+
+  it("preserves continuation identity through the default compactor", async () => {
+    const harness = await createHarness({
+      models: [{ id: "default-overflow-continuation", contextWindow: 64_000, maxTokens: 16_000 }],
+      completionMode: "implicit",
+      settings: {
+        compaction: {
+          enabled: true,
+          triggerReserveTokens: 8_000,
+          triggerRatio: 0.9,
+          targetContextTokens: 3_000,
+          keepRecentMinTokens: 200,
+          keepRecentMaxTokens: 500,
+          summaryMaxTokens: 500,
+          renderedStateMaxTokens: 500,
+        },
+      },
+    });
+    harnesses.push(harness);
+    const prefix = Array.from({ length: 5_000 }, (_value, index) => `default-${index}`).join(" ");
+    const continuation = "The default-compactor continuation.";
+    const steeringText = "Keep the default-compactor continuation concise.";
+    const overflowError = "prompt is too long";
+    const expectedControl = [
+      "The provider stopped because it reached its output-token limit.",
+      "Continue exactly after the final completed content above and finish within the available output budget.",
+      "Do not repeat, summarize, restart, or apologize.",
+    ].join("\n");
+    const requests: Array<{ order: string[]; control: string; compactions: number; hasProviderError: boolean }> = [];
+    let queuedSteering: Promise<void> | undefined;
+    const unsubscribe = harness.session.subscribe((event) => {
+      if (
+        event.type === "message_end" &&
+        event.message.role === "assistant" &&
+        event.message.stopReason === "length" &&
+        !queuedSteering
+      ) {
+        queuedSteering = harness.session.steer(steeringText);
+      }
+    });
+    const captureRequest = (context: Parameters<FauxResponseFactory>[0]) => {
+      let control = "";
+      const order = context.messages.flatMap((message) => {
+        if (message.role !== "user") return [];
+        if (message.metadata?.pInternal === "provider_length_continuation") {
+          control = getMessageText(message);
+          return ["continuation"];
+        }
+        return getMessageText(message) === steeringText ? ["steering"] : [];
+      });
+      requests.push({
+        order,
+        control,
+        compactions: harness.eventsOfType("compaction_end").length,
+        hasProviderError: context.messages.some(
+          (message) => message.role === "assistant" && message.stopReason === "error",
+        ),
+      });
+    };
+    harness.setResponses([
+      fauxAssistantMessage(prefix, { stopReason: "length" }),
+      (context) => {
+        captureRequest(context);
+        return fauxAssistantMessage("", { stopReason: "error", errorMessage: overflowError });
+      },
+      fauxAssistantMessage("## Goal\nResume the pending continuation.\n\n## Plan\n- [.] Continue without duplication"),
+      (context) => {
+        captureRequest(context);
+        return fauxAssistantMessage(continuation);
+      },
+    ]);
+
+    try {
+      await harness.session.prompt("Produce a long report that requires default overflow compaction.");
+      await queuedSteering;
+    } finally {
+      unsubscribe();
+    }
+
+    expect(requests).toEqual([
+      { order: ["continuation", "steering"], control: expectedControl, compactions: 0, hasProviderError: false },
+      { order: ["continuation", "steering"], control: expectedControl, compactions: 1, hasProviderError: false },
+    ]);
+    const entries = harness.sessionManager.getEntries();
+    const compactions = entries.filter((entry) => entry.type === "compaction");
+    expect(compactions).toHaveLength(1);
+    expect(compactions[0]).toMatchObject({ fromHook: false });
+    expect(
+      entries.filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE),
+    ).toHaveLength(1);
+    expect(harness.session.agent.state.messages).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ role: "assistant", errorMessage: overflowError })]),
+    );
+    const persistedMessages = entries.flatMap((entry) => (entry.type === "message" ? [entry.message] : []));
+    expect(
+      persistedMessages.filter(
+        (message) => message.role === "user" && message.metadata?.pInternal === "provider_length_continuation",
+      ),
+    ).toHaveLength(1);
+    expect(
+      persistedMessages.filter((message) => message.role === "user" && getMessageText(message) === steeringText),
+    ).toHaveLength(1);
+    const assistantTexts = persistedMessages.filter((message) => message.role === "assistant").map(getMessageText);
+    expect(assistantTexts.filter((text) => text === prefix)).toHaveLength(1);
+    expect(assistantTexts.filter((text) => text === continuation)).toHaveLength(1);
+    expect(assistantTexts.join("")).toBe(prefix + continuation);
+  });
 });

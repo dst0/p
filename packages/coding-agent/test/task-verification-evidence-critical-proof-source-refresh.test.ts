@@ -43,13 +43,12 @@ describe("evidence-mode critical proof source refresh", () => {
       writeFileSync(join(cwd, "src/store.ts"), writeArgs.content);
       await afterEvidenceTool(harness.agent, "write", writeArgs, "wrote file", writeCall);
       const originalEvidence = evidenceHandle(await focusedProofEvidence(harness, original.id, criterion));
-      expect(await ready(harness, originalEvidence)).toContain("verification_token:");
+      expect(await ready(harness)).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([originalEvidence]);
 
       const updatedContract = `${EXACT_LOG_CONTRACT}Rejected input leaves the import cursor unchanged.\n`;
       writeFileSync(join(cwd, "FORMAT.md"), updatedContract);
-      expect(await ready(harness, originalEvidence)).toContain(
-        "changed after its critical proof boundary was recorded",
-      );
+      expect(await ready(harness)).toContain("changed after its critical proof boundary was recorded");
       expect((await beforeEvidenceTool(harness.agent, "bash", { command: "git push" }))?.reason).toContain(
         "changed after its critical proof boundary was recorded",
       );
@@ -57,15 +56,22 @@ describe("evidence-mode critical proof source refresh", () => {
         "changed after its critical proof boundary was recorded",
       );
 
-      await afterEvidenceTool(harness.agent, "read", { path: "FORMAT.md" }, updatedContract);
+      const refreshedSourceEvidence = evidenceHandle(
+        await afterEvidenceTool(harness.agent, "read", { path: "FORMAT.md" }, updatedContract),
+      );
       const replacement = harness.controller.currentState.criticalProofObligations?.[0];
       if (!replacement) throw new Error("missing replacement exact-byte obligation");
       expect(harness.controller.currentState.criticalProofObligations).toHaveLength(1);
       expect(replacement.id).not.toBe(original.id);
       expect(replacement.sourceSha256).not.toBe(original.sourceSha256);
-      expect(await ready(harness, originalEvidence)).toContain("same-run P_PROOF_V1 exact-byte witness");
+      expect(await ready(harness)).toContain("same-run P_PROOF_V1 exact-byte witness");
       const replacementEvidence = evidenceHandle(await focusedProofEvidence(harness, replacement.id, criterion));
-      expect(await ready(harness, replacementEvidence)).toContain("verification_token:");
+      expect(await ready(harness)).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([
+        originalEvidence,
+        refreshedSourceEvidence,
+        replacementEvidence,
+      ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
@@ -117,10 +123,9 @@ function proofFrame(requirementId: string): string {
   })}`;
 }
 
-async function ready(harness: ReturnType<typeof createEvidenceHarness>, evidenceRef: string) {
+async function ready(harness: ReturnType<typeof createEvidenceHarness>) {
   return callEvidenceVerification(harness.controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: [[evidenceRef]],
     unresolved_failures: [],
   });
 }

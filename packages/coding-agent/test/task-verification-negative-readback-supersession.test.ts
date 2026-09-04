@@ -38,7 +38,10 @@ describe("receipt-bound negative readback supersession", () => {
       outcome: "confirmed",
       isError: false,
     });
-    expect(await ready(controller, receiptRef, confirmedRef)).toContain("verification_token:");
+    expect(await ready(controller)).toContain("verification_token:");
+    expect(controller.currentState.readiness?.acceptanceChecks).toEqual([
+      { criterion: CRITERION, evidenceRefs: [receiptRef, confirmedRef] },
+    ]);
 
     const negativeRef = await recordReadback(agent, {
       id: "read-negative",
@@ -47,15 +50,16 @@ describe("receipt-bound negative readback supersession", () => {
       isError,
     });
     expect(controller.evidence.get(negativeRef)?.toolEffect?.domains).toEqual(["persistent_state", "network_send"]);
+    expect(controller.currentState.readiness).toEqual({ status: "pending", acceptanceChecks: [] });
 
-    const negativeAttempt = await ready(controller, receiptRef, negativeRef);
+    const negativeAttempt = await ready(controller);
     expect(negativeAttempt).not.toContain("verification_token:");
     expect(negativeAttempt).toMatch(
       /(?:unconfirmed reads do not prove remote state|failed evidence cannot prove readiness)/u,
     );
 
-    const staleAttempt = await ready(controller, receiptRef, confirmedRef);
-    expect(staleAttempt).not.toContain("verification_token:");
+    const retryAttempt = await ready(controller);
+    expect(retryAttempt).not.toContain("verification_token:");
     expect(controller.currentState.readiness?.status).toBe("pending");
   });
 });
@@ -141,14 +145,9 @@ function evidenceRef(content: Array<{ type: string; text?: string }> | undefined
   return ref;
 }
 
-async function ready(
-  controller: ReturnType<typeof createTaskVerificationController>,
-  receiptRef: string,
-  readbackRef: string,
-): Promise<string> {
+async function ready(controller: ReturnType<typeof createTaskVerificationController>): Promise<string> {
   return callVerification(controller, {
     action: "ready_to_finish",
-    evidence_refs_by_check: [[receiptRef, readbackRef]],
     unresolved_failures: [],
   });
 }

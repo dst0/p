@@ -207,9 +207,8 @@ describe("task verification custom tool effects", () => {
         "ready",
         {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[evidenceRef!]],
           unresolved_failures: [],
-        } as never,
+        },
         undefined,
         undefined,
         {} as never,
@@ -217,6 +216,12 @@ describe("task verification custom tool effects", () => {
       const readyText = readyResult.content.find((part) => part.type === "text")?.text ?? "";
       const token = readyText.match(/verification_token:\s*([^\s]+)/u)?.[1];
       expect(token).toBeTruthy();
+      expect(controller.currentState.readiness?.acceptanceChecks).toEqual([
+        {
+          criterion: "External effect via tool send_email completes successfully",
+          evidenceRefs: [evidenceRef!],
+        },
+      ]);
 
       const finishArgs = { status: "success", verification_token: token };
       const finishCall = {

@@ -24,11 +24,8 @@ export async function do__runAutoCompaction(
     const retryUserEntry = willRetry
       ? [...pathEntries].reverse().find((entry) => entry.type === "message" && entry.message.role === "user")
       : undefined;
-    const retryContinuationMessage = willRetry
-      ? retryUserEntry?.type === "message"
-        ? retryUserEntry.message
-        : [...self.agent.state.messages].reverse().find((message) => message.role === "user")
-      : undefined;
+    const retryContinuationMessage =
+      willRetry && retryUserEntry?.type === "message" ? retryUserEntry.message : undefined;
 
     const preparationResult = prepareCompaction(pathEntries, settings, self.systemPrompt);
     if (!preparationResult.ok) {

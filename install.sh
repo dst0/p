@@ -62,13 +62,6 @@ for ARG in "$@"; do
     esac
 done
 
-AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
-source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
-initialize_indexing_device_selection "$SELECT_INDEXING"
-initialize_indexing_batch_size_selection "$SELECT_INDEXING"
-initialize_indexing_tray_selection "$SELECT_INDEXING"
-
-
 # ---------- ensure curl ----------
 if ! command -v curl &>/dev/null; then
     need "curl"
@@ -218,14 +211,13 @@ echo ""
 echo "=== All dependencies satisfied ==="
 echo ""
 
-# ---------- embedding device selection & dependencies ----------
-prompt_indexing_device_and_batch_size_selection
-prompt_indexing_tray_selection
-check_and_prompt_missing_indexing_deps
-
 # ---------- run reinstall ----------
 echo "=== Running reinstall.sh ==="
-bash "$SCRIPT_DIR/reinstall.sh"
+REINSTALL_ARGS=()
+if [[ "$SELECT_INDEXING" == true ]]; then
+    REINSTALL_ARGS+=("--select-indexing")
+fi
+bash "$SCRIPT_DIR/reinstall.sh" "${REINSTALL_ARGS[@]}"
 
 echo ""
 echo "=== p installed successfully ==="

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Exclude ignored dependency and generated-output tests from workspace mutation snapshots while preserving ignored project tests."
+}

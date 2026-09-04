@@ -73,10 +73,10 @@ describe("evidence-mode test command source mutations", () => {
     expect(
       await callVerification(controller, {
         action: "ready_to_finish",
-        evidence_refs_by_check: [[evidenceRef]],
         unresolved_failures: [],
       }),
     ).toContain("verification_token:");
+    expect(controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([evidenceRef!]);
 
     const mutation = await runTool(
       agent,

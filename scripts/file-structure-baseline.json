@@ -725,7 +725,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 573
+    "lines": 561
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,

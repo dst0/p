@@ -45,10 +45,10 @@ describe("evidence-mode finish requested-evidence revalidation", () => {
       expect(
         await callEvidenceVerification(harness.controller, {
           action: "ready_to_finish",
-          evidence_refs_by_check: [[readEvidence]],
           unresolved_failures: [],
         }),
       ).toContain("verification_token:");
+      expect(harness.controller.currentState.readiness?.acceptanceChecks[0]?.evidenceRefs).toEqual([readEvidence]);
 
       harness.controller.state.taskPrompts![0]!.text = prompt;
       const finish = await beforeEvidenceTool(harness.agent, "finish_work", { status: "success" });
