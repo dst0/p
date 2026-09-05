@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { MAX_CANONICAL_REQUEST_CHARS } from "./constants.ts";
 import { createSessionStateUpdateBlockRegex, stripSessionStateUpdateBlocks } from "./section-rendering.ts";
-import { capSentence, compactWhitespace, isRecord } from "./state-extraction.ts";
+import { capSentence, compactWhitespace, extractTextFromBlocks, isRecord } from "./state-extraction.ts";
 import { mergeStringList, normalizePatchGoal } from "./state-rendering.ts";
 import {
   getStringField,
@@ -166,7 +166,6 @@ export function parseSessionStateUpdateBlock(
 
 /**
  * Gets the string representation of an agent message.
- * ⚡ Bolt Performance Optimization:
  * Avoids `.filter().map().join()` which causes heavy array allocations in tight loops.
  * Uses explicit `for` loop and string concatenation for extracting text content from arrays,
  * which is significantly faster and creates less GC pressure.
@@ -189,22 +188,4 @@ export function getMessageTextForState(message: AgentMessage): string {
     case "compactionSummary":
       return message.summary;
   }
-}
-
-function extractTextFromBlocks(content: unknown): string {
-  if (!Array.isArray(content)) return "";
-  let result = "";
-  let first = true;
-  for (let i = 0; i < content.length; i++) {
-    const block = content[i];
-    if (block.type === "text" && typeof block.text === "string") {
-      if (first) {
-        result = block.text;
-        first = false;
-      } else {
-        result += `\n${block.text}`;
-      }
-    }
-  }
-  return result;
 }

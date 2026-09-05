@@ -74,20 +74,29 @@ export function extractSection(markdown: string, heading: string): string {
   return extractOptionalSection(markdown, heading) ?? "";
 }
 
+export function extractTextFromBlocks(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  let result = "";
+  let first = true;
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
+    if (!isRecord(block) || block.type !== "text" || typeof block.text !== "string") continue;
+    if (first) {
+      result = block.text;
+      first = false;
+    } else {
+      result += `\n${block.text}`;
+    }
+  }
+  return result;
+}
+
 export function getAgentMessageText(message: AgentMessage): string {
   if (message.role === "user" || message.role === "custom") {
-    return typeof message.content === "string"
-      ? message.content
-      : message.content
-          .filter((block) => block.type === "text")
-          .map((block) => block.text)
-          .join("\n");
+    return typeof message.content === "string" ? message.content : extractTextFromBlocks(message.content);
   }
   if (message.role === "assistant" || message.role === "toolResult") {
-    return message.content
-      .filter((block) => block.type === "text")
-      .map((block) => block.text)
-      .join("\n");
+    return extractTextFromBlocks(message.content);
   }
   if (message.role === "bashExecution") {
     return `${message.command}\n${message.output}`;
