@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Updated published indexing documentation with the existing reinstall ownership and stale-lock recovery guidance."
+}

@@ -1,0 +1,23 @@
+# 2026-09-05 — Historical release-fragment exceptions are exact and bounded
+
+- **Status:** Corrected
+- **Correction:** 2026-09-06: The initial draft incorrectly attributed these violations to policy being introduced afterward. Git commit `59ce19ddf8d694577e30a49c8ca241d00005614c` introduced the requirement before all three commits. The chronology and root cause below are corrected.
+- **Task/context:** Certify the `p` release when three governance-only commits violated the already-active same-commit fragment requirement.
+- **Unexpected observation or failure:** The release audit rejected `56eeb58cf67bd906677e9ba335ff97fef6352374`, `4c6bc0af26ddb2da25bf246bb8748c239833b543`, and `bbecf92062a08f9aeb50fe127fba93bc92d9ef2b` because they changed `AGENTS.md` without a fragment.
+- **Evidence:** Each commit is on `origin/main`; the policy already classified `AGENTS.md` as material and required same-commit fragments. The three commits contain governance or learning documentation only. Their full commit IDs, changed-path counts, and changed-path hashes are now bound in the audit source.
+- **Approaches tried:**
+  - **Attempt:** Add new fragments today for the historical commits.
+    - **Outcome:** Rejected during review.
+    - **Why:** A later fragment cannot truthfully become evidence from the original commit.
+  - **Attempt:** Remove `AGENTS.md` from material release paths.
+    - **Outcome:** Rejected during review.
+    - **Why:** It would weaken enforcement for future policy changes.
+  - **Attempt:** Allow only the exact historical commits with path-integrity checks.
+    - **Outcome:** Worked.
+    - **Why:** The exception is cryptographically and structurally bounded, while descendants remain strict.
+- **Root cause:** Governance-only changes omitted fragments despite the active policy; no full-history release audit caught those omissions before the commits reached main.
+- **Resolution:** The audit records an explicit exception only when the full commit ID, changed-path count, changed-path hash, and affected package match the reviewed values.
+- **Verification:** Focused tests verify all seven reviewed scopes, package mappings, mutation rejection, and certificate input hashing. Full-history preview and the containing release suite are separate delivery gates.
+- **Prevention/follow-up:** Do not add broad path exemptions or reuse these entries for later commits. Any future exception requires a new reviewed full-SHA entry and its own evidence.
+- **Reusable learning:** Historical provenance exceptions must be exact, reviewable, and bound to immutable commit identity plus changed-path evidence; never repair them with retroactive fragments.
+- **References:** `scripts/release-historical-fragment-exceptions.js`, `scripts/release-change-fragments.js`, `scripts/release-change-fragment-provenance.test.js`
