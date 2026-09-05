@@ -1,7 +1,7 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { MAX_CANONICAL_REQUEST_CHARS } from "./constants.ts";
 import { createSessionStateUpdateBlockRegex, stripSessionStateUpdateBlocks } from "./section-rendering.ts";
-import { capSentence, compactWhitespace, isRecord } from "./state-extraction.ts";
+import { capSentence, compactWhitespace, extractTextFromBlocks, isRecord } from "./state-extraction.ts";
 import { mergeStringList, normalizePatchGoal } from "./state-rendering.ts";
 import {
   getStringField,
@@ -164,34 +164,26 @@ export function parseSessionStateUpdateBlock(
   };
 }
 
+/**
+ * Gets the string representation of an agent message.
+ * Avoids `.filter().map().join()` which causes heavy array allocations in tight loops.
+ * Uses explicit `for` loop and string concatenation for extracting text content from arrays,
+ * which is significantly faster and creates less GC pressure.
+ */
 export function getMessageTextForState(message: AgentMessage): string {
   switch (message.role) {
     case "user":
-      return typeof message.content === "string"
-        ? message.content
-        : message.content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("\n");
+    case "custom": {
+      if (typeof message.content === "string") {
+        return message.content;
+      }
+      return extractTextFromBlocks(message.content);
+    }
     case "assistant":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
     case "toolResult":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
+      return extractTextFromBlocks(message.content);
     case "bashExecution":
       return `${message.command}\n${message.output}`;
-    case "custom":
-      return typeof message.content === "string"
-        ? message.content
-        : message.content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("\n");
     case "branchSummary":
     case "compactionSummary":
       return message.summary;
