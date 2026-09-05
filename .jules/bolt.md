@@ -23,4 +23,4 @@
 
 ## 2024-07-24 - Replace path splitting with pre-compiled regex in hot loops
 **Learning:** Using `path.split(/[\\/]/).some(part => !part || part === '.' || part === '..')` inside a hot loop is very slow because it forces string allocation for the split array and iterates over it every time.
-**Action:** When validating path segments in high-frequency functions (like `readSafeVersionFile`), use a pre-compiled regex like `/(?:^|[\\/])(?:\.\.?|)(?:[\\/]|$)/u` with `.test()` to validate the structure in O(1) time without any intermediate array allocations.
+**Action:** When validating path segments in high-frequency functions (like `readSafeVersionFile`), use a pre-compiled regex like `/(?:^|[\\/])(?:\.\.?|)(?:[\\/]|$)/u` with `.test()` to validate the structure in O(n) time without any intermediate array allocations. The scan is linear in the path length, not O(1).
