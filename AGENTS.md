@@ -13,6 +13,15 @@
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
 
+## AGY / Google Antigravity worktree binding
+
+- For every AGY subtask, the parent must resolve the exact absolute worktree path, expected branch (or detached HEAD), and full HEAD SHA before launch. Set the process `cwd` explicitly to that worktree; never inherit or infer it.
+- Repeat that absolute path, branch, and SHA at the beginning of the subtask prompt. Require the agent to work only in that worktree, including when following references; never search for another checkout, switch worktrees, or silently substitute a repository.
+- Before any task work, require the agent to run `pwd -P`, `git rev-parse --show-toplevel`, `git branch --show-current`, and `git rev-parse HEAD`. Compare canonical paths (so `/tmp` and `/private/tmp` aliases are handled correctly), branch, and SHA with the supplied identity. Stop and report any mismatch; do not auto-correct by selecting another checkout.
+- Include the assigned file scope and read-only or edit permission explicitly. For a dirty worktree, record the scoped initial diff/status as well: HEAD alone does not identify uncommitted changes. Recheck the relevant source before accepting a report if concurrent edits occurred.
+- Require every report to state the verified absolute worktree path, branch, full HEAD SHA, inspected files, and validation performed. Reject findings from an unverified or different checkout, and independently verify findings against the assigned worktree.
+- Apply the same checks to retries and any future AGY launcher/wrapper. A successful process exit or a prompt naming the repository is not proof of correct worktree selection.
+
 ## Code Quality
 
 - Code files must contain at most 300 physical lines. `npm run check:file-structure` enforces the limit for new files and prevents legacy baseline violations from growing; tighten or remove baseline entries whenever a legacy file is reduced.
