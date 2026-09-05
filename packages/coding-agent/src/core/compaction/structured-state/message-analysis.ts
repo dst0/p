@@ -164,36 +164,47 @@ export function parseSessionStateUpdateBlock(
   };
 }
 
+/**
+ * Gets the string representation of an agent message.
+ * ⚡ Bolt Performance Optimization:
+ * Avoids `.filter().map().join()` which causes heavy array allocations in tight loops.
+ * Uses explicit `for` loop and string concatenation for extracting text content from arrays,
+ * which is significantly faster and creates less GC pressure.
+ */
 export function getMessageTextForState(message: AgentMessage): string {
   switch (message.role) {
     case "user":
-      return typeof message.content === "string"
-        ? message.content
-        : message.content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("\n");
+    case "custom": {
+      if (typeof message.content === "string") {
+        return message.content;
+      }
+      return extractTextFromBlocks(message.content);
+    }
     case "assistant":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
     case "toolResult":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
+      return extractTextFromBlocks(message.content);
     case "bashExecution":
       return `${message.command}\n${message.output}`;
-    case "custom":
-      return typeof message.content === "string"
-        ? message.content
-        : message.content
-            .filter((block) => block.type === "text")
-            .map((block) => block.text)
-            .join("\n");
     case "branchSummary":
     case "compactionSummary":
       return message.summary;
   }
+}
+
+function extractTextFromBlocks(content: unknown): string {
+  if (!Array.isArray(content)) return "";
+  let result = "";
+  let first = true;
+  for (let i = 0; i < content.length; i++) {
+    const block = content[i];
+    if (block.type === "text" && typeof block.text === "string") {
+      if (first) {
+        result = block.text;
+        first = false;
+      } else {
+        result += `\n${block.text}`;
+      }
+    }
+  }
+  return result;
 }
