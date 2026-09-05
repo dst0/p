@@ -78,8 +78,6 @@ export function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[
   let rel: string | undefined;
   let name: string | undefined;
   let filePathPosix: string | undefined;
-  let isSkillFile: boolean | undefined;
-
   let parentDir: string | undefined;
   let parentRel: string | undefined;
   let parentName: string | undefined;
@@ -88,28 +86,26 @@ export function matchesAnyPattern(filePath: string, compiledPatterns: Minimatch[
   for (let i = 0; i < compiledPatterns.length; i++) {
     const compiled = compiledPatterns[i];
 
-    if (rel === undefined) {
-      rel = toPosixPath(relative(baseDir, filePath));
-      name = basename(filePath);
-      filePathPosix = toPosixPath(filePath);
-      isSkillFile = name === "SKILL.md";
-    }
+    rel ??= toPosixPath(relative(baseDir, filePath));
+    if (compiled.match(rel)) return true;
 
-    if (compiled.match(rel) || compiled.match(name!) || compiled.match(filePathPosix!)) {
-      return true;
-    }
+    name ??= basename(filePath);
+    if (compiled.match(name)) return true;
 
-    if (isSkillFile) {
-      if (parentDir === undefined) {
-        parentDir = dirname(filePath);
-        parentRel = toPosixPath(relative(baseDir, parentDir));
-        parentName = basename(parentDir);
-        parentDirPosix = toPosixPath(parentDir);
-      }
-      if (compiled.match(parentRel!) || compiled.match(parentName!) || compiled.match(parentDirPosix!)) {
-        return true;
-      }
-    }
+    filePathPosix ??= toPosixPath(filePath);
+    if (compiled.match(filePathPosix)) return true;
+
+    if (name !== "SKILL.md") continue;
+
+    parentDir ??= dirname(filePath);
+    parentRel ??= toPosixPath(relative(baseDir, parentDir));
+    if (compiled.match(parentRel)) return true;
+
+    parentName ??= basename(parentDir);
+    if (compiled.match(parentName)) return true;
+
+    parentDirPosix ??= toPosixPath(parentDir);
+    if (compiled.match(parentDirPosix)) return true;
   }
   return false;
 }
