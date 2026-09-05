@@ -123,6 +123,8 @@ Compiled mode rechecks authoritative source freshness before routing, after tool
 
 The complete injected result—including the base block and any per-turn route—is strictly less than 5,000 characters. The base block targets roughly 2,000 characters; the hard internal budget is 4,996 characters because prompt assembly adds separator characters around it.
 
+This is the budget for the injected project-instruction segment, not the entire assembled system prompt. Built-in assistant/tool guidance, verification instructions, and session metadata occupy additional context. Measure the project-instruction block plus its per-turn route separately, and measure the complete provider request when evaluating total context cost or latency.
+
 ## `list_skills`, `read_rules`, and `read_skills`
 
 Extracted AGENTS/CLAUDE sections are instruction modules, not ordinary user skills. Their separate readers keep those semantics explicit:
