@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Fixed",
+  "summary": "Reduce shell-output sanitization allocations by reusing a compiled regular expression."
+}
