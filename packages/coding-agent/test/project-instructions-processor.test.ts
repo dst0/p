@@ -8,7 +8,7 @@ import {
   type ProjectInstructionCompiler,
   prepareProjectInstructions,
 } from "../src/core/project-instructions/index.ts";
-import { readRuleLinks } from "../src/core/project-instructions/reader.ts";
+import { readRuleLinks, readSkillLinks } from "../src/core/project-instructions/reader.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
 
@@ -58,6 +58,34 @@ afterEach(() => {
 });
 
 describe("project instruction processing", () => {
+  it.each([
+    "",
+    ".",
+    "..",
+    "./rules/catalog.md",
+    "rules//catalog.md",
+    "rules/../catalog.md",
+    "rules\\catalog.md",
+    "rules/..\\catalog.md",
+  ])("rejects invalid catalog link boundary %s", async (link) => {
+    const workspace = createWorkspace();
+    const content = "# Rules\n\nKeep catalog links lexical.\n";
+    writeFileSync(workspace.agentsPath, content);
+    const prepared = await prepareProjectInstructions({
+      cwd: workspace.root,
+      cacheDir: workspace.cacheDir,
+      contextFiles: [{ path: workspace.agentsPath, content }],
+      skills: [],
+    });
+
+    expect(() => readRuleLinks(createProjectInstructionState(prepared), [link])).toThrow(
+      /Invalid relative catalog link/u,
+    );
+    expect(() => readSkillLinks(createProjectInstructionState(prepared), [link])).toThrow(
+      /Invalid relative catalog link/u,
+    );
+  });
+
   it("keeps small sources exact without disclosing them to the compiler", async () => {
     const workspace = createWorkspace();
     const compiler = createCompiler();
