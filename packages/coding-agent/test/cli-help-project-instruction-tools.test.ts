@@ -5,8 +5,8 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-describe("CLI help for project instruction readers", () => {
-  it("advertises both built-in reader names accepted by --tools", () => {
+describe("CLI help for built-in tools", () => {
+  it("advertises project readers and image generation names accepted by --tools", () => {
     const output: string[] = [];
     vi.spyOn(console, "log").mockImplementation((value: unknown) => output.push(String(value)));
 
@@ -14,5 +14,6 @@ describe("CLI help for project instruction readers", () => {
 
     expect(output.join("\n")).toContain("read_rules");
     expect(output.join("\n")).toContain("read_skills");
+    expect(output.join("\n")).toContain("generate_image");
   });
 });

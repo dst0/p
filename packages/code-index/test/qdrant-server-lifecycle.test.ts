@@ -84,4 +84,47 @@ describe("qdrant server manager lifecycle and client batching", () => {
       fetchSpy.mockRestore();
     }
   });
+
+  it("proves ownership only when the persisted key is required by the healthy server", async () => {
+    const dataDirectory = fs.mkdtempSync(path.join(os.tmpdir(), "p-qdrant-owned-health-"));
+    fs.writeFileSync(path.join(dataDirectory, "qdrant.key"), "owned-test-key\n", { mode: 0o600 });
+    const fetchSpy = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const apiKey = new Headers(init?.headers).get("api-key");
+      return apiKey === "owned-test-key"
+        ? Response.json({ status: "ok" })
+        : new Response("Unauthorized", { status: 401 });
+    });
+    const manager = new QdrantServerManager(9999, { dataDirectory });
+
+    try {
+      await expect(
+        (manager as unknown as { isOwnedServerHealthy(): Promise<boolean> }).isOwnedServerHealthy(),
+      ).resolves.toBe(true);
+      expect(fetchSpy).toHaveBeenCalledTimes(2);
+
+      fetchSpy.mockReset();
+      fetchSpy.mockResolvedValue(Response.json({ status: "ok" }));
+      await expect(
+        (manager as unknown as { isOwnedServerHealthy(): Promise<boolean> }).isOwnedServerHealthy(),
+      ).resolves.toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      fetchSpy.mockReset();
+      fetchSpy.mockResolvedValue(new Response("Service Unavailable", { status: 503 }));
+      await expect(
+        (manager as unknown as { isOwnedServerHealthy(): Promise<boolean> }).isOwnedServerHealthy(),
+      ).resolves.toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      fetchSpy.mockReset();
+      fetchSpy.mockResolvedValue(Response.json({ status: "invalid" }));
+      await expect(
+        (manager as unknown as { isOwnedServerHealthy(): Promise<boolean> }).isOwnedServerHealthy(),
+      ).resolves.toBe(false);
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+    } finally {
+      fetchSpy.mockRestore();
+      fs.rmSync(dataDirectory, { force: true, recursive: true });
+    }
+  });
 });

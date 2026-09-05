@@ -1,0 +1,22 @@
+# 2026-08-30 — Image retry response cleanup
+
+- **Status:** Resolved
+- **Task/context:** Adversarial review of the bounded image-generation HTTP transport before PR delivery.
+- **Unexpected observation or failure:** A retry response with a provider-requested delay above the configured maximum threw before canceling its body, and a non-finite retry count could keep the request loop alive indefinitely. Network exceptions also retried immediately without the same bounded backoff used for HTTP failures.
+- **Evidence:** New regressions initially produced five failures: the open response body's cancel hook remained false, negative/fractional/infinite retry counts reached `fetch`, and the observed network-retry delay list was empty.
+- **Approaches tried:**
+  - **Attempt:** Validate the requested delay before touching the response stream.
+    - **Outcome:** Did not work
+    - **Why:** The validation exception bypassed stream cancellation, potentially retaining the connection and buffered body.
+  - **Attempt:** Clamp only negative retry counts and otherwise trust the numeric option.
+    - **Outcome:** Did not work
+    - **Why:** Fractional values have unclear attempt semantics and `Infinity` never reaches a terminal retry attempt.
+  - **Attempt:** Cancel retryable bodies first, require a finite non-negative integer retry count, and share bounded exponential fallback delay across HTTP and network failures.
+    - **Outcome:** Worked
+    - **Why:** Every retry path now releases the prior response and follows one finite, abort-aware delay contract.
+- **Root cause:** Retry policy validation and response ownership were ordered independently, and retry-count validation was weaker than the structurally infinite request loop required.
+- **Resolution:** Cancel retryable response bodies before delay validation, reject invalid retry counts before the first request, and apply the bounded fallback delay to transient network exceptions.
+- **Verification:** The five regressions failed before the implementation change and passed afterward; the focused image HTTP suite and repository check completed successfully.
+- **Prevention/follow-up:** Retry tests must assert both timing/attempt behavior and resource cleanup, including branches where policy validation itself throws.
+- **Reusable learning:** Release provider-controlled response resources before any retry-policy operation that can throw, and validate loop bounds as finite integers before entering the loop.
+- **References:** `packages/ai/src/providers/images/image-http.ts`, `packages/ai/test/image-http.test.ts`

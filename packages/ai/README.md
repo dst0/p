@@ -437,7 +437,7 @@ Do not use `stream()` or `complete()` for image generation. Image generation is 
 ### Basic Image Generation
 
 ```typescript
-import { getImageModel, generateImages } from '@mariozechner/pi-ai';
+import { getImageModel, generateImages } from '@dst0/p-ai';
 
 const model = getImageModel('openrouter', 'google/gemini-2.5-flash-image');
 
@@ -480,6 +480,22 @@ console.log(model.input);   // ['text', 'image']
 console.log(model.output);  // ['image'] or ['image', 'text']
 ```
 
+Official OpenAI and LLM-orchestrator use the same one-shot interface:
+
+```typescript
+const openAIModel = getImageModel('openai', 'gpt-image-2');
+const orchestratorModel = getImageModel('llm-orchestrator', 'flux2-klein-4b');
+
+const result = await generateImages(orchestratorModel, {
+  input: [{ type: 'text', text: 'A brass compass on a dark workbench.' }]
+}, {
+  apiKey: process.env.LLM_ORCHESTRATOR_API_KEY,
+  size: '1024x1024'
+});
+```
+
+The LLM-orchestrator base URL defaults to `http://127.0.0.1:11450/v1`. Override it with `LLM_ORC_URL`, `P_LLM_ORC_URL`, or `LLM_ORCHESTRATOR_URL`; the `/v1` suffix is added when omitted. OpenAI-compatible custom endpoints can be used by passing `baseUrl` to `getImageModel(provider, modelId, { baseUrl })`.
+
 ### Notes and Limitations
 
 - Use `getImageModel(...)`, not `getModel(...)`.
@@ -490,7 +506,8 @@ console.log(model.output);  // ['image'] or ['image', 'text']
 - Some models accept image input, others are text-to-image only. Check `model.input`.
 - Like the streaming APIs, image generation supports options such as `apiKey`, `signal`, `headers`, `onPayload`, and `onResponse`, and results may include `stopReason`, `responseId`, and `usage`.
 - If you want a model to analyze images in a conversation or call tools, use the regular `stream()` / `complete()` APIs with a model that supports image input.
-- At the moment, image generation is available through only one provider, OpenRouter.
+- Built-in image generation supports OpenRouter, official OpenAI (`gpt-image-2`), and LLM-orchestrator (`flux2-klein-4b`). OpenAI-compatible custom endpoints are also supported.
+- Provider-controlled base64 and remote URL responses share a 50MB decoded-image hard ceiling plus a 36-megapixel structural dimension ceiling. The byte ceiling is deliberately generous for high-resolution lossless output, not a normal expected payload size. Node callers must supply a trusted `downloadImage` adapter for remote URL responses; base64 responses work in Node and browser runtimes.
 
 ## Thinking/Reasoning
 

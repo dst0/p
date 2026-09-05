@@ -1,7 +1,9 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { DEFAULT_QDRANT_STARTUP_TIMEOUT_MS } from "../embed/qdrant-server.ts";
 import { DEFAULT_MAX_SEQUENCE_LENGTH, defaultMaxSequenceLength } from "./embedding-settings.ts";
+import { resolveQdrantEndpoint } from "./qdrant-endpoint.ts";
 import type { WorkspaceCodeRagServiceOptions, WorkspaceCodeRagSettings } from "./types.ts";
 
 export const DEFAULT_EMBEDDING_POOLING = "last-non-padding-token";
@@ -17,7 +19,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   qdrantUrl: "http://127.0.0.1:6333",
   qdrantBinary: "qdrant",
   qdrantDataDirectory: path.join(os.homedir(), ".p", "agent", "code-rag", "qdrant"),
-  qdrantStartupTimeoutMs: 30_000,
+  qdrantStartupTimeoutMs: DEFAULT_QDRANT_STARTUP_TIMEOUT_MS,
   embeddingServerUrl: "http://127.0.0.1:18742",
   embeddingModel: "Qwen/Qwen3-Embedding-0.6B",
   embeddingDimensions: 1024,
@@ -42,7 +44,7 @@ export const DEFAULT_WORKSPACE_CODE_RAG_SETTINGS: WorkspaceCodeRagSettings = {
   maxResultCharacters: 4_000,
   searchTimeoutMs: 30_000,
   embeddingTimeoutMs: 5 * 60_000,
-  embeddingStartupTimeoutMs: 120_000,
+  embeddingStartupTimeoutMs: 5 * 60_000,
   maxFileBytes: 1024 * 1024,
   defaultChunkLines: 80,
   maxChunkLines: 300,
@@ -208,25 +210,22 @@ function validateSettings(settings: WorkspaceCodeRagSettings): WorkspaceCodeRagS
   ]) {
     if (!Number.isFinite(value) || value <= 0) throw new Error("Code RAG numeric settings must be positive");
   }
-  if (!settings.remoteBackendsAllowed) {
-    const urls = [
-      ["qdrantUrl", settings.qdrantUrl],
-      ["embeddingServerUrl", settings.embeddingServerUrl],
-    ] as const;
-    for (const [name, value] of urls) {
-      let url: URL;
-      try {
-        url = new URL(value);
-        if (!url.protocol.startsWith("http")) throw new Error("Invalid protocol");
-      } catch {
-        throw new Error(`Code RAG ${name} must be a valid absolute URL (starting with http:// or https://)`);
-      }
-      if (!["localhost", "127.0.0.1", "0.0.0.0", "::1", "[::1]"].includes(url.hostname)) {
-        throw new Error(`Code RAG ${name} must be local unless remoteBackendsAllowed is explicitly enabled`);
-      }
-    }
-  }
+  settings.qdrantUrl = resolveQdrantEndpoint(settings.qdrantUrl, settings.remoteBackendsAllowed).url;
+  validateEmbeddingServerUrl(settings.embeddingServerUrl, settings.remoteBackendsAllowed);
   return settings;
+}
+
+function validateEmbeddingServerUrl(value: string, remoteBackendsAllowed: boolean): void {
+  let url: URL;
+  try {
+    url = new URL(value);
+    if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("Invalid protocol");
+  } catch {
+    throw new Error("Code RAG embeddingServerUrl must be a valid absolute URL (starting with http:// or https://)");
+  }
+  if (!remoteBackendsAllowed && !["localhost", "127.0.0.1", "::1", "[::1]"].includes(url.hostname)) {
+    throw new Error("Code RAG embeddingServerUrl must be local unless remoteBackendsAllowed is explicitly enabled");
+  }
 }
 
 function resolveQdrantApiKey(apiKey?: string, qdrantDataDirectory?: string): string | undefined {

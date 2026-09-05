@@ -4,6 +4,7 @@ import { defineConfig } from "vitest/config";
 const aiSrcIndex = fileURLToPath(new URL("../ai/src/index.ts", import.meta.url));
 const aiSrcOAuth = fileURLToPath(new URL("../ai/src/oauth.ts", import.meta.url));
 const aiSrcBedrockProvider = fileURLToPath(new URL("../ai/src/bedrock-provider.ts", import.meta.url));
+const aiSrcImageDownload = fileURLToPath(new URL("../ai/src/utils/image-download.ts", import.meta.url));
 const agentSrcIndex = fileURLToPath(new URL("../agent/src/index.ts", import.meta.url));
 const codeIndexSrcIndex = fileURLToPath(new URL("../code-index/src/index.ts", import.meta.url));
 const tuiSrcIndex = fileURLToPath(new URL("../tui/src/index.ts", import.meta.url));
@@ -30,6 +31,7 @@ export default defineConfig({
 			{ find: /^@dst0\/p-ai$/, replacement: aiSrcIndex },
 			{ find: /^@dst0\/p-ai\/oauth$/, replacement: aiSrcOAuth },
 			{ find: /^@dst0\/p-ai\/bedrock-provider$/, replacement: aiSrcBedrockProvider },
+			{ find: /^@dst0\/p-ai\/utils\/image-download$/, replacement: aiSrcImageDownload },
 			{ find: /^@dst0\/p-agent-core$/, replacement: agentSrcIndex },
 			{ find: /^@dst0\/p-code-index$/, replacement: codeIndexSrcIndex },
 			{ find: /^@dst0\/p-tui$/, replacement: tuiSrcIndex },

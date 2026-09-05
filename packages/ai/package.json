@@ -49,6 +49,10 @@
     "./bedrock-provider": {
       "types": "./dist/bedrock-provider.d.ts",
       "import": "./dist/bedrock-provider.js"
+    },
+    "./utils/image-download": {
+      "types": "./dist/utils/image-download.d.ts",
+      "import": "./dist/utils/image-download.js"
     }
   },
   "bin": {

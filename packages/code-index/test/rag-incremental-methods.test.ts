@@ -18,6 +18,7 @@ describe("rag-incremental-methods", () => {
       vectorStore: {
         collectionStatus: async () => ({ dimensions: 512, pointCount: 10 }),
       },
+      waitForPayloadIndexMaintenance: vi.fn().mockResolvedValue(undefined),
     } as unknown as WorkspaceCodeRagService;
 
     const plan = { added: [], changed: [], deleted: [], unchanged: [] };
@@ -71,6 +72,7 @@ describe("rag-incremental-methods", () => {
           collectionStatus: async () => ({ dimensions: 1024, pointCount: 3 }),
           deleteFileVersions: vi.fn().mockResolvedValue(undefined),
         },
+        waitForPayloadIndexMaintenance: vi.fn().mockResolvedValue(undefined),
         loadVocabulary: () => new BM25Vocabulary(),
         processPreparedFiles: async () => {},
         now: () => new Date(),

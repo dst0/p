@@ -1,0 +1,31 @@
+# 2026-08-17 — Release approval must bind evidence to the exact immutable base
+
+- **Status:** Resolved
+- **Task/context:** Replacing the manual `/cl` confirmation before monorepo version bumps and releases.
+- **Unexpected observation or failure:** The release policy asked the user to confirm that a prompt had run, but the repository contained no `/cl` implementation, persisted result, commit binding, or check in either the version-bump or release scripts. A stale or entirely absent audit therefore could not be distinguished from a current successful audit.
+- **Evidence:** Repository and user-configuration searches found only the policy sentence in `AGENTS.md`; `scripts/version-bump.js` and `scripts/release.js` mutated versions without consuming audit evidence. Regression fixtures showed that direct bumps needed to be rejected before their first write and that a certificate had to become invalid after a new commit or release-input edit.
+- **Approaches tried:**
+  - **Attempt:** Preserve the user confirmation as the gate.
+    - **Outcome:** Did not work
+    - **Why:** Confirmation was neither machine-verifiable nor bound to the current main SHA or changelog contents.
+  - **Attempt:** Treat any new `[Unreleased]` bullet for an affected package as semantic coverage.
+    - **Outcome:** Did not work
+    - **Why:** One unrelated or placeholder bullet could certify multiple independent undocumented changes. Arbitrary prose and diffs have no reliable offline relation without change-owned metadata.
+  - **Attempt:** Treat certificate issuance as permanent approval.
+    - **Outcome:** Did not work
+    - **Why:** Version mutation necessarily changes certified inputs, so a reusable certificate would either invalidate mid-release or permit stale reuse.
+  - **Attempt:** Trust a receipt's own input paths and evidence hashes during CI verification.
+    - **Outcome:** Did not work
+    - **Why:** A self-consistent receipt could omit workspaces or replace audit evidence unless CI reconstructed both from the certified base tree.
+  - **Attempt:** Validate only allowed release path names around each commit.
+    - **Outcome:** Did not work
+    - **Why:** A hook could modify an allowed file after checks or during the next-cycle commit, and the tag verifier would not inspect the later main-only commit.
+  - **Attempt:** Separate immutable evidence certification from a one-time persisted release transaction.
+    - **Outcome:** Worked
+    - **Why:** The certificate is checked and consumed while the worktree is still identical to the audited base; subsequent controlled mutations advance through explicit states and cannot mint or reuse another authorization.
+- **Root cause:** An automatable evidence check was represented as a conversational convention instead of an enforced state machine at the mutation boundary.
+- **Resolution:** Require commit-local `.changes` fragments with package/category/summary or an explicit reasoned exemption, automatically fetch and audit the exact `origin/main`, persist a Brotli Q6 certificate bound to SHA, target, fragment evidence, and release-input hashes, require its one-time token in `version-bump.js`, bind each commit to its exact prevalidated index tree, reconcile interrupted publication against remote ancestry, and publish main plus tag with one atomic push. Commit a Brotli Q6 receipt at the release tag; CI reconstructs the canonical input scope, reruns evidence from the certified base in an isolated worktree, and verifies the exact normalized changelog preview before publishing.
+- **Verification:** Domain regressions cover malformed and historically rewritten changelogs, empty `[Unreleased]` aggregation, Markdown injection, mismatched/reused/`None`/breaking fragments, two consecutive releases, cross-process persistence, self-consistent evidence and input-scope tampering, commit and input invalidation, target mismatch, interrupted local-tag recovery, remote-main advancement after publish, unexpected and allowed-file hook injection in both commits, direct bump rejection, heterogeneous 0.4.224/0.4.134 to 0.5.0 lockstep mutation, exact-tag CI checkout, receipt verification, and a real temporary Git remote completing the audit-to-atomic-push flow.
+- **Prevention/follow-up:** Keep every release mutation behind the certificate consumer, include new audit/release inputs in the canonical deterministic scope, compare commit trees rather than only path names, and add a real transition regression whenever a new release phase is introduced. Preserve protected-main review and tag/workflow permissions because repository-contained verification cannot authenticate a malicious simultaneous policy rewrite.
+- **Reusable learning:** Automate evidence collection fully, bind approval to immutable inputs, consume it once at the first mutation, and independently reconstruct verifier scope and evidence; never let an artifact choose what the verifier checks.
+- **References:** `scripts/release-changelog-audit.js`, `scripts/release-audit-certificate.js`, `scripts/release-transaction.js`, `scripts/release-flow-certificate.test.js`

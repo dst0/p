@@ -1,0 +1,22 @@
+# 2026-08-21 — Benchmark stop gates must define every degradation dimension
+
+- **Status:** Partial
+- **Task/context:** Comparing the compiled project-instruction prompt against the latest same-model `p` result for four benchmark fixtures, with an instruction to stop on the first degradation.
+- **Unexpected observation or failure:** Calculator improved across quality, runtime, tokens, and tool errors, while monolith retained 6/6 quality and used 20.7% fewer tokens but ran 7.3% slower and increased tool errors from one to seven.
+- **Evidence:** Calculator completed in 469.7 seconds versus 649.4 with 939,560 versus 1,171,998 tokens. Monolith completed in 1,133.3 seconds versus 1,056.6 with 1,713,582 versus 2,159,695 tokens; its failed iterations included five shell commands, one edit, and one premature finish attempt.
+- **Approaches tried:**
+  - **Attempt:** Treat only fixture quality and terminal status as degradation criteria.
+    - **Outcome:** Incomplete
+    - **Why:** It would label a materially slower, more error-prone run as unchanged even though the user's stop instruction said any degradation.
+  - **Attempt:** Continue inventory and saga to average out the mixed result.
+    - **Outcome:** Rejected
+    - **Why:** A single run cannot establish causality, and continuing would violate the explicit stop-on-first-degradation cost guard.
+  - **Attempt:** Finish the active monolith task, compare all reported dimensions, then stop before starting inventory.
+    - **Outcome:** Worked
+    - **Why:** It produced a complete comparable result while avoiding roughly 95 minutes of additional baseline runtime.
+- **Root cause:** The benchmark is multidimensional and nondeterministic. Reduced prompt/token volume did not prevent model-level implementation mistakes from dominating wall time in one fixture, so the processor cannot be credited with either the slowdown or a universal speedup from one repetition.
+- **Resolution:** Preserve the calculator and monolith reports, record the mixed evidence in the PR, keep the feature draft, and leave inventory and saga unstarted.
+- **Verification:** Both completed fixtures passed at 6/6; the stop occurred only after monolith's final report confirmed the runtime and tool-error regressions.
+- **Prevention/follow-up:** Before future benchmark gates, name primary quality/status invariants plus secondary runtime, token, and error tolerances. Use repeated runs only when the user authorizes the additional cost needed for a causal performance claim.
+- **Reusable learning:** A lower-token prompt can coexist with a slower agent run; benchmark release gates must compare quality, terminal status, runtime, tokens, and execution errors without attributing one-run variance to the prompt change.
+- **References:** `benchmarks/results/2026-08-21-project-instructions-p-calculator/`, `benchmarks/results/2026-08-21-project-instructions-p-monolith/`.

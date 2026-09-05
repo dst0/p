@@ -1,10 +1,10 @@
 import type { AgentTool } from "@dst0/p-agent-core";
-import type { ToolDefinition } from "../extensions/types.ts";
 import { createBashTool, createBashToolDefinition } from "./bash.ts";
 import { createEditTool, createEditToolDefinition } from "./edit.ts";
 import { createFindTool, createFindToolDefinition } from "./find.ts";
 import { createFinishWorkTool, createFinishWorkToolDefinition } from "./finish-work.ts";
-import type { ToolName, ToolsOptions } from "./index.ts";
+import { createGenerateImageTool, createGenerateImageToolDefinition } from "./generate-image.ts";
+import type { ToolDef, ToolName, ToolsOptions } from "./index.ts";
 import {
   createRecallLearningsTool,
   createRecallLearningsToolDefinition,
@@ -27,12 +27,12 @@ import {
 } from "./user-input.ts";
 import { createWriteTool, createWriteToolDefinition } from "./write.ts";
 
-export function createAllToolDefinitions(
-  cwd: string,
-  options?: ToolsOptions,
-): Record<ToolName, ToolDefinition<any, any, any>> {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
+function resolveBackgroundProcessManager(options?: ToolsOptions) {
+  return options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
+}
+
+export function createAllToolDefinitions(cwd: string, options?: ToolsOptions): Record<ToolName, ToolDef> {
+  const backgroundProcesses = resolveBackgroundProcessManager(options);
   return {
     semantic_search: createSemanticSearchToolDefinition(cwd),
     rg: createRgToolDefinition(cwd, options?.rg ?? options?.grep),
@@ -51,18 +51,19 @@ export function createAllToolDefinitions(
     finish_work: createFinishWorkToolDefinition(),
     record_learning: createRecordLearningToolDefinition(cwd),
     recall_learnings: createRecallLearningsToolDefinition(cwd),
+    generate_image: createGenerateImageToolDefinition(cwd, options?.generateImage),
   };
 }
 
 export function createCodingTools(cwd: string, options?: ToolsOptions): AgentTool[] {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
+  const backgroundProcesses = resolveBackgroundProcessManager(options);
   return [
     createReadTool(cwd, options?.read),
     createBashTool(cwd, { ...options?.bash, processManager: backgroundProcesses }),
     createProcessTool({ ...options?.process, manager: backgroundProcesses }),
     createEditTool(cwd, options?.edit),
     createWriteTool(cwd, options?.write),
+    createGenerateImageTool(cwd, options?.generateImage),
   ];
 }
 
@@ -77,8 +78,7 @@ export function createReadOnlyTools(cwd: string, options?: ToolsOptions): AgentT
 }
 
 export function createAllTools(cwd: string, options?: ToolsOptions): Record<ToolName, AgentTool> {
-  const backgroundProcesses =
-    options?.backgroundProcesses ?? options?.bash?.processManager ?? options?.process?.manager;
+  const backgroundProcesses = resolveBackgroundProcessManager(options);
   return {
     semantic_search: createSemanticSearchTool(cwd),
     rg: createRgTool(cwd, options?.rg ?? options?.grep),
@@ -97,5 +97,6 @@ export function createAllTools(cwd: string, options?: ToolsOptions): Record<Tool
     finish_work: createFinishWorkTool(),
     record_learning: createRecordLearningTool(cwd),
     recall_learnings: createRecallLearningsTool(cwd),
+    generate_image: createGenerateImageTool(cwd, options?.generateImage),
   };
 }

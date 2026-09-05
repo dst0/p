@@ -29,6 +29,7 @@ export * from "./stream.ts";
 export * from "./types.ts";
 export * from "./utils/diagnostics.ts";
 export * from "./utils/event-stream.ts";
+export * from "./utils/image-mime.ts";
 export * from "./utils/json-parse.ts";
 export type {
   OAuthAuthInfo,

@@ -27,17 +27,12 @@ function toExecutionError(error: unknown): ExecutionError {
   return new ExecutionError("unknown", cause.message, cause);
 }
 
+// Optimization: Pre-compiled regex to remove control characters except tab, newline, and carriage return
+// This avoids expensive array allocations and iterations via Array.from(str).filter(...) in high-frequency streams
+const SANITIZE_BINARY_REGEX = /[\x00-\x08\x0b-\x0c\x0e-\x1f\ufff9-\ufffb]/g;
+
 export function sanitizeBinaryOutput(str: string): string {
-  return Array.from(str)
-    .filter((char) => {
-      const code = char.codePointAt(0);
-      if (code === undefined) return false;
-      if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
-      if (code <= 0x1f) return false;
-      if (code >= 0xfff9 && code <= 0xfffb) return false;
-      return true;
-    })
-    .join("");
+  return str.replace(SANITIZE_BINARY_REGEX, "");
 }
 
 export async function executeShellWithCapture(

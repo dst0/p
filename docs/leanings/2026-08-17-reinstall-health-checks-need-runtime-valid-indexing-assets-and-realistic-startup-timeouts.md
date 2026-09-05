@@ -1,0 +1,22 @@
+# 2026-08-17 — Reinstall health checks need runtime-valid indexing assets and realistic startup timeouts
+
+- **Status:** Partial
+- **Task/context:** Reinstalling and smoke-testing the local `p` CLI after a coding-agent protocol change.
+- **Unexpected observation or failure:** The first reinstall timed out while starting a large existing Qdrant store, then a later attempt reached the Apple Core AI worker but failed to load an on-disk model asset that passed the installer's structural checks.
+- **Evidence:** Qdrant needed about 80 seconds to answer its health endpoint while the configured timeout was 30 seconds. The existing Core AI directory contained the expected marker, model, embedding table, and tokenizer, but the worker raised a Core AI load error. Regenerating the same-version asset allowed the real semantic-search smoke to return one result.
+- **Approaches tried:**
+  - **Attempt:** Treat the first `reinstall.sh` failure as a code regression.
+    - **Outcome:** Did not work
+    - **Why:** Direct process and endpoint checks showed Qdrant was still loading a multi-gigabyte local store and became responsive after the installer's deadline.
+  - **Attempt:** Reuse the structurally complete Core AI asset.
+    - **Outcome:** Did not work
+    - **Why:** File presence and the artifact version marker did not prove that the runtime could load the compiled model function.
+  - **Attempt:** Regenerate the asset and rerun the installer with a 120-second local Qdrant startup timeout.
+    - **Outcome:** Worked
+    - **Why:** The rebuilt asset loaded successfully and the larger deadline covered the observed local-store startup time.
+- **Root cause:** The Qdrant deadline was shorter than this machine's observed startup time. The old Core AI artifact was runtime-invalid despite being structurally complete; whether corruption or runtime compatibility drift caused that invalidity remains unproven.
+- **Resolution:** Increase the machine-local Qdrant startup timeout when its measured store load requires it, move the suspect Core AI asset aside, regenerate it, and require the real semantic-search smoke before accepting reinstall success.
+- **Verification:** A complete `./reinstall.sh` rebuilt and relinked version `0.4.224`, verified compaction settings, loaded the regenerated Core AI asset, and passed real semantic search with one result.
+- **Prevention/follow-up:** Add a runtime load probe or integrity fingerprint before reusing compiled Core AI assets. Keep installer logs as rotated Brotli Q6 artifacts when long-running diagnostics need persistence.
+- **Reusable learning:** Structural asset markers are only a cache hint; accelerator artifacts require a runtime load probe, and service startup deadlines should reflect measured persistent-store recovery time.
+- **References:** `scripts/install-apple-coreai.js`, `packages/code-index/apple_coreai_artifact.py`, `scripts/install-indexing-service.js`

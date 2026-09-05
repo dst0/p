@@ -15,7 +15,7 @@ import type {
 import { StoredPointError } from "../../vector-store.ts";
 import { CodeRagError } from "../coderagerror.ts";
 import { SCROLL_PROGRESS_INTERVAL } from "../constants.ts";
-import { retrievalTextForPayload, unlinkBestEffort } from "../helpers.ts";
+import { retrievalTextForPayload, unlinkBestEffort, waitForSignal } from "../helpers.ts";
 import { ReusableGenerationError } from "../reusablegenerationerror.ts";
 import type { PreparedFile, RefreshPlan } from "../types.ts";
 import type { WorkspaceCodeRagService } from "../workspacecoderagservice.ts";
@@ -33,6 +33,7 @@ export async function do_performSparseGenerationRefresh(
   if (!iteratePoints) {
     return self.performRebuild(scanned, plan, startedAt, signal, onProgress);
   }
+  await waitForSignal(self.waitForPayloadIndexMaintenance(), signal);
 
   const previousManifest = self.manifest;
   const generation = self.createGeneration();

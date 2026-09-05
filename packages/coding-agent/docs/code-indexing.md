@@ -43,7 +43,7 @@ The accelerator implementations and installers are based on the primary vendor a
 
 AMD's current Ryzen AI compatibility matrix and the lower-level MLIR-AIE device matrix describe different support layers. Ryzen AI documents the model types supported by its packaged inference stack, while MLIR-AIE documents programmable access to the underlying `npu1` and `npu2` hardware. p therefore keeps the Phoenix/Hawk Point IRON path separate from the Strix/Krackan Vitis AI path rather than interpreting general XDNA device support as proof that a particular embedding graph can run.
 
-The service starts at login and restarts after failures. Qdrant and the embedding server start lazily after at least one repository is enabled. The first index may download the configured embedding model and can take several minutes for a large repository.
+The service starts at login and restarts after failures. The embedding server starts lazily after at least one repository is enabled. Qdrant also starts lazily on a new installation, but an existing local database starts with the daemon so collection maintenance can run. Persisted Qdrant recovery has a five-minute default startup budget and does not block indefinitely. The first index may download the configured embedding model and can take several minutes for a large repository.
 
 The background daemon (`indexing-service-daemon.js`) manages the lifecycle of the Qdrant and embedding server processes, ensuring they are only running when needed and restarting them if they crash. A per-agent-directory daemon lock prevents manual, launchd, and systemd starts from running overlapping index writers. Reinstall also stops validated stale daemon and managed-backend processes left by an older service installation before running its smoke test.
 
@@ -115,6 +115,7 @@ For every enabled repository, the service:
 6. periodically reconciles the repository to recover from missed filesystem events;
 7. prioritizes an enabled repository when PAgent opens its `semantic_search` tool while preserving FIFO order for ordinary file-change refreshes;
 8. honors `/index up` as an explicit higher-priority request and safely preempts the single lower-priority repository worker.
+9. reconciles owned local Qdrant collections at startup and again after every completed 24-hour maintenance interval.
 
 ```mermaid
 sequenceDiagram
@@ -133,6 +134,29 @@ sequenceDiagram
 ```
 
 Refreshes compare current file hashes with the stored manifest. Added and changed files are embedded, deleted files are removed, and unchanged files are not re-embedded. Hashing and chunk preparation run in a bounded worker-thread pool inside the active repository refresh. The pool leaves one logical CPU available, observes cgroup memory limits on Linux, preserves an explicit memory reserve, and caps both worker count and estimated in-flight memory. If the remaining budget cannot safely fit one preparation worker, indexing stops with a resource error instead of consuming the reserve.
+
+Changed files are written before their prior point IDs are removed. Cleanup scrolls only the indexed `repoId` and `fileId` fields, compares `fileHash` client-side, and deletes explicit obsolete IDs; this keeps strict remote Qdrant deployments compatible without a high-cardinality `fileHash` payload index. Deleted files use the same indexed repository/file identity filter to remove all of their points.
+
+```mermaid
+flowchart TD
+    Start[Daemon start or completed 24h interval] --> Ready[Ensure local Qdrant is ready]
+    Ready --> Ownership{Anonymous request rejected and saved key accepted?}
+    Ownership -- No --> Skip[Skip this collection pass]
+    Ownership -- Yes --> S1[Snapshot manifests, checkpoints, and refresh locks]
+    S1 --> Inventory[List exact managed-namespace collections]
+    Inventory --> S2[Repeat protection snapshot]
+    S2 --> Unsafe{Live or ambiguous refresh lock?}
+    Unsafe -- Yes --> Retain[Retain every collection]
+    Unsafe -- No --> Protect[Protect union of both snapshots]
+    Protect --> Eligible{Unreferenced, exact managed name, at least 24h old?}
+    Eligible -- No --> Retain
+    Eligible -- Yes --> Delete[Delete collection]
+    Skip --> Schedule[Schedule next run after 24h]
+    Retain --> Schedule
+    Delete --> Schedule
+```
+
+Collection deletion is deliberately conservative. Before every startup or daily pass, p proves ownership by requiring the endpoint to reject an anonymous health request and accept its saved API key; if ownership changes while the daemon is running, that pass is skipped before inventory. Both manifest/checkpoint snapshots must be readable, a cross-process repository refresh lock blocks deletion, names must match the exact p generation grammar, and new collections receive at least a 24-hour grace period. Disabled repositories remain referenced and are retained. Startup maintenance is asynchronous after Qdrant readiness, so schema backfills or cleanup cannot consume the backend startup timeout. Remote and externally managed Qdrant endpoints never receive local orphan deletion because this installation cannot prove ownership of other clients' collections. Before a referenced manifest collection is first searched, incrementally refreshed, or scanned for a sparse-generation refresh, it receives shared, retryable required-index maintenance. Search waits are bounded by the search timeout and revalidate a replacement collection after concurrent generation changes; index creation waits for Qdrant to report the operation completed before filtered operations can use it, without delaying daemon readiness.
 
 Full rebuilds stream prepared chunks through a private mode-`0600` disk spool while building the frozen BM25 vocabulary. This keeps source-text memory bounded by the preparation window and embedding batch rather than the total repository size. The service checks free disk space before creating the spool, preserves a disk reserve, and removes the spool after success, cancellation, or failure.
 
@@ -192,6 +216,7 @@ Important fields include:
   "autoRefresh": true,
   "allowStaleSearch": true,
   "qdrantUrl": "http://127.0.0.1:6333",
+  "qdrantStartupTimeoutMs": 300000,
   "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
   "embeddingDevice": "auto",
@@ -243,7 +268,7 @@ Embedding resource controls are safe caps rather than fixed utilization targets:
 
 Edit these fields in `~/.p/agent/code-rag.json` and rerun `./reinstall.sh`. The generated launchd or systemd service receives only the agent-directory and vendor runtime paths; indexing behavior always comes from the config file.
 
-Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is explicitly enabled. The managed local Qdrant auto-start applies only to loopback endpoints.
+Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is explicitly enabled. Managed local Qdrant accepts plain HTTP on `127.0.0.1` (or canonicalized `localhost`), defaults a missing port to `6333`, and owns only that local process and storage. HTTPS loopback, IPv6 loopback, and remote endpoints are connected as externally managed services and are never spawned, stopped, or orphan-cleaned by p. Qdrant URLs with credentials, wildcard hosts, paths, queries, fragments, or non-HTTP(S) schemes are rejected.
 
 ## Troubleshooting
 

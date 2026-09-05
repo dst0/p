@@ -1,3 +1,15 @@
+import { deleteObsoleteFileVersions } from "./qdrant-file-version-cleanup.ts";
+import { QDRANT_PAYLOAD_INDEXES } from "./qdrant-payload-indexes.ts";
+import {
+  FetchQdrantRestClient,
+  type QdrantFilter,
+  type QdrantFilterCondition,
+  type QdrantPointId,
+  type QdrantRestClient,
+  type QdrantStoredPoint,
+  type QdrantVectorStoreOptions,
+} from "./qdrant-rest-client.ts";
+import { StoredPointError } from "./stored-point-error.ts";
 import type {
   RagVectorStore,
   SparseVector,
@@ -8,186 +20,8 @@ import type {
   VectorSearchResult,
 } from "./types.ts";
 
-export interface QdrantVectorStoreOptions {
-  url: string;
-  timeoutMs: number;
-  apiKey?: string;
-  upsertBatchSize?: number;
-  fetch?: typeof fetch;
-}
-
-type QdrantPointId = string | number;
-type QdrantPayloadSchema = "bool" | "keyword";
-
-interface QdrantFilterCondition {
-  key: string;
-  match: { value: string | boolean } | { any: string[] };
-}
-
-interface QdrantFilter {
-  must: QdrantFilterCondition[];
-  must_not?: QdrantFilterCondition[];
-}
-
-interface QdrantCreateCollectionRequest {
-  vectors: { dense: { size: number; distance: "Cosine" } };
-  sparse_vectors: { sparse: Record<string, never> };
-  on_disk_payload: true;
-  hnsw_config: { m: number; ef_construction: number };
-  quantization_config: { scalar: { type: "int8" } };
-}
-
-interface QdrantCollectionInfo {
-  points_count?: number;
-  config?: { params?: { vectors?: unknown } };
-}
-
-interface QdrantSearchRequest {
-  vector: { name: "dense"; vector: number[] } | { name: "sparse"; vector: SparseVector };
-  filter: QdrantFilter;
-  limit: number;
-  with_payload: true;
-  params: { hnsw_ef: number; quantization?: { rescore: true } };
-}
-
-interface QdrantStoredPoint {
-  id: QdrantPointId;
-  payload?: Record<string, unknown>;
-  vector?: unknown;
-}
-interface QdrantScrollRequest {
-  offset?: QdrantPointId;
-  limit: number;
-  filter: QdrantFilter;
-  with_payload: true;
-  with_vector: false | ["dense"];
-}
-interface QdrantScrollResult {
-  points: QdrantStoredPoint[];
-  next_page_offset?: QdrantPointId | null;
-}
-
-type QdrantScoredPoint = QdrantStoredPoint;
-
-interface QdrantRestClient {
-  collectionExists(collection: string): Promise<{ exists: boolean }>;
-  createCollection(collection: string, request: QdrantCreateCollectionRequest): Promise<void>;
-  deleteCollection(collection: string): Promise<void>;
-  getCollection(collection: string): Promise<QdrantCollectionInfo>;
-  createPayloadIndex(
-    collection: string,
-    request: { field_name: string; field_schema: QdrantPayloadSchema },
-  ): Promise<void>;
-  upsert(
-    collection: string,
-    request: {
-      wait: true;
-      points: Array<{ id: string; vector: VectorPoint["vectors"]; payload: Record<string, unknown> }>;
-    },
-  ): Promise<void>;
-  delete(collection: string, request: { wait: true; filter: QdrantFilter }): Promise<void>;
-  search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]>;
-  scroll(collection: string, request: QdrantScrollRequest, signal?: AbortSignal): Promise<QdrantScrollResult>;
-}
-
-class FetchQdrantRestClient implements QdrantRestClient {
-  private readonly baseUrl: string;
-  private readonly timeoutMs: number;
-  private readonly fetchImpl: typeof fetch;
-  private readonly apiKey?: string;
-
-  constructor(options: QdrantVectorStoreOptions) {
-    this.baseUrl = options.url.replace(/\/+$/, "");
-    this.timeoutMs = options.timeoutMs;
-    this.fetchImpl = options.fetch ?? globalThis.fetch;
-    this.apiKey = options.apiKey;
-  }
-
-  async collectionExists(collection: string): Promise<{ exists: boolean }> {
-    return this.request("GET", `${this.collectionPath(collection)}/exists`);
-  }
-
-  async createCollection(collection: string, request: QdrantCreateCollectionRequest): Promise<void> {
-    await this.request("PUT", this.collectionPath(collection), request);
-  }
-
-  async deleteCollection(collection: string): Promise<void> {
-    await this.request("DELETE", this.collectionPath(collection));
-  }
-
-  async getCollection(collection: string): Promise<QdrantCollectionInfo> {
-    return this.request("GET", this.collectionPath(collection));
-  }
-
-  async createPayloadIndex(
-    collection: string,
-    request: { field_name: string; field_schema: QdrantPayloadSchema },
-  ): Promise<void> {
-    await this.request("PUT", `${this.collectionPath(collection)}/index`, request);
-  }
-
-  async upsert(
-    collection: string,
-    request: {
-      wait: true;
-      points: Array<{ id: string; vector: VectorPoint["vectors"]; payload: Record<string, unknown> }>;
-    },
-  ): Promise<void> {
-    const { wait, ...body } = request;
-    await this.request("PUT", `${this.collectionPath(collection)}/points?wait=${wait}`, body);
-  }
-
-  async delete(collection: string, request: { wait: true; filter: QdrantFilter }): Promise<void> {
-    const { wait, ...body } = request;
-    await this.request("POST", `${this.collectionPath(collection)}/points/delete?wait=${wait}`, body);
-  }
-
-  async search(collection: string, request: QdrantSearchRequest): Promise<QdrantScoredPoint[]> {
-    return this.request("POST", `${this.collectionPath(collection)}/points/search`, request);
-  }
-  async scroll(collection: string, request: QdrantScrollRequest, signal?: AbortSignal): Promise<QdrantScrollResult> {
-    return this.request("POST", `${this.collectionPath(collection)}/points/scroll`, request, signal);
-  }
-
-  private collectionPath(collection: string): string {
-    return `/collections/${encodeURIComponent(collection)}`;
-  }
-
-  private async request<T>(method: string, requestPath: string, body?: unknown, signal?: AbortSignal): Promise<T> {
-    let response: Response;
-    try {
-      const timeoutSignal = AbortSignal.timeout(this.timeoutMs);
-      const headers: Record<string, string> = {};
-      if (body !== undefined) headers["Content-Type"] = "application/json";
-      if (this.apiKey) headers["api-key"] = this.apiKey;
-      response = await this.fetchImpl(`${this.baseUrl}${requestPath}`, {
-        method,
-        headers: Object.keys(headers).length > 0 ? headers : undefined,
-        body: body === undefined ? undefined : JSON.stringify(body),
-        signal: signal ? AbortSignal.any([signal, timeoutSignal]) : timeoutSignal,
-      });
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`Qdrant ${method} ${requestPath} failed: ${message}`, { cause: error });
-    }
-    const responseText = await response.text();
-    if (!response.ok) {
-      throw new Error(
-        `Qdrant ${method} ${requestPath} returned HTTP ${response.status}: ${responseText.slice(0, 500)}`,
-      );
-    }
-    let decoded: unknown;
-    try {
-      decoded = JSON.parse(responseText);
-    } catch (error) {
-      throw new Error(`Qdrant ${method} ${requestPath} returned invalid JSON`, { cause: error });
-    }
-    if (!decoded || typeof decoded !== "object" || Array.isArray(decoded) || !("result" in decoded)) {
-      throw new Error(`Qdrant ${method} ${requestPath} returned a response without a result`);
-    }
-    return (decoded as { result: T }).result;
-  }
-}
+export type { QdrantVectorStoreOptions } from "./qdrant-rest-client.ts";
+export { StoredPointError } from "./stored-point-error.ts";
 
 /** HNSW query beam width — lower than default 100 for faster traversal. */
 const HNSW_EF = 60;
@@ -196,13 +30,6 @@ const HNSW_M = 10;
 /** HNSW construction beam — higher than query ef for better build quality. */
 const HNSW_EF_CONSTRUCTION = 128;
 const SCROLL_PAGE_SIZE = 256;
-
-export class StoredPointError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = "StoredPointError";
-  }
-}
 
 export class QdrantVectorStore implements RagVectorStore {
   private client: QdrantRestClient;
@@ -227,6 +54,7 @@ export class QdrantVectorStore implements RagVectorStore {
           `Collection ${collection} has ${status.dimensions ?? "unknown"} dimensions; expected ${denseDimensions}`,
         );
       }
+      await this.createPayloadIndexes(collection);
       return;
     }
     await this.client.createCollection(collection, {
@@ -236,7 +64,12 @@ export class QdrantVectorStore implements RagVectorStore {
       hnsw_config: { m: HNSW_M, ef_construction: HNSW_EF_CONSTRUCTION },
       quantization_config: { scalar: { type: "int8" } },
     });
-    await this.createPayloadIndexes(collection);
+    try {
+      await this.createPayloadIndexes(collection);
+    } catch (error) {
+      await this.client.deleteCollection(collection).catch(() => undefined);
+      throw error;
+    }
   }
 
   async deleteCollection(collection: string): Promise<void> {
@@ -259,21 +92,11 @@ export class QdrantVectorStore implements RagVectorStore {
   }
 
   async createPayloadIndexes(collection: string): Promise<void> {
-    const indexes: Array<{ field_name: string; field_schema: QdrantPayloadSchema }> = [
-      { field_name: "repoId", field_schema: "keyword" },
-      { field_name: "language", field_schema: "keyword" },
-      { field_name: "isTest", field_schema: "bool" },
-      { field_name: "isGenerated", field_schema: "bool" },
-    ];
-    for (const idx of indexes) {
-      try {
-        await this.client.createPayloadIndex(collection, {
-          field_name: idx.field_name,
-          field_schema: idx.field_schema,
-        });
-      } catch {
-        // Index may already exist from a prior run; best effort.
-      }
+    for (const idx of QDRANT_PAYLOAD_INDEXES) {
+      await this.client.createPayloadIndex(collection, {
+        field_name: idx.field_name,
+        field_schema: idx.field_schema,
+      });
     }
   }
 
@@ -294,15 +117,13 @@ export class QdrantVectorStore implements RagVectorStore {
   }
 
   async deleteFileVersions(collection: string, repoId: string, fileId: string, keepFileHash?: string): Promise<void> {
+    if (keepFileHash) return deleteObsoleteFileVersions(this.client, collection, repoId, fileId, keepFileHash);
     const filter: QdrantFilter = {
       must: [
         { key: "repoId", match: { value: repoId } },
         { key: "fileId", match: { value: fileId } },
       ],
     };
-    if (keepFileHash) {
-      filter.must_not = [{ key: "fileHash", match: { value: keepFileHash } }];
-    }
     await this.client.delete(collection, { wait: true, filter });
   }
 
@@ -348,7 +169,14 @@ export class QdrantVectorStore implements RagVectorStore {
     filters: VectorSearchFilters,
     limit: number,
   ): Promise<VectorSearchResult[]> {
-    const filter = createSearchFilter(filters);
+    const must: QdrantFilterCondition[] = [{ key: "repoId", match: { value: filters.repoId } }];
+    const mustNot: QdrantFilterCondition[] = [];
+    if (filters.languages && filters.languages.length > 0) {
+      must.push({ key: "language", match: { any: filters.languages } });
+    }
+    if (!filters.includeTests) mustNot.push({ key: "isTest", match: { value: true } });
+    if (!filters.includeGenerated) mustNot.push({ key: "isGenerated", match: { value: true } });
+    const filter: QdrantFilter = { must, ...(mustNot.length > 0 ? { must_not: mustNot } : {}) };
     const requestLimit = Math.max(limit, 1);
     const densePromise =
       dense.length > 0
@@ -436,15 +264,4 @@ function parseStoredPoint(point: QdrantStoredPoint, withDense: boolean): StoredV
     throw new StoredPointError(`Qdrant stored point ${point.id} has an invalid dense vector`);
   }
   return { id: point.id, dense, payload: payload as unknown as StoredChunkPayload };
-}
-
-function createSearchFilter(filters: VectorSearchFilters): QdrantFilter {
-  const must: QdrantFilterCondition[] = [{ key: "repoId", match: { value: filters.repoId } }];
-  const mustNot: QdrantFilterCondition[] = [];
-  if (filters.languages && filters.languages.length > 0) {
-    must.push({ key: "language", match: { any: filters.languages } });
-  }
-  if (!filters.includeTests) mustNot.push({ key: "isTest", match: { value: true } });
-  if (!filters.includeGenerated) mustNot.push({ key: "isGenerated", match: { value: true } });
-  return { must, ...(mustNot.length > 0 ? { must_not: mustNot } : {}) };
 }
