@@ -9,62 +9,23 @@ import {
   getReleaseBaseTag,
   validateChangelogContent,
 } from "./release-changelog-audit.js";
+import { parseReleaseChangeFragment } from "./release-fragment-parser.js";
+import {
+  getHistoricalReleaseFragmentException,
+  matchesHistoricalLegacyFragment,
+} from "./release-historical-fragment-exceptions.js";
 
 const CONFIG_PATH = ".changes/config.json";
-const FRAGMENT_TYPES = new Set(["Added", "Changed", "Fixed", "Removed", "Breaking Changes", "None"]);
+const FRAGMENT_POLICY_PATH = "scripts/release-change-fragments.js";
+const NONE_REASON_ENFORCEMENT_MARKER = "release-none-reason-enforcement-v2";
 const CHANGELOG_PREFIX = "# Changelog\n\n## [Unreleased]\n";
 
 function git(repoRoot, args) {
   return execFileSync("git", args, { cwd: repoRoot, encoding: "utf8" }).trim();
 }
-
 function sha256(value) {
   return createHash("sha256").update(value).digest("hex");
 }
-
-function parseFragment(path, content) {
-  let fragment;
-  try {
-    fragment = JSON.parse(content);
-  } catch {
-    throw new Error(`${path}: release-note fragment must be valid JSON`);
-  }
-  if (fragment.schemaVersion !== 1) {
-    throw new Error(`${path}: unsupported release-note fragment schema`);
-  }
-  if (!Array.isArray(fragment.packages) || fragment.packages.length === 0) {
-    throw new Error(`${path}: release-note fragment must name at least one package`);
-  }
-  const packages = [...new Set(fragment.packages)];
-  if (packages.some((name) => !["agent", "ai", "coding-agent", "tui"].includes(name))) {
-    throw new Error(`${path}: release-note fragment names an unknown changelog package`);
-  }
-  if (!FRAGMENT_TYPES.has(fragment.type)) {
-    throw new Error(`${path}: release-note fragment type is invalid`);
-  }
-  if (fragment.type === "None") {
-    if (typeof fragment.reason !== "string" || fragment.reason.trim().length < 10) {
-      throw new Error(`${path}: None fragments require a specific reason`);
-    }
-    if (/[\u0000-\u001f\u007f]/.test(fragment.reason)) {
-      throw new Error(`${path}: None fragment reason must be single-line text`);
-    }
-  } else if (typeof fragment.summary !== "string" || fragment.summary.trim().length < 10) {
-    throw new Error(`${path}: release-note fragment requires a specific summary`);
-  } else if (/[\u0000-\u001f\u007f]/.test(fragment.summary)) {
-    throw new Error(`${path}: release-note fragment requires a single-line summary`);
-  }
-  return {
-    path,
-    id: path.slice(".changes/".length, -".json".length),
-    packages: packages.sort(),
-    type: fragment.type,
-    summary: fragment.summary?.trim(),
-    reason: fragment.reason?.trim(),
-    contentHash: sha256(content),
-  };
-}
-
 function materialPaths(paths) {
   return paths.filter(
     (path) =>
@@ -73,7 +34,6 @@ function materialPaths(paths) {
       !/\/CHANGELOG\.md$/.test(path),
   );
 }
-
 function policyCommit(repoRoot) {
   const commits = git(repoRoot, ["rev-list", "--first-parent", "--reverse", "HEAD"])
     .split("\n")
@@ -87,12 +47,8 @@ function policyCommit(repoRoot) {
     }
     return commit;
   }
-  if (commits.length === 0) {
-    throw new Error(`${CONFIG_PATH} must be committed before release audit certification`);
-  }
   throw new Error(`${CONFIG_PATH} must be committed before release audit certification`);
 }
-
 function existsAtRevision(repoRoot, revision, path) {
   try {
     execFileSync("git", ["cat-file", "-e", `${revision}:${path}`], {
@@ -104,7 +60,6 @@ function existsAtRevision(repoRoot, revision, path) {
     return false;
   }
 }
-
 function isAncestor(repoRoot, ancestor, descendant) {
   try {
     execFileSync("git", ["merge-base", "--is-ancestor", ancestor, descendant], {
@@ -116,9 +71,42 @@ function isAncestor(repoRoot, ancestor, descendant) {
     return false;
   }
 }
-
+function noneReasonEnforcementCutoff(repoRoot) {
+  const commit = git(repoRoot, [
+    "log",
+    "--first-parent",
+    "--reverse",
+    "--format=%H",
+    `-S${NONE_REASON_ENFORCEMENT_MARKER}`,
+    "--",
+    FRAGMENT_POLICY_PATH,
+  ]).split("\n")[0];
+  if (commit) {
+    return git(repoRoot, ["rev-parse", `${commit}^`]);
+  }
+  try {
+    if (readFileSync(join(repoRoot, FRAGMENT_POLICY_PATH), "utf8").includes(NONE_REASON_ENFORCEMENT_MARKER)) {
+      return git(repoRoot, ["rev-parse", "HEAD"]);
+    }
+  } catch {
+    return undefined;
+  }
+  return undefined;
+}
+function contentAtRevision(repoRoot, revision, path) {
+  try {
+    return execFileSync("git", ["show", `${revision}:${path}`], {
+      cwd: repoRoot,
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    });
+  } catch {
+    return undefined;
+  }
+}
 export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseTag(repoRoot)) {
   const startCommit = policyCommit(repoRoot);
+  const noneReasonCutoff = noneReasonEnforcementCutoff(repoRoot);
   const parent = git(repoRoot, ["rev-parse", `${startCommit}^`]);
   const policyPredatesBase = isAncestor(repoRoot, startCommit, baseTag);
   const rangeStart = policyPredatesBase ? baseTag : parent;
@@ -143,24 +131,38 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
         path !== CONFIG_PATH &&
         existsAtRevision(repoRoot, commit, path),
     );
-    const fragments = fragmentPaths.map((path) =>
-      parseFragment(path, git(repoRoot, ["show", `${commit}:${path}`])),
-    );
+    const historicalException = getHistoricalReleaseFragmentException(commit, changedPaths);
+    if (historicalException && JSON.stringify(affectedPackages) !== JSON.stringify(historicalException.affectedPackages)) {
+      throw new Error(`${commit}: historical release exception does not match affected packages`);
+    }
+    const allowLegacyNoneSummary = noneReasonCutoff !== undefined && isAncestor(repoRoot, commit, noneReasonCutoff);
+    const fragments = fragmentPaths.map((path) => {
+      const content = git(repoRoot, ["show", `${commit}:${path}`]);
+      const allowHistoricalLegacy = matchesHistoricalLegacyFragment(historicalException, path, sha256(content));
+      return parseReleaseChangeFragment(path, content, allowLegacyNoneSummary || allowHistoricalLegacy);
+    });
     for (const fragment of fragments) {
-      if (introducedFragments.has(fragment.id)) {
+      const allowHistoricalLegacy = matchesHistoricalLegacyFragment(historicalException, fragment.path, fragment.contentHash);
+      if (allowHistoricalLegacy && introducedFragments.get(fragment.id)?.contentHash !== historicalException.legacyFragment.previousContentHash) {
+        throw new Error(`${commit}: historical fragment does not match its previous evidence`);
+      }
+      if (introducedFragments.has(fragment.id) && !allowHistoricalLegacy) {
         throw new Error(
           `${fragment.path}: release-note fragment ${fragment.id} was introduced in a previous commit and cannot be modified`,
         );
       }
       introducedFragments.set(fragment.id, fragment);
     }
-    if (affectedPackages.length > 0 && fragments.length === 0) {
+    const missingCoverageExceptions = historicalException?.allowedMissingPackages ?? [];
+    const allowMissingCoverage = missingCoverageExceptions.length > 0;
+    if (affectedPackages.length > 0 && fragments.length === 0 && !allowMissingCoverage) {
       throw new Error(`${commit}: material release changes require a release-note fragment in the same commit`);
     }
     const coveredPackages = new Set(fragments.flatMap((fragment) => fragment.packages));
     const missingPackages = affectedPackages.filter((name) => !coveredPackages.has(name));
-    if (missingPackages.length > 0) {
-      throw new Error(`${commit}: release-note fragments do not cover ${missingPackages.join(", ")}`);
+    const uncoveredPackages = missingPackages.filter((name) => !missingCoverageExceptions.includes(name));
+    if (uncoveredPackages.length > 0) {
+      throw new Error(`${commit}: release-note fragments do not cover ${uncoveredPackages.join(", ")}`);
     }
     if (affectedPackages.length > 0) {
       evidence.push({
@@ -168,6 +170,7 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
         affectedPackages,
         changedPathsHash: sha256(changedPaths.join("\0")),
         fragments,
+        ...(historicalException ? { historicalException } : {}),
       });
     }
   }
@@ -179,6 +182,9 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
     if (!currentFragments.has(id)) {
       throw new Error(`Material release evidence requires current release-note fragment ${expected.path}`);
     }
+    if (currentFragments.get(id).contentHash !== expected.contentHash) {
+      throw new Error(`${expected.path}: current fragment content must match its committed evidence`);
+    }
   }
   return {
     policyCommit: startCommit,
@@ -187,18 +193,19 @@ export function createChangeFragmentEvidence(repoRoot, baseTag = getReleaseBaseT
     commits: evidence,
   };
 }
-
 export function getCurrentChangeFragments(repoRoot) {
   const changesRoot = join(repoRoot, ".changes");
+  const noneReasonCutoff = noneReasonEnforcementCutoff(repoRoot);
   return readdirSync(changesRoot)
     .filter((name) => name.endsWith(".json") && name !== "config.json")
     .sort()
     .map((name) => {
       const path = `.changes/${name}`;
-      return parseFragment(path, readFileSync(join(repoRoot, path), "utf8"));
+      const content = readFileSync(join(repoRoot, path), "utf8");
+      const legacyContent = noneReasonCutoff && contentAtRevision(repoRoot, noneReasonCutoff, path);
+      return parseReleaseChangeFragment(path, content, legacyContent === content);
     });
 }
-
 function addSummaries(content, type, summaries) {
   if (!content.startsWith(CHANGELOG_PREFIX)) {
     throw new Error("Cannot aggregate fragments into a malformed changelog");

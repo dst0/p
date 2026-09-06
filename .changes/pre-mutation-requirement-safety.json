@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Require complete and convergent requirements before implementation mutation, reject rootless cwd-qualified paths, and preserve task locality after truncated tool calls."
+}

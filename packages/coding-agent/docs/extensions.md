@@ -1798,6 +1798,11 @@ p.registerTool({
   name: "my_tool",
   label: "My Tool",
   description: "What this tool does (shown to LLM)",
+  effect: {
+    kind: "external_write",
+    risk: "high",
+    domains: ["persistent_state"],
+  },
   promptSnippet: "List or add items in the project todo list",
   promptGuidelines: [
     "Use my_tool for todo planning instead of direct file edits when the user asks for a task list."
@@ -1845,6 +1850,8 @@ p.registerTool({
   renderResult(result, options, theme, context) { ... },
 });
 ```
+
+`effect` is the machine-readable verification boundary. Use `read`, `workspace_write`, `external_write`, or `unknown` for `kind`; use `normal` or `high` for `risk`; and optionally declare `credentials`, `destructive`, `deployment`, `network_send`, `persistent_state`, or `publication` domains. p never infers custom-tool effects from the tool name or description. Missing or malformed metadata becomes `unknown`/`high`, which activates conservative evidence tracking. Declare `{ kind: "read", risk: "normal" }` only for tools that cannot change workspace or external state.
 
 **Signaling errors:** To mark a tool execution as failed (sets `isError: true` on the result and reports it to the LLM), throw an error from `execute`. Returning a value never sets the error flag regardless of what properties you include in the return object.
 

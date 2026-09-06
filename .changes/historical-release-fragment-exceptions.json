@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Bind reviewed historical fragment-policy exceptions to exact commits and content while rejecting current evidence drift."
+}

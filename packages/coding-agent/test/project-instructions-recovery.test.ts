@@ -1,13 +1,16 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type ProjectInstructionCompiler, prepareProjectInstructions } from "../src/core/project-instructions/index.ts";
-import { PROJECT_INSTRUCTION_MODULE_MAX_BYTES } from "../src/core/project-instructions/limits.ts";
 import { renderRulesCatalog } from "../src/core/project-instructions/prompt.ts";
-import type { ProjectInstructionRuleRecord } from "../src/core/project-instructions/types.ts";
+import type {
+  ProjectInstructionCompilerResult,
+  ProjectInstructionRuleRecord,
+} from "../src/core/project-instructions/types.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation, replaceFirstAlwaysOn } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -20,17 +23,20 @@ function createWorkspace(): { root: string; agentsPath: string; cacheDir: string
 }
 
 function createLargeContent(label: string): string {
-  return Array.from(
-    { length: 90 },
-    (_, index) => `## ${label} ${index}\n\nAlways preserve ${label} ${index}. ${"detail ".repeat(12)}\n`,
+  return Array.from({ length: 90 }, (_, index) =>
+    index === 0
+      ? `## ${label} ${index}\n\nAlways preserve ${label} ${index} on every task. ${"detail ".repeat(12)}\n`
+      : `## ${label} ${index}\n\nFor ${label} ${index} work, preserve its invariant. ${"detail ".repeat(12)}\n`,
   ).join("");
 }
 
 function createCompiler(): ProjectInstructionCompiler {
-  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) => ({
-    body: `Use read_rules for ${request.modules[0].link} and other matching modules.`,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-  }));
+  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+    ),
+  );
 }
 
 function createSkill(root: string, name: string): Skill {
@@ -87,10 +93,10 @@ describe("project instruction compiler recovery", () => {
     let shouldFail = true;
     const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => {
       if (shouldFail) throw new Error("malformed response");
-      return {
-        body: `Use read_rules for ${request.modules[0].link}.`,
-        triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-      };
+      return createProjectInstructionCompilation(
+        request,
+        Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+      );
     });
     const options = {
       cwd: workspace.root,
@@ -119,10 +125,7 @@ describe("project instruction compiler recovery", () => {
     let shouldFail = true;
     const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => {
       if (shouldFail) throw new Error("first model failed");
-      return {
-        body: `Use read_rules for ${request.modules[0].link}.`,
-        triggers: {},
-      };
+      return createProjectInstructionCompilation(request);
     });
     const options = {
       cwd: workspace.root,
@@ -167,39 +170,40 @@ describe("project instruction compiler recovery", () => {
     expect(second.manifest.skills).toHaveLength(2);
   });
 
-  it("preserves no-newline Unicode content across byte-bounded module splits", async () => {
+  it("fails closed for an oversized no-newline Unicode structural unit", async () => {
     const workspace = createWorkspace();
     const content = `# Rules\n${"a".repeat(23_999)}😀${"b".repeat(25_000)}`;
     writeFileSync(workspace.agentsPath, content);
-    const prepared = await prepareProjectInstructions({
-      cwd: workspace.root,
-      cacheDir: workspace.cacheDir,
-      contextFiles: [{ path: workspace.agentsPath, content }],
-      skills: [],
-      compiler: createCompiler(),
-    });
 
-    const restored = prepared.manifest.rules
-      .map((rule) => readFileSync(join(prepared.versionDir, rule.file), "utf8"))
-      .join("");
-    expect(restored).toBe(content);
-    expect(restored).not.toContain("�");
-    for (const rule of prepared.manifest.rules) {
-      expect(Buffer.byteLength(readFileSync(join(prepared.versionDir, rule.file)))).toBeLessThanOrEqual(
-        PROJECT_INSTRUCTION_MODULE_MAX_BYTES,
-      );
-    }
+    await expect(
+      prepareProjectInstructions({
+        cwd: workspace.root,
+        cacheDir: workspace.cacheDir,
+        contextFiles: [{ path: workspace.agentsPath, content }],
+        skills: [],
+        compiler: createCompiler(),
+      }),
+    ).rejects.toThrow(/single structural instruction unit of 49011 bytes/u);
   });
 
   it.each([
-    ["blank body", async () => ({ body: " ", triggers: {} })],
-    ["unknown link", async () => ({ body: "Read rules/not-cataloged.md", triggers: {} })],
-    ["extra trigger", async () => ({ body: "Read rules/catalog.md", triggers: { "not-a-module": "Always" } })],
+    ["blank body", (result: ProjectInstructionCompilerResult) => ({ ...result, body: " " })],
+    [
+      "unknown link",
+      (result: ProjectInstructionCompilerResult) => replaceFirstAlwaysOn(result, "Read rules/not-cataloged.md"),
+    ],
+    [
+      "extra trigger",
+      (result: ProjectInstructionCompilerResult) => ({ ...result, triggers: { "not-a-module": "Always" } }),
+    ],
     [
       "non-record triggers",
-      async () => ({ body: "Read rules/catalog.md", triggers: [] as unknown as Record<string, string> }),
+      (result: ProjectInstructionCompilerResult) => ({
+        ...result,
+        triggers: [] as unknown as Record<string, string>,
+      }),
     ],
-  ])("fails closed for %s compiler output", async (_label, compiler) => {
+  ])("fails closed for %s compiler output", async (_label, mutate) => {
     const workspace = createWorkspace();
     const content = createLargeContent("invalid");
     writeFileSync(workspace.agentsPath, content);
@@ -208,25 +212,29 @@ describe("project instruction compiler recovery", () => {
       cacheDir: workspace.cacheDir,
       contextFiles: [{ path: workspace.agentsPath, content }],
       skills: [],
-      compiler,
+      compiler: async (request) => mutate(createProjectInstructionCompilation(request)),
     });
     expect(prepared.manifest.mode).toBe("fallback");
     expect(prepared.manifest.compilerStatus).toBe("failed");
   });
 
-  it("uses fallback triggers for omitted module IDs and preserves a closing tag for a huge body", async () => {
+  it("rejects a huge compiler body and preserves deterministic fallback triggers", async () => {
     const workspace = createWorkspace();
-    const content = createLargeContent("bounded");
+    const content = `# Global\n${Array.from(
+      { length: 100 },
+      (_, index) => `- Always preserve invariant ${index} ${"x".repeat(1_000)} on every task.`,
+    ).join("\n")}\n`;
     writeFileSync(workspace.agentsPath, content);
     const prepared = await prepareProjectInstructions({
       cwd: workspace.root,
       cacheDir: workspace.cacheDir,
       contextFiles: [{ path: workspace.agentsPath, content }],
       skills: [],
-      compiler: async () => ({ body: "x".repeat(100_000), triggers: {} }),
+      compiler: async (request) => createProjectInstructionCompilation(request),
     });
 
-    expect(prepared.manifest.mode).toBe("compiled");
+    expect(prepared.manifest.mode).toBe("fallback");
+    expect(prepared.manifest.compilerStatus).toBe("failed");
     expect(prepared.manifest.rules[0].trigger).toMatch(/^Work involving/u);
     expect(prepared.prompt).toMatch(/<\/project_instructions>$/u);
     expect(prepared.prompt.length).toBeLessThan(5_000);
@@ -243,6 +251,7 @@ describe("project instruction catalog pagination", () => {
         file: `rules/rule-${index}.md`,
         title: `Rule ${index}`,
         trigger: `Condition ${index} ${"detail ".repeat(35)}`,
+        routable: true,
         sourcePath: "/repo/AGENTS.md",
         contentHash: "a".repeat(64),
       }),

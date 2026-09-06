@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["ai", "agent", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Complete trusted audit verdicts without a redundant provider turn, preserve benchmark timeout and provider failures, and bound cumulative tool-argument parsing and JSON stream output."
+}

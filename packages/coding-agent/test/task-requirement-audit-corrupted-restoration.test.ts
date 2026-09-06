@@ -11,6 +11,27 @@ import {
 } from "./task-requirement-audit-test-harness.ts";
 
 describe("requirement-audit corrupted restoration", () => {
+  it("rejects unsafe or unbounded persisted test-authoring debt", () => {
+    const harness = createRequirementAuditHarness();
+    const state = harness.controller.currentState;
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      ...state,
+      unverifiedTestPaths: ["../outside.test.ts"],
+    });
+
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    expect(restored.controller.restoreError).toContain("latest persisted task-verification state is invalid");
+
+    const oversized = createRequirementAuditHarness();
+    oversized.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      ...oversized.controller.currentState,
+      unverifiedTestPaths: ["test/a.test.ts", "test/b.test.ts", "test/c.test.ts", "test/d.test.ts"],
+    });
+    expect(createRequirementAuditHarness(oversized.sessionManager).controller.restoreError).toContain(
+      "latest persisted task-verification state is invalid",
+    );
+  });
+
   it("rejects a structurally incomplete latest state without crashing status", async () => {
     const harness = createRequirementAuditHarness();
     harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
@@ -27,6 +48,74 @@ describe("requirement-audit corrupted restoration", () => {
     expect(status).toContain("Task: undeclared");
     expect(status).toContain("latest persisted task-verification state is invalid");
     expect(restored.controller.currentState.mutationRevision).toBe(0);
+  });
+
+  it("rejects requirement definitions after a corrupt latest state without persisting a replacement", async () => {
+    const harness = createRequirementAuditHarness();
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      version: 2,
+      taskId: "corrupted-latest-state",
+    });
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    const entriesBefore = harness.sessionManager.getEntries().length;
+    const stateBefore = restored.controller.currentState;
+
+    const result = await callRequirementAudit(restored.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The inventory rejects negative quantities",
+          acceptance_criterion: "Negative quantities are rejected",
+          source_prompt_indexes: [1],
+        },
+      ],
+    });
+
+    expect(result).toContain("Cannot use the requirement audit");
+    expect(result).toContain("latest persisted task-verification state is invalid");
+    expect(restored.controller.currentState).toEqual(stateBefore);
+    expect(restored.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+    expect(harness.sessionManager.getEntries()).toHaveLength(entriesBefore);
+  });
+
+  it("rejects a legacy partial-verdict cursor because batched audits persist atomically", async () => {
+    const harness = createRequirementAuditHarness();
+    const { evidenceRef } = await reachAuditEvidenceReady(harness);
+    await nextModelTurn(harness);
+    await callRequirementAudit(harness.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The first behavior is complete",
+          acceptance_criterion: "Focused evidence proves the first behavior",
+          source_prompt_indexes: [1],
+        },
+        {
+          type: "verification",
+          text: "The second behavior is complete",
+          acceptance_criterion: "Focused evidence proves the second behavior",
+          source_prompt_indexes: [1],
+        },
+      ],
+      ignored_source_prompts: [],
+    });
+    const state = harness.controller.currentState;
+    state.requirementAudit.nextRequirementIndex = 1;
+    state.requirementAudit.requirements[0]!.verdict = {
+      passed: true,
+      reason: "Legacy partial verdict",
+      evidenceRefs: [evidenceRef],
+      mutationRevision: state.mutationRevision,
+    };
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, state);
+
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    expect(await callTaskVerification(restored.controller, { action: "status" })).toContain(
+      "latest persisted task-verification state is invalid",
+    );
+    expect(restored.controller.currentState.requirementAudit.status).toBe("pending");
   });
 
   it("does not fall back to an older completion certificate when the latest state is invalid", async () => {
@@ -48,10 +137,14 @@ describe("requirement-audit corrupted restoration", () => {
     await nextModelTurn(harness);
     const completion = await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Current focused evidence proves the complete requirement.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Current focused evidence proves the complete requirement.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
     const staleToken = auditVerificationToken(completion);
     harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {

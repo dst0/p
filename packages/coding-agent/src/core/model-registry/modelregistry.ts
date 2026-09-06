@@ -48,6 +48,7 @@ import type {
 
 export class ModelRegistry {
   public models: Model<Api>[] = [];
+  public configuredModels: Model<Api>[] = [];
 
   public providerRequestConfigs: Map<string, ProviderRequestConfig> = new Map();
 

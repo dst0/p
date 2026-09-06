@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Bind benchmark candidate versions to the complete paired orchestration and measurement closure."
+}

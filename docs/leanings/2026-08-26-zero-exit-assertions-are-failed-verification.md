@@ -1,0 +1,22 @@
+# 2026-08-26 — Zero-exit assertions are failed verification
+
+- **Status:** Resolved
+- **Task/context:** Inspect live AI-unit and task-3 verification evidence for false-success manual reproductions.
+- **Unexpected observation or failure:** A Node reproduction used `console.assert`, printed `Assertion failed`, then printed `ALL CHECKS PASSED` and exited zero. The shell result and verification evidence were therefore treated as successful even though a checked invariant failed.
+- **Evidence:** The live reproduction exposed changed batch state while the tool-level result remained successful. Focused regressions confirmed that assertion-failure output could clear changed-test debt and support a passed `manual_reproduction` verdict.
+- **Approaches tried:**
+  - **Attempt:** Trust process exit status alone.
+    - **Outcome:** Did not work
+    - **Why:** Node `console.assert` logs instead of throwing and does not make the process fail.
+  - **Attempt:** Mark every shell result containing assertion text as failed.
+    - **Outcome:** Rejected
+    - **Why:** Read-only searches can legitimately display example failure text.
+  - **Attempt:** Detect line-oriented runtime assertion failures for executed shell commands, exclude confidently read-only commands, and reject the same marker as positive test output.
+    - **Outcome:** Worked
+    - **Why:** It closes manual and test-evidence paths without reclassifying `rg` output or changing expected non-zero baseline semantics.
+- **Root cause:** Evidence authority relied on tool exit status and runner failure patterns that did not include Node's zero-exit `Assertion failed` output.
+- **Resolution:** Runtime assertion failures now mark executed shell evidence and its tool result as failed while preserving whether the process itself failed. Synthesized semantic failures cannot satisfy a `failing_regression_test` baseline; native nonzero focused tests still can. The compact system prompt requires throwing assertions and prohibits `console.assert` for verification.
+- **Verification:** Focused tests reproduce Node's real zero-exit `console.assert` behavior, prove that mixed `Assertion failed` plus pass output does not clear test debt, reject it for manual and failing-regression evidence, preserve native nonzero baseline failures, and leave read-only search output non-error. The full static prompt remains within 4.2k characters.
+- **Prevention/follow-up:** Prefer `node:assert/strict` or explicit throws in live reproductions; keep semantic failure markers scoped to executed commands.
+- **Reusable learning:** A zero process exit is insufficient when the assertion API only logs; classify the semantic failure fail-closed without erasing native process-failure provenance.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/mutation-tracking.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/test-invocation-selection.ts`, `packages/coding-agent/test/task-verification-runtime-assertion-output.test.ts`

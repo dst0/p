@@ -46,6 +46,38 @@ class ResourceManagerTest(unittest.TestCase):
         self.assertEqual(plan.dtype, "bfloat16")
         self.assertEqual(plan.model_bytes, 1_200_000_000)
 
+    def test_mps_unified_memory_does_not_double_count_dedicated_vram_reserve(self):
+        plan = build_runtime_plan(
+            preferred_backend="mps",
+            logical_cpu_count=12,
+            memory=MemorySnapshot(
+                system_total_bytes=24 * GIB,
+                system_available_bytes=4 * GIB,
+                accelerator_total_bytes=24 * GIB,
+                accelerator_free_bytes=4 * GIB,
+            ),
+            model_parameter_count=600_000_000,
+        )
+
+        self.assertTrue(plan.usable)
+        self.assertEqual(plan.backend, "mps")
+        self.assertEqual(plan.accelerator_reserve_bytes, 512 * 1024 * 1024)
+
+        float32_plan = build_runtime_plan(
+            preferred_backend="mps",
+            logical_cpu_count=12,
+            memory=MemorySnapshot(
+                system_total_bytes=24 * GIB,
+                system_available_bytes=4 * GIB,
+                accelerator_total_bytes=24 * GIB,
+                accelerator_free_bytes=4 * GIB,
+            ),
+            model_parameter_count=600_000_000,
+            mps_precision="float32",
+        )
+        self.assertFalse(float32_plan.usable)
+        self.assertEqual(float32_plan.backend, "none")
+
     def test_allows_an_explicit_float32_mps_benchmark_baseline(self):
         plan = build_runtime_plan(
             preferred_backend="mps",

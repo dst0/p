@@ -7,7 +7,9 @@ import type {
 } from "@dst0/p-agent-core";
 import type { ToolDefinition } from "../extensions/types.ts";
 import type { SessionManager } from "../session-manager.ts";
-import type { RequirementAuditSchema, VerificationSchema } from "./constants.ts";
+import type { EvidenceVerificationSchema, RequirementAuditSchema, VerificationSchema } from "./constants.ts";
+import { DEFAULT_TASK_VERIFICATION_MODE, type TaskVerificationMode } from "./mode.ts";
+import type { RejectedRequirementDefinitionDraft } from "./requirement-definition-repair.ts";
 import { emptyState } from "./state-factories.ts";
 import {
   do_blocked,
@@ -24,6 +26,13 @@ import {
   do_withGuidance,
 } from "./taskverificationcontroller-methods/auto-finalization.ts";
 import { do_recordBaseline } from "./taskverificationcontroller-methods/baseline-recording.ts";
+import { applyEvidenceInput } from "./taskverificationcontroller-methods/evidence-input.ts";
+import { formatEvidenceNextAction } from "./taskverificationcontroller-methods/evidence-next-action.ts";
+import {
+  completionGateWithEvidence,
+  publishGateWithEvidence,
+  readyToFinishWithEvidence,
+} from "./taskverificationcontroller-methods/evidence-readiness.ts";
 import {
   do_completionGate,
   do_finalVerificationError,
@@ -35,12 +44,11 @@ import {
   do_restore,
   do_taskText,
 } from "./taskverificationcontroller-methods/evidence-resolution.ts";
+import { formatEvidenceStatus } from "./taskverificationcontroller-methods/evidence-status.ts";
 import { do_recordFinal } from "./taskverificationcontroller-methods/final-recording.ts";
 import {
   do_afterToolCall,
-  do_applyInput,
   do_authorizeBaselineTest,
-  do_declareTask,
   do_detectMutation,
 } from "./taskverificationcontroller-methods/mutation-tracking.ts";
 import {
@@ -57,12 +65,14 @@ import {
   do_baselineReplayInstruction,
   do_formatNextRequirement,
 } from "./taskverificationcontroller-methods/requirement-formatting.ts";
-import {
-  do_beforeToolCall,
-  do_createToolDefinition,
-  do_install,
-} from "./taskverificationcontroller-methods/tool-integration.ts";
+import type { SourceWorkspaceSnapshot } from "./taskverificationcontroller-methods/source-workspace-snapshot.ts";
+import { declareTask } from "./taskverificationcontroller-methods/task-declaration.ts";
+import { createTaskVerificationToolDefinition } from "./taskverificationcontroller-methods/task-verification-tool-definition.ts";
+import type { TestWorkspaceSnapshot } from "./taskverificationcontroller-methods/test-workspace-snapshot.ts";
+import { do_beforeToolCall, do_install } from "./taskverificationcontroller-methods/tool-integration.ts";
+import { applyVerificationInput } from "./taskverificationcontroller-methods/verification-input-dispatch.ts";
 import type {
+  EvidenceVerificationInput,
   FinalMethod,
   RequirementAuditInput,
   TaskVerificationEvidence,
@@ -72,33 +82,33 @@ import type {
 } from "./types.ts";
 
 export class TaskVerificationController {
+  readonly mode: TaskVerificationMode;
   readonly toolDefinition: ToolDefinition;
-
   readonly requirementAuditToolDefinition: ToolDefinition;
-
   public readonly sessionManager: SessionManager;
-
   public readonly evidence = new Map<string, TaskVerificationEvidence>();
-
   public readonly bashFingerprints = new Map<string, string | undefined>();
-
-  public readonly mutatedSourceFiles = new Set<string>();
-
+  public readonly testMutationReservations = new Map<string, string[]>();
+  public readonly testVerificationStarts = new Map<
+    string,
+    { mutationAttemptRevision: number; mutationRevision: number; unverifiedTestPaths: string[] }
+  >();
+  public readonly workspaceTestSnapshots = new Map<string, TestWorkspaceSnapshot | undefined>();
+  public readonly workspaceSourceSnapshots = new Map<string, SourceWorkspaceSnapshot | undefined>();
+  public readonly activeMutationAttempts = new Set<string>();
+  public mutationAttemptRevision = 0;
+  public readonly requirementSourceTexts = new Map<string, string>();
+  public rejectedRequirementDefinitionDraft?: RejectedRequirementDefinitionDraft;
   public state = emptyState();
-
   public latestUserPrompt = "";
-
   public nextEvidence = 1;
-
   public installed = false;
-
   public modelTurn = 0;
-
   public lastAuditTransitionTurn = -1;
-
   public restoreError?: string;
 
-  constructor(sessionManager: SessionManager) {
+  constructor(sessionManager: SessionManager, mode: TaskVerificationMode = DEFAULT_TASK_VERIFICATION_MODE) {
+    this.mode = mode;
     this.sessionManager = sessionManager;
     this.restore();
     this.toolDefinition = this.createToolDefinition() as unknown as ToolDefinition;
@@ -108,15 +118,16 @@ export class TaskVerificationController {
   get currentState(): TaskVerificationState {
     return structuredClone(this.state);
   }
-
   install(agent: Agent): void {
     do_install(this, agent);
   }
 
-  createToolDefinition(): ToolDefinition<typeof VerificationSchema, VerificationResult> {
-    return do_createToolDefinition(this);
+  createToolDefinition(): ToolDefinition<
+    typeof VerificationSchema | typeof EvidenceVerificationSchema,
+    VerificationResult
+  > {
+    return createTaskVerificationToolDefinition(this);
   }
-
   createRequirementAuditToolDefinition(): ToolDefinition<typeof RequirementAuditSchema, VerificationResult> {
     return do_createRequirementAuditToolDefinition(this);
   }
@@ -124,7 +135,6 @@ export class TaskVerificationController {
   beforeToolCall(context: BeforeToolCallContext): BeforeToolCallResult | undefined {
     return do_beforeToolCall(this, context);
   }
-
   async afterToolCall(
     context: AfterToolCallContext,
     previousResult: AfterToolCallResult | undefined,
@@ -135,21 +145,24 @@ export class TaskVerificationController {
   async detectMutation(context: AfterToolCallContext, isError: boolean): Promise<boolean> {
     return do_detectMutation(this, context, isError);
   }
-
-  applyInput(input: VerificationInput): VerificationResult {
-    return do_applyInput(this, input);
+  applyInput(input: VerificationInput | EvidenceVerificationInput): VerificationResult {
+    if (this.mode === "off") return this.rejected("Task verification is disabled for this session.");
+    if (this.mode === "evidence") return applyEvidenceInput(this, input);
+    return applyVerificationInput(this, input as VerificationInput);
   }
 
   applyRequirementAudit(input: RequirementAuditInput): VerificationResult {
+    if (this.mode !== "audit") {
+      return this.rejected("Requirement audit is available only when task verification mode is audit.");
+    }
     return do_applyRequirementAudit(this, input);
   }
-
   beginAuditTransition(): string | undefined {
     return do_beginAuditTransition(this);
   }
 
   declareTask(input: VerificationInput): VerificationResult {
-    return do_declareTask(this, input);
+    return declareTask(this, input);
   }
 
   authorizeBaselineTest(input: VerificationInput): VerificationResult {
@@ -165,9 +178,10 @@ export class TaskVerificationController {
   }
 
   readyToFinish(input: VerificationInput): VerificationResult {
-    return do_readyToFinish(this, input);
+    return this.mode === "evidence"
+      ? readyToFinishWithEvidence(this, input as EvidenceVerificationInput)
+      : do_readyToFinish(this, input);
   }
-
   isAuthorizedBaselineTestMutation(toolName: string, args: unknown): boolean {
     return do_isAuthorizedBaselineTestMutation(this, toolName, args);
   }
@@ -196,11 +210,13 @@ export class TaskVerificationController {
   }
 
   publishGate(action: string): BeforeToolCallResult | undefined {
-    return do_publishGate(this, action);
+    return this.mode === "evidence" ? publishGateWithEvidence(this, action) : do_publishGate(this, action);
   }
 
-  completionGate(action: string, verificationToken?: string): BeforeToolCallResult | undefined {
-    return do_completionGate(this, action, verificationToken);
+  completionGate(action: string, verificationToken?: string, filesChanged?: unknown): BeforeToolCallResult | undefined {
+    return this.mode === "evidence"
+      ? completionGateWithEvidence(this, action, verificationToken, filesChanged)
+      : do_completionGate(this, action, verificationToken);
   }
 
   restore(): void {
@@ -212,11 +228,10 @@ export class TaskVerificationController {
   }
 
   formatStatus(): string {
-    return do_formatStatus(this);
+    return this.mode === "evidence" ? formatEvidenceStatus(this) : do_formatStatus(this);
   }
-
   formatNextRequirement(): string {
-    return do_formatNextRequirement(this);
+    return this.mode === "evidence" ? formatEvidenceNextAction(this) : do_formatNextRequirement(this);
   }
 
   baselineReplayInstruction(): string {

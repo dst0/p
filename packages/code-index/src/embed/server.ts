@@ -196,21 +196,26 @@ export class EmbeddingServerManager {
 
   async waitUntilIdle(timeoutMs: number = 1_000): Promise<boolean> {
     const deadline = Date.now() + timeoutMs;
-    do {
+    while (Date.now() < deadline) {
+      const remainingMs = deadline - Date.now();
       try {
         const response = await fetch(`http://127.0.0.1:${this.port}/health`, {
-          signal: AbortSignal.timeout(Math.min(500, Math.max(1, timeoutMs))),
+          signal: AbortSignal.timeout(Math.min(500, Math.max(1, remainingMs))),
         });
-        if (response.ok) {
+        if (!response.ok) {
+          await response.body?.cancel();
+        } else {
           const health = (await response.json()) as { embeddingRequests?: { active?: unknown } };
+          if (Date.now() >= deadline) return false;
           if (health.embeddingRequests?.active === 0) return true;
         }
       } catch {
-        return false;
+        // A transient probe failure does not exhaust the remaining global wait budget.
       }
-      if (Date.now() >= deadline) return false;
-      await new Promise((resolve) => setTimeout(resolve, 50));
-    } while (Date.now() < deadline);
+      const retryDelayMs = Math.min(50, deadline - Date.now());
+      if (retryDelayMs <= 0) return false;
+      await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+    }
     return false;
   }
 

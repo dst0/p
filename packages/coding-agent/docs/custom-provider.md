@@ -155,6 +155,20 @@ p.registerProvider("my-llm", {
 
 When `models` is provided, it **replaces** all existing models for that provider.
 
+Dynamic discovery extensions that reuse a configured provider preserve authoritative thinking metadata for models that remain available by default:
+
+```typescript
+p.registerProvider("my-llm", {
+  baseUrl: "https://api.my-llm.com/v1",
+  apiKey: "$MY_LLM_API_KEY",
+  api: "openai-completions",
+  compat: { supportsDeveloperRole: false },
+  models: discoveredModels,
+});
+```
+
+The default `inherit-existing` metadata policy still replaces provider membership with the supplied `models` list. For an exact provider, model ID, and API match, only omitted `reasoning`, `thinkingLevelMap`, and `compat` metadata inherit from the existing model. Thinking-level maps merge by key, and compatibility precedence is existing model, then provider `compat`, then model `compat`; explicit model values, including `null` thinking levels, win. Models without an exact same-API match use normal defaults. Pass `modelMetadata: "replace"` to discard omitted metadata explicitly. Once registered, an explicit selected mode persists across later partial registrations that omit `modelMetadata`.
+
 `apiKey` and custom header values use the same config value syntax as `models.json`: `!command` at the start executes a command for the whole value, `$ENV_VAR` and `${ENV_VAR}` interpolate environment variables, `$$` emits a literal `$`, and `$!` emits a literal `!`.
 
 ## Unregister Provider
@@ -636,6 +650,10 @@ interface ProviderConfig {
 
   /** API type for streaming. Required at provider or model level when defining models. */
   api?: Api;
+  /** Compatibility defaults applied before model-level compatibility settings. */
+  compat?: Model<Api>["compat"];
+  /** Defaults to exact-match thinking-metadata inheritance; use "replace" to discard omitted metadata. */
+  modelMetadata?: "replace" | "inherit-existing";
 
   /** Custom streaming implementation for non-standard APIs. */
   streamSimple?: (
@@ -668,7 +686,7 @@ interface ProviderConfig {
 
 ```typescript
 interface ProviderModelConfig {
-  /** Model ID (e.g., "claude-sonnet-4-20250514"). */
+  /** Required non-empty model ID (e.g., "claude-sonnet-4-20250514"). */
   id: string;
 
   /** Display name (e.g., "Claude 4 Sonnet"). */

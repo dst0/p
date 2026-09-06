@@ -47,6 +47,10 @@ function fragment(packages, summary) {
   return `${JSON.stringify({ schemaVersion: 1, packages, type: "Added", summary })}\n`;
 }
 
+function noneFragment(packages, field, value) {
+  return `${JSON.stringify({ schemaVersion: 1, packages, type: "None", [field]: value })}\n`;
+}
+
 test("requires every material policy-era commit to carry matching package evidence", () => {
   const repoRoot = fixture();
   try {
@@ -221,6 +225,55 @@ test("starts the next audit after the latest release tag and ignores consumed fr
     assert.equal(evidence.baseTag, "v0.5.0");
     assert.equal(evidence.commits.length, 1);
     assert.equal(evidence.commits[0].fragments[0].id, "agent-next");
+  } finally {
+    rmSync(repoRoot, { recursive: true, force: true });
+  }
+});
+
+test("grandfathers unchanged pre-enforcement None summaries but requires reasons afterward", () => {
+  const repoRoot = fixture();
+  try {
+    const legacyPath = ".changes/legacy-internal.json";
+    const legacyContent = noneFragment(
+      ["agent"],
+      "summary",
+      "Record historical internal release evidence without a user-facing changelog entry.",
+    );
+    write(repoRoot, ".changes/config.json", '{"schemaVersion":1}\n');
+    write(repoRoot, legacyPath, legacyContent);
+    write(repoRoot, "packages/agent/src/index.js", "export const first = 2;\n");
+    commit(repoRoot, "historical summary-style exemption");
+    write(
+      repoRoot,
+      "scripts/release-change-fragments.js",
+      'export const policy = "release-none-reason-enforcement-v2";\n',
+    );
+    write(
+      repoRoot,
+      ".changes/reason-policy.json",
+      noneFragment(["coding-agent"], "reason", "Enforce explicit reasons for all newly introduced None fragments."),
+    );
+    commit(repoRoot, "enforce reasons for new None fragments");
+
+    const evidence = createChangeFragmentEvidence(repoRoot);
+    assert.equal(evidence.commits[0].fragments[0].summary, JSON.parse(legacyContent).summary);
+
+    write(repoRoot, legacyPath, noneFragment(["agent"], "summary", "Rewrite the historical exemption after enforcement."));
+    assert.throws(() => applyReleaseFragments(repoRoot), /None fragments require a specific reason/);
+    write(repoRoot, legacyPath, legacyContent);
+    write(repoRoot, ".changes/copied-legacy.json", legacyContent);
+    assert.throws(() => applyReleaseFragments(repoRoot), /None fragments require a specific reason/);
+    rmSync(join(repoRoot, ".changes/copied-legacy.json"));
+
+    write(
+      repoRoot,
+      ".changes/new-internal.json",
+      noneFragment(["agent"], "summary", "Describe a new internal-only change without the required reason."),
+    );
+    assert.throws(() => applyReleaseFragments(repoRoot), /None fragments require a specific reason/);
+    write(repoRoot, "packages/agent/src/new-internal.js", "export const internal = true;\n");
+    commit(repoRoot, "new summary-style exemption after enforcement");
+    assert.throws(() => createChangeFragmentEvidence(repoRoot), /None fragments require a specific reason/);
   } finally {
     rmSync(repoRoot, { recursive: true, force: true });
   }

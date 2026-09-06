@@ -13,6 +13,7 @@ import type {
   AgentToolResult,
   AgentToolUpdateCallback,
   ThinkingLevel,
+  ToolEffectDeclaration,
   ToolExecutionMode,
 } from "@dst0/p-agent-core";
 import type {
@@ -460,6 +461,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
   name: string;
   /** Human-readable label for UI */
   label: string;
+  /** Declares observable effects; omission means unknown and high risk for custom tools. */
+  effect?: ToolEffectDeclaration;
   /** Description for LLM */
   description: string;
   /** Optional one-line snippet for the Available tools section in the default system prompt. Custom tools are omitted from that section when this is not provided. */
@@ -470,10 +473,8 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
   parameters: TParams;
   /** Controls whether ToolExecutionComponent renders the standard colored shell or the tool renders its own framing. */
   renderShell?: "default" | "self";
-
   /** Optional compatibility shim to prepare raw tool call arguments before schema validation. Must return an object conforming to TParams. */
   prepareArguments?: (args: unknown) => Static<TParams>;
-
   /**
    * Per-tool execution mode override.
    * - "sequential": this tool must execute one at a time with other tool calls.
@@ -482,7 +483,6 @@ export interface ToolDefinition<TParams extends TSchema = TSchema, TDetails = un
    * If omitted, the default execution mode applies.
    */
   executionMode?: ToolExecutionMode;
-
   /** Execute the tool. */
   execute(
     toolCallId: string,
@@ -751,15 +751,15 @@ export interface ToolExecutionUpdateEvent {
   partialResult: any;
 }
 
-/** Fired when a tool finishes executing */
+/** Fired when a tool call settles; `executed` reports whether its execute function was invoked. */
 export interface ToolExecutionEndEvent {
   type: "tool_execution_end";
   toolCallId: string;
   toolName: string;
   result: any;
   isError: boolean;
+  executed: boolean;
 }
-
 // ============================================================================
 // Model Events
 // ============================================================================
@@ -1382,18 +1382,18 @@ export interface ExtensionAPI {
 
 /** Configuration for registering a provider via p.registerProvider(). */
 export interface ProviderConfig {
-  /** Display name for the provider in UI. */
-  name?: string;
+  name?: string; // Display name for the provider in UI.
   /** Base URL for the API endpoint. Required when defining models. */
   baseUrl?: string;
   /** API key literal, env interpolation ($ENV_VAR or ${ENV_VAR}), or leading !command. Required when defining models (unless oauth provided). */
   apiKey?: string;
   /** API type. Required at provider or model level when defining models. */
   api?: Api;
+  compat?: Model<Api>["compat"]; // Compatibility defaults shared by this provider's models.
+  modelMetadata?: "replace" | "inherit-existing"; // Defaults to exact-match inheritance; use replace to discard omitted metadata.
   /** Optional streamSimple handler for custom APIs. */
   streamSimple?: (model: Model<Api>, context: Context, options?: SimpleStreamOptions) => AssistantMessageEventStream;
-  /** Custom headers to include in requests. */
-  headers?: Record<string, string>;
+  headers?: Record<string, string>; // Custom headers to include in requests.
   /** If true, adds Authorization: Bearer header with the resolved API key. */
   authHeader?: boolean;
   /** Models to register. If provided, replaces all existing models for this provider. */

@@ -70,6 +70,7 @@ export async function finalizeExecutedToolCall(
           assistantMessage,
           toolCall: prepared.toolCall,
           args: prepared.args,
+          effect: prepared.effect,
           result,
           isError,
           context: currentContext,
@@ -82,6 +83,7 @@ export async function finalizeExecutedToolCall(
           details: afterResult.details ?? result.details,
           progress: afterResult.progress ?? result.progress,
           terminate: afterResult.terminate ?? result.terminate,
+          completion: afterResult.completion ?? result.completion,
         };
         isError = afterResult.isError ?? isError;
       }
@@ -95,6 +97,7 @@ export async function finalizeExecutedToolCall(
     toolCall: prepared.toolCall,
     result,
     isError,
+    executed: true,
   };
 }
 
@@ -105,6 +108,7 @@ export async function emitToolExecutionEnd(finalized: FinalizedToolCallOutcome, 
     toolName: finalized.toolCall.name,
     result: finalized.result,
     isError: finalized.isError,
+    executed: finalized.executed,
   });
 }
 
@@ -126,7 +130,10 @@ export async function emitToolResultMessage(toolResultMessage: ToolResultMessage
 }
 
 export function shouldTerminateToolBatch(finalizedCalls: FinalizedToolCallOutcome[]): boolean {
-  return finalizedCalls.length > 0 && finalizedCalls.every((finalized) => finalized.result.terminate === true);
+  return (
+    finalizedCalls.length > 0 &&
+    finalizedCalls.every((finalized) => !finalized.isError && finalized.result.terminate === true)
+  );
 }
 
 export function createExecutedToolCallBatch(
@@ -136,13 +143,18 @@ export function createExecutedToolCallBatch(
   const madeProgress = finalizedCalls.some(
     (finalized) => !finalized.isError && finalized.result.progress !== "waiting",
   );
+  const terminate = shouldTerminateToolBatch(finalizedCalls);
+  const completions = finalizedCalls.flatMap((finalized) =>
+    !finalized.isError && finalized.result.completion ? [finalized.result.completion] : [],
+  );
   return {
     messages,
-    terminate: shouldTerminateToolBatch(finalizedCalls),
+    terminate,
     madeProgress,
     waiting:
       !madeProgress &&
       finalizedCalls.some((finalized) => !finalized.isError && finalized.result.progress === "waiting"),
+    ...(terminate && finalizedCalls.length === 1 && completions.length === 1 ? { completion: completions[0] } : {}),
   };
 }
 
@@ -162,6 +174,7 @@ export async function executeToolCallsSequential(
       type: "tool_execution_start",
       toolCallId: toolCall.id,
       toolName: toolCall.name,
+      toolDescription: currentContext.tools?.find((tool) => tool.name === toolCall.name)?.description,
       args: toolCall.arguments,
     });
 
@@ -172,6 +185,7 @@ export async function executeToolCallsSequential(
         toolCall,
         result: preparation.result,
         isError: preparation.isError,
+        executed: false,
       };
     } else {
       const executed = await executePreparedToolCall(preparation, signal, emit);

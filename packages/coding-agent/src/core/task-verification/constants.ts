@@ -1,13 +1,30 @@
 import { Type } from "typebox";
+import { CompletionVerificationScopeSchema } from "./completion-verification-scope.ts";
+
+export {
+  IgnoredSourceClauseSchema,
+  IgnoredSourcePromptSchema,
+  MAX_REQUIREMENT_COUNT,
+  MAX_REQUIREMENT_REPAIR_BATCH_REPLACEMENTS,
+  MAX_REQUIREMENT_REPAIR_ENTRIES,
+  MAX_REQUIREMENT_REPAIR_LINEAGE_GROWTH,
+  MAX_REQUIREMENT_REPAIR_UNPRODUCTIVE_ATTEMPTS,
+  REQUIREMENT_TYPES,
+  RequirementAuditInputSchema,
+  RequirementAuditSchema,
+  RequirementDefinitionRepairSchema,
+  RequirementDefinitionSchema,
+  RequirementTypeSchema,
+  RequirementVerdictSchema,
+} from "./requirement-audit-schema.ts";
 
 export const TASK_VERIFICATION_TOOL_NAME = "record_task_verification";
-
 export const REQUIREMENT_AUDIT_TOOL_NAME = "record_requirement_audit";
 
-export const MAX_REQUIREMENT_COUNT = 32;
-
 export const USER_FILE_SIZE_OVERRIDE_PATTERN =
-  /(?:large|single|huge|big|long)\s+file|ignore\s+(?:file\s+size|line|size)\s+limit|no\s+line\s+limit|allow\s+large|without\s+limit|без\s+ограничений|один\s+файл|большой\s+файл|не\s+разбивать/i;
+  /(?:\b(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:without|with\s+no)\s+(?:a\s+)?(?:file[- ]size|line(?:-count)?)\s+limit\b|\b(?:do\s+not|don't)\s+split\s+(?:this|the)\s+file\b|(?:явно\s+)?(?:игнорируй|отмени)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|без\s+ограничени[яй]\s+(?:на\s+)?(?:размер|число\s+строк)|не\s+разбива(?:й|ть)\s+(?:этот\s+)?файл)/i;
+export const USER_FILE_SIZE_OVERRIDE_DENIAL_PATTERN =
+  /(?:\b(?:do\s+not|don't|never)\s+(?:explicitly\s+)?(?:ignore|override|waive|disable)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:do\s+not|don't|never)\s+(?:allow|permit)\s+(?:this\s+task|this\s+file|files?)\s+to\s+(?:exceed|go\s+over)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|\b(?:revoke|cancel|withdraw)\s+(?:the\s+)?(?:file[- ]size|line(?:-count)?|size)\s+(?:override|exception|waiver)\b|\b(?:enforce|restore|reinstate|respect|keep)\s+(?:the\s+)?(?:normal\s+)?(?:file[- ]size|line(?:-count)?|size)\s+limit\b|(?:не\s+игнорируй|не\s+отменяй|соблюдай|верни)\s+ограничени[ея]\s+(?:на\s+)?(?:размер|число\s+строк)|(?:отзови|отменяю)\s+(?:исключение|разрешение)\s+(?:для\s+)?(?:размера|числа\s+строк))/i;
 
 export const CHECKED_SOURCE_EXTENSIONS = new Set([
   ".ts",
@@ -57,9 +74,9 @@ export const TASK_VERIFICATION_STATE_CUSTOM_TYPE = "task_verification_state";
 
 export const TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE = "task_verification_evidence";
 
-export const TASK_KINDS = ["bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation"] as const;
+export const TASK_VERIFICATION_REQUIREMENT_SOURCE_CUSTOM_TYPE = "task_verification_requirement_source";
 
-export const REQUIREMENT_TYPES = ["behavior", "constraint", "deliverable", "verification", "workflow"] as const;
+export const TASK_KINDS = ["bug_fix", "behavior_change", "refactor", "feature", "docs", "investigation"] as const;
 
 export const BASELINE_METHODS = ["runtime_reproduction", "failing_regression_test", "static_trace"] as const;
 
@@ -92,37 +109,38 @@ export const AcceptanceCheckSchema = Type.Object({
   evidence_refs: Type.Array(Type.String(), { minItems: 1, maxItems: 8 }),
 });
 
-export const RequirementTypeSchema = Type.Union([
-  Type.Literal("behavior"),
-  Type.Literal("constraint"),
-  Type.Literal("deliverable"),
-  Type.Literal("verification"),
-  Type.Literal("workflow"),
-]);
+export const MAX_COMPLETION_CHECKLIST_INPUT_ITEMS = 24;
 
-export const RequirementDefinitionSchema = Type.Object({
-  type: RequirementTypeSchema,
-  text: Type.String({ minLength: 1 }),
-  acceptance_criterion: Type.String({ minLength: 1 }),
-  source_prompt_indexes: Type.Array(Type.Integer({ minimum: 1 }), { minItems: 1 }),
-});
-
-export const IgnoredSourcePromptSchema = Type.Object({
-  source_prompt_index: Type.Integer({ minimum: 1 }),
-  reason: Type.String({ minLength: 1 }),
-});
-
-export const RequirementAuditSchema = Type.Object({
-  action: Type.Union([Type.Literal("define"), Type.Literal("verdict")]),
-  requirements: Type.Optional(
-    Type.Array(RequirementDefinitionSchema, { minItems: 1, maxItems: MAX_REQUIREMENT_COUNT }),
-  ),
-  ignored_source_prompts: Type.Optional(Type.Array(IgnoredSourcePromptSchema, { maxItems: 64 })),
-  requirement_id: Type.Optional(Type.String()),
-  passed: Type.Optional(Type.Boolean()),
-  reason: Type.Optional(Type.String()),
-  evidence_refs: Type.Optional(Type.Array(Type.String(), { minItems: 1, maxItems: 8 })),
-});
+export const EvidenceVerificationSchema = Type.Object(
+  {
+    action: Type.Union([
+      Type.Literal("declare_task"),
+      Type.Literal("record_completion_checklist"),
+      Type.Literal("ready_to_finish"),
+      Type.Literal("status"),
+    ]),
+    unresolved_failures: Type.Optional(Type.Array(Type.String())),
+    task_kind: Type.Optional(TaskKindSchema),
+    task_summary: Type.Optional(Type.String({ minLength: 1, maxLength: 500 })),
+    completion_checklist: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 300 }), {
+        minItems: 1,
+        maxItems: MAX_COMPLETION_CHECKLIST_INPUT_ITEMS,
+      }),
+    ),
+    verification_scope: Type.Optional(CompletionVerificationScopeSchema),
+    authoritative_source_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
+    ),
+    deauthorized_source_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
+    ),
+    source_output_paths: Type.Optional(
+      Type.Array(Type.String({ minLength: 1, maxLength: 240 }), { minItems: 1, maxItems: 3 }),
+    ),
+  },
+  { additionalProperties: false },
+);
 
 export const VerificationSchema = Type.Object({
   action: Type.Union([
@@ -147,6 +165,13 @@ export const VerificationSchema = Type.Object({
   final_status: Type.Optional(Type.Union([Type.Literal("passed"), Type.Literal("failed")])),
   unresolved_failures: Type.Optional(Type.Array(Type.String())),
   acceptance_checks: Type.Optional(Type.Array(AcceptanceCheckSchema, { minItems: 1, maxItems: 32 })),
+  completion_summary: Type.Optional(
+    Type.String({
+      minLength: 1,
+      maxLength: 500,
+      description: "ready_to_finish only: concise user-visible summary for verified terminal completion.",
+    }),
+  ),
 });
 
 export const KNOWN_EVIDENCE_TOOLS = new Set(["read", "bash", "rg", "grep", "find", "ls", "semantic_search"]);
@@ -163,10 +188,13 @@ export const REFACTOR_PATTERN = /\brefactor|restructure|reorganize\b|(?:рефа
 export const DOCS_PATTERN = /\b(?:docs?|documentation|readme|changelog)\b|(?:документ|ридми|чейнджлог)/iu;
 
 export const INVESTIGATION_PATTERN =
-  /\b(?:investigat|diagnos|analy[sz]|audit|explain|find the cause)\b|(?:исслед|диагност|анализ|аудит|объясн|причин)/iu;
+  /\b(?:analy[sz]\w*|assess\w*|audit\w*|diagnos\w*|explain\w*|find\s+the\s+cause|inspect\w*|investigat\w*|review\w*|summari[sz]\w*)\b|(?:исслед|диагност|анализ|аудит|объясн|обзор|причин|суммар)/iu;
 
 export const HIGH_RISK_PATTERN =
   /\b(sigterm|sigint|sigkill|signal|shutdown|restart|daemon|crash|recovery|resume|checkpoint|manifest|persist|durab|transaction|concurr|race|deadlock|indexing|refresh|migration)\b|(?:сигнал|завершен|перезапуск|демон|восстанов|чекпоинт|манифест|персист|транзакц|конкурент|гонк|индекс|миграц)/iu;
+
+export const HIGH_RISK_REQUIREMENT_PATTERN =
+  /\b(?:access\s+controls?|auth(?:entication|orization)?|authenticate(?:d)?|unauthenticated|authorize|authorized\s+(?:access|actors?|clients?|requests?|users?)|atomic\w*|backoff\w*|clock\w*|command[-\s]?ids?|compensat\w*|concurr\w*|credential\w*|deadlock\w*|deep\s+cop(?:y|ies)|durab\w*|encrypt\w*|event[-\s]?logs?|exact_file_bytes|fenc\w*|hash(?:es|ed|ing)?\b|idempoten\w*|immutab\w*|integrity\w*|lease\w*|manifest\w*|newline[-\s]?terminat\w*|permission\w*|persist\w*|privacy\w*|race\w*|recover\w*|(?:event[-\s]?log|state|command|restore)\s+replay|replay\s+(?:integrity|recovery|validation)|retr(?:y|ies|ied|ying)|reverse[-\s]+order|rollback\w*|schedul\w*|secret\w*|secur\w*|stream\s+versions?|tamper\w*|terminal\s+newlines?|transaction\w*|traversal\w*|truncat\w*|virtual[-\s]+time)\b|(?:атомар|аутентиф|авторизац|безопас|восстанов|гонк|доступ|идемпотент|конкурент|откат|персист|подмен|приват|секрет|транзакц|целостн)/iu;
 
 export const BASH_MUTATION_PATTERN =
   /(?:^|[;&|]\s*)(?:sed\s+-i|perl\s+-[a-z]*i|patch\b|git\s+(?:apply|am|cherry-pick|merge|rebase|checkout|switch|reset|restore)\b|rm\b|mv\b|cp\b|touch\b|mkdir\b|truncate\b|tee\b|npm\s+(?:install|uninstall|update)\b|pnpm\s+(?:add|remove|install|update)\b|yarn\s+(?:add|remove|install|upgrade)\b|bun\s+(?:add|remove|install|update)\b|cargo\s+(?:add|remove|update)\b|node\s+scripts\/version-bump\.js\b|\.\/reinstall\.sh\b)/iu;
@@ -177,7 +205,7 @@ export const GENERIC_CHECK_PATTERN =
   /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:check|typecheck)|pnpm\s+(?:run\s+)?(?:check|typecheck)|yarn\s+(?:run\s+)?(?:check|typecheck)|(?:npx\s+|npm\s+exec\s+)?tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
 
 export const TYPECHECK_PATTERN =
-  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?typecheck|pnpm\s+(?:run\s+)?typecheck|yarn\s+(?:run\s+)?typecheck|(?:npx\s+|npm\s+exec\s+)?tsc\b)/iu;
+  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?typecheck|pnpm\s+(?:run\s+)?typecheck|yarn\s+(?:run\s+)?typecheck|(?:npx\s+|npm\s+exec\s+)?(?:[^\s;&|]+\/)?tsc\b)/iu;
 
 export const READ_ONLY_PATTERN =
   /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|stat\b|wc\b|md5\b|md5sum\b|shasum\b|sha256sum\b|git\s+(?:status|diff|show|log)\b)/iu;

@@ -99,7 +99,7 @@ process.exit(0);
     let exitCode: number;
     try {
       _stdout = execFileSync(process.execPath, execArgs, {
-        timeout: 10000,
+        timeout: 20000,
         encoding: "utf-8",
         env: { ...process.env, [ENV_AGENT_DIR]: agentDir },
         stdio: ["pipe", "pipe", "pipe"],

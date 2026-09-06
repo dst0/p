@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep evidence completion convergent with model-owned free-text checklists, exact external receipt binding, safe source discovery, and actionable verification diagnostics."
+}

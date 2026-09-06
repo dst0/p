@@ -1,4 +1,4 @@
-import { registerApiProvider, unregisterApiProviders } from "../../api-registry.ts";
+import { registerApiProviderExclusive, unregisterApiProviders } from "../../api-registry.ts";
 import type { Model, SimpleStreamOptions, StreamFunction, StreamOptions } from "../../types.ts";
 import { createAssistantMessageEventStream } from "../../utils/event-stream.ts";
 import {
@@ -90,7 +90,11 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
   const streamSimple: StreamFunction<string, SimpleStreamOptions> = (streamModel, context, streamOptions) =>
     stream(streamModel, context, streamOptions);
 
-  registerApiProvider({ api, stream, streamSimple }, sourceId);
+  const register = () =>
+    registerApiProviderExclusive({ api, stream, streamSimple }, sourceId, {
+      preserveOnReset: options.preserveOnReset,
+    });
+  if (options.registerImmediately ?? true) register();
 
   function getModel(): Model<string>;
   function getModel(requestedModelId: string): Model<string> | undefined;
@@ -104,6 +108,7 @@ export function registerFauxProvider(options: RegisterFauxProviderOptions = {}):
   return {
     api,
     models,
+    register,
     getModel,
     state,
     setResponses(responses) {

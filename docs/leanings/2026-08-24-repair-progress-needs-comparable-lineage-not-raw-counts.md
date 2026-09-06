@@ -1,0 +1,22 @@
+# 2026-08-24 — Repair progress needs comparable lineage, not raw counts
+
+- **Status:** Resolved
+- **Task/context:** Deciding whether candidate `5.0.1-rc.8` degraded on the event-sourced inventory benchmark after two sparse requirement-definition repairs.
+- **Unexpected observation or failure:** The live run moved from 79 diagnostics to 54 and then 56. It was stopped as a regression because the second raw count increased and an earlier candidate had reached 39 after two repairs.
+- **Evidence:** rc.8 reached define, repair one, and repair two at roughly 300, 350, and 500 seconds; rc.7 needed roughly 500, 600, and 800 seconds. The rc.8 progress archive proved one full definition and at least two repair starts but did not retain settled results, diagnostic classes, or revision lineage. The private recording that contained the diagnostic text was intentionally removed during interrupted-run cleanup, so an exact class comparison was impossible afterward.
+- **Approaches tried:**
+  - **Attempt:** Treat any increase in raw deterministic diagnostic instances as a hard degradation signal.
+    - **Outcome:** Did not work
+    - **Why:** An atomic split may replace one compound error with several newly exposed per-item mapping, facet, or semantic errors. The total is structurally non-monotonic, and the task-model decoding was not seeded by the benchmark's schedule/compiler seed.
+  - **Attempt:** Infer the diagnostic classes from preserved aggregate liveness after cleanup.
+    - **Outcome:** Did not work
+    - **Why:** The old progress schema intentionally retained only attempt and semantic counts; inventing an exact class diff would have fabricated evidence.
+  - **Attempt:** Preserve sanitized settled lineage and repair the ambiguous sparse protocol before rerunning.
+    - **Outcome:** Worked
+    - **Why:** Revision rotation distinguishes an applied validator rejection from stale, invalid, or status-barrier protocol failures without storing the revision. Per-cell keyed HMACs of normalized diagnostics and class histograms allow comparable transitions without retaining source or diagnostic text or creating a durable dictionary oracle.
+- **Root cause:** The stop decision used a non-monotonic surface metric. Separately, repair classifications had replace-all runtime semantics despite sparse-sounding guidance, and arity-changing repairs shifted subsequent 1-based indexes without forcing exact current-batch rehydration.
+- **Resolution:** Benchmark progress now records privacy-safe settled define/repair/status events, comparable fingerprint lineage, diagnostic classes, draft sizes, and repair arity while omitting prompts, payloads, diagnostic text, and revisions. Classification repairs use explicit keyed upserts/removals. A rejected arity-changing repair arms a revision-bound barrier that clears only after status renders the exact current indexed batch; fallback or stale status cannot clear it.
+- **Verification:** Regression-first production tests reproduced silent classification loss and a second shifted-index repair proceeding without rehydration. Focused real-harness tests cover keyed preservation/removal, split → blocked repair → exact status → corrected repair, oversized status fallback, every draft invalidation lifecycle, and successful finish reset. Telemetry tests cover non-monotonic totals, validator-versus-protocol revision lineage, replay deduplication, privacy, and interrupted Brotli retention.
+- **Prevention/follow-up:** Stop a canary only on correctness failure, timeout, explicit recovery restart, or at least two comparable settled repairs with no reduction in stable unresolved fingerprints/classes. Treat raw instance counts as descriptive only. Preserve every future recovery decision input in sanitized terminal evidence before removing the private recording.
+- **Reusable learning:** Progress is comparable only when the evidence identifies which obligations persisted, resolved, or appeared; a scalar error count cannot establish direction after structural decomposition.
+- **References:** `scripts/benchmark-project-instructions-repair-telemetry.js`, `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/test/task-requirement-definition-repair-status.test.ts`, `benchmarks/results/2026-08-24-v5.0.1-rc.8-task3-event-sourced-inventory-authority-v1/report.md`.

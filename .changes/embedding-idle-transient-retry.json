@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep waiting for embedding requests to become idle after transient health-probe failures while respecting the overall deadline."
+}

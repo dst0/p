@@ -1,0 +1,22 @@
+# 2026-08-24 — Long tests must verify runner cwd and lifecycle
+
+- **Status:** Resolved
+- **Task/context:** Running the full non-e2e unit gate from an isolated benchmark-architecture worktree while another task owned the primary repository worktree.
+- **Unexpected observation or failure:** The lean-ctx shell MCP ignored the requested isolated cwd, ran `test.sh` in the primary worktree, returned timeout 124 after 120 seconds, and left the test process tree running after the tool call ended. The interrupted auth lifecycle left `auth.json` absent and its mode-`0600` backup present.
+- **Evidence:** Process cwd inspection tied the orphaned `test.sh` root and its Vitest descendants to the primary repository rather than the requested worktree. The exact root PID, process start, parent chain, process group, and auth paths were resolved before cleanup. A later native process session from the explicit worktree completed the same suite with exit 0.
+- **Approaches tried:**
+  - **Attempt:** Run the suite through the lean-ctx CLI.
+    - **Outcome:** Did not work
+    - **Why:** Its output/time guard returned failure before the suite's normal multi-minute lifecycle completed.
+  - **Attempt:** Run the suite through the lean-ctx shell MCP with an explicit cwd.
+    - **Outcome:** Did not work
+    - **Why:** The stateful MCP remained rooted in the primary repository and its timeout did not reap the descendant process tree.
+  - **Attempt:** Run the suite in a native process session with an explicit workdir and redirect output to a dedicated temporary log.
+    - **Outcome:** Worked
+    - **Why:** The process session preserved the requested cwd and exposed the authoritative final exit code without imposing a shorter deadline.
+- **Root cause:** The stateful lean-ctx MCP project root overrode the per-call worktree expectation, while its fixed deadline covered only the tool call rather than the complete descendant lifecycle.
+- **Resolution:** The exact orphaned tree was terminated without signaling the shared lean-ctx process group. The intact mode-`0600` auth backup was restored only while the primary path was absent. Long gates now run through explicit-workdir native sessions with file-backed output; closed logs are compressed with Brotli Q6.
+- **Verification:** The replacement `npm run test:unit` completed with exit 0 from the isolated worktree, all reported suites passed, `auth.json` exists at mode `0600`, and `auth.json.bak` is absent.
+- **Prevention/follow-up:** Before a long cross-worktree gate, verify the runner's cwd and avoid wrappers with shorter fixed deadlines. After any interruption, resolve exact process identity and auth-file state before cleanup or restart.
+- **Reusable learning:** A wrapper timeout is not proof its descendants stopped; verify cwd, process identity, and owned credential lifecycle before treating a long test run as contained.
+- **References:** `test.sh`, `AGENTS.md`

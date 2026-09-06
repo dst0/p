@@ -1,14 +1,12 @@
-import { isAbsolute, relative, resolve } from "node:path";
 import type { AfterToolCallContext, AfterToolCallResult } from "@dst0/p-agent-core";
 import { captureWorkspaceFingerprint } from "../../workspace-fingerprint.ts";
-import {
-  GENERIC_CHECK_PATTERN,
-  TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE,
-  TEST_PATH_PATTERN,
-  TEST_PATTERN,
-} from "../constants.ts";
-import { baselineRequired } from "../requirement-checks.ts";
-import { emptyReadiness, emptyRequirementAudit, emptyState } from "../state-factories.ts";
+import { TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE } from "../constants.ts";
+import { evidenceCriticalProofRequirement, evidenceCriticalProofSetHash } from "../evidence-critical-proof.ts";
+import { recordCriticalProofObservation } from "../evidence-critical-proof-observation.ts";
+import { formatProofWitnessEvidenceFeedback } from "../proof-witness-evidence-feedback.ts";
+import { resetRequirementAuditAfterMutation } from "../requirement-audit-reset.ts";
+import { analyzeProofWitnesses, redactProofFrames } from "../requirement-proof-witnesses.ts";
+import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   argsRecord,
@@ -18,62 +16,153 @@ import {
   isPublishCommand,
   isRecognizedBashMutation,
   isShellTool,
-  isTaskKind,
-  normalizeStrings,
-  normalizeText,
-  pathArgument,
   summarizeOutput,
 } from "../tool-classification.ts";
-import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import type { TaskVerificationEvidence } from "../types.ts";
+import { resetAfterSuccessfulCompletion } from "./completion-lifecycle.ts";
+import { externalEffectStateUpdate, recordSuccessfulExternalEffect } from "./external-effect-receipt.ts";
+import { recordDeclaredExternalReadback } from "./external-readback-evidence.ts";
+import { isVerificationCommand } from "./failed-verification-resolution.ts";
+import { isZeroExitRuntimeAssertionFailure } from "./runtime-assertion-failure.ts";
+import {
+  mutationSourcePaths,
+  recordSourceMutationPaths,
+  settleSourceWorkspaceMutation,
+} from "./source-mutation-tracking.ts";
+import { mutationSourceSizeGuidance } from "./source-size-guidance.ts";
+import {
+  appendTestMutationGuidance,
+  clearVerifiedTestPaths,
+  settleTestAuthoringMutation,
+} from "./test-authoring-gate.ts";
+import { classifyTestEvidence } from "./test-evidence-outcome.ts";
+import { resolvedTaskVerificationToolEffect } from "./tool-effect-resolution.ts";
+import { updatedWorkspaceEffectLedger } from "./workspace-effect-ledger.ts";
 
+export { do_authorizeBaselineTest } from "./baseline-test-authorization.ts";
 export async function do_afterToolCall(
   self: TaskVerificationController,
   context: AfterToolCallContext,
   previousResult: AfterToolCallResult | undefined,
 ): Promise<AfterToolCallResult | undefined> {
-  const effectiveIsError = previousResult?.isError ?? context.isError;
-  const content = previousResult?.content ?? context.result.content;
+  const nativeIsError = context.isError;
+  const effectiveIsError = nativeIsError || previousResult?.isError === true;
+  const effectivePreviousResult =
+    previousResult && previousResult.isError !== effectiveIsError
+      ? { ...previousResult, isError: effectiveIsError }
+      : previousResult;
+  const content = effectivePreviousResult?.content ?? context.result.content;
   const descriptor = describeToolCall(context.toolCall.name, context.args);
-
   if (context.toolCall.name === "finish_work" && !effectiveIsError && argsRecord(context.args).status === "success") {
-    self.state = emptyState();
-    self.evidence.clear();
-    self.bashFingerprints.clear();
-    self.mutatedSourceFiles.clear();
-    self.latestUserPrompt = "";
-    self.persistState();
-    return previousResult;
+    resetAfterSuccessfulCompletion(self);
+    return effectivePreviousResult;
   }
-
-  const mutationDetected = await self.detectMutation(context, effectiveIsError);
-  if (mutationDetected) {
-    const filePath = pathArgument(context.args);
-    if (filePath) {
-      const relPath = relative(self.sessionManager.getCwd(), resolve(self.sessionManager.getCwd(), filePath));
-      self.mutatedSourceFiles.add(relPath);
+  const effect = resolvedTaskVerificationToolEffect(context);
+  const successfulExternalEffect = !effectiveIsError && (effect.kind === "external_write" || effect.kind === "unknown");
+  const capturedSourceSnapshot = self.workspaceSourceSnapshots.has(context.toolCall.id);
+  const workspaceEffect = effect.kind === "workspace_write" || effect.kind === "unknown" || capturedSourceSnapshot;
+  const initialMutation = workspaceEffect ? await self.detectMutation(context, nativeIsError) : false;
+  const testAuthoring = await settleTestAuthoringMutation(self, context, initialMutation);
+  const sourceMutation = await settleSourceWorkspaceMutation(self, context);
+  const workspaceMutation =
+    initialMutation ||
+    testAuthoring.workspaceMutated ||
+    sourceMutation.paths.length > 0 ||
+    sourceMutation.trackingFailed;
+  const detectedMutation = workspaceMutation || successfulExternalEffect;
+  if (detectedMutation) {
+    self.rejectedRequirementDefinitionDraft = undefined;
+    const workspaceEffectLedger = workspaceMutation
+      ? updatedWorkspaceEffectLedger(self.state, sourceMutation.before, sourceMutation.after)
+      : undefined;
+    if (workspaceMutation) {
+      recordSourceMutationPaths(
+        self,
+        [...mutationSourcePaths(self, context), ...sourceMutation.paths],
+        sourceMutation.trackingFailed,
+      );
     }
+    const nextMutationRevision = self.state.mutationRevision + 1;
+    const externalEffect = successfulExternalEffect
+      ? recordSuccessfulExternalEffect(self, context, effect, nextMutationRevision)
+      : undefined;
+    const mutationGuidance = [
+      testAuthoring.guidance,
+      effect.kind === "read" && capturedSourceSnapshot && workspaceMutation
+        ? "A test-like read command changed workspace source files. The mutation was recorded, the command was not accepted as verification evidence, and completion readiness was invalidated."
+        : undefined,
+      self.mode === "audit" ? mutationSourceSizeGuidance(self) : undefined,
+    ]
+      .filter((message): message is string => message !== undefined && message.length > 0)
+      .join("\n");
     if (self.isAuthorizedBaselineTestMutation(context.toolCall.name, context.args)) {
       self.state = {
         ...self.state,
+        ...workspaceEffectLedger,
+        ...externalEffectStateUpdate(externalEffect),
         baseline: { ...self.state.baseline, testSetupChanged: true },
         updatedAt: new Date().toISOString(),
       };
       self.persistState();
-      return previousResult;
+      return appendTestMutationGuidance(context, effectivePreviousResult, mutationGuidance);
     }
     self.state = {
       ...self.state,
-      mutationRevision: self.state.mutationRevision + 1,
+      ...workspaceEffectLedger,
+      ...externalEffectStateUpdate(externalEffect),
+      mutationRevision: nextMutationRevision,
       final: { status: "pending", evidenceRefs: [], unresolvedFailures: [] },
       readiness: emptyReadiness(),
-      requirementAudit: clearedRequirementAudit(self),
+      requirementAudit:
+        self.mode === "audit"
+          ? resetRequirementAuditAfterMutation(self.state.requirementAudit)
+          : self.state.requirementAudit,
       updatedAt: new Date().toISOString(),
     };
     self.persistState();
-    return previousResult;
+    const externalEvidenceGuidance = externalEffect?.evidence
+      ? `Verification evidence handle: ${externalEffect.evidence.ref} (@${externalEffect.evidence.toolCallId}, ${externalEffect.evidence.toolName}, mutation revision ${externalEffect.evidence.mutationRevision}). Metadata-only external-effect receipt recorded.`
+      : undefined;
+    return appendTestMutationGuidance(
+      context,
+      effectivePreviousResult,
+      [mutationGuidance, externalEvidenceGuidance].filter(Boolean).join("\n"),
+    );
   }
-
-  if (!isEvidenceTool(context.toolCall.name)) return previousResult;
+  if (!isEvidenceTool(context.toolCall.name) && !(effect.kind === "read" && effect.source === "declared")) {
+    return effectivePreviousResult;
+  }
+  if (effect.kind === "read" && effect.source === "declared") {
+    return recordDeclaredExternalReadback(self, context, effectivePreviousResult, content, effect, effectiveIsError);
+  }
+  const proofRequirements =
+    self.mode === "audit"
+      ? self.state.requirementAudit.requirements
+      : (self.state.criticalProofObligations ?? []).map(evidenceCriticalProofRequirement);
+  const proofSetHash =
+    self.mode === "audit"
+      ? self.state.requirementAudit.requirementSetHash
+      : evidenceCriticalProofSetHash(self.state.criticalProofObligations ?? []);
+  const proofAnalysis = analyzeProofWitnesses(
+    context.result.content,
+    proofRequirements,
+    proofSetHash,
+    self.state.mutationRevision,
+  );
+  const proofWitnesses = proofAnalysis.witnesses;
+  const proofFrameFeedback = formatProofWitnessEvidenceFeedback(proofAnalysis, proofRequirements);
+  const redactedContent = redactProofFrames(content);
+  const fullOutput = redactedContent
+    .filter((part) => part.type === "text")
+    .map((part) => part.text)
+    .join("\n");
+  const runtimeAssertionFailed = isZeroExitRuntimeAssertionFailure(context, fullOutput, nativeIsError);
+  const verificationIsError = effectiveIsError || runtimeAssertionFailed;
+  const readText = content.length === 1 && content[0]?.type === "text" ? content[0].text : undefined;
+  const criticalProofGuidance =
+    !verificationIsError && effect.kind === "read"
+      ? recordCriticalProofObservation(self, context.args, readText)
+      : undefined;
   const evidence: TaskVerificationEvidence = {
     version: 2,
     taskId: self.state.taskId,
@@ -81,26 +170,41 @@ export async function do_afterToolCall(
     toolCallId: context.toolCall.id,
     toolName: context.toolCall.name,
     descriptor,
-    outputSummary: summarizeOutput(content),
-    isError: effectiveIsError,
+    outputSummary: summarizeOutput(redactedContent),
+    ...(proofWitnesses ? { proofWitnesses } : {}),
+    isError: verificationIsError,
+    ...classifyTestEvidence(descriptor, fullOutput, verificationIsError, self.sessionManager.getCwd()),
+    nativeIsError,
     mutationRevision: self.state.mutationRevision,
     timestamp: new Date().toISOString(),
   };
   self.evidence.set(evidence.ref, evidence);
   self.sessionManager.appendCustomEntry(TASK_VERIFICATION_EVIDENCE_CUSTOM_TYPE, evidence);
+  const testBatchVerification = clearVerifiedTestPaths(self, evidence, fullOutput);
   const invalidation = invalidateAfterFailedVerification(self, evidence);
-  const autoFinalized = self.tryAutoFinalizeExactReplay(evidence) ?? self.tryAutoFinalizeFocusedTest(evidence);
-  const acceptanceAudit = autoFinalized ? undefined : self.highRiskAcceptanceAudit(evidence);
-
+  const autoFinalized =
+    self.mode === "audit"
+      ? (self.tryAutoFinalizeExactReplay(evidence) ?? self.tryAutoFinalizeFocusedTest(evidence))
+      : undefined;
+  const acceptanceAudit = self.mode === "audit" && !autoFinalized ? self.highRiskAcceptanceAudit(evidence) : undefined;
   const evidenceText = [
     `Verification evidence handle: ${evidence.ref} (@${evidence.toolCallId}, ${evidence.toolName}, mutation revision ${evidence.mutationRevision}).`,
+    proofFrameFeedback,
+    criticalProofGuidance,
+    runtimeAssertionFailed
+      ? "Runtime assertion failure detected despite a zero process exit; this evidence is failed. Use throwing assertions so the command exits non-zero."
+      : undefined,
+    evidence.verificationFailureKind === "missing_test_script"
+      ? "The requested package script is unavailable, so no tests ran and no implementation-test failure was recorded. Inspect the active package's declared scripts and run an applicable existing test command; do not add a script alias solely to clear verification."
+      : undefined,
+    testBatchVerification,
     invalidation,
     autoFinalized,
     acceptanceAudit,
   ]
     .filter((text): text is string => text !== undefined)
     .join("\n");
-  const newContent = [...content];
+  const newContent = [...redactedContent];
   let lastIndex = -1;
   for (let i = newContent.length - 1; i >= 0; i--) {
     if (newContent[i]!.type === "text") {
@@ -129,56 +233,39 @@ export async function do_afterToolCall(
   } else {
     newContent.push({ type: "text", text: evidenceText });
   }
-
   const result: AfterToolCallResult = {
     content: newContent,
-    isError: effectiveIsError,
+    isError: evidence.isError,
   };
-  if (previousResult?.details !== undefined) result.details = previousResult.details;
+  if (effectivePreviousResult?.details !== undefined) result.details = effectivePreviousResult.details;
   else if (context.result.details !== undefined) result.details = context.result.details;
-  if (previousResult?.terminate !== undefined) result.terminate = previousResult.terminate;
+  if (effectivePreviousResult?.terminate !== undefined) result.terminate = effectivePreviousResult.terminate;
   return result;
 }
-
-function clearedRequirementAudit(self: TaskVerificationController) {
-  const requirements = self.state.requirementAudit.requirements.map((requirement) => ({
-    id: requirement.id,
-    type: requirement.type,
-    text: requirement.text,
-    acceptanceCriterion: requirement.acceptanceCriterion,
-    sourcePromptIndexes: requirement.sourcePromptIndexes,
-  }));
-  if (requirements.length === 0) return emptyRequirementAudit();
-  return {
-    ...self.state.requirementAudit,
-    status: "pending" as const,
-    requirements,
-    nextRequirementIndex: 0,
-    verifiedMutationRevision: undefined,
-  };
-}
-
 function invalidateAfterFailedVerification(
   self: TaskVerificationController,
   evidence: TaskVerificationEvidence,
 ): string | undefined {
   if (
     !evidence.isError ||
+    evidence.verificationFailureKind === "missing_test_script" ||
     !isShellTool(evidence.toolName) ||
-    (!TEST_PATTERN.test(evidence.descriptor) && !GENERIC_CHECK_PATTERN.test(evidence.descriptor))
+    !isVerificationCommand(evidence.descriptor)
   ) {
     return undefined;
   }
   self.state = {
     ...self.state,
     readiness: emptyReadiness(),
-    requirementAudit: clearedRequirementAudit(self),
+    requirementAudit:
+      self.mode === "audit"
+        ? resetRequirementAuditAfterMutation(self.state.requirementAudit)
+        : self.state.requirementAudit,
     updatedAt: new Date().toISOString(),
   };
   self.persistState();
   return "This failed verification invalidated completion readiness and all requirement verdicts. Repair it, rerun the exact command successfully, then restart ready_to_finish.";
 }
-
 export async function do_detectMutation(
   self: TaskVerificationController,
   context: AfterToolCallContext,
@@ -187,104 +274,16 @@ export async function do_detectMutation(
   const toolName = context.toolCall.name;
   if (isDirectMutationTool(toolName)) return !isError;
   if (!isShellTool(toolName) || isPublishCommand(toolName, context.args)) return false;
-
   const hadFingerprint = self.bashFingerprints.has(context.toolCall.id);
   const beforeFingerprint = self.bashFingerprints.get(context.toolCall.id);
   self.bashFingerprints.delete(context.toolCall.id);
   if (hadFingerprint && beforeFingerprint !== undefined) {
-    const afterFingerprint = await captureWorkspaceFingerprint(self.sessionManager.getCwd());
+    const sessionFile = self.sessionManager.getSessionFile();
+    const afterFingerprint = await captureWorkspaceFingerprint(
+      self.sessionManager.getCwd(),
+      sessionFile ? [sessionFile] : [],
+    );
     if (afterFingerprint !== undefined) return beforeFingerprint !== afterFingerprint;
   }
   return isRecognizedBashMutation(context.args);
-}
-
-export function do_applyInput(self: TaskVerificationController, input: VerificationInput): VerificationResult {
-  switch (input.action) {
-    case "declare_task":
-      return self.declareTask(input);
-    case "authorize_baseline_test":
-      return self.authorizeBaselineTest(input);
-    case "record_baseline":
-      return self.recordBaseline(input);
-    case "record_final":
-      return self.recordFinal(input);
-    case "ready_to_finish":
-      return self.readyToFinish(input);
-    case "status":
-      return self.updated(self.formatStatus(), false);
-  }
-}
-
-export function do_declareTask(self: TaskVerificationController, input: VerificationInput): VerificationResult {
-  if (!isTaskKind(input.task_kind) || !normalizeText(input.task_summary)) {
-    return self.rejected("declare_task requires task_kind and a concrete task_summary.");
-  }
-  if (self.state.mutationRevision > 0) {
-    return self.rejected("Cannot replace the task declaration after mutation; finish the current task first.");
-  }
-  const taskSummary = normalizeText(input.task_summary);
-  const required = baselineRequired(input.task_kind, `${self.latestUserPrompt}\n${taskSummary}`);
-  const currentPrompts = self.state.taskPrompts?.length
-    ? self.state.taskPrompts
-    : self.latestUserPrompt.trim()
-      ? [{ id: `user-${Date.now()}-1`, text: self.latestUserPrompt }]
-      : [];
-  self.state = {
-    ...emptyState(self.state.taskId),
-    taskKind: input.task_kind,
-    taskSummary,
-    taskContext: self.latestUserPrompt.slice(0, 2_000) || undefined,
-    taskPrompts: currentPrompts,
-    baseline: {
-      required,
-      status: required ? "pending" : "not_required",
-      evidenceRefs: [],
-      authorizedTestPaths: [],
-      testSetupChanged: false,
-    },
-    updatedAt: new Date().toISOString(),
-  };
-  self.restoreError = undefined;
-  self.persistState();
-  return self.updated(
-    required
-      ? "Task declared; baseline verification is required before production mutation."
-      : "Task declared; final verification is required after mutation.",
-  );
-}
-
-export function do_authorizeBaselineTest(
-  self: TaskVerificationController,
-  input: VerificationInput,
-): VerificationResult {
-  if (!self.state.taskKind || !self.state.baseline.required || self.state.baseline.status !== "pending") {
-    return self.rejected(
-      "Test-only baseline authorization requires a declared task with pending baseline verification.",
-    );
-  }
-  if (self.state.mutationRevision !== 0) {
-    return self.rejected("Cannot authorize baseline test edits after production mutation.");
-  }
-  const requestedPaths = normalizeStrings(input.test_paths);
-  if (requestedPaths.length === 0) return self.rejected("authorize_baseline_test requires test_paths.");
-
-  const normalizedPaths: string[] = [];
-  for (const filePath of requestedPaths) {
-    const portablePath = filePath.replaceAll("\\", "/").replace(/^\.\//u, "");
-    if (isAbsolute(filePath) || portablePath.split("/").includes("..") || !TEST_PATH_PATTERN.test(portablePath)) {
-      return self.rejected(`Only explicit repository-relative test files may be authorized: ${filePath}`);
-    }
-    normalizedPaths.push(portablePath);
-  }
-  self.state = {
-    ...self.state,
-    baseline: {
-      ...self.state.baseline,
-      authorizedTestPaths: [...new Set(normalizedPaths)],
-      testSetupChanged: false,
-    },
-    updatedAt: new Date().toISOString(),
-  };
-  self.persistState();
-  return self.updated(`Authorized test-only baseline setup for: ${self.state.baseline.authorizedTestPaths.join(", ")}`);
 }

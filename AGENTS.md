@@ -8,7 +8,6 @@
 ## Conversational Style
 
 - Keep answers short and concise
-- No emojis in code
 - Technical prose only, be direct
 - When the user asks a question, answer it first before making edits or running implementation commands.
 - When responding to user feedback or an analysis, explicitly say whether you agree or disagree before saying what you changed.
@@ -44,22 +43,30 @@
 
 ## Commands
 
+- Before any side-effecting install, relink, daemon, release, or benchmark command in a multi-worktree repository, print and verify the absolute `pwd`, branch, and intended checkout; never rely on the session's inherited cwd.
 - After code changes (not docs): `npm run check` (full output, no tail). Fix all errors, warnings, and infos before committing. Does not run tests.
 - Never run `npm run build` or `npm test` unless requested by the user.
 - Never run the full vitest suite directly: it includes e2e tests that activate when endpoint/auth env vars are present. For all non-e2e tests, run `npm run test:unit` from the repo root. Otherwise run specific tests from the package root: `node ../../node_modules/vitest/dist/cli.js --run test/specific.test.ts`.
+- Do not run `npm run test:unit` inside a wrapper with a fixed deadline shorter than the suite. `test.sh` temporarily moves `~/.p/agent/auth.json`; after any interrupted run, verify the primary and `.bak` paths and restore the intact mode-`0600` backup only when the primary is absent.
+- Run `./test.sh` directly with output redirected to a temporary active log; do not route it through lean-ctx's bounded CLI wrapper. Compress the closed log with Brotli Q6 after the process exits.
 - Poll running background tasks with reasonable intervals that approximately equal to ETA ot reasonably smaller when closer progress monitoring is absolutely necessary. But not repeatedly in tight loops. Hard-Rely on reactive completion messages instead.
+- After restarting a live `p` run, rediscover and identity-bind its newest session JSONL before monitoring; never infer a stall from the previous process's log.
 
 ## Test Quality & Adversarial Review
 
 - Tests must never be added solely as mechanical line-fillers to pass coverage gates (`scripts/check-changed-coverage.js`). Tests must meaningfully verify domain logic, invariant preservation, realistic crash recovery, positive cases, negative cases, and edge cases.
+- Successful-state fixtures must use canonical runtime types and supported effect domains. Reserve deliberately invalid metadata for explicit rejection tests; never cast it into a success or freshness fixture merely to reach a branch.
 - Never create generic, catch-all, or branch-filler test files (e.g. `branches.test.ts`, `coverage.test.ts`). Organize all tests into descriptively named files grouped by domain, feature responsibility, and lifecycle semantics.
 - Strive for 100% branch coverage across all tested modules. Exercise real operational permutations: optional configuration hooks, fallback dispatcher chains, default parameter paths, and event sequences with and without initial lifecycle triggers.
 - When investigating uncovered lines reported by `check-changed-coverage.js`, never bypass them or write superficial mocks. Always investigate why the branch was unexercised (e.g. realistic repository fixture setup such as `.git/config` remotes, real abort signals, default environment/argument paths, fatal error transitions) and write genuine tests exercising the domain behavior.
 - Bug fixes must start with a reproducible failing regression test before writing the fix. Any bugs discovered during test authoring, coverage expansion, or refactoring must be fixed with dedicated regressions, explicitly documented in the PR description, and reported directly to the user in the session summary.
+- When a serialization contract requires both a terminal delimiter and rejection of any truncation, add a focused regression that removes exactly the final delimiter byte. Removing a whole record or payload is not equivalent evidence for that boundary.
 - For non-trivial features, bug fixes, or test additions, automatically spawn an adversarial test-critic subagent to review the tests. The critic must evaluate whether the suite verifies real behavior vs artificial line coverage, identifies missing edge cases, and flags fragile/vacuous tests before work is completed.
 - Never use `/* v8 ignore */` or coverage comments to bypass coverage gates. All code in the repository must be reachable and exercised by tests; dead or unreachable code must be deleted rather than kept or suppressed (except rare compiler/type-exhaustiveness edge cases where a branch is syntactically required but provably unreachable at runtime).
 - If you create or modify a test file, run it and iterate on test or implementation until it passes.
+- When adding a test under `scripts/`, inspect the root npm test scripts; if its parent suite enumerates files explicitly, add the new file in the same change and run that parent script at least once.
 - Temporary release Git fixtures that recursively delete repositories, remotes, or clones must disable repository-local automatic and detached maintenance/GC unless the test explicitly owns and joins that background lifecycle.
+- Successful child-process regressions must give their kill timeout measured full-suite load margin rather than setting it near the focused runtime.
 - For `packages/coding-agent/test/suite/`, use `test/suite/harness.ts` + the faux provider. No real provider APIs, keys, or paid tokens.
 - Put issue-specific regressions under `packages/coding-agent/test/suite/regressions/` named `<issue-number>-<short-slug>.test.ts`.
 
@@ -71,7 +78,6 @@
 - Before pushing code changes, run the touched focused tests, `npm run test:unit` for the non-e2e suite, `npm run check`, `./reinstall.sh`, and a `p` smoke. For docs/workflow-only changes, run the relevant validation plus `npm run check`. Never push with known local or CI failures unless the user explicitly accepts the risk.
 - For ad-hoc scripts, `write` them to a temp file (e.g. `/tmp`), run, edit if needed, remove when done. Don't embed multi-line scripts in `bash` commands.
 - Always commit and push changes unless the user asks not to.
-- After successful code changes, run `./reinstall.sh` to rebuild and relink the CLI locally, then test `p` works correctly.
 - `./reinstall.sh` is mandatory after code changes. Never use `npm run build` + `npm link` manually. The script handles build, relink, and verification in one step:
   1. Hydrates monorepo dependencies (`npm install --ignore-scripts`) and builds all packages (`npm run build`).
   2. Relinks `p` CLI across all global npm prefix locations on `PATH` and verifies version match & compaction settings.
@@ -81,8 +87,7 @@
 
 ## Code Indexing & Daemon Versioning
 
-- `computeIndexingVersion()` in `packages/coding-agent/src/core/indexing-service.ts` calculates a deterministic SHA-256 hash of all indexing runtime files (daemon core `indexing*.ts`/`js` modules, `code-index` build/Python/config files, installer scripts).
-- This hash determines whether `./reinstall.sh` can safely skip restarting the background daemon (`com.dst.p.code-index`) and rebuilding vector stores.
+- `computeIndexingVersion()` in `packages/coding-agent/src/core/indexing-service.ts` calculates a deterministic SHA-256 hash of all indexing runtime files (daemon core `indexing*.ts`/`js` modules, `code-index` build/Python/config files, installer scripts); `./reinstall.sh` uses it to skip unnecessary daemon restarts and vector-store rebuilds safely.
 - Package version bumps (`scripts/version-bump.js`) must NEVER modify source files in `packages/code-index/src/` or invalidate `computeIndexingVersion()`. Release version bumps only update `package.json` and `package-lock.json`.
 - When adding or modifying indexing files, run `node ../../node_modules/vitest/dist/cli.js --run test/indexing-version.test.ts` from `packages/coding-agent` to verify test coverage. Any new indexing daemon module matching `packages/coding-agent/src/core/indexing*` is automatically tracked by `computeIndexingVersion()`.
 
@@ -111,6 +116,8 @@ Never run (destroys other agents' work or bypasses checks):
 
 - `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git add -A`, `git add .`, `git commit --no-verify`.
 
+After base changes, validate the actual PR merge result; branch-only checks and conflict-free merges are insufficient.
+
 If rebase conflicts occur:
 
 - Resolve conflicts only in files you modified.
@@ -121,6 +128,8 @@ If rebase conflicts occur:
 
 See `CONTRIBUTING.md` for the contributor gate (auto-close workflows, `lgtm`/`lgtmi`, quality bar).
 
+When creating PRs or issues, add every applicable package label: `pkg:agent`, `pkg:ai`, `pkg:coding-agent`, and `pkg:tui`.
+
 When reviewing PRs:
 
 - Do not run `gh pr checkout`, `git switch`, or otherwise move the worktree to the PR branch unless the user explicitly asks.
@@ -129,13 +138,8 @@ When reviewing PRs:
 
 When creating PRs:
 
-- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
 - The PR description must give a detailed, complete account of every material change in the PR: behavior and architecture changes, state or data migrations, operational and release impact, compatibility or security consequences, and the exact verification performed. Do not omit secondary changes discovered or made while completing the task.
 - Always include a `## Bug Fixes` section in the PR description detailing any bugs uncovered and resolved during the task, with references to their regression tests.
-
-When creating issues:
-
-- Add `pkg:*` labels for affected packages (`pkg:agent`, `pkg:ai`, `pkg:coding-agent`, `pkg:tui`); use all that apply.
 
 When posting issue/PR comments:
 
@@ -190,6 +194,8 @@ Attribution:
 **Lockstep versioning**: all packages share one version; every release updates all together. `patch` = fixes + additions, `minor` = breaking changes. Major releases fail closed by default. The only currently authorized major target is exactly `5.0.1`, and it requires the explicit `--allow-major` flag; changing that target requires another reviewed policy change and explicit user authorization.
 
 Feature PRs must not change root, workspace, lockfile, or shrinkwrap release versions. CI runs `scripts/release-pr-version-policy.js` against the PR base and rejects such bumps; version mutation happens only inside the certified transaction on exact `main`.
+
+Historical fragment-policy exceptions must bind full commit IDs, complete changed-path hashes and affected packages. Scope coverage exceptions to the omitted packages; fragment rewrites also require previous and replacement content hashes. Current fragments must match the final committed evidence. Inspect the entire policy-era range before resolving historical violations, and never treat a feature-branch preview as a main release certificate.
 
 Live provider model generators are not release-time mutations because their network inputs are not reproducible during later certificate verification. Run and review model metadata regeneration in a normal pre-release PR when needed; the certified release commit must leave generated model source identical to its audited base.
 

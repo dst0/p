@@ -7,6 +7,8 @@ import {
 } from "../compaction/index.ts";
 import type { ParsedSkillBlock } from "./session-types.ts";
 
+export { isInternalAgentMessage } from "../messages.ts";
+
 export function parseSkillBlock(text: string): ParsedSkillBlock | null {
   const match = text.match(/^<skill name="([^"]+)" location="([^"]+)">\n([\s\S]*?)\n<\/skill>(?:\n\n([\s\S]+))?$/);
   if (!match) return null;
@@ -101,12 +103,6 @@ export function getFinishWorkRemainingWork(args: unknown): string[] {
     .filter((item): item is string => typeof item === "string")
     .map((item) => item.trim())
     .filter((item) => item.length > 0);
-}
-
-export function isInternalCompletionProtocolRepairMessage(message: AgentMessage): boolean {
-  return (
-    message.role === "user" && isRecord(message.metadata) && message.metadata.pInternal === "completion_protocol_repair"
-  );
 }
 
 export function normalizeCompactionDetails(details: unknown): CompactionDetails {

@@ -3,7 +3,9 @@ import { Container } from "@dst0/p-tui";
 import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { isInternalCompletionProtocolRepairMessage } from "../src/core/agent-session.ts";
+import { isInternalAgentMessage } from "../src/core/agent-session.ts";
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { formatEditResult } from "../src/core/tools/edit.ts";
 import { getTextOutput, stripHarnessMessages } from "../src/core/tools/render-utils.ts";
@@ -17,7 +19,6 @@ describe("showHarnessMessages functionality & coverage", () => {
   const testDir = join(process.cwd(), "test-harness-messages-tmp");
   const agentDir = join(testDir, "agent");
   const projectDir = join(testDir, "project");
-
   beforeEach(() => {
     initTheme("dark");
     if (existsSync(testDir)) {
@@ -26,14 +27,12 @@ describe("showHarnessMessages functionality & coverage", () => {
     mkdirSync(agentDir, { recursive: true });
     mkdirSync(join(projectDir, ".p"), { recursive: true });
   });
-
   afterEach(() => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true });
     }
   });
-
-  describe("isInternalCompletionProtocolRepairMessage helper", () => {
+  describe("isInternalAgentMessage helper", () => {
     it("identifies completion protocol repair messages", () => {
       const repairMsg: AgentMessage = {
         role: "user",
@@ -41,7 +40,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         timestamp: Date.now(),
         metadata: { pInternal: "completion_protocol_repair" },
       };
-      expect(isInternalCompletionProtocolRepairMessage(repairMsg)).toBe(true);
+      expect(isInternalAgentMessage(repairMsg)).toBe(true);
     });
 
     it("returns false for regular user messages", () => {
@@ -50,7 +49,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         content: [{ type: "text", text: "Hello agent" }],
         timestamp: Date.now(),
       };
-      expect(isInternalCompletionProtocolRepairMessage(regularMsg)).toBe(false);
+      expect(isInternalAgentMessage(regularMsg)).toBe(false);
     });
 
     it("returns false for non-user messages", () => {
@@ -61,7 +60,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         display: true,
         timestamp: Date.now(),
       };
-      expect(isInternalCompletionProtocolRepairMessage(customMsg)).toBe(false);
+      expect(isInternalAgentMessage(customMsg)).toBe(false);
     });
   });
 
@@ -201,7 +200,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         return false;
       }
       if (message.role === "user") {
-        if (isInternalCompletionProtocolRepairMessage(message) && !showHarnessMessages) {
+        if (isInternalAgentMessage(message) && !showHarnessMessages) {
           return false;
         }
         return true;
@@ -430,6 +429,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         editorContainer: new Container(),
         editor: new Container(),
         session: {
+          runBudget: new SessionRunBudget(SessionManager.inMemory()),
           autoCompactionEnabled: true,
           steeringMode: "all",
           followUpMode: "all",

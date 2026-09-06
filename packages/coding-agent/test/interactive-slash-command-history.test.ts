@@ -2,6 +2,8 @@ import { Editor } from "@dst0/p-tui";
 import { describe, expect, it, vi } from "vitest";
 import { createTestTUI } from "../../tui/test/editor-test-helpers.ts";
 import { defaultEditorTheme } from "../../tui/test/test-themes.ts";
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { BUILTIN_SLASH_COMMANDS } from "../src/core/slash-commands.ts";
 import { InteractiveMode } from "../src/modes/interactive/interactive-mode.ts";
 
@@ -17,12 +19,16 @@ function createInteractiveModeContext(): { editor: Editor; mode: InteractiveMode
     defaultEditor: editor,
     editor,
     session: {
+      runBudget: new SessionRunBudget(SessionManager.inMemory()),
       isCompacting: false,
       isStreaming: false,
       isBashRunning: false,
       prompt: vi.fn(async () => {}),
     },
     flushPendingBashComponents: vi.fn(),
+    showStatus: vi.fn(),
+    showError: vi.fn(),
+    createExtensionUIContext: () => ({ select: vi.fn(async () => undefined) }),
     pendingUserInputs: [],
     showSettingsSelector: vi.fn(),
     handlePlanCommand: vi.fn(async () => {}),

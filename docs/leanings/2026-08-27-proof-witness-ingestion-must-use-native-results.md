@@ -1,0 +1,22 @@
+# 2026-08-27 — Proof witness ingestion must use native results
+
+- **Status:** Resolved
+- **Task/context:** Diagnose a task-verification closure loop in `packages/coding-agent` where focused tests emitted `P_PROOF_V1` frames but current-revision proof evidence was unavailable.
+- **Unexpected observation or failure:** Raw focused-test output could contain a valid proof frame while the controller stored no witness after an earlier tool-result hook redacted or deleted that line. Conversely, a hook could inject a valid-looking frame that the controller trusted even though the native tool never emitted it. This applied both to returned result overrides and in-place mutations of the shared result object.
+- **Evidence:** Five isolated integration regressions on commit `742b3da838d507ac1adaf9c924bcafbcb2680e4c` exercised returned and in-place hook transformations in opposite directions: native frames disappeared after hook redaction or deletion, hook-only frames were persisted, and native tool identity, arguments, and error state were mutable before evidence recording. The model-visible output was correctly redacted in every proof-bearing case.
+- **Approaches tried:**
+  - **Attempt:** Parse `previousResult.content`, then redact it before storage and model delivery.
+    - **Outcome:** Did not work
+    - **Why:** `previousResult` is already transformed by earlier hooks, so it is neither complete nor authoritative evidence.
+  - **Attempt:** Parse `context.result.content` after invoking earlier hooks.
+    - **Outcome:** Did not work
+    - **Why:** Hooks receive the same mutable result object and can delete or inject frames in place without returning an override.
+  - **Attempt:** Selectively snapshot native tool identity, validated arguments, content, and error state before invoking earlier hooks, then parse and count only that snapshot while preserving returned hook transformations for redacted model-visible output.
+    - **Outcome:** Worked
+    - **Why:** The controller owns an immutable-by-isolation copy of the native parts before any presentation transformation, without bypassing output redaction.
+- **Root cause:** Proof ingestion and model presentation shared transformed or still-mutable tool-call and result state. Hook ordering therefore allowed presentation sanitization to erase trusted evidence, hook-generated text to become evidence, and evidence identity or descriptors to change after execution.
+- **Resolution:** Selectively snapshot every tool-call and result field trusted by verification before invoking earlier hooks, and make that snapshot the sole proof-ingestion boundary. Transformed content remains the model-facing result and is independently redacted before storage or delivery.
+- **Verification:** `task-requirement-proof-ingestion-boundary.test.ts` proves native-frame retention, hook-injection rejection, and stable native identity, arguments, error state, and mutation revision across returned overrides and in-place mutations. It also checks serialized durable evidence for encoded payload leakage. The existing proof-witness validation suite continues to prove secret redaction and invalid-frame rejection.
+- **Prevention/follow-up:** Keep evidence ingestion bound to native tool output whenever result hooks may transform presentation. Preserve raw-value redaction independently from evidence parsing.
+- **Reusable learning:** Bind security-relevant machine evidence to the earliest authoritative result, and keep presentation-hook output plus redaction on a separate path; never derive evidence from hook-transformed model output.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/mutation-tracking.ts`, `packages/coding-agent/test/task-requirement-proof-ingestion-boundary.test.ts`, `packages/coding-agent/docs/usage.md`

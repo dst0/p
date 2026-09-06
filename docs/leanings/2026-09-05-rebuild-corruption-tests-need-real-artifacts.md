@@ -1,0 +1,22 @@
+# 2026-09-05 — Rebuild corruption tests need real persisted artifacts
+
+- **Status:** Resolved
+- **Task/context:** Validate the rebased project-instructions release candidate and investigate code-index test failures.
+- **Unexpected observation or failure:** Recovery tests wrote `rebuild-plan.json` and `rebuild-vocab.json`, although the service reads generation-bound plan and BM25 files. They only asserted `fullRebuild`, which is also true for a successful resume. A compound corruption case ran six rebuild cycles inside one 30-second deadline; separate two-cycle cases also exceeded that deadline under measured host load.
+- **Evidence:** A fail-first assertion that the old vocabulary fixture already existed failed with expected `true`, received `false`. `rebuildArtifacts()` names `.rebuild-<generation>.plan.json` and `bm25-<generation>.json`; `do_performRebuild()` reports a full rebuild for both fresh and resumed work. The baseline focused run failed two cases at approximately 31 seconds while module import alone took approximately 48 seconds.
+- **Approaches tried:**
+  - **Attempt:** Keep the original synthetic filenames and assert only that rebuild completes.
+    - **Outcome:** Did not work
+    - **Why:** This never corrupted the persisted inputs, and the summary flag could not distinguish resume from restart.
+  - **Attempt:** Increase the deadline without strengthening the fixture or assertions.
+    - **Outcome:** Rejected
+    - **Why:** It would conceal invalid coverage and still allow timed-out work to outlive directory cleanup.
+  - **Attempt:** Use actual interrupted-rebuild artifacts, isolate corruption cases, and verify complete re-encoding into a new collection.
+    - **Outcome:** Worked
+    - **Why:** The tests mutate an existing generation-bound artifact, preserve valid unrelated fields for semantic mismatch cases, and exercise real service persistence. All 13 focused scenarios pass.
+- **Root cause:** Synthetic fixture paths drifted from production naming, while an invariant shared by both resume and restart made the assertions vacuous. The test lifecycle also did not cancel or join worker-backed rebuilds before deleting fixtures.
+- **Resolution:** Resolve artifacts from the valid persisted checkpoint; assert their existence before corruption, new collection identity, four re-encoded chunks, final collection state, and cleanup of trusted invalid artifacts. Exercise deleted, underfilled, overfilled, and dimension-mismatched partial collections separately. Pass the runner's abort signal and await service disposal before fixture removal; never accept runner cancellation as the intentional two-chunk interruption. Use a 90-second per-case integration deadline to allow measured full-suite load margin, without changing any production timeout.
+- **Verification:** The fail-first fixture-existence reproduction failed as expected. The strengthened suite passed 13/13 twice, including the final cancellation guard (13.70 seconds total). Independent adversarial review approved the assertions and joined teardown after that guard was added. The release-wide non-e2e gate remains a separate delivery requirement.
+- **Prevention/follow-up:** Require the focused recovery suite, full non-e2e gate, and adversarial review before delivery. Do not claim that malformed checkpoint JSON permits safe deletion of a collection whose identity can no longer be trusted.
+- **Reusable learning:** A corruption test must prove that it changed the exact artifact the reader consumes, and must assert a result that distinguishes recovery from the untouched success path.
+- **References:** `packages/code-index/test/rebuild-checkpoint.test.ts`; `packages/code-index/src/rag/service/rebuild-checkpoint.ts`; `packages/code-index/src/rag/service/rebuild-resume.ts`; `packages/code-index/src/rag/service/workspacecoderagservice-methods/lifecycle.ts`.

@@ -1,4 +1,5 @@
 import type { InteractiveMode } from "../interactivemode.ts";
+import { handleBudgetCommand } from "./budget-command.ts";
 
 export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
   self.defaultEditor.onSubmit = async (text: string) => {
@@ -10,6 +11,11 @@ export function do_setupEditorSubmitHandler(self: InteractiveMode): void {
     }
 
     // Handle commands
+    if (text === "/budget" || text.startsWith("/budget ")) {
+      self.editor.setText("");
+      await handleBudgetCommand(self, text);
+      return;
+    }
     if (text === "/settings") {
       self.showSettingsSelector();
       self.editor.setText("");

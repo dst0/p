@@ -21,11 +21,12 @@ import type {
   ToolDefinition,
 } from "../extensions/index.ts";
 import type { ModelRegistry } from "../model-registry.ts";
-import type { ProjectInstructionController } from "../project-instructions/index.ts";
+import type { ProjectInstructionController, ProjectInstructionDeliveryMode } from "../project-instructions/index.ts";
 import type { ResourceLoader } from "../resource-loader.ts";
 import type { SessionManager } from "../session-manager.ts";
 import type { SettingsManager } from "../settings-manager.ts";
 import type { SourceInfo } from "../source-info.ts";
+import type { TaskVerificationMode } from "../task-verification/mode.ts";
 import type { TokenBreakdown } from "../token-accounting.ts";
 
 export interface ToolSearchMatch {
@@ -104,6 +105,8 @@ export interface AgentSessionConfig {
   resourceLoader: ResourceLoader;
   /** Prepared instruction cache and refresh lifecycle. */
   projectInstructions?: ProjectInstructionController;
+  /** Project instruction delivery mode. */
+  projectInstructionMode?: ProjectInstructionDeliveryMode;
   /** SDK custom tools registered outside extensions */
   customTools?: ToolDefinition[];
   /** Whether every registered extension/custom tool starts active. */
@@ -129,6 +132,8 @@ export interface AgentSessionConfig {
   sessionStartEvent?: SessionStartEvent;
   /** Completion protocol used by this session. */
   completionMode?: CompletionMode;
+  /** Task verification policy used by this session. */
+  taskVerificationMode?: TaskVerificationMode;
 }
 
 export interface ExtensionBindings {

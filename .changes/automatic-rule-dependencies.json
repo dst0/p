@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Automatically load bounded transitive rule prerequisites in one dependency-aware read_rules call."
+}

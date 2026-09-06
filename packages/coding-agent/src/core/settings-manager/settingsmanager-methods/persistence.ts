@@ -1,5 +1,10 @@
 import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
 import { normalizePath } from "../../../utils/paths.ts";
+import {
+  DEFAULT_TASK_VERIFICATION_MODE,
+  isTaskVerificationMode,
+  type TaskVerificationMode,
+} from "../../task-verification/mode.ts";
 import { COMPLETION_MODE_ALIASES } from "../constants.ts";
 import { parsePositiveIntegerSetting } from "../helpers.ts";
 import type { SettingsManager } from "../settingsmanager.ts";
@@ -139,6 +144,11 @@ export function do_getCompletionMode(self: SettingsManager): CompletionMode {
     return COMPLETION_MODE_ALIASES[mode as keyof typeof COMPLETION_MODE_ALIASES];
   }
   return "explicit_finish";
+}
+
+export function do_getTaskVerificationMode(self: SettingsManager): TaskVerificationMode {
+  const mode = self.globalSettings.taskVerificationMode;
+  return typeof mode === "string" && isTaskVerificationMode(mode) ? mode : DEFAULT_TASK_VERIFICATION_MODE;
 }
 
 export function do_getCompletionLimits(self: SettingsManager): CompletionProtocolLimits | undefined {

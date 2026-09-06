@@ -1,0 +1,284 @@
+import { describe, expect, it } from "vitest";
+import {
+  rejectedRequirementDefinitionDraft,
+  repairRejectedRequirementDefinition,
+} from "../src/core/task-verification/requirement-definition-repair.ts";
+import { do_createRequirementAuditToolDefinition } from "../src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts";
+import type { RequirementAuditInput } from "../src/core/task-verification/types.ts";
+import { createRequirementAuditHarness } from "./task-requirement-audit-test-harness.ts";
+import { createRequirementAuditToolControllerDouble } from "./task-requirement-audit-tool-controller-double.ts";
+
+describe("rejected requirement definition repair protocol", () => {
+  it("replaces or splits only named items while retaining the rest of the rejected batch", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition());
+    expect(draft).toBeDefined();
+
+    const repaired = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft!.revision,
+      requirement_repairs: [
+        {
+          requirement_index: 2,
+          replacements: [requirement("Shipping reduces onHand"), requirement("Shipping reduces the reservation")],
+        },
+      ],
+    });
+
+    expect(repaired).toEqual({
+      action: "define",
+      requirements: [
+        requirement("Receiving increases onHand"),
+        requirement("Shipping reduces onHand"),
+        requirement("Shipping reduces the reservation"),
+      ],
+      ignored_source_prompts: [{ source_prompt_index: 1, reason: "Delegates to the specification" }],
+      ignored_source_clauses: [],
+    });
+  });
+
+  it("fails closed for stale revisions, multi-item repairs, and out-of-range indexes", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: "stale",
+        requirement_repairs: [{ requirement_index: 1, replacements: [] }],
+      }),
+    ).toContain("stale or unavailable");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [
+          { requirement_index: 1, replacements: [] },
+          { requirement_index: 1, replacements: [] },
+        ],
+      }),
+    ).toContain("exactly one repair item; received 2");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [{ requirement_index: 3, replacements: [] }],
+      }),
+    ).toContain("invalid rejected-batch indexes: 3");
+  });
+
+  it("rejects more than one repair item across requirement and classification changes", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [
+          { requirement_index: 1, replacements: [requirement("First correction")] },
+          { requirement_index: 2, replacements: [requirement("Second correction")] },
+        ],
+      }),
+    ).toContain("exactly one repair item");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        action: "repair_definition",
+        definition_revision: draft.revision,
+        requirement_repairs: [{ requirement_index: 2, replacements: [] }],
+        ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
+      }),
+    ).toContain("exactly one repair item");
+  });
+
+  it("supports one requirement or keyed classification repair per call", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+    const repairedRequirement = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft.revision,
+      requirement_repairs: [{ requirement_index: 2, replacements: [] }],
+    });
+    expect(typeof repairedRequirement).not.toBe("string");
+    if (typeof repairedRequirement === "string") throw new Error(repairedRequirement);
+    expect(repairedRequirement.requirements).toEqual([requirement("Receiving increases onHand")]);
+    const repairedClassification = repairRejectedRequirementDefinition(draft, {
+      action: "repair_definition",
+      definition_revision: draft.revision,
+      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Updated classification" }],
+    });
+    expect(typeof repairedClassification).not.toBe("string");
+    if (typeof repairedClassification === "string") throw new Error(repairedClassification);
+    expect(repairedClassification.ignored_source_prompts).toEqual([
+      { source_prompt_index: 1, reason: "Updated classification" },
+    ]);
+  });
+
+  it("rejects complete classification snapshots and multi-item classification deltas", () => {
+    const draft = rejectedRequirementDefinitionDraft(definition())!;
+    const base = { action: "repair_definition" as const, definition_revision: draft.revision };
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompts: [{ source_prompt_index: 1, reason: "Complete snapshot" }],
+      }),
+    ).toContain("complete ignored-source snapshots are define-only");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompt_upserts: [
+          { source_prompt_index: 1, reason: "First correction" },
+          { source_prompt_index: 2, reason: "Second correction" },
+        ],
+      }),
+    ).toContain("exactly one repair item; received 2");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Replacement" }],
+        ignored_source_prompt_removals: [1],
+      }),
+    ).toContain("exactly one repair item; received 2");
+    expect(
+      repairRejectedRequirementDefinition(draft, {
+        ...base,
+        ignored_source_clause_upserts: [
+          { source_clause_id: "S1-C1", classification: "example", reason: "Illustrative payload" },
+        ],
+        ignored_source_clause_removals: ["S1-C2"],
+      }),
+    ).toContain("exactly one repair item; received 2");
+    expect(repairRejectedRequirementDefinition(draft, base)).toContain("exactly one repair item; received 0");
+  });
+
+  it("does not consume the audit transition gate when no rejected draft exists", () => {
+    const { controller } = createRequirementAuditHarness();
+    controller.modelTurn = 3;
+
+    const result = controller.applyRequirementAudit({
+      action: "repair_definition",
+      definition_revision: "missing",
+      requirement_repairs: [{ requirement_index: 1, replacements: [] }],
+    });
+
+    expect(result.status).toBe("needs_action");
+    expect(controller.lastAuditTransitionTurn).toBe(-1);
+  });
+
+  it("rejects repair-only classification deltas on define", async () => {
+    const { controller } = createRequirementAuditHarness();
+    const result = await execute(do_createRequirementAuditToolDefinition(controller), {
+      ...definition(),
+      ignored_source_prompt_upserts: [{ source_prompt_index: 1, reason: "Ambiguous delta" }],
+    });
+
+    expect(result).toContain("does not accept field(s): ignored_source_prompt_upserts");
+    expect(controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+  });
+
+  it("rotates revisions with compact feedback while retaining the indexed draft", async () => {
+    const received: RequirementAuditInput[] = [];
+    const { controller } = createRequirementAuditToolControllerDouble(
+      (input, state) => {
+        received.push(input);
+        return received.length < 3
+          ? {
+              status: "needs_action",
+              message: `Requirement definition has 2 deterministic validation errors:\n1. Rejected ${received.length}.`,
+              state,
+              requirementDefinitionDiagnosticCount: 2,
+            }
+          : { status: "updated", message: "Accepted.", state };
+      },
+      { taskId: "repair-protocol-test" },
+    );
+    const tool = do_createRequirementAuditToolDefinition(controller);
+    const initial = await execute(tool, largeDefinition());
+    const revision1 = revisionFrom(initial);
+    const firstRepair = await execute(tool, {
+      action: "repair_definition",
+      definition_revision: revision1,
+      requirement_repairs: [
+        {
+          requirement_index: 2,
+          replacements: [requirement("Shipping reduces onHand"), requirement("Shipping reduces the reservation")],
+        },
+      ],
+    });
+    const revision2 = revisionFrom(firstRepair);
+    const shiftedIndex = controller.rejectedRequirementDefinitionDraft?.input.requirements?.findIndex(
+      (requirement) => requirement.text === "Shipping reduces the reservation",
+    );
+
+    expect(revision2).not.toBe(revision1);
+    expect(firstRepair).not.toContain("Current merged rejected batch");
+    expect(controller.rejectedRequirementDefinitionDraft?.input.requirements).toHaveLength(35);
+    expect(shiftedIndex).toBe(2);
+    const retainedDraft = structuredClone(controller.rejectedRequirementDefinitionDraft?.input);
+    expect(
+      await execute(tool, {
+        action: "repair_definition",
+        definition_revision: revision1,
+        requirement_repairs: [
+          { requirement_index: shiftedIndex! + 1, replacements: [requirement("Stale index replacement")] },
+        ],
+      }),
+    ).toContain("stale or unavailable");
+    expect(received).toHaveLength(2);
+    expect(controller.rejectedRequirementDefinitionDraft?.input).toEqual(retainedDraft);
+
+    expect(
+      await execute(tool, {
+        action: "repair_definition",
+        definition_revision: revision2,
+        requirement_repairs: [
+          { requirement_index: shiftedIndex! + 1, replacements: [requirement("Shipping decreases reservation")] },
+        ],
+      }),
+    ).toBe("Accepted.");
+    expect(received).toHaveLength(3);
+  });
+});
+
+async function execute(
+  tool: ReturnType<typeof do_createRequirementAuditToolDefinition>,
+  input: RequirementAuditInput,
+): Promise<string> {
+  const result = await tool.execute("audit", input, undefined, undefined, {} as never);
+  const content = result.content[0];
+  if (content?.type !== "text") throw new Error("Expected text tool output.");
+  return content.text;
+}
+
+function revisionFrom(text: string): string {
+  const revision = text.match(/definition_revision: ([0-9a-f-]+)/u)?.[1];
+  if (!revision) throw new Error(`Missing definition revision in: ${text}`);
+  return revision;
+}
+
+function definition(): RequirementAuditInput {
+  return {
+    action: "define",
+    requirements: [
+      requirement("Receiving increases onHand"),
+      requirement("Shipping reduces onHand and the reservation"),
+    ],
+    ignored_source_prompts: [{ source_prompt_index: 1, reason: "Delegates to the specification" }],
+    ignored_source_clauses: [],
+  };
+}
+
+function largeDefinition(): RequirementAuditInput {
+  const base = definition();
+  return {
+    ...base,
+    requirements: [
+      ...base.requirements!,
+      ...Array.from({ length: 32 }, (_value, index) => requirement(`Independent behavior ${index + 3}`)),
+    ],
+  };
+}
+
+function requirement(text: string) {
+  return {
+    type: "behavior" as const,
+    text,
+    acceptance_criterion: `${text} by the command quantity`,
+    source_clause_ids: ["S2-C1"],
+  };
+}

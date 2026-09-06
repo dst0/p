@@ -1,5 +1,12 @@
 import type { Agent, AgentContext, AgentMessage } from "@dst0/p-agent-core";
 import type { AgentSession } from "./agent-session.ts";
+import {
+  createModelCallContextBudgetReport,
+  estimatePreparedModelCallTokens,
+  getModelCallMaxTokens,
+  getPreparedModelCallMaxTokens,
+} from "./compaction/index.ts";
+import { getLatestCompactionEntry } from "./session-manager.ts";
 import type { SettingsManager } from "./settings-manager.ts";
 import {
   createSessionStateReminderMessage,
@@ -66,5 +73,43 @@ export function installAgentSessionPrepareNextTurn(
       context: replacementContext,
       appendMessages: turnCheckpointMessages,
     };
+  };
+
+  agent.prepareModelCall = async ({ context, model, maxTokens, attempt }) => {
+    const settings = session._getEffectiveCompactionSettings();
+    const desiredMaxTokens = getModelCallMaxTokens(model, settings, maxTokens);
+    if (desiredMaxTokens === undefined) {
+      throw new Error("Model-call preflight could not reserve a positive response budget.");
+    }
+    const contextTokens = estimatePreparedModelCallTokens(context);
+    const budget = createModelCallContextBudgetReport(contextTokens, model, settings, desiredMaxTokens);
+    const requestMaxTokens = getPreparedModelCallMaxTokens(contextTokens, model, settings, desiredMaxTokens);
+    const desiredCapCanFitSomePrompt = desiredMaxTokens + budget.safetyMarginTokens < budget.contextWindow;
+    const hasPriorAssistantHistory = context.messages.some((message) => message.role === "assistant");
+    const shouldAttemptCompaction =
+      settings.enabled &&
+      attempt === 0 &&
+      budget.shouldCompact &&
+      desiredCapCanFitSomePrompt &&
+      hasPriorAssistantHistory;
+    if (shouldAttemptCompaction) {
+      const previousCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
+      await session._runAutoCompaction("threshold", false);
+      const nextCompactionId = getLatestCompactionEntry(session.sessionManager.getBranch())?.id;
+      if (nextCompactionId !== previousCompactionId) {
+        return {
+          maxTokens: desiredMaxTokens,
+          retryContext: {
+            systemPrompt: agent.state.systemPrompt,
+            messages: agent.state.messages.slice(),
+            tools: agent.state.tools.slice(),
+          },
+        };
+      }
+    }
+    if (requestMaxTokens === undefined) {
+      throw new Error("Model-call preflight could not reserve a positive response budget.");
+    }
+    return { maxTokens: requestMaxTokens };
   };
 }

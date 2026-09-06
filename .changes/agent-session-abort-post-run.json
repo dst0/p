@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Stop terminally aborted sessions from restarting queued messages under a fresh provider signal."
+}

@@ -1,0 +1,22 @@
+# 2026-08-25 — Verification failures need semantic supersession
+
+- **Status:** Resolved
+- **Task/context:** Diagnose a task 3 benchmark timeout after implementation tests and type checking had passed.
+- **Unexpected observation or failure:** Completion remained blocked by a failed test-runner discovery command and an earlier test command with an invalid runner path.
+- **Evidence:** The run reached 95/100 and later reported seven passing tests plus a successful type check, but `ready_to_finish` repeatedly demanded exact reruns of `find node_modules/vitest ...` and the invalid runner command until timeout.
+- **Approaches tried:**
+  - **Attempt:** Retain the latest result for each exact command descriptor.
+    - **Outcome:** Did not work
+    - **Why:** A semantically equivalent or broader successful test command has a different descriptor, and a discovery command can mention a test runner without executing it.
+  - **Attempt:** Let any later passing test clear prior test failures.
+    - **Outcome:** Rejected
+    - **Why:** An unrelated focused test or a name-filtered suite could conceal a genuine failure.
+  - **Attempt:** Parse actual test invocations and require demonstrable scope coverage plus a positive test result for cross-command supersession.
+    - **Outcome:** Worked
+    - **Why:** It excludes discovery commands while preserving failed checks, unrelated tests, unsafe selectors, and narrowed filters as blockers.
+- **Root cause:** The failure ledger classified commands with a broad text regex and keyed recovery only by exact command text rather than test invocation semantics.
+- **Resolution:** Verification classification now recognizes actual test invocations. A later distinct pass supersedes a failed test only when its broad, exact-path, or safe test-directory glob scope covers the failed selector and its name filter is not narrower. Generic checks remain exact-command scoped.
+- **Verification:** Focused controller regressions prove discovery exclusion, covering glob supersession, unrelated-test rejection, filter monotonicity, and preservation of existing test-authoring behavior. A live canary then reached `evidence_ready` with no unresolved failures after two native command failures and a covering Node test pass.
+- **Prevention/follow-up:** Keep command discovery separate from command execution, and add a negative regression whenever a new selector or wrapper is made eligible for supersession.
+- **Reusable learning:** A verification ledger should compare parsed execution scope, not tool-name substrings or raw command identity alone.
+- **References:** `packages/coding-agent/test/task-verification-failed-evidence-supersession.test.ts`

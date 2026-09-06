@@ -2,6 +2,8 @@ import type { AgentEvent } from "@dst0/p-agent-core";
 import { installDelegatedMethods } from "../../utils/install-delegated-methods.ts";
 import type { CustomMessage } from "../messages.ts";
 import { installAgentSessionPrepareNextTurn } from "../prepare-next-turn.ts";
+import { installSessionBudgetScope } from "../run-budget/install-session-scope.ts";
+import { SessionRunBudget } from "../run-budget/session-run-budget.ts";
 import * as agentEventHandling from "./agentsession-methods/agent-event-handling.ts";
 import * as authDelegates from "./agentsession-methods/auth.ts";
 import * as autoCompactionDelegates from "./agentsession-methods/auto-compaction.ts";
@@ -42,8 +44,11 @@ import type { AgentSessionConfig } from "./session-types.ts";
 
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: The installer below synchronously defines every delegated method.
 export class AgentSession extends AgentSessionState {
-  constructor(config: AgentSessionConfig) {
+  readonly runBudget: SessionRunBudget;
+
+  constructor(config: AgentSessionConfig, runBudget?: SessionRunBudget) {
     super(config);
+    this.runBudget = runBudget ?? new SessionRunBudget(config.sessionManager);
     this._unsubscribeAgent = this.agent.subscribe(this._handleAgentEvent);
     this._installAgentToolHooks();
     this._installPromptContextTransform();
@@ -54,7 +59,8 @@ export class AgentSession extends AgentSessionState {
     installAgentSessionPrepareNextTurn(this.agent, this, this.settingsManager);
   }
 
-  public _handleAgentEvent = (event: AgentEvent): Promise<void> => agentEventHandling.handleAgentEvent(this, event);
+  public _handleAgentEvent = (event: AgentEvent): Promise<void> =>
+    this.runBudget.run(() => agentEventHandling.handleAgentEvent(this, event));
 
   async sendCustomMessage<T = unknown>(
     message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,
@@ -104,3 +110,4 @@ installDelegatedMethods(AgentSession.prototype, [
   updateSessionStateDelegates,
   userMessagingDelegates,
 ]);
+installSessionBudgetScope(AgentSession.prototype);

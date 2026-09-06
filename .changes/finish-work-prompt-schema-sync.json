@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Advertise the actual finish_work verification token field instead of the removed result field in agent prompts and usage documentation."
+}

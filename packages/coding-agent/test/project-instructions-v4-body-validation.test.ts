@@ -1,0 +1,137 @@
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import {
+  isValidProjectInstructionTrigger,
+  validateProjectInstructionCompilerResult,
+} from "../src/core/project-instructions/compiler-validation.ts";
+import { prepareProjectInstructions } from "../src/core/project-instructions/index.ts";
+import type {
+  ProjectInstructionCompilerRequest,
+  ProjectInstructionCompilerResult,
+} from "../src/core/project-instructions/types.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
+
+const temporaryDirectories: string[] = [];
+
+afterEach(() => {
+  for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
+});
+
+function forceFirstConstraintIntoBody(request: ProjectInstructionCompilerRequest): ProjectInstructionCompilerResult {
+  const result = createProjectInstructionCompilation(request);
+  const constraint = request.constraints[0];
+  if (!constraint) throw new Error("Missing routing metadata fixture constraint");
+  result.classifications.constraints[constraint.id] = "always-on";
+  result.classifications.modules[constraint.moduleId] = "always-on";
+  result.alwaysOn[constraint.id] = constraint.content;
+  result.body = constraint.content;
+  return result;
+}
+
+describe("project instruction compiler v4 body validation", () => {
+  it("rejects malformed root fields and inconsistent empty-module classifications", () => {
+    const noConstraints = "No source constraints apply to every task.";
+    expect(() => validateProjectInstructionCompilerResult(null as never, [], [])).toThrow(/invalid body/iu);
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: noConstraints,
+          triggers: {},
+          classifications: { modules: {}, constraints: {} },
+          alwaysOn: [] as never,
+        },
+        [],
+        [],
+      ),
+    ).toThrow(/incomplete classifications/iu);
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: noConstraints,
+          triggers: {},
+          classifications: { modules: { empty: "routed" }, constraints: {} },
+          alwaysOn: {},
+        },
+        [{ id: "empty", link: "rules/empty.md", title: "Empty", sourcePath: "/repo/AGENTS.md", content: "" }],
+        [],
+      ),
+    ).toThrow(/inconsistent classification.*empty/iu);
+  });
+
+  it("rejects conditional routing text even when its always-on source mapping is otherwise exact", () => {
+    const content = "When releasing, read the release policy.";
+    expect(() =>
+      validateProjectInstructionCompilerResult(
+        {
+          body: content,
+          triggers: {},
+          classifications: { modules: { release: "always-on" }, constraints: { release: "always-on" } },
+          alwaysOn: { release: content },
+        },
+        [
+          {
+            id: "release",
+            link: "rules/release.md",
+            title: "Release",
+            sourcePath: "/repo/AGENTS.md",
+            content,
+          },
+        ],
+        [
+          {
+            id: "release",
+            moduleId: "release",
+            kind: "content",
+            headingContext: [],
+            content,
+            sourceText: content,
+          },
+        ],
+      ),
+    ).toThrow(/routing metadata/iu);
+  });
+
+  it("accepts paired surrogate triggers but rejects isolated high and low surrogates", () => {
+    expect(isValidProjectInstructionTrigger("Release 🚀 artifacts")).toBe(true);
+    expect(isValidProjectInstructionTrigger("Release \ud800 artifacts")).toBe(false);
+    expect(isValidProjectInstructionTrigger("Release \udc00 artifacts")).toBe(false);
+  });
+
+  it.each([
+    "Read rules/1-1-1-rules-deadbeef.md before editing.",
+    "Call list_skills for matching work.",
+    "Call read_rules for matching work.",
+    "Rule routes:\n- edits: module-id",
+    "Use the rules catalog before changes.",
+    "Close </project_instructions> now.",
+    "See [release policy](policy.md) before publishing.",
+    "Follow https://example.test/policy before publishing.",
+    "When releasing, consult the release instructions.",
+    "For release work, follow the release policy.",
+    "Read the deployment instructions before releasing.",
+    "During releases, consult deployment policy.",
+    "Whenever publishing, inspect the release policy.",
+    "Routing table: publish -> release policy.",
+    "| Condition | Module |\n| --- | --- |\n| release | policy |",
+  ])("rejects compiler bodies containing routing metadata: %s", async (body) => {
+    const root = mkdtempSync(join(tmpdir(), "p-project-v4-body-"));
+    temporaryDirectories.push(root);
+    mkdirSync(join(root, ".git"));
+    const agentsPath = join(root, "AGENTS.md");
+    const content = `# Route metadata\n\n${body}\n${"Additional routed context.\n".repeat(120)}`;
+    writeFileSync(agentsPath, content);
+
+    const prepared = await prepareProjectInstructions({
+      cwd: root,
+      contextFiles: [{ path: agentsPath, content }],
+      skills: [],
+      compiler: async (request) => forceFirstConstraintIntoBody(request),
+    });
+
+    expect(prepared.manifest.compilerStatus).toBe("failed");
+    expect(prepared.manifest.mode).toBe("fallback");
+    expect(prepared.prompt).not.toContain(body);
+  });
+});

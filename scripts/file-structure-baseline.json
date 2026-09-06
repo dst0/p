@@ -1,7 +1,7 @@
 {
   "packages/agent/src/harness/agent-harness.ts": {
     "classes": 1,
-    "lines": 1094
+    "lines": 1092
   },
   "packages/agent/src/harness/compaction/compaction.ts": {
     "classes": 0,
@@ -311,10 +311,6 @@
     "classes": 5,
     "lines": 632
   },
-  "packages/coding-agent/src/cli/args.ts": {
-    "classes": 0,
-    "lines": 454
-  },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
     "classes": 2,
     "lines": 433
@@ -325,7 +321,7 @@
   },
   "packages/coding-agent/src/core/compaction/minimal-compaction.ts": {
     "classes": 0,
-    "lines": 458
+    "lines": 454
   },
   "packages/coding-agent/src/core/export-html/index.ts": {
     "classes": 0,
@@ -353,7 +349,7 @@
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
-    "lines": 470
+    "lines": 436
   },
   "packages/coding-agent/src/core/skills.ts": {
     "classes": 0,
@@ -617,7 +613,7 @@
   },
 	"packages/coding-agent/test/task-verification.test.ts": {
 		"classes": 0,
-		"lines": 1082
+      "lines": 1000
 	},
   "packages/coding-agent/test/test-harness.test.ts": {
     "classes": 0,
@@ -715,10 +711,6 @@
     "classes": 2,
     "lines": 874
   },
-  "scripts/benchmark-agents.js": {
-    "classes": 0,
-    "lines": 2229
-  },
   "scripts/edit-tool-stats.js": {
     "classes": 0,
     "lines": 834
@@ -729,7 +721,7 @@
   },
   "scripts/install-indexing-service.js": {
     "classes": 0,
-    "lines": 573
+    "lines": 561
   },
   "scripts/p-cache-26-turn-smoke.js": {
     "classes": 0,

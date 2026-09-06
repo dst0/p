@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Replace internal benchmark wall-clock task kills with bounded semantic-progress leases while preserving silent-stall and overall-deadline stops."
+}

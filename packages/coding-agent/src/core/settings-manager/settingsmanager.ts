@@ -7,6 +7,7 @@ import * as inputSettingsDelegates from "./settingsmanager-methods/input-setting
 import * as persistenceDelegates from "./settingsmanager-methods/persistence.ts";
 import * as projectTrustDelegates from "./settingsmanager-methods/project-trust.ts";
 import * as reloadOverridesDelegates from "./settingsmanager-methods/reload-overrides.ts";
+import * as runBudgetDelegates from "./settingsmanager-methods/run-budget.ts";
 import * as storageLoadingDelegates from "./settingsmanager-methods/storage-loading.ts";
 import * as transportSettingsDelegates from "./settingsmanager-methods/transport-settings.ts";
 import * as uiSettingsDelegates from "./settingsmanager-methods/ui-settings.ts";
@@ -99,6 +100,7 @@ type SettingsManagerMethods = DelegatedMethods<
     typeof persistenceDelegates &
     typeof projectTrustDelegates &
     typeof reloadOverridesDelegates &
+    typeof runBudgetDelegates &
     typeof transportSettingsDelegates &
     typeof uiSettingsDelegates
 >;
@@ -111,6 +113,7 @@ installDelegatedMethods(SettingsManager.prototype, [
   persistenceDelegates,
   projectTrustDelegates,
   reloadOverridesDelegates,
+  runBudgetDelegates,
   transportSettingsDelegates,
   uiSettingsDelegates,
 ]);

@@ -1,0 +1,22 @@
+# 2026-09-01 — Model checklist grammar needs live variants
+
+- **Status:** Resolved
+- **Task/context:** A live non-coding evidence-mode AI-unit exercised model-generated completion checklists against an exact two-line text artifact.
+- **Unexpected observation or failure:** The controller independently verified successful literal `diff` commands but rejected readiness because the checklist matcher did not recognize the model's single-quoted line literals or its later `exists with exactly` phrasing.
+- **Evidence:** The first live session used `contains exactly ... 'line one' and 'line two'`; the second used `exists with exactly ...`. Both produced the correct file bytes and a successful literal diff, while focused reproduction showed the classifier and evidence lookup succeeding and the criterion matcher returning false.
+- **Approaches tried:**
+  - **Attempt:** Require only the documented canonical `exact_file_bytes(...)` checklist form.
+    - **Outcome:** Did not work
+    - **Why:** The live model preserved the exact semantics but naturally paraphrased the checklist despite the guideline.
+  - **Attempt:** Loosen shell assertion classification or evidence lookup.
+    - **Outcome:** Rejected
+    - **Why:** Both layers were already correct, and loosening them would weaken path, byte, and evidence-identity guarantees without fixing the failed association.
+  - **Attempt:** Extend only the closed natural criterion grammar.
+    - **Outcome:** Worked
+    - **Why:** Non-evaluated single-quoted line literals and the bounded `exists with` bridge can be recognized while exact path ownership, controller reread, SHA-256 equality, line count, and terminal-newline checks remain mandatory.
+- **Root cause:** Unit fixtures covered canonical JSON quoting and a narrower verb set, but the live model emitted semantically equivalent natural variants outside that closed grammar.
+- **Resolution:** The natural matcher now accepts bounded single-quoted line lists and the observed verb bridge. It continues to reject escapes, control characters, unbalanced or cross-paired quotes, unrelated subjects, extra subjects, contradictory counts, and unsupported prose.
+- **Verification:** The regression failed before the fix, focused matcher and controller integration tests pass, adversarial cases bind claims to the tokenizer-derived candidate bytes, and a fresh live run reached evidence readiness and successful `finish_work` with the exact requested bytes.
+- **Prevention/follow-up:** Run a fresh non-coding AI-unit after each checklist-language change. Capture each materially different model-generated criterion as a regression, but never broaden the proof classifier or accept free-form semantic overlap to accommodate phrasing.
+- **Reusable learning:** Closed model-output grammars need live paraphrase coverage; add observed variants at the semantic association layer while preserving controller-derived proof boundaries.
+- **References:** `packages/coding-agent/test/task-verification-exact-file-criterion-matcher.test.ts`, `packages/coding-agent/test/task-verification-evidence-exact-content-shell.test.ts`

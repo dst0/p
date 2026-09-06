@@ -3,12 +3,15 @@ import { createProjectTrustContext } from "../cli/project-trust.ts";
 import type { CreateAgentSessionRuntimeFactory } from "../core/agent-session-runtime.ts";
 import {
   type AgentSessionRuntimeDiagnostic,
+  type AgentSessionServices,
   createAgentSessionFromServices,
   createAgentSessionServices,
 } from "../core/agent-session-services.ts";
 import type { AuthStorage } from "../core/auth-storage.ts";
 import { resolveModelScope } from "../core/model-resolver.ts";
 import { type AppMode, resolveProjectTrusted } from "../core/project-trust.ts";
+import { SessionRunBudget } from "../core/run-budget/session-run-budget.ts";
+import type { RunBudgetPolicy } from "../core/run-budget-policy.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, type ProjectTrustStore } from "../core/trust-manager.ts";
 import { collectSettingsDiagnostics } from "./cli-entry.ts";
@@ -16,6 +19,7 @@ import { buildSessionOptions } from "./runtime-init.ts";
 import type { MainOptions } from "./types.ts";
 
 interface CliRuntimeFactoryOptions {
+  defaultRunBudget?: RunBudgetPolicy;
   agentDir: string;
   appMode: AppMode;
   authStorage: AuthStorage;
@@ -30,11 +34,24 @@ interface CliRuntimeFactoryOptions {
   trustStore: ProjectTrustStore;
 }
 
-export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): CreateAgentSessionRuntimeFactory {
+interface CliRuntimeServicesInput {
+  cwd: string;
+  agentDir: string;
+  isInitialRuntime: boolean;
+  projectTrustContext?: Parameters<CreateAgentSessionRuntimeFactory>[0]["projectTrustContext"];
+}
+
+interface CliRuntimeServicesResult {
+  services: AgentSessionServices;
+  diagnostics: AgentSessionRuntimeDiagnostic[];
+}
+
+function createCliRuntimeServicesFactory(
+  options: CliRuntimeFactoryOptions,
+): (input: CliRuntimeServicesInput) => Promise<CliRuntimeServicesResult> {
   const projectTrustByCwd = new Map<string, boolean>();
 
-  return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
-    const isInitialRuntime = sessionStartEvent === undefined;
+  return async ({ cwd, agentDir, isInitialRuntime, projectTrustContext }) => {
     const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
     const cachedProjectTrust = projectTrustByCwd.get(cwd);
     const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
@@ -93,7 +110,7 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
         extensionFactories: options.extensionFactories,
       },
     });
-    const { settingsManager, modelRegistry, resourceLoader } = services;
+    const { settingsManager, resourceLoader } = services;
     const diagnostics: AgentSessionRuntimeDiagnostic[] = [
       ...projectTrustDiagnostics,
       ...services.diagnostics,
@@ -103,6 +120,35 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
         message: `Failed to load extension "${path}": ${error}`,
       })),
     ];
+
+    return { services, diagnostics };
+  };
+}
+
+export async function createCliMetadataServices(
+  options: CliRuntimeFactoryOptions,
+  input: Omit<CliRuntimeServicesInput, "isInitialRuntime">,
+): Promise<CliRuntimeServicesResult> {
+  return createCliRuntimeServicesFactory(options)({ ...input, isInitialRuntime: true });
+}
+
+export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): CreateAgentSessionRuntimeFactory {
+  const createRuntimeServices = createCliRuntimeServicesFactory(options);
+
+  return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
+    const budget = new SessionRunBudget(sessionManager, {
+      runBudget: options.parsed.runBudget,
+      defaultRunBudget: options.defaultRunBudget,
+    });
+    const { services, diagnostics } = await budget.run(() =>
+      createRuntimeServices({
+        cwd,
+        agentDir,
+        isInitialRuntime: sessionStartEvent === undefined,
+        projectTrustContext,
+      }),
+    );
+    const { settingsManager, modelRegistry } = services;
 
     const modelPatterns = options.parsed.models ?? settingsManager.getEnabledModels();
     const scopedModels =
@@ -133,6 +179,8 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
     }
 
     const created = await createAgentSessionFromServices({
+      runBudget: options.parsed.runBudget,
+      defaultRunBudget: options.defaultRunBudget,
       services,
       sessionManager,
       sessionStartEvent,
@@ -147,6 +195,9 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
       completionMode: sessionOptions.completionMode,
       completionLimits: sessionOptions.completionLimits,
       maxTokens: sessionOptions.maxTokens,
+      taskVerificationMode: sessionOptions.taskVerificationMode,
+      projectInstructionMode: sessionOptions.projectInstructionMode,
+      projectInstructionCompilerModel: sessionOptions.projectInstructionCompilerModel,
     });
     const cliThinkingOverride = options.parsed.thinking !== undefined || cliThinkingFromModel;
     if (created.session.model && cliThinkingOverride) {

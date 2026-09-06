@@ -1,0 +1,22 @@
+# 2026-09-05 — Indexing reuse must bind runtime state
+
+- **Status:** Resolved
+- **Task/context:** Finishing the project-instruction release required reinstalling the current checkout without disrupting an unchanged code-index daemon or its operator-selected storage.
+- **Unexpected observation or failure:** An unchanged-version reinstall replaced an explicit Qdrant data directory with the default path, skipped the daemon restart, and then timed out waiting for health. The empty reuse marker also allowed configuration changes and concurrent reinstall processes to invalidate or steal the decision.
+- **Evidence:** A pre-fix regression expected the configured directory but received the managed default. The live reinstall reached the reuse branch, rewrote the configuration, skipped restart, and failed its bounded health check. Fingerprint comparison showed that restoring the explicit directory restored the daemon's recorded runtime fingerprint.
+- **Approaches tried:**
+  - **Attempt:** Preserve the configured directory and re-read its fingerprint inside the installer while retaining an existence-only marker.
+    - **Outcome:** Partial
+    - **Why:** It fixed deterministic path replacement but still trusted a new baseline after the shell decision and allowed concurrent cleanup to delete another run's marker.
+  - **Attempt:** Automatically recover stale directory locks.
+    - **Outcome:** Did not work
+    - **Why:** Recovery ownership introduced another crash and interleaving window that could remove a newer live lock.
+  - **Attempt:** Publish a private owner-bound lock atomically, carry a one-shot JSON decision with exact run, code, and configuration identities, and fail closed on stale locks.
+    - **Outcome:** Worked
+    - **Why:** Only the lock owner can clear or consume its decision, and the installer verifies the approved identities both before and after dependency work.
+- **Root cause:** Reuse was represented as global mutable existence state instead of a serialized transaction. Managed configuration also rebuilt an operator-owned storage path from defaults, while stale-backend discovery depended on the newly written path.
+- **Resolution:** Preserve explicit Qdrant storage, identify managed Qdrant by its leading managed executable across path transitions, serialize install and reinstall configuration changes, and bind reuse to a private one-shot decision containing the run ID, indexing version, and runtime fingerprint. A dead owner now produces an exact fail-closed manual recovery target.
+- **Verification:** Focused lock, reuse, installer, transaction-lifecycle, reinstall-script, and indexing-version tests pass, including a real owner/contender Bash lifecycle and a decoy command that must never be killed.
+- **Prevention/follow-up:** Keep every installer coordination file in `computeIndexingVersion()`, retain the two-process regression, and never infer service ownership from an argument sequence that is not anchored to the managed executable.
+- **Reusable learning:** A non-disruptive service reinstall is a transaction: serialize all supported writers and bind any reuse approval to immutable code, configuration, and owner identity.
+- **References:** `reinstall.sh`, `install.sh`, `scripts/indexing-reinstall-transaction.sh`, `scripts/indexing-reinstall-lock.test.js`, `packages/coding-agent/test/indexing-reinstall-concurrency.test.ts`
