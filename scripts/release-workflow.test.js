@@ -66,3 +66,21 @@ test("downstream jobs fail closed if the remote tag moves before side effects", 
   );
   assertImmediatelyPrecedes(publish, "Re-check pinned release tag", "Publish npm packages");
 });
+
+test("binary build verifies standalone package metadata before release upload", () => {
+  const build = job("build", "publish-npm");
+  assertImmediatelyPrecedes(build, "Build binaries", "Verify standalone package metadata");
+
+  const verificationStart = build.indexOf("name: Verify standalone package metadata");
+  const verificationEnd = build.indexOf("\n      - name:", verificationStart);
+  assert.notEqual(verificationEnd, -1, "another step must follow standalone verification");
+  const verification = build.slice(verificationStart, verificationEnd);
+  assert.match(verification, /working-directory: packages\/coding-agent/);
+  assert.match(verification, /bun --version/);
+  assert.match(
+    verification,
+    /node \.\.\/\.\.\/node_modules\/vitest\/dist\/cli\.js --run test\/standalone-package-version\.test\.ts/,
+  );
+  assert.ok(verification.indexOf("bun --version") < verification.indexOf("node ../../node_modules"));
+  assert.ok(verificationStart < build.indexOf("name: Create GitHub Release and upload binaries"));
+});
