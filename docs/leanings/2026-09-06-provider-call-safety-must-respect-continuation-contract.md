@@ -1,0 +1,22 @@
+# 2026-09-06 — Provider-call safety must respect the continuation contract
+
+- **Status:** Partial
+- **Task/context:** Final review of PR #115 before the API v5 release, against `90a10142dc6ef50412a37b52d5321d753cb61e82`.
+- **Unexpected observation or failure:** An unresolved automated P1 review correctly observed that repeated clean `stopReason: "length"` responses can continue indefinitely without caller cancellation, but proposed a consecutive-segment ceiling that had already been deliberately removed. The initial protocol-independent continuation learning still describes the earlier bounded implementation; reading it without its later follow-up gives the wrong current contract.
+- **Evidence:** `error-recovery.ts` excludes clean length segments from logical completion turns. `provider-length-continuation.ts` preserves each segment and schedules continuation without a segment counter. Commit `53780cd1153b3925cd63ad9df17633be9d574234`, the later length-is-not-logical-failure learning, and `packages/agent/README.md` explicitly assign run-level safety to caller cancellation, deadlines, or caller-owned budgets. The liveness regressions require six segments to complete even with `maxTurns: 1`.
+- **Approaches tried:**
+  - **Attempt:** Treat the absence of a consecutive-length counter as a newly discovered missing turn-limit fix.
+    - **Outcome:** Did not work
+    - **Why:** It confuses logical completion turns with provider requests and would reintroduce the documented premature-truncation regression.
+  - **Attempt:** Compare the review with the current source, the removal commit, canonical API documentation, and subsequent semantic-repetition repair.
+    - **Outcome:** Worked
+    - **Why:** These sources distinguish clean capacity-limited progress from independently detected semantic repetition and expose the intentionally caller-owned safety boundary.
+  - **Attempt:** Infer that every caller supplies a finite deadline or whole-run request budget.
+    - **Outcome:** Rejected
+    - **Why:** The API contract permits caller controls but does not prove their presence in every embedding or CLI run. The unbounded-request risk must remain explicit.
+- **Root cause:** The review interpreted `maxTurns` as a transport-request budget, while the implemented and tested API defines it as a logical completion-protocol budget. Historical learning entries describe successive contracts rather than interchangeable current instructions.
+- **Resolution:** Preserve the intentional continuation behavior and existing semantic-repetition repair budgets. Do not silently add a hidden segment ceiling or present caller cancellation support as proof that all runs are bounded. Keep the review decision visible; an explicit whole-run call, time, or cost policy is a separate caller-level design decision.
+- **Verification:** The current source, removal patch, canonical README, and full provider-length continuation/liveness test files were inspected. An independently identity-bound read-only review passed 20 targeted continuation/recovery tests and three semantic-repetition regressions, with exit code zero. The abort regression observes exactly four provider requests, no fifth request, and one terminal aborted response. Final runtime verification on the cited head also passed the complete non-e2e suite. This investigation did not call a real provider or establish production cost limits.
+- **Prevention/follow-up:** Read the newest linked contract before implementing a review remedy. Include unresolved inline threads in the final PR review read-back, not only top-level review summaries. Maintainer review of the remaining caller-budget risk is still required before release.
+- **Reusable learning:** A real operational risk does not make every proposed guard correct. Preserve the defined ownership boundary, reproduce the claimed behavior, and distinguish an intentional policy tradeoff from a regression.
+- **References:** [PR #115 review](https://github.com/dst0/p/pull/115#discussion_r3942448467); `packages/agent/README.md`; `packages/agent/test/provider-length-continuation.test.ts`; `packages/agent/test/provider-length-continuation-liveness.test.ts`; `docs/leanings/2026-08-27-provider-length-continuation-must-be-protocol-independent.md`; `docs/leanings/2026-08-27-provider-length-is-not-logical-failure.md`; `docs/leanings/2026-08-27-provider-length-semantic-repetition-budget.md`.
