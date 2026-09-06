@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { existsSync, linkSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, linkSync, mkdirSync, mkdtempSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -33,17 +33,72 @@ describe("evidence-mode critical proof source safety", () => {
     }
   });
 
-  it("matches an absolute case-only source alias by safe file identity", async () => {
+  it("matches an absolute case-only source alias by safe file identity", async (context) => {
     const cwd = createRepository({ "README.md": "# Contract\n\nPreserve configured records.\n" });
     const harness = createEvidenceHarness(cwd);
     try {
       await sendPrompt(harness, "Implement the persistence contract from README.md.", 100);
       expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
       const aliasPath = join(cwd, "readme.md");
-      if (!existsSync(aliasPath)) return;
+      if (!existsSync(aliasPath)) context.skip();
       writeFileSync(join(cwd, "README.md"), EXACT_LOG_CONTRACT);
       await afterEvidenceTool(harness.agent, "read", { path: aliasPath }, EXACT_LOG_CONTRACT);
       expect(harness.controller.currentState.criticalProofObligations).toHaveLength(1);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("blocks a case-only symlink substitution and recovers only after a safe canonical reread", async () => {
+    const cwd = createRepository({ "README.md": "# Contract\n\nPreserve configured records.\n" });
+    const harness = createEvidenceHarness(cwd);
+    try {
+      await sendPrompt(harness, "Implement the persistence contract from README.md.", 100);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      renameSync(join(cwd, "README.md"), join(cwd, "REAL.md"));
+      writeFileSync(join(cwd, "REAL.md"), EXACT_LOG_CONTRACT);
+      const aliasPath = join(cwd, "readme.md");
+      symlinkSync("REAL.md", aliasPath);
+      const observed = await afterEvidenceTool(harness.agent, "read", { path: aliasPath }, EXACT_LOG_CONTRACT);
+      expect(observed).toContain("Critical proof discovery is blocked");
+      expect(harness.controller.currentState.criticalProofDiscoveryFailures).toEqual([
+        { sourcePath: "README.md", reason: "Requirement source uses a symlink: readme.md" },
+      ]);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      expect((await beforeEvidenceTool(harness.agent, "write", { path: "src/store.ts", content: "" }))?.block).toBe(
+        true,
+      );
+
+      rmSync(aliasPath);
+      renameSync(join(cwd, "REAL.md"), join(cwd, "README.md"));
+      await afterEvidenceTool(harness.agent, "read", { path: "README.md" }, EXACT_LOG_CONTRACT);
+      expect(harness.controller.currentState.criticalProofDiscoveryFailures).toBeUndefined();
+      expect(harness.controller.currentState.criticalProofObligations).toHaveLength(1);
+      expect(harness.controller.currentState.criticalProofObligations?.[0]?.sourcePath).toBe("README.md");
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a distinct case-only file instead of adopting its apparent contract", async (context) => {
+    const cwd = createRepository({ "README.md": "# Contract\n\nPreserve configured records.\n" });
+    const harness = createEvidenceHarness(cwd);
+    try {
+      const aliasPath = join(cwd, "readme.md");
+      if (existsSync(aliasPath)) context.skip();
+      writeFileSync(aliasPath, EXACT_LOG_CONTRACT, { flag: "wx" });
+      await sendPrompt(harness, "Implement the persistence contract from README.md.", 100);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      const observed = await afterEvidenceTool(harness.agent, "read", { path: aliasPath }, EXACT_LOG_CONTRACT);
+      expect(observed).toContain("does not resolve to authoritative source README.md");
+      expect(harness.controller.currentState.criticalProofDiscoveryFailures).toEqual([
+        {
+          sourcePath: "README.md",
+          reason: "Observed path readme.md does not resolve to authoritative source README.md.",
+        },
+      ]);
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      expect(await recordChecklist(harness.controller)).toContain("Critical proof discovery is blocked");
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
