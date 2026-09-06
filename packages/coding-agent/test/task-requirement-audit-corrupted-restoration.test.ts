@@ -50,6 +50,35 @@ describe("requirement-audit corrupted restoration", () => {
     expect(restored.controller.currentState.mutationRevision).toBe(0);
   });
 
+  it("rejects requirement definitions after a corrupt latest state without persisting a replacement", async () => {
+    const harness = createRequirementAuditHarness();
+    harness.sessionManager.appendCustomEntry(TASK_VERIFICATION_STATE_CUSTOM_TYPE, {
+      version: 2,
+      taskId: "corrupted-latest-state",
+    });
+    const restored = createRequirementAuditHarness(harness.sessionManager);
+    const entriesBefore = harness.sessionManager.getEntries().length;
+    const stateBefore = restored.controller.currentState;
+
+    const result = await callRequirementAudit(restored.controller, {
+      action: "define",
+      requirements: [
+        {
+          type: "behavior",
+          text: "The inventory rejects negative quantities",
+          acceptance_criterion: "Negative quantities are rejected",
+          source_prompt_indexes: [1],
+        },
+      ],
+    });
+
+    expect(result).toContain("Cannot use the requirement audit");
+    expect(result).toContain("latest persisted task-verification state is invalid");
+    expect(restored.controller.currentState).toEqual(stateBefore);
+    expect(restored.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
+    expect(harness.sessionManager.getEntries()).toHaveLength(entriesBefore);
+  });
+
   it("rejects a legacy partial-verdict cursor because batched audits persist atomically", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);

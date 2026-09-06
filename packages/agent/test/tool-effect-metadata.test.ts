@@ -3,7 +3,12 @@ import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { finalizeExecutedToolCall } from "../src/agent-loop/streaming-handler.ts";
 import { prepareToolCall } from "../src/agent-loop/tool-result-formatting.ts";
-import { type ResolvedToolEffect, resolveToolEffect } from "../src/tool-effects.ts";
+import {
+  type ResolvedToolEffect,
+  resolveToolEffect,
+  type ToolEffectDeclaration,
+  toolEffectRequiresVerification,
+} from "../src/tool-effects.ts";
 import type { AgentContext, AgentLoopConfig, AgentTool, AgentToolCall } from "../src/types.ts";
 
 const assistantMessage = {
@@ -125,5 +130,42 @@ describe("tool effect metadata", () => {
     expect(resolved.domains).toEqual(["network_send"]);
     expect(Object.isFrozen(resolved)).toBe(true);
     expect(Object.isFrozen(resolved.domains)).toBe(true);
+  });
+
+  it("preserves trusted provenance and object identity when hooks resolve an effect again", () => {
+    const resolved = resolveToolEffect(
+      { kind: "external_write", risk: "high", domains: ["publication", "publication"] },
+      "builtin",
+    );
+
+    expect(resolved.domains).toEqual(["publication"]);
+    expect(resolveToolEffect(resolved)).toBe(resolved);
+    expect(resolveToolEffect(resolved).source).toBe("builtin");
+
+    const unknown = resolveToolEffect(undefined);
+    expect(resolveToolEffect(unknown, "builtin")).toBe(unknown);
+    expect(unknown.source).toBe("default_unknown");
+    expect(Object.isFrozen(unknown)).toBe(true);
+    expect(Object.isFrozen(unknown.domains)).toBe(true);
+  });
+
+  it.each([
+    ["read", "normal", false],
+    ["read", "high", true],
+    ["workspace_write", "normal", true],
+    ["workspace_write", "high", true],
+    ["external_write", "normal", true],
+    ["external_write", "high", true],
+    ["unknown", "normal", true],
+    ["unknown", "high", true],
+  ] satisfies [ToolEffectDeclaration["kind"], ToolEffectDeclaration["risk"], boolean][])(
+    "requires verification for %s/%s only when the effect is not an ordinary read",
+    (kind, risk, required) => {
+      expect(toolEffectRequiresVerification(resolveToolEffect({ kind, risk }))).toBe(required);
+    },
+  );
+
+  it("requires verification for undeclared tools even when callers omit effect metadata", () => {
+    expect(toolEffectRequiresVerification(resolveToolEffect(undefined))).toBe(true);
   });
 });

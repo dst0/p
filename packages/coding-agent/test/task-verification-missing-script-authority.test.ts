@@ -44,6 +44,33 @@ async function recordMissingScript(workspace: string, command: string, text: str
 }
 
 describe("missing package script authority", () => {
+  it.each([
+    ["yarn test", 'yarn run v1.22.22\nerror Command "test" not found.\ninfo Visit https://yarnpkg.com/en/docs/cli/run'],
+    ["pnpm run test:unit", 'ERR_PNPM_NO_SCRIPT Missing script: "test:unit"'],
+    ["bun run test:unit", 'error: Script not found "test:unit"'],
+  ])("recognizes canonical missing-script context for %s", async (command, output) => {
+    const { evidence, harness } = await recordMissingScript(createWorkspace(), command, output);
+
+    expect(evidence).toMatchObject({
+      isError: true,
+      testOutcome: "unconfirmed",
+      verificationFailureKind: "missing_test_script",
+    });
+    expect(harness.controller.latestFailedVerificationEvidence()).toEqual([]);
+  });
+
+  it.each([
+    ["yarn test", 'yarn run v1.22.22\nerror Command "test" not found.\nTests: 3 passed'],
+    ["pnpm run test:unit", 'ERR_PNPM_NO_SCRIPT Missing script: "test:unit"\nAssertionError: inventory is negative'],
+  ])("retains a missing-script result mixed with non-manager evidence for %s", async (command, output) => {
+    const { evidence, harness } = await recordMissingScript(createWorkspace(), command, output);
+
+    expect(evidence.isError).toBe(true);
+    expect(evidence.testOutcome).toBe("unconfirmed");
+    expect(evidence.verificationFailureKind).toBeUndefined();
+    expect(harness.controller.latestFailedVerificationEvidence()).toEqual([evidence]);
+  });
+
   it("keeps a declared script failure even when the diagnostic cleanly claims it is missing", async () => {
     const { harness } = await recordMissingScript(
       createWorkspace({ "test:unit": "vitest --run" }),

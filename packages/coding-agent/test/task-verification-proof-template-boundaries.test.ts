@@ -11,6 +11,27 @@ describe("task verification proof witness template boundaries", () => {
       '"policy":"preserve_log_on_failure"',
     );
   });
+
+  it.each(["preserve_version_on_failure", "preserve_position_on_failure"] as const)(
+    "requires failed and successful outcomes for %s witnesses",
+    (policy) => {
+      const lines = formatRequirementProofWitnessTemplates(requirement(policy)).split("\n");
+
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toMatch(/^P_PROOF_V1 /u);
+      expect(JSON.parse(lines[0]!.slice("P_PROOF_V1 ".length))).toEqual({
+        requirementId: "R1",
+        policy,
+        facts: {
+          before: 4,
+          afterFailure: 4,
+          afterSuccess: 5,
+          failedOutcome: "threw",
+          successOutcome: "succeeded",
+        },
+      });
+    },
+  );
 });
 
 function requirement(policy: NonNullable<TaskRequirement["proofPolicies"]>[number]): TaskRequirement {

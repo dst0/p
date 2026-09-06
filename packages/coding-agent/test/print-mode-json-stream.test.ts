@@ -23,6 +23,36 @@ function createStreamingMessage(text: string, rawArgs: string): AssistantMessage
 }
 
 describe("runPrintMode JSON stream", () => {
+  it("retains terminal provider events and their final payload without a cumulative update wrapper", async () => {
+    const message = createAssistantMessage({ text: "Checked result.txt against the acceptance criteria." });
+    const terminal: AgentSessionEvent = {
+      type: "message_update",
+      message,
+      assistantMessageEvent: { type: "done", reason: "stop", message },
+    };
+    const expected = structuredClone([
+      { type: "message_update", assistantMessageEvent: terminal.assistantMessageEvent },
+      { type: "message_end", message },
+    ]);
+    const runtimeHost = createRuntimeHost(message, {
+      promptEventBatches: [[terminal, { type: "message_end", message }]],
+    });
+    const stdout = captureStdout();
+
+    expect(
+      await runPrintMode(runtimeHost as unknown as Parameters<typeof runPrintMode>[0], {
+        mode: "json",
+        initialMessage: "Validate the result and preserve its final response payload",
+      }),
+    ).toBe(0);
+    const output = stdout
+      .text()
+      .trim()
+      .split("\n")
+      .map((line) => JSON.parse(line));
+    expect(output).toEqual(expected);
+  });
+
   it("emits bounded deltas without cumulative assistant snapshots or provider scratch arguments", async () => {
     const deltaCount = 200;
     const events: AgentSessionEvent[] = [];

@@ -47,6 +47,15 @@ describe("referenced requirement clause polarity", () => {
       directPromptSupersedesClause("Do not reveal log access tokens.", clause("Reject every truncated log.")),
     ).toBe(false);
   });
+
+  it("checks combined requirement and criterion polarity when only the requirement names the source subject", () => {
+    const source = clause("Accept retry operations");
+
+    expect(clauseRequirementRelevanceError(source, "Retry operations", "They are rejected")).toContain(
+      "behavioral polarity that the mapped requirement reverses",
+    );
+    expect(clauseRequirementRelevanceError(source, "Retry operations", "They are accepted")).toBeUndefined();
+  });
 });
 
 function clause(text: string): RequirementSourceClause {

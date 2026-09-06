@@ -59,4 +59,39 @@ describe("task-verification Git publication classification", () => {
     expect(shellCommandActionIdentities("npm exec tool install")).toEqual([{ executable: "npm" }]);
     expect(shellCommandActionIdentities("rm git-commit-version-release.txt")).toEqual([{ executable: "rm" }]);
   });
+
+  it("keeps absent and terminated actions unclassified despite publication operands", () => {
+    expect(shellCommandActionIdentities("git --no-pager; npm --silent; npm -- run release")).toEqual([
+      { executable: "git" },
+      { executable: "npm" },
+      { executable: "npm" },
+    ]);
+    expect(shellCommandActionIdentities("FEATURE=release env --; command --")).toEqual([]);
+    expect(isSafePublishCommandSequence("cd -- /tmp/review")).toBe(false);
+    expect(isSafePublishCommandSequence("cd -- /tmp/review && git push origin HEAD")).toBe(true);
+  });
+
+  it("stops interpreting deeply nested shell payloads as known actions", () => {
+    let command = "git push origin HEAD";
+    for (let depth = 0; depth < 4; depth++) {
+      command = `bash -c '${command.replaceAll("'", "'\\''")}'`;
+    }
+    expect(shellCommandActionIdentities(command)).toEqual([{ executable: "git", action: "push" }]);
+    expect(isSafePublishCommandSequence(command)).toBe(true);
+
+    const beyondLimit = `bash -c '${command.replaceAll("'", "'\\''")}'`;
+    expect(shellCommandActionIdentities(beyondLimit)).toEqual([{ executable: "bash" }]);
+    expect(containsGitPublishCommand(beyondLimit)).toBe(true);
+    expect(isSafePublishCommandSequence(beyondLimit)).toBe(false);
+  });
+
+  it("tracks split-string wrapper depth independently of literal shell operands", () => {
+    let command = "git push origin HEAD";
+    for (let depth = 0; depth < 5; depth++) {
+      command = `env -S '${command.replaceAll("'", "'\\''")}'`;
+    }
+    expect(containsGitPublishCommand(command)).toBe(true);
+    expect(isSafePublishCommandSequence(command)).toBe(false);
+    expect(shellCommandActionIdentities(command)).toEqual([]);
+  });
 });

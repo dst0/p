@@ -80,6 +80,30 @@ afterEach(() => {
 });
 
 describe("default project instruction compiler lifecycle", () => {
+  it("retains loader-supplied source identity if its backing file disappears before controller creation", async () => {
+    const fixture = createFixture();
+    const source = fixture.resourceLoader.getAgentsFiles().agentsFiles[0]!;
+    rmSync(source.path);
+    const model = createModel("working");
+    const controller = await createSessionProjectInstructionController({
+      cwd: fixture.root,
+      resourceLoader: fixture.resourceLoader,
+      modelRegistry: {
+        getApiKeyAndHeaders: async () => ({ ok: true, apiKey: "test-api-key" }),
+      } as unknown as ModelRegistry,
+      settingsManager: {
+        getHttpIdleTimeoutMs: () => 12_000,
+        getEnableInstallTelemetry: () => false,
+      } as unknown as SettingsManager,
+      getModel: () => model,
+    });
+
+    expect(controller.state.current?.manifest.mode).toBe("compiled");
+    expect(modelCompilerMocks.compile).toHaveBeenCalledOnce();
+    expect(modelCompilerMocks.compile.mock.calls[0][0].sources).toEqual([source]);
+    expect(modelCompilerMocks.compile.mock.calls[0][1]).toMatchObject({ model, timeoutMs: 12_000 });
+  });
+
   it("recovers from no model and failed auth when a different authenticated model becomes available", async () => {
     const fixture = createFixture();
     let model: Model<Api> | undefined;

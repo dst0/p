@@ -114,5 +114,64 @@ describe("terminal tool termination", () => {
     expect(
       events.filter((event) => event.type === "completion_protocol" && event.event === "finish_work_called"),
     ).toHaveLength(0);
+    expect(
+      events.filter((event) => event.type === "completion_protocol" && event.event === "verified_completion_called"),
+    ).toHaveLength(0);
   });
+
+  it.each(["explicit_finish", "hybrid", "implicit"] as const)(
+    "emits trusted completion once in %s without another provider turn",
+    async (completionMode) => {
+      const completion = { status: "success" as const, summary: "Verified result.txt bytes.", files_changed: [] };
+      let executions = 0;
+      const terminalTool: AgentTool = {
+        name: "terminal_audit",
+        label: "Terminal audit",
+        description: "Complete only after the evidence gate has accepted the task.",
+        parameters: Type.Object({ value: Type.String() }),
+        async execute() {
+          executions++;
+          return {
+            content: [{ type: "text", text: completion.summary }],
+            details: {},
+            terminate: true,
+            completion,
+          };
+        },
+      };
+      let providerCalls = 0;
+      const events: AgentEvent[] = [];
+      const stream = agentLoop(
+        [createUserMessage()],
+        { systemPrompt: "", messages: [], tools: [terminalTool] },
+        { model: createModel(), completionMode, convertToLlm: identityConverter },
+        undefined,
+        () => {
+          if (++providerCalls > 1) throw new Error("Trusted completion must prevent provider continuation");
+          return new MockAssistantStream(createAssistantMessage());
+        },
+      );
+      for await (const event of stream) events.push(event);
+
+      expect(executions).toBe(1);
+      expect(providerCalls).toBe(1);
+      expect((await stream.result()).at(-1)).toMatchObject({
+        role: "toolResult",
+        toolCallId: "terminal-1",
+        isError: false,
+        content: [{ type: "text", text: completion.summary }],
+      });
+      expect(events.filter((event) => event.type === "completion_protocol")).toEqual(
+        completionMode === "implicit"
+          ? []
+          : [
+              { type: "completion_protocol", completionMode, event: "completion_mode" },
+              { type: "completion_protocol", completionMode, event: "verified_completion_called" },
+            ],
+      );
+      expect(events.filter((event) => event.type === "agent_end")).toHaveLength(1);
+      expect(events.at(-1)?.type).toBe("agent_end");
+      expect(events.at(completionMode === "implicit" ? -2 : -3)?.type).toBe("turn_end");
+    },
+  );
 });

@@ -154,7 +154,7 @@ function bindingsWithinLine(value: string): QualifierBinding[] {
       anchors: new Set(anchors),
       values: new Set(match.values ?? (cardinality ? [cardinality.value] : [])),
     });
-    index = match.end;
+    index = Math.max(match.end, cardinality?.end ?? match.end);
   }
   return bindings;
 }

@@ -153,5 +153,5 @@ function wordDecimal(terms: readonly string[], start: number): SemanticCardinali
     digits += String(digit);
     end = index;
   }
-  return digits ? { value: `${whole}.${digits}`, end } : undefined;
+  return digits ? { value: normalizedDigitLiteral(`${whole}.${digits}`), end } : undefined;
 }
