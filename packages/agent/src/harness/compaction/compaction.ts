@@ -598,10 +598,17 @@ export async function generateSummary(
     );
   }
 
-  const textContent = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
+  let textContent = "";
+  let isFirst = true;
+  // PERF: use explicit for loop to prevent intermediate array allocations
+  for (let i = 0; i < response.content.length; i++) {
+    const c = response.content[i];
+    if (c.type === "text") {
+      if (!isFirst) textContent += "\n";
+      textContent += c.text;
+      isFirst = false;
+    }
+  }
 
   return ok(textContent);
 }
@@ -841,10 +848,17 @@ async function generateTurnPrefixSummary(
     );
   }
 
-  return ok(
-    response.content
-      .filter((c): c is { type: "text"; text: string } => c.type === "text")
-      .map((c) => c.text)
-      .join("\n"),
-  );
+  let textContent = "";
+  let isFirst = true;
+  // PERF: use explicit for loop to prevent intermediate array allocations
+  for (let i = 0; i < response.content.length; i++) {
+    const c = response.content[i];
+    if (c.type === "text") {
+      if (!isFirst) textContent += "\n";
+      textContent += c.text;
+      isFirst = false;
+    }
+  }
+
+  return ok(textContent);
 }

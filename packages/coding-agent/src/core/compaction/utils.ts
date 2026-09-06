@@ -99,6 +99,21 @@ function truncateForSummary(text: string, maxChars: number): string {
 }
 
 /**
+ * Extract text from a message content block array efficiently.
+ * Avoids `.filter().map().join()` which causes heavy array allocations in tight loops.
+ */
+function extractTextFromBlocks(blocks: Array<{ type: string; text?: string; [key: string]: any }>): string {
+  let content = "";
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    if (block && block.type === "text" && typeof block.text === "string") {
+      content += block.text;
+    }
+  }
+  return content;
+}
+
+/**
  * Serialize LLM messages to text for summarization.
  * This prevents the model from treating it as a conversation to continue.
  * Call convertToLlm() first to handle custom message types.
@@ -111,13 +126,12 @@ export function serializeConversation(messages: Message[]): string {
 
   for (const msg of messages) {
     if (msg.role === "user") {
-      const content =
-        typeof msg.content === "string"
-          ? msg.content
-          : msg.content
-              .filter((c): c is { type: "text"; text: string } => c.type === "text")
-              .map((c) => c.text)
-              .join("");
+      let content = "";
+      if (typeof msg.content === "string") {
+        content = msg.content;
+      } else {
+        content = extractTextFromBlocks(msg.content);
+      }
       if (content) parts.push(`[User]: ${content}`);
     } else if (msg.role === "assistant") {
       const textParts: string[] = [];
@@ -148,10 +162,7 @@ export function serializeConversation(messages: Message[]): string {
         parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
       }
     } else if (msg.role === "toolResult") {
-      const content = msg.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join("");
+      const content = extractTextFromBlocks(msg.content);
       if (content) {
         parts.push(`[Tool result]: ${truncateForSummary(content, TOOL_RESULT_MAX_CHARS)}`);
       }

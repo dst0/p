@@ -243,11 +243,18 @@ export async function generateBranchSummary(
     );
   }
 
-  let summary = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
-  summary = BRANCH_SUMMARY_PREAMBLE + summary;
+  let summaryText = "";
+  let isFirst = true;
+  // PERF: use explicit for loop to prevent intermediate array allocations
+  for (let i = 0; i < response.content.length; i++) {
+    const c = response.content[i];
+    if (c.type === "text") {
+      if (!isFirst) summaryText += "\n";
+      summaryText += c.text;
+      isFirst = false;
+    }
+  }
+  let summary = BRANCH_SUMMARY_PREAMBLE + summaryText;
   const { readFiles, modifiedFiles } = computeFileLists(fileOps);
   summary += formatFileOperations(readFiles, modifiedFiles);
 
