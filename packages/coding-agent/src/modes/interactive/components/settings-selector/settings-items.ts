@@ -13,6 +13,17 @@ export function createSettingsItems(config: SettingsConfig, callbacks: SettingsC
   const followUpKey = keyDisplayText("app.message.followUp");
 
   return [
+    ...(callbacks.onRunBudgetConfigure
+      ? [
+          {
+            id: "run-budget",
+            label: "Task budget",
+            description: "Unlimited or a request, token, or estimated USD limit; preserves spend.",
+            currentValue: config.runBudgetLabel ?? "configure",
+            values: ["configure"],
+          },
+        ]
+      : []),
     {
       id: "autocompact",
       label: "Auto-compact",

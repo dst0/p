@@ -6,6 +6,7 @@ export * from "./env-api-keys.ts";
 export * from "./image-models.ts";
 export * from "./images.ts";
 export * from "./images-api-registry.ts";
+export * from "./model-call-guard.ts";
 export * from "./models.ts";
 export type { BedrockOptions, BedrockThinkingDisplay } from "./providers/amazon-bedrock.ts";
 export type { AnthropicEffort, AnthropicOptions, AnthropicThinkingDisplay } from "./providers/anthropic.ts";

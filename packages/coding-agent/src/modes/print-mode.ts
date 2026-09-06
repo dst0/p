@@ -202,11 +202,11 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
       await session.prompt(message);
     }
 
+    const finalOutput = latestAgentEndMessages
+      ? getTextModeFinalOutput(latestAgentEndMessages)
+      : getSessionStateTextModeFinalOutput(session.state.messages);
+    exitCode = finalOutput.exitCode;
     if (mode === "text") {
-      const finalOutput = latestAgentEndMessages
-        ? getTextModeFinalOutput(latestAgentEndMessages)
-        : getSessionStateTextModeFinalOutput(session.state.messages);
-      exitCode = finalOutput.exitCode;
       if (finalOutput.text) {
         writeRawStdout(`${finalOutput.text}\n`);
       }

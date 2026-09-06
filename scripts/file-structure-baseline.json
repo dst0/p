@@ -311,10 +311,6 @@
     "classes": 5,
     "lines": 632
   },
-  "packages/coding-agent/src/cli/args.ts": {
-    "classes": 0,
-    "lines": 427
-  },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
     "classes": 2,
     "lines": 433
@@ -353,7 +349,7 @@
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
-    "lines": 456
+    "lines": 436
   },
   "packages/coding-agent/src/core/skills.ts": {
     "classes": 0,

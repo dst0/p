@@ -122,7 +122,18 @@ describe("--session-id read-only commands", () => {
 
   it("rejects an existing fork target session id", async () => {
     const result = await runCli(
-      (dirs) => ["--session-dir", dirs.sessionDir, "--fork", "source-id", "--session-id", "existing-id", "-p", "hi"],
+      (dirs) => [
+        "--budget",
+        "unlimited",
+        "--session-dir",
+        dirs.sessionDir,
+        "--fork",
+        "source-id",
+        "--session-id",
+        "existing-id",
+        "-p",
+        "hi",
+      ],
       (dirs) => {
         mkdirSync(dirs.sessionDir, { recursive: true });
         writeSession(dirs.sessionDir, dirs.projectDir, "source-id");

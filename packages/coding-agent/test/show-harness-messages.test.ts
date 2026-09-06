@@ -4,6 +4,8 @@ import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
 import { join } from "path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { isInternalAgentMessage } from "../src/core/agent-session.ts";
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { formatEditResult } from "../src/core/tools/edit.ts";
 import { getTextOutput, stripHarnessMessages } from "../src/core/tools/render-utils.ts";
@@ -17,7 +19,6 @@ describe("showHarnessMessages functionality & coverage", () => {
   const testDir = join(process.cwd(), "test-harness-messages-tmp");
   const agentDir = join(testDir, "agent");
   const projectDir = join(testDir, "project");
-
   beforeEach(() => {
     initTheme("dark");
     if (existsSync(testDir)) {
@@ -26,13 +27,11 @@ describe("showHarnessMessages functionality & coverage", () => {
     mkdirSync(agentDir, { recursive: true });
     mkdirSync(join(projectDir, ".p"), { recursive: true });
   });
-
   afterEach(() => {
     if (existsSync(testDir)) {
       rmSync(testDir, { recursive: true });
     }
   });
-
   describe("isInternalAgentMessage helper", () => {
     it("identifies completion protocol repair messages", () => {
       const repairMsg: AgentMessage = {
@@ -430,6 +429,7 @@ describe("showHarnessMessages functionality & coverage", () => {
         editorContainer: new Container(),
         editor: new Container(),
         session: {
+          runBudget: new SessionRunBudget(SessionManager.inMemory()),
           autoCompactionEnabled: true,
           steeringMode: "all",
           followUpMode: "all",

@@ -108,6 +108,7 @@ export function commandForAgent(
   if (!(agent === "p" && options.projectInstructions)) commonArgs.push("--no-context-files");
   if (isContinue) commonArgs.push("--continue");
   const env: NodeJS.ProcessEnv = sanitizeBenchmarkGitEnvironment();
+  delete env.NODE_TLS_REJECT_UNAUTHORIZED;
   env.P_CODING_AGENT_DIR = configDir;
   env.PI_CODING_AGENT_DIR = configDir;
   if (agent === "p" && options.projectInstructions) env.HOME = configDir;
@@ -125,7 +126,6 @@ export function commandForAgent(
   env.PI_SKIP_VERSION_CHECK = "1";
   const caPath = join(homedir(), ".p", "agent", "ca.pem");
   if (existsSync(caPath)) env.NODE_EXTRA_CA_CERTS = caPath;
-  env.NODE_TLS_REJECT_UNAUTHORIZED = "0";
   env.NO_COLOR = "1";
   env.PATH = augmentBenchmarkPath(repoRoot);
   if (agent === "p") {

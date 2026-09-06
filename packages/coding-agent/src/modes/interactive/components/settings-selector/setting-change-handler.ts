@@ -6,6 +6,9 @@ import type { SettingsCallbacks } from "./types.ts";
 export function createSettingChangeHandler(callbacks: SettingsCallbacks): (id: string, newValue: string) => void {
   return (id, newValue) => {
     switch (id) {
+      case "run-budget":
+        callbacks.onRunBudgetConfigure?.();
+        break;
       case "autocompact":
         callbacks.onAutoCompactChange(newValue === "true");
         break;

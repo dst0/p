@@ -1,5 +1,6 @@
 import type { CompletionMode, CompletionProtocolLimits } from "@dst0/p-agent-core";
 import type { Transport } from "@dst0/p-ai";
+import type { RunBudgetPolicy } from "../run-budget-policy.ts";
 import type { TaskVerificationMode } from "../task-verification/mode.ts";
 
 export interface CompactionSettings {
@@ -110,6 +111,7 @@ export interface Settings {
   completionMode?: CompletionMode | "explicit"; // default: "explicit"
   taskVerificationMode?: TaskVerificationMode; // default: "evidence"
   completionLimits?: CompletionProtocolLimits;
+  runBudget?: RunBudgetPolicy; // Explicit user choice; global settings only
   enableToolResultContextExtraction?: boolean; // default: false - extract summaries from large tool results via service model
   theme?: string;
   compaction?: CompactionSettings;

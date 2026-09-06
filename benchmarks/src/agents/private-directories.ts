@@ -1,4 +1,4 @@
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { copyBenchmarkAuthSource } from "../harness/auth-source.ts";
@@ -36,6 +36,11 @@ export function createBenchmarkAgentDirectories(
       mkdirSync(dir, { recursive: true });
       copyOptionalPrivateFile(options.modelsFile, join(dir, "models.json"));
       copyBenchmarkAuthSource(options.authFile, join(dir, "auth.json"));
+      if (agent === "p") {
+        writeFileSync(join(dir, "settings.json"), `${JSON.stringify({ runBudget: { mode: "unlimited" } })}\n`, {
+          mode: 0o600,
+        });
+      }
       dirs[agent] = dir;
     }
     const kiloDir = join(root, "kilo");

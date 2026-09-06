@@ -53,6 +53,8 @@ export interface CreateAgentSessionServicesOptions {
  * have been resolved against those services.
  */
 export interface CreateAgentSessionFromServicesOptions {
+  runBudget?: CreateAgentSessionOptions["runBudget"];
+  defaultRunBudget?: CreateAgentSessionOptions["defaultRunBudget"];
   services: AgentSessionServices;
   sessionManager: SessionManager;
   sessionStartEvent?: SessionStartEvent;
@@ -195,6 +197,8 @@ export async function createAgentSessionFromServices(
   options: CreateAgentSessionFromServicesOptions,
 ): Promise<CreateAgentSessionResult> {
   return createAgentSession({
+    runBudget: options.runBudget,
+    defaultRunBudget: options.defaultRunBudget,
     cwd: options.services.cwd,
     agentDir: options.services.agentDir,
     authStorage: options.services.authStorage,

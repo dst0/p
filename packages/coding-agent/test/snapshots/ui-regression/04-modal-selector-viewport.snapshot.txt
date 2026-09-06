@@ -4,7 +4,8 @@
 ────────────────────────────────────────────────────────────────────────────────
 >
 
-→ Auto-compact             true
+→ Task budget              Unlimited
+  Auto-compact             true
   Auto-resize images       true
   Block images             false
   Skill commands           true
@@ -13,10 +14,9 @@
   Autocomplete max items   5
   Clear on shrink          false
   Terminal progress        false
-  Token progress           true
-  (1/30)
+  (1/31)
 
-  Automatically compact context when it gets too large
+  Unlimited or a request, token, or estimated USD limit; preserves spend.
 
   Type to search · Enter/Space to change · Esc to cancel
 ────────────────────────────────────────────────────────────────────────────────

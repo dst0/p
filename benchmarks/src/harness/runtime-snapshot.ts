@@ -12,6 +12,7 @@ import {
   readlinkSync,
   realpathSync,
   rmSync,
+  symlinkSync,
 } from "node:fs";
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path";
 import ts from "typescript";
@@ -28,24 +29,31 @@ const BENCHMARK_CLOSURE_SEEDS = [
   BENCHMARK_SEED_HELPER,
   join(BENCHMARK_SOURCE_ROOT, "harness", "seed-helper-process.ts"),
 ];
+const EVALUATOR_FIXTURE_NAMES = new Set(["hidden.test.ts", "rubric.json"]);
+
+export type BenchmarkFixtureScope = "all" | "candidate" | "evaluator";
+
+export interface RuntimeSnapshotOptions {
+  fixtureScope?: BenchmarkFixtureScope;
+}
 
 export function assertEmptyOutputDirectory(path: string): void {
   if (existsSync(path) && readdirSync(path).length > 0) throw new Error(`Output directory is not empty: ${path}`);
 }
 
-export function createRuntimeSnapshot(repoRoot: string, temporaryParent: string): string {
+export function createRuntimeSnapshot(
+  repoRoot: string,
+  temporaryParent: string,
+  options: RuntimeSnapshotOptions = {},
+): string {
   const snapshot = mkdtempSync(join(temporaryParent, "p-benchmark-runtime-"));
   try {
-    const copyOptions = {
-      mode: fsConstants.COPYFILE_FICLONE,
-      recursive: true,
-      verbatimSymlinks: true,
-    };
+    const copyOptions = { mode: fsConstants.COPYFILE_FICLONE, recursive: true, verbatimSymlinks: true };
     cpSync(join(repoRoot, "node_modules"), join(snapshot, "node_modules"), copyOptions);
     cpSync(join(repoRoot, "package.json"), join(snapshot, "package.json"), copyOptions);
     cpSync(join(repoRoot, "package-lock.json"), join(snapshot, "package-lock.json"), copyOptions);
     snapshotBenchmarkRunnerClosure(repoRoot, snapshot, copyOptions);
-    cpSync(join(repoRoot, "benchmarks", "fixtures"), join(snapshot, "benchmarks", "fixtures"), copyOptions);
+    copyBenchmarkFixtures(repoRoot, snapshot, options.fixtureScope ?? "all", copyOptions);
     for (const pkg of runtimePackages) {
       const target = join(snapshot, "packages", pkg);
       mkdirSync(target, { recursive: true });
@@ -58,6 +66,58 @@ export function createRuntimeSnapshot(repoRoot: string, temporaryParent: string)
   } catch (error) {
     rmSync(snapshot, { recursive: true, force: true });
     throw error;
+  }
+}
+
+export function createCandidateRuntimeSnapshot(repoRoot: string, temporaryParent: string): string {
+  return createRuntimeSnapshot(repoRoot, temporaryParent, { fixtureScope: "candidate" });
+}
+
+export function copyBenchmarkEvaluatorFixtures(
+  repoRoot: string,
+  destination: string,
+  copyOptions: CopySyncOptions = {},
+): void {
+  copyBenchmarkFixtures(repoRoot, destination, "evaluator", copyOptions);
+}
+
+function copyBenchmarkFixtures(
+  repoRoot: string,
+  destination: string,
+  scope: BenchmarkFixtureScope,
+  copyOptions: CopySyncOptions,
+): void {
+  const source = join(repoRoot, "benchmarks", "fixtures");
+  const target = join(destination, "benchmarks", "fixtures");
+  copyFixtureTree(source, target, scope, copyOptions);
+}
+
+function copyFixtureTree(
+  source: string,
+  target: string,
+  scope: BenchmarkFixtureScope,
+  copyOptions: CopySyncOptions,
+): void {
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const evaluatorFixture = !entry.isDirectory() && EVALUATOR_FIXTURE_NAMES.has(entry.name);
+    if (
+      !entry.isDirectory() &&
+      ((scope === "candidate" && evaluatorFixture) || (scope === "evaluator" && !evaluatorFixture))
+    ) {
+      continue;
+    }
+    const sourcePath = join(source, entry.name);
+    const targetPath = join(target, entry.name);
+    if (entry.isSymbolicLink()) {
+      mkdirSync(dirname(targetPath), { recursive: true });
+      symlinkSync(readlinkSync(sourcePath), targetPath);
+    } else if (entry.isDirectory()) {
+      mkdirSync(targetPath, { recursive: true });
+      copyFixtureTree(sourcePath, targetPath, scope, copyOptions);
+    } else {
+      mkdirSync(dirname(targetPath), { recursive: true });
+      cpSync(sourcePath, targetPath, copyOptions);
+    }
   }
 }
 
@@ -187,7 +247,7 @@ function listEntries(root: string, current = root): string[] {
   return paths.sort();
 }
 
-function assertSnapshotSymlinksContained(snapshot: string): void {
+export function assertSnapshotSymlinksContained(snapshot: string): void {
   const snapshotPath = resolve(snapshot);
   const snapshotRoot = realpathSync(snapshotPath);
   for (const relativePath of listEntries(snapshot)) {
@@ -213,7 +273,7 @@ function isPathInside(root: string, path: string): boolean {
   return targetRelative !== ".." && !targetRelative.startsWith(`..${sep}`) && !isAbsolute(targetRelative);
 }
 
-export function hashRuntimeSnapshot(snapshot: string, nodeExecutable: string): string {
+function createSnapshotHash(snapshot: string): ReturnType<typeof createHash> {
   const hash = createHash("sha256");
   for (const relativePath of listEntries(snapshot)) {
     const path = join(snapshot, relativePath);
@@ -223,7 +283,16 @@ export function hashRuntimeSnapshot(snapshot: string, nodeExecutable: string): s
     else hash.update(readFileSync(path));
     hash.update("\0");
   }
+  return hash;
+}
+
+export function hashRuntimeSnapshot(snapshot: string, nodeExecutable: string): string {
+  const hash = createSnapshotHash(snapshot);
   hash.update("node\0");
   hash.update(readFileSync(nodeExecutable));
   return hash.digest("hex");
+}
+
+export function hashSnapshotDirectory(snapshot: string): string {
+  return createSnapshotHash(snapshot).digest("hex");
 }

@@ -10,6 +10,8 @@ import {
 import type { AuthStorage } from "../core/auth-storage.ts";
 import { resolveModelScope } from "../core/model-resolver.ts";
 import { type AppMode, resolveProjectTrusted } from "../core/project-trust.ts";
+import { SessionRunBudget } from "../core/run-budget/session-run-budget.ts";
+import type { RunBudgetPolicy } from "../core/run-budget-policy.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
 import { hasTrustRequiringProjectResources, type ProjectTrustStore } from "../core/trust-manager.ts";
 import { collectSettingsDiagnostics } from "./cli-entry.ts";
@@ -17,6 +19,7 @@ import { buildSessionOptions } from "./runtime-init.ts";
 import type { MainOptions } from "./types.ts";
 
 interface CliRuntimeFactoryOptions {
+  defaultRunBudget?: RunBudgetPolicy;
   agentDir: string;
   appMode: AppMode;
   authStorage: AuthStorage;
@@ -133,12 +136,18 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
   const createRuntimeServices = createCliRuntimeServicesFactory(options);
 
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
-    const { services, diagnostics } = await createRuntimeServices({
-      cwd,
-      agentDir,
-      isInitialRuntime: sessionStartEvent === undefined,
-      projectTrustContext,
+    const budget = new SessionRunBudget(sessionManager, {
+      runBudget: options.parsed.runBudget,
+      defaultRunBudget: options.defaultRunBudget,
     });
+    const { services, diagnostics } = await budget.run(() =>
+      createRuntimeServices({
+        cwd,
+        agentDir,
+        isInitialRuntime: sessionStartEvent === undefined,
+        projectTrustContext,
+      }),
+    );
     const { settingsManager, modelRegistry } = services;
 
     const modelPatterns = options.parsed.models ?? settingsManager.getEnabledModels();
@@ -170,6 +179,8 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
     }
 
     const created = await createAgentSessionFromServices({
+      runBudget: options.parsed.runBudget,
+      defaultRunBudget: options.defaultRunBudget,
       services,
       sessionManager,
       sessionStartEvent,

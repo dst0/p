@@ -3,6 +3,7 @@ import type { Transport } from "@dst0/p-ai";
 import type { DefaultProjectTrust, WarningSettings } from "../../../../core/settings-manager.ts";
 
 export interface SettingsConfig {
+  runBudgetLabel?: string;
   autoCompact: boolean;
   showImages: boolean;
   imageWidthCells: number;
@@ -40,6 +41,7 @@ export interface SettingsConfig {
 }
 
 export interface SettingsCallbacks {
+  onRunBudgetConfigure?: () => void;
   onAutoCompactChange: (enabled: boolean) => void;
   onShowImagesChange: (enabled: boolean) => void;
   onImageWidthCellsChange: (width: number) => void;

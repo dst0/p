@@ -188,6 +188,8 @@ describe("real CLI session isolation", () => {
     const requestBodies: string[] = [];
     writeModelsConfig(agentDir, await startProvider(requestBodies));
     const commonArgs = [
+      "--budget",
+      "unlimited",
       "--provider",
       "session-isolation-faux",
       "--model",

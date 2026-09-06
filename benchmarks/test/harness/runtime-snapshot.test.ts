@@ -20,6 +20,7 @@ import {
   benchmarkProjectInstructionProbePath,
   benchmarkRunnerPath,
   benchmarkSeedHelperPath,
+  createCandidateRuntimeSnapshot,
   createRuntimeSnapshot,
   hashRuntimeSnapshot,
   snapshotBenchmarkRunnerClosure,
@@ -51,6 +52,8 @@ function writeRuntimeFixture(root: string): void {
   const fixture = join(root, "benchmarks", "fixtures", "task");
   mkdirSync(fixture, { recursive: true });
   writeFileSync(join(fixture, "requirements.md"), "snapshot requirements\n");
+  writeFileSync(join(fixture, "hidden.test.ts"), "export const hiddenOracle = true;\n");
+  writeFileSync(join(fixture, "rubric.json"), '[{"id":"secret","name":"secret","weight":1}]\n');
   mkdirSync(join(root, "benchmarks", "test"), { recursive: true });
   mkdirSync(join(root, "benchmarks", "results"), { recursive: true });
   writeFileSync(join(root, "benchmarks", "test", "ignored.test.ts"), "ignored\n");
@@ -210,5 +213,36 @@ test("the real TypeScript benchmark closure can be snapshotted", () => {
     }
   } finally {
     rmSync(snapshot, { recursive: true, force: true });
+  }
+});
+
+test("candidate runtime snapshots exclude hidden evaluator fixtures", () => {
+  const root = mkdtempSync(join(tmpdir(), "benchmark-runtime-evaluator-source-"));
+  const snapshotParent = mkdtempSync(join(tmpdir(), "benchmark-runtime-evaluator-copy-"));
+  try {
+    writeRuntimeFixture(root);
+    const snapshot = createCandidateRuntimeSnapshot(root, snapshotParent);
+    assert.equal(existsSync(join(snapshot, "benchmarks", "fixtures", "task", "requirements.md")), true);
+    assert.equal(existsSync(join(snapshot, "benchmarks", "fixtures", "task", "hidden.test.ts")), false);
+    assert.equal(existsSync(join(snapshot, "benchmarks", "fixtures", "task", "rubric.json")), false);
+    rmSync(snapshot, { recursive: true, force: true });
+
+    const fixture = join(root, "benchmarks", "fixtures", "task");
+    symlinkSync("hidden.test.ts", join(fixture, "evaluator-symlink.ts"));
+    assert.throws(
+      () => createCandidateRuntimeSnapshot(root, snapshotParent),
+      /Runtime symlink (?:escapes|is unresolved inside|resolves outside) immutable runtime snapshot/u,
+    );
+    rmSync(join(fixture, "evaluator-symlink.ts"));
+
+    symlinkSync("../../../../outside-target", join(fixture, "escape-symlink"));
+    assert.throws(
+      () => createCandidateRuntimeSnapshot(root, snapshotParent),
+      /Runtime symlink (?:escapes|is unresolved inside|resolves outside) immutable runtime snapshot/u,
+    );
+    rmSync(join(fixture, "escape-symlink"));
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(snapshotParent, { recursive: true, force: true });
   }
 });

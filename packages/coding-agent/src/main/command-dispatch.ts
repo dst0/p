@@ -1,7 +1,7 @@
 import chalk from "chalk";
 import { parseArgs, printHelp } from "../cli/args.ts";
 import { listModels } from "../cli/list-models.ts";
-import { shouldRunFirstTimeSetup, showFirstTimeSetup } from "../cli/startup-ui.ts";
+import { resolveStartupChoices } from "../cli/run-budget-choice.ts";
 import {
   ENV_SESSION_DIR,
   expandTildePath,
@@ -107,12 +107,13 @@ export async function main(args: string[], options?: MainOptions) {
   const agentDir = getAgentDir();
   const startupSettingsManager = SettingsManager.create(cwd, agentDir);
   reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
-
-  // Experimental first-time setup: theme choice and analytics opt-in.
-  // Runs before any runtime services are created so the chosen settings apply everywhere.
-  if (appMode === "interactive" && !parsed.help && parsed.listModels === undefined && shouldRunFirstTimeSetup()) {
-    await showFirstTimeSetup(startupSettingsManager);
-    time("firstTimeSetup");
+  const needsBudget = !parsed.help && parsed.listModels === undefined;
+  const defaultRunBudget = needsBudget
+    ? await resolveStartupChoices(startupSettingsManager, appMode, parsed.runBudget)
+    : undefined;
+  if (needsBudget && !defaultRunBudget) {
+    restoreStdout();
+    return;
   }
 
   // Decide the final runtime cwd before creating cwd-bound runtime services.
@@ -159,6 +160,7 @@ export async function main(args: string[], options?: MainOptions) {
   const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
   const authStorage = AuthStorage.create();
   const runtimeFactoryOptions = {
+    defaultRunBudget,
     agentDir,
     appMode,
     authStorage,
