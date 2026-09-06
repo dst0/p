@@ -115,6 +115,8 @@ Never run (destroys other agents' work or bypasses checks):
 
 - `git reset --hard`, `git checkout .`, `git clean -fd`, `git stash`, `git add -A`, `git add .`, `git commit --no-verify`.
 
+After base changes, validate the actual PR merge result; branch-only checks and conflict-free merges are insufficient.
+
 If rebase conflicts occur:
 
 - Resolve conflicts only in files you modified.

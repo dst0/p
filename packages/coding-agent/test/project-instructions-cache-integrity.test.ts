@@ -1,5 +1,14 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  realpathSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -69,6 +78,46 @@ afterEach(() => {
 });
 
 describe("project instruction cache authority", () => {
+  it("rejects a traversal-like prompt path even when it resolves inside the version directory", async () => {
+    const workspace = createWorkspace();
+    const sources = [{ path: workspace.agentsPath, content: workspace.content }];
+    const prepared = await prepareProjectInstructions({
+      cwd: workspace.root,
+      cacheDir: workspace.cacheDir,
+      contextFiles: sources,
+      skills: [],
+      compiler: createCompiler(),
+    });
+    const expected = {
+      sources: buildSourceRecords(sources),
+      modules: splitInstructionSources(sources),
+      skills: buildSkillRecords([]),
+    };
+    const loadOptions = {
+      cacheDir: prepared.cacheDir,
+      workspaceRoot: realpathSync(workspace.root),
+      agentsHash: prepared.manifest.agentsHash,
+      inputHash: prepared.manifest.inputHash,
+      compilerVersion: PROJECT_INSTRUCTION_COMPILER_VERSION,
+      expected,
+    };
+    expect(loadCachedProjectInstructions(loadOptions)?.prompt).toBe(prepared.prompt);
+    const forged = structuredClone(prepared.manifest);
+    Object.assign(forged, { promptFile: "rules/../prompt.md" });
+    forged.resultHash = computeProjectInstructionResultHash(forged);
+    const forgedVersion = `${forged.inputHash}-${forged.resultHash}`;
+    const forgedVersionDir = join(dirname(prepared.versionDir), forgedVersion);
+    writeFileSync(join(prepared.versionDir, "manifest.json"), `${JSON.stringify(forged, null, 2)}\n`);
+    renameSync(prepared.versionDir, forgedVersionDir);
+    writeFileSync(
+      join(prepared.cacheDir, "current.json"),
+      `${JSON.stringify({ schemaVersion: 1, agentsHash: forged.agentsHash, inputHash: forged.inputHash, version: forgedVersion })}\n`,
+    );
+    const fallbackPath = getProjectInstructionFallbackPath(prepared.cacheDir, forged.inputHash);
+    writeFileSync(fallbackPath, readFileSync(fallbackPath, "utf8").replaceAll(prepared.versionDir, forgedVersionDir));
+    expect(loadCachedProjectInstructions(loadOptions)).toBeUndefined();
+  });
+
   it.each([
     [
       "skill base directory",
@@ -77,9 +126,14 @@ describe("project instruction cache authority", () => {
       },
     ],
     [
-      "source and module provenance",
+      "source provenance",
       (manifest: ProjectInstructionManifest) => {
         manifest.sources[0].path = "/forged/AGENTS.md";
+      },
+    ],
+    [
+      "module provenance",
+      (manifest: ProjectInstructionManifest) => {
         manifest.rules[0].sourcePath = "/forged/AGENTS.md";
       },
     ],
@@ -106,9 +160,10 @@ describe("project instruction cache authority", () => {
       join(prepared.cacheDir, "current.json"),
       `${JSON.stringify({ schemaVersion: 1, agentsHash: forged.agentsHash, inputHash: forged.inputHash, version: forgedVersion })}\n`,
     );
-    writeFileSync(
+    rewriteFallbackVersionPath(
       getProjectInstructionFallbackPath(prepared.cacheDir, forged.inputHash),
-      renderForgedFallback(forged, forgedVersionDir),
+      prepared.versionDir,
+      forgedVersionDir,
     );
 
     const loaded = loadCachedProjectInstructions({
@@ -196,23 +251,9 @@ describe("project instruction cache concurrency", () => {
   });
 });
 
-function renderForgedFallback(manifest: ProjectInstructionManifest, versionDir: string): string {
-  return `${[
-    "# Ordinary-read project instruction fallback",
-    "",
-    `Input SHA-256: ${manifest.inputHash}`,
-    `Immutable cache version: ${versionDir}`,
-    `Physical rule catalog: ${join(versionDir, manifest.rulesCatalogFile)}`,
-    `Physical skill catalog: ${join(versionDir, manifest.skillsCatalogFile)}`,
-    "",
-    "## Authoritative instruction sources",
-    ...manifest.sources.map((source) => `- ${source.path}`),
-    "",
-    "## Authoritative skill roots",
-    ...manifest.skills.map((skill) => `- ${skill.name}: ${skill.filePath}`),
-    "",
-    "Resolve relative catalog page and module links from the immutable cache version directory.",
-  ].join("\n")}\n`;
+function rewriteFallbackVersionPath(fallbackPath: string, oldVersionDir: string, newVersionDir: string): void {
+  const fallback = readFileSync(fallbackPath, "utf8").replaceAll(oldVersionDir, newVersionDir);
+  writeFileSync(fallbackPath, fallback);
 }
 
 function createConcurrentRunner(): string {

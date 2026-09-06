@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Precompute normalized recall-search terms before scoring candidates."
+}

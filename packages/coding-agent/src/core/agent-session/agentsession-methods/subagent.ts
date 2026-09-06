@@ -15,7 +15,7 @@ import type { AgentSession } from "../agentsession.ts";
 import {
   capTextByTokens,
   estimateTextTokens,
-  scoreRecallCandidate,
+  scoreRecallCandidateOptimized,
   summarizeSubagentTranscript,
 } from "../recall-utils.ts";
 import type { SessionRecallInput } from "../session-types.ts";
@@ -132,12 +132,16 @@ export function do__recallSessionEvidence(self: AgentSession, params: SessionRec
   const defaultMaxTokens = params.includeRaw ? 4000 : 1200;
   const maxTokens = Math.max(1, Math.min(params.maxTokens ?? defaultMaxTokens, 4000));
   const kindFilter = params.kind ? new Set<EvidenceKind>(params.kind) : undefined;
+
+  const normalizedQuery = params.query.trim().toLowerCase();
+  const terms = normalizedQuery ? normalizedQuery.split(/\s+/).filter((term) => term.length > 1) : [];
+
   const scored = self
     ._collectRecallCandidates()
     .filter((candidate) => !kindFilter || kindFilter.has(candidate.pointer.kind))
     .map((candidate) => ({
       candidate,
-      relevance: scoreRecallCandidate(params.query, candidate),
+      relevance: scoreRecallCandidateOptimized(normalizedQuery, terms, candidate),
     }))
     .filter((item) => item.relevance > 0)
     .sort((a, b) => b.relevance - a.relevance || a.candidate.pointer.id.localeCompare(b.candidate.pointer.id));

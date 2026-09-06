@@ -203,8 +203,10 @@ function matchesExpectedInputs(
   });
 }
 
+const INVALID_PATH_PATTERN = /(?:^|[\\/])(?:\.\.?|)(?:[\\/]|$)/u;
+
 function readSafeVersionFile(versionDir: string, relativePath: string): string {
-  if (isAbsolute(relativePath) || relativePath.split(/[\\/]/u).some((part) => !part || part === ".." || part === ".")) {
+  if (isAbsolute(relativePath) || INVALID_PATH_PATTERN.test(relativePath)) {
     throw new Error("Invalid project instruction cache path");
   }
   const target = resolve(versionDir, relativePath);
