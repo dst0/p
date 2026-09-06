@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
-import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
+import { TYPECHECK_PATTERN } from "../constants.ts";
 import { frozenSourceOutputRestoreError } from "../critical-proof-source-output-revalidation.ts";
 import { revalidateCriticalProofSources } from "../evidence-critical-proof-observation.ts";
 import { testsRequested, typecheckRequested } from "../requirement-checks.ts";
@@ -15,6 +15,7 @@ import {
 } from "./evidence-focused-proof-validation.ts";
 import { selectEvidenceForReadiness } from "./evidence-readiness-selection.ts";
 import { computeTaskEffectStateHash } from "./task-effect-state-hash.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 import { evidenceHasPositivePassingTestResult } from "./test-evidence-outcome.ts";
 import { zeroEffectCompletionGate } from "./zero-effect-completion-gate.ts";
 
@@ -216,7 +217,9 @@ function requestedEvidenceError(
     testsRequested(taskText) &&
     !mappedEvidence.some(
       (item) =>
-        isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && evidenceHasPositivePassingTestResult(item),
+        isShellTool(item.toolName) &&
+        commandContainsTestInvocation(item.descriptor) &&
+        evidenceHasPositivePassingTestResult(item),
     )
   ) {
     return "The task explicitly requires tests, but no successful current-revision test evidence is available.";

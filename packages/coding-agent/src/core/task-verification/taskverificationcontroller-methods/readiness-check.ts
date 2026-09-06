@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { TEST_PATTERN, TYPECHECK_PATTERN } from "../constants.ts";
+import { TYPECHECK_PATTERN } from "../constants.ts";
 import { computeRequirementSetHash, computeStateUserRequirementsHash } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
@@ -21,6 +21,7 @@ import type {
 } from "../types.ts";
 import { userFileSizeOverrideIsAuthorized } from "../user-file-size-override.ts";
 import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_readyToFinish(self: TaskVerificationController, input: VerificationInput): VerificationResult {
   if (!self.state.taskSummary || self.state.mutationRevision === 0) {
@@ -89,7 +90,7 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
   const taskText = self.taskText();
   if (
     testsRequested(taskText) &&
-    !mappedValues.some((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor))
+    !mappedValues.some((item) => isShellTool(item.toolName) && commandContainsTestInvocation(item.descriptor))
   ) {
     return self.rejected(
       "The task explicitly requires tests, but no successful current-revision test evidence is mapped to an acceptance check.",

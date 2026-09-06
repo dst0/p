@@ -205,7 +205,7 @@ export const GENERIC_CHECK_PATTERN =
   /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?(?:check|typecheck)|pnpm\s+(?:run\s+)?(?:check|typecheck)|yarn\s+(?:run\s+)?(?:check|typecheck)|(?:npx\s+|npm\s+exec\s+)?tsc\b|biome\b|eslint\b|prettier\b|cargo\s+(?:fmt|clippy)\b)/iu;
 
 export const TYPECHECK_PATTERN =
-  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?typecheck|pnpm\s+(?:run\s+)?typecheck|yarn\s+(?:run\s+)?typecheck|(?:npx\s+|npm\s+exec\s+)?tsc\b)/iu;
+  /(?:^|[;&|]\s*)(?:npm\s+(?:run\s+)?typecheck|pnpm\s+(?:run\s+)?typecheck|yarn\s+(?:run\s+)?typecheck|(?:npx\s+|npm\s+exec\s+)?(?:[^\s;&|]+\/)?tsc\b)/iu;
 
 export const READ_ONLY_PATTERN =
   /^\s*(?:pwd\b|ls\b|find\b|fd\b|rg\b|grep\b|cat\b|head\b|tail\b|stat\b|wc\b|md5\b|md5sum\b|shasum\b|sha256sum\b|git\s+(?:status|diff|show|log)\b)/iu;

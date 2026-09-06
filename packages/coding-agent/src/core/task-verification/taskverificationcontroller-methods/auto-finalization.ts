@@ -5,7 +5,6 @@ import {
   HIGH_RISK_PATTERN,
   READ_ONLY_PATTERN,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import { behavioralFinalRequired } from "../requirement-checks.ts";
 import { emptyReadiness } from "../state-factories.ts";
@@ -14,6 +13,7 @@ import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import type { FinalMethod, TaskVerificationEvidence, VerificationResult } from "../types.ts";
 import { formatTaskVerificationCompactionNextAction } from "./task-verification-compaction-context.ts";
 import { taskVerificationContextExtract } from "./task-verification-context-extract.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_requiredBaselineReplayDescriptor(self: TaskVerificationController): string | undefined {
   if (self.state.baseline.method === "runtime_reproduction") {
@@ -24,8 +24,9 @@ export function do_requiredBaselineReplayDescriptor(self: TaskVerificationContro
   if (self.state.baseline.method === "failing_regression_test") {
     return self.state.baseline.evidenceRefs
       .map((ref) => self.evidence.get(ref))
-      .find((item) => item && isShellTool(item.toolName) && item.isError && TEST_PATTERN.test(item.descriptor))
-      ?.descriptor;
+      .find(
+        (item) => item && isShellTool(item.toolName) && item.isError && commandContainsTestInvocation(item.descriptor),
+      )?.descriptor;
   }
   return undefined;
 }
@@ -82,7 +83,7 @@ export function do_tryAutoFinalizeFocusedTest(
     !self.state.taskSummary ||
     self.state.baseline.status === "pending" ||
     !isShellTool(evidence.toolName) ||
-    !TEST_PATTERN.test(evidence.descriptor) ||
+    !commandContainsTestInvocation(evidence.descriptor) ||
     !FOCUSED_TEST_PATTERN.test(evidence.descriptor) ||
     /\s*\|\s*/u.test(evidence.descriptor)
   ) {
@@ -118,7 +119,7 @@ export function do_highRiskAcceptanceAudit(
     !self.state.taskKind ||
     !self.state.taskSummary ||
     !isShellTool(evidence.toolName) ||
-    !TEST_PATTERN.test(evidence.descriptor) ||
+    !commandContainsTestInvocation(evidence.descriptor) ||
     FOCUSED_TEST_PATTERN.test(evidence.descriptor)
   ) {
     return undefined;
@@ -146,7 +147,7 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const focusedTest = newestFirst.find(
     (item) =>
       isShellTool(item.toolName) &&
-      TEST_PATTERN.test(item.descriptor) &&
+      commandContainsTestInvocation(item.descriptor) &&
       FOCUSED_TEST_PATTERN.test(item.descriptor) &&
       !/\s*\|\s*/.test(item.descriptor),
   );
@@ -155,7 +156,7 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const manualReproduction = newestFirst.find(
     (item) =>
       isShellTool(item.toolName) &&
-      !TEST_PATTERN.test(item.descriptor) &&
+      !commandContainsTestInvocation(item.descriptor) &&
       !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
       !READ_ONLY_PATTERN.test(item.descriptor),
   );
@@ -165,7 +166,9 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const behavioral = self.state.taskKind ? behavioralFinalRequired(self.state.taskKind, taskText) : true;
   const highRisk = HIGH_RISK_PATTERN.test(taskText);
   if (!behavioral && !highRisk) {
-    const testSuite = newestFirst.find((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor));
+    const testSuite = newestFirst.find(
+      (item) => isShellTool(item.toolName) && commandContainsTestInvocation(item.descriptor),
+    );
     if (testSuite) return [testSuite];
   }
 
@@ -187,12 +190,12 @@ export function do_finalMethodForEvidence(
   if (!primary) return "manual_reproduction";
   if (
     isShellTool(primary.toolName) &&
-    TEST_PATTERN.test(primary.descriptor) &&
+    commandContainsTestInvocation(primary.descriptor) &&
     FOCUSED_TEST_PATTERN.test(primary.descriptor)
   ) {
     return "focused_test";
   }
-  if (isShellTool(primary.toolName) && TEST_PATTERN.test(primary.descriptor)) return "test_suite";
+  if (isShellTool(primary.toolName) && commandContainsTestInvocation(primary.descriptor)) return "test_suite";
   return "manual_reproduction";
 }
 

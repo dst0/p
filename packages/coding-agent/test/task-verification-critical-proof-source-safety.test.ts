@@ -98,7 +98,15 @@ describe("evidence-mode critical proof source safety", () => {
         },
       ]);
       expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
-      expect(await recordChecklist(harness.controller)).toContain("Critical proof discovery is blocked");
+      expect(
+        (await beforeEvidenceTool(harness.agent, "write", { path: "src/store.ts", content: "" }))?.reason,
+      ).toContain("Critical proof discovery is blocked");
+      expect(await recordChecklist(harness.controller)).toContain("Completion checklist recorded");
+      expect(harness.controller.currentState.criticalProofDiscoveryFailures).toBeUndefined();
+      expect(harness.controller.currentState.criticalProofObligations).toEqual([]);
+      expect(harness.controller.currentState.criticalProofSourceSelections?.map((source) => source.sourcePath)).toEqual(
+        ["README.md"],
+      );
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

@@ -5,7 +5,6 @@ import {
   READ_ONLY_PATTERN,
   REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import {
   referencedRequirementCandidates,
@@ -24,6 +23,7 @@ import type { TaskVerificationController } from "../taskverificationcontroller.t
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
 import { formatRequirementSourcePreparationGuidance } from "./requirement-source-preparation-guidance.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_formatNextRequirement(self: TaskVerificationController): string {
   if (!self.state.taskKind || !self.state.taskSummary) {
@@ -74,7 +74,7 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         item.mutationRevision === 0 &&
         isShellTool(item.toolName) &&
         item.isError &&
-        TEST_PATTERN.test(item.descriptor) &&
+        commandContainsTestInvocation(item.descriptor) &&
         FOCUSED_TEST_PATTERN.test(item.descriptor) &&
         !/\s*\|\s*/.test(item.descriptor),
     );
