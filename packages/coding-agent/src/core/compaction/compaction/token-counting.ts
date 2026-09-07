@@ -218,6 +218,26 @@ export function createToolResultStubText(stub: ToolResultStub, originalTokens: n
   return lines.join("\n");
 }
 
+function selectPointerKeyLines(keyLines: string[], maxLines = 3): string[] {
+  if (keyLines.length === 0 || maxLines <= 0) return [];
+  const seen = new Set<string>();
+  const uniqueLines: string[] = [];
+  for (const line of keyLines) {
+    const trimmed = line.trim();
+    if (trimmed.length > 0 && !seen.has(trimmed)) {
+      seen.add(trimmed);
+      uniqueLines.push(trimmed);
+    }
+  }
+  if (uniqueLines.length <= maxLines) {
+    return uniqueLines;
+  }
+  const headCount = Math.max(0, maxLines - 1);
+  return headCount === 0
+    ? [uniqueLines[uniqueLines.length - 1]]
+    : [...uniqueLines.slice(0, headCount), uniqueLines[uniqueLines.length - 1]];
+}
+
 export function createToolResultStub(
   message: ToolResultMessage,
   index: number,
@@ -231,7 +251,8 @@ export function createToolResultStub(
     contextExtract?.summary ||
     `${message.toolName} ${status} output omitted from prompt context (${text.split("\n").length} lines, ${originalTokens} estimated tokens).`;
   const pointerId = `tool-result:${message.toolCallId || index}`;
-  const pointerSummary = keyLines.length > 0 ? `${summary} Evidence: ${keyLines.slice(0, 3).join(" | ")}` : summary;
+  const selectedKeyLines = selectPointerKeyLines(keyLines, 3);
+  const pointerSummary = selectedKeyLines.length > 0 ? `${summary} Evidence: ${selectedKeyLines.join(" | ")}` : summary;
   const rawPointer: EvidencePointer = {
     id: pointerId,
     kind: "tool_result",

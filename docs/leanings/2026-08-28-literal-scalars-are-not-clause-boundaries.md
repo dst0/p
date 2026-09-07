@@ -1,0 +1,22 @@
+# 2026-08-28 — Literal scalars are not clause boundaries
+
+- **Status:** Resolved
+- **Task/context:** A live noncoding AI canary for candidate `5.0.1-rc.45` asked the installed agent to create one exact JSON handoff artifact from `SPEC.md`.
+- **Unexpected observation or failure:** The agent improved its rejected requirement definition from 10 diagnostics to one but still created no artifact within the 10-minute canary budget.
+- **Evidence:** Clause extraction split the exact scalar `` `Payment retries are delayed; no confirmed data loss.` `` at its literal semicolon. The two fragments then conflicted with semantic-support and compound high-risk validation. Separately, the collection introduction "exactly these top-level keys" was distributed onto each individual field requirement.
+- **Approaches tried:**
+  - **Attempt:** Repair the two scalar fragments as independent atomic requirements.
+    - **Outcome:** Did not work
+    - **Why:** The fragments were not independent outcomes; one lost the field subject and the other could not semantically support the complete scalar requirement.
+  - **Attempt:** Map the collection introduction onto every child and repeat "exactly these" in every field requirement.
+    - **Outcome:** Did not work
+    - **Why:** The introduction constrains the closed key collection, not each scalar value, and mapping it to every child created additional semantic-support diagnostics.
+  - **Attempt:** Preserve literal spans during clause splitting and atomicity analysis, while keeping collection demonstratives at the introduction level.
+    - **Outcome:** Worked
+    - **Why:** The verifier now sees the exact scalar as one indivisible value and still evaluates structural delimiters and true numeric or universal constraints outside literals.
+- **Root cause:** Clause splitting and high-risk atomicity treated all semicolons as grammar, including semicolons inside inline-code and quoted values. Inherited-constraint detection also confused a demonstrative collection closure with a distributive quantity.
+- **Resolution:** One shared literal-boundary scanner protects straight-quoted, smart-quoted, and variable-backtick spans, preserves structural splitting outside them, and distinguishes contractions, possessives, and numeric measurement marks from quote delimiters. Exact and upper-bound collection closures require explicit introduction-level mapping; conditional `only` and true universal or numeric quantities remain inherited constraints.
+- **Verification:** Focused regressions cover literal and structural semicolons, smart-single-quoted contractions, plural possessives, inch marks, prefix and postpositive collection closures, conditional `only`, retained universal inheritance, and genuine compound high-risk outcomes. Repository gates and a repeated live canary remain required before benchmarking.
+- **Prevention/follow-up:** Keep the short noncoding canary as a pre-benchmark gate and add future delimiter cases to the shared literal-boundary suite rather than patching individual validators.
+- **Reusable learning:** Parse structural delimiters only outside syntax-aware literal spans, and never distribute a collection-level demonstrative constraint onto leaf values.
+- **References:** `packages/coding-agent/test/task-requirement-clause-scalar-boundaries.test.ts`, `packages/coding-agent/test/task-requirement-collection-closure-boundaries.test.ts`, `packages/coding-agent/src/core/task-verification/requirement-literal-boundaries.ts`, and session `01a04390-0aa0-72f5-984d-7bbcef02cafa`.

@@ -7,6 +7,7 @@ import { createToolHtmlRenderer } from "../../export-html/tool-renderer.ts";
 import type { ContextUsage } from "../../extensions/index.ts";
 import { getLatestCompactionEntry } from "../../session-manager.ts";
 import type { AgentSession } from "../agentsession.ts";
+import { isInternalAgentMessage } from "../message-utils.ts";
 import type { SessionStats } from "../session-types.ts";
 
 export function do_getUserMessagesForForking(self: AgentSession): Array<{ entryId: string; text: string }> {
@@ -15,7 +16,7 @@ export function do_getUserMessagesForForking(self: AgentSession): Array<{ entryI
 
   for (const entry of entries) {
     if (entry.type !== "message") continue;
-    if (entry.message.role !== "user") continue;
+    if (entry.message.role !== "user" || isInternalAgentMessage(entry.message)) continue;
 
     const text = self._extractUserMessageText(entry.message.content);
     if (text) {

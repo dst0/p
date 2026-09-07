@@ -1,0 +1,22 @@
+# 2026-08-25 — Pure delegation classification must preserve residual requirements
+
+- **Status:** Resolved
+- **Task/context:** Repairing duplicate requirement definitions exposed by live AI-unit candidate 5.0.1-rc.29.
+- **Unexpected observation or failure:** The agent correctly mapped four README clauses, then invented a fifth generic deliverable from the direct instruction to implement that README. An initial keyword classifier fixed that case but also classified product-bearing residual prose as workflow and missed common courtesy, conjunction, and path forms.
+- **Evidence:** The rc.29 definition accepted both clause-backed deliverables and a standalone “requested workspace change” requirement. The first classifier then caused 15 existing requirement regressions and adversarial reproductions for comma/plus residual requirements, `Read and implement`, `all of the`, ambiguous basenames, suffix paths, and Unicode-equivalent macOS paths.
+- **Approaches tried:**
+  - **Attempt:** Let the model choose whether a direct file-delegation prompt is a product requirement or ignored workflow.
+    - **Outcome:** Did not work
+    - **Why:** Both choices could validate, so the model sometimes invented a semantic duplicate.
+  - **Attempt:** Detect delegation through unanchored requirement, test, and finish keywords.
+    - **Outcome:** Did not work
+    - **Why:** Substring matching cannot distinguish a workflow suffix from an independently actionable residual clause.
+  - **Attempt:** Use an anchored full-unit workflow grammar with normalized prepared-path identity.
+    - **Outcome:** Worked
+    - **Why:** Only completely consumed workflow text is classified as pure delegation; unknown residual text remains product-bearing.
+- **Root cause:** Pure delegation was an ambiguous semantic classification with no deterministic residual-text or path-identity contract. Direct prompt mappings also lacked a guard against using that workflow prompt as product provenance.
+- **Resolution:** Classify only fully matched delegation, focused-test, and requirement-verification units. Resolve prepared sources through boundary-aware NFKC paths and unique basenames; reject suffix and ambiguous basename matches. Reject a pure direct prompt index even when a requirement also has clause provenance, while preserving the clause mapping and requiring keyed ignored-prompt classification.
+- **Verification:** Twelve dedicated grammar/provenance cases, a real Git/controller repair integration, the 53-file, 402-test requirement slice, and idempotent repository checks pass. Candidate 5.0.1-rc.31 classified the direct prompt through one keyed repair, retained exactly four README requirements, and completed 4/4 verification.
+- **Prevention/follow-up:** Keep the classifier conservative: a new phrasing is workflow-only only when a regression proves the grammar consumes it losslessly. Unknown residual prose must never be silently ignored.
+- **Reusable learning:** Instruction classification is safe only when the recognized grammar consumes the complete semantic unit and path identity is exact; keyword presence alone is not evidence that no product requirement remains.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-prompt-classification.ts`, `packages/coding-agent/test/task-requirement-pure-delegation-classification.test.ts`, `packages/coding-agent/test/task-requirement-delegated-prompt-repair.test.ts`

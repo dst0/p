@@ -207,7 +207,27 @@ class AppleNpuBackendsTest(unittest.TestCase):
             },
         )
 
+    def test_core_ai_worker_probe_returns_sanitized_health(self):
+        import asyncio
+        from pathlib import Path
+        from unittest.mock import AsyncMock
+        mock_runtime = Mock()
+        mock_runtime.ComputeUnitKind.available_kinds.return_value = ["Neural Engine"]
+        with patch.dict("sys.modules", {"coreai": Mock(), "coreai.runtime": mock_runtime, "transformers": Mock()}):
+            from apple_coreai_worker import AppleCoreAIWorker
+            worker = AppleCoreAIWorker(Path("/tmp/mock_artifact_root"))
+            with patch.object(worker, "initialize", new_callable=AsyncMock) as mock_init:
+                worker.residency_verified = True
+                worker.compiled_batch_size = 1
+                worker.sequence_length = 64
+                response = asyncio.run(worker.probe())
+                mock_init.assert_awaited_once()
+        self.assertEqual(response["status"], "ready")
+        self.assertEqual(response["id"], "probe")
+        self.assertEqual(response["preferredComputeUnit"], "Neural Engine")
+        self.assertTrue(response["npuFullyPlaced"])
+        self.assertFalse(response["gpuActivity"])
+
 
 if __name__ == "__main__":
     unittest.main()
-

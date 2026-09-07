@@ -67,7 +67,7 @@ SUPPORTED_BACKENDS = {
     "amd-ryzenai-npu",
 }
 SHARED_MEMORY_ACCELERATORS = {
-    "npu", "openvino", "coreml", "vitisai", "apple-ane", "amd-phoenix-npu", "amd-ryzenai-npu"
+    "mps", "npu", "openvino", "coreml", "vitisai", "apple-ane", "amd-phoenix-npu", "amd-ryzenai-npu"
 }
 FAIL_CLOSED_ACCELERATORS = {
     "npu", "openvino", "vitisai", "apple-ane", "amd-phoenix-npu", "amd-ryzenai-npu"

@@ -7,7 +7,7 @@ import {
   type TouchedFile,
 } from "../../compaction/index.ts";
 import type { AgentSession } from "../agentsession.ts";
-import { isInternalCompletionProtocolRepairMessage, reconcilePlanItemsForSuccessFinish } from "../message-utils.ts";
+import { isInternalAgentMessage, reconcilePlanItemsForSuccessFinish } from "../message-utils.ts";
 import type { UpdateSessionStateInput } from "../session-types.ts";
 
 export function do__autoExecuteUpdateSessionState(self: AgentSession): void {
@@ -17,7 +17,7 @@ export function do__autoExecuteUpdateSessionState(self: AgentSession): void {
 
   const branchEntries = self.sessionManager
     .getBranch()
-    .filter((entry) => entry.type !== "message" || !isInternalCompletionProtocolRepairMessage(entry.message));
+    .filter((entry) => entry.type !== "message" || !isInternalAgentMessage(entry.message));
   const state = getLatestStructuredSessionState(branchEntries);
   const liveState = createLiveStructuredSessionState({
     sessionId: self.sessionManager.getSessionId(),

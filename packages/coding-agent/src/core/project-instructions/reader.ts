@@ -2,6 +2,7 @@ import { Buffer } from "node:buffer";
 import { lstatSync, readFileSync, realpathSync, type Stats } from "node:fs";
 import { basename, isAbsolute, relative, resolve, sep } from "node:path";
 import { hashText } from "./content.ts";
+import { expandProjectInstructionRuleLinks } from "./dependency-graph.ts";
 import { PROJECT_INSTRUCTION_READ_MAX_BYTES } from "./limits.ts";
 import { ProjectInstructionReadError } from "./read-error.ts";
 import type {
@@ -15,7 +16,8 @@ export function readRuleLinks(state: ProjectInstructionState, links: string[]): 
   const prepared = requireFreshPreparedState(state);
   const ruleByLink = new Map(prepared.manifest.rules.map((rule) => [rule.link, rule]));
   const pageByLink = new Map(prepared.manifest.rulesCatalogPages.map((page) => [page.link, page]));
-  return readRequestedLinks(links, (link, maxBytes) => {
+  const expandedLinks = expandProjectInstructionRuleLinks(prepared.manifest.rules, links);
+  return readRequestedLinks(expandedLinks, (link, maxBytes) => {
     if (link === prepared.manifest.rulesCatalogFile) {
       return readVersionFile(prepared, link, prepared.manifest.rulesCatalogHash, maxBytes);
     }

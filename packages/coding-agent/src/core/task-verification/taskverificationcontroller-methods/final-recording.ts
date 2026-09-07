@@ -4,13 +4,13 @@ import {
   HIGH_RISK_PATTERN,
   READ_ONLY_PATTERN,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import { behavioralFinalRequired } from "../requirement-checks.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isFinalMethod, isShellTool, isStaticTool, normalizeStrings, normalizeText } from "../tool-classification.ts";
 import type { TaskVerificationEvidence, VerificationInput, VerificationResult } from "../types.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_recordFinal(self: TaskVerificationController, input: VerificationInput): VerificationResult {
   if (!self.state.taskKind || !self.state.taskSummary || self.state.mutationRevision === 0) {
@@ -73,7 +73,10 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
   if (
     finalMethod === "focused_test" &&
     evidence.some(
-      (item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && /\s*\|\s*/.test(item.descriptor),
+      (item) =>
+        isShellTool(item.toolName) &&
+        commandContainsTestInvocation(item.descriptor) &&
+        /\s*\|\s*/.test(item.descriptor),
     )
   ) {
     return self.rejected(
@@ -84,7 +87,9 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
     finalMethod === "focused_test" &&
     !evidence.some(
       (item) =>
-        isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && FOCUSED_TEST_PATTERN.test(item.descriptor),
+        isShellTool(item.toolName) &&
+        commandContainsTestInvocation(item.descriptor) &&
+        FOCUSED_TEST_PATTERN.test(item.descriptor),
     )
   ) {
     return self.rejected("focused_test requires evidence from a specific test file or test name.");
@@ -93,7 +98,7 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
     finalMethod === "test_suite" &&
     (behavioral ||
       HIGH_RISK_PATTERN.test(taskText) ||
-      !evidence.some((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor)))
+      !evidence.some((item) => isShellTool(item.toolName) && commandContainsTestInvocation(item.descriptor)))
   ) {
     return self.rejected("A broad test suite alone is insufficient for this behavioral task.");
   }
@@ -123,7 +128,7 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
   if (self.state.baseline.method === "failing_regression_test") {
     const baselineTests = new Set(
       baselineEvidence
-        .filter((item) => isShellTool(item.toolName) && item.isError && TEST_PATTERN.test(item.descriptor))
+        .filter((item) => isShellTool(item.toolName) && item.isError && commandContainsTestInvocation(item.descriptor))
         .map((item) => item.descriptor),
     );
     if (!evidence.some((item) => isShellTool(item.toolName) && baselineTests.has(item.descriptor))) {
@@ -148,6 +153,6 @@ export function do_recordFinal(self: TaskVerificationController, input: Verifica
   self.persistState();
   return self.updated(
     "Final semantic verification passed for the current mutation revision.\n\n" +
-      `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish", then complete the sequential requirement audit before a verification_token can be issued.`,
+      `NEXT REQUIRED ACTION: call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish", then complete the batched requirement audit before a verification_token can be issued.`,
   );
 }

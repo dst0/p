@@ -1,0 +1,22 @@
+# 2026-08-30 — Follow-up prompts must not renumber frozen sources
+
+- **Status:** Resolved
+- **Task/context:** Preserve a durable rejected requirement-definition batch when the user adds a substantive follow-up.
+- **Unexpected observation or failure:** The draft correctly retained diagnostics and mappings for `S2-*`, but recovery rendering rebuilt the catalog as all direct prompts followed by referenced files. Adding one direct prompt moved the frozen file to source 3, so the catalog exposed `S3-*` while the retained draft still targeted `S2-*`.
+- **Evidence:** The regression captured a file as source 2, added a direct follow-up, and then found `[Source 3 | kind=referenced_file]` and `S3-C2` beside active-draft diagnostics for `S2-C2`.
+- **Approaches tried:**
+  - **Attempt:** Preserve only the rejected draft and revision across follow-up.
+    - **Outcome:** Did not work
+    - **Why:** Draft identity is insufficient when the authoritative catalog that gives its provenance IDs meaning is renumbered.
+  - **Attempt:** Revalidate the retained draft against the renumbered catalog.
+    - **Outcome:** Rejected
+    - **Why:** It would create artificial provenance failures and force repairs for an ordering artifact rather than a user requirement change.
+  - **Attempt:** Persist the number of direct prompts present when each referenced source is captured and render that source at the same catalog boundary thereafter.
+    - **Outcome:** Worked
+    - **Why:** Later prompts append without shifting existing source indexes, while sources prepared from later prompts can occupy their own later boundary.
+- **Root cause:** Source indexes were derived from a transient concatenation (`all direct prompts`, then `all referenced sources`) instead of a persisted catalog-order boundary.
+- **Resolution:** Requirement-source references and immutable snapshots now carry a required `definitionSourcePromptCount`. Catalog rendering interleaves each source after the direct-prompt boundary at which it was captured, re-selection preserves the relative order of existing sources, and the value participates in snapshot identity and the user-requirements hash. Missing, zero, or out-of-range anchors fail restoration instead of silently changing identities.
+- **Verification:** The follow-up regression failed with source 3 before the fix and passes with source 2 before and after restoration. A reordered-selection regression failed with `SPEC.md, README.md` before the fix and now preserves `README.md, SPEC.md`. The complete requirement-definition family passes 598 of 598 tests.
+- **Prevention/follow-up:** Any identifier emitted into durable repair state must derive from persisted ordering metadata, not from the current length of a mutable collection.
+- **Reusable learning:** Durable references require durable ordering; preserving an object without preserving the catalog that names it still corrupts identity.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-source-storage.ts`, `packages/coding-agent/test/task-requirement-definition-repair-status.test.ts`

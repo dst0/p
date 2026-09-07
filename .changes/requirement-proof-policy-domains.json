@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Derive focused corruption and final-byte proof policies for direct prompts and additional serialized artifact domains without cross-clause or cross-artifact matches."
+}

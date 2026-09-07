@@ -1,0 +1,22 @@
+# 2026-08-25 — Node test reporter settlement
+
+- **Status:** Resolved
+- **Task/context:** Add a bounded test-authoring feedback loop to the coding-agent task-verification controller and validate it with a small live AI task before rerunning the project-instructions benchmark.
+- **Unexpected observation or failure:** A live agent filled the three-path test batch, passed both a focused `node --test` command and broad `npm test`, but every attempt to create the fourth test file remained blocked as if the batch had never run. The first full suite then exposed a second representation mismatch: requirement evidence stores a single-line output summary, so a parser restricted to line-start reporter markers rejected the same valid Node result there.
+- **Evidence:** The initial live trace showed Node's spec reporter emit `ℹ pass 4` and later `ℹ pass 5`, while `unverifiedTestPaths` stayed at three entries. A regression using the same reporter summary failed with all three paths still pending. The controller had accepted synthetic `82 tests passed` output in existing tests, so the mismatch was hidden. After the initial fix, the full suite failed `task-requirement-audit-focused-evidence-cwd.test.ts` because its stored summary flattened `ℹ pass 1` onto one line.
+- **Approaches tried:**
+  - **Attempt:** Rely on prompt guidance to make the model test after small batches.
+    - **Outcome:** Partial
+    - **Why:** The model did run tests, but a controller parser mismatch made valid evidence ineffective and trapped the workflow.
+  - **Attempt:** Treat readiness or requirement-audit completion as permission to bypass the test-authoring batch.
+    - **Outcome:** Did not work
+    - **Why:** Test-authoring debt is an independent invariant and correctly continued to block later mutation and completion.
+  - **Attempt:** Recognize Node's anchored `ℹ pass N` summary and give nonzero `ℹ fail N` precedence.
+    - **Outcome:** Worked
+    - **Why:** It accepts the real reporter contract without accepting generic strings such as `compiler pass 1` or mixed pass/fail output.
+- **Root cause:** `hasPositivePassingTestResult` recognized TAP, Jest, Pytest, Go, and Rust summaries but not the default Node spec reporter's `ℹ pass N` token. The same predicate consumes both full multiline tool output and a flattened stored evidence summary, but the first correction only handled the multiline representation.
+- **Resolution:** Extended positive and nonzero-failure recognition for Node's explicit `ℹ` reporter marker in both multiline output and whitespace-flattened summaries. Added a controller-level regression that proves a passing broad run clears a full batch and permits a fourth path; the existing focused-evidence regression protects the summarized representation.
+- **Verification:** The regression failed before the parser change and passed afterward. Twelve focused task-verification files passed 115 tests, `npm run check` passed, reinstall completed without an indexing restart, and a fresh live AI task created exactly four requested files and finished with `npm test` passing 7/7.
+- **Prevention/follow-up:** Keep realistic native reporter samples in state-transition tests and exercise every representation that consumes them, including persisted summaries. Every accepted positive format must also have a nonzero-failure case so mixed output cannot clear debt. Run a small installed-binary AI canary before expensive benchmark tasks whenever verification feedback semantics change.
+- **Reusable learning:** Test orchestration must validate the actual runner output contract and every storage transformation end to end; synthetic success prose or only testing raw output can conceal a deadlocked feedback loop.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/test-invocation-selection.ts`, `packages/coding-agent/test/task-verification-test-authoring-gate.test.ts`

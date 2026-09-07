@@ -1,0 +1,22 @@
+# 2026-08-27 — Regressive repair must not invalidate the best draft
+
+- **Status:** Resolved
+- **Task/context:** Candidate `5.0.1-rc.44` task 3 validation of pre-mutation requirement definition and compiled project instructions.
+- **Unexpected observation or failure:** The legacy cell spent its complete 40-minute allowance in requirement-definition work and never created an implementation source file.
+- **Evidence:** The cell timed out after 2,416,109 ms with 551,144 session tokens, 32 tool calls, two full definitions, four repair attempts, and quality 2/100. One adopted repair reduced diagnostics from 28 to 16. A later candidate briefly increased them, after which the controller required a full 70-item redefine; that redefine still had eight diagnostics.
+- **Approaches tried:**
+  - **Attempt:** Require a complete fresh definition immediately after any repair candidate exceeds the historical diagnostic minimum.
+    - **Outcome:** Did not work
+    - **Why:** The candidate was already rejected transactionally and the better draft was retained, so disabling repair on that retained draft discarded convergence without protecting additional state.
+  - **Attempt:** Retain the best draft and revision, count a worse candidate as one unproductive attempt, and keep sparse repair available until the existing bounded stagnation threshold.
+    - **Outcome:** Worked
+    - **Why:** Authoritative state remains monotonic while a single provenance or cardinality mistake no longer forces complete regeneration.
+  - **Attempt:** Bound every repair call to 32 replacement objects even when the final definition remains below the global 96-item maximum.
+    - **Outcome:** Did not work
+    - **Why:** A coherent 40-replacement candidate was rejected before atomic validation, wasting a full model turn even though the lineage-overflow path already admits only historically improving candidates.
+- **Root cause:** Transaction rollback retained the best non-authoritative draft but separately marked it `regressive_repair`, making the next-action guard reject all further sparse repair. An independent aggregate replacement limit also rejected otherwise globally bounded candidates before the monotonic validator could evaluate them.
+- **Resolution:** A worse candidate is discarded without authorizing an immediate full redefine; repeated unproductive attempts still converge to the existing `stagnant_repair` escape. Aggregate replacements use the global requirement-count ceiling while indexed-entry, lineage-growth, strict-improvement, and mutation gates remain enforced.
+- **Verification:** Focused regressions prove one regressive candidate preserves the revision and permits a succeeding sparse repair, large coherent candidates reach atomic validation, non-improving lineage overflow is not adopted, and the global maximum remains fail-closed. Full repository gates and live AI canaries are required before another paired task 3 run.
+- **Prevention/follow-up:** Run the fast requirement-convergence AI canary before every expensive paired benchmark and stop at the first correctness failure.
+- **Reusable learning:** Rejecting a speculative candidate is sufficient rollback; never revoke the recovery path for the retained best state unless a bounded sequence proves that path is stagnant.
+- **References:** Supersedes the immediate-full-redefine conclusion in `docs/leanings/2026-08-25-rejected-repairs-must-retain-best-draft.md`; see `benchmarks/results/2026-08-27-v5.0.1-rc.44-task3-paired-v1/`, `packages/coding-agent/test/task-requirement-definition-monotonic-repair.test.ts`, and `packages/coding-agent/test/task-requirement-definition-repair-lineage-budget.test.ts`.

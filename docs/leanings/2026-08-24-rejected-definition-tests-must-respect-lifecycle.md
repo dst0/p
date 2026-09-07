@@ -1,0 +1,22 @@
+# 2026-08-24 — Rejected-definition tests must respect lifecycle state
+
+- **Status:** Resolved
+- **Task/context:** Final integrated verification of controller-global next-action enforcement for rejected requirement definitions.
+- **Unexpected observation or failure:** The focused feature suites passed, but the repository unit suite failed seven older cases across five files because those tests reused a controller after an intentionally rejected definition and then attempted an unauthorized fresh definition or sibling action.
+- **Evidence:** The integrated `./test.sh` run reported 7 failures while 2,847 coding-agent tests passed. Every failure received `next_required_action: repair_definition` instead of reaching the older test's intended validation path; the closed log is stored as `/tmp/p-rc11-full-final.log.br`.
+- **Approaches tried:**
+  - **Attempt:** Rely on the new focused next-action suites alone.
+    - **Outcome:** Did not work
+    - **Why:** They proved the new guard but did not exercise older multi-scenario tests whose shared controller accumulated rejected-draft state.
+  - **Attempt:** Weaken the controller guard or update assertions to expect the guard message.
+    - **Outcome:** Did not work
+    - **Why:** Either option would discard the original validation coverage or reintroduce the unauthorized restart path that the feature closes.
+  - **Attempt:** Give independent validation scenarios fresh harnesses and use `repair_definition` when a test intentionally preserves one lifecycle.
+    - **Outcome:** Worked
+    - **Why:** Each assertion reaches its intended domain validator while retaining the controller-global next-action invariant.
+- **Root cause:** Tests treated a rejected definition as a stateless validation result, but rejection now creates authoritative lifecycle state that permits only the controller-selected recovery action until a real reset or explicit authorization.
+- **Resolution:** Independent malformed-input cases now use isolated controllers; lifecycle tests that continue from a rejected draft perform a revision-bound repair.
+- **Verification:** The five focused files pass 29 tests, `npm run check` passes, and an adversarial test review is required before the final full-suite rerun.
+- **Prevention/follow-up:** When a controller action creates recovery state, tests must either follow that recovery protocol or start a genuinely independent lifecycle. Include older multi-case suites in focused verification when strengthening state-machine guards.
+- **Reusable learning:** A rejected state-machine transition can still mutate protocol state; never reuse its harness as if validation were pure.
+- **References:** `packages/coding-agent/test/task-requirement-audit-action-fields.test.ts`, `packages/coding-agent/test/task-requirement-audit-clause-semantics.test.ts`, `packages/coding-agent/test/task-requirement-audit-definition-diagnostics.test.ts`, `packages/coding-agent/test/task-requirement-audit-state-machine.test.ts`, `packages/coding-agent/test/task-requirement-audit-validation.test.ts`

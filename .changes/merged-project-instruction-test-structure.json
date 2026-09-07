@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep the merged project-instruction processor regression suite within the source-file size policy without removing assertions."
+}

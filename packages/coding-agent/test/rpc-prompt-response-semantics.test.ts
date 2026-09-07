@@ -11,6 +11,7 @@ import { ModelRegistry } from "../src/core/model-registry.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 import { runRpcMode } from "../src/modes/rpc/rpc-mode.ts";
+import { createVerifiedCompletionResult } from "./terminal-completion-test-support.ts";
 import { createTestResourceLoader } from "./utilities.ts";
 
 const rpcIo = vi.hoisted(() => ({
@@ -78,7 +79,6 @@ function parseOutputLines(outputLines: string[]): ParsedOutputLine[] {
     .filter((line) => line.trim().length > 0)
     .map((line) => JSON.parse(line) as ParsedOutputLine);
 }
-
 function getPromptResponses(outputLines: string[], id: string): ParsedOutputLine[] {
   return parseOutputLines(outputLines).filter(
     (record) => record.id === id && record.type === "response" && record.command === "prompt",
@@ -88,7 +88,6 @@ function getPromptResponses(outputLines: string[], id: string): ParsedOutputLine
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-
 function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): {
   runtimeHost: AgentSessionRuntime;
   cleanup: () => Promise<void>;
@@ -168,6 +167,7 @@ function createRuntimeHost(options: { withAuth: boolean; responseDelayMs: number
 
 async function startRpcMode(options: { withAuth: boolean; responseDelayMs: number; model?: Model<any> }): Promise<{
   lineHandler: (line: string) => void;
+  runtimeHost: AgentSessionRuntime;
   cleanup: () => Promise<void>;
 }> {
   rpcIo.outputLines = [];
@@ -177,7 +177,7 @@ async function startRpcMode(options: { withAuth: boolean; responseDelayMs: numbe
   void runRpcMode(runtimeHost);
   await vi.waitFor(() => expect(rpcIo.lineHandler).toBeDefined());
 
-  return { lineHandler: rpcIo.lineHandler!, cleanup };
+  return { lineHandler: rpcIo.lineHandler!, runtimeHost, cleanup };
 }
 
 describe("RPC prompt response semantics", () => {
@@ -277,6 +277,22 @@ describe("RPC prompt response semantics", () => {
       });
 
       await sleep(150);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  it("returns the reserved verified audit summary as the session final response", async () => {
+    const { lineHandler, runtimeHost, cleanup } = await startRpcMode({ withAuth: true, responseDelayMs: 0 });
+    runtimeHost.session.agent.state.messages.push(createVerifiedCompletionResult("Verified RPC summary"));
+    try {
+      lineHandler(JSON.stringify({ id: "verified", type: "get_last_assistant_text" }));
+      await vi.waitFor(() =>
+        expect(parseOutputLines(rpcIo.outputLines).at(-1)).toMatchObject({
+          success: true,
+          data: { text: "Verified RPC summary" },
+        }),
+      );
     } finally {
       await cleanup();
     }

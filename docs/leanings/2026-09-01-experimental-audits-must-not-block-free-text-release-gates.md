@@ -1,0 +1,22 @@
+# 2026-09-01 — Experimental audits must not block free-text release gates
+
+- **Status:** Partial
+- **Task/context:** Validate compiled project instructions against legacy delivery on all four canonical benchmark tasks before the 5.0.1 release.
+- **Unexpected observation or failure:** The compiled evidence path and legacy path both completed the first task correctly, but the experimental compiled audit consumed the remainder of the 900-second cell budget formalizing ordinary prose and stopped the complete paired comparison before later tasks ran.
+- **Evidence:** Candidate `5.0.1-rc.63` passed the TypeScript calculator at 6/6 in both `compiled-evidence` and `legacy`. `compiled-evidence` used 563,980 tokens in 396,113 ms versus 747,499 tokens in 452,335 ms for legacy. The later `compiled-audit` cell reached an accepted definition only after 13 sparse repairs at roughly 869 seconds, then timed out at 900,296 ms with zero verdict attempts or completion certificates.
+- **Approaches tried:**
+  - **Attempt:** Terminate immediately after an accepted audit verdict.
+    - **Outcome:** Worked
+    - **Why:** It removes a redundant provider turn after the controller has already issued a valid audit certificate, but rc.63 never reached that downstream state.
+  - **Attempt:** Continue extending natural-language definition and repair grammar.
+    - **Outcome:** Did not work
+    - **Why:** The final remaining clause repeatedly received a semantically invalid classification, and each local grammar repair preserves the unbounded formalization problem for arbitrary prose.
+  - **Attempt:** Auto-issue a verdict when a definition becomes structurally valid.
+    - **Outcome:** Did not work
+    - **Why:** Definition acceptance proves source coverage, not requirement satisfaction; readiness evidence is not deterministically mapped to newly assigned IDs, hashes, or focused high-risk proof obligations.
+- **Root cause:** The benchmark coupled the universal free-text release comparison to an explicitly experimental semantic audit. That made an opt-in formalization protocol a hard prerequisite for measuring the default evidence-backed product path.
+- **Resolution:** Make the canonical randomized release benchmark compare `legacy/evidence` with `compiled/evidence`. Preserve `compiled/audit` behind explicit `--include-audit`, with the same hard correctness gate only when that canary is deliberately requested. Require the default free-text checklist to contain enough distinct items for multiple explicit guarantee signals without constructing a clause matrix.
+- **Verification:** Focused benchmark regressions pass for exact condition selection, three-to-five-run balancing and seed sensitivity, scheduled-cell identity, dynamic completeness, stale-summary suppression, CLI wiring, and paired versus canary reporting. The benchmark suite passes 367/367, the evidence-mode checklist regression passes 4/4, `npm run check` is clean, the full repository unit gate passes, and `./reinstall.sh` plus installed version/model-list smokes pass. The four-task paired live benchmark remains pending.
+- **Prevention/follow-up:** Release performance conclusions must compare only configurations intended for universal default use. Experimental verification protocols need a separate explicit canary and must never be silently auto-certified from unrelated readiness evidence.
+- **Reusable learning:** A hard benchmark gate defines the shipped product boundary; do not let an opt-in experimental formalizer block evidence for the universal free-text path.
+- **References:** `benchmarks/results/2026-09-01-v5.0.1-rc.63-all-four-three-condition-v1`, `benchmarks/src/project-instructions/`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/evidence-readiness.ts`, `docs/leanings/2026-08-31-natural-language-audit-is-not-a-default-verification-boundary.md`

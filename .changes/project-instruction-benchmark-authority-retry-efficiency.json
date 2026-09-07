@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Validate legacy benchmark authority before evidence projection and avoid replaying full requirement catalogs after rejected definition batches."
+}

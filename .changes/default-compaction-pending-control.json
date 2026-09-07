@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve exact pending continuation and steering state through default provider-overflow compaction."
+}

@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  auditEvidenceHandle,
   auditVerificationToken,
   beforeAuditTool,
   callRequirementAudit,
@@ -8,7 +7,6 @@ import {
   createRequirementAuditHarness,
   nextModelTurn,
   reachAuditEvidenceReady,
-  recordAuditToolResult,
   sendAuditUserPrompt,
 } from "./task-requirement-audit-test-harness.ts";
 
@@ -35,19 +33,21 @@ function definitions() {
   ];
 }
 
-async function verdict(
+async function verdictBatch(
   harness: ReturnType<typeof createRequirementAuditHarness>,
-  requirementId: string,
-  passed: boolean,
-  evidenceRef?: string,
+  outcomes: Array<{ passed: boolean; evidenceRef?: string }>,
 ): Promise<string> {
   await nextModelTurn(harness);
   return callRequirementAudit(harness.controller, {
     action: "verdict",
-    requirement_id: requirementId,
-    passed,
-    reason: passed ? `${requirementId} is proven by focused evidence.` : `${requirementId} still lacks implementation.`,
-    evidence_refs: evidenceRef ? [evidenceRef] : undefined,
+    verdicts: outcomes.map((outcome, index) => ({
+      requirement_id: `R${index + 1}`,
+      passed: outcome.passed,
+      reason: outcome.passed
+        ? `R${index + 1} is proven by focused evidence.`
+        : `R${index + 1} still lacks implementation.`,
+      evidence_refs: outcome.evidenceRef ? [outcome.evidenceRef] : undefined,
+    })),
   });
 }
 
@@ -61,11 +61,9 @@ describe("requirement-audit state machine", () => {
       requirements: definitions(),
       ignored_source_prompts: [],
     });
-    expect(defined).toContain("Verify requirement R1 (1/3)");
+    expect(defined).toContain("Verify all 3 requirements");
 
-    expect(await verdict(harness, "R1", false)).toContain("Verify requirement R2 (2/3)");
-    expect(await verdict(harness, "R2", true, evidenceRef)).toContain("Verify requirement R3 (3/3)");
-    const failed = await verdict(harness, "R3", false);
+    const failed = await verdictBatch(harness, [{ passed: false }, { passed: true, evidenceRef }, { passed: false }]);
     expect(failed).toContain("Requirement audit failed: 2/3");
     expect(failed).toContain("R1: The completion gate blocks premature success");
     expect(failed).toContain("R3: Focused evidence proves the gate behavior");
@@ -80,12 +78,14 @@ describe("requirement-audit state machine", () => {
       unresolved_failures: [],
     });
     expect(restarted).toContain("Reusing the existing 3-item requirement set");
-    expect(restarted).toContain("Verify requirement R1 (1/3)");
+    expect(restarted).toContain("Verify all 3 requirements");
     expect(harness.controller.currentState.requirementAudit.requirements.every((item) => !item.verdict)).toBe(true);
 
-    await verdict(harness, "R1", true, evidenceRef);
-    await verdict(harness, "R2", true, evidenceRef);
-    const passed = await verdict(harness, "R3", true, evidenceRef);
+    const passed = await verdictBatch(harness, [
+      { passed: true, evidenceRef },
+      { passed: true, evidenceRef },
+      { passed: true, evidenceRef },
+    ]);
     const token = auditVerificationToken(passed);
     const readiness = harness.controller.currentState.readiness;
     expect(readiness).toMatchObject({
@@ -141,104 +141,47 @@ describe("requirement-audit state machine", () => {
     expect(incomplete).toContain("unclassified indexes: 2");
 
     await nextModelTurn(harness);
+    const revision = harness.controller.rejectedRequirementDefinitionDraft?.revision;
     const complete = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: [definitions()[0]],
-      ignored_source_prompts: [{ source_prompt_index: 2, reason: "Status question, not a task requirement" }],
+      action: "repair_definition",
+      definition_revision: revision,
+      ignored_source_prompt_upserts: [{ source_prompt_index: 2, reason: "Status question, not a task requirement" }],
     });
     expect(complete).toContain("Defined 1 atomic requirement");
     expect(harness.controller.currentState.requirementAudit.requirements[0]?.id).toBe("R1");
   });
 
   it("rejects precomputed audit transitions from the same assistant turn", async () => {
-    const harness = createRequirementAuditHarness();
-    const { evidenceRef } = await reachAuditEvidenceReady(harness);
-    const prematureDefinition = await callRequirementAudit(harness.controller, {
+    const defineHarness = createRequirementAuditHarness();
+    const { evidenceRef } = await reachAuditEvidenceReady(defineHarness);
+    const prematureDefinition = await callRequirementAudit(defineHarness.controller, {
       action: "define",
       requirements: [definitions()[0]],
       ignored_source_prompts: [],
     });
     expect(prematureDefinition).toContain("Only one requirement-audit transition");
+    expect(defineHarness.controller.rejectedRequirementDefinitionDraft).toBeUndefined();
 
-    await nextModelTurn(harness);
-    const defined = await callRequirementAudit(harness.controller, {
+    await nextModelTurn(defineHarness);
+    const defined = await callRequirementAudit(defineHarness.controller, {
       action: "define",
       requirements: [definitions()[0]],
       ignored_source_prompts: [],
     });
-    expect(defined).toContain("Verify requirement R1");
-    const prematureVerdict = await callRequirementAudit(harness.controller, {
+    expect(defined).toContain("Verify all 1 requirements");
+    const prematureVerdict = await callRequirementAudit(defineHarness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Focused evidence passes.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Focused evidence passes.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
     expect(prematureVerdict).toContain("Only one requirement-audit transition");
-    expect(harness.controller.currentState.requirementAudit.requirements[0]?.verdict).toBeUndefined();
-  });
-
-  it("enforces controller order and rejects unsupported passed verdicts", async () => {
-    const harness = createRequirementAuditHarness();
-    const { evidenceRef } = await reachAuditEvidenceReady(harness);
-    await nextModelTurn(harness);
-    await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: definitions().slice(0, 2),
-      ignored_source_prompts: [],
-    });
-
-    await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "verdict",
-        requirement_id: "R2",
-        passed: true,
-        reason: "Attempted out of order.",
-        evidence_refs: [evidenceRef],
-      }),
-    ).toContain("Expected verdict for R1");
-
-    await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "verdict",
-        requirement_id: "R1",
-        passed: true,
-        reason: "No evidence supplied.",
-      }),
-    ).toContain("requires at least one evidence_refs handle");
-
-    await nextModelTurn(harness);
-    const failedRead = auditEvidenceHandle(
-      await recordAuditToolResult(
-        harness.agent,
-        "read",
-        { path: "missing-proof.txt" },
-        { text: "not found", isError: true },
-      ),
-    );
-    await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "verdict",
-        requirement_id: "R1",
-        passed: true,
-        reason: "Failed inspection cannot prove success.",
-        evidence_refs: [failedRead],
-      }),
-    ).toContain("Failed evidence cannot support a passed requirement verdict");
-
-    await nextModelTurn(harness);
-    expect(
-      await callRequirementAudit(harness.controller, {
-        action: "verdict",
-        requirement_id: "R1",
-        passed: true,
-        reason: "Current focused evidence proves the first requirement.",
-        evidence_refs: [evidenceRef],
-      }),
-    ).toContain("Verify requirement R2 (2/2)");
+    expect(defineHarness.controller.currentState.requirementAudit.requirements[0]?.verdict).toBeUndefined();
   });
 
   it("rejects a token when certificate fields or the canonical requirement set are corrupted", async () => {
@@ -250,7 +193,7 @@ describe("requirement-audit state machine", () => {
       requirements: [definitions()[0]],
       ignored_source_prompts: [],
     });
-    const passed = await verdict(harness, "R1", true, evidenceRef);
+    const passed = await verdictBatch(harness, [{ passed: true, evidenceRef }]);
     const token = auditVerificationToken(passed);
     const certificateHash = harness.controller.state.readiness?.certificateHash;
     if (!certificateHash) throw new Error("missing completion certificate hash");

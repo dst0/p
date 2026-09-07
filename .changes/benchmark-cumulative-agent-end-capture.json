@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep benchmark raw recordings lossless while excluding only oversized cumulative agent-end transcript snapshots from semantic metric capture."
+}

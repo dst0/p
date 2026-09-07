@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve configured Qdrant storage and serialize owner-bound indexing-service reuse across install and reinstall."
+}

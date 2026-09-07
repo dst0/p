@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Harden non-user-facing benchmark startup proofs with a parent-owned private channel bound to an opaque receipt and exact turn ordinals."
+}

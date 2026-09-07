@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Exercise real case-only source substitution and recovery on native filesystems, and report unsupported case-alias tests as explicit skips instead of false passes."
+}

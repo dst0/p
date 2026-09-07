@@ -1,7 +1,7 @@
 import type { ImageContent, Model, SimpleStreamOptions, TextContent, Transport } from "@dst0/p-ai";
+import type { FinishWorkPayload } from "../completion-protocol.ts";
 import type { AgentEvent, AgentMessage, AgentTool, CompletionMode, QueueMode, ThinkingLevel } from "../index.ts";
 import type { Session } from "./session/session.ts";
-
 /** Result of a fallible operation. Expected failures are returned as `ok: false` instead of thrown. */
 export type Result<TValue, TError> = { ok: true; value: TValue } | { ok: false; error: TError };
 
@@ -686,8 +686,8 @@ export interface ToolResultPatch {
   details?: unknown;
   isError?: boolean;
   terminate?: boolean;
+  completion?: FinishWorkPayload;
 }
-
 export interface SessionBeforeCompactResult {
   cancel?: boolean;
   compaction?: CompactResult;

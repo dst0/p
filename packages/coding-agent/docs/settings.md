@@ -183,7 +183,9 @@ Model-loading and LLM-orchestrator worker-unavailable errors use an extended rec
 ### Completion Protocol
 
 | Setting | Type | Default | Description |
+| --- | --- | --- | --- |
 | `completionMode` | string | `"explicit_finish"` | Completion mode: `"explicit_finish"`, `"hybrid"`, or `"implicit"` |
+| `taskVerificationMode` | string | `"evidence"` | Task verification: deterministic `"evidence"`, experimental semantic `"audit"`, or `"off"`. Global setting only |
 | `completionLimits.maxTurns` | number | `64` | Maximum model turns before strict/hybrid protocol failure |
 | `completionLimits.maxNoProgressTurns` | number | `5` | Maximum repair/no-progress turns before graceful failure |
 | `completionLimits.maxMalformedToolRetries` | number | `3` | Maximum malformed or truncated tool-call retries |
@@ -227,6 +229,8 @@ Strict CI/testing profile:
 ```
 
 `finish_work` is always available in `explicit_finish` and `hybrid`, and is not removed by `--tools`, `--exclude-tools`, or `--no-tools`.
+
+`evidence` and `audit` require `explicit_finish` when a mutating tool activates verification. The task-verification default is read only from global settings so a repository-local `.p/settings.json` cannot silently weaken or replace it. The explicit `--task-verification` CLI option overrides the global setting for one session.
 
 ### Message Delivery
 

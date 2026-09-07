@@ -12,6 +12,7 @@ import {
 import { getAssistantText, prepareToolCall } from "./tool-result-formatting.ts";
 import type {
   AgentEventSink,
+  CompletionProtocolRepair,
   CompletionProtocolState,
   ExecutedToolCallBatch,
   FinalizedToolCallEntry,
@@ -33,6 +34,7 @@ export async function executeToolCallsParallel(
       type: "tool_execution_start",
       toolCallId: toolCall.id,
       toolName: toolCall.name,
+      toolDescription: currentContext.tools?.find((tool) => tool.name === toolCall.name)?.description,
       args: toolCall.arguments,
     });
 
@@ -42,6 +44,7 @@ export async function executeToolCallsParallel(
         toolCall,
         result: preparation.result,
         isError: preparation.isError,
+        executed: false,
       } satisfies FinalizedToolCallOutcome;
       await emitToolExecutionEnd(finalized, emit);
       finalizedCalls.push(finalized);
@@ -99,11 +102,14 @@ export async function executeToolCalls(
   return executeToolCallsParallel(currentContext, assistantMessage, toolCalls, config, signal, emit);
 }
 
-export function createProtocolRepairMessage(text: string): AgentMessage {
+export function createProtocolRepairMessage(text: string, reason?: CompletionProtocolRepair["reason"]): AgentMessage {
   return {
     role: "user",
     content: [{ type: "text", text }],
-    metadata: { pInternal: "completion_protocol_repair" },
+    metadata: {
+      pInternal: "completion_protocol_repair",
+      ...(reason ? { completionProtocolRepairReason: reason } : {}),
+    },
     timestamp: Date.now(),
   };
 }

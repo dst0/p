@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Probe Core AI runtime artifacts for Apple Neural Engine loadability during installation, building immutable unique candidate generations and atomically promoting current pointers on probe success while deliberately retaining old generations."
+}

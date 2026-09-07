@@ -1,0 +1,22 @@
+# 2026-08-30 — Missing requirements need explicit addition repair
+
+- **Status:** Partial
+- **Task/context:** Restore completion liveness after deferred requirement definition let implementation finish but a live small-task audit could not close its final missing source clause.
+- **Unexpected observation or failure:** The model reduced five deterministic definition diagnostics to one, then repeatedly replaced requirement 1 of 12 with the missing requirement because `repair_definition` had no append operation. Each replacement dropped the original requirement's provenance, so the monotonic guard correctly retained the old draft and three unproductive attempts forced another full definition.
+- **Evidence:** In an isolated live AI-unit, implementation reached its first mutation in about 159 seconds and its manifest-backed test evidence passed. The later definition took about 108 seconds; subsequent one-item repairs reduced the diagnostic count from 5 to 4 to 2 to 1 before the missing append primitive caused three safely rejected lateral replacements.
+- **Approaches tried:**
+  - **Attempt:** Reuse an indexed replacement to express a newly missing atomic requirement.
+    - **Outcome:** Did not work
+    - **Why:** Replacing a valid indexed item cannot append a distinct obligation; it trades one missing requirement for another and correctly fails monotonic adoption.
+  - **Attempt:** Permit an array of additions with `maxItems: 1`.
+    - **Outcome:** Rejected
+    - **Why:** A singular field makes the one-item contract structural, removes an unnecessary collection layer, and makes combination counting explicit.
+  - **Attempt:** Add one singular `requirement_addition`, count it together with every other repair delta, and report each missing clause or prompt separately.
+    - **Outcome:** Partial
+    - **Why:** Focused regressions and type checking pass; the installed live AI-unit rerun is still pending.
+- **Root cause:** The repair protocol exposed correction, split, removal, and classification primitives but no way to append one distinct requirement while preserving the complete retained draft.
+- **Resolution:** `repair_definition` now accepts one singular `requirement_addition` and rejects any call containing it plus another delta. The controller appends it without changing prior order or provenance, emits missing clauses and prompts as separate diagnostics, and never replaces an active rejected batch through a broad `define` action.
+- **Verification:** Focused regressions cover schema/runtime combination rejection, preserved append order, per-source diagnostics, the 96-requirement ceiling, lineage-cap recovery, and final-diagnostic atomic overflow. The complete requirement-definition family is being rerun after replacing the former full-definition recovery path. Live installed-agent closure remains pending.
+- **Prevention/follow-up:** Rerun the isolated live AI-unit and require a successful additive repair plus `finish_work` before binding the next benchmark candidate or spending time on task 3 or 4.
+- **Reusable learning:** A bounded repair protocol needs a primitive for every valid one-item state transition; never make a model simulate append by destructively replacing an unrelated retained item.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/test/task-requirement-definition-addition-repair.test.ts`, `packages/coding-agent/docs/usage.md`

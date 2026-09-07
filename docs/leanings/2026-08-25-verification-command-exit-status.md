@@ -1,0 +1,22 @@
+# 2026-08-25 — Verification commands must preserve their exit status
+
+- **Status:** Resolved
+- **Task/context:** Run a live AI-unit canary for verification-failure supersession.
+- **Unexpected observation or failure:** The agent appended `2>&1; echo "EXIT_CODE=$?"` to commands that were required verbatim, making the shell tool report success after the intended command failed.
+- **Evidence:** The tool result contained `EXIT_CODE=1` and a module-not-found error while its authoritative `isError` field was false because the trailing `echo` exited successfully.
+- **Approaches tried:**
+  - **Attempt:** Rely on the existing instruction to treat exit codes as authoritative.
+    - **Outcome:** Did not work
+    - **Why:** It did not explicitly prohibit a trailing success command from replacing the verifier's status.
+  - **Attempt:** Infer failure from arbitrary output text.
+    - **Outcome:** Rejected
+    - **Why:** Output is runner-specific and can be truncated or contain expected failure text in a successful test.
+  - **Attempt:** Require direct verification commands without a trailing status-masking command.
+    - **Outcome:** Worked
+    - **Why:** The shell tool retains the verifier process's real exit status.
+- **Root cause:** The model optimized for visible exit-code output but changed the shell command's authoritative final status.
+- **Resolution:** The compact system prompt now explicitly forbids appending `; echo $?` or another trailing success command to verification commands.
+- **Verification:** `test/system-prompt.test.ts` asserts the invariant while preserving the full prompt budget. In the rerun, the model issued all three required command arguments without suffixes, and the shell tool reported the two intended failures as `isError: true`.
+- **Prevention/follow-up:** Verification harnesses should assert both the exact command descriptor and tool-level error status when a failed command is part of the scenario.
+- **Reusable learning:** Never observe a verifier's exit code by appending a successful shell segment; run the verifier directly.
+- **References:** `packages/coding-agent/src/core/system-prompt.ts`, `packages/coding-agent/test/system-prompt.test.ts`

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Load packaged metadata beside standalone Bun executables and verify it before uploading release archives."
+}

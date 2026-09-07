@@ -7,10 +7,17 @@
  */
 
 import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
-import type { AssistantMessage, ImageContent } from "@dst0/p-ai";
+import type { ImageContent } from "@dst0/p-ai";
 import type { AgentSessionRuntime } from "../core/agent-session-runtime.ts";
 import { flushRawStdout, writeRawStdout } from "../core/output-guard.ts";
+import { getTaskVerificationCompletionPayload } from "../core/task-verification/verified-completion.ts";
 import { killTrackedDetachedChildren } from "../utils/shell.ts";
+import { projectJsonEvent } from "./json-event-projection.ts";
+import {
+  assistantMessagesText,
+  getFinalResponseAssistantMessages,
+  getRepairedFinalResponse,
+} from "./print-mode-final-response.ts";
 
 /**
  * Options for print mode.
@@ -36,31 +43,56 @@ export function getTextModeFinalOutput(messages: readonly AgentMessage[]): TextM
   const finishPayload = getFinishWorkPayload(messages);
   if (finishPayload) {
     return {
-      text: finishPayload.summary,
+      text:
+        finishPayload.status === "success"
+          ? (getRepairedFinalResponse(messages) ?? finishPayload.summary)
+          : finishPayload.summary,
       exitCode: finishPayload.status === "failed" ? 1 : 0,
     };
   }
+  const verifiedCompletion = getTaskVerificationCompletionPayload(messages);
+  if (verifiedCompletion) {
+    return { text: verifiedCompletion.summary, exitCode: 0 };
+  }
 
-  const lastMessage = messages[messages.length - 1];
-  if (lastMessage?.role !== "assistant") {
+  const assistantMessages = getFinalResponseAssistantMessages(messages);
+  const lastAssistantMessage = assistantMessages[assistantMessages.length - 1];
+  if (!lastAssistantMessage) {
     return { exitCode: 0 };
   }
 
-  const assistantMsg = lastMessage as AssistantMessage;
-  if (assistantMsg.stopReason === "error" || assistantMsg.stopReason === "aborted") {
+  const isTerminalError = lastAssistantMessage.stopReason === "error" || lastAssistantMessage.stopReason === "aborted";
+  const error = isTerminalError
+    ? lastAssistantMessage.errorMessage || `Request ${lastAssistantMessage.stopReason}`
+    : undefined;
+  const text = assistantMessages
+    .map((message, index) => {
+      const messageText = assistantMessagesText([message]);
+      const isTerminalDiagnostic = index === assistantMessages.length - 1 && error === messageText;
+      return isTerminalDiagnostic ? "" : messageText;
+    })
+    .join("");
+
+  if (error) {
     return {
-      error: assistantMsg.errorMessage || `Request ${assistantMsg.stopReason}`,
+      ...(text ? { text } : {}),
+      error,
       exitCode: 1,
     };
   }
 
   return {
-    text: assistantMsg.content
-      .filter((content) => content.type === "text")
-      .map((content) => content.text)
-      .join(""),
+    text,
     exitCode: 0,
   };
+}
+
+function getSessionStateTextModeFinalOutput(messages: readonly AgentMessage[]): TextModeFinalOutput {
+  if (getFinishWorkPayload(messages)) {
+    return getTextModeFinalOutput(messages);
+  }
+  const lastMessage = messages[messages.length - 1];
+  return getTextModeFinalOutput(lastMessage ? [lastMessage] : []);
 }
 
 /**
@@ -72,6 +104,7 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
   let exitCode = 0;
   let session = runtimeHost.session;
   let unsubscribe: (() => void) | undefined;
+  let latestAgentEndMessages: readonly AgentMessage[] | undefined;
   let disposed = false;
   const signalCleanupHandlers: Array<() => void> = [];
 
@@ -140,8 +173,11 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
 
     unsubscribe?.();
     unsubscribe = session.subscribe((event) => {
+      if (event.type === "agent_end" && !event.willRetry) {
+        latestAgentEndMessages = event.messages;
+      }
       if (mode === "json") {
-        writeRawStdout(`${JSON.stringify(event)}\n`);
+        writeRawStdout(`${JSON.stringify(projectJsonEvent(event))}\n`);
       }
     });
   };
@@ -157,20 +193,25 @@ export async function runPrintMode(runtimeHost: AgentSessionRuntime, options: Pr
     await rebindSession();
 
     if (initialMessage) {
+      latestAgentEndMessages = undefined;
       await session.prompt(initialMessage, { images: initialImages });
     }
 
     for (const message of messages) {
+      latestAgentEndMessages = undefined;
       await session.prompt(message);
     }
 
+    const finalOutput = latestAgentEndMessages
+      ? getTextModeFinalOutput(latestAgentEndMessages)
+      : getSessionStateTextModeFinalOutput(session.state.messages);
+    exitCode = finalOutput.exitCode;
     if (mode === "text") {
-      const finalOutput = getTextModeFinalOutput(session.state.messages);
-      exitCode = finalOutput.exitCode;
+      if (finalOutput.text) {
+        writeRawStdout(`${finalOutput.text}\n`);
+      }
       if (finalOutput.error) {
         console.error(finalOutput.error);
-      } else if (finalOutput.text) {
-        writeRawStdout(`${finalOutput.text}\n`);
       }
     }
 

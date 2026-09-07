@@ -11,6 +11,7 @@ import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -58,10 +59,12 @@ function createLargeInstructions(label: string): string {
 }
 
 function createCompiler(): ProjectInstructionCompiler {
-  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) => ({
-    body: `Use read_rules for ${request.modules[0].link} and every other matching catalog route.`,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `Work on ${module.title}`])),
-  }));
+  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `Work on ${module.title}`])),
+    ),
+  );
 }
 
 afterEach(() => {
@@ -80,7 +83,10 @@ describe("session project instruction integration", () => {
       projectInstructionCompiler: compiler,
     });
     try {
-      expect(session.getActiveToolNames()).toEqual(expect.arrayContaining(["read_rules", "read_skills"]));
+      expect(session.getActiveToolNames()).toEqual(
+        expect.arrayContaining(["list_skills", "read_rules", "read_skills"]),
+      );
+      expect(session.systemPrompt).toContain("list_skills");
       expect(session.systemPrompt).toContain("read_rules");
       expect(session.systemPrompt).toContain("read_skills");
       expect(session.systemPrompt).not.toContain("SENTINEL_UNINJECTED_TAIL_first");
@@ -92,7 +98,9 @@ describe("session project instruction integration", () => {
       workspace.updateInstructions("second");
       await session.reload();
       expect(compiler).toHaveBeenCalledTimes(2);
-      expect(session.systemPrompt).toContain("second-rule-0");
+      expect(session._createRuntimeContextPrompts("change second rule 0", session.systemPrompt).rulesPrompt).toContain(
+        "second-rule-0",
+      );
       expect(session.systemPrompt).not.toContain("SENTINEL_UNINJECTED_TAIL_second");
     } finally {
       session.dispose();
@@ -111,6 +119,7 @@ describe("session project instruction integration", () => {
     });
     try {
       expect(session.getActiveToolNames()).toEqual(["read"]);
+      expect(session.getToolDefinition("list_skills")).toBeUndefined();
       expect(session.getToolDefinition("read_rules")).toBeUndefined();
       expect(session.getToolDefinition("read_skills")).toBeUndefined();
       const fallbackPath = getProjectInstructionFallbackPath(
@@ -160,7 +169,9 @@ describe("session project instruction integration", () => {
 
   it("refreshes the injected skill catalog after extension resource discovery", async () => {
     const workspace = createWorkspace();
-    workspace.replaceInstructions(`# Extension rules\n\n${"Preserve extension resource discovery. ".repeat(300)}\n`);
+    workspace.replaceInstructions(
+      `# Extension rules\n\n${Array.from({ length: 300 }, () => "Preserve extension resource discovery.").join("\n")}\n`,
+    );
     const baseDir = join(workspace.root, "extension-skill");
     const filePath = join(baseDir, "SKILL.md");
     mkdirSync(baseDir);
@@ -218,7 +229,7 @@ describe("session project instruction integration", () => {
       const current = readCurrentPointer(workspace.root);
       expect(current.inputHash).not.toBe(initialInputHash);
       expect(session.systemPrompt).not.toBe(initialPrompt);
-      expect(session.systemPrompt).toContain("Extension-only guidance");
+      expect(session.systemPrompt).not.toContain("Extension-only guidance");
       expect(compiler).toHaveBeenCalledOnce();
       const catalog = readFileSync(
         join(

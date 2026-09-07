@@ -1,6 +1,6 @@
 export { AgentSession } from "./agentsession.ts";
 export { TOOL_SEARCH_TOOL_NAME } from "./constants.ts";
-export { isInternalCompletionProtocolRepairMessage, parseSkillBlock } from "./message-utils.ts";
+export { isInternalAgentMessage, parseSkillBlock } from "./message-utils.ts";
 export type {
   AgentSessionConfig,
   AgentSessionEvent,

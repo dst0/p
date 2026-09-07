@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep local package-store and nested raw benchmark evidence out of release commits while allowing reviewed reports and metrics."
+}

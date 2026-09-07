@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Accept equivalent word and digit decimals in requirement checks without inventing a separate zero constraint or losing subsequent real constraints."
+}

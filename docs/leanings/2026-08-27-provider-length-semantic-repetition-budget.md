@@ -1,0 +1,22 @@
+# 2026-08-27 — Separate provider capacity from semantic repetition
+
+- **Status:** Resolved
+- **Task/context:** Provider-length continuation in `packages/agent` had been made independent of a fixed segment ceiling so long responses could finish.
+- **Unexpected observation or failure:** The full agent suite showed that repetitive streamed text no longer emitted a completion-protocol repair, while repeated reasoning exhausted the scripted provider responses instead of stopping at the configured malformed-output budget.
+- **Evidence:** The focused repetitive-text regression received zero `malformed_tool_call_retry` events instead of one. With `maxMalformedToolRetries: 2`, three repetitive reasoning responses requested an unscripted fourth response and timed out. Six clean text segments and six clean partial-tool segments still needed to continue successfully.
+- **Approaches tried:**
+  - **Attempt:** Treat every `stopReason: "length"` response as completion-protocol no-progress.
+    - **Outcome:** Did not work.
+    - **Why:** It recreates a hidden output-segment ceiling and interrupts valid long text or valid truncated tool-call re-emission.
+  - **Attempt:** Exempt every length-finished response from completion-protocol accounting.
+    - **Outcome:** Did not work.
+    - **Why:** It also exempts an independent provider diagnostic that the model is repeating text, reasoning, or tool arguments, allowing a genuinely stuck model to continue indefinitely.
+  - **Attempt:** Classify all three repetition diagnostics as `repetitive_model_output`, retain the tool-specific repair prompt for argument repetition, and charge only that semantic reason to existing repair budgets.
+    - **Outcome:** Worked.
+    - **Why:** Provider capacity and model no-progress remain distinct even though both responses end with `length`.
+- **Root cause:** Continuation handling used `stopReason` as the accounting boundary. Removing the generic length ceiling also removed the separate semantic repair accounting because both paths shared the same early continuation branch.
+- **Resolution:** Semantic repetition is normalized across text, reasoning, and tool-argument channels. Only `repetitive_model_output` increments malformed-tool and no-progress counters; clean capacity-limited segments remain free. Partial tool calls are still never executed, and argument repetition retains a focused re-emission instruction.
+- **Verification:** Focused agent-loop regressions cover repair events and the third-response stop at a retry limit of two. Provider-length liveness tests cover more than three clean text and partial-tool segments in explicit and hybrid modes, plus caller cancellation.
+- **Prevention/follow-up:** Keep transport-capacity signals and semantic failure signals as separate predicates even when providers encode both with `stopReason: "length"`. A future whole-run call, time, or cost budget may bound pathological providers without introducing another hidden segment ceiling.
+- **Reusable learning:** Never use a transport finish reason alone as a proxy for semantic progress; account only an independently detected semantic failure.
+- **References:** `packages/agent/src/agent-loop/provider-length-completion-compatibility.ts`, `packages/agent/test/agent-loop.test.ts`, `packages/agent/test/provider-length-continuation-liveness.test.ts`, and `docs/leanings/2026-08-27-provider-length-is-not-logical-failure.md`.

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Let a passing pytest node ID retire the matching failed name-filter attempt without hiding unrelated test failures."
+}

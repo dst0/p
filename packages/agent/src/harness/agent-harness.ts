@@ -452,9 +452,7 @@ export class AgentHarness<
           details: result.details,
           isError,
         });
-        return patch
-          ? { content: patch.content, details: patch.details, isError: patch.isError, terminate: patch.terminate }
-          : undefined;
+        return patch ? { ...patch } : undefined;
       },
       prepareNextTurn: async () => {
         await this.flushPendingSessionWrites();

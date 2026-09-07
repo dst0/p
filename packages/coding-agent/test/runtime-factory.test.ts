@@ -1,3 +1,4 @@
+import { admitModelCall, getModel } from "@dst0/p-ai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const runtimeState = vi.hoisted(() => ({
@@ -6,6 +7,7 @@ const runtimeState = vi.hoisted(() => ({
   hasTrustResources: true,
   runtimeSettings: undefined as unknown,
   services: undefined as unknown,
+  initializeExtension: undefined as (() => void) | undefined,
 }));
 
 const serviceMocks = vi.hoisted(() => ({
@@ -19,6 +21,7 @@ const serviceMocks = vi.hoisted(() => ({
       };
     }) => {
       await options.resourceLoaderReloadOptions?.resolveProjectTrust({ extensionsResult: {} });
+      runtimeState.initializeExtension?.();
       return runtimeState.services;
     },
   ),
@@ -50,6 +53,8 @@ vi.mock("../src/core/trust-manager.ts", () => ({
 vi.mock("../src/main/cli-entry.ts", () => ({ collectSettingsDiagnostics: serviceMocks.collectSettingsDiagnostics }));
 vi.mock("../src/main/runtime-init.ts", () => ({ buildSessionOptions: serviceMocks.buildSessionOptions }));
 
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { createCliRuntimeFactory } from "../src/main/runtime-factory.ts";
 
 function createParsed() {
@@ -87,13 +92,14 @@ function createOptions() {
 }
 
 function createSessionManager(messageCount = 0) {
-  return {
-    buildSessionContext: vi.fn(() => ({ messages: Array.from({ length: messageCount }, () => ({})) })),
-  };
+  const manager = SessionManager.inMemory();
+  for (let i = 0; i < messageCount; i++) manager.appendMessage({ role: "user", content: "Prior task", timestamp: 0 });
+  return manager;
 }
 
 beforeEach(() => {
   vi.clearAllMocks();
+  runtimeState.initializeExtension = undefined;
   runtimeState.hasTrustResources = true;
   runtimeState.runtimeSettings = {
     getEnabledModels: vi.fn(() => ["fallback/model"]),
@@ -115,7 +121,9 @@ beforeEach(() => {
       maxTokens: 100,
       model: { provider: "provider" },
       noTools: false,
+      projectInstructionCompilerModel: "compiler-provider/compiler-model",
       scopedModels: [],
+      taskVerificationMode: "audit",
       thinkingLevel: "high",
       tools: [],
       userInputTools: [],
@@ -129,6 +137,19 @@ beforeEach(() => {
 });
 
 describe("CLI runtime factory", () => {
+  it("accounts for extension initialization before constructing the SDK session", async () => {
+    const manager = createSessionManager();
+    let admitted = false;
+    runtimeState.initializeExtension = () => {
+      const receipt = admitModelCall({ kind: "text", model: getModel("openai", "gpt-4o-mini") });
+      admitted = receipt !== undefined;
+      receipt?.settle(undefined);
+    };
+    const options = { ...createOptions(), defaultRunBudget: { mode: "limited", unit: "requests", limit: 1 } };
+    await createCliRuntimeFactory(options as never)({ cwd: "/project", agentDir: "/agent", sessionManager: manager });
+    expect(admitted).toBe(true);
+    expect(new SessionRunBudget(manager).snapshot()).toMatchObject({ requests: 1, status: "exhausted" });
+  });
   it("resolves uncached project trust and assembles runtime diagnostics", async () => {
     const options = createOptions();
     const factory = createCliRuntimeFactory(options as never);
@@ -144,6 +165,12 @@ describe("CLI runtime factory", () => {
     expect(serviceMocks.createProjectTrustContext).toHaveBeenCalledWith(expect.objectContaining({ hasUI: true }));
     expect(serviceMocks.resolveModelScope).toHaveBeenCalledWith(["provider/model"], expect.anything());
     expect(options.authStorage.setRuntimeApiKey).toHaveBeenCalledWith("provider", "runtime-key");
+    expect(serviceMocks.createAgentSessionFromServices).toHaveBeenCalledWith(
+      expect.objectContaining({
+        projectInstructionCompilerModel: "compiler-provider/compiler-model",
+        taskVerificationMode: "audit",
+      }),
+    );
     expect(
       (runtimeState.created as { session: { setThinkingLevel: ReturnType<typeof vi.fn> } }).session.setThinkingLevel,
     ).toHaveBeenCalledWith("high");

@@ -1,0 +1,22 @@
+# 2026-08-30 — Task-verification fixtures need valid lifecycle state
+
+- **Status:** Resolved
+- **Task/context:** Diagnose full-suite failures after task-verification results began carrying context derived from the final controller state.
+- **Unexpected observation or failure:** Nine repair tests crashed while reading baseline or mutation state, and a focused-proof test received task-declaration guidance instead of selector guidance.
+- **Evidence:** The crashing tests cast partial object literals through `unknown` with only `requirementAudit.status`; the selector test manually set `mutationRevision: 1` and `status: verifying` while leaving `taskKind` unset. A real controller always has canonical state, and mutation after an undeclared task is intentionally fail-closed.
+- **Approaches tried:**
+  - **Attempt:** Add optional production fallbacks when controller state is absent.
+    - **Outcome:** Rejected
+    - **Why:** It would hide corrupt runtime state and weaken the exact post-transition context contract.
+  - **Attempt:** Add the currently missing fields independently to each partial test double.
+    - **Outcome:** Rejected
+    - **Why:** Repeated structural casts would drift again when the canonical state gains another required field.
+  - **Attempt:** Build all direct audit-tool doubles from `emptyState()` through one shared helper and establish the selector fixture through a real pre-mutation `declare_task` transition.
+    - **Outcome:** Worked
+    - **Why:** Fixtures now satisfy the same state shape and lifecycle ordering as production without weakening production invariants.
+- **Root cause:** Handcrafted test doubles modeled only the method under test, not the controller state contract consumed by outer result wrappers. One integration fixture also represented an impossible restored state.
+- **Resolution:** Added one canonical requirement-audit tool controller double with live `state`, `currentState`, deterministic next-action formatting, and injected audit behavior. Replaced the partial repair doubles and declared the focused-selector task before advancing its mutation revision.
+- **Verification:** The exact failed set plus task-kind regressions passes 155 tests across eight files. The repository-wide rerun also passes: coding-agent 3,510 tests with 49 skipped, plus every other package and script suite.
+- **Prevention/follow-up:** New direct tool tests must use the canonical double or a real harness controller. Do not bypass lifecycle transitions by manually combining mutation state with missing declarations.
+- **Reusable learning:** A stateful controller double must preserve both data shape and transition order; type casts that erase either make tests brittle and can encourage unsafe production fallbacks.
+- **References:** `packages/coding-agent/test/task-requirement-audit-tool-controller-double.ts`, `packages/coding-agent/test/task-requirement-audit-focused-selector-contract.test.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`

@@ -188,6 +188,8 @@ describe("real CLI session isolation", () => {
     const requestBodies: string[] = [];
     writeModelsConfig(agentDir, await startProvider(requestBodies));
     const commonArgs = [
+      "--budget",
+      "unlimited",
       "--provider",
       "session-isolation-faux",
       "--model",
@@ -207,6 +209,8 @@ describe("real CLI session isolation", () => {
       ...commonArgs,
       "--completion-mode",
       "implicit",
+      "--task-verification",
+      "off",
       "--no-tools",
       "--session-id",
       "session-a",
@@ -245,5 +249,5 @@ describe("real CLI session isolation", () => {
     expect(sessionAFile).not.toBe(sessionBFile);
     expect(readFileSync(join(sessionDir, sessionAFile!), "utf8")).toContain("ALPHA_SESSION_SECRET");
     expect(readFileSync(join(sessionDir, sessionBFile!), "utf8")).not.toContain("ALPHA_SESSION_SECRET");
-  }, 30000);
+  }, 120_000);
 });

@@ -1,0 +1,22 @@
+# 2026-09-04 — One unfinished Qdrant generation can block all startup
+
+- **Status:** Partial
+- **Task/context:** Supervised Qdrant-only recovery after quarantining 18 old unreferenced collections and retiring a legacy metadata blocker.
+- **Unexpected observation or failure:** Qdrant 1.18.3 recovered 23 retained collections, then exited 101 while loading the remaining unfinished generation. The decisive error was `Failed to deserialize Vec<ecow::EcoString>` with an integer where a sequence was expected. It was not simply a long backend startup or an embedding-model wait.
+- **Evidence:** The identity-bound native child started at 2026-09-04T12:43:41Z and exited after approximately 544 seconds. Its startup log identifies the failing generation and local shard. No manifest or rebuild checkpoint referenced that generation; its older current predecessor was still referenced and had recovered successfully. The failed generation was less than 24 hours old and was deliberately retained by the ordinary GC audit.
+- **Approaches tried:**
+  - **Attempt:** Reduce startup work by isolating only obsolete generations and wait for native recovery.
+    - **Outcome:** Partial.
+    - **Why:** This exposed the specific deserialization failure after the other collections loaded, but could not make the remaining generation loadable.
+  - **Attempt:** Delete the fresh generation or reduce the automatic GC grace period.
+    - **Outcome:** Rejected.
+    - **Why:** A recent unfinished generation can contain valuable work. Incident recovery must not silently weaken normal retention or destroy diagnostic data.
+  - **Attempt:** Re-prove stopped writers and unchanged references, then move the exact failing collection intact to a separate incident quarantine outside Qdrant-managed paths.
+    - **Outcome:** Worked; the subsequent native probe became ready and returned real search hits.
+    - **Why:** The current predecessor remains referenced, all 22 current manifests remain unchanged, and the failing generation remains recoverable for inspection.
+- **Root cause:** The immediate startup blocker is a generation-bound payload-index deserialization failure. The underlying reason for those bytes is unproven; external ExFAT is a separate observed storage risk, not established causation.
+- **Resolution:** Preserved the failing unfinished generation separately without deletion and started a new identity-bound Qdrant-only probe over the remaining 23 collections. No index rebuild, daemon restart, or automatic GC deletion was used to hide the failure.
+- **Verification:** The first probe's exit code, failing shard, and prior collection recovery messages are direct evidence. The second probe became ready in 542,329 ms with 23 loaded collections; all 22 currently referenced collections were green with healthy optimizers and 451,252 total points. The current P collection contained 105,326 points. Three authenticated sparse queries, using its actual persisted BM25 vocabulary, each returned five hits. The owned Qdrant child then shut down with exit 0. This proves backend recovery and sparse retrieval, not installed daemon or embedding/hybrid health.
+- **Prevention/follow-up:** Surface owned backend startup logs and collection identity during recovery; keep startup health, collection readability, GC, sparse retrieval, hybrid retrieval, and daemon indexing as separate gates. Preserve a failing generation until a verified recovery/archive decision exists.
+- **Reusable learning:** A timeout can conceal a later collection-specific startup panic. Follow the newest native process log through recovery and fix the identified state problem without changing general deletion policy.
+- **References:** `docs/leanings/2026-09-04-retired-manifest-blocks-qdrant-gc.md`, `docs/leanings/2026-09-04-qdrant-startup-on-external-exfat-storage.md`, `packages/code-index/src/embed/qdrant-server.ts`.

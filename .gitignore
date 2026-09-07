@@ -24,6 +24,7 @@ packages/*/dist-firefox/
 
 # Package specific
 .npm/
+.pnpm-store/
 coverage/
 .nyc_output/
 .p_config/
@@ -51,9 +52,9 @@ p-session-*.html
 __pycache__/
 *.pyc
 
-# Benchmark artifacts (keep results.json, exclude large recordings/workspaces)
-benchmarks/results/*/recordings/
-benchmarks/results/*/workspaces/
+# Benchmark artifacts (keep reviewed reports/results, exclude nested raw evidence)
+benchmarks/results/**/recordings/
+benchmarks/results/**/workspaces/
 benchmarks/results/2026-08-05*
 
 # Agent metadata

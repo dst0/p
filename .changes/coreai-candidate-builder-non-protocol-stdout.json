@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Derive Core AI candidate directory locally within managed root and UUID child boundaries rather than parsing builder child stdout, tolerating non-protocol dependency chatter while failing closed on symlinked or invalid paths, preserving nonzero exit diagnostics, and relying on candidate worker probes for build correctness."
+}

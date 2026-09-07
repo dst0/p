@@ -66,7 +66,8 @@ export function do_loadModels(self: ModelRegistry): void {
     }
   }
 
-  self.models = combined;
+  self.configuredModels = combined;
+  self.models = [...combined];
 }
 
 export function do_loadBuiltInModels(

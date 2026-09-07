@@ -1,0 +1,31 @@
+# 2026-09-02 — Bounded ledgers must recompute from authority
+
+- **Status:** Partial
+- **Task/context:** Harden bounded critical-proof discovery while keeping at most four active proof obligations.
+- **Unexpected observation or failure:** Selecting five authoritative sources set overflow and retained four obligations, but de-authorizing one retained source cleared overflow with only three obligations; the still-selected fifth source remained silently absent. A second cap silently discarded every ninth referenced document before classification. The first recovery draft then cleared nine-source overflow from prompt wording alone before structured de-authorization was accepted.
+- **Evidence:** The inverse overflow regression expected `SPEC-2.md` through `SPEC-5.md` after de-authorizing `SPEC-1.md`, but the old transition returned only `SPEC-2.md` through `SPEC-4.md`. A nine-source prompt returned only eight candidates and could not distinguish a complete catalog from truncation. Adversarial review showed that a narrowing sentence alone changed the active catalog even when the checklist transition was rejected.
+- **Approaches tried:**
+  - **Attempt:** Filter the already bounded obligation array during narrowing.
+    - **Outcome:** Did not work
+    - **Why:** The fifth obligation had already been truncated and could not be recovered from the bounded projection.
+  - **Attempt:** Recompute from durable source selections.
+    - **Outcome:** Worked
+    - **Why:** The selection catalog retains source authority independently from the bounded obligation view.
+  - **Attempt:** Stop collecting candidates after eight without recording overflow.
+    - **Outcome:** Did not work
+    - **Why:** The bounded list became indistinguishable from a complete list, so later requirements could vanish.
+  - **Attempt:** Return eight candidates plus a separate overflow signal.
+    - **Outcome:** Worked in focused verification
+    - **Why:** Persisted ledgers stay bounded while mutation and checklist preparation fail closed and ask for a narrower source set.
+  - **Attempt:** Remove prompt-deauthorized candidates immediately during prompt capture.
+    - **Outcome:** Did not work
+    - **Why:** Prompt text made the recovery call eligible but did not prove that the bounded structured transition had been accepted and persisted.
+  - **Attempt:** Subtract only persisted accepted `deauthorized_source_paths` and keep a ninth overflow sentinel for legacy callers.
+    - **Outcome:** Worked in focused verification
+    - **Why:** Mutation remains blocked until the exact latest-prompt transition succeeds, while bounded consumers never mistake truncation for completeness.
+- **Root cause:** Bounded derived ledgers and catalogs were incorrectly treated as complete authoritative source sets, and proposed prompt intent was conflated with an accepted durable state transition.
+- **Resolution:** Recompute obligations transactionally from durable active selections, including frozen source-output metadata, before applying the four-obligation bound; preserve document-candidate overflow separately from the eight-item catalog; recover only after latest-prompt, bounded structured de-authorization is accepted and persisted.
+- **Verification:** The failing-first overflow/deauthorization regression, nine-source fail-closed regression, prompt-only non-recovery, ten-minus-one overflow, restored-state recovery, and adjacent source lifecycle tests pass; the combined verification-domain run passed 1,353 tests and the bounded full repository suite passed. Reinstall and live verification remain pending.
+- **Prevention/follow-up:** Keep inverse narrowing tests whenever an overflowed projection can later shrink.
+- **Reusable learning:** Never reconstruct dropped state from a bounded projection; recompute from an independently retained authority catalog.
+- **References:** `packages/coding-agent/test/task-verification-critical-proof-overflow-deauthorization-reconciliation.test.ts`

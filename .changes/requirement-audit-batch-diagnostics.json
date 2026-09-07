@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Batch requirement verdict diagnostics and require atomic high-risk cases backed by selector-bound focused evidence through a safe literal-directory test wrapper."
+}

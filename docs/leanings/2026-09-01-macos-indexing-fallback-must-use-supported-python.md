@@ -1,0 +1,22 @@
+# 2026-09-01 — macOS indexing fallback must use supported Python
+
+- **Status:** Resolved
+- **Task/context:** Reinstall P after a project-instruction benchmark validator fix on an Apple Silicon host.
+- **Unexpected observation or failure:** The configured Core AI backend could not load its artifact. Selecting the installer's MPS fallback then attempted to recreate the indexing environment with Python 3.14 and failed because the pinned `coremltools==9.0` distribution was unavailable.
+- **Evidence:** Installer output resolved wheels tagged `cp314` before reporting no matching `coremltools==9.0`. The discovery order placed plain `python3` before versioned interpreters on Apple Silicon, and plain `python3` resolved to 3.14.
+- **Approaches tried:**
+  - **Attempt:** Retry Core AI after stopping Qdrant and freeing stale cache space.
+    - **Outcome:** Did not work
+    - **Why:** Direct worker probes still failed with a host-level Foundation/Core AI runtime error, so resource contention was not the sole cause.
+  - **Attempt:** Use the detected MPS fallback.
+    - **Outcome:** Partial
+    - **Why:** MPS was available, but Python discovery selected an interpreter newer than the pinned macOS dependency supports.
+  - **Attempt:** Constrain macOS indexing discovery to exactly Python 3.12.
+    - **Outcome:** Worked
+    - **Why:** Python 3.12 satisfies `numpy==2.5.1`'s Python 3.12-or-newer requirement, has a `coremltools==9.0` macOS wheel, and provides one stable interpreter contract across ANE, MPS, and CPU fallback paths.
+- **Root cause:** Only Intel macOS and explicit Core AI installation constrained Python to 3.12; Apple Silicon MPS and CPU paths accepted the newest plain `python3` even though all macOS requirements include pinned Core ML tooling.
+- **Resolution:** All macOS indexing backends now require Python 3.12 by default and auto-install `python@3.12` when needed. Discovery consumes the installed Homebrew formula path directly, so installation works even when Homebrew's bin directory was absent from the original `PATH`.
+- **Verification:** Provider-free regressions prove that macOS selects 3.12 over plain 3.14, rejects incompatible fallback candidates, consumes an installed interpreter outside the original `PATH`, and preserves Linux and explicit-minor behavior. The registered parent script suite and live reinstall exercise the selected interpreter.
+- **Prevention/follow-up:** Keep interpreter discovery constrained by the strictest platform dependency, not only by the selected accelerator.
+- **Reusable learning:** Backend fallback is not viable unless its interpreter selection is compatible with every pinned platform requirement.
+- **References:** `scripts/indexing-python-discovery.js`, `scripts/indexing-python-discovery.test.js`, `packages/code-index/requirements.txt`

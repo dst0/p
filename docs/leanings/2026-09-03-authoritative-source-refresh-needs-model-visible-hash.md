@@ -1,0 +1,25 @@
+# 2026-09-03 — Authoritative source refresh needs a model-visible hash
+
+- **Status:** Resolved
+- **Task/context:** Hardening response-only and non-runtime completion after an explicitly selected authoritative file changes during a task.
+- **Unexpected observation or failure:** Selected files without critical runtime domains had no frozen hash. Adding one blocked concurrent changes, but re-recording the same checklist silently adopted new bytes; requiring a reread still allowed partial reads and a read/file race to refresh the hash without the model seeing the bound content.
+- **Evidence:** Regressions reproduced direct file mutation after selection, identical checklist re-record without reread, an offset/limit read, and a file changed between the model-visible read result and controller inspection.
+- **Approaches tried:**
+  - **Attempt:** Revalidate only critical runtime proof obligations.
+    - **Outcome:** Did not work
+    - **Why:** A selected zero-domain or non-runtime source had no obligation carrying its identity.
+  - **Attempt:** Persist a selection hash and recompute it on checklist re-record.
+    - **Outcome:** Did not work
+    - **Why:** Re-recording could adopt raced bytes without updating the model's understanding.
+  - **Attempt:** Refresh the selection hash after any read of the path.
+    - **Outcome:** Did not work
+    - **Why:** Partial output and TOCTOU races meant the hash could describe bytes the model never received.
+  - **Attempt:** Bind refresh to a complete model-visible read whose text hash equals a safe atomic current-file inspection.
+    - **Outcome:** Worked
+    - **Why:** The persisted identity can advance only when the model-visible bytes and current tracked file are the same complete content.
+- **Root cause:** Source selection recorded authorization and prompt epoch but not immutable content identity, and later refresh logic initially trusted live path state rather than the exact read result delivered to the model.
+- **Resolution:** Persist a required SHA-256 on every selected source, validate selection/obligation consistency on restore, revalidate selections before finish, preserve the old hash during checklist re-record, and refresh only after an unbounded single-text read matches the safe current inspection exactly.
+- **Verification:** Focused source lifecycle, state-validation, zero-effect, partial-read, and race regressions pass; the selected-source adversarial review reported GO.
+- **Prevention/follow-up:** Any future source-refresh path must prove full model-visible bytes and current safe path identity before changing durable authority hashes.
+- **Reusable learning:** Never refresh authoritative source identity from the live file alone; bind the new hash to the exact complete bytes the model observed.
+- **References:** `packages/coding-agent/src/core/task-verification/evidence-critical-proof-observation.ts`, `packages/coding-agent/src/core/task-verification/critical-proof-selection-recompute.ts`

@@ -16,6 +16,7 @@ export interface BuiltinSlashCommand {
 }
 
 export const BUILTIN_SLASH_COMMANDS: ReadonlyArray<BuiltinSlashCommand> = [
+  { name: "budget", description: "View or change task spending: Unlimited, requests, tokens, or USD" },
   { name: "settings", description: "Open settings menu" },
   { name: "plan", description: "Plan first, then wait for approval before execution" },
   { name: "model", description: "Select model (opens selector UI)" },

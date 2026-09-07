@@ -1,0 +1,22 @@
+# 2026-08-25 — Focused proof must precede broad test evidence
+
+- **Status:** Resolved
+- **Task/context:** Hardening controller-derived requirement proof during compiled project-instruction AI-unit runs before the task-3 benchmark.
+- **Unexpected observation or failure:** A live agent implemented the source change and ran the whole test file while ignoring the controller's exact focused selector and in-test proof witness.
+- **Evidence:** Candidate 5.0.1-rc.25 reached a broad `node --test validator.test.js` command before satisfying the pending byte-change proof. In candidate 5.0.1-rc.31, two shortened selectors were blocked; the agent then renamed the case to the exact controller selector, emitted a `change_artifact_bytes` witness inside it, passed that focused case, and only afterward ran the full test file.
+- **Approaches tried:**
+  - **Attempt:** Rely on prompt wording that asks for focused proof first.
+    - **Outcome:** Did not work
+    - **Why:** The model treated a familiar broad test command as interchangeable verification.
+  - **Attempt:** Validate evidence only when the final verdict is submitted.
+    - **Outcome:** Partial
+    - **Why:** It rejects weak evidence late, after the agent has already spent turns on the wrong verification order.
+  - **Attempt:** Parse recognized test invocations before execution and require an exact pending selector.
+    - **Outcome:** Worked
+    - **Why:** The same normalized invocation contract now governs both execution permission and later evidence attribution.
+- **Root cause:** Test execution and evidence validation were separate policy surfaces. A generic passing suite could run before a high-risk invariant had focused, same-case proof.
+- **Resolution:** Share one test-command parser across the pre-execution gate and evidence validator. Unwrap common shell, package-manager, environment, timeout, and timing wrappers; reject comment-based selectors; block broad or shortened test commands until the exact controller-generated case runs with its required witness; then permit broader verification.
+- **Verification:** Focused selector-contract regressions and the complete 53-file, 402-test requirement-verification slice pass. The 5.0.1-rc.31 live AI-unit demonstrated blocked shortened selectors, accepted exact proof, subsequent broad testing, one 4/4 verdict batch, and successful finalization.
+- **Prevention/follow-up:** Treat focused proof ordering as an execution invariant, not a prompt preference. Add parser regressions whenever a new supported test wrapper or shell composition is introduced.
+- **Reusable learning:** If a narrow invariant must be proved before general verification, enforce the exact proof command before execution and reuse the same parser when attributing evidence.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-proof-command-gate.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/test-command-invocation.ts`, `packages/coding-agent/test/task-requirement-audit-focused-selector-contract.test.ts`

@@ -1,29 +1,30 @@
 import { join } from "node:path";
-import {
-  Agent,
-  type AgentMessage,
-  type CompletionMode,
-  type CompletionProtocolLimits,
-  type ThinkingLevel,
-} from "@dst0/p-agent-core";
-import { clampThinkingLevel, type Message, type Model, streamSimple } from "@dst0/p-ai";
+import { Agent, type ThinkingLevel } from "@dst0/p-agent-core";
+import { clampThinkingLevel, type Model, streamSimple } from "@dst0/p-ai";
 import { getAgentDir } from "../config.ts";
 import { resolvePath } from "../utils/paths.ts";
-import { AgentSession, TOOL_SEARCH_TOOL_NAME } from "./agent-session.ts";
+import { AgentSession } from "./agent-session.ts";
+import type { AgentSessionPolicyOptions } from "./agent-session-policy-options.ts";
 import { formatNoModelsAvailableMessage } from "./auth-guidance.ts";
 import { AuthStorage } from "./auth-storage.ts";
+import { guardProviderPayloadBudget } from "./compaction/index.ts";
 import { DEFAULT_THINKING_LEVEL } from "./defaults.ts";
 import type { ExtensionRunner, LoadExtensionsResult, SessionStartEvent, ToolDefinition } from "./extensions/index.ts";
-import { convertToLlm } from "./messages.ts";
 import { ModelRegistry } from "./model-registry.ts";
 import { findInitialModel } from "./model-resolver.ts";
+import { resolveSessionProjectInstructionCompilerModel } from "./project-instructions/compiler-model.ts";
 import { createSessionProjectInstructionController } from "./project-instructions/session-controller.ts";
-import type { ProjectInstructionCompiler } from "./project-instructions/types.ts";
+import type { ProjectInstructionCompiler, ProjectInstructionDeliveryMode } from "./project-instructions/types.ts";
 import { mergeProviderAttributionHeaders } from "./provider-attribution.ts";
 import type { ResourceLoader } from "./resource-loader.ts";
 import { DefaultResourceLoader } from "./resource-loader.ts";
+import { SessionRunBudget } from "./run-budget/session-run-budget.ts";
+import type { RunBudgetPolicy } from "./run-budget-policy.ts";
+import { convertSdkMessages } from "./sdk-message-conversion.ts";
+import { prepareSdkSessionPolicy } from "./sdk-session-policy.ts";
 import { getDefaultSessionDir, SessionManager } from "./session-manager.ts";
 import { SettingsManager } from "./settings-manager.ts";
+import { installTaskVerificationRuntime } from "./task-verification-session-runtime.ts";
 import { time } from "./timings.ts";
 import {
   createAskUserTool,
@@ -42,22 +43,23 @@ import {
   createWriteTool,
   withFileMutationQueue,
 } from "./tools/index.ts";
-
-export interface CreateAgentSessionOptions {
+export interface CreateAgentSessionOptions extends AgentSessionPolicyOptions {
+  /** Explicit current-task budget override, preserving recorded spend. */
+  runBudget?: RunBudgetPolicy;
+  /** New-task default only; a resumed task retains its saved policy. */
+  defaultRunBudget?: RunBudgetPolicy;
   cwd?: string;
   agentDir?: string;
   /** Auth storage for credentials. Default: AuthStorage.create(agentDir/auth.json) */
   authStorage?: AuthStorage;
   /** Model registry. Default: ModelRegistry.create(authStorage, agentDir/models.json) */
   modelRegistry?: ModelRegistry;
-
   /** Model to use. Default: from settings, else first available */
   model?: Model<any>;
   /** Thinking level. Default: from settings, else 'medium' (clamped to model capabilities) */
   thinkingLevel?: ThinkingLevel;
   /** Models available for cycling (Ctrl+P in interactive mode) */
   scopedModels?: Array<{ model: Model<any>; thinkingLevel?: ThinkingLevel }>;
-
   /**
    * Optional default tool suppression mode when no explicit allowlist is provided.
    *
@@ -93,34 +95,28 @@ export interface CreateAgentSessionOptions {
    * but their schemas are not sent to the first provider request. Defaults to false.
    */
   includeAllExtensionTools?: boolean;
-
   /** Resource loader. When omitted, DefaultResourceLoader is used. */
   resourceLoader?: ResourceLoader;
-  /** Override the hash-miss project-instruction compiler. */
   projectInstructionCompiler?: ProjectInstructionCompiler;
-
+  projectInstructionCompilerIdentity?: string;
+  projectInstructionCompilerModel?: string;
+  projectInstructionMode?: ProjectInstructionDeliveryMode;
   /** Session manager. Default: SessionManager.create(cwd) */
   sessionManager?: SessionManager;
-
   /** Settings manager. Default: SettingsManager.create(cwd, agentDir) */
   settingsManager?: SettingsManager;
   /** Session start event metadata for extension runtime startup. */
   sessionStartEvent?: SessionStartEvent;
-  /** Completion protocol. Defaults to settings, then explicit_finish. */
-  completionMode?: CompletionMode;
-  /** Safety limits for explicit and hybrid completion modes. */
-  completionLimits?: CompletionProtocolLimits;
   /** Default provider output token limit for each model request. */
   maxTokens?: number;
 }
-
 export interface CreateAgentSessionResult {
   session: AgentSession;
   extensionsResult: LoadExtensionsResult;
   modelFallbackMessage?: string;
 }
-
 export type { InteractionMode } from "./agent-session.ts";
+export type { AgentSessionPolicyOptions } from "./agent-session-policy-options.ts";
 export * from "./agent-session-runtime.ts";
 export type {
   ExtensionAPI,
@@ -132,11 +128,14 @@ export type {
   ToolDefinition,
 } from "./extensions/index.ts";
 export type { PromptTemplate } from "./prompt-templates.ts";
+export type { RunBudgetSnapshot } from "./run-budget/types.ts";
+export type { RunBudgetPolicy } from "./run-budget-policy.ts";
 export type { Skill } from "./skills.ts";
+export type { TaskVerificationMode } from "./task-verification/mode.ts";
+export type * from "./tool-effects.ts";
 export type { Tool } from "./tools/index.ts";
 export {
   withFileMutationQueue,
-  // Tool factories (for custom cwd)
   createAskUserTool,
   createCodingTools,
   createConfirmUserTool,
@@ -152,7 +151,6 @@ export {
   createSleepTool,
   createSubmitPlanTool,
 };
-
 function getDefaultAgentDir(): string {
   return getAgentDir();
 }
@@ -195,33 +193,43 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
   const cwd = resolvePath(options.cwd ?? options.sessionManager?.getCwd() ?? process.cwd());
   const agentDir = options.agentDir ? resolvePath(options.agentDir) : getDefaultAgentDir();
   let resourceLoader = options.resourceLoader;
-
   const authPath = options.agentDir ? join(agentDir, "auth.json") : undefined;
   const modelsPath = options.agentDir ? join(agentDir, "models.json") : undefined;
   const authStorage = options.authStorage ?? AuthStorage.create(authPath);
   const modelRegistry = options.modelRegistry ?? ModelRegistry.create(authStorage, modelsPath);
-
   const settingsManager = options.settingsManager ?? SettingsManager.create(cwd, agentDir);
   const sessionManager = options.sessionManager ?? SessionManager.create(cwd, getDefaultSessionDir(cwd, agentDir));
-  const configuredCompletionMode = options.completionMode ?? settingsManager.getCompletionMode();
+  const runBudget = new SessionRunBudget(sessionManager, options);
   const completionLimits = options.completionLimits ?? settingsManager.getCompletionLimits();
-
+  const projectInstructionMode = options.projectInstructionMode ?? "compiled";
+  const projectInstructionCompilerModel = resolveSessionProjectInstructionCompilerModel({
+    reference: options.projectInstructionCompilerModel,
+    customCompiler: options.projectInstructionCompiler,
+    mode: projectInstructionMode,
+    modelRegistry,
+    sessionManager,
+  });
   if (!resourceLoader) {
     resourceLoader = new DefaultResourceLoader({ cwd, agentDir, settingsManager });
-    await resourceLoader.reload();
+    await runBudget.run(resourceLoader.reload.bind(resourceLoader));
     time("resourceLoader.reload");
   }
-
+  const extensionsResult = resourceLoader.getExtensions();
+  const sessionPolicy = prepareSdkSessionPolicy({
+    options,
+    projectInstructionMode,
+    extensionsResult,
+    sessionManager,
+    settingsManager,
+  });
   // Check if session has existing data to restore. Do not truncate restored
   // messages here: changing provider-visible history outside a recorded
   // compaction boundary breaks prefix cache reuse for reopened sessions.
   const existingSession = sessionManager.buildSessionContext();
   const hasExistingSession = existingSession.messages.length > 0;
   const hasThinkingEntry = sessionManager.getBranch().some((entry) => entry.type === "thinking_level_change");
-
   let model = options.model;
   let modelFallbackMessage: string | undefined;
-
   // If session has data, try to restore model from it
   if (!model && hasExistingSession && existingSession.model) {
     const restoredModel = modelRegistry.find(existingSession.model.provider, existingSession.model.modelId);
@@ -232,7 +240,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       modelFallbackMessage = `Could not restore model ${existingSession.model.provider}/${existingSession.model.modelId}`;
     }
   }
-
   // If still no model, use findInitialModel (checks settings default, then provider defaults)
   if (!model) {
     const defaultModelString = settingsManager.getDefaultModel();
@@ -280,71 +287,12 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     thinkingLevel = clampThinkingLevel(model, thinkingLevel) as ThinkingLevel;
   }
 
-  const defaultActiveToolNames: string[] = [
-    "read",
-    "bash",
-    "process",
-    "edit",
-    "write",
-    "sleep",
-    "semantic_search",
-    "read_rules",
-    "read_skills",
-    "update_session_state",
-    "session_recall",
-    "keep_context",
-    TOOL_SEARCH_TOOL_NAME,
-  ];
-  if (options.userInputTools) {
-    defaultActiveToolNames.push("ask_user", "confirm_user");
-  }
-  const allowedToolNames = options.tools ?? (options.noTools === "all" ? [] : undefined);
-  const excludedToolNames = options.excludeTools;
-  const excludedToolNameSet = excludedToolNames ? new Set(excludedToolNames) : undefined;
-  const initialActiveToolNames: string[] = (
-    options.tools ? [...options.tools] : options.noTools ? [] : defaultActiveToolNames
-  ).filter((name) => !excludedToolNameSet?.has(name));
-  const explicitlyToolless = (options.tools !== undefined && options.tools.length === 0) || options.noTools === "all";
   const completionMode =
-    options.completionMode === undefined && explicitlyToolless ? "implicit" : configuredCompletionMode;
+    options.completionMode === undefined && sessionPolicy.explicitlyToolless
+      ? "implicit"
+      : sessionPolicy.taskVerification.completionMode;
   const defaultMaxTokens = options.maxTokens;
-
   let agent: Agent;
-
-  // Create convertToLlm wrapper that filters images if blockImages is enabled (defense-in-depth)
-  const convertToLlmWithBlockImages = (messages: AgentMessage[]): Message[] => {
-    const converted = convertToLlm(messages);
-    // Check setting dynamically so mid-session changes take effect
-    if (!settingsManager.getBlockImages()) {
-      return converted;
-    }
-    // Filter out ImageContent from all messages, replacing with text placeholder
-    return converted.map((msg) => {
-      if (msg.role === "user" || msg.role === "toolResult") {
-        const content = msg.content;
-        if (Array.isArray(content)) {
-          const hasImages = content.some((c) => c.type === "image");
-          if (hasImages) {
-            const filteredContent = content
-              .map((c) => (c.type === "image" ? { type: "text" as const, text: "Image reading is disabled." } : c))
-              .filter(
-                (c, i, arr) =>
-                  // Dedupe consecutive "Image reading is disabled." texts
-                  !(
-                    c.type === "text" &&
-                    c.text === "Image reading is disabled." &&
-                    i > 0 &&
-                    arr[i - 1].type === "text" &&
-                    (arr[i - 1] as { type: "text"; text: string }).text === "Image reading is disabled."
-                  ),
-              );
-            return { ...msg, content: filteredContent };
-          }
-        }
-      }
-      return msg;
-    });
-  };
 
   const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
@@ -355,43 +303,50 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
       thinkingLevel,
       tools: [],
     },
-    convertToLlm: convertToLlmWithBlockImages,
-    streamFn: async (model, context, options) => {
-      const auth = await modelRegistry.getApiKeyAndHeaders(model);
-      if (!auth.ok) {
-        throw new Error(auth.error);
-      }
-      const providerRetrySettings = settingsManager.getProviderRetrySettings();
-      const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
-      // SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
-      // Use max int32 to effectively disable the timeout.
-      const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
-      const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
-      const websocketConnectTimeoutMs =
-        options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
-      return streamSimple(model, context, {
-        ...options,
-        apiKey: auth.apiKey,
-        timeoutMs,
-        websocketConnectTimeoutMs,
-        maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
-        maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
-        maxTokens: options?.maxTokens ?? defaultMaxTokens ?? 16384,
-        headers: mergeProviderAttributionHeaders(
-          model,
-          settingsManager,
-          options?.sessionId,
-          auth.headers,
-          options?.headers,
-        ),
-      });
-    },
+    convertToLlm: (messages) => convertSdkMessages(messages, settingsManager),
+    streamFn: async (model, context, options) =>
+      runBudget.run(async () => {
+        const auth = await modelRegistry.getApiKeyAndHeaders(model);
+        if (!auth.ok) {
+          throw new Error(auth.error);
+        }
+        const providerRetrySettings = settingsManager.getProviderRetrySettings();
+        const httpIdleTimeoutMs = settingsManager.getHttpIdleTimeoutMs();
+        // SDKs treat timeout=0 as 0ms (immediate timeout), not "no timeout".
+        // Use max int32 to effectively disable the timeout.
+        const effectiveTimeoutMs = httpIdleTimeoutMs === 0 ? 2147483647 : httpIdleTimeoutMs;
+        const timeoutMs = options?.timeoutMs ?? providerRetrySettings.timeoutMs ?? effectiveTimeoutMs;
+        const websocketConnectTimeoutMs =
+          options?.websocketConnectTimeoutMs ?? settingsManager.getWebSocketConnectTimeoutMs();
+        return streamSimple(model, context, {
+          ...options,
+          apiKey: auth.apiKey,
+          timeoutMs,
+          websocketConnectTimeoutMs,
+          maxRetries: options?.maxRetries ?? providerRetrySettings.maxRetries,
+          maxRetryDelayMs: options?.maxRetryDelayMs ?? providerRetrySettings.maxRetryDelayMs,
+          maxTokens: options?.maxTokens ?? defaultMaxTokens ?? 16384,
+          headers: mergeProviderAttributionHeaders(
+            model,
+            settingsManager,
+            options?.sessionId,
+            auth.headers,
+            options?.headers,
+          ),
+        });
+      }),
     onPayload: async (payload, _model) => {
       const runner = extensionRunnerRef.current;
-      if (!runner?.hasHandlers("before_provider_request")) {
-        return payload;
-      }
-      return runner.emitBeforeProviderRequest(payload);
+      const transformedPayload = runner?.hasHandlers("before_provider_request")
+        ? await runner.emitBeforeProviderRequest(payload)
+        : payload;
+      return guardProviderPayloadBudget(
+        transformedPayload ?? payload,
+        _model,
+        settingsManager.getCompactionSettings(),
+        agent.maxTokens,
+        payload,
+      );
     },
     onResponse: async (response, _model) => {
       const runner = extensionRunnerRef.current;
@@ -417,6 +372,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     transport: settingsManager.getTransport(),
     thinkingBudgets: settingsManager.getThinkingBudgets(),
     maxRetryDelayMs: settingsManager.getProviderRetrySettings().maxRetryDelayMs,
+    maxTokens: defaultMaxTokens ?? 16384,
   });
 
   // Restore messages if session has existing data
@@ -433,35 +389,45 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
 
-  const projectInstructions = await createSessionProjectInstructionController({
-    cwd,
-    resourceLoader,
-    modelRegistry,
-    settingsManager,
-    getModel: () => agent.state.model,
-    compiler: options.projectInstructionCompiler,
-  });
-
-  const session = new AgentSession({
-    agent,
-    sessionManager,
-    settingsManager,
-    cwd,
-    scopedModels: options.scopedModels,
-    resourceLoader,
-    projectInstructions,
-    customTools: options.customTools,
-    includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
-    modelRegistry,
-    initialActiveToolNames,
-    allowedToolNames,
-    excludedToolNames,
-    extensionRunnerRef,
-    sessionStartEvent: options.sessionStartEvent,
-    completionMode,
-  });
-  const extensionsResult = resourceLoader.getExtensions();
-
+  const projectInstructions =
+    projectInstructionMode === "compiled"
+      ? await runBudget.run(() =>
+          createSessionProjectInstructionController({
+            cwd,
+            resourceLoader,
+            modelRegistry,
+            settingsManager,
+            getModel: () => agent.state.model,
+            compilerModel: projectInstructionCompilerModel,
+            compiler: options.projectInstructionCompiler,
+            compilerIdentity: options.projectInstructionCompilerIdentity,
+          }),
+        )
+      : undefined;
+  const session = new AgentSession(
+    {
+      agent,
+      sessionManager,
+      settingsManager,
+      cwd,
+      scopedModels: options.scopedModels,
+      resourceLoader,
+      projectInstructions,
+      projectInstructionMode,
+      customTools: sessionPolicy.taskVerification.customTools,
+      includeAllExtensionTools: options.includeAllExtensionTools ?? options.noTools === "builtin",
+      modelRegistry,
+      initialActiveToolNames: sessionPolicy.initialActiveToolNames,
+      allowedToolNames: sessionPolicy.allowedToolNames,
+      excludedToolNames: sessionPolicy.excludedToolNames,
+      extensionRunnerRef,
+      sessionStartEvent: options.sessionStartEvent,
+      completionMode,
+      taskVerificationMode: sessionPolicy.taskVerification.effectiveMode,
+    },
+    runBudget,
+  );
+  installTaskVerificationRuntime(session, sessionPolicy.taskVerification);
   return {
     session,
     extensionsResult,

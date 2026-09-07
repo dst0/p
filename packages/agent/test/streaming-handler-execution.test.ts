@@ -3,6 +3,7 @@ import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
 import { executePreparedToolCall, finalizeExecutedToolCall } from "../src/agent-loop/streaming-handler.ts";
 import type { PreparedToolCall } from "../src/agent-loop/types.ts";
+import { resolveToolEffect } from "../src/tool-effects.ts";
 import type { AgentContext, AgentLoopConfig, AgentTool, AgentToolCall, AgentToolResult } from "../src/types.ts";
 
 const mockTool: AgentTool = {
@@ -31,7 +32,13 @@ const mockAssistantMessage: AssistantMessage = {
   timestamp: 123,
 };
 const mockToolCall: AgentToolCall = { type: "toolCall", id: "tc_1", name: "mock_tool", arguments: {} };
-const mockPrepared: PreparedToolCall = { kind: "prepared", toolCall: mockToolCall, tool: mockTool, args: {} };
+const mockPrepared: PreparedToolCall = {
+  kind: "prepared",
+  toolCall: mockToolCall,
+  tool: mockTool,
+  args: {},
+  effect: resolveToolEffect(mockTool.effect),
+};
 const textContent = (text: string): TextContent => ({ type: "text", text });
 
 describe("executePreparedToolCall", () => {

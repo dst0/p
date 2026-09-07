@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Freeze explicitly referenced task specifications before mutation and require complete clause-mapped, source-bound verification evidence."
+}

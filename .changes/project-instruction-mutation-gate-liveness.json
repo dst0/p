@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preserve one stable compiled-rule batch across queued turns and restarts, reject stale routes, and reserve a slot for the concrete mutating action."
+}

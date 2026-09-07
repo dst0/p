@@ -318,7 +318,7 @@ Use `--offline` or `P_OFFLINE=1` to disable all startup network operations descr
 
 ## Completion Protocol
 
-p defaults to the Explicit Completion Protocol. The model must call the terminal tool `finish_work` before p considers the task complete. A normal assistant message such as "I will inspect the file" is treated as incomplete work, even if the provider reports `finish_reason: "stop"`.
+p defaults to the Explicit Completion Protocol. The model normally calls the terminal tool `finish_work` before p considers the task complete. A normal assistant message such as "I will inspect the file" is treated as incomplete work, even if the provider reports `finish_reason: "stop"`. In experimental `audit` verification, one newly accepted, sole verdict batch is itself a trusted terminal transition, so p does not request a redundant provider turn merely to repeat the certified result through `finish_work`.
 
 The built-in terminal tool accepts:
 
@@ -338,9 +338,11 @@ finish_work({
 
 Completion modes:
 
-- `explicit_finish` (default): only `finish_work` completes the task. Plain assistant text, malformed tool-call-looking output, and truncated tool calls trigger a corrective continuation until `finish_work` or safety limits stop the run.
+- `explicit_finish` (default): `finish_work`, or a runtime-owned verified terminal transition, completes the task. Plain assistant text, malformed tool-call-looking output, and truncated tool calls trigger a corrective continuation until a trusted completion or safety limits stop the run.
 - `hybrid`: asks for `finish_work`, retries missing completion, then falls back to old implicit completion behavior.
 - `implicit`: old behavior. Assistant text without tool calls may end the run.
+
+Task verification is a separate axis. `--task-verification evidence` (default) freezes one concise model-generated behavioral checklist after discovery and before the first mutation, then maps it to deterministic fresh evidence such as real exit status, requested checks, mutation revision, and changed scope. It does not build an exhaustive clause matrix. Exact common text/data artifacts can use a controller-revalidated path-and-bytes assertion, while source behavior still requires a focused test and bounded critical format boundaries still require their controller-validated same-run witness. Requested docs outputs and investigation-only tasks do not acquire runtime-test debt. `--task-verification audit` enables the experimental semantic requirement protocol for structured specifications; it is not the default for arbitrary prose. `--task-verification off` disables task verification without changing project-instruction delivery. See [Evidence-backed completion](docs/usage.md#evidence-backed-completion).
 
 This is especially useful for local or quantized models that may stop after planning text without actually calling a tool. Example:
 
@@ -753,6 +755,9 @@ p --thinking high "Solve this complex problem"
 
 # Opt out of mandatory finish_work for one run
 p --completion-mode implicit -p "Say exactly: ok"
+
+# Compare the experimental semantic audit with default evidence verification
+p --task-verification audit -p "Implement the structured specification in spec.md"
 ```
 
 ### Environment Variables

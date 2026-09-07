@@ -1,8 +1,11 @@
 import { describe, expect, test, vi } from "vitest";
 import { HTTP_IDLE_TIMEOUT_CHOICES } from "../src/core/http-dispatcher.ts";
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import { SessionManager } from "../src/core/session-manager.ts";
 import { DEFAULT_PROJECT_TRUST_BY_LABEL } from "../src/modes/interactive/components/settings-selector/constants.ts";
 import { createSettingChangeHandler } from "../src/modes/interactive/components/settings-selector/setting-change-handler.ts";
 import type { SettingsCallbacks } from "../src/modes/interactive/components/settings-selector/types.ts";
+import type { SettingsSelectorComponent } from "../src/modes/interactive/components/settings-selector.ts";
 import type { InteractiveMode } from "../src/modes/interactive/interactive-mode/interactivemode.ts";
 import { do_showSettingsSelector } from "../src/modes/interactive/interactive-mode/interactivemode-methods/settings-selector.ts";
 import { initTheme } from "../src/modes/interactive/theme/theme.ts";
@@ -122,9 +125,12 @@ describe("settings selector change handler", () => {
     expect(callbacks.onDefaultProjectTrustChange).not.toHaveBeenCalled();
   });
 
-  test("do_showSettingsSelector wires onEnableIndexingTrayChange to setEnableIndexingTray", () => {
+  test("settings menu wires indexing changes and opens budget configuration through Enter", async () => {
     initTheme("dark");
-    let capturedComponent: { callbacks: SettingsCallbacks } | undefined;
+    let capturedComponent: SettingsSelectorComponent | undefined;
+    const select = vi.fn().mockResolvedValue(undefined);
+    const close = vi.fn();
+    const showError = vi.fn();
     const mockSettingsManager = {
       getShowImages: () => false,
       getImageWidthCells: () => 80,
@@ -159,6 +165,7 @@ describe("settings selector change handler", () => {
     const mockInteractive = {
       settingsManager: mockSettingsManager,
       session: {
+        runBudget: new SessionRunBudget(SessionManager.inMemory()),
         autoCompactionEnabled: true,
         steeringMode: "all",
         followUpMode: "all",
@@ -166,8 +173,11 @@ describe("settings selector change handler", () => {
         getAvailableThinkingLevels: () => ["medium"],
       },
       hideThinkingBlock: false,
-      showSelector: (factory: (done: () => void) => { component: { callbacks: SettingsCallbacks } }) => {
-        const result = factory(() => {});
+      showStatus: vi.fn(),
+      showError,
+      createExtensionUIContext: () => ({ select }),
+      showSelector: (factory: (done: () => void) => { component: SettingsSelectorComponent }) => {
+        const result = factory(close);
         capturedComponent = result.component;
       },
     } as unknown as InteractiveMode;
@@ -176,5 +186,14 @@ describe("settings selector change handler", () => {
     expect(capturedComponent?.callbacks.onEnableIndexingTrayChange).toBeDefined();
     capturedComponent!.callbacks.onEnableIndexingTrayChange!(false);
     expect(mockSettingsManager.setEnableIndexingTray).toHaveBeenCalledWith(false);
+    expect(capturedComponent!.render(100).join("\n")).toContain("Task budget");
+    capturedComponent!.getSettingsList().handleInput("\r");
+    await Promise.resolve();
+    expect(close).toHaveBeenCalledOnce();
+    expect(select).toHaveBeenCalledWith(
+      expect.stringContaining("Choose your task budget"),
+      expect.arrayContaining(["Unlimited — no spending ceiling"]),
+    );
+    expect(showError).not.toHaveBeenCalled();
   });
 });

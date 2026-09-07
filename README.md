@@ -98,6 +98,10 @@ npm run dev --                 # Run p from sources
 For a short same-model comparison between this fork and the upstream agent, see
 [Agent benchmarking](packages/coding-agent/docs/benchmarking.md).
 
+For repository instruction handling, including `compiled`, `legacy`, and `off` modes, bounded `list_skills`/`read_rules`/`read_skills` retrieval, and lifecycle-aware action gating, see [Project instructions](packages/coding-agent/docs/project-instructions.md).
+
+For the independent `evidence`, experimental `audit`, and `off` task-verification modes, see [Evidence-backed completion](packages/coding-agent/docs/usage.md#evidence-backed-completion).
+
 ## Supply-chain hardening
 
 We treat npm dependency changes as reviewed code changes.
@@ -106,8 +110,10 @@ We treat npm dependency changes as reviewed code changes.
 - `.npmrc` sets `save-exact=true` and `min-release-age=2` to avoid same-day dependency releases during npm resolution.
 - `package-lock.json` is the dependency ground truth. Pre-commit blocks accidental lockfile commits unless `P_ALLOW_LOCKFILE_CHANGE=1` is set.
 - `npm run check` verifies pinned direct deps, native TypeScript import compatibility, and the generated coding-agent shrinkwrap.
-- The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive deps for npm users.
-- Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release.
+- The published CLI package includes `packages/coding-agent/npm-shrinkwrap.json`, generated from the root lockfile, to pin transitive dependencies for npm versions that honor dependency-shipped shrinkwraps. npm 12 neither includes this file when packing nor honors it when installing; Bun package installs also do not inherit this guarantee. Exact direct dependencies still apply, but do not imply a pinned transitive tree for those clients.
+- Release smoke tests use `npm run release:local` to build, pack, and create isolated npm and Bun installs outside the repo before tagging a release. Use the same npm toolchain as the publisher in `.github/workflows/build-binaries.yml` (currently `npm@11.16.0`), installed in an isolated tool directory if the host uses npm 12. Pack metadata must identify the exact package/version and canonical archive name, include the explicitly shipped shrinkwrap, and correspond to a regular archive file. Supporting npm's array and keyed JSON formats does not waive artifact-content checks.
+- The publisher includes every public runtime workspace, with internal dependencies published before their consumers. New npm packages also require verified registry availability/access and the correct trusted-publisher binding before their first tag release; repository metadata alone does not configure npm account permissions.
+- Artifact checks use declared ESM entrypoints and actual CLI execution, not require-only resolution. First-run TUI checks inspect and cancel any indexing selector before testing editor shortcuts; smoke validation must not enable indexing as an unintended side effect.
 - Local release installs, documented npm installs, and `p update --self` use `--ignore-scripts` where supported.
 - CI installs with `npm ci --ignore-scripts`, and a scheduled GitHub workflow runs `npm audit --omit=dev` plus `npm audit signatures --omit=dev`.
 - Shrinkwrap generation has an explicit allowlist for dependency lifecycle scripts; new lifecycle-script deps fail checks until reviewed.

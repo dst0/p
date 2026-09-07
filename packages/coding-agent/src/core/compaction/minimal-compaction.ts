@@ -1,5 +1,6 @@
 import type { AgentMessage, StreamFn, ThinkingLevel } from "@dst0/p-agent-core";
 import type { AssistantMessage, Model, ToolResultMessage } from "@dst0/p-ai";
+import { isInternalAgentMessage } from "../messages.ts";
 import type { SessionEntry } from "../session-manager.ts";
 import {
   type CompactionPreparation as BaseCompactionPreparation,
@@ -14,6 +15,7 @@ import {
   selectKeepRecentTokens,
   stubToolResultsForCompactionSummary,
 } from "./compaction.ts";
+import { compactCompletedToolCallArguments } from "./completed-tool-call-compaction.ts";
 import {
   createStructuredSessionState,
   getLatestStructuredSessionState,
@@ -319,22 +321,14 @@ function messageText(message: AgentMessage): string | undefined {
   switch (message.role) {
     case "user":
     case "custom":
+    case "toolResult":
+    case "assistant":
       return typeof message.content === "string"
         ? message.content
         : message.content
             .filter((block) => block.type === "text")
             .map((block) => block.text)
             .join("\n");
-    case "toolResult":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
-    case "assistant":
-      return message.content
-        .filter((block) => block.type === "text")
-        .map((block) => block.text)
-        .join("\n");
     case "bashExecution":
       return `${message.command}\n${message.output}`;
     case "branchSummary":
@@ -407,11 +401,7 @@ function totalTokens(messages: AgentMessage[], systemPromptTokens: number): numb
   return systemPromptTokens + messages.reduce((total, message) => total + estimateTokens(message), 0);
 }
 
-/**
- * Enforce the final prompt target without destroying the beginning of old
- * requests. Oversized kept messages retain both setup and outcome; exact raw
- * content remains retrievable from the persisted session.
- */
+/** Compact history, not pending controller instructions; raw content remains persisted. */
 export function truncateKeptMessages(
   messages: AgentMessage[],
   budget:
@@ -423,11 +413,17 @@ export function truncateKeptMessages(
       },
 ): AgentMessage[] {
   if (messages.length === 0) return messages;
+  messages = compactCompletedToolCallArguments(messages);
   const keepRecentTokens = typeof budget === "number" ? budget : budget.keepRecentTokens;
   const targetContextTokens =
     typeof budget === "number" ? keepRecentTokens * 1.5 : (budget.targetContextTokens ?? keepRecentTokens * 1.5);
   const systemPromptTokens = typeof budget === "number" ? 0 : (budget.systemPromptTokens ?? 0);
-  const originalTexts = messages.map((message) => messageText(message));
+  const lastAssistantIndex = messages
+    .map((message) => message.role === "assistant" && message.stopReason !== "error")
+    .lastIndexOf(true);
+  const originalTexts = messages.map((message, index) =>
+    index > lastAssistantIndex && isInternalAgentMessage(message) ? undefined : messageText(message),
+  );
 
   for (let index = 0; index < messages.length; index++) {
     const message = messages[index];

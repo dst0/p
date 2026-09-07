@@ -119,6 +119,12 @@ jobs:
       - name: Build binaries
         run: ./scripts/build-binaries.sh
 
+      - name: Verify standalone package metadata
+        working-directory: packages/coding-agent
+        run: |
+          bun --version
+          node ../../node_modules/vitest/dist/cli.js --run test/standalone-package-version.test.ts
+
       - name: Extract changelog for this version
         id: changelog
         run: |

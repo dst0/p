@@ -2,6 +2,7 @@ import "./providers/register-builtins.ts";
 
 import { getApiProvider } from "./api-registry.ts";
 import { getEnvApiKey } from "./env-api-keys.ts";
+import { guardedModelStream } from "./guarded-model-stream.ts";
 import { registerSessionResourceCleanup } from "./session-resources.ts";
 import type {
   Api,
@@ -197,10 +198,12 @@ export function stream<TApi extends Api>(
   options?: ProviderStreamOptions,
 ): AssistantMessageEventStream {
   const provider = resolveApiProvider(model.api);
-  return provider.stream(
-    model,
-    normalizeRuntimeContext(context, options?.sessionId),
-    withEnvApiKey(model, options) as StreamOptions,
+  return guardedModelStream(model, options?.signal, () =>
+    provider.stream(
+      model,
+      normalizeRuntimeContext(context, options?.sessionId),
+      withEnvApiKey(model, options) as StreamOptions,
+    ),
   );
 }
 
@@ -219,10 +222,8 @@ export function streamSimple<TApi extends Api>(
   options?: SimpleStreamOptions,
 ): AssistantMessageEventStream {
   const provider = resolveApiProvider(model.api);
-  return provider.streamSimple(
-    model,
-    normalizeRuntimeContext(context, options?.sessionId),
-    withEnvApiKey(model, options),
+  return guardedModelStream(model, options?.signal, () =>
+    provider.streamSimple(model, normalizeRuntimeContext(context, options?.sessionId), withEnvApiKey(model, options)),
   );
 }
 

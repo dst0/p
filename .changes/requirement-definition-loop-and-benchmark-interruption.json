@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Prevent dense requirement definitions from looping on invalid draft coverage, compound atomic facets, dotted paths, acronym plurals, and the former 64-item ceiling."
+}

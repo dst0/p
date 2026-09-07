@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Clarified that the 5,000-character project-instruction budget does not limit the complete system prompt or provider request."
+}

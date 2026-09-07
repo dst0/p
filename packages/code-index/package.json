@@ -42,6 +42,11 @@
     "@vitest/coverage-v8": "4.1.8",
     "vitest": "4.1.8"
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dst0/p.git",
+    "directory": "packages/code-index"
+  },
   "engines": {
     "node": ">=22.19.0"
   }

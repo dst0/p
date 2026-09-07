@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Allow bounded sparse requirement repairs to submit up to 32 replacements, with synchronized model guidance and unchanged lineage and global count limits."
+}

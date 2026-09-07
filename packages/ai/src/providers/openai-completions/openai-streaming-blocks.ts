@@ -12,6 +12,8 @@ export type StreamingBlock = TextContent | ThinkingContent | StreamingToolCallBl
 
 type StreamingToolCallDelta = NonNullable<ChatCompletionChunk.Choice.Delta["tool_calls"]>[number];
 
+const INITIAL_TOOL_ARGUMENT_PARSE_CHECKPOINT_CHARS = 256;
+
 export class OpenAIStreamingBlocks {
   public readonly blocks: StreamingBlock[];
   private readonly output: AssistantMessage;
@@ -20,6 +22,7 @@ export class OpenAIStreamingBlocks {
   private thinkingBlock: ThinkingContent | null = null;
   private readonly toolCallBlocksByIndex = new Map<number, StreamingToolCallBlock>();
   private readonly toolCallBlocksById = new Map<string, StreamingToolCallBlock>();
+  private readonly nextToolArgumentParseLengths = new WeakMap<StreamingToolCallBlock, number>();
 
   constructor(output: AssistantMessage, stream: AssistantMessageEventStream) {
     this.output = output;
@@ -42,7 +45,8 @@ export class OpenAIStreamingBlocks {
       this.stream.push({ type: "thinking_end", contentIndex, content: block.thinking, partial: this.output });
       return;
     }
-    block.arguments = parseStreamingJson(block.partialArgs);
+    this.parseToolCallArguments(block);
+    this.nextToolArgumentParseLengths.delete(block);
     delete block.partialArgs;
     delete block.streamIndex;
     this.stream.push({ type: "toolcall_end", contentIndex, toolCall: block, partial: this.output });
@@ -104,7 +108,34 @@ export class OpenAIStreamingBlocks {
     return block;
   }
 
+  appendToolCallArguments(
+    block: StreamingToolCallBlock,
+    delta: string,
+  ): { previousLength: number; currentArgs: string } {
+    const previousLength = block.partialArgs?.length ?? 0;
+    block.partialArgs = (block.partialArgs ?? "") + delta;
+    const nextParseLength =
+      this.nextToolArgumentParseLengths.get(block) ?? INITIAL_TOOL_ARGUMENT_PARSE_CHECKPOINT_CHARS;
+    if (block.partialArgs.length >= nextParseLength) {
+      this.parseToolCallArguments(block);
+    }
+    return { previousLength, currentArgs: block.partialArgs };
+  }
+
+  reparseToolCallArguments(block: StreamingToolCallBlock): void {
+    this.parseToolCallArguments(block);
+  }
+
   rememberToolCallId(id: string, block: StreamingToolCallBlock): void {
     this.toolCallBlocksById.set(id, block);
+  }
+
+  private parseToolCallArguments(block: StreamingToolCallBlock): void {
+    block.arguments = parseStreamingJson(block.partialArgs);
+    const parsedLength = block.partialArgs?.length ?? 0;
+    this.nextToolArgumentParseLengths.set(
+      block,
+      Math.max(INITIAL_TOOL_ARGUMENT_PARSE_CHECKPOINT_CHARS, parsedLength * 2),
+    );
   }
 }

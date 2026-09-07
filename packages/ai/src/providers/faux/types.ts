@@ -33,6 +33,8 @@ export interface RegisterFauxProviderOptions {
   api?: string;
   provider?: string;
   models?: FauxModelDefinition[];
+  registerImmediately?: boolean;
+  preserveOnReset?: boolean;
   tokensPerSecond?: number;
   tokenSize?: {
     min?: number;
@@ -43,6 +45,7 @@ export interface RegisterFauxProviderOptions {
 export interface FauxProviderRegistration {
   api: string;
   models: [Model<string>, ...Model<string>[]];
+  register: () => void;
   getModel(): Model<string>;
   getModel(modelId: string): Model<string> | undefined;
   state: { callCount: number };

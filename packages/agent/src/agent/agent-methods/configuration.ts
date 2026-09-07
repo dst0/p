@@ -14,6 +14,7 @@ export function do_createLoopConfig(self: Agent, options: { skipInitialSteeringP
     transport: self.transport,
     thinkingBudgets: self.thinkingBudgets,
     maxRetryDelayMs: self.maxRetryDelayMs,
+    maxTokens: self.maxTokens,
     toolExecution: self.toolExecution,
     completionMode: self.completionMode,
     completionLimits: self.completionLimits,
@@ -21,6 +22,9 @@ export function do_createLoopConfig(self: Agent, options: { skipInitialSteeringP
     afterToolCall: self.afterToolCall,
     prepareNextTurn: self.prepareNextTurn
       ? async (context) => await self.prepareNextTurn?.(self.signal, context)
+      : undefined,
+    prepareModelCall: self.prepareModelCall
+      ? async (context) => await self.prepareModelCall?.(context, self.signal)
       : undefined,
     convertToLlm: self.convertToLlm,
     transformContext: self.transformContext,

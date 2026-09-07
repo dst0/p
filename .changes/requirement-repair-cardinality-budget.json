@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Bound sparse requirement-repair fan-out across each call and rejected-definition lineage."
+}

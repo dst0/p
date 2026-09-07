@@ -11,12 +11,14 @@ export function do_subscribe(
   return () => self.listeners.delete(listener);
 }
 
-export function do_steer(self: Agent, message: AgentMessage): void {
-  self.steeringQueue.enqueue(message);
+export function do_steer(self: Agent, message: AgentMessage | readonly AgentMessage[]): void {
+  if (Array.isArray(message)) self.steeringQueue.enqueueGroup(message);
+  else self.steeringQueue.enqueue(message as AgentMessage);
 }
 
-export function do_followUp(self: Agent, message: AgentMessage): void {
-  self.followUpQueue.enqueue(message);
+export function do_followUp(self: Agent, message: AgentMessage | readonly AgentMessage[]): void {
+  if (Array.isArray(message)) self.followUpQueue.enqueueGroup(message);
+  else self.followUpQueue.enqueue(message as AgentMessage);
 }
 
 export function do_clearSteeringQueue(self: Agent): void {

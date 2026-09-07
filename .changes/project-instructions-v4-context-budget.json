@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Prevent production-sized compiled project instructions from failing on context preflight or redundant classifications while preserving exact headings, whitespace, and structural rule semantics."
+}

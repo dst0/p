@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Preflight every release package before publication, retain required shrinkwrap artifacts, and publish the code-index dependency before the CLI in lockstep releases."
+}

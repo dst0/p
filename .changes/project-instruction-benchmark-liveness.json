@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Add sanitized sub-minute paired-benchmark progress evidence, first-mutation timing, definition-attempt counts, and explicit gate-failure classes."
+}

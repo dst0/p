@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Fixed",
+  "summary": "Bound semantic repetitive-output recovery without limiting clean provider-length continuation."
+}

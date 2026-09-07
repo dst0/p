@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Freeze referenced specifications before mutation but defer exhaustive requirement definition until completion evidence is ready."
+}

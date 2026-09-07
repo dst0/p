@@ -355,7 +355,7 @@ describe("bounded file preparation workers", () => {
   it("falls back to bounded in-process work when worker startup is unavailable", async () => {
     const tasks = createTasks(2);
     const results: number[] = [];
-    const missingWorker = pathToFileURL(join(tasks[0].absPath, "..", "missing-worker.mjs"));
+    const missingWorker = pathToFileURL(join(tasks[0].absPath, "..", "missing-worker.js"));
     const plan = await processFilePreparationTasks(
       tasks,
       {
@@ -387,7 +387,7 @@ describe("bounded file preparation workers", () => {
     ["a response without a result", "parentPort.postMessage({ id: message.id });"],
   ])("falls back after %s from a worker", async (_description, responseStatement) => {
     const tasks = createTasks(1);
-    const workerPath = join(tasks[0].absPath, "..", "invalid-response-worker.mjs");
+    const workerPath = join(tasks[0].absPath, "..", "invalid-response-worker.js");
     writeFileSync(
       workerPath,
       `import { parentPort } from "node:worker_threads";
@@ -425,7 +425,7 @@ parentPort.on("message", (message) => {
 
   it("terminates active workers and preserves the abort reason", async () => {
     const tasks = createTasks(1);
-    const hangingWorkerPath = join(tasks[0].absPath, "..", "hanging-worker.mjs");
+    const hangingWorkerPath = join(tasks[0].absPath, "..", "hanging-worker.js");
     writeFileSync(hangingWorkerPath, "setInterval(() => undefined, 1000);\n");
     const controller = new AbortController();
     const operation = processFilePreparationTasks(

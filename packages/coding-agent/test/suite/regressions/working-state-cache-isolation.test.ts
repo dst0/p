@@ -154,12 +154,12 @@ describe("working state cache isolation", () => {
           sessionStartEvent,
           model: faux.getModel(),
           completionMode: "implicit",
+          taskVerificationMode: "off",
         })),
         services,
         diagnostics: services.diagnostics,
       };
     };
-
     const runtime = await createAgentSessionRuntime(createRuntime, {
       cwd: tempDir,
       agentDir: tempDir,
@@ -443,7 +443,6 @@ describe("working state cache isolation", () => {
     const sessionFile = sessionManager.getSessionFile();
     expect(sessionFile).toBeDefined();
     if (!sessionFile) throw new Error("Expected persisted session file");
-
     const reopened = await createAgentSession({
       cwd: tempDir,
       agentDir: tempDir,
@@ -453,6 +452,7 @@ describe("working state cache isolation", () => {
       sessionManager: SessionManager.open(sessionFile, undefined, tempDir),
       completionMode: "implicit",
       noTools: "all",
+      taskVerificationMode: "off",
     });
     cleanups.push(async () => {
       await reopened.session.dispose();

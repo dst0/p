@@ -1,0 +1,22 @@
+# 2026-08-30 — Requirement repair progress needs target identity
+
+- **Status:** Partial
+- **Task/context:** Restore completion liveness after deferred requirement definition exposed a repair loop in a live small-task AI unit.
+- **Unexpected observation or failure:** Three correct singular repairs removed three unsupported provenance mappings, but each exposed one previously masked unclassified clause. The total diagnostic count stayed at six, so the controller treated real progress as stagnation and eventually authorized a broad replacement definition.
+- **Evidence:** The live session completed 46 implementation mutations before the audit. During repair, each selected unsupported-mapping diagnostic disappeared while the aggregate count remained six. The replacement definition reduced the count to four but recreated provenance problems and did not complete the task.
+- **Approaches tried:**
+  - **Attempt:** Use only a lower aggregate diagnostic count as the progress measure.
+    - **Outcome:** Did not work
+    - **Why:** Validation dependencies can replace a resolved error with a newly visible downstream error without increasing the remaining work.
+  - **Attempt:** Permit a broad replacement `define` after a fixed number of equal-count repairs.
+    - **Outcome:** Did not work
+    - **Why:** It discarded controller-retained correct items, recreated earlier errors, and reopened an expensive full-batch loop.
+  - **Attempt:** Select the first deterministic diagnostic, structurally constrain the next call to one matching repair item, and adopt the candidate only when that diagnostic identity disappears.
+    - **Outcome:** Partial
+    - **Why:** Focused and broad requirement-definition regressions are passing or being updated; an installed live closure run remains pending.
+- **Root cause:** Aggregate diagnostic count is not a monotonic measure when validation errors have dependencies. The controller also allowed a broad state-replacing escape that erased useful local progress.
+- **Resolution:** The controller now returns one exact repair target, rejects multi-item or off-target calls, and evaluates progress by disappearance of the selected normalized diagnostic. The total may stay equal or rise as downstream errors become visible. An active rejected batch cannot be replaced with `define`.
+- **Verification:** The selected-target, protocol, cycle, prompt-recovery, and durable-state focused set passes 62 of 62 tests. The complete requirement-definition family is being rerun, and installed live-agent closure is still required.
+- **Prevention/follow-up:** Keep progress measures bound to the state transition the controller requested. Require the installed AI unit to reach accepted definition, batched verdict, and `finish_work` before binding another benchmark candidate.
+- **Reusable learning:** When validator errors depend on one another, progress means the requested error disappeared, not that the total error count fell.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair-target.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `packages/coding-agent/test/task-requirement-definition-repair-cycle-recovery.test.ts`

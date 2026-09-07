@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Constrain invalid ignored-clause repairs to the controller-selected classification removal instead of accepting unrelated single-item edits."
+}

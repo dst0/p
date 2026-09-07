@@ -1,10 +1,4 @@
-import {
-  FOCUSED_TEST_PATTERN,
-  GENERIC_CHECK_PATTERN,
-  HIGH_RISK_PATTERN,
-  READ_ONLY_PATTERN,
-  TEST_PATTERN,
-} from "../constants.ts";
+import { FOCUSED_TEST_PATTERN, GENERIC_CHECK_PATTERN, HIGH_RISK_PATTERN, READ_ONLY_PATTERN } from "../constants.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import {
   isBaselineMethod,
@@ -14,6 +8,7 @@ import {
   normalizeText,
 } from "../tool-classification.ts";
 import type { VerificationInput, VerificationResult } from "../types.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_recordBaseline(self: TaskVerificationController, input: VerificationInput): VerificationResult {
   if (!self.state.taskKind || !self.state.taskSummary) {
@@ -64,7 +59,10 @@ export function do_recordBaseline(self: TaskVerificationController, input: Verif
     }
     if (
       evidence.some(
-        (item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor) && /\s*\|\s*/.test(item.descriptor),
+        (item) =>
+          isShellTool(item.toolName) &&
+          commandContainsTestInvocation(item.descriptor) &&
+          /\s*\|\s*/.test(item.descriptor),
       )
     ) {
       return self.rejected(
@@ -76,11 +74,12 @@ export function do_recordBaseline(self: TaskVerificationController, input: Verif
         (item) =>
           isShellTool(item.toolName) &&
           item.isError &&
-          TEST_PATTERN.test(item.descriptor) &&
+          (item.nativeIsError ?? item.isError) &&
+          commandContainsTestInvocation(item.descriptor) &&
           FOCUSED_TEST_PATTERN.test(item.descriptor),
       )
     ) {
-      return self.rejected("failing_regression_test requires a failing focused-test evidence handle.");
+      return self.rejected("failing_regression_test requires a native failing focused-test evidence handle.");
     }
   }
 

@@ -1,0 +1,25 @@
+# 2026-08-27 — Preflight model output budget
+
+- **Status:** Resolved
+- **Task/context:** A long coding-agent turn streamed a large completed write while the prompt was already close to a local model's context limit.
+- **Unexpected observation or failure:** The provider request reached 65,715 tokens for a 65,536-token model and failed during generation. Automatic compaction started only after the failed stream.
+- **Evidence:** The configured model advertised a 65,536-token context window and 16,384 output tokens. The old preflight threshold reserved only 2,000 tokens, the generic agent did not forward the model-aligned output cap, and the OpenAI Codex request builder discarded the `maxTokens` value it received.
+- **Approaches tried:**
+  - **Attempt:** Rely on overflow recovery after the provider error.
+    - **Outcome:** Did not work
+    - **Why:** The response had already been interrupted, so recovery could not preserve a complete generation.
+  - **Attempt:** Compact using prompt size alone.
+    - **Outcome:** Partial
+    - **Why:** It protected input capacity but did not reserve the next response or constrain the provider to that reservation.
+  - **Attempt:** Reserve model output plus an estimation margin before every call, forward the same cap, and compact completed oversized tool-call arguments only in the rebuilt prompt.
+    - **Outcome:** Partial
+    - **Why:** A between-turn check still ran before queued steering, checkpoint insertions, final context transforms, and serialized tool schemas. It could therefore certify a smaller context than the provider received.
+  - **Attempt:** Recheck the fully transformed provider-visible context at the final model-call boundary, rebuild after formal compaction, and fail closed if the rebuilt request remains unsafe.
+    - **Outcome:** Worked
+    - **Why:** Every queued message and static prompt component is present before the decision, and the provider is not invoked until the rebuilt request fits the same cap.
+- **Root cause:** Preflight compaction and provider generation used different budgets and boundaries: compaction considered only a small configured input reserve before all provider-visible additions existed, while the provider could generate up to a much larger configured output limit. Formal compaction also reduced large tool results but retained oversized completed tool-call arguments in the prompt copy.
+- **Resolution:** Reserve the configured request maximum capped only by model metadata, add a 1,024-token safety margin, use that same cap for both the final-boundary compaction check and provider request, rebuild and recheck after compaction, use serialized UTF-8 bytes as the fail-closed upper bound, require a recognized numeric provider cap, reject any later payload-hook size or cap expansion before network I/O, and replace only completed oversized tool-call arguments in the rebuilt prompt.
+- **Verification:** `agent-session-preflight-context-budget.test.ts` reproduces the queued-message boundary miss, verifies pre-request compaction, proves queued steer and follow-up messages survive rebuilt contexts and the write executes exactly once, confirms per-model request caps, and proves an oversized static tool schema fails before any provider call. `model-call-budget.test.ts` covers non-ASCII undercounting and missing or expanded caps; `openai-codex-output-budget.test.ts` proves the Codex request serializes its configured cap. Existing minimal-retention coverage also caught and prevented a prompt-copy helper from breaking the compactor's legacy in-place behavior when nothing needed replacement.
+- **Prevention/follow-up:** Keep output reservation and request caps derived from the same helper. Fail before provider invocation when a complete configured response cannot fit even after compaction; never silently lower the cap to make an impossible request appear safe.
+- **Reusable learning:** A context-window guard is complete only when input estimate, reserved output, safety margin, and the provider's actual output cap share one budget.
+- **References:** `packages/coding-agent/src/core/compaction/compaction/model-call-budget.ts`, `packages/coding-agent/test/model-call-budget.test.ts`, `packages/coding-agent/test/suite/agent-session-preflight-context-budget.test.ts`, `packages/ai/test/openai-codex-output-budget.test.ts`

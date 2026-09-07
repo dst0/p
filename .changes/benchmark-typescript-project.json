@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Move internal benchmark tooling into a strictly checked TypeScript project without changing published package behavior."
+}

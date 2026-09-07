@@ -11,7 +11,9 @@ import type {
   ToolResultMessage,
 } from "@dst0/p-ai";
 import type { Static, TSchema } from "typebox";
-import type { CompletionMode, CompletionProtocolLimits } from "./completion-protocol.ts";
+import type { CompletionMode, CompletionProtocolLimits, FinishWorkPayload } from "./completion-protocol.ts";
+import type { ModelCallPreparationConfig } from "./model-call-preparation.ts";
+import type { ResolvedToolEffect, ToolEffectDeclaration } from "./tool-effects.ts";
 
 /**
  * Stream function used by the agent loop.
@@ -43,10 +45,8 @@ export type ToolExecutionMode = "sequential" | "parallel";
  * - "one-at-a-time": drain and inject only the oldest queued message, leaving the rest queued for later drain points.
  */
 export type QueueMode = "all" | "one-at-a-time";
-
 /** A single tool call content block emitted by an assistant message. */
 export type AgentToolCall = Extract<AssistantMessage["content"][number], { type: "toolCall" }>;
-
 /**
  * Result returned from `beforeToolCall`.
  *
@@ -57,7 +57,6 @@ export interface BeforeToolCallResult {
   block?: boolean;
   reason?: string;
 }
-
 /**
  * Partial override returned from `afterToolCall`.
  *
@@ -85,8 +84,8 @@ export interface AfterToolCallResult {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  completion?: FinishWorkPayload;
 }
-
 /** Context passed to `beforeToolCall`. */
 export interface BeforeToolCallContext {
   /** The assistant message that requested the tool call. */
@@ -95,10 +94,11 @@ export interface BeforeToolCallContext {
   toolCall: AgentToolCall;
   /** Validated tool arguments for the target tool schema. */
   args: unknown;
+  /** Deterministic, fail-conservative effect classification when supplied by the runtime. */
+  effect?: ResolvedToolEffect;
   /** Current agent context at the time the tool call is prepared. */
   context: AgentContext;
 }
-
 /** Context passed to `afterToolCall`. */
 export interface AfterToolCallContext {
   /** The assistant message that requested the tool call. */
@@ -107,6 +107,8 @@ export interface AfterToolCallContext {
   toolCall: AgentToolCall;
   /** Validated tool arguments for the target tool schema. */
   args: unknown;
+  /** The same deterministic effect classification used by the before hook. */
+  effect?: ResolvedToolEffect;
   /** The executed tool result before any `afterToolCall` overrides are applied. */
   result: AgentToolResult<any>;
   /** Whether the executed tool result is currently treated as an error. */
@@ -144,8 +146,7 @@ export interface AgentLoopTurnUpdate {
 }
 
 export interface PrepareNextTurnContext extends ShouldStopAfterTurnContext {}
-
-export interface AgentLoopConfig extends Omit<SimpleStreamOptions, "reasoning" | "onPayload" | "onResponse"> {
+export interface AgentLoopConfig extends ModelCallPreparationConfig {
   model: Model<any>;
 
   /** Dynamic session identifier forwarded to the stream function. */
@@ -397,7 +398,6 @@ export interface AgentState {
   /** Error message from the most recent failed or aborted assistant turn, if any. */
   readonly errorMessage?: string;
 }
-
 /** Final or partial result produced by a tool. */
 export interface AgentToolResult<T> {
   /** Text or image content returned to the model. */
@@ -416,10 +416,9 @@ export interface AgentToolResult<T> {
    * Early termination only happens when every finalized tool result in the batch sets this to true.
    */
   terminate?: boolean;
+  completion?: FinishWorkPayload;
 }
-
 export type AgentToolProgress = "made_progress" | "waiting";
-
 /**
  * Callback used by tools to stream partial execution updates.
  *
@@ -427,11 +426,11 @@ export type AgentToolProgress = "made_progress" | "waiting";
  * the tool promise settles are ignored.
  */
 export type AgentToolUpdateCallback<T = any> = (partialResult: AgentToolResult<T>) => void;
-
 /** Tool definition used by the agent runtime. */
 export interface AgentTool<TParameters extends TSchema = TSchema, TDetails = any> extends Tool<TParameters> {
   /** Human-readable label for UI display. */
   label: string;
+  effect?: ToolEffectDeclaration | ResolvedToolEffect; // Omission means unknown/high risk.
   /**
    * Optional compatibility shim for raw tool-call arguments before schema validation.
    * Must return an object that matches `TParameters`.
@@ -463,14 +462,7 @@ export interface AgentContext {
   /** Tools available for this run. */
   tools?: AgentTool<any>[];
 }
-
-/**
- * Events emitted by the Agent for UI updates.
- *
- * `agent_end` is the last event emitted for a run, but awaited `Agent.subscribe()`
- * listeners for that event are still part of run settlement. The agent becomes
- * idle only after those listeners finish.
- */
+/** Agent UI events; `agent_end` settles before idle, and tool end `executed` reports execute-function invocation. */
 export type AgentEvent =
   // Agent lifecycle
   | { type: "agent_start" }
@@ -492,6 +484,7 @@ export type AgentEvent =
       event:
         | "completion_mode"
         | "finish_work_called"
+        | "verified_completion_called"
         | "missing_finish_work_retry"
         | "malformed_tool_call_retry"
         | "max_turns_without_finish_work"
@@ -503,6 +496,13 @@ export type AgentEvent =
       reason?: string;
     }
   // Tool execution lifecycle
-  | { type: "tool_execution_start"; toolCallId: string; toolName: string; args: any }
+  | { type: "tool_execution_start"; toolCallId: string; toolName: string; toolDescription?: string; args: any }
   | { type: "tool_execution_update"; toolCallId: string; toolName: string; args: any; partialResult: any }
-  | { type: "tool_execution_end"; toolCallId: string; toolName: string; result: any; isError: boolean };
+  | {
+      type: "tool_execution_end";
+      toolCallId: string;
+      toolName: string;
+      result: any;
+      isError: boolean;
+      executed: boolean;
+    };

@@ -1,0 +1,25 @@
+# 2026-08-27 — Print mode must use the logical agent response
+
+- **Status:** Resolved
+- **Task/context:** Preserve provider length-continuation output in `p -p` text mode when a response spans multiple assistant messages and context compaction changes persisted session history.
+- **Unexpected observation or failure:** The agent loop retained every continued segment, but print mode emitted only the last suffix. A terminal provider error also replaced useful partial text instead of accompanying it. Naively concatenating all assistants fixed that loss but leaked narration from earlier ordinary tool turns. Depending on the public event surface, internal continuation markers can also be absent.
+- **Evidence:** Focused regressions showed that text mode returned only `and tail`, `tail`, or `response` for multi-segment responses, returned no partial text before a terminal error, concatenated unrelated historical responses when no response event was present, duplicated synthetic diagnostics on stdout and stderr, printed `Inspecting first.` from a pre-continuation tool turn, and lost all but the final marker-free public segment.
+- **Approaches tried:**
+  - **Attempt:** Reconstruct final output from `session.state.messages` after prompting.
+    - **Outcome:** Did not work
+    - **Why:** Compaction may remove early response segments, and the reducer selected only the final assistant message.
+  - **Attempt:** Capture the latest `agent_end.messages` emitted for each prompt and reduce that logical response.
+    - **Outcome:** Partial
+    - **Why:** The event preserves the complete settled response, but it can also contain earlier normal tool turns whose narration is not part of the final printable answer.
+  - **Attempt:** Capture only settled `agent_end` events and walk backward through adjacent internal provider-length continuation boundaries.
+    - **Outcome:** Partial
+    - **Why:** The raw marker-bearing response was correct, but a public event may intentionally omit internal messages and leave continued assistant segments directly adjacent.
+  - **Attempt:** Walk backward through either adjacent length-finished assistants or marker-separated length pairs, stopping at every tool result or ordinary user boundary.
+    - **Outcome:** Worked
+    - **Why:** It supports both raw and public response shapes while preserving ordinary tool-turn print semantics.
+- **Root cause:** Print mode used persisted session state as its response authority and reduced only the last assistant message. A first-pass fix treated every assistant in `agent_end.messages` as printable continuation text; a second pass assumed internal continuation markers would survive every public event surface.
+- **Resolution:** Text print mode resets capture per prompt, ignores retrying `agent_end` events, prefers the latest settled response, concatenates assistant text from the final raw or public provider-length chain, preserves ordinary last-assistant and `finish_work` behavior, and emits both useful partial text and a following terminal error with a non-zero exit.
+- **Verification:** `packages/coding-agent/test/print-mode.test.ts` covers marker-bearing and marker-free public continuation chains, ordinary tool boundaries, compacted state missing early segments, multiple prompts, transient retries, terminal error and abort, legacy fallback, and synthetic diagnostic de-duplication.
+- **Prevention/follow-up:** Keep print-mode output selection event-scoped. Do not reconstruct a logical response solely from mutable persisted session history.
+- **Reusable learning:** When a runtime exposes an explicit settled-response event, user-facing single-shot output should consume that response boundary rather than infer it from mutable global history.
+- **References:** `packages/coding-agent/src/modes/print-mode.ts`, `packages/coding-agent/test/print-mode.test.ts`

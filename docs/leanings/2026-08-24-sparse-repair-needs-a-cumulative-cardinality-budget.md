@@ -1,0 +1,22 @@
+# 2026-08-24 — Sparse repair needs a cumulative cardinality budget
+
+- **Status:** Resolved
+- **Task/context:** Validating candidate `5.0.1-rc.9` with a bounded event-sourced inventory definition canary.
+- **Unexpected observation or failure:** A repair described as sparse expanded the rejected draft from 39 to 80 requirements and increased deterministic diagnostics from 30 to 48.
+- **Evidence:** The sanitized settled event recorded seven targeted indexes and 48 replacements. The merge retained 32 untouched items, so the exact result was `39 - 7 + 48 = 80`; the next validation reported 20 duplicate-requirement diagnostics. The prior protocol allowed 16 repair entries and up to 96 replacements in each entry, with no aggregate or lineage-growth bound.
+- **Approaches tried:**
+  - **Attempt:** Rely on prompt wording such as “small replacements or splits.”
+    - **Outcome:** Did not work
+    - **Why:** Other authoritative guidance required atomic decomposition and correcting every diagnostic, so the model legitimately interpreted the unbounded schema as permission for a broad rewrite.
+  - **Attempt:** Cap only one repair call.
+    - **Outcome:** Partial
+    - **Why:** It prevents the observed burst but permits the same inflation through several smaller repair calls.
+  - **Attempt:** Bind both each call and the full rejected-definition lineage to explicit cardinality budgets.
+    - **Outcome:** Worked
+    - **Why:** The controller can reject an oversized candidate before merge while preserving legitimate local splits and preventing staircase growth across rotated revisions.
+- **Root cause:** Sparse semantics were advisory rather than structural. The repair merger blindly substituted every replacement, and a validator-rejected expanded candidate became the next recovery draft. The synthetic merged `define` payload also bypassed the external tool-schema maximum.
+- **Resolution:** Repair calls now allow at most 16 total replacements, a rejected-definition lineage may grow by at most 16 requirements from its immutable initial baseline, and every merged candidate remains subject to the global 96-requirement ceiling. Budget failures preserve the prior draft and revision. A fresh complete `define` batch intentionally starts a new lineage.
+- **Verification:** Regression-first tests cover the exact 39-item/seven-index/48-replacement failure, 16/17 boundaries, shrink-then-re-expand staircase attempts, the 96-item global ceiling, valid one-to-five splitting, real tool revision preservation, and fresh-definition reset. The focused repair suite passed after the fix.
+- **Prevention/follow-up:** Treat “sparse,” “bounded,” and “incremental” as controller-enforced invariants. Prompts should explain the budget, but runtime preflight must reject excessive fan-out before state rotation.
+- **Reusable learning:** Any delta protocol that can replace one item with many needs both a per-call fan-out cap and an immutable cumulative-lineage cap; otherwise a sparse API is only a naming convention.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/test/task-requirement-definition-repair-lineage-budget.test.ts`, `benchmarks/results/2026-08-24-v5.0.1-rc.9-task3-definition-canary-v1/report.md`.

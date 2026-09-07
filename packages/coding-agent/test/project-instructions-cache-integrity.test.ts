@@ -31,6 +31,7 @@ import { readRuleLinks } from "../src/core/project-instructions/reader.ts";
 import type { ProjectInstructionManifest } from "../src/core/project-instructions/types.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -64,10 +65,12 @@ function createSkill(root: string, name: string): Skill {
 }
 
 function createCompiler(): ProjectInstructionCompiler {
-  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) => ({
-    body: `Use read_rules for ${request.modules[0].link}.`,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-  }));
+  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+    ),
+  );
 }
 
 afterEach(() => {
@@ -261,7 +264,8 @@ const content = readFileSync(agentsPath, "utf8");
 await prepareProjectInstructions({ cwd: root, contextFiles: [{ path: agentsPath, content }], skills: [], compiler: async (request) => {
   writeFileSync(root + "/ready-" + id, "ready\\n");
   while (!existsSync(root + "/ready-one") || !existsSync(root + "/ready-two")) await new Promise((resolve) => setTimeout(resolve, 5));
-  return { body: "Use read_rules for " + request.modules[0].link + ".", triggers: Object.fromEntries(request.modules.map((module) => [module.id, "When " + module.title + " applies"])) };
+  const alwaysOn = Object.fromEntries(request.constraints.map((constraint) => [constraint.id, "Always " + (constraint.content.match(/\\d+/)?.[0] ?? "integrity")]));
+  return { body: Object.values(alwaysOn).join("\\n"), triggers: Object.fromEntries(request.modules.map((module) => [module.id, "When " + module.title + " applies"])), classifications: { modules: Object.fromEntries(request.modules.map((module) => [module.id, "always-on"])), constraints: Object.fromEntries(request.constraints.map((constraint) => [constraint.id, "always-on"])) }, alwaysOn };
 } });
 `;
 }

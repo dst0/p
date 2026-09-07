@@ -43,6 +43,7 @@ import type {
 import type {
   MarkSessionProgressInput,
   MarkSessionProgressResult,
+  ProjectRuleGate,
   PromptContextPreparation,
   RecallCandidate,
   RecallResult,
@@ -54,7 +55,11 @@ export interface AgentSessionRuntimeMethods {
   _createToolPromptAccountingText(): string;
   _installPromptContextTransform(): void;
   _createWorkingStatePromptMessage(content: string, timestamp: number): CustomMessage;
-  _createRuntimeContextPromptMessage(content: string, timestamp: number): CustomMessage;
+  _createRuntimeContextPromptMessage(
+    content: string,
+    timestamp: number,
+    projectRuleGate?: ProjectRuleGate,
+  ): CustomMessage;
   _withWorkingStatePromptInsertions(
     messages: AgentMessage[],
     workingStatePrompt: string | undefined,

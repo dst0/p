@@ -71,6 +71,7 @@ export function createFinishWorkTool(): AgentTool<typeof FINISH_WORK_SCHEMA, Fin
     label: "Finish Work",
     description:
       "Terminate the agent run with an explicit final status and summary. Call this exactly once when the task is complete, partially complete, or blocked.",
+    effect: { kind: "read", risk: "normal" },
     parameters: FINISH_WORK_SCHEMA,
     executionMode: "sequential",
     async execute(_toolCallId, params) {

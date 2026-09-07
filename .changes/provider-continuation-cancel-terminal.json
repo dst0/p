@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent"],
+  "type": "Fixed",
+  "summary": "Emit an explicit aborted terminal response when cancellation occurs between provider-limited segments."
+}

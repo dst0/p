@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep help and model-list metadata commands from starting project-instruction compilation or an agent session."
+}

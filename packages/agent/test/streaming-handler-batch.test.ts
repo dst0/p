@@ -1,6 +1,7 @@
 import type { AssistantMessage, ToolResultMessage } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { describe, expect, it, vi } from "vitest";
+import { executeToolCallsParallel } from "../src/agent-loop/context-management.ts";
 import {
   createExecutedToolCallBatch,
   createToolResultMessage,
@@ -42,11 +43,12 @@ const mockToolCall: AgentToolCall = { type: "toolCall", id: "tc_1", name: "mock_
 describe("emitToolExecutionEnd", () => {
   it("emits the correct tool_execution_end event", async () => {
     const emit = vi.fn();
-    const finalized: FinalizedToolCallOutcome = {
+    const finalized = {
       toolCall: mockToolCall,
       result: { content: [], details: {} },
       isError: true,
-    };
+      executed: true,
+    } as FinalizedToolCallOutcome & { executed: boolean };
     await emitToolExecutionEnd(finalized, emit);
     expect(emit).toHaveBeenCalledWith({
       type: "tool_execution_end",
@@ -54,6 +56,7 @@ describe("emitToolExecutionEnd", () => {
       toolName: "mock_tool",
       result: finalized.result,
       isError: true,
+      executed: true,
     });
   });
 });
@@ -64,6 +67,7 @@ describe("createToolResultMessage", () => {
       toolCall: mockToolCall,
       result: { content: [], details: { a: 1 } },
       isError: false,
+      executed: true,
     };
     const msg = createToolResultMessage(finalized);
     expect(msg.role).toBe("toolResult");
@@ -100,16 +104,16 @@ describe("shouldTerminateToolBatch", () => {
 
   it("returns true if all entries have terminate: true", () => {
     const list: FinalizedToolCallOutcome[] = [
-      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false },
-      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false },
+      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false, executed: true },
+      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false, executed: true },
     ];
     expect(shouldTerminateToolBatch(list)).toBe(true);
   });
 
   it("returns false if mixed or some undefined", () => {
     const list: FinalizedToolCallOutcome[] = [
-      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false },
-      { toolCall: mockToolCall, result: { content: [], details: {} }, isError: false },
+      { toolCall: mockToolCall, result: { content: [], details: {}, terminate: true }, isError: false, executed: true },
+      { toolCall: mockToolCall, result: { content: [], details: {} }, isError: false, executed: true },
     ];
     expect(shouldTerminateToolBatch(list)).toBe(false);
   });
@@ -118,7 +122,12 @@ describe("shouldTerminateToolBatch", () => {
 describe("createExecutedToolCallBatch", () => {
   it("identifies madeProgress", () => {
     const finalized: FinalizedToolCallOutcome[] = [
-      { toolCall: mockToolCall, result: { content: [], details: {}, progress: "made_progress" }, isError: false },
+      {
+        toolCall: mockToolCall,
+        result: { content: [], details: {}, progress: "made_progress" },
+        isError: false,
+        executed: true,
+      },
     ];
     const batch = createExecutedToolCallBatch([], finalized);
     expect(batch.madeProgress).toBe(true);
@@ -127,7 +136,12 @@ describe("createExecutedToolCallBatch", () => {
 
   it("identifies waiting", () => {
     const finalized: FinalizedToolCallOutcome[] = [
-      { toolCall: mockToolCall, result: { content: [], details: {}, progress: "waiting" }, isError: false },
+      {
+        toolCall: mockToolCall,
+        result: { content: [], details: {}, progress: "waiting" },
+        isError: false,
+        executed: true,
+      },
     ];
     const batch = createExecutedToolCallBatch([], finalized);
     expect(batch.madeProgress).toBe(false);
@@ -136,7 +150,7 @@ describe("createExecutedToolCallBatch", () => {
 
   it("handles errors as neither progress nor waiting", () => {
     const finalized: FinalizedToolCallOutcome[] = [
-      { toolCall: mockToolCall, result: { content: [], details: {} }, isError: true },
+      { toolCall: mockToolCall, result: { content: [], details: {} }, isError: true, executed: true },
     ];
     const batch = createExecutedToolCallBatch([], finalized);
     expect(batch.madeProgress).toBe(false);
@@ -172,7 +186,9 @@ describe("executeToolCallsSequential", () => {
     const batch = await executeToolCallsSequential(mockContext, mockAssistantMessage, [badTc], config, undefined, emit);
     expect(batch.messages).toHaveLength(1);
     expect(batch.messages[0].isError).toBe(true);
-    expect(emit.mock.calls.filter((c) => c[0].type === "tool_execution_end")).toHaveLength(1);
+    const endEvents = emit.mock.calls.filter((c) => c[0].type === "tool_execution_end");
+    expect(endEvents).toHaveLength(1);
+    expect(endEvents[0]?.[0]).toMatchObject({ executed: false });
   });
 
   it("aborts mid-batch", async () => {
@@ -196,5 +212,50 @@ describe("executeToolCallsSequential", () => {
     );
     expect(batch.messages).toHaveLength(1);
     expect(emit.mock.calls.filter((c) => c[0].type === "tool_execution_start")).toHaveLength(1);
+  });
+});
+
+describe("executeToolCallsParallel", () => {
+  it("distinguishes blocked calls from successful and throwing executions", async () => {
+    const emit = vi.fn();
+    const toolCalls: AgentToolCall[] = [
+      { type: "toolCall", id: "blocked", name: "mock_tool", arguments: {} },
+      { type: "toolCall", id: "successful", name: "mock_tool", arguments: {} },
+      { type: "toolCall", id: "throwing", name: "mock_tool", arguments: {} },
+    ];
+    vi.mocked(mockTool.execute).mockReset();
+    vi.mocked(mockTool.execute).mockImplementation(async (toolCallId) => {
+      if (toolCallId === "throwing") throw new Error("expected failure");
+      return { content: [], details: {} };
+    });
+
+    const batch = await executeToolCallsParallel(
+      mockContext,
+      mockAssistantMessage,
+      toolCalls,
+      {
+        model: {} as any,
+        convertToLlm: () => [],
+        beforeToolCall: async ({ toolCall }) =>
+          toolCall.id === "blocked" ? { block: true, reason: "verification required" } : undefined,
+      },
+      undefined,
+      emit,
+    );
+
+    expect(batch.messages).toHaveLength(3);
+    expect(vi.mocked(mockTool.execute).mock.calls.map(([toolCallId]) => toolCallId)).toEqual([
+      "successful",
+      "throwing",
+    ]);
+    const endEvents = emit.mock.calls.map(([event]) => event).filter((event) => event.type === "tool_execution_end");
+    expect(endEvents).toHaveLength(3);
+    expect(endEvents).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ toolCallId: "blocked", isError: true, executed: false }),
+        expect.objectContaining({ toolCallId: "successful", isError: false, executed: true }),
+        expect.objectContaining({ toolCallId: "throwing", isError: true, executed: true }),
+      ]),
+    );
   });
 });

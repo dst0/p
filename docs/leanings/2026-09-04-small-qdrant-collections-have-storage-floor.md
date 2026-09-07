@@ -1,0 +1,22 @@
+# 2026-09-04 — Small Qdrant collections can have a large storage floor
+
+- **Status:** Partial
+- **Task/context:** Explain the remaining local Qdrant footprint after distinguishing old generations from current manifest references.
+- **Unexpected observation or failure:** Six current collections containing only 0–39 points each occupied approximately 0.59–0.66 GiB. Point count did not explain their disk footprint, and treating all of that space as useful index data was misleading.
+- **Evidence:** The recovered Qdrant API reported five segments in each inspected small collection. A zero-point, currently referenced collection occupied approximately 0.593 GiB. A metadata-only file allocation inventory found 64 MiB of WAL, 170 MiB of sparse-vector storage file lengths, 165 MiB of payload storage lengths, approximately 110 MiB of payload-index lengths, and 5 MiB of dense storage lengths. Five 32 MiB page files appeared in each of the sparse-vector and payload storage groups. Filesystem allocation increased those groups further; AppleDouble sidecars alone used approximately 53.6 MiB of allocation for 1.7 MiB of content, plus approximately 19.4 MiB of directory allocation.
+- **Approaches tried:**
+  - **Attempt:** Explain the entire remaining footprint using the number of indexed points or unreachable collections.
+    - **Outcome:** Rejected.
+    - **Why:** The inspected collection had zero points and was still referenced by a current manifest. It retained segmented storage and WAL overhead.
+  - **Attempt:** Separate logical file lengths, allocated disk bytes, segment counts, and current reachability.
+    - **Outcome:** Worked for diagnosis.
+    - **Why:** This exposed fixed/reserved storage and filesystem amplification separately from useful point payloads and obsolete-generation retention.
+  - **Attempt:** Tune segment/page settings or rebuild all small collections during incident cleanup.
+    - **Outcome:** Deferred.
+    - **Why:** No tested, version-specific storage policy or migration result exists yet. Recovery must preserve current indexes, and a lower point count does not authorize deletion.
+- **Root cause:** The observed storage floor comes from multiple persisted segments, reserved storage pages, WAL, payload indexes, and filesystem allocation overhead. The reason these collections reached five segments and the best supported configuration are not yet established.
+- **Resolution:** Recorded the measured storage categories and retained all currently referenced collections. This turn does not claim to reduce the small-collection storage floor.
+- **Verification:** Live Qdrant collection metadata and direct file-size/allocation inspection agree that point count alone is insufficient. All 22 current collections were readable after recovery; no storage-layout experiment was run.
+- **Prevention/follow-up:** Benchmark a version-specific small-collection storage policy with realistic create/update/delete/restart sequences on a supported POSIX filesystem. Compare allocation, latency, recovery, and retrieval quality before adopting segment or WAL settings.
+- **Reusable learning:** Capacity planning for many small vector collections must include a measured per-collection storage floor, not only bytes per vector.
+- **References:** `packages/coding-agent/docs/code-indexing.md`, `packages/code-index/src/embed/vector-store.ts`, `docs/leanings/2026-09-04-retired-manifest-blocks-qdrant-gc.md`.

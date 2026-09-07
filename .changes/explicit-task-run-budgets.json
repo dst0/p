@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["ai", "coding-agent"],
+  "type": "Added",
+  "summary": "Add explicit Unlimited or request/token/estimated-USD task budgets with first-use selection, durable admission accounting, SDK controls, and /budget settings."
+}

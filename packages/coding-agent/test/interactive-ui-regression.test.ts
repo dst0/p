@@ -1,3 +1,4 @@
+import { getApiProvider } from "@dst0/p-ai";
 import { describe, expect, it } from "vitest";
 import { createUIRegressionHarness } from "./helpers/ui-visual-snapshot-harness.ts";
 
@@ -32,8 +33,9 @@ describe("InteractiveMode E2E Terminal Visual Regression Suite", () => {
   });
 
   it("renders user prompt in chat container and streams assistant response", async () => {
-    const ui = await createUIRegressionHarness({ width: 80, height: 24 });
+    const ui = await createUIRegressionHarness({ width: 80, height: 24, completionMode: "implicit" });
     try {
+      expect(getApiProvider(ui.harness.getModel().api)).toBeDefined();
       ui.harness.setResponses([
         {
           role: "assistant",

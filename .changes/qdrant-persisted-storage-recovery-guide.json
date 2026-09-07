@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Document safe Qdrant storage recovery with reference checks and verified archive restoration."
+}

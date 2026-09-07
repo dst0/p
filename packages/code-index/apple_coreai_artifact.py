@@ -15,6 +15,13 @@ from huggingface_hub import snapshot_download
 from safetensors.torch import load_file
 from transformers import AutoConfig, AutoTokenizer
 
+from apple_coreai_artifact_locator import (
+    CANONICAL_ARTIFACT_VERSION,
+    CANONICAL_MODEL_ID,
+    EXPECTED_BATCH_SIZE,
+    EXPECTED_SEQUENCE_LENGTH,
+    validate_generation_name,
+)
 from apple_coreai_model import AppleCoreAIEmbeddingModel
 from coreai_models.export.mlir_ops import (
     register_custom_torch_lowering,
@@ -23,10 +30,10 @@ from coreai_models.export.mlir_ops import (
 from coreai_models.models.ios.qwen3 import Qwen3ForCausalLMForiOS
 
 
-MODEL_ID = "Qwen/Qwen3-Embedding-0.6B"
-ARTIFACT_VERSION = "qwen3-embedding-0.6b-ane-b1-s64-v1"
-BATCH_SIZE = 1
-SEQUENCE_LENGTH = 64
+MODEL_ID = CANONICAL_MODEL_ID
+ARTIFACT_VERSION = CANONICAL_ARTIFACT_VERSION
+BATCH_SIZE = EXPECTED_BATCH_SIZE
+SEQUENCE_LENGTH = EXPECTED_SEQUENCE_LENGTH
 TRACE_BATCH_SIZE = 1
 TRACE_SEQUENCE_LENGTH = 64
 
@@ -134,38 +141,47 @@ def export_asset(destination: Path) -> None:
     )
 
 
-def prepare_artifact(root: Path) -> Path:
+validate_generation = validate_generation_name
+
+
+def build_candidate(root: Path, generation: str) -> Path:
+    validate_generation(generation)
+    root = Path(root).resolve()
     root.mkdir(parents=True, exist_ok=True)
-    destination = root / ARTIFACT_VERSION
-    marker = destination / "artifact.json"
-    valid = (
-        marker.exists()
-        and (destination / "model.aimodel").is_dir()
-        and (destination / "embedding-table.npy").is_file()
-        and (destination / "tokenizer").is_dir()
-    )
-    if not valid:
-        temporary = Path(tempfile.mkdtemp(prefix=f".{ARTIFACT_VERSION}-", dir=root))
-        try:
-            export_asset(temporary)
-            if destination.exists():
-                shutil.rmtree(destination)
-            os.replace(temporary, destination)
-        finally:
-            if temporary.exists():
-                shutil.rmtree(temporary)
-    current = root / "current.json"
-    temporary_marker = root / f"current.json.{os.getpid()}.tmp"
-    temporary_marker.write_text(json.dumps({"artifactVersion": ARTIFACT_VERSION}) + "\n")
-    os.replace(temporary_marker, current)
+    destination = root / generation
+    if os.path.lexists(destination):
+        raise FileExistsError(
+            f"Candidate generation destination already exists: {destination}"
+        )
+
+    temporary = Path(tempfile.mkdtemp(prefix=f".building-{generation}-", dir=root))
+    try:
+        export_asset(temporary)
+        if os.path.lexists(destination):
+            raise FileExistsError(
+                f"Candidate generation destination already exists: {destination}"
+            )
+        os.replace(temporary, destination)
+    finally:
+        if temporary.exists():
+            shutil.rmtree(temporary, ignore_errors=True)
     return destination
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--output-root", type=Path, required=True)
+    parser.add_argument("--generation", type=str, required=True)
     args = parser.parse_args()
-    print(json.dumps({"artifactDirectory": str(prepare_artifact(args.output_root))}))
+    dest = build_candidate(args.output_root, args.generation)
+    print(
+        json.dumps(
+            {
+                "artifactDirectory": str(dest),
+                "generation": args.generation,
+            }
+        )
+    )
 
 
 if __name__ == "__main__":

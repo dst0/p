@@ -32,6 +32,8 @@
       "packages/*/src/**/*.ts",
       "packages/*/test/**/*.ts",
       "packages/coding-agent/examples/**/*.ts",
+      "benchmarks/src/**/*.ts",
+      "benchmarks/test/**/*.ts",
       "!**/node_modules/**/*",
       "!**/test-sessions.ts",
       "!**/models.generated.ts",

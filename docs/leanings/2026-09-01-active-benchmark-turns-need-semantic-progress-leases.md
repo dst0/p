@@ -1,0 +1,23 @@
+# 2026-09-01 — Active benchmark turns need semantic-progress leases
+
+- **Status:** Resolved
+- **Task/context:** Run the randomized paired project-instruction benchmark for candidate `5.0.1-rc.66` across all four canonical tasks.
+- **Unexpected observation or failure:** The first event-sourced inventory legacy cell was terminated at its exact 2,400-second fixture timeout while it was still generating, mutating, testing, and compacting normally.
+- **Evidence:** Sanitized progress increased from 69 semantic events and 35 mutation starts at 2,350 seconds to 75 semantic events and 41 mutation starts at 2,400 seconds. The harness nevertheless reported `timed_out` at 2,400,271 ms and stopped the paired run before the compiled cell.
+- **Approaches tried:**
+  - **Attempt:** Raise only the inventory fixture timeout.
+    - **Outcome:** Did not use.
+    - **Why:** A larger fixed wall-clock cap would hide the same infrastructure defect until another task or model crossed the new threshold.
+  - **Attempt:** Renew the timeout on any stdout or stderr byte.
+    - **Outcome:** Did not use.
+    - **Why:** Arbitrary output spam could keep a stuck or adversarial child alive.
+  - **Attempt:** Renew a bounded lease only for parsed, supported semantic events while retaining an absolute run-wide deadline.
+    - **Outcome:** Worked.
+    - **Why:** It distinguishes observable agent progress from idle or malformed output and preserves a finite safety boundary.
+- **Unexpected constraint:** A failed process-tree cleanup cannot be reported as an ordinary completed turn. A surviving child or descendant can retain stdio or IPC, keep the runner alive, and continue mutating the workspace while quality verification runs. The failure path must release those references, settle without depending on `child.close`, and reject before verification. Child-process timing regressions also need full-suite load margin; a 50 ms startup budget produced a false marker-race failure under concurrent suite load.
+- **Root cause:** The low-level benchmark turn runner installed one unconditional wall-clock timer and never consulted parsed stream events, liveness counters, active tool calls, or mutations before terminating the process tree.
+- **Resolution:** Treat the fixture timeout as a nominal budget plus semantic-inactivity watchdog. Supported semantic events extend an active turn by a bounded rolling grace period; arbitrary text does not. The overall benchmark deadline remains a non-renewable hard stop, and an over-budget incomplete turn cannot start another nudge. Timeout ownership latches the first termination reason. Failed process cleanup destroys local pipes, disconnects IPC, unreferences the surviving child, settles once on a bounded fallback, and rejects the task before workspace verification.
+- **Verification:** Focused regressions cover a progressing turn that outlives its nominal budget, silent timeout, text and valid-JSON spam rejection, progress-then-silence timeout, equal-deadline hard-stop precedence, marker termination during delayed cleanup, same-turn terminal completion, and rejection of post-budget nudges. Process regressions cover direct-child exit, inherited-pipe descendants, live direct children, cleanup returning false, cleanup rejection, and a real IPC helper that exits before test-owned survivor cleanup without reaching its verification sentinel. The adversarial test critic returned GO after these cases were added.
+- **Prevention/follow-up:** Keep correctness assessment after process completion unchanged. Retain explicit timeout kinds in benchmark evidence so future failures distinguish semantic inactivity from the run-wide hard deadline.
+- **Reusable learning:** A wall-clock budget is not a liveness signal; extend only on parsed semantic progress and preserve a separate absolute safety deadline.
+- **References:** `benchmarks/src/agents/turn.ts`, `benchmarks/src/agents/turn-timeout.ts`, `benchmarks/src/workloads/agent-turn-runner.ts`, `benchmarks/test/agents/turn-liveness-timeout.test.ts`, `benchmarks/test/agents/turn-cleanup-failure.test.ts`, `benchmarks/test/workloads/agent-task-inactivity-timeout.test.ts`

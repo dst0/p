@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Return a failing process status for terminal errors and aborted responses in JSON print mode."
+}

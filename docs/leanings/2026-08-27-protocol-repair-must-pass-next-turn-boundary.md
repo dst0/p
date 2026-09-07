@@ -1,0 +1,22 @@
+# 2026-08-27 — Protocol repair must pass the next-turn boundary
+
+- **Status:** Resolved
+- **Task/context:** Separate streamed-generation continuity from pre-request context budgeting in the agent loop and coding-agent session runtime.
+- **Unexpected observation or failure:** A provider response ending with `stopReason: "length"` was finalized and persisted, and its incomplete tool call was correctly withheld, but the automatic repair request could start before threshold compaction.
+- **Evidence:** A faux-provider regression persisted the complete text and 58,000-character tool argument, then observed that the next provider callback ran before any `compaction_end` event. Explicit cancellation already persisted its streamed prefix with `stopReason: "aborted"` and did not compact.
+- **Approaches tried:**
+  - **Attempt:** Rely on the session's post-run compaction check.
+    - **Outcome:** Did not work
+    - **Why:** A strict completion-protocol repair continues inside the same agent run, so post-run handling is too late.
+  - **Attempt:** Compact or truncate the active provider stream.
+    - **Outcome:** Rejected
+    - **Why:** Context compaction changes future input and cannot safely rewrite a response that is already streaming.
+  - **Attempt:** Route the repair turn through the existing `prepareNextTurn` boundary.
+    - **Outcome:** Worked
+    - **Why:** The completed response is emitted and persisted first, the host can compact, and only then does the next provider request start.
+- **Root cause:** The completion-protocol repair branch used an early `continue`, bypassing the common `prepareNextTurn` hook that performs between-turn compaction.
+- **Resolution:** Keep the repair message pending with `hasMoreToolCalls = true`, but fall through the common next-turn preparation path before looping.
+- **Verification:** The focused faux-provider suite proves full length-finished response persistence, compaction completion before retry, deterministic one-time delivery of protocol repair then queued steering, exactly one bounded retry tool execution, and terminal cancellation with a persisted streamed prefix.
+- **Prevention/follow-up:** Keep every internally generated provider turn on the same pre-request preparation boundary; do not use an early loop continuation that bypasses host context preparation.
+- **Reusable learning:** Finalize and persist the current stream first; compact only at the shared boundary before the next provider request.
+- **References:** `packages/agent/src/agent-loop/error-recovery.ts`, `packages/coding-agent/test/suite/agent-session-stream-generation-continuity.test.ts`

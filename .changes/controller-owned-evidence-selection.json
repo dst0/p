@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Select completion evidence automatically while keeping focused test boundaries, workspace freshness, and external-effect receipts independently bound."
+}

@@ -5,22 +5,66 @@ import {
   READ_ONLY_PATTERN,
   REQUIREMENT_AUDIT_TOOL_NAME,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
-import { sourcePromptsForState } from "../requirement-audit-hashing.ts";
+import {
+  referencedRequirementCandidates,
+  requirementSourceSelectionMatches,
+} from "../referenced-requirement-sources.ts";
+import { requirementDefinitionMatchesState, sourcePromptsForState } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
+import {
+  deferredReferencedSourceDefinition,
+  requirementDefinitionPolicyActive,
+} from "../requirement-definition-policy.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
+import { requirementDefinitionSources } from "../requirement-source-storage.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
-import { formatRequirementPrompt } from "./requirement-audit.ts";
+import { formatRequirementBatchPrompt } from "./requirement-audit-prompt.ts";
+import { formatRequirementSourcePreparationGuidance } from "./requirement-source-preparation-guidance.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_formatNextRequirement(self: TaskVerificationController): string {
   if (!self.state.taskKind || !self.state.taskSummary) {
     return [
       "Task classification is pending.",
-      "Continue with inspection or baseline checks; the controller will classify the task before the first mutation.",
-      `Use ${TASK_VERIFICATION_TOOL_NAME} with action "declare_task" only to override that classification before mutation.`,
+      "Continue with inspection or baseline checks; the controller will classify an unambiguous task before the first mutation.",
+      `If the mutation gate reports an ambiguous mixed effect, call ${TASK_VERIFICATION_TOOL_NAME} once with action "declare_task" and the dominant requested effect.`,
+    ].join("\n");
+  }
+
+  const prompts = sourcePromptsForState(self.state);
+  const sourceCandidates = referencedRequirementCandidates(prompts);
+  if (sourceCandidates.length > 0) {
+    const references = self.state.requirementSourceRefs ?? [];
+    const ignored = self.state.ignoredRequirementSources ?? [];
+    if (!requirementSourceSelectionMatches(prompts, references, ignored)) {
+      return formatRequirementSourcePreparationGuidance(sourceCandidates.map((candidate) => candidate.path));
+    }
+  }
+
+  if (self.rejectedRequirementDefinitionDraft) {
+    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+    return [
+      `NEXT REQUIRED ACTION: continue the active rejected requirement definition through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
+      typeof sources === "string"
+        ? sources
+        : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
+    ].join("\n");
+  }
+
+  const definitionDeferred =
+    deferredReferencedSourceDefinition(self.state) && self.state.readiness?.status !== "evidence_ready";
+  if (
+    requirementDefinitionPolicyActive(self.state) &&
+    !definitionDeferred &&
+    !requirementDefinitionMatchesState(self.state)
+  ) {
+    const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
+    return [
+      `NEXT REQUIRED ACTION: define and obtain one accepted complete requirement set through ${REQUIREMENT_AUDIT_TOOL_NAME} before implementation.`,
+      typeof sources === "string" ? sources : formatRequirementDefinitionPrompt(sources),
     ].join("\n");
   }
 
@@ -30,7 +74,7 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
         item.mutationRevision === 0 &&
         isShellTool(item.toolName) &&
         item.isError &&
-        TEST_PATTERN.test(item.descriptor) &&
+        commandContainsTestInvocation(item.descriptor) &&
         FOCUSED_TEST_PATTERN.test(item.descriptor) &&
         !/\s*\|\s*/.test(item.descriptor),
     );
@@ -131,27 +175,23 @@ export function do_formatNextRequirement(self: TaskVerificationController): stri
     if (readiness.status === "evidence_ready" && readiness.verifiedMutationRevision === self.state.mutationRevision) {
       const audit = self.state.requirementAudit;
       if (audit.status === "awaiting_definition") {
+        const sources = requirementDefinitionSources(self.state, self.requirementSourceTexts);
         return [
           `NEXT REQUIRED ACTION: define atomic user requirements through ${REQUIREMENT_AUDIT_TOOL_NAME}.`,
-          formatRequirementDefinitionPrompt(sourcePromptsForState(self.state)),
+          typeof sources === "string"
+            ? sources
+            : formatRequirementDefinitionPrompt(sources, self.rejectedRequirementDefinitionDraft),
         ].join("\n");
       }
       if (audit.status === "verifying") {
-        const requirement = audit.requirements[audit.nextRequirementIndex];
-        if (requirement) {
-          return `NEXT REQUIRED ACTION:\n${formatRequirementPrompt(
-            requirement,
-            audit.nextRequirementIndex,
-            audit.requirements.length,
-          )}`;
-        }
+        return `NEXT REQUIRED ACTION:\n${formatRequirementBatchPrompt(audit.requirements)}`;
       }
       if (audit.status === "failed") {
         const failed = audit.requirements.filter((requirement) => requirement.verdict?.passed === false);
         return [
           `NEXT REQUIRED ACTION: complete all ${failed.length} failed user requirement(s).`,
           ...failed.map((requirement) => `${requirement.id}: ${requirement.text} — ${requirement.verdict?.reason}`),
-          `Then call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to re-run every verdict.`,
+          `Then call ${TASK_VERIFICATION_TOOL_NAME} with action "ready_to_finish" to re-run the complete verdict batch.`,
         ].join("\n");
       }
     }

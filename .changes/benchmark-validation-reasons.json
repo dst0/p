@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Retain safe, actionable paired-benchmark validation reasons without exposing child-controlled diagnostic content."
+}

@@ -1,4 +1,4 @@
-import { clearApiProviders, registerApiProvider } from "../api-registry.ts";
+import { clearResettableApiProviders, registerApiProviderIfAbsent as registerApiProvider } from "../api-registry.ts";
 import type {
   Api,
   AssistantMessage,
@@ -405,7 +405,7 @@ export function registerBuiltInApiProviders(): void {
 }
 
 export function resetApiProviders(): void {
-  clearApiProviders();
+  clearResettableApiProviders();
   registerBuiltInApiProviders();
 }
 

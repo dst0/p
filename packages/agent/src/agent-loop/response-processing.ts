@@ -10,21 +10,32 @@ export async function streamAssistantResponse(
   emit: AgentEventSink,
   streamFn?: StreamFn,
 ): Promise<AssistantMessage> {
-  // Apply context transform if configured (AgentMessage[] → AgentMessage[])
-  let messages = context.messages;
-  if (config.transformContext) {
-    messages = await config.transformContext(messages, signal);
+  let llmContext: Context;
+  let maxTokens = config.maxTokens;
+  for (let attempt = 0; ; attempt++) {
+    const messages = config.transformContext
+      ? await config.transformContext(context.messages, signal)
+      : context.messages;
+    llmContext = {
+      systemPrompt: context.systemPrompt,
+      messages: await config.convertToLlm(messages),
+      tools: context.tools,
+    };
+    const prepared = await config.prepareModelCall?.({
+      context: llmContext,
+      model: config.model,
+      maxTokens,
+      attempt,
+    });
+    if (prepared?.maxTokens !== undefined) maxTokens = prepared.maxTokens;
+    if (!prepared?.retryContext) break;
+    if (attempt >= 1) {
+      throw new Error("Model-call preparation could not produce a request that fits after compaction.");
+    }
+    context.systemPrompt = prepared.retryContext.systemPrompt;
+    context.messages = prepared.retryContext.messages;
+    context.tools = prepared.retryContext.tools;
   }
-
-  // Convert to LLM-compatible messages (AgentMessage[] → Message[])
-  const llmMessages = await config.convertToLlm(messages);
-
-  // Build LLM context
-  const llmContext: Context = {
-    systemPrompt: context.systemPrompt,
-    messages: llmMessages,
-    tools: context.tools,
-  };
 
   const streamFunction = streamFn || streamSimple;
 
@@ -38,6 +49,7 @@ export async function streamAssistantResponse(
     ...config,
     reasoning: config.reasoning === "off" ? undefined : config.reasoning,
     apiKey: resolvedApiKey,
+    maxTokens,
     signal,
   });
 
@@ -195,6 +207,6 @@ export async function streamAssistantResponse(
 export function hasRepetitiveModelOutput(message: AssistantMessage): boolean {
   return (
     message.stopReason === "length" &&
-    /streamed (?:text|reasoning) entered a repetitive loop/i.test(message.errorMessage ?? "")
+    /streamed (?:text|reasoning|arguments) entered a repetitive loop/i.test(message.errorMessage ?? "")
   );
 }

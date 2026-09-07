@@ -5,11 +5,13 @@ import { SettingsSelectorComponent } from "../../components/settings-selector.ts
 import { ToolExecutionComponent } from "../../components/tool-execution.ts";
 import { getAvailableThemes, setTheme } from "../../theme/theme.ts";
 import type { InteractiveMode } from "../interactivemode.ts";
+import { handleBudgetCommand } from "./budget-command.ts";
 
 export function do_showSettingsSelector(self: InteractiveMode): void {
   self.showSelector((done) => {
     const selector = new SettingsSelectorComponent(
       {
+        runBudgetLabel: self.session.runBudget.policy.mode === "unlimited" ? "Unlimited" : "Limited",
         autoCompact: self.session.autoCompactionEnabled,
         showImages: self.settingsManager.getShowImages(),
         imageWidthCells: self.settingsManager.getImageWidthCells(),
@@ -46,6 +48,10 @@ export function do_showSettingsSelector(self: InteractiveMode): void {
         warnings: self.settingsManager.getWarnings(),
       },
       {
+        onRunBudgetConfigure: () => {
+          done();
+          void handleBudgetCommand(self, "/budget");
+        },
         onAutoCompactChange: (enabled) => {
           self.session.setAutoCompactionEnabled(enabled);
           self.footer.setAutoCompactEnabled(enabled);

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Add bounded metadata-only list_skills discovery for compiled project-instruction catalogs."
+}

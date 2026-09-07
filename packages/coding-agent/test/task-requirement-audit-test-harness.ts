@@ -1,5 +1,7 @@
 import { Agent, type AgentEvent } from "@dst0/p-agent-core";
 import { SessionManager } from "../src/core/session-manager.ts";
+import { computeStateUserRequirementsHash } from "../src/core/task-verification/requirement-audit-hashing.ts";
+import type { TaskRequirement } from "../src/core/task-verification/types.ts";
 import { createTaskVerificationController, type TaskVerificationController } from "../src/core/task-verification.ts";
 
 export interface RequirementAuditHarness {
@@ -13,7 +15,7 @@ export function createRequirementAuditHarness(
   sessionManager: SessionManager = SessionManager.inMemory(),
 ): RequirementAuditHarness {
   const agent = new Agent();
-  const controller = createTaskVerificationController(sessionManager);
+  const controller = createTaskVerificationController(sessionManager, "audit");
   let subscriber: Parameters<Agent["subscribe"]>[0] | undefined;
   const originalSubscribe = agent.subscribe.bind(agent);
   agent.subscribe = (listener: Parameters<Agent["subscribe"]>[0]) => {
@@ -48,6 +50,38 @@ export async function sendAuditUserPrompt(
   await harness.emit({ type: "message_end", message });
 }
 
+export async function defineSingleDirectPromptRequirement(
+  harness: RequirementAuditHarness,
+  text: string,
+  acceptanceCriterion: string,
+): Promise<void> {
+  return defineDirectPromptRequirements(harness, [{ text, acceptanceCriterion, sourcePromptIndex: 1 }]);
+}
+
+export async function defineDirectPromptRequirements(
+  harness: RequirementAuditHarness,
+  requirements: readonly { text: string; acceptanceCriterion: string; sourcePromptIndex: number }[],
+): Promise<void> {
+  if (!harness.controller.currentState.taskKind) {
+    await callTaskVerification(harness.controller, {
+      action: "declare_task",
+      task_kind: "docs",
+      task_summary: requirements[0]?.text ?? "Verify the requested behavior",
+    });
+  }
+  const result = await callRequirementAudit(harness.controller, {
+    action: "define",
+    requirements: requirements.map((requirement) => ({
+      type: "behavior",
+      text: requirement.text,
+      acceptance_criterion: requirement.acceptanceCriterion,
+      source_prompt_indexes: [requirement.sourcePromptIndex],
+    })),
+    ignored_source_prompts: [],
+  });
+  if (!result.includes(`Defined ${requirements.length} atomic requirement`)) throw new Error(result);
+}
+
 function resultText(result: { content: Array<{ type: string; text?: string }> }): string {
   return result.content
     .filter((part): part is { type: "text"; text: string } => part.type === "text" && typeof part.text === "string")
@@ -79,6 +113,32 @@ export async function callRequirementAudit(
   );
 }
 
+export function activateRequirementDefinitionAfterEvidenceForTest(controller: TaskVerificationController): void {
+  const userRequirementsHash = computeStateUserRequirementsHash(controller.state);
+  controller.state.final = {
+    status: "passed",
+    method: "focused_test",
+    evidenceRefs: ["verification-evidence-test"],
+    unresolvedFailures: [],
+    verifiedMutationRevision: controller.state.mutationRevision,
+  };
+  controller.state.readiness = {
+    status: "evidence_ready",
+    acceptanceChecks: [{ criterion: "focused test evidence", evidenceRefs: ["verification-evidence-test"] }],
+    verifiedMutationRevision: controller.state.mutationRevision,
+    userRequirementsHash,
+  };
+  controller.state.requirementAudit = {
+    status: "awaiting_definition",
+    requirements: [],
+    ignoredSourcePrompts: [],
+    ignoredSourceClauses: [],
+    nextRequirementIndex: 0,
+    userRequirementsHash,
+  };
+  controller.persistState();
+}
+
 function toolCall(name: string, args: Record<string, unknown>) {
   return { type: "toolCall" as const, id: `${name}-${Math.random()}`, name, arguments: args };
 }
@@ -101,6 +161,13 @@ export async function recordAuditToolResult(
   return result?.content ? resultText({ content: result.content }) : "";
 }
 
+export async function recordProductionMutationForTest(harness: RequirementAuditHarness): Promise<void> {
+  await recordAuditToolResult(harness.agent, "write", {
+    path: "src/inventory.ts",
+    content: "export const inventory = true;\n",
+  });
+}
+
 export function auditEvidenceHandle(text: string): string {
   const match = text.match(/Verification evidence handle: (verification-evidence-\d+)/u);
   if (!match) throw new Error(`Missing evidence handle in: ${text}`);
@@ -111,6 +178,44 @@ export function auditVerificationToken(text: string): string {
   const match = text.match(/verification_token: ([0-9a-f-]+)/u);
   if (!match) throw new Error(`Missing verification token in: ${text}`);
   return match[1];
+}
+
+export function withAuditProofWitnesses(output: string, requirement: TaskRequirement): string {
+  const proofLines = (requirement.proofPolicies ?? []).map(
+    (policy) => `P_PROOF_V1 ${JSON.stringify({ requirementId: requirement.id, policy, facts: proofFacts(policy) })}`,
+  );
+  return [output, ...proofLines].join("\n");
+}
+
+function proofFacts(policy: NonNullable<TaskRequirement["proofPolicies"]>[number]): Record<string, unknown> {
+  if (policy === "preserve_state_on_failure" || policy === "preserve_log_on_failure") {
+    const snapshot = Buffer.from("unchanged snapshot").toString("base64");
+    return { beforeBase64: snapshot, afterFailureBase64: snapshot, failedOutcome: "threw" };
+  }
+  if (policy === "preserve_version_on_failure" || policy === "preserve_position_on_failure") {
+    return {
+      before: 4,
+      afterFailure: 4,
+      afterSuccess: 5,
+      failedOutcome: "threw",
+      successOutcome: "succeeded",
+    };
+  }
+  if (policy === "preserve_command_identity_on_failure") {
+    return {
+      failedIdentity: "same-command-id",
+      retryIdentity: "same-command-id",
+      failedOutcome: "threw",
+      retryOutcome: "succeeded",
+    };
+  }
+  const original = Buffer.from("artifact\n");
+  const candidate = policy === "remove_exact_final_byte" ? original.subarray(0, -1) : Buffer.from("changed\n");
+  return {
+    originalBase64: original.toString("base64"),
+    candidateBase64: candidate.toString("base64"),
+    outcome: "threw",
+  };
 }
 
 export async function completeSingleRequirementAudit(
@@ -131,10 +236,14 @@ export async function completeSingleRequirementAudit(
   });
   const verdict = await callRequirementAudit(controller, {
     action: "verdict",
-    requirement_id: "R1",
-    passed: true,
-    reason: "Focused current-revision evidence proves the requested behavior.",
-    evidence_refs: [evidenceRef],
+    verdicts: [
+      {
+        requirement_id: "R1",
+        passed: true,
+        reason: "Focused current-revision evidence proves the requested behavior.",
+        evidence_refs: [evidenceRef],
+      },
+    ],
   });
   return auditVerificationToken(verdict);
 }

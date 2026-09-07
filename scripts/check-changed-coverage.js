@@ -7,6 +7,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 export const LINE_COVERAGE_THRESHOLD = 99;
 export const COVERAGE_PACKAGES = ["agent", "ai", "code-index", "coding-agent", "tui"];
+export const GIT_DIFF_MAX_BUFFER_BYTES = 32 * 1024 * 1024;
 
 function normalizeRepoPath(filePath) {
 	return filePath.split(path.sep).join("/");
@@ -143,6 +144,14 @@ export function findReports(repoRoot, packageNames = COVERAGE_PACKAGES) {
 	return reports;
 }
 
+export function readChangedDiff(repoRoot, base, runGitDiff = execFileSync) {
+	return runGitDiff(
+		"git",
+		["diff", "--unified=0", "--no-color", `${base}...HEAD`, "--", "packages"],
+		{ cwd: repoRoot, encoding: "utf8", maxBuffer: GIT_DIFF_MAX_BUFFER_BYTES },
+	);
+}
+
 function formatResult(result, base, reportCount) {
 	const percentage = result.percentage.toFixed(2);
 	const lines = [
@@ -166,10 +175,7 @@ function formatResult(result, base, reportCount) {
 export function main(argv = process.argv.slice(2)) {
 	const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 	const base = parseBase(argv);
-	const diff = execFileSync("git", ["diff", "--unified=0", "--no-color", `${base}...HEAD`, "--", "packages"], {
-		cwd: repoRoot,
-		encoding: "utf8",
-	});
+	const diff = readChangedDiff(repoRoot, base);
 	const changedLines = parseChangedLines(diff);
 	const reports = findReports(repoRoot);
 

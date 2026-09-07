@@ -1,12 +1,15 @@
 import { type AgentTool, type CompletionMode, FINISH_WORK_TOOL_NAME, type ThinkingLevel } from "@dst0/p-agent-core";
 import type { Model } from "@dst0/p-ai";
+import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { buildSystemPrompt } from "../../system-prompt.ts";
+import { reconcileTaskVerificationRuntime } from "../../task-verification-session-runtime.ts";
 import type { AgentSession } from "../agentsession.ts";
 
 export function do_setActiveToolsByName(self: AgentSession, toolNames: string[]): void {
+  const reconciledToolNames = reconcileTaskVerificationRuntime(self, toolNames);
   const tools: AgentTool[] = [];
   const validToolNames: string[] = [];
-  for (const name of toolNames) {
+  for (const name of reconciledToolNames) {
     const tool = self._toolRegistry.get(name);
     if (tool) {
       tools.push(tool);
@@ -136,7 +139,7 @@ export function do__rebuildSystemPrompt(
   }
   if (completionMode !== "implicit") {
     toolSnippets[FINISH_WORK_TOOL_NAME] =
-      "finish_work({ status, summary, result?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible result";
+      "finish_work({ status, summary, verification_token?, files_changed?, tests_run?, remaining_work?, notes? }): explicitly terminate the task with the final status and user-visible summary";
   }
 
   const loaderSystemPrompt = self._resourceLoader.getSystemPrompt();
@@ -147,18 +150,24 @@ export function do__rebuildSystemPrompt(
     .join("\n\n");
   const loadedSkills = self._resourceLoader.getSkills().skills;
   const loadedContextFiles = self._resourceLoader.getAgentsFiles().agentsFiles;
+  const preparedProjectInstructions = self._projectInstructions.state.current;
+  const projectInstructions =
+    self._projectInstructionMode === "compiled" && preparedProjectInstructions
+      ? selectProjectInstructionPromptForTools(preparedProjectInstructions, validToolNames)
+      : undefined;
 
   self._baseSystemPromptOptions = {
     cwd: self._cwd,
     skills: loadedSkills,
-    contextFiles: loadedContextFiles,
-    projectInstructions: self._projectInstructions.state.current?.prompt,
+    contextFiles: self._projectInstructionMode === "legacy" ? loadedContextFiles : [],
+    projectInstructions,
     customPrompt: loaderSystemPrompt,
     appendSystemPrompt: appendSystemPrompt || undefined,
     selectedTools: promptToolNames,
     toolSnippets,
     promptGuidelines,
     completionMode,
+    taskVerificationMode: self._taskVerificationMode,
   };
   return buildSystemPrompt(self._baseSystemPromptOptions);
 }

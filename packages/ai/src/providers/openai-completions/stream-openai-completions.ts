@@ -3,7 +3,6 @@ import type { AssistantMessage, Context, Model, StreamFunction, ToolCall } from 
 import { extractErrorDetails } from "../../utils/error-details.ts";
 import { AssistantMessageEventStream } from "../../utils/event-stream.ts";
 import { headersToRecord } from "../../utils/headers.ts";
-import { parseStreamingJson } from "../../utils/json-parse.ts";
 import {
   findReasoningActionLoop,
   findRepetitiveOutputSuffix,
@@ -200,18 +199,16 @@ export const streamOpenAICompletions: StreamFunction<"openai-completions", OpenA
               let delta = "";
               if (toolCall.function?.arguments) {
                 delta = toolCall.function.arguments;
-                const previousLength = block.partialArgs?.length ?? 0;
-                block.partialArgs = (block.partialArgs ?? "") + delta;
-                block.arguments = parseStreamingJson(block.partialArgs);
+                const { previousLength, currentArgs } = streamingBlocks.appendToolCallArguments(block, delta);
                 const crossedRepetitionCheckBoundary =
                   Math.floor(previousLength / TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS) !==
-                  Math.floor(block.partialArgs.length / TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS);
+                  Math.floor(currentArgs.length / TOOL_CALL_REPETITION_CHECK_INTERVAL_CHARS);
                 const repetition = crossedRepetitionCheckBoundary
-                  ? findRepetitiveToolCallSuffix(block.partialArgs)
+                  ? findRepetitiveToolCallSuffix(currentArgs)
                   : undefined;
                 if (repetition) {
-                  block.partialArgs = trimRepetitiveSuffix(block.partialArgs, repetition);
-                  block.arguments = parseStreamingJson(block.partialArgs);
+                  block.partialArgs = trimRepetitiveSuffix(currentArgs, repetition);
+                  streamingBlocks.reparseToolCallArguments(block);
                   output.stopReason = "length";
                   output.errorMessage = TOOL_CALL_REPETITION_MESSAGE;
                   hasFinishReason = true;

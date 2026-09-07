@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "ai", "coding-agent"],
+  "type": "Fixed",
+  "summary": "Preflight compaction reserves the full response budget and keeps completed large tool calls atomic."
+}

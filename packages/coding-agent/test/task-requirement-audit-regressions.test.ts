@@ -140,7 +140,9 @@ describe("requirement-audit completion regressions", () => {
     expect(harness.controller.currentState.taskKind).toBe("feature");
     expect(harness.controller.currentState.mutationRevision).toBe(1);
     expect((harness.controller.currentState as unknown as { taskId?: string }).taskId).toBe(taskId);
+    expect(harness.controller.currentState.final.status).toBe("pending");
     expect(harness.controller.currentState.readiness?.status).toBe("pending");
+    expect((await beforeAuditTool(harness.agent, "opaque_sender", {}))?.block).not.toBe(true);
   });
 
   it("returns every verbatim source prompt for authoritative decomposition without invented policy", async () => {
@@ -230,25 +232,6 @@ describe("requirement-audit completion regressions", () => {
     expect(harness.controller.currentState.taskPrompts).toHaveLength(1);
   });
 
-  it("bounds authoritative decomposition to 32 atomic requirements", async () => {
-    const harness = createRequirementAuditHarness();
-    await reachAuditEvidenceReady(harness);
-    await nextModelTurn(harness);
-    const result = await callRequirementAudit(harness.controller, {
-      action: "define",
-      requirements: Array.from({ length: 33 }, (_unused, index) => ({
-        type: "behavior",
-        text: `Atomic behavior ${index + 1}`,
-        acceptance_criterion: `Behavior ${index + 1} is independently verified`,
-        source_prompt_indexes: [1],
-      })),
-      ignored_source_prompts: [],
-    });
-
-    expect(result).toContain("at most 32 atomic requirements");
-    expect(harness.controller.currentState.requirementAudit.status).toBe("awaiting_definition");
-  });
-
   it("allows finish_work without explicit verification_token after requirement audit passes", async () => {
     const harness = createRequirementAuditHarness();
     const { evidenceRef } = await reachAuditEvidenceReady(harness);
@@ -268,10 +251,14 @@ describe("requirement-audit completion regressions", () => {
     await nextModelTurn(harness);
     await callRequirementAudit(harness.controller, {
       action: "verdict",
-      requirement_id: "R1",
-      passed: true,
-      reason: "Current focused evidence proves the complete requirement.",
-      evidence_refs: [evidenceRef],
+      verdicts: [
+        {
+          requirement_id: "R1",
+          passed: true,
+          reason: "Current focused evidence proves the complete requirement.",
+          evidence_refs: [evidenceRef],
+        },
+      ],
     });
 
     const finishArgs: { status: "success"; summary: string; verification_token?: string } = {

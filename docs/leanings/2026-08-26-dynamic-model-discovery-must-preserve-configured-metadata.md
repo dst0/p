@@ -1,0 +1,22 @@
+# 2026-08-26 — Dynamic model discovery must preserve configured metadata
+
+- **Status:** Resolved
+- **Task/context:** Running a live non-coding compiled-instruction canary with a compiler model that is configured locally and rediscovered by a provider extension.
+- **Unexpected observation or failure:** The compiler refused to run with `Instruction compiler model lacks explicit thinking-disable compatibility` even though the configured model declared the required thinking format.
+- **Evidence:** The compiled-instruction failure artifact reported missing compatibility, while the configured model retained it and the fresh discovery cache omitted it. A separate regression reproduced that registering provider connection fields before model membership failed before the two updates could be merged. The full suite then exposed a stale rollback test that still classified a valid merged update as invalid merely because its second call omitted the already-registered provider API.
+- **Approaches tried:**
+  - **Attempt:** Change only the active discovery extension to request metadata inheritance.
+    - **Outcome:** Did not work
+    - **Why:** It would repair one extension while leaving every other sparse dynamic registration vulnerable to erasing configured compatibility.
+  - **Attempt:** Let the compiler fall back to stale configured metadata after dynamic discovery replaced it.
+    - **Outcome:** Did not work
+    - **Why:** Configured metadata may describe a different API than the live discovered model, so compiler control would no longer be fail-closed.
+  - **Attempt:** Preserve configured metadata by default when dynamic model membership omits it, retain explicit replacement semantics, and validate partial registrations after merging them with existing provider state.
+    - **Outcome:** Worked
+    - **Why:** Live membership remains authoritative, API mismatches do not inherit incompatible metadata, and sparse provider lifecycle updates become valid without accepting malformed effective configurations.
+- **Root cause:** Sparse dynamic registration implicitly replaced model metadata and validated each partial update before merging, so discovery could erase compiler-control compatibility or reject a valid provider-first registration sequence.
+- **Resolution:** Default model-bearing dynamic updates to metadata inheritance unless replacement was explicitly selected, merge only API-compatible metadata, and validate the complete effective provider configuration before applying it atomically.
+- **Verification:** Focused dynamic metadata, registration validation, default registration, compiler reasoning-control, compiler metadata-backoff, and atomic invalid-ID rollback tests pass; the live non-coding canary then compiled and loaded its operational rule module.
+- **Prevention/follow-up:** Cover provider-first and model-first lifecycles, empty membership, reappearance, refresh, explicit replacement, malformed IDs, and API changes whenever dynamic registration semantics change.
+- **Reusable learning:** Dynamic discovery should own current membership while omitted fields inherit compatible configured metadata; validate an atomic merged state, not an intentionally partial update.
+- **References:** `packages/coding-agent/src/core/model-registry/modelregistry-methods/model-lookup.ts`, `packages/coding-agent/test/model-registry.test.ts`, `packages/coding-agent/test/model-registry-dynamic-registration-validation.test.ts`, `packages/coding-agent/test/model-registry-dynamic-thinking-metadata.test.ts`

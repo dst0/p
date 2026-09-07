@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Recover large instruction compilation with scope-calibrated sparse always-on selection, one bounded typed retry, safe failure telemetry, verified reasoning disable, and exact cache invalidation."
+}

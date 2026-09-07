@@ -6,7 +6,7 @@
  */
 
 import type { AgentTool } from "@dst0/p-agent-core";
-import { wrapToolDefinition, wrapToolDefinitions } from "../tools/tool-definition-wrapper.ts";
+import { wrapToolDefinition } from "../tools/tool-definition-wrapper.ts";
 import type { ExtensionRunner } from "./runner.ts";
 import type { RegisteredTool } from "./types.ts";
 
@@ -15,7 +15,8 @@ import type { RegisteredTool } from "./types.ts";
  * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
 export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: ExtensionRunner): AgentTool {
-  return wrapToolDefinition(registeredTool.definition, () => runner.createContext());
+  const source = registeredTool.sourceInfo.source === "builtin" ? "builtin" : "declared";
+  return wrapToolDefinition(registeredTool.definition, () => runner.createContext(), source);
 }
 
 /**
@@ -23,8 +24,5 @@ export function wrapRegisteredTool(registeredTool: RegisteredTool, runner: Exten
  * Uses the runner's createContext() for consistent context across tools and event handlers.
  */
 export function wrapRegisteredTools(registeredTools: RegisteredTool[], runner: ExtensionRunner): AgentTool[] {
-  return wrapToolDefinitions(
-    registeredTools.map((registeredTool) => registeredTool.definition),
-    () => runner.createContext(),
-  );
+  return registeredTools.map((registeredTool) => wrapRegisteredTool(registeredTool, runner));
 }

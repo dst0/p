@@ -1,5 +1,6 @@
 import { accessSync, constants } from "node:fs";
 import { access } from "node:fs/promises";
+import { normalize as normalizeNodePath, parse, sep } from "node:path";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 
 const NARROW_NO_BREAK_SPACE = "\u202F";
@@ -46,7 +47,22 @@ export function expandPath(filePath: string): string {
  * Handles ~ expansion and absolute paths.
  */
 export function resolveToCwd(filePath: string, cwd: string): string {
-  return resolvePath(filePath, cwd, { normalizeUnicodeSpaces: true, stripAtPrefix: true });
+  const normalized = normalizePath(filePath, { normalizeUnicodeSpaces: true, stripAtPrefix: true });
+  rejectRootlessCwdQualifiedPath(normalized, cwd, filePath);
+  return resolvePath(normalized, cwd);
+}
+
+function rejectRootlessCwdQualifiedPath(normalizedPath: string, cwd: string, originalPath: string): void {
+  const absoluteCwd = resolvePath(cwd);
+  const cwdRoot = parse(absoluteCwd).root;
+  if (!cwdRoot) return;
+  const rootlessCwd = absoluteCwd.slice(cwdRoot.length).split(sep).join("/");
+  const comparablePath = normalizeNodePath(normalizedPath).split(sep).join("/");
+  if (rootlessCwd && (comparablePath === rootlessCwd || comparablePath.startsWith(`${rootlessCwd}/`))) {
+    throw new Error(
+      `Path ${JSON.stringify(originalPath)} looks like the absolute cwd ${JSON.stringify(absoluteCwd)} whose leading root separator is missing. Retry with a rooted absolute path or a normal cwd-relative path such as "src/index.ts". No filesystem operation was performed.`,
+    );
+  }
 }
 
 export function resolveReadPath(filePath: string, cwd: string): string {

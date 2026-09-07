@@ -99,6 +99,7 @@ interface RequestBody {
   text?: { verbosity?: string };
   include?: string[];
   prompt_cache_key?: string;
+  max_output_tokens?: number;
   [key: string]: unknown;
 }
 
@@ -446,14 +447,13 @@ function buildRequestBody(
     text: { verbosity: options?.textVerbosity || "low" },
     include: ["reasoning.encrypted_content"],
     prompt_cache_key: clampOpenAIPromptCacheKey(options?.sessionId),
+    max_output_tokens: options?.maxTokens,
     tool_choice: "auto",
     parallel_tool_calls: true,
   };
-
   if (options?.temperature !== undefined) {
     body.temperature = options.temperature;
   }
-
   if (options?.serviceTier !== undefined) {
     body.service_tier = options.serviceTier;
   }

@@ -34,6 +34,40 @@ afterEach(async () => {
 });
 
 describe("indexing reinstall scripts", () => {
+  it("clears a stale reuse marker before every new decision and on exit", () => {
+    const reinstall = fs.readFileSync(path.join(repositoryRoot, "reinstall.sh"), "utf8");
+    const transaction = fs.readFileSync(
+      path.join(repositoryRoot, "scripts", "indexing-reinstall-transaction.sh"),
+      "utf8",
+    );
+    const markerClear = "clear_stale_indexing_reuse_decision";
+    const flowStart = reinstall.indexOf("INDEXING_REINSTALL_MARKER_ACTIVE=true");
+    const decision = reinstall.indexOf("INDEXING_REUSE_DECISION=$(");
+    const preDecisionClear = reinstall.indexOf(markerClear, flowStart);
+    const markerWrite = reinstall.indexOf("mark_indexing_service_reuse", decision);
+    const installer = reinstall.indexOf("node scripts/install-indexing-service.js", decision);
+    const lockBegin = reinstall.indexOf("begin_indexing_reinstall_transaction");
+    const configMigration = reinstall.indexOf('node "$SCRIPT_DIR/scripts/indexing-config.js" migrate');
+    const lockActive = transaction.indexOf("INDEXING_REINSTALL_LOCK_ACTIVE=true", transaction.indexOf("begin_"));
+    const lockAcquire = transaction.indexOf('indexing-reinstall-lock.js" --acquire');
+
+    expect(flowStart).toBeGreaterThanOrEqual(0);
+    expect(preDecisionClear).toBeGreaterThan(flowStart);
+    expect(preDecisionClear).toBeLessThan(decision);
+    expect(markerWrite).toBeGreaterThan(decision);
+    expect(markerWrite).toBeLessThan(installer);
+    expect(lockBegin).toBeGreaterThanOrEqual(0);
+    expect(lockBegin).toBeLessThan(configMigration);
+    expect(lockActive).toBeGreaterThanOrEqual(0);
+    expect(lockActive).toBeLessThan(lockAcquire);
+    expect(transaction).toContain('indexing-service-reuse.js" --clear-reuse');
+    expect(transaction).toContain('indexing-reinstall-lock.js" --release');
+    expect(reinstall).not.toContain('touch "$INDEXING_VERSION_UNCHANGED_FLAG"');
+    expect(reinstall).not.toContain('rm -f "$INDEXING_VERSION_UNCHANGED_FLAG"');
+    expect(reinstall).toContain('P_INDEXING_REINSTALL_RUN_ID="$INDEXING_REINSTALL_RUN_ID"');
+    expect(reinstall).toContain('P_INDEXING_REINSTALL_EXPECTED_REUSE="$INDEXING_REUSE_DECISION"');
+  });
+
   it("documents supported flags and rejects unknown options before reinstalling", () => {
     for (const script of ["install.sh", "reinstall.sh"]) {
       const scriptPath = path.join(repositoryRoot, script);
@@ -45,6 +79,15 @@ describe("indexing reinstall scripts", () => {
       expect(unknown.status).toBe(1);
       expect(unknown.stderr).toContain("Unknown option: --unknown");
     }
+  });
+
+  it("routes install-time indexing configuration through the serialized reinstall", () => {
+    const install = fs.readFileSync(path.join(repositoryRoot, "install.sh"), "utf8");
+
+    expect(install).not.toContain("prompt_indexing_device_and_batch_size_selection");
+    expect(install).not.toContain("prompt_indexing_tray_selection");
+    expect(install).toContain('REINSTALL_ARGS+=("--select-indexing")');
+    expect(install).toContain(`bash "$SCRIPT_DIR/reinstall.sh" "\${REINSTALL_ARGS[@]}"`);
   });
 
   it.skipIf(!canInspectProcesses)("force-stops a daemon that ignores the bounded quiesce handshake", async () => {

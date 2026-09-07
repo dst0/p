@@ -26,6 +26,10 @@ export interface ApiProvider<TApi extends Api = Api, TOptions extends StreamOpti
   streamSimple: StreamFunction<TApi, SimpleStreamOptions>;
 }
 
+export interface ApiProviderRegistrationOptions {
+  preserveOnReset?: boolean;
+}
+
 interface ApiProviderInternal {
   api: Api;
   stream: ApiStreamFunction;
@@ -35,6 +39,7 @@ interface ApiProviderInternal {
 type RegisteredApiProvider = {
   provider: ApiProviderInternal;
   sourceId?: string;
+  preserveOnReset: boolean;
 };
 
 const apiProviderRegistry = new Map<string, RegisteredApiProvider>();
@@ -66,6 +71,36 @@ function wrapStreamSimple<TApi extends Api>(
 export function registerApiProvider<TApi extends Api, TOptions extends StreamOptions>(
   provider: ApiProvider<TApi, TOptions>,
   sourceId?: string,
+  options: ApiProviderRegistrationOptions = {},
+): void {
+  storeApiProvider(provider, sourceId, options);
+}
+
+export function registerApiProviderIfAbsent<TApi extends Api, TOptions extends StreamOptions>(
+  provider: ApiProvider<TApi, TOptions>,
+  sourceId?: string,
+  options: ApiProviderRegistrationOptions = {},
+): void {
+  if (apiProviderRegistry.has(provider.api)) return;
+  storeApiProvider(provider, sourceId, options);
+}
+
+export function registerApiProviderExclusive<TApi extends Api, TOptions extends StreamOptions>(
+  provider: ApiProvider<TApi, TOptions>,
+  sourceId: string,
+  options: ApiProviderRegistrationOptions = {},
+): void {
+  const existing = apiProviderRegistry.get(provider.api);
+  if (existing && existing.sourceId !== sourceId) {
+    throw new Error(`API provider already registered by a different source: ${provider.api}`);
+  }
+  storeApiProvider(provider, sourceId, options);
+}
+
+function storeApiProvider<TApi extends Api, TOptions extends StreamOptions>(
+  provider: ApiProvider<TApi, TOptions>,
+  sourceId?: string,
+  options: ApiProviderRegistrationOptions = {},
 ): void {
   apiProviderRegistry.set(provider.api, {
     provider: {
@@ -74,6 +109,7 @@ export function registerApiProvider<TApi extends Api, TOptions extends StreamOpt
       streamSimple: wrapStreamSimple(provider.api, provider.streamSimple),
     },
     sourceId,
+    preserveOnReset: options.preserveOnReset ?? false,
   });
 }
 
@@ -95,4 +131,10 @@ export function unregisterApiProviders(sourceId: string): void {
 
 export function clearApiProviders(): void {
   apiProviderRegistry.clear();
+}
+
+export function clearResettableApiProviders(): void {
+  for (const [api, entry] of apiProviderRegistry.entries()) {
+    if (!entry.preserveOnReset) apiProviderRegistry.delete(api);
+  }
 }

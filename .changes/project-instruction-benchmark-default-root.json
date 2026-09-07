@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Correct the paired project-instruction benchmark launcher default root resolution to the repository root and explicitly include coding-agent in root biome formatting checks."
+}

@@ -11,6 +11,7 @@ import {
   writePrivateFile,
 } from "./cache-safety.ts";
 import { hashText } from "./content.ts";
+import { validateProjectInstructionRuleDependencies } from "./dependency-graph.ts";
 import { computeProjectInstructionResultHash, parseProjectInstructionManifest } from "./manifest.ts";
 import { getProjectInstructionFallbackPath } from "./paths.ts";
 import type {
@@ -148,6 +149,7 @@ function loadVersion(
     const manifest = parseProjectInstructionManifest(
       JSON.parse(readSafeVersionFile(versionDir, "manifest.json")) as unknown,
     );
+    if (manifest) validateProjectInstructionRuleDependencies(manifest.rules);
     if (
       !manifest ||
       manifest.agentsHash !== options.agentsHash ||

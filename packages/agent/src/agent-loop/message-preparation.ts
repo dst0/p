@@ -66,7 +66,11 @@ export function resolveCompletionLimits(config: AgentLoopConfig, mode: Completio
   };
 }
 
-export function createProtocolFailureMessage(config: AgentLoopConfig, diagnostic: string): AssistantMessage {
+export function createTerminalAssistantMessage(
+  config: AgentLoopConfig,
+  diagnostic: string,
+  stopReason: "error" | "aborted",
+): AssistantMessage {
   return {
     role: "assistant",
     content: [{ type: "text", text: diagnostic }],
@@ -74,10 +78,27 @@ export function createProtocolFailureMessage(config: AgentLoopConfig, diagnostic
     provider: config.model.provider,
     model: config.model.id,
     usage: EMPTY_USAGE,
-    stopReason: "error",
+    stopReason,
     errorMessage: diagnostic,
     timestamp: Date.now(),
   };
+}
+
+export async function emitAbortedTurn(
+  currentContext: AgentContext,
+  newMessages: AgentMessage[],
+  config: AgentLoopConfig,
+  emit: AgentEventSink,
+  diagnostic: string,
+): Promise<void> {
+  const message = createTerminalAssistantMessage(config, diagnostic, "aborted");
+  currentContext.messages.push(message);
+  newMessages.push(message);
+  await emit({ type: "turn_start" });
+  await emit({ type: "message_start", message });
+  await emit({ type: "message_end", message });
+  await emit({ type: "turn_end", message, toolResults: [] });
+  await emit({ type: "agent_end", messages: newMessages });
 }
 
 export async function emitProtocolFailure(
@@ -94,7 +115,7 @@ export async function emitProtocolFailure(
   if (!turnAlreadyStarted) {
     await emit({ type: "turn_start" });
   }
-  const message = createProtocolFailureMessage(config, diagnostic);
+  const message = createTerminalAssistantMessage(config, diagnostic, "error");
   currentContext.messages.push(message);
   newMessages.push(message);
   await emit({ type: "message_start", message });

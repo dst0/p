@@ -1,0 +1,23 @@
+# 2026-09-04 — bsdtar AppleDouble restoration needs literal entry mode
+
+- **Status:** Corrected
+- **Correction:** 2026-09-04: The first draft overgeneralized a successful ASCII `._*` filename fixture into a claim about real AppleDouble preservation. Full restoration omitted 2,844 genuine 4,096-byte sidecars. A bounded real-content reproduction and the matching libarchive 3.7.4 disk-writer source confirmed that `!mac-ext` does not disable all metadata conversion. The guidance below replaces that incomplete claim; no raw index data was pruned based on it.
+- **Task/context:** Rehearse Brotli Q6 archival and extraction before reclaiming quarantined Qdrant generations stored on ExFAT.
+- **Unexpected observation or failure:** An archive compressed and round-trip-hashed successfully, but macOS bsdtar extraction failed while restoring metadata for an existing `._*` sidecar. Adding only `--no-mac-metadata` avoided that error but omitted the literal sidecar file.
+- **Evidence:** A temporary fixture containing nested data and an ASCII AppleDouble-named sidecar passed with the reader option `!mac-ext` plus `--no-xattrs --no-mac-metadata`. Real restoration still omitted exactly 2,844 sidecars totaling 11,649,024 bytes, with no other inventory/size differences. A real binary AppleDouble fixture reproduced the omission when the companion file preceded its sidecar. Natural APFS enumeration initially did not reproduce it because entry order changed the precondition.
+- **Approaches tried:**
+  - **Attempt:** Accept decompression hash equality as complete restore proof.
+    - **Outcome:** Rejected.
+    - **Why:** Hash equality proves the compressed stream, not the archive reader's interpretation of special entries.
+  - **Attempt:** Disable automatic Apple metadata processing during extraction and compare both ordinary and sidecar file bytes.
+    - **Outcome:** Partial; insufficient for real AppleDouble data.
+    - **Why:** Reader options do not disable the disk writer's content-aware metadata fixup.
+  - **Attempt:** Preserve exact missing sidecars as path/size/SHA-256/raw-byte records in a separate Brotli Q6 supplement and restore them using direct file writes.
+    - **Outcome:** Worked for the bounded real-content reproduction and all 2,844 live missing files.
+    - **Why:** Direct writes do not interpret AppleDouble headers. The supplement is 19,336 bytes and remains an independently hash-bound mandatory part of the recovery bundle.
+- **Root cause:** The libarchive disk writer recognizes nonempty `._*` files, checks the AppleDouble magic/version, and can apply metadata then unlink the literal sidecar if the companion already exists. This is independent of reader `!mac-ext` and the normal metadata flag. ASCII content and different archive ordering missed those preconditions.
+- **Resolution:** Preserve the main archive plus a verified raw-byte sidecar supplement. Require full restored-union inventory and per-file hashes before pruning, and bind both archive digests to deletion authority. Keep the restoration helper with the private backup bundle.
+- **Verification:** Three archive tests, fourteen pruning tests, four supplement tests, and three standalone restoration tests pass; the real AppleDouble/order reproduction also confirms the failure and byte-preserving workaround. Full restored-union verification subsequently passed for all 13,331 original files and 11,763,626,499 bytes before raw quarantine cleanup. This full verification—not those synthetic tests alone—was the operational cleanup gate.
+- **Prevention/follow-up:** Test real format bytes, existing companion files, and both entry orders. Never exclude missing sidecars just to pass validation; preserve and verify them explicitly. Archive hashes alone do not certify the restore tool's interpretation.
+- **Reusable learning:** Backup verification must cover the recovery tool's interpretation, not just compression integrity.
+- **References:** `packages/coding-agent/docs/code-indexing.md`; local bsdtar 3.5.3/libarchive 3.7.4; [matching disk-writer implementation](https://raw.githubusercontent.com/libarchive/libarchive/v3.7.4/libarchive/archive_write_disk_posix.c), specifically `TODO_APPLEDOUBLE` and `fixup_appledouble`.

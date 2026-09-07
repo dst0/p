@@ -21,9 +21,11 @@ export async function do__runAutoCompaction(
   try {
     const hadQueuedMessages = self.agent.hasQueuedMessages();
     const pathEntries = self.sessionManager.getBranch();
-    const retryContinuationMessage = willRetry
-      ? [...self.agent.state.messages].reverse().find((message) => message.role === "user")
+    const retryUserEntry = willRetry
+      ? [...pathEntries].reverse().find((entry) => entry.type === "message" && entry.message.role === "user")
       : undefined;
+    const retryContinuationMessage =
+      willRetry && retryUserEntry?.type === "message" ? retryUserEntry.message : undefined;
 
     const preparationResult = prepareCompaction(pathEntries, settings, self.systemPrompt);
     if (!preparationResult.ok) {
@@ -124,6 +126,9 @@ export async function do__runAutoCompaction(
     }
     const newEntries = self.sessionManager.getEntries();
     const sessionContext = self.sessionManager.buildSessionContext();
+    const retryContinuationIndex = retryContinuationMessage
+      ? sessionContext.messages.indexOf(retryContinuationMessage)
+      : -1;
 
     // Post-compaction truncation: truncate oversized kept messages to enforce
     // the keepRecentTokens budget (last 20 lines / max 4K tokens per message).
@@ -134,6 +139,10 @@ export async function do__runAutoCompaction(
       targetContextTokens: settings.targetContextTokens,
       systemPromptTokens,
     });
+    if (retryContinuationMessage) {
+      if (retryContinuationIndex >= 0) truncatedMessages[retryContinuationIndex] = retryContinuationMessage;
+      else truncatedMessages.push(retryContinuationMessage);
+    }
     const retryMessagesWithoutOverflow = self._removeContextOverflowMessages(truncatedMessages);
     self.agent.state.messages = retryMessagesWithoutOverflow;
     const tokensAfterAuto = estimateContextTokens(retryMessagesWithoutOverflow, self.systemPrompt, {
@@ -173,11 +182,6 @@ export async function do__runAutoCompaction(
       const lastMsg = messages[messages.length - 1];
       if (lastMsg?.role === "assistant" && (lastMsg as AssistantMessage).stopReason === "error") {
         self.agent.state.messages = messages.slice(0, -1);
-      }
-      const retryMessages = self.agent.state.messages;
-      const retryLastMsg = retryMessages[retryMessages.length - 1];
-      if (retryContinuationMessage && retryLastMsg?.role !== "user") {
-        self.agent.state.messages = [...retryMessages, retryContinuationMessage];
       }
       return true;
     }

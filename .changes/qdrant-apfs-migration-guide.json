@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Added",
+  "summary": "Document verified cross-filesystem Qdrant migration, readiness comparisons and cutoff-tie search checks."
+}

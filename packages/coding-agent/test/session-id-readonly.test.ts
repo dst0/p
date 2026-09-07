@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
+const CLI_CHILD_KILL_TIMEOUT_MS = 60_000;
+const FULL_SUITE_CHILD_PROCESS_TIMEOUT_MS = 150_000;
 const tempDirs: string[] = [];
 
 afterEach(() => {
@@ -74,8 +76,23 @@ async function runCli(
     child.stderr.on("data", (chunk) => {
       stderr += chunk.toString();
     });
-    child.on("error", reject);
-    child.on("close", resolvePromise);
+    let timedOut = false;
+    const killTimer = setTimeout(() => {
+      timedOut = true;
+      child.kill("SIGKILL");
+    }, CLI_CHILD_KILL_TIMEOUT_MS);
+    child.on("error", (error) => {
+      clearTimeout(killTimer);
+      reject(error);
+    });
+    child.on("close", (exitCode) => {
+      clearTimeout(killTimer);
+      if (timedOut) {
+        reject(new Error(`CLI child did not exit within ${CLI_CHILD_KILL_TIMEOUT_MS}ms`));
+        return;
+      }
+      resolvePromise(exitCode);
+    });
   });
 
   return { code, agentDir: dirs.agentDir, stderr };
@@ -105,7 +122,18 @@ describe("--session-id read-only commands", () => {
 
   it("rejects an existing fork target session id", async () => {
     const result = await runCli(
-      (dirs) => ["--session-dir", dirs.sessionDir, "--fork", "source-id", "--session-id", "existing-id", "-p", "hi"],
+      (dirs) => [
+        "--budget",
+        "unlimited",
+        "--session-dir",
+        dirs.sessionDir,
+        "--fork",
+        "source-id",
+        "--session-id",
+        "existing-id",
+        "-p",
+        "hi",
+      ],
       (dirs) => {
         mkdirSync(dirs.sessionDir, { recursive: true });
         writeSession(dirs.sessionDir, dirs.projectDir, "source-id");
@@ -119,13 +147,17 @@ describe("--session-id read-only commands", () => {
 });
 
 describe("--session-id validation", () => {
-  it("rejects ids invalid under SessionManager rules without stack traces", async () => {
-    for (const id of ["-bad", "bad id"]) {
-      const result = await runCli(["--session-id", id, "-p", "hi"]);
+  it(
+    "rejects ids invalid under SessionManager rules without stack traces",
+    async () => {
+      for (const id of ["-bad", "bad id"]) {
+        const result = await runCli(["--session-id", id, "-p", "hi"]);
 
-      expect(result.code).toBe(1);
-      expect(result.stderr).toContain("Session id must be non-empty");
-      expect(result.stderr).not.toContain("SessionManager.create");
-    }
-  });
+        expect(result.code).toBe(1);
+        expect(result.stderr).toContain("Session id must be non-empty");
+        expect(result.stderr).not.toContain("SessionManager.create");
+      }
+    },
+    FULL_SUITE_CHILD_PROCESS_TIMEOUT_MS,
+  );
 });

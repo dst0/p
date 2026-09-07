@@ -24,6 +24,12 @@ const REQUIRED_INPUTS = [
   "scripts/verify-release-certificate.js",
   "scripts/version-bump.js",
 ];
+const OPTIONAL_RELEASE_INPUTS = [
+  "scripts/build-binaries.sh",
+  "scripts/local-release.js",
+  "scripts/npm-pack-result.js",
+  "scripts/publish.js",
+];
 
 function selectedInputPaths(allPaths, rootPackage, workspacePaths) {
   const paths = new Set([
@@ -37,6 +43,7 @@ function selectedInputPaths(allPaths, rootPackage, workspacePaths) {
         (/^scripts\/release.*\.js$/.test(path) && !path.endsWith(".test.js")) ||
         ["scripts/generate-coding-agent-shrinkwrap.js", "scripts/sync-versions.js"].includes(path),
     ),
+    ...OPTIONAL_RELEASE_INPUTS.filter((path) => allPaths.includes(path)),
   ]);
   for (const path of REQUIRED_INPUTS) {
     if (!allPaths.includes(path)) {

@@ -12,6 +12,7 @@ import { readRuleLinks, readSkillLinks } from "../src/core/project-instructions/
 import type { ProjectInstructionRuleRecord } from "../src/core/project-instructions/types.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -52,12 +53,17 @@ describe("project instruction catalog persistence", () => {
     ).join("");
     writeFileSync(workspace.agentsPath, content);
     const skills = Array.from({ length: 240 }, (_, index) => createSkill(workspace.root, index));
-    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => ({
-      body: "Read every matching exact rule module.",
-      triggers: Object.fromEntries(
-        request.modules.map((module) => [module.id, `When ${module.title} applies ${"specific detail ".repeat(25)}`]),
+    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) =>
+      createProjectInstructionCompilation(
+        request,
+        Object.fromEntries(
+          request.modules.map((module) => [
+            module.id,
+            `When ${module.title} applies ${"specific detail ".repeat(15).trim()}`,
+          ]),
+        ),
       ),
-    }));
+    );
     const options = {
       cwd: workspace.root,
       cacheDir: workspace.cacheDir,
@@ -67,6 +73,7 @@ describe("project instruction catalog persistence", () => {
     };
 
     const first = await prepareProjectInstructions(options);
+    expect(first.manifest).toMatchObject({ mode: "compiled", compilerStatus: "success" });
     expect(first.manifest.rulesCatalogPages.length).toBeGreaterThan(1);
     expect(first.manifest.skillsCatalogPages.length).toBeGreaterThan(1);
     const state = createProjectInstructionState(first);
@@ -118,6 +125,7 @@ describe("project instruction catalog bounds", () => {
       file: "rules/oversized.md",
       title: "Oversized",
       trigger: "Always",
+      routable: true,
       sourcePath: "x".repeat(140_000),
       contentHash: "a".repeat(64),
     };

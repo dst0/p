@@ -19,12 +19,35 @@ const ENV_OPTIONS_WITH_SEPARATE_VALUE = new Set([
 ]);
 const SHELL_ASSIGNMENT_PATTERN = /^[A-Za-z_][A-Za-z0-9_]*=/u;
 const MAX_SPLIT_STRING_DEPTH = 4;
-
+const GIT_ACTIONS = new Set([
+  "add",
+  "branch",
+  "checkout",
+  "cherry-pick",
+  "clean",
+  "clone",
+  "commit",
+  "diff",
+  "fetch",
+  "log",
+  "merge",
+  "pull",
+  "push",
+  "rebase",
+  "reset",
+  "restore",
+  "revert",
+  "show",
+  "stash",
+  "status",
+  "switch",
+  "tag",
+]);
 function isExecutable(token: string | undefined, name: string): boolean {
   return token === name || token?.endsWith(`/${name}`) === true;
 }
 
-function tokenizeShellCommands(command: string): string[][] {
+export function tokenizeShellCommands(command: string): string[][] {
   const commands: string[][] = [];
   let words: string[] = [];
   let word = "";
@@ -79,7 +102,7 @@ function tokenizeShellCommands(command: string): string[][] {
   return commands;
 }
 
-function gitArgumentStart(words: readonly string[]): number | undefined {
+export function commandStart(words: readonly string[]): number {
   let index = 0;
   while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   while (isExecutable(words[index], "command") || isExecutable(words[index], "env")) {
@@ -104,11 +127,41 @@ function gitArgumentStart(words: readonly string[]): number | undefined {
     }
     while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   }
-  const executable = words[index];
-  return isExecutable(executable, "git") ? index + 1 : undefined;
+  return index;
 }
 
-function envSplitStringPayload(words: readonly string[]): string | undefined {
+export function gitArgumentStart(words: readonly string[]): number | undefined {
+  const index = commandStart(words);
+  return isExecutable(words[index], "git") ? index + 1 : undefined;
+}
+
+export function gitAction(words: readonly string[], startIndex: number): string | undefined {
+  for (let index = startIndex; index < words.length; index++) {
+    const token = words[index]!;
+    if (token === "--") return words[index + 1]?.toLocaleLowerCase("en-US");
+    if (GIT_OPTIONS_WITH_SEPARATE_VALUE.has(token)) {
+      index += 1;
+      continue;
+    }
+    if (token.startsWith("-")) continue;
+    const normalized = token.toLocaleLowerCase("en-US");
+    return GIT_ACTIONS.has(normalized) ? normalized : undefined;
+  }
+  return undefined;
+}
+
+export function shellWrapperPayload(words: readonly string[]): string | undefined {
+  const startIndex = commandStart(words);
+  const executable = words[startIndex]?.split("/").pop();
+  if (executable === "eval") return words.slice(startIndex + 1).join(" ") || undefined;
+  if (executable !== "bash" && executable !== "sh" && executable !== "zsh") return undefined;
+  const commandIndex = words.findIndex(
+    (word, index) => index > startIndex && (word === "-c" || /^-[^-]*c[^-]*$/u.test(word)),
+  );
+  return commandIndex >= 0 ? words[commandIndex + 1] : undefined;
+}
+
+export function envSplitStringPayload(words: readonly string[]): string | undefined {
   let index = 0;
   while (index < words.length) {
     while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
@@ -152,6 +205,11 @@ function invocationPublishes(words: readonly string[], startIndex: number): bool
 
 function containsGitPublishCommandAtDepth(command: string, depth: number): boolean {
   for (const words of tokenizeShellCommands(command)) {
+    const shellPayload = shellWrapperPayload(words);
+    if (shellPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH) return true;
+      if (containsGitPublishCommandAtDepth(shellPayload, depth + 1)) return true;
+    }
     const splitStringPayload = envSplitStringPayload(words);
     if (splitStringPayload !== undefined) {
       if (depth >= MAX_SPLIT_STRING_DEPTH) return true;
@@ -163,6 +221,47 @@ function containsGitPublishCommandAtDepth(command: string, depth: number): boole
   return false;
 }
 
+function isDirectoryChange(words: readonly string[]): boolean {
+  if (!isExecutable(words[0], "cd")) return false;
+  return words.length === 2 || (words.length === 3 && words[1] === "--");
+}
+
+function isSafePublishCommandSequenceAtDepth(command: string, depth: number): boolean {
+  if (/[<>`]|\$\(/u.test(command)) return false;
+  const commands = tokenizeShellCommands(command);
+  if (commands.length === 0) return false;
+  let foundPublish = false;
+  for (const words of commands) {
+    const shellPayload = shellWrapperPayload(words);
+    if (shellPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH || !isSafePublishCommandSequenceAtDepth(shellPayload, depth + 1)) {
+        return false;
+      }
+      foundPublish = true;
+      continue;
+    }
+    const splitStringPayload = envSplitStringPayload(words);
+    if (splitStringPayload !== undefined) {
+      if (depth >= MAX_SPLIT_STRING_DEPTH || !isSafePublishCommandSequenceAtDepth(splitStringPayload, depth + 1)) {
+        return false;
+      }
+      foundPublish = true;
+      continue;
+    }
+    const startIndex = gitArgumentStart(words);
+    if (startIndex !== undefined && invocationPublishes(words, startIndex)) {
+      foundPublish = true;
+      continue;
+    }
+    if (!isDirectoryChange(words)) return false;
+  }
+  return foundPublish;
+}
+
 export function containsGitPublishCommand(command: string): boolean {
   return containsGitPublishCommandAtDepth(command, 0);
+}
+
+export function isSafePublishCommandSequence(command: string): boolean {
+  return isSafePublishCommandSequenceAtDepth(command, 0);
 }

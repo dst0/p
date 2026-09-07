@@ -1,0 +1,20 @@
+# 2026-08-25 — Sparse repair payload budgets must fit valid splits
+
+- **Status:** Resolved
+- **Task/context:** Run the randomized paired project-instructions benchmark for candidate `5.0.1-rc.34` after requirement-draft monotonicity passed a focused live AI-unit.
+- **Unexpected observation or failure:** Run-1 legacy improved its active draft from 42 requirements with 35 diagnostics to 42/30 and 42/19, but timed out after two protocol-rejected repair calls. The final call repaired 13 indexed items with 20 atomic replacements and only seven net-new requirements.
+- **Evidence:** The hard gate stopped after 2,405,483 ms with one definition, four repair attempts, 448,051 session tokens, and no compiled or later cells. The Brotli Q6 progress stream records the final 13-entry, 20-replacement call as protocol-rejected while the 42/19 draft remained active.
+- **Approaches tried:**
+  - **Attempt:** Keep aggregate replacements equal to the 16-entry limit.
+    - **Outcome:** Did not work
+    - **Why:** A valid split can replace one indexed compound requirement with multiple atomic requirements. The observed 20-object repair stayed below the 96-item global limit and the lineage grew by only seven, but the independent aggregate cap rejected it before those safety checks.
+  - **Attempt:** Raise only the aggregate replacement envelope to 32 while retaining the 16-entry, +16 lineage-growth, and 96-result limits.
+    - **Outcome:** Worked after synchronizing model guidance
+    - **Why:** The deterministic rc.34-shaped regression passes, but the first live-canary review found model-facing tool guidance still hardcoded to the former 16-replacement limit.
+- **Unexpected constraint:** Changing an enforced controller constant without deriving every schema description and prompt guideline from that constant creates a self-contradictory runtime: the validator accepts a payload that the model is explicitly told not to produce.
+- **Root cause:** The payload limit conflated the number of indexed items being changed with the number of atomic objects required to replace them. Sixteen touched entries plus valid one-to-many atomization can require more than 16 replacement objects without excessive state growth.
+- **Resolution:** A sparse repair may carry up to 32 replacement objects while still touching at most 16 indexes. The controller continues to preflight merged count and immutable lineage growth before cloning or validating the candidate.
+- **Verification:** A failing-before regression reconstructs 13 repaired entries, 20 replacements, and net growth from 42 to 49 requirements. It passes after the envelope change; 33 and 48 replacements remain rejected at the payload boundary. A real-provider rc.36 AI-unit then froze 20 tracked source clauses, rejected a 13-item draft, submitted one 13-entry/20-replacement repair using the returned revision, and reached a 20-requirement `verifying` state. An independent log verifier passed all call-count, cardinality, revision, provenance, and final-state assertions; the closed JSONL is stored at `/private/tmp/p-rc36-repair-ai-unit.zfDgbV/live.log.br` with Brotli Q6.
+- **Prevention/follow-up:** Keep payload-size, touched-index, merged-count, and cumulative-growth limits independently named and tested. Derive schema and model-facing limit text from the same constants, with a regression covering the rendered guidance. Run a clean live repair unit before another paired benchmark.
+- **Reusable learning:** Bound the state transition that creates risk; do not reject a safe atomic split merely because object count and touched-index count differ.
+- **References:** `packages/coding-agent/test/task-requirement-definition-repair-lineage-budget.test.ts`, `packages/coding-agent/test/task-requirement-definition-stagnation-recovery.test.ts`, `packages/coding-agent/src/core/task-verification/constants.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `benchmarks/results/2026-08-24T22-39-50-953Z-v5.0.1-rc.34-project-instructions-paired/report.md`

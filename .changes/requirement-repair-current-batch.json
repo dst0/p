@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Return each rejected requirement repair with a fresh revision and its complete current indexed batch, without a separate status roundtrip."
+}

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["agent", "coding-agent"],
+  "type": "None",
+  "reason": "Add operational regressions for trusted completion, tool-effect provenance, proof-source safety, readiness lifecycles, and focused verification selection without changing those runtime contracts."
+}

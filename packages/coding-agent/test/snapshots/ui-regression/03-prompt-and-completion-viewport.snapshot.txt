@@ -11,7 +11,7 @@
 │ Hello agent
 │
 
- Error: No API provider registered for api: faux:static-id
+ Hello! I am ready to assist.
 
 ────────────────────────────────────────────────────────────────────────────────
 

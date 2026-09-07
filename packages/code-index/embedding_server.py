@@ -634,6 +634,8 @@ class EmbeddingServer:
         current_backend = self.plan.backend
         memory = self._current_memory()
         refreshed_plan = self._build_plan(current_backend, memory, model_resident=True)
+        if not refreshed_plan.usable:
+            raise RuntimeError(f"{current_backend} memory pressure crossed the safety reserve: {refreshed_plan.reason}")
         if refreshed_plan.backend == "cpu" and current_backend != "cpu":
             if self.fail_closed_backend:
                 raise RuntimeError(
@@ -643,9 +645,7 @@ class EmbeddingServer:
             if cpu_plan.usable:
                 self._move_model_to_cpu(cpu_plan, f"{current_backend} memory pressure crossed the safety reserve")
                 return
-            self._record_warning(
-                f"{current_backend} memory is constrained, but CPU fallback is unsafe: {cpu_plan.reason}"
-            )
+            self._record_warning(f"{current_backend} memory is constrained, but CPU fallback is unsafe: {cpu_plan.reason}")
             return
         if refreshed_plan.usable:
             self.plan = refreshed_plan

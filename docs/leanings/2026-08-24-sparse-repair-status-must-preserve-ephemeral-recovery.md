@@ -1,0 +1,22 @@
+# 2026-08-24 — Sparse repair status must preserve ephemeral recovery
+
+- **Status:** Resolved
+- **Task/context:** Validating immutable candidate `5.0.1-rc.7` on the event-sourced inventory benchmark after adding revision-bound sparse requirement-definition repair.
+- **Unexpected observation or failure:** Deterministic errors fell from 76 to 57 to 39, but a later `record_task_verification(status)` call replayed the original full-definition prompt. The model then planned a fresh monolithic definition and remained pre-implementation at 1,200 seconds, triggering the stop-on-degradation gate.
+- **Evidence:** The preserved rc.7 progress evidence records one full definition, aggregate semantic and mutation activity, and no accepted definition before interruption. Transient live-recording inspection before cleanup showed two successful sparse correction results, a status call near 1,100 seconds, and the model's subsequent fresh-definition reasoning. The old liveness metric did not identify repairs separately and counted status as a potential mutation, obscuring those details in the durable report.
+- **Approaches tried:**
+  - **Attempt:** Keep the rejected draft only inside the requirement-audit tool closure and tell the model to call status if context was hidden.
+    - **Outcome:** Did not work
+    - **Why:** The separate status tool could not see the closure-local revision, merged draft, or latest diagnostics, so it could only reconstruct the original `define` catalog.
+  - **Attempt:** Append the full rejected batch to the existing full-definition prompt.
+    - **Outcome:** Partial
+    - **Why:** It restored the correction target but could exceed the existing 32,768-byte definition-prompt ceiling on dense sources.
+  - **Attempt:** Expose the draft through ephemeral controller runtime state and render a compact, ceiling-bounded recovery prompt.
+    - **Outcome:** Worked
+    - **Why:** Status can now recover the current revision and indexed merged batch without making it authoritative or persistent; oversized recovery safely falls back to the already bounded full-definition prompt.
+- **Root cause:** Runtime ownership was split incorrectly: the audit tool owned sparse-repair state, while the status tool owned recovery guidance. Benchmark classification independently conflated sparse repairs with historical full-definition attempts and treated read-only status as a mutation.
+- **Resolution:** The controller now owns the rejected draft only in memory, rotates it with each rejected repair, clears it on restore and task/source/user invalidation, and supplies it to bounded status rendering. Production and benchmark routing both classify the identity-bound verification status action as read-only. Liveness preserves the historical full-definition count and records sparse repairs separately, including incomplete-capture lower bounds.
+- **Verification:** Regression-first tests reproduced status losing the latest revision, repairs disappearing from chunked liveness, and status inflating mutation count. Focused status, prompt-ceiling, production identity, chunk-rotation, interruption, and report tests pass.
+- **Prevention/follow-up:** Any non-persistent protocol state referenced by recovery guidance must be reachable from every recovery entrypoint, explicitly invalidated with its authority context, and bounded under the same prompt ceiling as initial delivery. Performance metrics must not change historical semantics when a cheaper operation is introduced.
+- **Reusable learning:** Recovery state may remain non-authoritative and non-persistent, but it cannot remain private to only one tool when another tool promises exact continuation.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-prompt.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller.ts`, `packages/coding-agent/test/task-requirement-definition-repair-status.test.ts`, `scripts/benchmark-project-instructions-liveness.js`, `benchmarks/results/2026-08-24-v5.0.1-rc.7-task3-event-sourced-inventory-authority-v2/report.md`.

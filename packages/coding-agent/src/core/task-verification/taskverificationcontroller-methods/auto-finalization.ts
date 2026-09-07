@@ -5,13 +5,15 @@ import {
   HIGH_RISK_PATTERN,
   READ_ONLY_PATTERN,
   TASK_VERIFICATION_TOOL_NAME,
-  TEST_PATTERN,
 } from "../constants.ts";
 import { behavioralFinalRequired } from "../requirement-checks.ts";
 import { emptyReadiness } from "../state-factories.ts";
 import type { TaskVerificationController } from "../taskverificationcontroller.ts";
 import { isShellTool, isStaticTool } from "../tool-classification.ts";
 import type { FinalMethod, TaskVerificationEvidence, VerificationResult } from "../types.ts";
+import { formatTaskVerificationCompactionNextAction } from "./task-verification-compaction-context.ts";
+import { taskVerificationContextExtract } from "./task-verification-context-extract.ts";
+import { commandContainsTestInvocation } from "./test-command-invocation.ts";
 
 export function do_requiredBaselineReplayDescriptor(self: TaskVerificationController): string | undefined {
   if (self.state.baseline.method === "runtime_reproduction") {
@@ -22,8 +24,9 @@ export function do_requiredBaselineReplayDescriptor(self: TaskVerificationContro
   if (self.state.baseline.method === "failing_regression_test") {
     return self.state.baseline.evidenceRefs
       .map((ref) => self.evidence.get(ref))
-      .find((item) => item && isShellTool(item.toolName) && item.isError && TEST_PATTERN.test(item.descriptor))
-      ?.descriptor;
+      .find(
+        (item) => item && isShellTool(item.toolName) && item.isError && commandContainsTestInvocation(item.descriptor),
+      )?.descriptor;
   }
   return undefined;
 }
@@ -80,7 +83,7 @@ export function do_tryAutoFinalizeFocusedTest(
     !self.state.taskSummary ||
     self.state.baseline.status === "pending" ||
     !isShellTool(evidence.toolName) ||
-    !TEST_PATTERN.test(evidence.descriptor) ||
+    !commandContainsTestInvocation(evidence.descriptor) ||
     !FOCUSED_TEST_PATTERN.test(evidence.descriptor) ||
     /\s*\|\s*/u.test(evidence.descriptor)
   ) {
@@ -116,7 +119,7 @@ export function do_highRiskAcceptanceAudit(
     !self.state.taskKind ||
     !self.state.taskSummary ||
     !isShellTool(evidence.toolName) ||
-    !TEST_PATTERN.test(evidence.descriptor) ||
+    !commandContainsTestInvocation(evidence.descriptor) ||
     FOCUSED_TEST_PATTERN.test(evidence.descriptor)
   ) {
     return undefined;
@@ -125,7 +128,10 @@ export function do_highRiskAcceptanceAudit(
   if (!HIGH_RISK_PATTERN.test(taskText)) return undefined;
   return [
     "HIGH-RISK ACCEPTANCE AUDIT REQUIRED before completion: a broad suite passed, but it does not prove every explicit guarantee.",
-    "Re-read the original task and run focused adversarial tests for each absolute or negative requirement.",
+    "Re-read the original task and identify any uncovered absolute or negative requirement.",
+    "Add and run one focused test at a time for each uncovered requirement.",
+    "Fix a failing focused test before creating another test file; do not batch unverified tests.",
+    "Defer optional test breadth until requested final checks are green and required deliverables are complete.",
     "Preserve exact public API return shapes without invented wrappers; use lossless identities containing every relevant input and option.",
     "Test the literal smallest boundary mutation (for a newline-terminated serialization, remove exactly one final byte rather than a whole line or record).",
     "After failed atomic operations, retry every attempted identity with both identical and changed payloads to prove complete rollback.",
@@ -141,7 +147,7 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const focusedTest = newestFirst.find(
     (item) =>
       isShellTool(item.toolName) &&
-      TEST_PATTERN.test(item.descriptor) &&
+      commandContainsTestInvocation(item.descriptor) &&
       FOCUSED_TEST_PATTERN.test(item.descriptor) &&
       !/\s*\|\s*/.test(item.descriptor),
   );
@@ -150,7 +156,7 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const manualReproduction = newestFirst.find(
     (item) =>
       isShellTool(item.toolName) &&
-      !TEST_PATTERN.test(item.descriptor) &&
+      !commandContainsTestInvocation(item.descriptor) &&
       !GENERIC_CHECK_PATTERN.test(item.descriptor) &&
       !READ_ONLY_PATTERN.test(item.descriptor),
   );
@@ -160,7 +166,9 @@ export function do_findEligibleFinalEvidence(self: TaskVerificationController): 
   const behavioral = self.state.taskKind ? behavioralFinalRequired(self.state.taskKind, taskText) : true;
   const highRisk = HIGH_RISK_PATTERN.test(taskText);
   if (!behavioral && !highRisk) {
-    const testSuite = newestFirst.find((item) => isShellTool(item.toolName) && TEST_PATTERN.test(item.descriptor));
+    const testSuite = newestFirst.find(
+      (item) => isShellTool(item.toolName) && commandContainsTestInvocation(item.descriptor),
+    );
     if (testSuite) return [testSuite];
   }
 
@@ -182,12 +190,12 @@ export function do_finalMethodForEvidence(
   if (!primary) return "manual_reproduction";
   if (
     isShellTool(primary.toolName) &&
-    TEST_PATTERN.test(primary.descriptor) &&
+    commandContainsTestInvocation(primary.descriptor) &&
     FOCUSED_TEST_PATTERN.test(primary.descriptor)
   ) {
     return "focused_test";
   }
-  if (isShellTool(primary.toolName) && TEST_PATTERN.test(primary.descriptor)) return "test_suite";
+  if (isShellTool(primary.toolName) && commandContainsTestInvocation(primary.descriptor)) return "test_suite";
   return "manual_reproduction";
 }
 
@@ -240,9 +248,19 @@ export function do_updated(
     status: "updated",
     message: includeGuidance ? `${message}\n\n${self.formatNextRequirement()}` : message,
     state: self.currentState,
+    contextExtract: taskVerificationContextExtract(compactionNextAction(self), self.currentState),
   };
 }
 
 export function do_rejected(self: TaskVerificationController, message: string): VerificationResult {
-  return { status: "needs_action", message, state: self.currentState };
+  return {
+    status: "needs_action",
+    message,
+    state: self.currentState,
+    contextExtract: taskVerificationContextExtract(compactionNextAction(self), self.currentState),
+  };
+}
+
+function compactionNextAction(self: TaskVerificationController): string {
+  return self.mode === "audit" ? formatTaskVerificationCompactionNextAction(self) : self.formatNextRequirement();
 }

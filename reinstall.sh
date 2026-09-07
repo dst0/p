@@ -3,12 +3,14 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
+source "$SCRIPT_DIR/scripts/indexing-reinstall-transaction.sh"
 
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 cleanup_indexing_reinstall_marker() {
     if [[ "$INDEXING_REINSTALL_MARKER_ACTIVE" == true ]]; then
         node scripts/prepare-indexing-service-reinstall.js --clear >/dev/null 2>&1 || true
     fi
+    cleanup_indexing_reinstall_transaction
 }
 trap cleanup_indexing_reinstall_marker EXIT
 
@@ -45,6 +47,7 @@ done
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
+begin_indexing_reinstall_transaction "$AGENT_DIR"
 node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-device-selection.sh"
 initialize_indexing_device_selection "$SELECT_INDEXING"
@@ -143,6 +146,7 @@ check_and_prompt_missing_indexing_deps
 # settle promptly, stop the validated daemon before replacing its managed service.
 # However, if the indexing-related code hasn't changed, skip the quiesce entirely.
 INDEXING_REINSTALL_MARKER_ACTIVE=true
+clear_stale_indexing_reuse_decision
 
 # Compute the new indexing version from the freshly-built files.
 NEW_INDEXING_VERSION=$(node scripts/compute-indexing-version.js 2>/dev/null || echo "")
@@ -152,9 +156,8 @@ INDEXING_REUSE_DECISION=$(
 )
 
 if [[ "$INDEXING_REUSE_DECISION" == "reuse" ]]; then
-    # Indexing version unchanged; write flag file so prepare/install skip disruptive operations.
-    AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
-    touch "$AGENT_DIR/indexing-version-unchanged"
+    # Bind the one-shot reuse approval to this serialized reinstall and its exact inputs.
+    mark_indexing_service_reuse "$NEW_INDEXING_VERSION" "$NEW_INDEXING_RUNTIME_FINGERPRINT"
     echo "Indexing version unchanged; skipping daemon quiesce and restart."
     node scripts/prepare-indexing-service-reinstall.js --skip-quiesce
 else
@@ -163,10 +166,11 @@ else
 fi
 
 # Install or update the persistent code-indexing service (launchd/systemd)
-node scripts/install-indexing-service.js
+P_INDEXING_REINSTALL_RUN_ID="$INDEXING_REINSTALL_RUN_ID" \
+P_INDEXING_REINSTALL_EXPECTED_REUSE="$INDEXING_REUSE_DECISION" \
+    node scripts/install-indexing-service.js
 node scripts/prepare-indexing-service-reinstall.js --clear
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 node scripts/indexing-service-health.js "$AGENT_DIR"
 
 echo "Done. Version $VERSION installed."
-

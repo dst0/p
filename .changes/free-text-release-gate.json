@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Require free-text completion checklists to cover multiple explicit guarantees while keeping exhaustive semantic audit opt-in."
+}

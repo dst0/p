@@ -1,0 +1,28 @@
+# 2026-08-24 — Rejected definition retries need stable catalogs
+
+- **Status:** Resolved
+- **Task/context:** Diagnosing the `5.0.1-rc.5` event-sourced inventory benchmark after its first legacy cell timed out.
+- **Unexpected observation or failure:** The model needed five monotonically improving definition attempts before 67 atomic requirements were accepted, then learned about a controller-owned 250-line source-file gate only after tests and final evidence passed.
+- **Evidence:** Definition diagnostics converged `26 → 10 → 5 → 1 → accepted`, but each rejected atomic batch replayed the complete source catalog and required another complete JSON definition. The definition phase consumed about 800 seconds. Later, contract tests passed 4/4, adversarial tests passed 40/40, and typecheck passed before `ready_to_finish` first disclosed `store.ts` at 446 lines and `engine.ts` at 331 lines; the cell timed out during the required split. Session accounting reported 2,148,159 cumulative provider-processed tokens, and the parser counts only final assistant-message usage rather than streaming deltas.
+- **Approaches tried:**
+  - **Attempt:** Treat the large active JSONL size as evidence of token double-counting.
+    - **Outcome:** Did not work
+    - **Why:** Streaming snapshots inflated disk bytes, but token accounting ignores `message_update` events and sums only final `message_end` usage.
+  - **Attempt:** Preserve atomic fail-closed definition rejection while replaying the full catalog after every diagnostic batch.
+    - **Outcome:** Did not work
+    - **Why:** The unchanged catalog repeatedly expanded persistent context without adding authority, making each later correction more expensive.
+  - **Attempt:** Return only targeted diagnostics, keep the original catalog authoritative, and provide an explicit status-based rehydration path after compaction.
+    - **Outcome:** Worked
+    - **Why:** No partial definition becomes authoritative, but normal retries no longer duplicate the large immutable catalog.
+  - **Attempt:** Reveal the structural completion guard only at `ready_to_finish`.
+    - **Outcome:** Did not work
+    - **Why:** Correct structure was discovered after expensive tests and evidence collection, forcing late refactoring and invalidating evidence.
+  - **Attempt:** Include the effective 250-line structural preflight in the successful pre-mutation definition response.
+    - **Outcome:** Worked
+    - **Why:** The model can plan focused modules before implementation while the final guard remains unchanged.
+- **Root cause:** Rejection guidance conflated targeted correction with full catalog recovery, and a deterministic completion constraint was not disclosed until the final transition.
+- **Resolution:** Rejected definition batches now return focused diagnostics without `withGuidance` catalog replay and point to `record_task_verification status` for recovery after compaction. Successful pre-mutation definition now discloses the 250-line readiness limit and instructs the agent to split before final verification.
+- **Verification:** Regression-first tests produced the two intended failures before the fix. The focused requirement-definition and referenced-spec suites pass 19/19 after the change; `git diff --check` is clean.
+- **Prevention/follow-up:** Preserve failed-run progress evidence and a quarantined Brotli Q6 diagnostic recording when safe, but never admit untrusted child output into benchmark authority. A fresh immutable candidate and paired task 3 rerun remain required.
+- **Reusable learning:** Immutable catalogs should be referenced by stable authority during retries, not replayed automatically; deterministic finish blockers must be disclosed before the first matching mutation or expensive verification.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-audit-tool.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/requirement-definition.ts`, `packages/coding-agent/test/task-requirement-definition-single-batch.test.ts`, `packages/coding-agent/test/task-requirement-audit-referenced-specs.test.ts`, `benchmarks/results/2026-08-24-v5.0.1-rc.5-task3-event-sourced-inventory-authority-v1/report.md`.

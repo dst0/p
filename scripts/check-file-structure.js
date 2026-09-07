@@ -67,6 +67,8 @@ function countClasses(filePath, source) {
 
 function inspectFiles() {
   const files = [];
+  collectSourceFiles(path.join(repositoryRoot, "benchmarks", "src"), files);
+  collectSourceFiles(path.join(repositoryRoot, "benchmarks", "test"), files);
   collectSourceFiles(path.join(repositoryRoot, "packages"), files);
   collectSourceFiles(path.join(repositoryRoot, "scripts"), files);
   return files.sort().map((filePath) => {

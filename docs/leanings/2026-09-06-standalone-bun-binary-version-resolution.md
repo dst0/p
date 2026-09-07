@@ -1,0 +1,25 @@
+# 2026-09-06 — Resolve standalone Bun metadata beside the executable
+
+- **Status:** Resolved
+- **Task/context:** Validate the locally assembled release artifacts outside the repository, including the standalone Bun executable's version output and the tagged-release workflow that uploads it.
+- **Unexpected observation or failure:** The standalone executable reported version `0.0.0` even though its release directory contained the packaged version metadata. The first domain regression was not part of the Bun-enabled release build job and could skip when Bun was unavailable.
+- **Evidence:** A regression that compiles a fresh Bun executable reproduced `isBunBinary: true` together with the fallback metadata `@dst0/p`, `0.0.0`, `p`, and `.p`. A second regression then showed that an upward walk from the executable adopted an unrelated parent manifest, including its version, application name, and config directory. A workflow regression failed because the build job moved directly from binary construction to changelog extraction without executing the standalone test.
+- **Approaches tried:**
+  - **Attempt:** Walk upward from the module's `import.meta.url` directory for every runtime.
+    - **Outcome:** Did not work for a compiled Bun executable.
+    - **Why:** Bun represents bundled modules beneath a virtual filesystem path, so the module directory is unrelated to the release directory containing `package.json`.
+  - **Attempt:** For the already-detected standalone Bun runtime, begin the existing upward walk at `dirname(process.execPath)` while leaving the Node/package path unchanged.
+    - **Outcome:** Did not work.
+    - **Why:** It found a valid adjacent sidecar, but a moved binary with no sidecar inherited an unrelated parent `package.json` and changed application routing metadata.
+  - **Attempt:** Read only `package.json` beside `process.execPath` for standalone Bun while preserving the existing upward walk for Node/package execution.
+    - **Outcome:** Worked.
+    - **Why:** Release metadata is defined as an exact executable sidecar, so missing or malformed metadata fails to the established constants without searching unrelated directories.
+  - **Attempt:** Run the real standalone regression in the pinned-Bun binary build job after artifacts are constructed, with `bun --version` as an explicit non-skippable prerequisite.
+    - **Outcome:** Worked.
+    - **Why:** The release job has the required runtime and now fails before upload if either Bun or the standalone metadata contract is unavailable.
+- **Root cause:** Package metadata discovery recognized a compiled Bun runtime but still started from its virtual module directory. A naive switch to an upward executable-directory walk fixed the version but weakened isolation by accepting parent manifests. The release workflow also lacked an explicit gate for this deployment-format-specific contract.
+- **Resolution:** Read only the exact `package.json` beside `process.execPath` for standalone Bun executables; retain the original module-relative upward discovery for normal package execution. Run the real compiled regression after binary construction and before upload in the pinned-Bun release job.
+- **Verification:** The real compile-and-execute regression failed first with fallback values and then exposed parent-manifest adoption in the intermediate implementation. The final three-case suite passed for a valid exact sidecar and for missing or malformed sidecars surrounded by unrelated parent and working-directory manifests. The existing focused config suite passed. The workflow regression failed before the new gate, passed afterward, and the complete release-audit suite passed 67/67.
+- **Prevention/follow-up:** Keep the standalone regression based on a compiled executable and adjacent sidecar rather than mocking `import.meta.url` or injecting a version at build time. Keep its explicit Bun prerequisite and invocation structurally bound between binary construction and upload.
+- **Reusable learning:** Runtime metadata discovery and its release gate must use the filesystem location and toolchain of the deployed format; a bundled module's virtual source path is not an install root.
+- **References:** `packages/coding-agent/src/config/constants.ts`, `packages/coding-agent/test/standalone-package-version.test.ts`, `.github/workflows/build-binaries.yml`, `scripts/release-workflow.test.js`

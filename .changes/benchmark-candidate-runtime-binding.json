@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Bind local benchmark candidate versions to immutable runtime hashes without changing package release versions."
+}

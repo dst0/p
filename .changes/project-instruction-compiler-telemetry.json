@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Persist strict hash-bound compiler failure telemetry for backoff and paired benchmark diagnosis without retaining source, response, constraint-ID, or provider text."
+}

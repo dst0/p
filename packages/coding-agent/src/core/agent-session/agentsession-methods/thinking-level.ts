@@ -1,9 +1,11 @@
 import { readFileSync } from "node:fs";
+import type { AgentMessage } from "@dst0/p-agent-core";
 import type { ImageContent, TextContent } from "@dst0/p-ai";
 import { stripFrontmatter } from "../../../utils/frontmatter.ts";
 import type { CustomMessage } from "../../messages.ts";
 import { expandPromptTemplate } from "../../prompt-templates.ts";
 import type { AgentSession } from "../agentsession.ts";
+import { createProjectRuleTurnContext } from "./prompt-context.ts";
 
 export async function do__tryExecuteExtensionCommand(self: AgentSession, text: string): Promise<boolean> {
   // Parse command name and args
@@ -86,29 +88,33 @@ export async function do_followUp(self: AgentSession, text: string, images?: Ima
 export async function do__queueSteer(self: AgentSession, text: string, images?: ImageContent[]): Promise<void> {
   self._steeringMessages.push(text);
   self._emitQueueUpdate();
-  const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
-  if (images) {
-    content.push(...images);
-  }
-  self.agent.steer({
-    role: "user",
-    content,
-    timestamp: Date.now(),
-  });
+  self.agent.steer(createQueuedTurnMessages(self, text, images));
 }
 
 export async function do__queueFollowUp(self: AgentSession, text: string, images?: ImageContent[]): Promise<void> {
   self._followUpMessages.push(text);
   self._emitQueueUpdate();
+  self.agent.followUp(createQueuedTurnMessages(self, text, images));
+}
+
+function createQueuedTurnMessages(self: AgentSession, text: string, images?: ImageContent[]): AgentMessage[] {
   const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
   if (images) {
     content.push(...images);
   }
-  self.agent.followUp({
+  const userMessage: AgentMessage = {
     role: "user",
     content,
     timestamp: Date.now(),
-  });
+  };
+  const messages: AgentMessage[] = [userMessage];
+  if (self._projectInstructionMode === "compiled") {
+    const turn = createProjectRuleTurnContext(self, text);
+    if (turn.gate) turn.gate.candidateMerge = "union";
+    self._queuedProjectRuleGates.set(userMessage, turn.gate);
+    if (turn.prompt) messages.push(self._createRuntimeContextPromptMessage(turn.prompt, Date.now(), turn.gate));
+  }
+  return messages;
 }
 
 export function do__throwIfExtensionCommand(self: AgentSession, text: string): void {

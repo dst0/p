@@ -1,0 +1,22 @@
+# 2026-08-26 — Shell gates must scope workspace snapshots
+
+- **Status:** Resolved
+- **Task/context:** Run the complete requirement-verification unit group after strengthening pre-mutation gates.
+- **Unexpected observation or failure:** The focused-selector contract repeatedly exceeded Vitest's five-second timeout only during the 58-file parallel run.
+- **Evidence:** The case took about 3.4 seconds alone and more than 5 seconds under parallel load; after using an empty temporary workspace it took about 0.25 seconds and the aggregate run passed.
+- **Approaches tried:**
+  - **Attempt:** Rerun the timed-out case alone and then retry the unchanged aggregate suite.
+    - **Outcome:** Partial
+    - **Why:** The isolated case passed, but the aggregate reproduced the same timeout because allowed shell calls still snapshotted the full repository.
+  - **Attempt:** Give the parser-focused harness its own empty temporary workspace.
+    - **Outcome:** Worked
+    - **Why:** The test retained the production snapshot path while removing unrelated repository size from its timing budget.
+  - **Attempt:** Snapshot every shell command conservatively, including commands already classified as confidently read-only.
+    - **Outcome:** Did not work
+    - **Why:** Repeated read-only probes traversed the workspace without improving mutation detection and timed out under parallel load.
+- **Root cause:** Promptless test harnesses defaulted to the repository working directory, and the shell wrapper captured fingerprints and test/source snapshots even when the existing classifier proved a command read-only.
+- **Resolution:** Shell-gate fixtures now use isolated temporary workspaces, while production snapshot capture is limited to test invocations and commands that can potentially mutate the workspace.
+- **Verification:** Focused cases fell from seconds to hundreds of milliseconds; confidently read-only probes leave no unnecessary snapshots, unknown shell mutations remain covered, and the 70-file affected aggregate exits successfully.
+- **Prevention/follow-up:** Pass explicit minimal workspaces to shell-gate unit harnesses and preserve conservative snapshots for unknown commands, test runs, and recognized mutations.
+- **Reusable learning:** Scope snapshots to the state and command classes that can change; increasing a timeout hides unnecessary integration work.
+- **References:** `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/tool-integration.ts`, `packages/coding-agent/test/task-verification-read-only-shell.test.ts`

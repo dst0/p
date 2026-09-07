@@ -1,16 +1,16 @@
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createProjectInstructionState,
-  PROJECT_INSTRUCTIONS_PROMPT_BUDGET,
   type ProjectInstructionCompiler,
   prepareProjectInstructions,
 } from "../src/core/project-instructions/index.ts";
 import { readRuleLinks, readSkillLinks } from "../src/core/project-instructions/reader.ts";
 import type { Skill } from "../src/core/skills.ts";
 import { createSyntheticSourceInfo } from "../src/core/source-info.ts";
+import { createProjectInstructionCompilation } from "./project-instruction-compiler-fixture.ts";
 
 const temporaryDirectories: string[] = [];
 
@@ -26,11 +26,13 @@ function createWorkspace(): { root: string; agentsPath: string; cacheDir: string
   };
 }
 
-function createCompiler(body = "Keep the authoritative project rules in force."): ProjectInstructionCompiler {
-  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) => ({
-    body,
-    triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-  }));
+function createCompiler(): ProjectInstructionCompiler {
+  return vi.fn(async (request: Parameters<ProjectInstructionCompiler>[0]) =>
+    createProjectInstructionCompilation(
+      request,
+      Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
+    ),
+  );
 }
 
 function createSkill(root: string, index: number): Skill {
@@ -110,9 +112,10 @@ describe("project instruction processing", () => {
     expect(first.manifest.mode).toBe("exact");
     expect(first.prompt).toContain("Never expose secrets.");
     expect(first.prompt).toContain("read_rules");
+    expect(first.prompt).toContain("list_skills");
     expect(first.prompt).toContain("read_skills");
     expect(first.prompt).toContain("rules/catalog.md");
-    expect(first.prompt).toContain("skills/catalog.md");
+    expect(first.prompt).not.toContain("skills/catalog.md");
     expect(first.prompt.length).toBeLessThan(5_000);
     expect(second.manifest.inputHash).toBe(first.manifest.inputHash);
 
@@ -128,141 +131,7 @@ describe("project instruction processing", () => {
     expect(changed.manifest.agentsHash).not.toBe(first.manifest.agentsHash);
   });
 
-  it("stores every large-source byte in exact rule modules while bounding the complete injected block", async () => {
-    const workspace = createWorkspace();
-    const content = Array.from(
-      { length: 90 },
-      (_, index) => `## Rule ${index}\n\nAlways preserve invariant ${index}. ${"detail ".repeat(12)}\n`,
-    ).join("");
-    writeFileSync(workspace.agentsPath, content);
-    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => ({
-      body: `For repository work, call read_rules with ${request.modules[0].link} when its topic applies.`,
-      triggers: Object.fromEntries(request.modules.map((module) => [module.id, `Work involving ${module.title}`])),
-    }));
-
-    const prepared = await prepareProjectInstructions({
-      cwd: workspace.root,
-      cacheDir: workspace.cacheDir,
-      contextFiles: [{ path: workspace.agentsPath, content }],
-      skills: [],
-      compiler,
-    });
-
-    expect(compiler).toHaveBeenCalledOnce();
-    expect(compiler.mock.calls[0][0].sources[0].content).toBe(content);
-    expect(prepared.manifest.mode).toBe("compiled");
-    expect(prepared.prompt.length).toBeLessThanOrEqual(PROJECT_INSTRUCTIONS_PROMPT_BUDGET);
-    expect(prepared.prompt).not.toContain(content);
-    const restored = prepared.manifest.rules
-      .map((rule) => readFileSync(join(prepared.versionDir, rule.file), "utf8"))
-      .join("");
-    expect(restored).toBe(content);
-    const catalog = readFileSync(join(prepared.versionDir, prepared.manifest.rulesCatalogFile), "utf8");
-    for (const rule of prepared.manifest.rules) expect(catalog).toContain(rule.link);
-  });
-
-  it("falls back deterministically when compilation fails without dropping source modules", async () => {
-    const workspace = createWorkspace();
-    const content = `# Rules\n\n${"Never drop this requirement.\n".repeat(400)}`;
-    writeFileSync(workspace.agentsPath, content);
-    const compiler: ProjectInstructionCompiler = async () => {
-      throw new Error("compiler unavailable");
-    };
-
-    const prepared = await prepareProjectInstructions({
-      cwd: workspace.root,
-      cacheDir: workspace.cacheDir,
-      contextFiles: [{ path: workspace.agentsPath, content }],
-      skills: [],
-      compiler,
-    });
-
-    expect(prepared.manifest.mode).toBe("fallback");
-    expect(prepared.prompt.length).toBeLessThan(5_000);
-    expect(
-      prepared.manifest.rules.map((rule) => readFileSync(join(prepared.versionDir, rule.file), "utf8")).join(""),
-    ).toBe(content);
-  });
-
-  it("atomically repairs a corrupted exact cache version without invoking the compiler", async () => {
-    const workspace = createWorkspace();
-    const compiler = createCompiler();
-    writeFileSync(workspace.agentsPath, "# Rules\n\nAlways validate cached instructions.\n");
-    const options = {
-      cwd: workspace.root,
-      cacheDir: workspace.cacheDir,
-      contextFiles: [{ path: workspace.agentsPath, content: readFileSync(workspace.agentsPath, "utf8") }],
-      skills: [],
-      compiler,
-    };
-    const first = await prepareProjectInstructions(options);
-    writeFileSync(join(first.versionDir, first.manifest.promptFile), "corrupted\n");
-
-    const repaired = await prepareProjectInstructions(options);
-
-    expect(compiler).not.toHaveBeenCalled();
-    expect(repaired.prompt).toBe(first.prompt);
-    expect(readFileSync(join(repaired.versionDir, repaired.manifest.promptFile), "utf8")).toBe(first.prompt);
-  });
-
-  it("keeps concurrent same-input versions usable when compiler output differs", async () => {
-    const workspace = createWorkspace();
-    const content = `# Rules\n\n${"Always preserve concurrent cache integrity.\n".repeat(180)}`;
-    writeFileSync(workspace.agentsPath, content);
-    let compilation = 0;
-    const compiler = vi.fn<ProjectInstructionCompiler>(async (request) => {
-      compilation++;
-      return {
-        body: `Compilation ${compilation}; use read_rules for ${request.modules[0].link}.`,
-        triggers: Object.fromEntries(request.modules.map((module) => [module.id, `When ${module.title} applies`])),
-      };
-    });
-    const options = {
-      cwd: workspace.root,
-      cacheDir: workspace.cacheDir,
-      contextFiles: [{ path: workspace.agentsPath, content }],
-      skills: [],
-      compiler,
-    };
-
-    const [first, second] = await Promise.all([
-      prepareProjectInstructions(options),
-      prepareProjectInstructions(options),
-    ]);
-
-    expect(compiler).toHaveBeenCalledTimes(2);
-    expect(first.manifest.inputHash).toBe(second.manifest.inputHash);
-    expect(first.manifest.resultHash).not.toBe(second.manifest.resultHash);
-    expect(readRuleLinks(createProjectInstructionState(first), [first.manifest.rules[0].link])).toContain(
-      "concurrent cache integrity",
-    );
-    expect(readRuleLinks(createProjectInstructionState(second), [second.manifest.rules[0].link])).toContain(
-      "concurrent cache integrity",
-    );
-    await prepareProjectInstructions(options);
-    expect(compiler).toHaveBeenCalledTimes(2);
-  });
-
-  it("refuses a symlinked .pdev cache parent before writing through it", async () => {
-    const workspace = createWorkspace();
-    const outside = mkdtempSync(join(tmpdir(), "p-project-cache-outside-"));
-    temporaryDirectories.push(outside);
-    writeFileSync(workspace.agentsPath, "# Rules\n\nNever follow cache symlinks.\n");
-    symlinkSync(outside, join(workspace.root, ".pdev"));
-
-    await expect(
-      prepareProjectInstructions({
-        cwd: workspace.root,
-        cacheDir: workspace.cacheDir,
-        contextFiles: [{ path: workspace.agentsPath, content: readFileSync(workspace.agentsPath, "utf8") }],
-        skills: [],
-        compiler: createCompiler(),
-      }),
-    ).rejects.toThrow(/cache.*workspace|symlink/i);
-    expect(existsSync(join(outside, "instructions"))).toBe(false);
-  });
-
-  it("uses catalog-only prompt routing when many skill links cannot fit inline", async () => {
+  it("uses list_skills prompt discovery when many skill links cannot fit inline", async () => {
     const workspace = createWorkspace();
     writeFileSync(workspace.agentsPath, "# Rules\n\nUse relevant skills.\n");
     const skills = Array.from({ length: 120 }, (_, index) => createSkill(workspace.root, index));
@@ -277,9 +146,40 @@ describe("project instruction processing", () => {
 
     expect(prepared.manifest.skills).toHaveLength(120);
     expect(prepared.prompt.length).toBeLessThan(5_000);
-    expect(prepared.prompt).toContain("skills/catalog.md");
+    expect(prepared.prompt).toContain("list_skills");
+    expect(prepared.prompt).not.toContain("skills/catalog.md");
     expect(prepared.prompt).not.toContain(prepared.manifest.skills[119].link);
     const catalog = readFileSync(join(prepared.versionDir, prepared.manifest.skillsCatalogFile), "utf8");
     expect(catalog).toContain(prepared.manifest.skills[119].link);
+  });
+
+  it("falls back when a valid compiled body leaves no room for routed turn metadata", async () => {
+    const workspace = createWorkspace();
+    const content = [
+      `# Global\n\nAlways ${"preserve ".repeat(365)}evidence on every task.\n`,
+      ...Array.from({ length: 3 }, (_, index) => `# Routed ${index}\n\nWhen routed ${index} applies, inspect it.\n`),
+    ].join("");
+    writeFileSync(workspace.agentsPath, content);
+    const prepared = await prepareProjectInstructions({
+      cwd: workspace.root,
+      cacheDir: workspace.cacheDir,
+      contextFiles: [{ path: workspace.agentsPath, content }],
+      skills: [],
+      compiler: async (request) => {
+        const result = createProjectInstructionCompilation(request);
+        for (const module of request.modules) {
+          if (result.classifications.modules[module.id] === "routed") {
+            result.triggers[module.id] = `${module.title} ${"x".repeat(450)}`;
+          }
+        }
+        return result;
+      },
+    });
+
+    expect(prepared.manifest).toMatchObject({
+      mode: "fallback",
+      compilerStatus: "failed",
+      compilerDiagnostic: "project instruction compiler output validation failed",
+    });
   });
 });

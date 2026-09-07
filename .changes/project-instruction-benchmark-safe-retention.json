@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep paired benchmark auth and model inputs immutable and private, redact secrets from retained evidence, and prune non-retained dependency installs before fail-closed artifact validation."
+}

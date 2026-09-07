@@ -1,0 +1,28 @@
+# 2026-09-03 — Zero-effect completion needs independent intent
+
+- **Status:** Resolved
+- **Task/context:** Adding a live evidence-mode completion path for ordinary answers that perform no workspace or external mutation.
+- **Unexpected observation or failure:** A model-selected `response_only` checklist could authorize its own zero-effect finish for an implementation, artifact, or external-action request. A later positive-verb classifier closed that bypass but blocked ordinary status, summary, calculation, and non-English answer requests. Splitting response directives at punctuation also hid prerequisite effects, while a broad temporal `-ing` heuristic confused ordinary nouns such as `spring`, `building`, and `setting` with actions.
+- **Evidence:** Gate-level regressions reproduced known English create, implement, and send bypasses; multilingual create/send prompts demonstrated that a finite verb list fails open, while common response wording demonstrated that an exhaustive response allowlist fails closed. Retained earlier response prompts also masked later unclassified effects until prompts were evaluated independently. Full-prompt and actual finish-gate cases cover response destinations, contractions, passive voice, temporal wrappers, structural punctuation, Markdown list boundaries, and ordinary temporal noun phrases.
+- **Approaches tried:**
+  - **Attempt:** Trust the checklist's `verification_scope` alone.
+    - **Outcome:** Did not work
+    - **Why:** The completion proof and its authorization came from the same model field.
+  - **Attempt:** Treat every unrecognized request as effect-required.
+    - **Outcome:** Did not work
+    - **Why:** Open-ended wording and languages made legitimate response-only tasks impossible to finish.
+  - **Attempt:** Treat every unrecognized request as response-only.
+    - **Outcome:** Did not work
+    - **Why:** Unsupported-language mutation requests could finish without their requested effect.
+  - **Attempt:** Combine positive effect detection with a separate immutable declaration for unknown intent.
+    - **Outcome:** Worked
+    - **Why:** Known effects cannot be downgraded, known answers remain direct, and unknown wording converges through a distinct prompt-bound classification rather than checklist self-authorization.
+  - **Attempt:** Detect every temporal marker or arbitrary word ending in `-ing` as an operational prerequisite.
+    - **Outcome:** Did not work
+    - **Why:** It classified ordinary subject matter and proper nouns as requested effects.
+- **Root cause:** Requested-effect intent and completion evidence were conflated, and the initial classifier assumed that a finite language pattern could classify every free-form request safely.
+- **Resolution:** Evaluate each retained substantive prompt independently; let any recognized effect dominate, require all prompts to be recognized responses for direct zero-effect completion, and require an immutable `declare_task` classification when any prompt remains unknown. For English response directives, inspect the full prompt and clause-local prerequisite grammar: only finite agent actions, effect gerunds, passive effect forms, and explicit structural effect clauses are treated as operational, while subject-question ownership keeps ordinary explanations live. A new substantive prompt clears the declaration and checklist.
+- **Verification:** `packages/coding-agent/test/task-verification-response-only-intent.test.ts` covers response wording, explicit effects, wrappers, explicit response destinations, multilingual unknowns, temporal noun controls, and multi-prompt precedence. `packages/coding-agent/test/task-verification-response-only-tail-gate.test.ts` exercises those ambiguous prerequisite forms at the actual zero-effect finish boundary. `packages/coding-agent/test/task-verification-zero-effect-completion.test.ts` covers declaration convergence, immutability, and prompt invalidation.
+- **Prevention/follow-up:** Keep semantic intent classification independent from the checklist and add gate-level regressions whenever a new intent shortcut or language fallback is introduced.
+- **Reusable learning:** An unknown free-text effect must be neither silently mutating nor silently response-only; require a separate prompt-bound declaration while deterministic known effects remain non-overridable.
+- **References:** `packages/coding-agent/src/core/task-verification/requested-effect-intent.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/evidence-task-declaration.ts`

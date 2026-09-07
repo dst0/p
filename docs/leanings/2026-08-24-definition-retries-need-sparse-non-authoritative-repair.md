@@ -1,0 +1,25 @@
+# 2026-08-24 — Definition retries need sparse non-authoritative repair
+
+- **Status:** Resolved
+- **Task/context:** Rerunning the event-sourced inventory benchmark as immutable candidate `5.0.1-rc.6` after removing full catalog replay from rejected requirement definitions.
+- **Unexpected observation or failure:** The first legacy cell still submitted six complete requirement batches and remained pre-implementation after 1,250 seconds, exceeding the five attempts in `rc.5` and triggering the stop-on-degradation rule.
+- **Evidence:** The preserved progress recording shows definition attempts at approximately 300, 450, 600, 800, 1,000, and 1,150 seconds. Diagnostics narrowed, but the controller repeatedly rejected atomic splits of the clause “Shipping reduces both `onHand` and the reservation” because clause relevance treated the first camel-case identifier as mandatory for every mapped split. Each two-item correction still regenerated the unchanged 60-plus-item batch.
+- **Approaches tried:**
+  - **Attempt:** Stop replaying the immutable source catalog while retaining complete-batch resubmission.
+    - **Outcome:** Partial
+    - **Why:** It removed duplicate prompt payload, but did not reduce semantic repair attempts or the cost of regenerating unchanged requirements.
+  - **Attempt:** Relax clause relevance globally whenever any identifier overlaps.
+    - **Outcome:** Did not use
+    - **Why:** It could admit a different primary API that merely shares a secondary identifier.
+  - **Attempt:** Derive deterministic one-object facets for coordinated `both A and B` behavior clauses.
+    - **Outcome:** Worked
+    - **Why:** Each independently observable object has a stable source facet, and complete facet coverage still fails closed against omissions or unrelated mappings.
+  - **Attempt:** Retain the rejected batch as a tool-local draft and accept sparse indexed replacements under an opaque revision.
+    - **Outcome:** Worked
+    - **Why:** The draft is non-authoritative and non-persistent; the controller reconstructs and validates the entire merged batch before entering verification or permitting mutation.
+- **Root cause:** The validator had no stable representation for ordinary coordinated outcomes, while the retry protocol coupled a local semantic correction to complete model regeneration of the whole atomic batch.
+- **Resolution:** Coordinated increase/reduce clauses now expose exactly-one-mapping facets with article, multi-word object, and trailing-qualifier support. Rejected definitions return an opaque `definition_revision`; `repair_definition` can replace or split named 1-based items, rotates the revision after another rejection, rejects stale or invalid repairs without consuming the audit transition, and performs full validation before any authoritative state transition.
+- **Verification:** Regression-first tests reproduced the coordinated-identifier false rejection and missing revision. The expanded focused definition suite passes 73/73 across 11 files. AGY Gemini 3.7 High identified regex, capacity, and transition-gate edge cases that were fixed; a final AGY Opus 4.6 review reported no P0/P1 findings and two non-actionable P2 observations.
+- **Prevention/follow-up:** Keep rejected drafts non-authoritative, require opaque revision matching, revalidate the reconstructed full batch, and benchmark a fresh immutable candidate before treating lower retry cost as a performance win.
+- **Reusable learning:** When a fail-closed validator rejects a large atomic batch, preserve authority at the full-batch boundary but make correction cost proportional to the invalid subset.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/src/core/task-verification/requirement-source-facets.ts`, `packages/coding-agent/test/task-requirement-definition-repair-protocol.test.ts`, `packages/coding-agent/test/task-requirement-definition-coordinated-identifiers.test.ts`, `benchmarks/results/2026-08-24-v5.0.1-rc.6-task3-event-sourced-inventory-authority-v1/report.md`.

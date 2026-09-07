@@ -47,6 +47,8 @@ describe("AgentSession dynamic tool registration", () => {
 
     expect(session.agent.completionMode).toBe("explicit_finish");
     expect(session.systemPrompt).toContain("- finish_work:");
+    expect(session.systemPrompt).toContain("verification_token?");
+    expect(session.systemPrompt).not.toContain("result?");
 
     session.dispose();
   });

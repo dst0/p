@@ -4,6 +4,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import { type AgentMessage, getFinishWorkPayload } from "@dst0/p-agent-core";
 import { VERSION } from "../config.ts";
+import { getTaskVerificationCompletionPayload } from "../core/task-verification/verified-completion.ts";
 import { DEFAULT_HOST, DEFAULT_PORT } from "./constants.ts";
 import type { JsonObject, VoiceServerOptions } from "./types.ts";
 
@@ -116,6 +117,10 @@ export function extractFinalText(event: unknown): string | undefined {
   const finishText = finishPayload?.summary;
   if (finishText?.trim()) {
     return finishText.trim();
+  }
+  const verifiedText = getTaskVerificationCompletionPayload(messages)?.summary;
+  if (verifiedText?.trim()) {
+    return verifiedText.trim();
   }
 
   for (let i = event.messages.length - 1; i >= 0; i--) {

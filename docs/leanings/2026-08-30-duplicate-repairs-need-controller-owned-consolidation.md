@@ -1,0 +1,22 @@
+# 2026-08-30 — Duplicate repairs need controller-owned consolidation
+
+- **Status:** Resolved
+- **Task/context:** Make rejected requirement definitions repairable through exactly one semantic item per tool call without weakening the broad-repair guard.
+- **Unexpected observation or failure:** An exact duplicate group required removing several indexed entries and preserving their combined provenance, but a model-authored replacement payload represented that one semantic correction as several structural edits and repeatedly approached the repair cardinality guard.
+- **Evidence:** Focused regressions reproduce two and larger exact-duplicate groups, same-text groups identified by different indexed diagnostics, provenance from every removed duplicate, and sanitized diagnostic text. The complete requirement and verification family passes 114 files and 1,023 tests after consolidation and direct-source hardening.
+- **Approaches tried:**
+  - **Attempt:** Loosen the maximum repair-entry or replacement limits for duplicate batches.
+    - **Outcome:** Did not work
+    - **Why:** It would make the repair surface broader for every failure class and weaken the intentional one-item safety boundary.
+  - **Attempt:** Ask the model to submit one replacement plus removals for every duplicate index.
+    - **Outcome:** Did not work
+    - **Why:** The representation remained multi-edit, easy to misaddress, and unnecessarily exposed deterministic bookkeeping to the model.
+  - **Attempt:** Select one indexed duplicate group and let the controller perform the consolidation.
+    - **Outcome:** Worked
+    - **Why:** The diagnostic already identifies the exact semantic item, so the controller can preserve the first item, union provenance, and remove only later exact duplicates without model-authored structure.
+- **Root cause:** The protocol counted low-level array mutations instead of offering a first-class transition for the semantic repair item already selected by the controller.
+- **Resolution:** `duplicate_consolidation` is a payload-free singular repair. It is valid only for the active indexed exact-duplicate diagnostic and performs bounded, deterministic provenance-preserving consolidation.
+- **Verification:** `task-requirement-definition-duplicate-consolidation.test.ts` covers cardinality, target identity, ordering, provenance union, and control-character sanitization; the broader requirement family remains green.
+- **Prevention/follow-up:** Add a controller-owned primitive whenever one valid semantic correction otherwise requires several predictable structural edits; never raise global repair limits to accommodate it.
+- **Reusable learning:** Enforce one-item repair at the semantic level and keep deterministic structural consequences inside the controller.
+- **References:** `packages/coding-agent/src/core/task-verification/requirement-definition-repair.ts`, `packages/coding-agent/src/core/task-verification/requirement-definition-repair-target.ts`, `packages/coding-agent/test/task-requirement-definition-duplicate-consolidation.test.ts`

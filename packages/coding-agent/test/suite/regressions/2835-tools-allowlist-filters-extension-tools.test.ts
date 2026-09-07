@@ -40,6 +40,7 @@ describe("regression #2835: tool allowlists filter extension tools", () => {
               label: "Dynamic Tool",
               description: "Tool registered from session_start",
               promptSnippet: "Run dynamic test behavior",
+              effect: { kind: "read", risk: "normal" },
               parameters: Type.Object({}),
               execute: async () => ({
                 content: [{ type: "text", text: "ok" }],
@@ -59,6 +60,7 @@ describe("regression #2835: tool allowlists filter extension tools", () => {
       settingsManager,
       sessionManager,
       resourceLoader,
+      projectInstructionMode: "off",
       tools: allowedToolNames,
     });
     await session.bindExtensions({});

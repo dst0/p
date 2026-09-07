@@ -4,9 +4,9 @@ import { readRuleLinks } from "../project-instructions/reader.ts";
 import type { ProjectInstructionState } from "../project-instructions/types.ts";
 
 const readRulesSchema = Type.Object({
-  links: Type.Array(Type.String({ description: "Relative link from the injected rule catalog" }), {
+  links: Type.Array(Type.String({ description: "Cataloged rules/* virtual link", pattern: "^rules/.+$" }), {
     minItems: 1,
-    maxItems: 32,
+    maxItems: 3,
   }),
 });
 
@@ -18,17 +18,21 @@ export interface ReadRulesToolDetails {
 
 export function createReadRulesToolDefinition(
   state: ProjectInstructionState,
+  onValidatedRead?: (links: readonly string[]) => void,
 ): ToolDefinition<typeof readRulesSchema, ReadRulesToolDetails> {
   return {
     name: "read_rules",
     label: "read_rules",
     description:
-      "Read exact authoritative project instruction modules using only relative links advertised by the injected rule catalog. Rejects unknown, stale, tampered, absolute, and traversal paths.",
+      "Read 1-3 exact authoritative project instruction modules plus their bounded transitive prerequisites using relative catalog links. Rejects invalid catalogs, unknown, stale, tampered, absolute, and traversal paths.",
     promptSnippet: "Read exact project instruction modules by catalog link",
+    executionMode: "sequential",
     parameters: readRulesSchema,
     async execute(_toolCallId, input: ReadRulesToolInput) {
+      const text = readRuleLinks(state, input.links);
+      onValidatedRead?.(input.links);
       return {
-        content: [{ type: "text", text: readRuleLinks(state, input.links) }],
+        content: [{ type: "text", text }],
         details: { links: input.links },
       };
     },

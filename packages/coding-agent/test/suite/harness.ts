@@ -2,11 +2,11 @@
  * Local test harness for the new coding-agent test suite.
  */
 
-import { existsSync, mkdirSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { AgentMessage, AgentTool, CompletionMode } from "@dst0/p-agent-core";
-import { Agent } from "@dst0/p-agent-core";
+import { Agent, resolveToolEffect } from "@dst0/p-agent-core";
 import type { FauxModelDefinition, FauxProviderRegistration, FauxResponseStep, Model } from "@dst0/p-ai";
 import { registerFauxProvider } from "@dst0/p-ai";
 import { AgentSession, type AgentSessionEvent } from "../../src/core/agent-session.ts";
@@ -17,6 +17,11 @@ import { ModelRegistry } from "../../src/core/model-registry.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 import type { Settings } from "../../src/core/settings-manager.ts";
 import { SettingsManager } from "../../src/core/settings-manager.ts";
+import type { TaskVerificationMode } from "../../src/core/task-verification/mode.ts";
+import {
+  installTaskVerificationRuntime,
+  prepareTaskVerificationRuntime,
+} from "../../src/core/task-verification-session-runtime.ts";
 import type { ExtensionFactory, ResourceLoader } from "../../src/index.ts";
 import {
   type CreateTestExtensionsResultInput,
@@ -56,6 +61,8 @@ export function getAssistantTexts(harness: Harness): string[] {
 }
 
 export interface HarnessOptions {
+  tempRoot?: string;
+  onTempDirCreated?: (tempDir: string) => void;
   models?: FauxModelDefinition[];
   settings?: Partial<Settings>;
   systemPrompt?: string;
@@ -67,6 +74,7 @@ export interface HarnessOptions {
   extensionFactories?: Array<ExtensionFactory | CreateTestExtensionsResultInput>;
   withConfiguredAuth?: boolean;
   completionMode?: CompletionMode;
+  taskVerificationMode?: TaskVerificationMode;
 }
 
 export interface Harness {
@@ -87,26 +95,88 @@ export interface Harness {
   cleanup: () => void;
 }
 
-function createTempDir(): string {
-  const tempDir = join(tmpdir(), `pi-suite-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-  mkdirSync(tempDir, { recursive: true });
-  return tempDir;
+interface HarnessConstruction {
+  fauxProvider?: FauxProviderRegistration;
+  session?: AgentSession;
+}
+
+function createTempDir(tempRoot: string = tmpdir()): string {
+  return mkdtempSync(join(tempRoot, "pi-suite-"));
+}
+
+function collectHarnessCleanupFailures(construction: HarnessConstruction, tempDir: string): unknown[] {
+  const failures: unknown[] = [];
+  const cleanupSteps = [
+    () => construction.session?.dispose(),
+    () => construction.fauxProvider?.unregister(),
+    () => {
+      if (existsSync(tempDir)) rmSync(tempDir, { recursive: true });
+    },
+  ];
+  for (const cleanup of cleanupSteps) {
+    try {
+      cleanup();
+    } catch (error) {
+      failures.push(error);
+    }
+  }
+  return failures;
+}
+
+function attachHarnessCleanupFailures(error: unknown, failures: unknown[]): void {
+  if (!(error instanceof Error) || failures.length === 0) return;
+  const causeDescriptor = Object.getOwnPropertyDescriptor(error, "cause");
+  if ((!causeDescriptor && !Object.isExtensible(error)) || causeDescriptor?.configurable === false) return;
+  const cleanupCause = new AggregateError(failures, "Harness rollback cleanup failed");
+  Object.defineProperty(error, "cause", {
+    configurable: true,
+    value: error.cause === undefined ? cleanupCause : new AggregateError([error.cause, cleanupCause]),
+  });
 }
 
 export async function createHarness(options: HarnessOptions = {}): Promise<Harness> {
-  const tempDir = createTempDir();
+  const tempDir = createTempDir(options.tempRoot);
+  const construction: HarnessConstruction = {};
+  try {
+    options.onTempDirCreated?.(tempDir);
+    return await buildHarness(options, tempDir, construction);
+  } catch (error) {
+    attachHarnessCleanupFailures(error, collectHarnessCleanupFailures(construction, tempDir));
+    throw error;
+  }
+}
+
+async function buildHarness(
+  options: HarnessOptions,
+  tempDir: string,
+  construction: HarnessConstruction,
+): Promise<Harness> {
   const completionMode = options.completionMode ?? "explicit_finish";
   const fauxProvider: FauxProviderRegistration = registerFauxProvider({
     models: options.models,
+    registerImmediately: false,
+    preserveOnReset: true,
   });
+  construction.fauxProvider = fauxProvider;
   fauxProvider.setResponses([]);
   const model = fauxProvider.getModel();
   const toolMap = options.tools ? Object.fromEntries(options.tools.map((tool) => [tool.name, tool])) : undefined;
   const withConfiguredAuth = options.withConfiguredAuth ?? true;
   const extensionRunnerRef: { current?: ExtensionRunner } = {};
 
-  const sessionManager = SessionManager.inMemory();
+  const sessionManager = SessionManager.inMemory(options.taskVerificationMode ? tempDir : undefined);
   const settingsManager = SettingsManager.inMemory(options.settings);
+  const taskVerificationRuntime = options.taskVerificationMode
+    ? prepareTaskVerificationRuntime(
+        {
+          taskVerificationMode: options.taskVerificationMode,
+          completionMode,
+          activeToolEffects: [resolveToolEffect({ kind: "workspace_write", risk: "normal" }, "builtin")],
+        },
+        sessionManager,
+        settingsManager,
+      )
+    : undefined;
 
   const authStorage = AuthStorage.inMemory();
   if (withConfiguredAuth) {
@@ -178,18 +248,23 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     cwd: tempDir,
     modelRegistry,
     resourceLoader,
+    customTools: taskVerificationRuntime?.customTools,
     baseToolsOverride: toolMap,
     initialActiveToolNames: options.initialActiveToolNames,
     allowedToolNames: options.allowedToolNames,
     excludedToolNames: options.excludedToolNames,
     extensionRunnerRef,
     completionMode,
+    taskVerificationMode: taskVerificationRuntime?.effectiveMode,
   });
+  construction.session = session;
+  if (taskVerificationRuntime) installTaskVerificationRuntime(session, taskVerificationRuntime);
 
   const events: AgentSessionEvent[] = [];
   session.subscribe((event) => {
     events.push(event);
   });
+  fauxProvider.register();
 
   return {
     session,
@@ -208,11 +283,8 @@ export async function createHarness(options: HarnessOptions = {}): Promise<Harne
     },
     tempDir,
     cleanup() {
-      session.dispose();
-      fauxProvider.unregister();
-      if (existsSync(tempDir)) {
-        rmSync(tempDir, { recursive: true });
-      }
+      const failures = collectHarnessCleanupFailures(construction, tempDir);
+      if (failures.length > 0) throw new AggregateError(failures, "Harness cleanup failed");
     },
   };
 }

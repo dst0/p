@@ -1,0 +1,22 @@
+# 2026-08-27 — Post-length cancellation needs a terminal assistant
+
+- **Status:** Resolved
+- **Task/context:** Verify end-to-end print behavior after cancelling a multi-segment provider response between continuation requests.
+- **Unexpected observation or failure:** The loop correctly avoided a fifth provider request, but emitted only `agent_end`. The last public assistant message therefore remained a successful-looking `length` segment, allowing output consumers to print partial content and exit successfully.
+- **Evidence:** The cancellation regression observed exactly four provider calls and one `agent_end`, but no assistant message with `stopReason: "aborted"` or cancellation diagnostic.
+- **Approaches tried:**
+  - **Attempt:** Stop with `agent_end` alone once the abort signal is observed.
+    - **Outcome:** Did not work
+    - **Why:** `agent_end` carries history but does not classify the logical terminal result for consumers that inspect assistant stop reasons.
+  - **Attempt:** Start another provider stream with the already-aborted signal.
+    - **Outcome:** Rejected
+    - **Why:** It creates an unnecessary provider invocation and delegates deterministic runtime cancellation semantics to provider behavior.
+  - **Attempt:** Emit one runtime-owned terminal aborted assistant turn before `agent_end`.
+    - **Outcome:** Worked
+    - **Why:** It preserves prior segments, avoids another provider request, and gives every downstream consumer one explicit terminal status and diagnostic.
+- **Root cause:** Inter-turn cancellation was treated as loop control only, rather than as a terminal assistant outcome that must be represented in the event/message contract.
+- **Resolution:** The loop now appends and emits one `aborted` assistant message with a clear diagnostic, followed by `turn_end` and `agent_end`, when cancellation is observed after next-turn preparation.
+- **Verification:** The focused regression asserts exactly four provider calls, exact terminal event ordering, one aborted message and diagnostic, no synthetic error message, and one `agent_end`.
+- **Prevention/follow-up:** Every terminal loop path must provide both control-flow termination and an unambiguous public assistant stop reason when consumers derive success or failure from messages.
+- **Reusable learning:** A terminal event is not a substitute for a terminal result message when downstream behavior depends on result classification.
+- **References:** `packages/agent/src/agent-loop/message-preparation.ts`, `packages/agent/src/agent-loop/error-recovery.ts`, `packages/agent/test/provider-length-continuation-liveness.test.ts`

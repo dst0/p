@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep compiled instructions universal while preserving compatible configured model metadata across sparse dynamic provider discovery."
+}

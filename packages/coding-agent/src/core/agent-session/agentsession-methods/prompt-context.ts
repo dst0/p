@@ -5,6 +5,7 @@ import {
   renderWorkingSessionState,
 } from "../../compaction/index.ts";
 import type { CustomMessage } from "../../messages.ts";
+import { renderProjectInstructionTurnContext } from "../../project-instructions/index.ts";
 import { createRulesContext } from "../../project-rules.ts";
 import { createRepoMapContext } from "../../repo-map.ts";
 import type { SessionEntry } from "../../session-manager.ts";
@@ -15,8 +16,64 @@ import {
   SESSION_STATE_PROTOCOL_PROMPT,
   WORKING_STATE_PROMPT_CUSTOM_TYPE,
 } from "../constants.ts";
+import { restoreProjectRuleGateFromHistory } from "../project-instruction-integrity.ts";
 import { getUserMessageAnchorKey } from "../recall-utils.ts";
-import type { RuntimeContextPrompts, WorkingStatePromptInsertionOptions } from "../state-types.ts";
+import type {
+  ProjectRuleGate,
+  ProjectRuleTurnContext,
+  RuntimeContextPrompts,
+  WorkingStatePromptInsertionOptions,
+} from "../state-types.ts";
+import { mergeProjectRuleGates } from "./agent-event-handling.ts";
+
+export function createProjectRuleTurnContext(self: AgentSession, query: string): ProjectRuleTurnContext {
+  if (self._projectInstructionMode !== "compiled") return {};
+  const prepared = self._projectInstructions.state.current;
+  if (!prepared) return {};
+  if (!self._projectRuleGate) {
+    self._projectRuleGate = restoreProjectRuleGateFromHistory(
+      self.sessionManager.getBranch(),
+      prepared.manifest.inputHash,
+      () => ++self._projectRuleGateGeneration,
+    );
+  }
+  const activeGeneration = ++self._projectRuleGateGeneration;
+  if (prepared.manifest.mode === "fallback") {
+    return {
+      prompt:
+        "<project_rule_routes>Compiled project instructions are unavailable. Do not mutate; restart in legacy mode.</project_rule_routes>",
+      gate: {
+        inputHash: prepared.manifest.inputHash,
+        batches: [],
+        activeGeneration,
+        candidateLinks: [],
+        failure:
+          "Compiled project instructions are unavailable. Reload with project instruction mode legacy before mutating work.",
+      },
+    };
+  }
+  const routes = renderProjectInstructionTurnContext(prepared, query);
+  if (!routes) {
+    return {
+      gate: {
+        inputHash: prepared.manifest.inputHash,
+        batches: [],
+        activeGeneration,
+        candidateLinks: [],
+      },
+    };
+  }
+  return {
+    prompt: routes.prompt,
+    links: routes.links,
+    gate: {
+      inputHash: routes.inputHash,
+      batches: [],
+      activeGeneration,
+      candidateLinks: [...routes.links],
+    },
+  };
+}
 
 export function do__createRuntimeContextPrompts(
   self: AgentSession,
@@ -35,7 +92,14 @@ export function do__createRuntimeContextPrompts(
       ? renderWorkingSessionState(structuredState, settings.renderedStateMaxTokens)
       : undefined;
   const memoryPrompt = self._createProjectMemoryPrompt(query);
-  const rulesPrompt = createRulesContext(self._cwd, query);
+  const projectRuleTurn = createProjectRuleTurnContext(self, query);
+  self._projectRuleGate = mergeProjectRuleGates(self._projectRuleGate, projectRuleTurn.gate);
+  const rulesPrompt =
+    self._projectInstructionMode === "compiled"
+      ? projectRuleTurn.prompt
+      : self._projectInstructionMode === "legacy"
+        ? createRulesContext(self._cwd, query)
+        : undefined;
   const repoMapPrompt = createRepoMapContext(self._cwd, query)?.content;
   const branchEntryIds = new Set(branchEntries.map((e) => e.id));
   const subagentStorageTarget = {
@@ -63,6 +127,8 @@ export function do__createRuntimeContextPrompts(
     workingStatePrompt,
     memoryPrompt,
     rulesPrompt,
+    projectRuleLinks: projectRuleTurn.links,
+    projectRuleGate: projectRuleTurn.gate,
     repoMapPrompt,
     subagentProfilesPrompt,
     subagentDigestPrompt,
@@ -122,15 +188,35 @@ export function do__createWorkingStatePromptMessage(
 }
 
 export function do__createRuntimeContextPromptMessage(
-  _self: AgentSession,
+  self: AgentSession,
   content: string,
   timestamp: number,
+  projectRuleGate?: ProjectRuleGate,
 ): CustomMessage {
   return {
     role: "custom",
     customType: RUNTIME_CONTEXT_PROMPT_CUSTOM_TYPE,
     content,
     display: false,
+    details: {
+      projectInstructionMode: self._projectInstructionMode,
+      ...(projectRuleGate
+        ? {
+            projectRuleGate: {
+              inputHash: projectRuleGate.inputHash,
+              batches: projectRuleGate.batches.map((batch) => ({
+                links: [...batch.links],
+                satisfied: false,
+                generation: batch.generation,
+              })),
+              activeGeneration: projectRuleGate.activeGeneration,
+              candidateLinks: [...(projectRuleGate.candidateLinks ?? [])],
+              candidateMerge: projectRuleGate.candidateMerge,
+              failure: projectRuleGate.failure,
+            },
+          }
+        : {}),
+    },
     timestamp,
   };
 }

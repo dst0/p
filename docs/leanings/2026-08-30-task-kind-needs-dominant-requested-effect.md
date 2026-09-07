@@ -1,0 +1,31 @@
+# 2026-08-30 — Task kind needs the dominant requested effect
+
+- **Status:** Resolved
+- **Task/context:** Diagnose why a code implementation specified by README was automatically declared as documentation or investigation work.
+- **Unexpected observation or failure:** Incidental words such as `README`, `explain`, and `API` overrode the actual requested mutation, read-only API summaries could be classified as features, and a literal dot in `README.md` created a false clause. Later review found that a `continue` nudge replaced the real prompt during first-mutation inference, every `and` split documentation noun lists into fake actions, the first 500 characters hid later effects, and an automatically rejected declaration did not block the mutation. A second review found that docs compatibility carried context across clauses while docs-mutation detection recomputed each clause without context; Russian coordination, reference phrases, and continuations were also modeled less precisely than English.
+- **Evidence:** Clause-order regressions showed `Fix ... and explain ...` becoming investigation, `Implement ... and update README` becoming docs, and `Summarize API documentation` becoming feature. Adversarial review then reproduced unknown deploy or migrate effects erased by docs, `Document setup and usage in README.md` becoming ambiguous, `Fix the parser` followed by `proceed` becoming feature, a late decisive effect beyond 500 characters being ignored, and restored mutation state continuing after `declare_task` rejected. Follow-up counterexamples classified `Review README.md and update its examples` as investigation, `Review README.md and document the workflow` as ambiguous, `Обнови поток и документацию` as docs, Russian `согласно`, `по`, and `как описано в` references as docs mutations, and `Обнови README и добавь примеры` as ambiguous.
+- **Approaches tried:**
+  - **Attempt:** Reorder broad keyword regular expressions.
+    - **Outcome:** Did not work
+    - **Why:** Topic nouns and subordinate verbs remain indistinguishable from requested actions, so a different ordering only moves the false positives.
+  - **Attempt:** Split action clauses, remove polite prefixes, and rank explicit fix, refactor, behavior-change, code, docs, and read-only effects.
+    - **Outcome:** Partial
+    - **Why:** A closed action list remained order-dependent for unknown verbs, and treating every unknown clause as a mutation broke valid docs continuations.
+  - **Attempt:** Make docs-only classification asymmetric: accept explicit docs actions and bounded docs continuations, but treat any unmodeled coordinated effect as non-doc regardless of order.
+    - **Outcome:** Partial
+    - **Why:** It removed some order dependence, but any finite continuation vocabulary either classified new docs content as feature work or allowed an unknown effect to collapse back to docs.
+  - **Attempt:** Return no automatic classification for semantically ambiguous mixed effects and gate the first mutation on one structured model declaration.
+    - **Outcome:** Partial
+    - **Why:** The explicit fallback was sound, but prompt selection, action tokenization, and ignored declaration failure could still bypass it.
+  - **Attempt:** Infer over all retained non-nudge task prompts, split conjunctions only before recognized action heads, require behavior-bearing targets, and verify that automatic declaration actually updates state.
+    - **Outcome:** Partial
+    - **Why:** It closed the gate bypasses, but docs-only compatibility and mutation detection still used different context models and multilingual syntax remained asymmetric.
+  - **Attempt:** Carry docs context through mutation detection and model Russian coordinated targets, reference phrases, and continuation nouns with Unicode-aware suffixes.
+    - **Outcome:** Worked
+    - **Why:** An explicit later docs mutation now dominates an earlier read-only action, behavior-bearing coordinated effects remain behavior changes in either order, and documentation references are not mistaken for mutation targets.
+- **Root cause:** The classifier inferred work kind from salient words and a destructively tokenized latest message instead of the complete retained requested effects. Its docs compatibility and docs-mutation decisions also used different context models, and English-only coordination/reference syntax made equivalent Russian requests diverge. The mutation gate additionally treated calling `declare_task` as success without checking the resulting state.
+- **Resolution:** Task-kind inference now uses the complete persisted non-nudge prompt set, action-headed clauses, stateful docs-mutation context, target-aware behavior changes, filename-safe boundaries, and English/Russian docs continuations and references that reject non-doc qualifiers. The stored 500-character summary no longer limits inference. Ambiguous effects return no kind, and both manual and automatic declaration failures block the original mutation.
+- **Verification:** `task-verification-task-kind-inference.test.ts` passes 110 cases covering clause order, unknown effects, documentation noun conjunctions, inspection-then-mutation continuations, arbitrary artifact mutations, behavior targets, filename dots, code described by docs, read-only work, Russian coordination and references, nudges, effects after 500 characters, successful structured recovery, and restored-state declaration rejection. Nudge-continuity and requirement-audit regression suites add 21 passing cases; the combined focused closure run passes 195 tests across 10 files.
+- **Prevention/follow-up:** Add action-versus-topic, noun-conjunction, nudge, long-prefix, and failed-transition counterexamples whenever intent routing changes.
+- **Reusable learning:** Classify a request by its dominant observable effect, not the most salient noun. When deterministic syntax cannot prove that effect, require one structured semantic choice before mutation instead of expanding a brittle vocabulary.
+- **References:** `packages/coding-agent/src/core/task-verification/task-kind-inference.ts`, `packages/coding-agent/test/task-verification-task-kind-inference.test.ts`

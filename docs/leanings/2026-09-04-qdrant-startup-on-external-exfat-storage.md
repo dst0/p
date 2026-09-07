@@ -1,0 +1,25 @@
+# 2026-09-04 — Qdrant startup on external ExFAT storage
+
+- **Status:** Open
+- **Task/context:** Mandatory installed-runtime verification after the completion-evidence and compaction fixes in `e46d3905e`.
+- **Unexpected observation or failure:** The installer rebuilt and relinked p, then its real semantic-search smoke failed because the configured Qdrant instance did not become ready within 900,000 ms. Local unit and static checks had passed; those gates did not establish installed backend health.
+- **Evidence:** The identity-bound smoke child started Qdrant at 2026-09-04 11:48:07 UTC. No TCP listener appeared before timeout. A short native stack sample observed shard/segment loading and mmap/payload-index filesystem operations. `diskutil` identified the configured external volume as USB, ExFAT, and not solid-state. `du` measured approximately 33 GiB of persistent storage; the internal data volume had approximately 130 GiB available. The installer exited 1 and all identified owned child processes exited. No index directory was deleted or moved.
+- **Approaches tried:**
+  - **Attempt:** Wait for the configured startup deadline while inspecting process identity, sockets, and a bounded stack sample.
+    - **Outcome:** Partial
+    - **Why:** It established that persistent storage loading was occurring and startup still failed, but one sample does not prove sustained progress or exclude other faults.
+  - **Attempt:** Attribute the silent wait to a missing embedding model or stalled language model.
+    - **Outcome:** Rejected after inspection
+    - **Why:** The smoke had not yet reached embedding/search. Qdrant child logs were consumed by the manager without a supplied logging callback.
+  - **Attempt:** Raise the timeout, delete existing indexes, or bypass the real smoke.
+    - **Outcome:** Not performed
+    - **Why:** None establishes backend correctness, and deleting or relocating shared data requires explicit scope and preservation planning.
+  - **Attempt:** Start the same Qdrant 1.18.3 binary against a new empty private APFS directory on an owned ephemeral endpoint.
+    - **Outcome:** Worked
+    - **Why:** Authenticated health succeeded in 545 ms and owned shutdown was verified. The temporary backend was removed after stopping, without accessing the existing store. This proves binary startup on an empty compatible store, not recovery of the existing 33 GiB dataset or that filesystem type alone caused the failure.
+- **Root cause:** Not fully established. External spinning-disk filesystem loading is directly observed; ExFAT also does not meet Qdrant's documented POSIX-compatible persistent-filesystem requirement. A controlled comparison on a compatible filesystem is still needed to distinguish storage compatibility/performance from additional index problems.
+- **Resolution:** Pending. The least-destructive candidate is an offline, verified copy to a private internal APFS directory, retaining the original storage and switching configuration only after explicit user authorization and rollback preparation.
+- **Verification:** Source checks and non-e2e tests passed, but installer semantic-search verification failed. An isolated empty-store APFS startup probe passed and cleaned up its owned endpoint. No live model probe, new benchmark candidate, push, or release was certified from this attempt.
+- **Prevention/follow-up:** Check actual mount type, storage medium, capacity, and native startup evidence before interpreting a silent indexing smoke as a compiler regression. Do not publish a release based solely on a successful build/relink.
+- **Reusable learning:** A runtime smoke can expose a shared storage prerequisite unrelated to the source change; preserve that distinction and the data while investigating it.
+- **References:** `scripts/smoke-code-index.js`, `packages/code-index/src/embed/qdrant-server.ts`, [Qdrant installation requirements](https://qdrant.tech/documentation/installation/), [Qdrant filesystem troubleshooting](https://qdrant.tech/documentation/operations/common-errors/).

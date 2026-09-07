@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep native tool failures monotonic through result hooks while tracking successful mutations from their native outcome."
+}

@@ -15,7 +15,7 @@ import {
   UPDATE_SESSION_STATE_SCHEMA,
   UPDATE_SESSION_STATE_TOOL_NAME,
 } from "../constants.ts";
-import { isInternalCompletionProtocolRepairMessage } from "../message-utils.ts";
+import { isInternalAgentMessage } from "../message-utils.ts";
 import type { CompactionDryRunResult, UpdateSessionStateInput } from "../session-types.ts";
 import type { UpdateSessionStateResult } from "../state-types.ts";
 
@@ -130,7 +130,7 @@ export function do__applyUpdateSessionState(
 ): UpdateSessionStateResult {
   const branchEntries = self.sessionManager
     .getBranch()
-    .filter((entry) => entry.type !== "message" || !isInternalCompletionProtocolRepairMessage(entry.message));
+    .filter((entry) => entry.type !== "message" || !isInternalAgentMessage(entry.message));
   const previous =
     getLatestStructuredSessionState(branchEntries) ??
     createInitialStructuredSessionState(self.sessionManager.getSessionId());

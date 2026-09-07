@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Keep execution, security, and trace context requirements normative while allowing standalone context labels to remain informational."
+}

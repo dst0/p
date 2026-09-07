@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Reduce the default coding-agent system prompt without dropping its operational or verification invariants."
+}

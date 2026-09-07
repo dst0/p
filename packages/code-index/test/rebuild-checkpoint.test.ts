@@ -2,15 +2,24 @@ import { existsSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync }
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
+import { BM25Vocabulary } from "../src/bm25.ts";
 import type { EmbeddingProvider } from "../src/embed/provider.ts";
 import { WorkspaceCodeRagService } from "../src/index.ts";
+import {
+  loadRebuildCheckpoint,
+  loadRebuildPlan,
+  rebuildArtifacts,
+  rebuildCheckpointPath,
+} from "../src/rag/service/rebuild-checkpoint.ts";
 import { FakeVectorStore } from "./fake-vector-store.ts";
 
 const temporaryDirectories: string[] = [];
+const services: WorkspaceCodeRagService[] = [];
 
-afterEach(() => {
+afterEach(async () => {
+  await Promise.all(services.splice(0).map((service) => service.dispose()));
   for (const directory of temporaryDirectories.splice(0)) rmSync(directory, { recursive: true, force: true });
-});
+}, 30_000);
 
 class RecordingEmbeddingProvider implements EmbeddingProvider {
   dim = 3;
@@ -50,7 +59,7 @@ function createService(
     embeddingModel?: string;
   } = {},
 ): WorkspaceCodeRagService {
-  return new WorkspaceCodeRagService({
+  const service = new WorkspaceCodeRagService({
     workspaceRoot: root,
     dataDirectory: data,
     embeddingProvider,
@@ -70,9 +79,11 @@ function createService(
       preparationMemoryReserveBytes: 1024 * 1024,
     },
   });
+  services.push(service);
+  return service;
 }
 
-async function interruptAfterTwoChunks(service: WorkspaceCodeRagService): Promise<void> {
+async function interruptAfterTwoChunks(service: WorkspaceCodeRagService, signal: AbortSignal): Promise<void> {
   const cancellation = new AbortController();
   await expect(
     service.rebuild(
@@ -83,20 +94,23 @@ async function interruptAfterTwoChunks(service: WorkspaceCodeRagService): Promis
           }
         },
       },
-      cancellation.signal,
+      AbortSignal.any([cancellation.signal, signal]),
     ),
   ).rejects.toMatchObject({ code: "RAG_CANCELLED" });
+  signal.throwIfAborted();
+  expect(cancellation.signal.aborted).toBe(true);
 }
 
-describe("resumable full rebuild", () => {
-  it("continues from the last committed chunk after service restart", async () => {
+// These integration cases start real scan/preparation workers twice; allow full-suite load margin.
+describe("resumable full rebuild", { timeout: 90_000 }, () => {
+  it("continues from the last committed chunk after service restart", async ({ signal }) => {
     const { root, data } = createFixture();
     const vectorStore = new FakeVectorStore();
     const initialEmbedding = new RecordingEmbeddingProvider();
     const initialService = createService(root, data, initialEmbedding, vectorStore, {
       embeddingDevice: "apple-mps",
     });
-    await interruptAfterTwoChunks(initialService);
+    await interruptAfterTwoChunks(initialService, signal);
 
     const checkpointPath = join(data, initialService.repoId, "rebuild-checkpoint.json");
     const partialCollection = vectorStore.createdCollections[0];
@@ -107,7 +121,7 @@ describe("resumable full rebuild", () => {
     const resumedService = createService(root, data, resumedEmbedding, vectorStore, {
       embeddingDevice: "apple-ane",
     });
-    const summary = await resumedService.rebuild();
+    const summary = await resumedService.rebuild({}, signal);
 
     expect(vectorStore.createdCollections).toEqual([partialCollection]);
     expect(resumedEmbedding.encodedTexts).toHaveLength(2);
@@ -116,11 +130,11 @@ describe("resumable full rebuild", () => {
     expect(existsSync(checkpointPath)).toBe(false);
   });
 
-  it("continues after metadata-only timestamp changes", async () => {
+  it("continues after metadata-only timestamp changes", async ({ signal }) => {
     const { root, data } = createFixture();
     const vectorStore = new FakeVectorStore();
     const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    await interruptAfterTwoChunks(initialService);
+    await interruptAfterTwoChunks(initialService, signal);
     const partialCollection = vectorStore.createdCollections[0];
 
     const touchedFile = join(root, "file-0.ts");
@@ -129,107 +143,124 @@ describe("resumable full rebuild", () => {
 
     const resumedEmbedding = new RecordingEmbeddingProvider();
     const resumedService = createService(root, data, resumedEmbedding, vectorStore);
-    const summary = await resumedService.rebuild();
+    const summary = await resumedService.rebuild({}, signal);
 
     expect(summary.status.collection).toBe(partialCollection);
     expect(vectorStore.createdCollections).toEqual([partialCollection]);
     expect(resumedEmbedding.encodedTexts).toHaveLength(2);
   });
 
-  it("invalidates a checkpoint when repository contents change", async () => {
+  it("invalidates a checkpoint when repository contents change", async ({ signal }) => {
     const { root, data } = createFixture();
     const vectorStore = new FakeVectorStore();
     const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    await interruptAfterTwoChunks(initialService);
+    await interruptAfterTwoChunks(initialService, signal);
     const partialCollection = vectorStore.createdCollections[0];
 
     writeFileSync(join(root, "file-0.ts"), 'export function value0() { return "changed-token"; }\n');
     const resumedEmbedding = new RecordingEmbeddingProvider();
     const resumedService = createService(root, data, resumedEmbedding, vectorStore);
-    const summary = await resumedService.rebuild();
+    const summary = await resumedService.rebuild({}, signal);
 
     expect(summary.status.collection).not.toBe(partialCollection);
     expect(vectorStore.deletedCollections).toContain(partialCollection);
     expect(resumedEmbedding.encodedTexts).toHaveLength(4);
   });
 
-  it("invalidates a checkpoint when embedding compatibility changes", async () => {
+  it("invalidates a checkpoint when embedding compatibility changes", async ({ signal }) => {
     const { root, data } = createFixture();
     const vectorStore = new FakeVectorStore();
     const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore, {
       embeddingModel: "test-embedding-v1",
     });
-    await interruptAfterTwoChunks(initialService);
+    await interruptAfterTwoChunks(initialService, signal);
     const partialCollection = vectorStore.createdCollections[0];
 
     const resumedEmbedding = new RecordingEmbeddingProvider();
     const resumedService = createService(root, data, resumedEmbedding, vectorStore, {
       embeddingModel: "test-embedding-v2",
     });
-    const summary = await resumedService.rebuild();
+    const summary = await resumedService.rebuild({}, signal);
 
     expect(summary.status.collection).not.toBe(partialCollection);
     expect(vectorStore.deletedCollections).toContain(partialCollection);
     expect(resumedEmbedding.encodedTexts).toHaveLength(4);
   });
 
-  it("handles corrupted checkpoint and plan JSON files gracefully", async () => {
-    const { root, data } = createFixture();
-    const vectorStore = new FakeVectorStore();
-    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    await interruptAfterTwoChunks(initialService);
+  it.for(["checkpoint JSON", "plan JSON", "plan generation", "vocabulary JSON", "vocabulary count"] as const)(
+    "restarts all chunks after corrupt %s",
+    async (corruption, { signal }) => {
+      const { root, data } = createFixture();
+      const vectorStore = new FakeVectorStore();
+      const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+      await interruptAfterTwoChunks(initialService, signal);
+      const partialCollection = vectorStore.createdCollections[0]!;
+      const checkpoint = loadRebuildCheckpoint(rebuildCheckpointPath(initialService.repositoryDirectory));
+      expect(checkpoint).toMatchObject({ collection: partialCollection, completedChunks: 2, chunkCount: 4 });
+      if (!checkpoint) throw new Error("Interrupted rebuild did not persist a valid checkpoint");
+      const artifacts = rebuildArtifacts(initialService.repositoryDirectory, checkpoint.generation);
+      for (const artifact of Object.values(artifacts)) expect(existsSync(artifact)).toBe(true);
 
-    const repoDir = join(data, initialService.repoId);
-    const checkpointPath = join(repoDir, "rebuild-checkpoint.json");
-    const planPath = join(repoDir, "rebuild-plan.json");
+      if (corruption === "checkpoint JSON") writeFileSync(artifacts.checkpoint, "{ invalid json");
+      else if (corruption === "plan JSON") writeFileSync(artifacts.plan, "{ invalid json");
+      else if (corruption === "plan generation") {
+        const plan = loadRebuildPlan(artifacts.plan, checkpoint.generation);
+        expect(plan).toBeDefined();
+        writeFileSync(artifacts.plan, JSON.stringify({ ...plan, generation: "wrong-generation" }));
+      } else if (corruption === "vocabulary JSON") writeFileSync(artifacts.vocabulary, "{ invalid json");
+      else {
+        const vocabulary = BM25Vocabulary.load(artifacts.vocabulary);
+        expect(vocabulary.totalDocs).toBe(checkpoint.chunkCount);
+        vocabulary.totalDocs = checkpoint.chunkCount + 1;
+        vocabulary.save(artifacts.vocabulary);
+      }
 
-    // Corrupt checkpoint JSON
-    writeFileSync(checkpointPath, "{ invalid json");
-    const resumedService1 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    const summary1 = await resumedService1.rebuild();
-    expect(summary1.fullRebuild).toBe(true);
+      const resumedEmbedding = new RecordingEmbeddingProvider();
+      const resumedService = createService(root, data, resumedEmbedding, vectorStore);
+      const summary = await resumedService.rebuild({}, signal);
+      expect(summary.status.collection).not.toBe(partialCollection);
+      expect(resumedEmbedding.encodedTexts).toHaveLength(4);
+      await expect(vectorStore.collectionStatus(summary.status.collection!)).resolves.toMatchObject({ points: 4 });
+      expect(existsSync(artifacts.checkpoint)).toBe(false);
+      if (corruption !== "checkpoint JSON") {
+        expect(vectorStore.deletedCollections).toContain(partialCollection);
+        for (const artifact of [artifacts.plan, artifacts.spool, artifacts.vocabulary]) {
+          expect(existsSync(artifact)).toBe(false);
+        }
+      }
+    },
+  );
 
-    // Corrupt plan JSON
-    await interruptAfterTwoChunks(createService(root, data, new RecordingEmbeddingProvider(), vectorStore));
-    writeFileSync(planPath, "{ invalid json");
-    const resumedService2 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    const summary2 = await resumedService2.rebuild();
-    expect(summary2.fullRebuild).toBe(true);
+  it.for(["missing", "too few points", "too many points", "wrong dimensions"] as const)(
+    "restarts all chunks when the partial collection has %s",
+    async (corruption, { signal }) => {
+      const { root, data } = createFixture();
+      const vectorStore = new FakeVectorStore();
+      const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
+      await interruptAfterTwoChunks(initialService, signal);
+      const partialCollection = vectorStore.createdCollections[0]!;
+      if (corruption === "missing") await vectorStore.deleteCollection(partialCollection);
+      else if (corruption === "wrong dimensions") vectorStore.dimensions.set(partialCollection, 9);
+      else {
+        const points = vectorStore.collections.get(partialCollection)!;
+        expect(points.size).toBe(2);
+        if (corruption === "too few points") points.clear();
+        else {
+          const point = [...points.values()][0]!;
+          for (let index = 0; index < 3; index += 1) points.set(`extra-${index}`, { ...point, id: `extra-${index}` });
+        }
+      }
 
-    // Mismatched generation in plan
-    await interruptAfterTwoChunks(createService(root, data, new RecordingEmbeddingProvider(), vectorStore));
-    writeFileSync(planPath, JSON.stringify({ schemaVersion: 3, generation: "wrong-generation", files: {} }));
-    const resumedService3 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    const summary3 = await resumedService3.rebuild();
-    expect(summary3.fullRebuild).toBe(true);
-  });
-
-  it("invalidates checkpoint when collection is deleted or points/dimensions mismatch", async () => {
-    const { root, data } = createFixture();
-    const vectorStore = new FakeVectorStore();
-    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    await interruptAfterTwoChunks(initialService);
-
-    const partialCollection = vectorStore.createdCollections[0]!;
-    await vectorStore.deleteCollection(partialCollection);
-
-    const resumedService1 = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    const summary1 = await resumedService1.rebuild();
-    expect(summary1.fullRebuild).toBe(true);
-  });
-
-  it("invalidates checkpoint when vocabulary doc count mismatches checkpoint chunkCount", async () => {
-    const { root, data } = createFixture();
-    const vectorStore = new FakeVectorStore();
-    const initialService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    await interruptAfterTwoChunks(initialService);
-
-    const repoDir = join(data, initialService.repoId);
-    const vocabPath = join(repoDir, "rebuild-vocab.json");
-    writeFileSync(vocabPath, JSON.stringify({ totalDocs: 999, df: {} }));
-
-    const resumedService = createService(root, data, new RecordingEmbeddingProvider(), vectorStore);
-    const summary = await resumedService.rebuild();
-    expect(summary.fullRebuild).toBe(true);
-  });
+      const resumedEmbedding = new RecordingEmbeddingProvider();
+      const resumedService = createService(root, data, resumedEmbedding, vectorStore);
+      const summary = await resumedService.rebuild({}, signal);
+      expect(summary.status.collection).not.toBe(partialCollection);
+      expect(vectorStore.deletedCollections).toContain(partialCollection);
+      expect(resumedEmbedding.encodedTexts).toHaveLength(4);
+      await expect(vectorStore.collectionStatus(summary.status.collection!)).resolves.toMatchObject({
+        points: 4,
+        dimensions: 3,
+      });
+    },
+  );
 });

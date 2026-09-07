@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Rename internal worker-test fixture paths from .mjs to repository-standard .js without changing published behavior."
+}

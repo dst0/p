@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Retain the best rejected requirement draft and preserve valid frozen definitions across pre-mutation task reclassification."
+}

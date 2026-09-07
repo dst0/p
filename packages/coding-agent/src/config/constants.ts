@@ -14,14 +14,22 @@ export const isBunRuntime = !!process.versions.bun;
 
 let loadedPkg: PackageJson = {};
 try {
-  let dir = __dirname;
-  while (dir !== dirname(dir)) {
-    const candidate = join(dir, "package.json");
+  if (isBunBinary) {
+    // Compiled modules use a virtual path; release metadata is an exact executable sidecar.
+    const candidate = join(dirname(process.execPath), "package.json");
     if (existsSync(candidate)) {
       loadedPkg = JSON.parse(readFileSync(candidate, "utf-8")) as PackageJson;
-      break;
     }
-    dir = dirname(dir);
+  } else {
+    let dir = __dirname;
+    while (dir !== dirname(dir)) {
+      const candidate = join(dir, "package.json");
+      if (existsSync(candidate)) {
+        loadedPkg = JSON.parse(readFileSync(candidate, "utf-8")) as PackageJson;
+        break;
+      }
+      dir = dirname(dir);
+    }
   }
 } catch {
   // Ignore fallback

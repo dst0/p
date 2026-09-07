@@ -1,0 +1,22 @@
+# 2026-09-05 — Idle waits must retry transient health failures
+
+- **Status:** Resolved
+- **Task/context:** Diagnosing a load-sensitive `EmbeddingServerManager.waitUntilIdle` failure during the full code-index test suite.
+- **Unexpected observation or failure:** A two-second idle wait returned `false` after 1.283 seconds under aggregate load, before its overall deadline elapsed.
+- **Evidence:** The production catch path returned `false` after any failed health request. Focused regressions reproduced a rejected first request and a first request exceeding the 500-millisecond attempt timeout; both returned `false` before the fix even though the next response reported zero active requests. Additional red tests showed that an unconsumed, never-ending `503` body prevented an idle retry and that an idle JSON body parsed after the total deadline incorrectly returned `true`.
+- **Approaches tried:**
+  - **Attempt:** Increase only the test's overall timeout.
+    - **Outcome:** Did not work
+    - **Why:** The method exited on the first per-attempt failure, so unused global wait budget could not help.
+  - **Attempt:** Retry transient probe failures with the existing polling interval while bounding every request and delay by the remaining global budget.
+    - **Outcome:** Worked
+    - **Why:** A later healthy response can confirm idle without extending the caller's total deadline.
+  - **Attempt:** Prove sub-500-millisecond deadline and body-cancellation behavior only through loopback HTTP servers.
+    - **Outcome:** Did not work reliably
+    - **Why:** In a parallel focused run with file-preparation worker contention, loopback callbacks were not scheduled before the deliberately short test budgets; four idle tests failed even though the same file passed eight of eight alone. Real HTTP remains for success/rejection/attempt-timeout paths, while controlled `fetch` responses plus real `AbortSignal.timeout` now verify cancellation and deadline ownership without requiring network scheduling inside a sub-500-millisecond window.
+- **Root cause:** `waitUntilIdle` treated one health-probe exception as the terminal result for the whole operation instead of as a failed polling attempt. Its retry path also abandoned non-success response bodies and trusted an idle body without rechecking the deadline after asynchronous parsing.
+- **Resolution:** Continue polling after transient request failures, cancel each non-success response body before retrying, and accept an idle response only when parsing completes before the strict overall deadline.
+- **Verification:** The eight-case focused suite passes real-socket rejected-request recovery and 500-millisecond attempt-timeout recovery, cancellation of a hanging `503` response stream, rejection of late-parsed idle JSON, unreachable-server failure, continuously busy timeout, and real-abort-signal/no-retry behavior at the overall deadline.
+- **Prevention/follow-up:** Keep separate regressions for per-attempt failure recovery, response-body ownership, and total-deadline enforcement. Do not infer production correctness from isolated timing passes alone.
+- **Reusable learning:** A bounded polling operation must distinguish an attempt timeout from its global deadline, own or cancel every response body, and recheck the deadline after awaited parsing before accepting success.
+- **References:** `packages/code-index/src/embed/server.ts`, `packages/code-index/test/embedding-server-idle.test.ts`, `docs/leanings/2026-08-28-coverage-health-test-timing.md`

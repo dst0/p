@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Exercise actual persisted rebuild artifacts and partial-collection corruption with joined worker cleanup; no published runtime behavior changes."
+}

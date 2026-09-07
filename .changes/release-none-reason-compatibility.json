@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Preserve audited historical summary-style exemptions while requiring explicit reasons for every new internal fragment."
+}

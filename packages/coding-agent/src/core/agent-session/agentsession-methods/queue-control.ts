@@ -1,6 +1,7 @@
 import type { ImageContent, Model, TextContent } from "@dst0/p-ai";
 import { modelsAreEqual } from "@dst0/p-ai";
 import type { AgentSession } from "../agentsession.ts";
+import { persistProjectRuleSupersession } from "../project-instruction-integrity.ts";
 import type { ModelCycleResult } from "../session-types.ts";
 
 export async function do_sendUserMessage(
@@ -87,7 +88,7 @@ export async function do_setModel(self: AgentSession, model: Model<any>): Promis
 
   const previousModel = self.model;
   const thinkingLevel = self._getThinkingLevelForModelSwitch();
-  self.agent.state.model = model;
+  await prepareModelSwitch(self, model);
   self.sessionManager.appendModelChange(model.provider, model.id);
   self.settingsManager.setDefaultModelAndProvider(model.provider, model.id);
 
@@ -123,8 +124,7 @@ export async function do__cycleScopedModel(
   const next = scopedModels[nextIndex];
   const thinkingLevel = self._getThinkingLevelForModelSwitch(next.thinkingLevel);
 
-  // Apply model
-  self.agent.state.model = next.model;
+  await prepareModelSwitch(self, next.model);
   self.sessionManager.appendModelChange(next.model.provider, next.model.id);
   self.settingsManager.setDefaultModelAndProvider(next.model.provider, next.model.id);
 
@@ -159,7 +159,7 @@ export async function do__cycleAvailableModel(
   const nextModel = availableModels[nextIndex];
 
   const thinkingLevel = self._getThinkingLevelForModelSwitch();
-  self.agent.state.model = nextModel;
+  await prepareModelSwitch(self, nextModel);
   self.sessionManager.appendModelChange(nextModel.provider, nextModel.id);
   self.settingsManager.setDefaultModelAndProvider(nextModel.provider, nextModel.id);
 
@@ -173,4 +173,47 @@ export async function do__cycleAvailableModel(
     thinkingLevel: self.thinkingLevel,
     isScoped: false,
   };
+}
+
+async function prepareModelSwitch(self: AgentSession, nextModel: Model<any>): Promise<void> {
+  const previousModel = self.agent.state.model;
+  if (self._projectInstructionMode !== "compiled") {
+    self.agent.state.model = nextModel;
+    return;
+  }
+  const previousInstructions = self._projectInstructions.state.current;
+  const previousGate = self._projectRuleGate;
+  const previousReadStages = new Map(self._projectRuleReadStages);
+  const previousQueuedGates = self._queuedProjectRuleGates;
+  const previousProcessingQueuedTurn = self._processingQueuedProjectRuleTurn;
+  const previousBasePrompt = self._baseSystemPrompt;
+  const previousSystemPrompt = self.agent.state.systemPrompt;
+  self.agent.state.model = nextModel;
+  try {
+    await refreshModelKeyedProjectInstructions(self);
+  } catch (error) {
+    self.agent.state.model = previousModel;
+    self._projectInstructions.state.current = previousInstructions;
+    self._projectRuleGate = previousGate;
+    self._projectRuleReadStages = previousReadStages;
+    self._queuedProjectRuleGates = previousQueuedGates;
+    self._processingQueuedProjectRuleTurn = previousProcessingQueuedTurn;
+    self._baseSystemPrompt = previousBasePrompt;
+    self.agent.state.systemPrompt = previousSystemPrompt;
+    throw error;
+  }
+}
+
+async function refreshModelKeyedProjectInstructions(self: AgentSession): Promise<void> {
+  if (self._projectInstructionMode !== "compiled") return;
+  const previousInputHash = self._projectInstructions.state.current?.manifest.inputHash;
+  const prepared = await self._projectInstructions.refresh();
+  if (prepared.manifest.inputHash === previousInputHash) return;
+  self._projectRuleGate = undefined;
+  self._projectRuleReadStages.clear();
+  self._queuedProjectRuleGates = new WeakMap();
+  self._processingQueuedProjectRuleTurn = false;
+  self._baseSystemPrompt = self._rebuildSystemPrompt(self.getActiveToolNames());
+  self.agent.state.systemPrompt = self._baseSystemPrompt;
+  persistProjectRuleSupersession(self.sessionManager, prepared.manifest.inputHash, "model-refresh");
 }

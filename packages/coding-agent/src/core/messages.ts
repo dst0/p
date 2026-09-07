@@ -28,6 +28,14 @@ export const BRANCH_SUMMARY_SUFFIX = `</summary>`;
 export const FAST_RESPONDER_CUSTOM_TYPE = "fast_responder";
 export const SLEEP_TOOL_NAME = "sleep";
 
+export function isInternalAgentMessage(message: AgentMessage): boolean {
+  if (message.role !== "user" || typeof message.metadata !== "object" || message.metadata === null) return false;
+  return (
+    message.metadata.pInternal === "completion_protocol_repair" ||
+    message.metadata.pInternal === "provider_length_continuation"
+  );
+}
+
 /**
  * Message type for bash executions via the ! command.
  */

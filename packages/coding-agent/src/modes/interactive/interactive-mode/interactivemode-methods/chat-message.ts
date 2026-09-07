@@ -1,6 +1,6 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import { Spacer } from "@dst0/p-tui";
-import { isInternalCompletionProtocolRepairMessage, parseSkillBlock } from "../../../../core/agent-session.ts";
+import { isInternalAgentMessage, parseSkillBlock } from "../../../../core/agent-session.ts";
 import type { TruncationResult } from "../../../../core/tools/truncate.ts";
 import { AssistantMessageComponent } from "../../components/assistant-message.ts";
 import { BashExecutionComponent } from "../../components/bash-execution.ts";
@@ -60,7 +60,7 @@ export function do_addMessageToChat(
     }
     case "user": {
       // Gate internal repair messages behind showHarnessMessages setting
-      if (isInternalCompletionProtocolRepairMessage(message) && !self.settingsManager.getShowHarnessMessages()) {
+      if (isInternalAgentMessage(message) && !self.settingsManager.getShowHarnessMessages()) {
         break;
       }
       const textContent = self.getUserMessageText(message);

@@ -1,0 +1,25 @@
+# 2026-09-02 — Authoritative checklists need qualifier frames
+
+- **Status:** Resolved
+- **Task/context:** Harden the evidence-mode completion checklist so one free-form behavioral checklist preserves explicit constraints from user-authoritative source documents without recreating an exhaustive clause matrix.
+- **Unexpected observation or failure:** The rc.74 live canary kept the broad output behavior but dropped the exact `{"count":N}` metadata shape. Early deterministic fixes then alternated between false acceptance of a different subject and false rejection of harmless checklist paraphrases.
+- **Evidence:** The rc.74 session reached implementation before the frozen checklist omitted the metadata qualifier. Failing-first tests subsequently reproduced cardinality collisions, cross-sentence anchor leakage, example-scope leakage, subject substitution, moved-adjunct false blocks, negation inversions, and numeric sign, fraction, grouping, unit, and notation collisions. The final focused qualifier set passed 30 tests, the 151-file task-verification domain passed 1,283 tests, and the independent adversarial critic returned GO before full-suite and live-canary verification.
+- **Approaches tried:**
+  - **Attempt:** Require any two nearby words to overlap.
+    - **Outcome:** Did not work
+    - **Why:** Common nouns allowed different qualified subjects such as created and deleted records to match.
+  - **Attempt:** Require all six nearby words to match.
+    - **Outcome:** Did not work
+    - **Why:** Predicates and movable adjuncts became accidental subject identity, repeatedly blocking equivalent model-generated wording.
+  - **Attempt:** Treat example markers as a sentence-local reset or a single document-global state.
+    - **Outcome:** Did not work
+    - **Why:** Sentence-local state exposed Markdown example lists as requirements, while document-global state hid later ordinary normative sentences.
+  - **Attempt:** Parse bounded qualifier frames with explicit numeric, negation, scope, order, and example-section semantics.
+    - **Outcome:** Worked
+    - **Why:** Values and local subjects remain strict while predicates, structural examples, and recognized movable adjuncts are excluded from identity.
+- **Root cause:** A deterministic guard cannot substitute undirected token proximity for semantic attachment. Qualifier value, subject frame, document structure, and sentence or clause boundary are separate concerns and must be represented separately.
+- **Resolution:** The controller now segments clauses, tracks explicit example sections, normalizes supported cardinalities and prohibition forms, binds qualifiers to bounded subject frames, matches each required occurrence one-to-one, batches gaps across active authoritative sources, and revalidates before mutation. Uncertain paraphrases fail conservatively with an instruction to copy the source-local qualifier and subject phrase verbatim into the same model checklist item.
+- **Verification:** Focused qualifier, checklist, and evidence-selector tests; the complete 151-file task-verification and requirement domain with 1,283 passing tests; `npm run check`; the full repository `./test.sh`; reinstall and indexing smoke; and an independent adversarial test critic. In the live rc.75 canary, the controller rejected a checklist that omitted `exactly { "count": N }`, blocked the attempted source write, accepted the corrected single behavioral checklist, required and accepted the focused final-byte witness, survived natural context compaction, passed all 5 fixture tests, reached evidence readiness, and completed through `finish_work`.
+- **Prevention/follow-up:** Keep each newly supported semantic form paired with a positive paraphrase and a negative subject or value substitution. Treat false acceptance as a correctness blocker; use exact source-local wording as the bounded liveness escape hatch instead of expanding aliases indefinitely.
+- **Reusable learning:** Deterministic natural-language guards should parse a narrow semantic frame and provide an exact-wording escape hatch; wider token overlap is neither safe nor liveable.
+- **References:** `packages/coding-agent/test/task-verification-semantic-source-scope.test.ts`, `packages/coding-agent/test/task-verification-checklist-source-qualifier-integrity.test.ts`, `packages/coding-agent/src/core/task-verification/taskverificationcontroller-methods/semantic-qualifier-coverage.ts`

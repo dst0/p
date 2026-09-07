@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Report independent requirement-definition defects in one atomic deterministic rejection so agents can repair the full batch in one turn."
+}

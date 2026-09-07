@@ -64,6 +64,37 @@ describe("finish_work tool", () => {
     const rendered = toolDef.renderResult?.(res as any, { expanded: true } as any, dummyTheme, dummyContext);
     expect(rendered).toBeDefined();
   });
+
+  it("describes the selected task verification protocol without promoting audit by default", () => {
+    const evidenceGuidance = createFinishWorkToolDefinition().promptGuidelines?.join(" ") ?? "";
+    const auditGuidance =
+      createFinishWorkToolDefinition({ taskVerificationMode: "audit" }).promptGuidelines?.join(" ") ?? "";
+    const offGuidance =
+      createFinishWorkToolDefinition({ taskVerificationMode: "off" }).promptGuidelines?.join(" ") ?? "";
+
+    expect(evidenceGuidance).toContain("one concise completion checklist");
+    expect(evidenceGuidance).toContain("first call record_task_verification with action 'record_completion_checklist'");
+    expect(evidenceGuidance).toContain("finish_work without ready_to_finish");
+    expect(evidenceGuidance).toContain("record the checklist before the first effect");
+    expect(evidenceGuidance).toContain("ready_to_finish once without manually mapping evidence handles");
+    expect(evidenceGuidance).not.toMatch(/ready_to_finish[^.]*completion checklist/iu);
+    expect(evidenceGuidance).not.toContain("record_requirement_audit");
+    expect(auditGuidance).toContain("record_requirement_audit");
+    expect(offGuidance).not.toContain("record_task_verification");
+  });
+
+  it("defines summary as the complete verbatim user-visible response", () => {
+    const definition = createFinishWorkToolDefinition();
+    const summarySchema = definition.parameters.properties.summary;
+    const summaryDescription =
+      "description" in summarySchema && typeof summarySchema.description === "string" ? summarySchema.description : "";
+    const guidance = definition.promptGuidelines?.join(" ") ?? "";
+
+    expect(summaryDescription).toContain("complete final user-visible response");
+    expect(summaryDescription).toContain("Preserve requested structure");
+    expect(guidance).toContain("printed verbatim");
+    expect(guidance).toContain("Do not rely on an earlier assistant message");
+  });
 });
 
 describe("sleep tool", () => {

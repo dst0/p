@@ -1,8 +1,10 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
 import type { ImageContent, TextContent } from "@dst0/p-ai";
 import { formatNoApiKeyFoundMessage, formatNoModelSelectedMessage } from "../../auth-guidance.ts";
+import { selectProjectInstructionPromptForTools } from "../../project-instructions/index.ts";
 import { expandPromptTemplate } from "../../prompt-templates.ts";
 import type { AgentSession } from "../agentsession.ts";
+import { preserveCompiledProjectInstructionPrompt } from "../project-instruction-integrity.ts";
 import type { PromptOptions } from "../session-types.ts";
 
 export async function do_prompt(self: AgentSession, text: string, options?: PromptOptions): Promise<void> {
@@ -125,14 +127,31 @@ export async function do_prompt(self: AgentSession, text: string, options?: Prom
         });
       }
     }
-    const effectiveSystemPrompt = result?.systemPrompt ?? self._baseSystemPrompt;
+    const extensionSystemPrompt = result?.systemPrompt ?? self._baseSystemPrompt;
+    const preparedProjectInstructions = self._projectInstructions.state.current;
+    const immutableProjectInstructionPrompt =
+      preparedProjectInstructions &&
+      (preparedProjectInstructions.manifest.sources.length > 0 ||
+        preparedProjectInstructions.manifest.skills.length > 0)
+        ? selectProjectInstructionPromptForTools(preparedProjectInstructions, self.getActiveToolNames())
+        : undefined;
+    const effectiveSystemPrompt =
+      self._projectInstructionMode === "compiled"
+        ? preserveCompiledProjectInstructionPrompt(extensionSystemPrompt, immutableProjectInstructionPrompt)
+        : extensionSystemPrompt;
     const runtimePrompts = self._createRuntimeContextPrompts(expandedText, effectiveSystemPrompt, messages);
     self._lastRuntimePromptComponents = runtimePrompts;
     self.agent.state.systemPrompt = runtimePrompts.combinedPrompt
       ? `${effectiveSystemPrompt}\n\n${runtimePrompts.combinedPrompt}`
       : effectiveSystemPrompt;
     if (runtimePrompts.turnContextPrompt) {
-      messages.push(self._createRuntimeContextPromptMessage(runtimePrompts.turnContextPrompt, Date.now()));
+      messages.push(
+        self._createRuntimeContextPromptMessage(
+          runtimePrompts.turnContextPrompt,
+          Date.now(),
+          runtimePrompts.projectRuleGate,
+        ),
+      );
     }
     if (runtimePrompts.workingStatePrompt) {
       messages.push(self._createWorkingStatePromptMessage(runtimePrompts.workingStatePrompt, Date.now()));

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Changed",
+  "summary": "Reduce requirement-definition prompt size while preserving exact referenced sources, source identity, clause locations, and direct user wording."
+}
