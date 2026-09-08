@@ -54,6 +54,7 @@ vi.mock("../src/main/cli-entry.ts", () => ({ collectSettingsDiagnostics: service
 vi.mock("../src/main/runtime-init.ts", () => ({ buildSessionOptions: serviceMocks.buildSessionOptions }));
 
 import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
+import type { RunBudgetPolicy } from "../src/core/run-budget-policy.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { createCliRuntimeFactory } from "../src/main/runtime-factory.ts";
 
@@ -68,6 +69,7 @@ function createParsed() {
     noSkills: false,
     noThemes: false,
     projectTrustOverride: undefined,
+    runBudget: undefined as RunBudgetPolicy | undefined,
     systemPrompt: undefined,
     thinking: "high",
     unknownFlags: new Map(),
@@ -79,6 +81,7 @@ function createOptions() {
     agentDir: "/agent",
     appMode: "interactive",
     authStorage: { setRuntimeApiKey: vi.fn() },
+    defaultRunBudget: { mode: "limited", unit: "requests", limit: 1 } as const,
     extensionFactories: [],
     parsed: createParsed(),
     resolvedExtensionPaths: ["extension"],
@@ -97,12 +100,18 @@ function createSessionManager(messageCount = 0) {
   return manager;
 }
 
+function setSavedRunBudget(policy: RunBudgetPolicy | undefined): void {
+  const settings = runtimeState.runtimeSettings as { getRunBudgetPolicy: ReturnType<typeof vi.fn> };
+  settings.getRunBudgetPolicy.mockReturnValue(policy);
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   runtimeState.initializeExtension = undefined;
   runtimeState.hasTrustResources = true;
   runtimeState.runtimeSettings = {
     getEnabledModels: vi.fn(() => ["fallback/model"]),
+    getRunBudgetPolicy: vi.fn(() => ({ mode: "limited", unit: "requests", limit: 1 })),
   };
   runtimeState.services = {
     diagnostics: [{ type: "warning", message: "service" }],
@@ -213,5 +222,79 @@ describe("CLI runtime factory", () => {
       message: "--api-key requires a model to be specified via --model, --provider/--model, or --models",
     });
     expect(serviceMocks.settingsCreate).toHaveBeenCalledWith("/plain", "/agent", { projectTrusted: true });
+  });
+
+  it("applies --budget only to the initial runtime and preserves a resumed session policy", async () => {
+    const processPolicy = { mode: "limited", unit: "requests", limit: 2 } as const;
+    const savedPolicy = { mode: "limited", unit: "requests", limit: 1 } as const;
+    const resumedPolicy = { mode: "limited", unit: "tokens", limit: 500 } as const;
+    const options = { ...createOptions(), defaultRunBudget: savedPolicy };
+    options.parsed.runBudget = processPolicy;
+    const factory = createCliRuntimeFactory(options as never);
+
+    const initialManager = createSessionManager();
+    new SessionRunBudget(initialManager, { runBudget: resumedPolicy });
+    await factory({ cwd: "/project", agentDir: "/agent", sessionManager: initialManager });
+    expect(new SessionRunBudget(initialManager).policy).toEqual(processPolicy);
+
+    const resumedManager = createSessionManager();
+    new SessionRunBudget(resumedManager, { runBudget: resumedPolicy });
+    await factory({
+      cwd: "/project",
+      agentDir: "/agent",
+      sessionManager: resumedManager,
+      sessionStartEvent: { type: "session_start", reason: "resume" },
+    });
+    expect(new SessionRunBudget(resumedManager).policy).toEqual(resumedPolicy);
+  });
+
+  it("reloads the saved default for replacement tasks without inheriting the initial policy", async () => {
+    const options = createOptions();
+    options.parsed.runBudget = { mode: "unlimited" };
+    const factory = createCliRuntimeFactory(options as never);
+    const initialManager = createSessionManager();
+    await factory({ cwd: "/project", agentDir: "/agent", sessionManager: initialManager });
+    expect(new SessionRunBudget(initialManager).policy).toEqual({ mode: "unlimited" });
+
+    setSavedRunBudget(undefined);
+    await expect(
+      factory({
+        cwd: "/project",
+        agentDir: "/agent",
+        sessionManager: createSessionManager(),
+        sessionStartEvent: { type: "session_start", reason: "new" },
+      }),
+    ).rejects.toMatchObject({ code: "budget_required" });
+
+    const savedPolicy = { mode: "limited", unit: "tokens", limit: 900 } as const;
+    setSavedRunBudget(savedPolicy);
+    const replacementManager = createSessionManager();
+    await factory({
+      cwd: "/project",
+      agentDir: "/agent",
+      sessionManager: replacementManager,
+      sessionStartEvent: { type: "session_start", reason: "new" },
+    });
+    expect(new SessionRunBudget(replacementManager).policy).toEqual(savedPolicy);
+  });
+
+  it("does not leak the initial override into a new in-memory task", async () => {
+    const savedPolicy = { mode: "limited", unit: "tokens", limit: 900 } as const;
+    const options = { ...createOptions(), defaultRunBudget: savedPolicy };
+    options.parsed.runBudget = { mode: "unlimited" };
+    const factory = createCliRuntimeFactory(options as never);
+    const manager = createSessionManager();
+
+    await factory({ cwd: "/project", agentDir: "/agent", sessionManager: manager });
+    expect(new SessionRunBudget(manager).policy).toEqual({ mode: "unlimited" });
+    manager.newSession();
+    setSavedRunBudget(savedPolicy);
+    await factory({
+      cwd: "/project",
+      agentDir: "/agent",
+      sessionManager: manager,
+      sessionStartEvent: { type: "session_start", reason: "new" },
+    });
+    expect(new SessionRunBudget(manager).policy).toEqual(savedPolicy);
   });
 });

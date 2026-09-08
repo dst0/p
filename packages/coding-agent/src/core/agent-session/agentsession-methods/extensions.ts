@@ -42,6 +42,7 @@ export async function do_bindExtensions(self: AgentSession, bindings: ExtensionB
   }
 
   self._applyExtensionBindings(self._extensionRunner);
+  self._extensionsStarted = true;
   await self._extensionRunner.emit(self._sessionStartEvent);
   await self.extendResourcesFromExtensions(self._sessionStartEvent.reason === "reload" ? "reload" : "startup");
 }

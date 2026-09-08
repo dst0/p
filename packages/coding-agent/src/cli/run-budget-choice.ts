@@ -9,18 +9,24 @@ export interface RunBudgetChoiceUI {
   input(title: string, placeholder?: string): Promise<string | undefined>;
 }
 
+export interface StartupRunBudgetPolicies {
+  current: RunBudgetPolicy;
+  defaultPolicy: RunBudgetPolicy | undefined;
+}
+
 export async function resolveStartupChoices(
   settings: SettingsManager,
   mode: AppMode,
   explicit?: RunBudgetPolicy,
-): Promise<RunBudgetPolicy | undefined> {
+  resumed?: RunBudgetPolicy,
+): Promise<StartupRunBudgetPolicies | undefined> {
   const initialSetup = mode === "interactive" && shouldRunFirstTimeSetup();
-  const budget = await resolveStartupRunBudget(settings, mode, explicit);
-  if (budget && initialSetup) {
+  const policies = await resolveStartupBudgetPolicies(settings, mode, explicit, resumed);
+  if (policies && initialSetup) {
     await showFirstTimeSetup(settings);
     time("firstTimeSetup");
   }
-  return budget;
+  return policies;
 }
 
 export async function chooseRunBudget(ui: RunBudgetChoiceUI): Promise<RunBudgetPolicy | undefined> {
@@ -59,11 +65,21 @@ export async function resolveStartupRunBudget(
   settings: SettingsManager,
   mode: AppMode,
   explicit?: RunBudgetPolicy,
+  resumed?: RunBudgetPolicy,
 ): Promise<RunBudgetPolicy | undefined> {
+  return (await resolveStartupBudgetPolicies(settings, mode, explicit, resumed))?.current;
+}
+
+export async function resolveStartupBudgetPolicies(
+  settings: SettingsManager,
+  mode: AppMode,
+  explicit?: RunBudgetPolicy,
+  resumed?: RunBudgetPolicy,
+): Promise<StartupRunBudgetPolicies | undefined> {
   try {
-    if (explicit) return explicit;
     const saved = settings.getRunBudgetPolicy();
-    if (saved) return saved;
+    const current = explicit ?? resumed ?? saved;
+    if (current) return { current, defaultPolicy: saved };
     if (mode !== "interactive")
       throw new Error(
         "budget_required: Choose --budget unlimited, requests:N, tokens:N, or usd:N before starting a task.",
@@ -78,7 +94,7 @@ export async function resolveStartupRunBudget(
       input: (title, placeholder) => showStartupInput(settings, title, placeholder),
     });
     if (selected) await settings.setRunBudgetPolicy(selected);
-    return selected;
+    return selected ? { current: selected, defaultPolicy: selected } : undefined;
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not configure task budget";
     const code = message.startsWith("budget_required:") ? "budget_required" : "budget_configuration_error";

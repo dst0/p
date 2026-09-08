@@ -312,8 +312,8 @@
     "lines": 632
   },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
-    "classes": 2,
-    "lines": 433
+    "classes": 1,
+    "lines": 431
   },
   "packages/coding-agent/src/core/compaction/branch-summarization.ts": {
     "classes": 0,

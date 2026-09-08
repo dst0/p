@@ -45,6 +45,7 @@ import type { AgentSessionConfig } from "./session-types.ts";
 // biome-ignore lint/suspicious/noUnsafeDeclarationMerging: The installer below synchronously defines every delegated method.
 export class AgentSession extends AgentSessionState {
   readonly runBudget: SessionRunBudget;
+  public _extensionsStarted = false;
 
   constructor(config: AgentSessionConfig, runBudget?: SessionRunBudget) {
     super(config);
@@ -61,6 +62,10 @@ export class AgentSession extends AgentSessionState {
 
   public _handleAgentEvent = (event: AgentEvent): Promise<void> =>
     this.runBudget.run(() => agentEventHandling.handleAgentEvent(this, event));
+
+  get extensionsStarted(): boolean {
+    return this._extensionsStarted;
+  }
 
   async sendCustomMessage<T = unknown>(
     message: Pick<CustomMessage<T>, "customType" | "content" | "display" | "details">,

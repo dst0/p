@@ -16,6 +16,7 @@ import { AuthStorage } from "../core/auth-storage.ts";
 import { configureHttpDispatcher } from "../core/http-dispatcher.ts";
 import { restoreStdout, takeOverStdout } from "../core/output-guard.ts";
 import type { AppMode } from "../core/project-trust.ts";
+import { SessionRunBudget } from "../core/run-budget/session-run-budget.ts";
 import { getMissingSessionCwdIssue, MissingSessionCwdError } from "../core/session-cwd.ts";
 import { SessionManager } from "../core/session-manager.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
@@ -107,20 +108,9 @@ export async function main(args: string[], options?: MainOptions) {
   const agentDir = getAgentDir();
   const startupSettingsManager = SettingsManager.create(cwd, agentDir);
   reportDiagnostics(collectSettingsDiagnostics(startupSettingsManager, "startup session lookup"));
-  const needsBudget = !parsed.help && parsed.listModels === undefined;
-  const defaultRunBudget = needsBudget
-    ? await resolveStartupChoices(startupSettingsManager, appMode, parsed.runBudget)
-    : undefined;
-  if (needsBudget && !defaultRunBudget) {
-    restoreStdout();
-    return;
-  }
 
-  // Decide the final runtime cwd before creating cwd-bound runtime services.
-  // --session and --resume may select a session from another project, so project-local
-  // settings, resources, provider registrations, and models must be resolved only after
-  // the target session cwd is known. The startup-cwd settings manager is used only for
-  // sessionDir lookup during session selection.
+  // Resolve the target session before cwd-bound services and budget policy; resumed
+  // sessions can supply their own persisted policy without changing the global default.
   const envSessionDir = process.env[ENV_SESSION_DIR];
   const sessionDir =
     (parsed.sessionDir ? normalizePath(parsed.sessionDir) : undefined) ??
@@ -146,6 +136,16 @@ export async function main(args: string[], options?: MainOptions) {
   }
   time("createSessionManager");
 
+  const needsBudget = !parsed.help && parsed.listModels === undefined;
+  const resumedRunBudget = needsBudget ? SessionRunBudget.getPersistedPolicy(sessionManager) : undefined;
+  const startupRunBudgets = needsBudget
+    ? await resolveStartupChoices(startupSettingsManager, appMode, parsed.runBudget, resumedRunBudget)
+    : undefined;
+  if (needsBudget && !startupRunBudgets) {
+    restoreStdout();
+    return;
+  }
+
   const trustStore = new ProjectTrustStore(agentDir);
   const sessionCwd = sessionManager.getCwd();
   const autoTrustOnReloadCwd =
@@ -160,7 +160,7 @@ export async function main(args: string[], options?: MainOptions) {
   const resolvedThemePaths = resolveCliPaths(cwd, parsed.themes);
   const authStorage = AuthStorage.create();
   const runtimeFactoryOptions = {
-    defaultRunBudget,
+    defaultRunBudget: startupRunBudgets?.defaultPolicy,
     agentDir,
     appMode,
     authStorage,

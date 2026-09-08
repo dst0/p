@@ -1,4 +1,13 @@
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -61,6 +70,38 @@ describe("durable budget storage recovery", () => {
     symlinkSync(target, path);
     expect(() => new RunBudgetStorage(initial, path)).toThrow(/budget_storage_error/);
     expect(JSON.parse(readFileSync(target, "utf8"))).toEqual(initial);
+  });
+
+  it("rejects a symlinked storage ancestor without writing outside the session tree", () => {
+    const directory = temporaryDirectory();
+    const outside = temporaryDirectory();
+    const budgetDirectory = join(directory, ".budgets");
+    const path = join(budgetDirectory, "task.json");
+    symlinkSync(outside, budgetDirectory, "dir");
+
+    expect(() => new RunBudgetStorage(initial, path, directory)).toThrow(/budget_storage_error/);
+    expect(existsSync(join(outside, "task.json"))).toBe(false);
+  });
+
+  it("does not publish a stale update over an atomically replaced higher-spend ledger", () => {
+    const directory = temporaryDirectory();
+    const path = join(directory, "budget.json");
+    const storage = new RunBudgetStorage(initial, path);
+    storage.update((state) => {
+      state.requests = 3;
+    });
+
+    expect(() =>
+      storage.update((state) => {
+        const replacement = { ...state, requests: 10 };
+        const replacementPath = join(directory, "replacement.json");
+        writeFileSync(replacementPath, `${JSON.stringify(replacement)}\n`);
+        renameSync(replacementPath, path);
+        state.requests = 4;
+      }),
+    ).toThrow(/budget_storage_error/);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toMatchObject({ requests: 10 });
+    expect(storage.read().requests).toBe(10);
   });
 
   it.each([

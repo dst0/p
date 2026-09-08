@@ -136,9 +136,15 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
   const createRuntimeServices = createCliRuntimeServicesFactory(options);
 
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
+    const initialRunBudget = sessionStartEvent === undefined ? options.parsed.runBudget : undefined;
+    const defaultRunBudget =
+      sessionStartEvent === undefined
+        ? options.defaultRunBudget
+        : SettingsManager.create(cwd, agentDir, { projectTrusted: false }).getRunBudgetPolicy();
     const budget = new SessionRunBudget(sessionManager, {
-      runBudget: options.parsed.runBudget,
-      defaultRunBudget: options.defaultRunBudget,
+      runBudget: initialRunBudget,
+      defaultRunBudget,
+      requireDefaultRunBudget: true,
     });
     const { services, diagnostics } = await budget.run(() =>
       createRuntimeServices({
@@ -179,8 +185,8 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
     }
 
     const created = await createAgentSessionFromServices({
-      runBudget: options.parsed.runBudget,
-      defaultRunBudget: options.defaultRunBudget,
+      runBudget: initialRunBudget,
+      defaultRunBudget,
       services,
       sessionManager,
       sessionStartEvent,

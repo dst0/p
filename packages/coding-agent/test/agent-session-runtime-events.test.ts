@@ -10,6 +10,7 @@ import {
   createAgentSessionServices,
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import { SessionRunBudget } from "../src/core/run-budget/session-run-budget.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import type {
   ExtensionFactory,
@@ -34,7 +35,11 @@ describe("AgentSessionRuntime session lifecycle events", () => {
     }
   });
 
-  async function createRuntimeHost(extensionFactory: ExtensionFactory) {
+  async function createRuntimeHost(
+    extensionFactory: ExtensionFactory,
+    requireBudgetDefault = false,
+    persistSession = true,
+  ) {
     const tempDir = join(tmpdir(), `pi-runtime-events-${Date.now()}-${Math.random().toString(36).slice(2)}`);
     mkdirSync(tempDir, { recursive: true });
 
@@ -56,6 +61,12 @@ describe("AgentSessionRuntime session lifecycle events", () => {
       },
     };
     const createRuntime: CreateAgentSessionRuntimeFactory = async ({ cwd, sessionManager, sessionStartEvent }) => {
+      if (requireBudgetDefault) {
+        new SessionRunBudget(sessionManager, {
+          runBudget: sessionStartEvent ? undefined : { mode: "unlimited" },
+          requireDefaultRunBudget: true,
+        });
+      }
       const services = await createAgentSessionServices({
         ...runtimeOptions,
         cwd,
@@ -74,7 +85,7 @@ describe("AgentSessionRuntime session lifecycle events", () => {
     const runtimeHost = await createAgentSessionRuntime(createRuntime, {
       cwd: tempDir,
       agentDir: tempDir,
-      sessionManager: SessionManager.create(tempDir),
+      sessionManager: persistSession ? SessionManager.create(tempDir) : SessionManager.inMemory(tempDir),
     });
     await runtimeHost.session.bindExtensions({});
 
@@ -230,5 +241,45 @@ describe("AgentSessionRuntime session lifecycle events", () => {
     const cancelAtResult = await runtimeHost.fork("missing-entry", { position: "at" });
     expect(cancelAtResult).toEqual({ cancelled: true });
     expect(events).toEqual([{ type: "session_before_fork", entryId: "missing-entry", position: "at" }]);
+  });
+
+  it("fails closed before replacing a task when no global budget default exists", async () => {
+    const { runtimeHost } = await createRuntimeHost(() => {}, true);
+    await runtimeHost.session.prompt("hello");
+    const originalSession = runtimeHost.session;
+    const originalSessionFile = runtimeHost.session.sessionFile;
+    const originalSessionId = originalSession.sessionId;
+    const userMessage = runtimeHost.session.getUserMessagesForForking()[0];
+
+    await expect(runtimeHost.newSession()).rejects.toMatchObject({ code: "budget_required" });
+    await expect(runtimeHost.fork(userMessage.entryId)).rejects.toMatchObject({ code: "budget_required" });
+
+    const target = SessionManager.create(runtimeHost.cwd, runtimeHost.session.sessionManager.getSessionDir());
+    target.appendMessage(fauxAssistantMessage("other"));
+    await expect(runtimeHost.switchSession(target.getSessionFile()!)).rejects.toMatchObject({
+      code: "budget_required",
+    });
+    expect(runtimeHost.session).toBe(originalSession);
+    expect(runtimeHost.session.sessionFile).toBe(originalSessionFile);
+    expect(originalSession.sessionId).toBe(originalSessionId);
+    expect(() => originalSession.extensionRunner.createContext()).not.toThrow();
+    await originalSession.prompt("still usable after rejected replacement");
+    expect(originalSession.messages.at(-1)).toMatchObject({ role: "assistant" });
+  });
+
+  it("does not mutate an in-memory task before a rejected fork", async () => {
+    const { runtimeHost } = await createRuntimeHost(() => {}, true, false);
+    await runtimeHost.session.prompt("hello");
+    const originalSession = runtimeHost.session;
+    const originalSessionId = originalSession.sessionId;
+    const userMessage = originalSession.getUserMessagesForForking()[0];
+
+    await expect(runtimeHost.fork(userMessage.entryId, { position: "at" })).rejects.toMatchObject({
+      code: "budget_required",
+    });
+    expect(runtimeHost.session).toBe(originalSession);
+    expect(originalSession.sessionId).toBe(originalSessionId);
+    await originalSession.prompt("still usable after rejected in-memory fork");
+    expect(originalSession.messages.at(-1)).toMatchObject({ role: "assistant" });
   });
 });

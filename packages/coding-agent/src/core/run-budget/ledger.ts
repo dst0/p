@@ -9,7 +9,18 @@ export class RunBudgetLedger {
   private readonly storage: RunBudgetStorage;
   private storageFailed = false;
 
-  constructor(options: { scopeId: string; policy: RunBudgetPolicy; path?: string; override?: boolean }) {
+  static openPersisted(options: { scopeId: string; path: string; storageRoot?: string }): RunBudgetLedger | undefined {
+    const ledger = new RunBudgetLedger({ ...options, policy: { mode: "unlimited" } });
+    return ledger.storage.hasPersistedState ? ledger : undefined;
+  }
+
+  constructor(options: {
+    scopeId: string;
+    policy: RunBudgetPolicy;
+    path?: string;
+    storageRoot?: string;
+    override?: boolean;
+  }) {
     this.storage = new RunBudgetStorage(
       {
         version: 1,
@@ -23,6 +34,7 @@ export class RunBudgetLedger {
         uncertainUsd: false,
       },
       options.path,
+      options.storageRoot,
     );
     if (options.override) this.setPolicy(options.policy);
   }

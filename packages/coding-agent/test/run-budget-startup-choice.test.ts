@@ -61,4 +61,15 @@ describe("explicit first-use budget choice", () => {
     expect(process.exitCode).toBe(1);
     expect(JSON.parse(String(error.mock.calls[0][0]))).toMatchObject({ type: "error", code: "budget_required" });
   });
+
+  it("resumes a saved session policy without requiring or saving a global default", async () => {
+    const settings = SettingsManager.inMemory();
+    const resumedPolicy = { mode: "limited", unit: "tokens", limit: 2400 } as const;
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+
+    expect(await resolveStartupRunBudget(settings, "json", undefined, resumedPolicy)).toEqual(resumedPolicy);
+    expect(settings.getRunBudgetPolicy()).toBeUndefined();
+    expect(error).not.toHaveBeenCalled();
+    expect(process.exitCode).toBeUndefined();
+  });
 });

@@ -1,6 +1,4 @@
-// Core session management
 export { type Args, parseArgs } from "./cli/args.ts";
-// Config paths
 export { getAgentDir, getDocsPath, getExamplesPath, getPackageDir, getReadmePath, VERSION } from "./config.ts";
 export {
   AgentSession,
@@ -14,7 +12,6 @@ export {
   parseSkillBlock,
   type SessionStats,
 } from "./core/agent-session.ts";
-// Auth and model registry
 export {
   type ApiKeyCredential,
   type AuthCredential,
@@ -166,7 +163,10 @@ export type {
 export { DefaultPackageManager } from "./core/package-manager.ts";
 export type { ResourceCollision, ResourceDiagnostic, ResourceLoader } from "./core/resource-loader.ts";
 export { DefaultResourceLoader, loadProjectContextFiles } from "./core/resource-loader.ts";
-// SDK for programmatic usage
+export { RunBudgetError } from "./core/run-budget/error.ts";
+export { SessionRunBudget } from "./core/run-budget/session-run-budget.ts";
+export type { RunBudgetSnapshot } from "./core/run-budget/types.ts";
+export type { RunBudgetPolicy } from "./core/run-budget-policy.ts";
 export {
   AgentSessionRuntime,
   type AgentSessionRuntimeDiagnostic,
