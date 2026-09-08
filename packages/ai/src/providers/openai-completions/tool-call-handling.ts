@@ -2,6 +2,7 @@ import OpenAI from "openai";
 import type { Context, Model } from "../../types.ts";
 import { isCloudflareProvider, resolveCloudflareBaseUrl } from "../cloudflare.ts";
 import { buildCopilotDynamicHeaders, hasCopilotVisionInput } from "../github-copilot-headers.ts";
+import { withOpenRouterAttributionHeaders } from "../openrouter-headers.ts";
 import { getCompat } from "./error-handling.ts";
 import type { ResolvedOpenAICompletionsCompat } from "./types.ts";
 
@@ -29,23 +30,20 @@ export function createClient(
     headers["x-session-affinity"] = sessionId;
   }
 
-  // Merge options headers last so they can override defaults
-  if (optionsHeaders) {
-    Object.assign(headers, optionsHeaders);
-  }
-
+  const baseURL = isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl;
+  const attributedHeaders = withOpenRouterAttributionHeaders(baseURL, headers, optionsHeaders);
   const defaultHeaders =
     model.provider === "cloudflare-ai-gateway"
       ? {
-          ...headers,
-          Authorization: headers.Authorization ?? null,
+          ...attributedHeaders,
+          Authorization: attributedHeaders.Authorization ?? null,
           "cf-aig-authorization": `Bearer ${apiKey}`,
         }
-      : headers;
+      : attributedHeaders;
 
   return new OpenAI({
     apiKey,
-    baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl,
+    baseURL,
     dangerouslyAllowBrowser: true,
     defaultHeaders,
   });

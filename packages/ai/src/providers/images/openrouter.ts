@@ -10,6 +10,7 @@ import type {
 import { headersToRecord } from "../../utils/headers.ts";
 import { decodeImageBase64Safely, detectImageMimeType } from "../../utils/image-mime.ts";
 import { sanitizeSurrogates } from "../../utils/sanitize-unicode.ts";
+import { withOpenRouterAttributionHeaders } from "../openrouter-headers.ts";
 import { postImageJson } from "./image-http.ts";
 
 interface OpenRouterImagesOptions extends ImagesOptions {
@@ -67,7 +68,7 @@ export const generateImagesOpenRouter: ImagesFunction<"openrouter-images", OpenR
       payload,
       {
         apiKey,
-        headers: { ...model.headers, ...options?.headers },
+        headers: withOpenRouterAttributionHeaders(model.baseUrl, model.headers, options?.headers),
         signal: options?.signal,
         timeoutMs: options?.timeoutMs,
         maxRetries: options?.maxRetries,

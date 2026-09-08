@@ -7,12 +7,14 @@ const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk
 const mockState = {
   lastUrl: undefined as string | undefined,
   lastParams: undefined as unknown,
+  lastHeaders: undefined as Headers | undefined,
   response: undefined as unknown,
 };
 
 const fakeFetch: typeof globalThis.fetch = async (input, init) => {
   mockState.lastUrl = String(input);
   mockState.lastParams = JSON.parse(String(init?.body)) as unknown;
+  mockState.lastHeaders = new Headers(init?.headers);
   const defaultResponse = {
     id: "generation-1",
     choices: [
@@ -45,6 +47,7 @@ describe("openrouter-images-unit", () => {
   beforeEach(() => {
     mockState.lastUrl = undefined;
     mockState.lastParams = undefined;
+    mockState.lastHeaders = undefined;
     mockState.response = undefined;
   });
 
@@ -80,6 +83,8 @@ describe("openrouter-images-unit", () => {
       stream: false,
       modalities: ["image", "text"],
     });
+    expect(mockState.lastHeaders?.get("HTTP-Referer")).toBe("https://github.com/dst0/p");
+    expect(mockState.lastHeaders?.get("X-OpenRouter-Title")).toBe("p");
     expect(res.stopReason).toBe("stop");
     expect(res.output).toEqual([
       { type: "text", text: "Generated" },
@@ -109,5 +114,34 @@ describe("openrouter-images-unit", () => {
 
     expect(result.stopReason).toBe("error");
     expect(result.errorMessage).toContain("exceeds maximum limit");
+  });
+
+  it("lets request headers override duplicate model casing variants", async () => {
+    const model: ImagesModel<"openrouter-images"> = {
+      ...dummyModel,
+      headers: {
+        "HTTP-Referer": "https://model.example",
+        "http-referer": "https://stale-model.example",
+        "X-OpenRouter-Title": "Model p",
+        "x-openrouter-title": "Stale model p",
+      },
+    };
+
+    const result = await generateImagesOpenRouter(
+      model,
+      { input: [{ type: "text", text: "draw" }] },
+      {
+        apiKey: "dummy-key",
+        fetch: fakeFetch,
+        headers: {
+          "HTTP-Referer": "https://request.example",
+          "X-OpenRouter-Title": "Request p",
+        },
+      },
+    );
+
+    expect(result.stopReason).toBe("stop");
+    expect(mockState.lastHeaders?.get("HTTP-Referer")).toBe("https://request.example");
+    expect(mockState.lastHeaders?.get("X-OpenRouter-Title")).toBe("Request p");
   });
 });

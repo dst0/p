@@ -25,6 +25,7 @@ import {
   convertResponsesTools,
   processResponsesStream,
 } from "./openai-responses-shared.ts";
+import { withOpenRouterAttributionHeaders } from "./openrouter-headers.ts";
 import { buildBaseOptions } from "./simple-options.ts";
 
 const OPENAI_TOOL_CALL_PROVIDERS = new Set(["openai", "openai-codex", "opencode"]);
@@ -194,23 +195,20 @@ function createClient(
     headers["x-client-request-id"] = sessionId;
   }
 
-  // Merge options headers last so they can override defaults
-  if (optionsHeaders) {
-    Object.assign(headers, optionsHeaders);
-  }
-
+  const baseURL = isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl;
+  const attributedHeaders = withOpenRouterAttributionHeaders(baseURL, headers, optionsHeaders);
   const defaultHeaders =
     model.provider === "cloudflare-ai-gateway"
       ? {
-          ...headers,
-          Authorization: headers.Authorization ?? null,
+          ...attributedHeaders,
+          Authorization: attributedHeaders.Authorization ?? null,
           "cf-aig-authorization": `Bearer ${apiKey}`,
         }
-      : headers;
+      : attributedHeaders;
 
   return new OpenAI({
     apiKey,
-    baseURL: isCloudflareProvider(model.provider) ? resolveCloudflareBaseUrl(model) : model.baseUrl,
+    baseURL,
     dangerouslyAllowBrowser: true,
     defaultHeaders,
   });
