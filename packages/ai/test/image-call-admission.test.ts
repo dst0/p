@@ -41,11 +41,12 @@ describe("image dispatch budget coverage", () => {
     const settle = vi.fn();
     const guard = vi.fn(() => ({ settle }));
     const dispatch = vi.fn(async () => result);
-    registerImagesApiProvider({ api: model.api, generateImages: dispatch });
+    const accounting = { tokens: "reported", usd: "model-rates" } as const;
+    registerImagesApiProvider({ api: model.api, generateImages: dispatch, modelCallAccounting: accounting });
     removeGuard = registerModelCallGuard(guard);
     expect(await generateImages(model, { input: [] })).toEqual(result);
-    expect(guard).toHaveBeenCalledExactlyOnceWith({ kind: "image", model, signal: undefined });
-    expect(settle).toHaveBeenCalledExactlyOnceWith(result.usage);
+    expect(guard).toHaveBeenCalledExactlyOnceWith({ kind: "image", model, signal: undefined, accounting });
+    expect(settle).toHaveBeenCalledExactlyOnceWith(result.usage, { reportedUsd: undefined });
   });
 
   it("does not dispatch or settle an admission denial", async () => {

@@ -1,7 +1,7 @@
 import { mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import type { Model, Usage } from "@dst0/p-ai";
+import type { ImagesModel, Model, Usage } from "@dst0/p-ai";
 import { afterEach, describe, expect, it } from "vitest";
 import { RunBudgetLedger } from "../src/core/run-budget/ledger.ts";
 
@@ -24,7 +24,23 @@ const usage: Usage = {
   cacheWrite: 4,
   cacheWrite1h: 2,
   totalTokens: 19,
-  cost: { input: 0.00001, output: 0.000006, cacheRead: 0.0000002, cacheWrite: 0.000005, total: 0.0000212 },
+  cost: {
+    input: 0.00001,
+    output: 0.000006,
+    cacheRead: 0.0000002,
+    cacheWrite: 0.000005,
+    total: 0.00001 + 0.000006 + 0.0000002 + 0.000005,
+  },
+};
+const imageModel: ImagesModel<"faux-images"> = {
+  id: "image-ledger-test",
+  name: "image-ledger-test",
+  api: "faux-images",
+  provider: "faux",
+  baseUrl: "",
+  input: ["text"],
+  output: ["image"],
+  cost: { input: 0, output: 2, cacheRead: 0, cacheWrite: 0 },
 };
 const paths: string[] = [];
 afterEach(() => {
@@ -70,6 +86,144 @@ describe("task spend ledger", () => {
     expect(ledger.snapshot().status).toBe("ready");
     ledger.admit({ kind: "text", model }).settle(usage);
   });
+
+  it("accepts an image model with zero input rate when its priced output usage is usable", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    ledger
+      .admit({
+        kind: "image",
+        model: imageModel,
+        accounting: { tokens: "reported", usd: "model-rates" },
+      })
+      .settle({ ...usage, cost: { ...usage.cost, total: 0 } });
+    expect(ledger.snapshot()).toMatchObject({ requests: 1, usd: 0.000006, uncertainUsd: false, status: "ready" });
+  });
+
+  it("keeps the larger priced image cost when the provider reports a lower total", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    ledger
+      .admit({ kind: "image", model: imageModel, accounting: { tokens: "reported", usd: "reported" } })
+      .settle(usage, { reportedUsd: 0.000001 });
+    expect(ledger.snapshot()).toMatchObject({ usd: 0.000006, uncertainUsd: false, status: "ready" });
+  });
+
+  it("does not trust a plausible usage total when model-rate token counts are invalid", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    ledger
+      .admit({ kind: "image", model: imageModel, accounting: { tokens: "reported", usd: "model-rates" } })
+      .settle({ ...usage, input: Number.NaN, cost: { ...usage.cost, total: 0.25 } });
+    expect(ledger.snapshot()).toMatchObject({ usd: 0, uncertainUsd: true, status: "uncertain" });
+  });
+
+  it("does not launder an image adapter estimate through Usage.cost.total", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    ledger.admit({ kind: "image", model: imageModel, accounting: { tokens: "reported", usd: "model-rates" } }).settle({
+      ...usage,
+      cost: { input: 0.25, output: 0, cacheRead: 0, cacheWrite: 0, total: 0.25 },
+    });
+    expect(ledger.snapshot()).toMatchObject({ usd: 0.000006, uncertainUsd: false, status: "ready" });
+  });
+
+  it.each([
+    {
+      name: "text",
+      admit: (ledger: RunBudgetLedger) => ledger.admit({ kind: "text", model }),
+      details: undefined,
+    },
+    {
+      name: "custom image",
+      admit: (ledger: RunBudgetLedger) =>
+        ledger.admit({ kind: "image", model: imageModel, accounting: { tokens: "reported", usd: "reported" } }),
+      details: { reportedUsd: 0.25 },
+    },
+  ])("fails closed after inconsistent $name token totals", ({ admit, details }) => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    admit(ledger).settle({ ...usage, totalTokens: usage.totalTokens + 1 }, details);
+    expect(ledger.snapshot()).toMatchObject({ usd: 0, uncertainUsd: true, status: "uncertain" });
+    expect(() => admit(ledger)).toThrow(/budget_uncertain/);
+    expect(ledger.snapshot().requests).toBe(1);
+  });
+
+  it("does not trust response cost when the adapter declares USD accounting unsupported", () => {
+    const ledger = new RunBudgetLedger({
+      scopeId: "task",
+      policy: { mode: "limited", unit: "requests", limit: 2 },
+    });
+    ledger
+      .admit({ kind: "image", model: imageModel, accounting: { tokens: "unsupported", usd: "unsupported" } })
+      .settle({ ...usage, cost: { ...usage.cost, total: 0.25 } });
+    expect(ledger.snapshot()).toMatchObject({ requests: 1, usd: 0, uncertainUsd: true, status: "ready" });
+  });
+
+  it("requires independent settlement details for reported USD accounting", () => {
+    const ledger = new RunBudgetLedger({
+      scopeId: "task",
+      policy: { mode: "limited", unit: "requests", limit: 2 },
+    });
+    ledger
+      .admit({ kind: "image", model: imageModel, accounting: { tokens: "reported", usd: "reported" } })
+      .settle({ ...usage, cost: { ...usage.cost, total: 0.25 } });
+    expect(ledger.snapshot()).toMatchObject({ requests: 1, usd: 0, uncertainUsd: true, status: "ready" });
+  });
+
+  it("rejects malformed accounting instead of treating an unknown value as model rates", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    expect(() =>
+      ledger.admit({
+        kind: "image",
+        model: imageModel,
+        accounting: { tokens: "reported", usd: "typo" } as never,
+      }),
+    ).toThrow(/accounting/i);
+    expect(ledger.snapshot()).toMatchObject({ requests: 0, pending: 0, status: "ready" });
+  });
+
+  it("snapshots accounting at admission so later mutation cannot change settlement", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    const accounting = { tokens: "reported", usd: "reported" };
+    const receipt = ledger.admit({ kind: "image", model: imageModel, accounting: accounting as never });
+    accounting.usd = "unsupported";
+    receipt.settle({ ...usage, cost: { ...usage.cost, total: 0 } }, { reportedUsd: 0.01 });
+    expect(ledger.snapshot()).toMatchObject({ usd: 0.01, uncertainUsd: false, status: "ready" });
+  });
+
+  it.each([
+    {
+      name: "cannot report the token counts needed by model rates",
+      accounting: { tokens: "unsupported", usd: "model-rates" } as const,
+      cost: imageModel.cost,
+      expected: /accounting/i,
+    },
+    {
+      name: "only has cache rates rather than primary input or output rates",
+      accounting: { tokens: "reported", usd: "model-rates" } as const,
+      cost: { input: 0, output: 0, cacheRead: 1, cacheWrite: 0 },
+      expected: /budget_pricing_required/,
+    },
+  ])("rejects an image model-rate contract that $name", ({ accounting, cost, expected }) => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+    expect(() =>
+      ledger.admit({ kind: "image", model: { ...imageModel, cost }, accounting: accounting as never }),
+    ).toThrow(expected);
+    expect(ledger.snapshot()).toMatchObject({ requests: 0, pending: 0, status: "ready" });
+  });
+
+  it.each(["input", "output", "cacheRead", "cacheWrite"] as const)(
+    "rejects a missing %s rate before reported-USD image dispatch",
+    (field) => {
+      const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
+      const cost: Partial<typeof imageModel.cost> = { ...imageModel.cost };
+      delete cost[field];
+      expect(() =>
+        ledger.admit({
+          kind: "image",
+          model: { ...imageModel, cost: cost as never },
+          accounting: { tokens: "unsupported", usd: "reported" },
+        }),
+      ).toThrow(/budget_pricing_required/);
+      expect(ledger.snapshot()).toMatchObject({ requests: 0, pending: 0, status: "ready" });
+    },
+  );
 
   it("persists admission before a first assistant message and coordinates two ledger instances", () => {
     const directory = mkdtempSync(join(tmpdir(), "p-budget-ledger-"));

@@ -106,6 +106,8 @@ export interface AssistantImages {
   output: ImagesOutputContent[];
   responseId?: string;
   usage?: Usage;
+  /** Exact total request cost in USD when the provider reports it independently of token usage. */
+  reportedUsd?: number;
   stopReason: ImagesStopReason;
   errorMessage?: string;
   timestamp: number; // Unix timestamp in milliseconds

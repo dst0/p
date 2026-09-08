@@ -5,14 +5,26 @@ import { MAX_IMAGE_BYTES } from "../src/utils/image-mime.ts";
 
 const PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
 const mockState = {
-  lastUrl: undefined as string | undefined,
+  urls: [] as string[],
   lastParams: undefined as unknown,
   lastHeaders: undefined as Headers | undefined,
   response: undefined as unknown,
+  generationResponse: undefined as unknown,
 };
 
 const fakeFetch: typeof globalThis.fetch = async (input, init) => {
-  mockState.lastUrl = String(input);
+  const url = String(input);
+  mockState.urls.push(url);
+  if (url.includes("/generation?")) {
+    return new Response(
+      JSON.stringify(
+        mockState.generationResponse ?? {
+          data: { is_byok: false, total_cost: 0.04, upstream_inference_cost: 0.03 },
+        },
+      ),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }
   mockState.lastParams = JSON.parse(String(init?.body)) as unknown;
   mockState.lastHeaders = new Headers(init?.headers);
   const defaultResponse = {
@@ -45,10 +57,11 @@ describe("openrouter-images-unit", () => {
   };
 
   beforeEach(() => {
-    mockState.lastUrl = undefined;
+    mockState.urls = [];
     mockState.lastParams = undefined;
     mockState.lastHeaders = undefined;
     mockState.response = undefined;
+    mockState.generationResponse = undefined;
   });
 
   it("returns error stopReason when apiKey is missing", async () => {
@@ -77,7 +90,10 @@ describe("openrouter-images-unit", () => {
     });
 
     expect(payloadReceived).toBe(true);
-    expect(mockState.lastUrl).toBe("https://openrouter.ai/api/v1/chat/completions");
+    expect(mockState.urls).toEqual([
+      "https://openrouter.ai/api/v1/chat/completions",
+      "https://openrouter.ai/api/v1/generation?id=generation-1",
+    ]);
     expect(mockState.lastParams).toMatchObject({
       model: "google/imagen-3",
       stream: false,
@@ -90,6 +106,94 @@ describe("openrouter-images-unit", () => {
       { type: "text", text: "Generated" },
       { type: "image", mimeType: "image/png", data: PNG_BASE64 },
     ]);
+  });
+
+  it.each([
+    { name: "missing completion and total counts", usage: { prompt_tokens: 5, cost: 0.04 } },
+    { name: "a negative prompt count", usage: { prompt_tokens: -1, completion_tokens: 4, cost: 0.04 } },
+    {
+      name: "a total smaller than its complete components",
+      usage: { prompt_tokens: 3, completion_tokens: 7, total_tokens: 9, cost: 0.04 },
+    },
+    {
+      name: "a total larger than its complete components",
+      usage: { prompt_tokens: 3, completion_tokens: 7, total_tokens: 11, cost: 0.04 },
+    },
+    {
+      name: "cache counters larger than the prompt total",
+      usage: {
+        prompt_tokens: 5,
+        completion_tokens: 7,
+        total_tokens: 12,
+        cost: 0.04,
+        prompt_tokens_details: { cached_tokens: 3, cache_write_tokens: 3 },
+      },
+    },
+  ])("does not fabricate token usage from $name", async ({ usage }) => {
+    mockState.response = {
+      id: "generation-invalid-token-usage",
+      usage,
+      choices: [{ message: { images: [{ image_url: `data:image/png;base64,${PNG_BASE64}` }] } }],
+    };
+
+    const result = await generateImagesOpenRouter(
+      dummyModel,
+      { input: [{ type: "text", text: "draw" }] },
+      { apiKey: "dummy-key", fetch: fakeFetch },
+    );
+
+    expect(result).toMatchObject({ stopReason: "stop", reportedUsd: 0.04 });
+    expect(result.usage).toBeUndefined();
+  });
+
+  it.each([
+    { cachedTokens: 0, cacheWriteTokens: 100, expectedInput: 20 },
+    { cachedTokens: 20, cacheWriteTokens: 80, expectedInput: 20 },
+  ])(
+    "treats $cacheWriteTokens cache writes separately from $cachedTokens cache reads",
+    async ({ cachedTokens, cacheWriteTokens, expectedInput }) => {
+      mockState.response = {
+        id: "generation-cache-breakdown",
+        usage: {
+          prompt_tokens: 120,
+          completion_tokens: 7,
+          total_tokens: 127,
+          cost: 0.09,
+          prompt_tokens_details: { cached_tokens: cachedTokens, cache_write_tokens: cacheWriteTokens },
+        },
+        choices: [{ message: { images: [{ image_url: `data:image/png;base64,${PNG_BASE64}` }] } }],
+      };
+
+      const result = await generateImagesOpenRouter(
+        dummyModel,
+        { input: [{ type: "text", text: "draw" }] },
+        { apiKey: "dummy-key", fetch: fakeFetch },
+      );
+
+      expect(result.usage).toMatchObject({
+        input: expectedInput,
+        output: 7,
+        cacheRead: cachedTokens,
+        cacheWrite: cacheWriteTokens,
+        totalTokens: 127,
+      });
+    },
+  );
+
+  it("derives a total only when all required token components are present", async () => {
+    mockState.response = {
+      id: "generation-complete-token-components",
+      usage: { prompt_tokens: 3, completion_tokens: 7, cost: 0.09 },
+      choices: [{ message: { images: [{ image_url: `data:image/png;base64,${PNG_BASE64}` }] } }],
+    };
+
+    const result = await generateImagesOpenRouter(
+      dummyModel,
+      { input: [{ type: "text", text: "draw" }] },
+      { apiKey: "dummy-key", fetch: fakeFetch },
+    );
+
+    expect(result.usage).toMatchObject({ input: 3, output: 7, totalTokens: 10 });
   });
 
   it("rejects oversized base64 image responses before decoding", async () => {

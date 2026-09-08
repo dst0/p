@@ -21,6 +21,12 @@ export interface ImageJsonResponse<T> {
   response: Response;
 }
 
+function requestHeaders(options: ImageJsonRequestOptions): Headers {
+  const headers = new Headers(options.headers);
+  if (!headers.has("authorization") && options.apiKey) headers.set("authorization", `Bearer ${options.apiKey}`);
+  return headers;
+}
+
 function requestSignal(signal?: AbortSignal, timeoutMs?: number): AbortSignal | undefined {
   if (signal?.aborted) throw new Error("Request aborted");
   const timeoutSignal = timeoutMs !== undefined ? AbortSignal.timeout(timeoutMs) : undefined;
@@ -130,9 +136,8 @@ export async function postImageJson<T>(
   const fetchFunction = options.fetch ?? globalThis.fetch;
   if (!fetchFunction) throw new Error("Image generation requires a fetch implementation");
   const url = `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
-  const headers = new Headers(options.headers);
+  const headers = requestHeaders(options);
   headers.set("content-type", "application/json");
-  if (!headers.has("authorization") && options.apiKey) headers.set("authorization", `Bearer ${options.apiKey}`);
   const maxRetries = options.maxRetries ?? 0;
   if (!Number.isFinite(maxRetries) || !Number.isInteger(maxRetries) || maxRetries < 0) {
     throw new Error("maxRetries must be a non-negative finite integer");
@@ -173,4 +178,23 @@ export async function postImageJson<T>(
     const responseText = await readBoundedImageResponse(response, MAX_IMAGE_JSON_RESPONSE_BYTES);
     return { data: JSON.parse(responseText) as T, response };
   }
+}
+
+export async function getImageJson<T>(
+  baseUrl: string,
+  path: string,
+  options: ImageJsonRequestOptions,
+  maximumResponseBytes: number,
+): Promise<ImageJsonResponse<T>> {
+  const fetchFunction = options.fetch ?? globalThis.fetch;
+  if (!fetchFunction) throw new Error("Image generation requires a fetch implementation");
+  const url = `${baseUrl.replace(/\/+$/, "")}/${path.replace(/^\/+/, "")}`;
+  const response = await fetchFunction(url, {
+    method: "GET",
+    headers: requestHeaders(options),
+    signal: requestSignal(options.signal, options.timeoutMs),
+  });
+  if (!response.ok) throw await responseError(response);
+  const responseText = await readBoundedImageResponse(response, maximumResponseBytes);
+  return { data: JSON.parse(responseText) as T, response };
 }
