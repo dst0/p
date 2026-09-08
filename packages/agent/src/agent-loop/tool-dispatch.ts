@@ -115,7 +115,7 @@ export function parseMisplacedToolCallBlock(block: string): ParsedMisplacedToolC
 
 export function createRecoveredToolCall(
   parsed: ParsedMisplacedToolCall,
-  toolNames: Set<string>,
+  toolNames: ReadonlySet<string>,
   index: number,
 ): AgentToolCall {
   const knownTool = toolNames.size === 0 || toolNames.has(parsed.name);
@@ -157,14 +157,15 @@ export function isToolJsonFence(language: string): boolean {
   return /^(json|jsonc|tool|tools|tool_call|tool-call|function|functions)$/i.test(language);
 }
 
-export function extractMisplacedJsonToolCalls(text: string): ParsedMisplacedToolCall[] {
+export function extractMisplacedJsonToolCalls(text: string, toolNames: ReadonlySet<string>): ParsedMisplacedToolCall[] {
+  if (toolNames.size === 0) return [];
   const stripped = stripMarkdownCodeFences(text).trim();
   const calls = parseMisplacedToolCallJson(stripped);
   for (const block of collectMarkdownCodeFences(text)) {
     if (!isToolJsonFence(block.language)) continue;
     calls.push(...parseMisplacedToolCallJson(block.body.trim()));
   }
-  return calls;
+  return calls.filter((call) => toolNames.has(call.name));
 }
 
 export function extractMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AgentToolCall[] {
@@ -186,7 +187,7 @@ export function extractMisplacedToolCalls(message: AssistantMessage, tools: Agen
       index++;
     }
   }
-  for (const parsed of extractMisplacedJsonToolCalls(text)) {
+  for (const parsed of extractMisplacedJsonToolCalls(text, toolNames)) {
     const key = `${parsed.name}:${JSON.stringify(parsed.arguments)}`;
     const duplicate = toolCalls.some((toolCall) => `${toolCall.name}:${JSON.stringify(toolCall.arguments)}` === key);
     if (duplicate) continue;
