@@ -112,6 +112,15 @@ describe("OpenRouter attribution headers", () => {
     expect(Object.keys(headers).filter((name) => name.toLowerCase() === "x-openrouter-title")).toHaveLength(1);
   });
 
+  it("preserves the legacy OpenRouter title override without injecting the canonical default", () => {
+    const headers = withOpenRouterAttributionHeaders("https://openrouter.ai/api/v1", {
+      "x-title": "Legacy custom title",
+    });
+
+    expect(headers["x-title"]).toBe("Legacy custom title");
+    expect(Object.keys(headers).some((name) => name.toLowerCase() === "x-openrouter-title")).toBe(false);
+  });
+
   it("merges OpenRouter layers case-insensitively without mutating inputs", () => {
     const modelHeaders = {
       "HTTP-Referer": "https://model.example",

@@ -48,7 +48,8 @@ export function withOpenRouterAttributionHeaders(
   if (!isOpenRouter) return headers;
 
   for (const [name, value] of Object.entries(OPENROUTER_ATTRIBUTION_HEADERS)) {
-    if (!hasHeader(headers, name)) headers[name] = value;
+    const hasLegacyTitle = name === "X-OpenRouter-Title" && hasHeader(headers, "X-Title");
+    if (!hasHeader(headers, name) && !hasLegacyTitle) headers[name] = value;
   }
   return headers;
 }
