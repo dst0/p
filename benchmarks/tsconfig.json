@@ -1,10 +1,15 @@
 {
-  "extends": "../tsconfig.base.json",
+  "extends": "../tsconfig.json",
   "compilerOptions": {
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
     "noEmit": true,
-    "verbatimModuleSyntax": true
+    "verbatimModuleSyntax": true,
+    "rootDirs": [
+      "..",
+      "../packages/coding-agent/src",
+      "../packages/coding-agent/dist"
+    ]
   },
   "include": [
     "src/**/*.ts",

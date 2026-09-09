@@ -21,3 +21,13 @@ test("npm run dev runs the source CLI from outside the repository", () => {
     rmSync(callerCwd, { recursive: true, force: true });
   }
 });
+
+test("benchmarks typecheck succeeds without built dist", () => {
+  const tsgoBin = path.join(repoRoot, "node_modules", ".bin", "tsgo");
+  const benchmarkTsconfig = path.join(repoRoot, "benchmarks", "tsconfig.json");
+  const output = execFileSync(tsgoBin, ["--noEmit", "-p", benchmarkTsconfig], {
+    cwd: repoRoot,
+    encoding: "utf8",
+  });
+  assert.equal(output.trim(), "");
+});
