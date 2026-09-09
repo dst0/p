@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "agent"
+  ],
+  "type": "Fixed",
+  "summary": "Recover and remove misplaced JSON or XML tool calls only when the same complete action block is safely executable."
+}

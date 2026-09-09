@@ -1,42 +1,22 @@
 import type { AssistantMessage } from "@dst0/p-ai";
 import type { AgentTool } from "../types.ts";
-import { expandWaitCheckToolCalls } from "./message-preparation.ts";
+import { expandWaitCheckToolCalls, isClosingMarkdownFence, splitMarkdownFenceSegments } from "./message-preparation.ts";
 import {
   extractMisplacedToolCalls,
   isFullyRecoverableMisplacedToolCallJson,
   isToolJsonFence,
+  parseMisplacedToolCallBlock,
 } from "./tool-dispatch.ts";
 
 export function removeXmlToolCallBlocksOutsideFences(value: string): string {
-  const chunks: string[] = [];
-  const outsideFenceBuffer: string[] = [];
-  const flushOutsideFenceBuffer = () => {
-    if (outsideFenceBuffer.length === 0) return;
-    chunks.push(outsideFenceBuffer.join("").replace(/<tool_call\b[^>]*>[\s\S]*?<\/tool_call>/gi, ""));
-    outsideFenceBuffer.length = 0;
-  };
-  const lines = value.split(/(\r?\n)/);
-  let activeFence: string | undefined;
-  for (let index = 0; index < lines.length; index += 2) {
-    const line = lines[index] ?? "";
-    const lineEnd = lines[index + 1] ?? "";
-    const fenceMatch = line.match(/^\s*(```+|~~~+)/);
-    if (fenceMatch) {
-      if (activeFence === undefined) {
-        flushOutsideFenceBuffer();
-      }
-      activeFence = activeFence === undefined ? fenceMatch[1] : undefined;
-      chunks.push(line, lineEnd);
-      continue;
-    }
-    if (activeFence !== undefined) {
-      chunks.push(line, lineEnd);
-      continue;
-    }
-    outsideFenceBuffer.push(line, lineEnd);
-  }
-  flushOutsideFenceBuffer();
-  return chunks
+  return splitMarkdownFenceSegments(value)
+    .map((segment) =>
+      segment.fenced
+        ? segment.text
+        : segment.text.replace(/<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi, (match, body: string) =>
+            parseMisplacedToolCallBlock(body).length > 0 ? "" : match,
+          ),
+    )
     .join("")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
@@ -44,6 +24,8 @@ export function removeXmlToolCallBlocksOutsideFences(value: string): string {
 
 export function removeRecoveredJsonToolCallBlocks(value: string, toolNames: ReadonlySet<string>): string {
   if (toolNames.size === 0) return value;
+  const rawJson = value.trim();
+  if (isFullyRecoverableMisplacedToolCallJson(rawJson, toolNames)) return "";
   const chunks: string[] = [];
   const lines = value.split(/(\r?\n)/);
   let activeFence: { marker: string; language: string; lines: string[]; bodyLines: string[] } | undefined;
@@ -64,7 +46,7 @@ export function removeRecoveredJsonToolCallBlocks(value: string, toolNames: Read
       }
       continue;
     }
-    if (fenceMatch && fenceMatch[1][0] === activeFence.marker[0] && fenceMatch[1].length >= activeFence.marker.length) {
+    if (fenceMatch && isClosingMarkdownFence(line, activeFence.marker)) {
       activeFence.lines.push(line, lineEnd);
       const language = activeFence.language.toLowerCase();
       const body = activeFence.bodyLines.join("").trim();
@@ -119,12 +101,14 @@ export function removeRecoveredToolCallMarkup(
     content: message.content
       .map((block) => {
         if (block.type === "text") {
-          const withoutXml = removeXmlToolCallBlocksOutsideFences(block.text);
-          const withoutJson = removeRecoveredJsonToolCallBlocks(withoutXml, toolNames);
-          return { ...block, text: withoutJson };
+          const withoutJson = removeRecoveredJsonToolCallBlocks(block.text, toolNames);
+          const withoutXml = removeXmlToolCallBlocksOutsideFences(withoutJson);
+          return { ...block, text: withoutXml };
         }
         if (block.type === "thinking") {
-          return { ...block, thinking: removeXmlToolCallBlocksOutsideFences(block.thinking) };
+          const withoutJson = removeRecoveredJsonToolCallBlocks(block.thinking, toolNames);
+          const withoutXml = removeXmlToolCallBlocksOutsideFences(withoutJson);
+          return { ...block, thinking: withoutXml };
         }
         return block;
       })

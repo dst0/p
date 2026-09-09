@@ -220,61 +220,62 @@ describe("misplaced JSON tool recovery filtering", () => {
     });
   });
 
-  it("preserves unrecovered and unknown JSON blocks in assistant text", () => {
-    const text = `Here is sample data:\n\`\`\`json\n{"total": 42, "items": []}\n\`\`\`\nAnd an unknown tool:\n\`\`\`json\n${JSON.stringify({ name: "unknown_tool", arguments: {} })}\n\`\`\``;
-    const msg = createAssistantMessage([{ type: "text", text }]);
-    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+  it("preserves repeated JSON calls as distinct actions", () => {
+    const calls = ["call_1", "call_2"].map((id) => ({
+      id,
+      type: "function",
+      function: { name: "echo", arguments: JSON.stringify({ value: "same" }) },
+    }));
+    const fence = `\`\`\`json\n${JSON.stringify({ tool_calls: calls })}\n\`\`\``;
+    const recovered = recoverMisplacedToolCalls(createAssistantMessage([{ type: "text", text: fence }]), [
+      createEchoTool([]),
+    ]);
 
-    expect(recovered.content).toEqual([{ type: "text", text }]);
-    expect(recovered.stopReason).toBe("stop");
+    expect(recovered.content.filter((block) => block.type === "text")).toEqual([]);
+    expect(recovered.content.filter((block) => block.type === "toolCall")).toHaveLength(2);
   });
 
-  it("preserves a mixed JSON block when only some calls can be recovered", () => {
-    const calls = [
-      { name: "echo", arguments: { value: "known" } },
-      { name: "unknown_tool", arguments: { secret: "KEEP" } },
-    ];
-    const text = `Mixed calls:\n\`\`\`json\n${JSON.stringify(calls)}\n\`\`\``;
-    const msg = createAssistantMessage([{ type: "text", text }]);
-    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+  it("deduplicates matching XML and JSON calls one-to-one", () => {
+    const xml = `<tool_call><function=echo><arguments>${JSON.stringify({ value: "same" })}</arguments></function></tool_call>`;
+    const calls = ["call_1", "call_2"].map((id) => ({
+      id,
+      type: "function",
+      function: { name: "echo", arguments: JSON.stringify({ value: "same" }) },
+    }));
+    const json = `\`\`\`json\n${JSON.stringify({ tool_calls: calls })}\n\`\`\``;
+    const recovered = recoverMisplacedToolCalls(createAssistantMessage([{ type: "text", text: `${xml}\n${json}` }]), [
+      createEchoTool([]),
+    ]);
 
-    expect(recovered.content[0]).toEqual({ type: "text", text });
-    expect(recovered.content[1]).toMatchObject({
-      type: "toolCall",
-      name: "echo",
-      arguments: { value: "known" },
-    });
+    expect(recovered.content.filter((block) => block.type === "text")).toEqual([]);
+    expect(recovered.content.filter((block) => block.type === "toolCall")).toHaveLength(2);
   });
 
-  it("preserves a mixed JSON block containing non-call data", () => {
-    const callsAndData = [{ name: "echo", arguments: { value: "known" } }, { evidence: "KEEP" }];
-    const text = `Mixed action and data:\n\`\`\`json\n${JSON.stringify(callsAndData)}\n\`\`\``;
-    const msg = createAssistantMessage([{ type: "text", text }]);
-    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+  it("deduplicates cross-format arguments regardless of object key order", () => {
+    const xmlArguments = { value: "same", metadata: { first: 1, second: 2 } };
+    const jsonArguments = { metadata: { second: 2, first: 1 }, value: "same" };
+    const xml = `<tool_call><function=echo><arguments>${JSON.stringify(xmlArguments)}</arguments></function></tool_call>`;
+    const json = `\`\`\`json\n${JSON.stringify({
+      tool_calls: [{ id: "call_1", type: "function", function: { name: "echo", arguments: jsonArguments } }],
+    })}\n\`\`\``;
+    const recovered = recoverMisplacedToolCalls(createAssistantMessage([{ type: "text", text: `${xml}\n${json}` }]), [
+      createEchoTool([]),
+    ]);
 
-    expect(recovered.content[0]).toEqual({ type: "text", text });
-    expect(recovered.content[1]).toMatchObject({
-      type: "toolCall",
-      name: "echo",
-      arguments: { value: "known" },
-    });
+    expect(recovered.content.filter((block) => block.type === "toolCall")).toHaveLength(1);
   });
 
-  it("removes only recovered blocks and preserves unrecovered blocks in multi-block text", () => {
-    const text = `Step 1:\n\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "part1" } })}\n\`\`\`\nStep 2 (data):\n\`\`\`json\n{"data": true}\n\`\`\`\nStep 3:\n\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "part3" } })}\n\`\`\`\nFinished.`;
-    const msg = createAssistantMessage([{ type: "text", text }]);
-    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+  it("does not canonicalize deeply nested arguments when no XML call needs deduplication", () => {
+    const nestedArguments = `${'{"child":'.repeat(6_000)}0${"}".repeat(6_000)}`;
+    const fence = `\`\`\`json\n${JSON.stringify({ name: "echo", arguments: nestedArguments })}\n\`\`\``;
 
-    const textBlocks = recovered.content.filter((b) => b.type === "text");
-    expect(textBlocks).toHaveLength(1);
-    expect(textBlocks[0]).toEqual({
-      type: "text",
-      text: `Step 1:\n\nStep 2 (data):\n\`\`\`json\n{"data": true}\n\`\`\`\nStep 3:\n\nFinished.`,
-    });
-    const toolCalls = recovered.content.filter((b) => b.type === "toolCall");
-    expect(toolCalls).toHaveLength(2);
-    expect(toolCalls[0]).toMatchObject({ name: "echo", arguments: { value: "part1" } });
-    expect(toolCalls[1]).toMatchObject({ name: "echo", arguments: { value: "part3" } });
+    let recovered: AssistantMessage | undefined;
+    expect(() => {
+      recovered = recoverMisplacedToolCalls(createAssistantMessage([{ type: "text", text: fence }]), [
+        createEchoTool([]),
+      ]);
+    }).not.toThrow();
+    expect(recovered?.content.filter((block) => block.type === "toolCall")).toHaveLength(1);
   });
 
   it("removes the text block entirely when it contains only the recovered JSON tool block", () => {

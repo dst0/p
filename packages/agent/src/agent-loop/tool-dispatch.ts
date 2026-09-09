@@ -2,10 +2,13 @@ import type { AssistantMessage } from "@dst0/p-ai";
 import type { AgentTool, AgentToolCall } from "../types.ts";
 import {
   getStringValue,
+  isClosingMarkdownFence,
+  isFullyRecoverableMisplacedToolArguments,
   isRecord,
   normalizeMisplacedToolArguments,
   sanitizeToolCallIdSegment,
-  stripMarkdownCodeFences,
+  serializeCanonicalMisplacedToolArguments,
+  splitMarkdownFenceSegments,
 } from "./message-preparation.ts";
 import type { ParsedMisplacedToolCall } from "./types.ts";
 
@@ -59,8 +62,13 @@ function containsOnlyKnownMisplacedToolCalls(value: unknown, toolNames: Readonly
     return value.length > 0 && value.every((item) => containsOnlyKnownMisplacedToolCalls(item, toolNames));
   }
   if (!isRecord(value)) return false;
+  const toolListAliases = ["tool_calls", "toolCalls", "tools"] as const;
+  const toolListAliasCount = countPresentKeys(value, toolListAliases);
   const nestedToolCalls = value.tool_calls ?? value.toolCalls ?? value.tools;
-  if (Array.isArray(nestedToolCalls)) {
+  if (toolListAliasCount > 0) {
+    if (toolListAliasCount !== 1 || !Array.isArray(nestedToolCalls) || !hasOnlyKeys(value, toolListAliases)) {
+      return false;
+    }
     return (
       nestedToolCalls.length > 0 &&
       nestedToolCalls.every((item) => containsOnlyKnownMisplacedToolCalls(item, toolNames))
@@ -68,13 +76,64 @@ function containsOnlyKnownMisplacedToolCalls(value: unknown, toolNames: Readonly
   }
   const nestedFunction = value.function;
   if (isRecord(nestedFunction)) {
+    if (!hasOnlyKeys(value, ["function", "type", "id", "arguments", "input"])) return false;
+    if (!hasOnlyKeys(nestedFunction, ["name", "arguments", "input"])) return false;
+    if (!hasValidOptionalMetadata(value, ["function"])) return false;
+    const argumentCount =
+      countPresentKeys(value, ["arguments", "input"]) + countPresentKeys(nestedFunction, ["arguments", "input"]);
+    if (argumentCount > 1) return false;
+    const argumentValue = nestedFunction.arguments ?? nestedFunction.input ?? value.arguments ?? value.input;
+    if (argumentCount === 1 && !isLosslesslyNormalizableArgument(argumentValue)) return false;
     const name = getStringValue(nestedFunction.name);
     return name !== undefined && toolNames.has(name);
   }
+  if (
+    !hasOnlyKeys(value, [
+      "name",
+      "tool_name",
+      "toolName",
+      "tool",
+      "function",
+      "arguments",
+      "input",
+      "parameters",
+      "params",
+      "type",
+      "id",
+    ])
+  ) {
+    return false;
+  }
+  if (!hasValidOptionalMetadata(value, ["function", "tool_call", "tool-call", "toolCall", "tool_use"])) return false;
+  if (countPresentKeys(value, ["name", "tool_name", "toolName", "tool", "function"]) !== 1) return false;
+  const argumentCount = countPresentKeys(value, ["arguments", "input", "parameters", "params"]);
+  if (argumentCount > 1) return false;
+  const argumentValue = value.arguments ?? value.input ?? value.parameters ?? value.params;
+  if (argumentCount === 1 && !isLosslesslyNormalizableArgument(argumentValue)) return false;
   const name = getStringValue(value.name ?? value.tool_name ?? value.toolName ?? value.tool ?? value.function);
   return name !== undefined && toolNames.has(name);
 }
 
+function countPresentKeys(value: Record<string, unknown>, keys: readonly string[]): number {
+  return keys.filter((key) => Object.hasOwn(value, key)).length;
+}
+function hasValidOptionalMetadata(value: Record<string, unknown>, types: readonly string[]): boolean {
+  if (Object.hasOwn(value, "id") && getStringValue(value.id) === undefined) return false;
+  return !Object.hasOwn(value, "type") || (typeof value.type === "string" && types.includes(value.type));
+}
+function isLosslesslyNormalizableArgument(value: unknown): boolean {
+  if (isRecord(value)) return true;
+  if (typeof value !== "string") return false;
+  try {
+    return isRecord(JSON.parse(value) as unknown);
+  } catch {
+    return false;
+  }
+}
+function hasOnlyKeys(value: Record<string, unknown>, allowed: readonly string[]): boolean {
+  const allowedKeys = new Set(allowed);
+  return Object.keys(value).every((key) => allowedKeys.has(key));
+}
 export function isFullyRecoverableMisplacedToolCallJson(block: string, toolNames: ReadonlySet<string>): boolean {
   if (toolNames.size === 0 || !block) return false;
   if (!(block.startsWith("{") && block.endsWith("}")) && !(block.startsWith("[") && block.endsWith("]"))) {
@@ -115,35 +174,30 @@ export function parseMisplacedToolArguments(body: string): Record<string, unknow
 }
 
 export function parseMisplacedToolCallBlock(block: string): ParsedMisplacedToolCall[] {
-  const jsonCalls = parseMisplacedToolCallJson(block.trim());
-  if (jsonCalls.length > 0) return jsonCalls;
-
-  const calls: ParsedMisplacedToolCall[] = [];
-  for (const functionMatch of block.matchAll(/<function=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/function>/gi)) {
-    const name = functionMatch[1]?.trim();
-    if (!name) continue;
-    calls.push({
-      name,
-      arguments: parseMisplacedToolArguments(functionMatch[2] ?? ""),
-    });
+  const trimmed = block.trim();
+  const jsonCalls = parseMisplacedToolCallJson(trimmed);
+  if (jsonCalls.length > 0) {
+    const names = new Set(jsonCalls.map((call) => call.name));
+    return isFullyRecoverableMisplacedToolCallJson(trimmed, names) ? jsonCalls : [];
   }
-  for (const functionMatch of block.matchAll(/<function\s+name=["']([^"']+)["']\s*>([\s\S]*?)<\/function>/gi)) {
-    const name = functionMatch[1]?.trim();
-    if (!name) continue;
-    calls.push({
-      name,
-      arguments: parseMisplacedToolArguments(functionMatch[2] ?? ""),
-    });
+  const namedFunctionPattern = /<function(?:=([A-Za-z0-9_.:-]+)|\s+name=["']([^"']+)["'])\s*>([\s\S]*?)<\/function>/gi;
+  const namedFunctions = [...block.matchAll(namedFunctionPattern)];
+  if (namedFunctions.length > 0) {
+    const fullyConsumed =
+      block.replace(namedFunctionPattern, "").trim().length === 0 &&
+      namedFunctions.every((match) => isFullyRecoverableMisplacedToolArguments(match[3] ?? ""));
+    if (!fullyConsumed) return [];
+    return namedFunctions.map((match) => ({
+      name: (match[1] ?? match[2] ?? "").trim(),
+      arguments: parseMisplacedToolArguments(match[3] ?? ""),
+    }));
   }
-  const bareFunctionMatch = block.match(/<function>\s*([A-Za-z0-9_.:-]+)\s*<\/function>/i);
-  const name = bareFunctionMatch?.[1]?.trim();
-  if (name && calls.length === 0) {
-    calls.push({
-      name,
-      arguments: parseMisplacedToolArguments(block),
-    });
-  }
-  return calls;
+  const bareFunctionPattern = /<function>\s*([A-Za-z0-9_.:-]+)\s*<\/function>/gi;
+  const bareFunctions = [...block.matchAll(bareFunctionPattern)];
+  if (bareFunctions.length !== 1) return [];
+  const argumentBody = block.replace(bareFunctionPattern, "").trim();
+  if (!isFullyRecoverableMisplacedToolArguments(argumentBody)) return [];
+  return [{ name: bareFunctions[0][1].trim(), arguments: parseMisplacedToolArguments(argumentBody) }];
 }
 
 export function createRecoveredToolCall(
@@ -175,7 +229,7 @@ export function collectMarkdownCodeFences(value: string): Array<{ language: stri
       activeFence = { marker, language: fenceMatch[2] ?? "", lines: [] };
       continue;
     }
-    if (marker[0] === activeFence.marker[0]) {
+    if (isClosingMarkdownFence(line, activeFence.marker)) {
       blocks.push({ language: activeFence.language.toLowerCase(), body: activeFence.lines.join("\n") });
       activeFence = undefined;
     } else {
@@ -189,29 +243,31 @@ export function isToolJsonFence(language: string): boolean {
   if (!language) return false;
   return /^(json|jsonc|tool|tools|tool_call|tool-call|function|functions)$/i.test(language);
 }
-
 export function extractMisplacedJsonToolCalls(text: string, toolNames: ReadonlySet<string>): ParsedMisplacedToolCall[] {
   if (toolNames.size === 0) return [];
-  const stripped = stripMarkdownCodeFences(text).trim();
-  const calls = parseMisplacedToolCallJson(stripped);
+  const rawJson = text.trim();
+  const calls = isFullyRecoverableMisplacedToolCallJson(rawJson, toolNames) ? parseMisplacedToolCallJson(rawJson) : [];
   for (const block of collectMarkdownCodeFences(text)) {
-    if (!isToolJsonFence(block.language)) continue;
-    calls.push(...parseMisplacedToolCallJson(block.body.trim()));
+    const body = block.body.trim();
+    if (!isToolJsonFence(block.language) || !isFullyRecoverableMisplacedToolCallJson(body, toolNames)) continue;
+    calls.push(...parseMisplacedToolCallJson(body));
   }
   return calls.filter((call) => toolNames.has(call.name));
 }
 
 export function extractMisplacedToolCalls(message: AssistantMessage, tools: AgentTool[] | undefined): AgentToolCall[] {
   const toolNames = new Set(tools?.map((tool) => tool.name) ?? []);
-  const text = message.content
-    .flatMap((block) => {
-      if (block.type === "text") return [block.text];
-      if (block.type === "thinking") return [block.thinking];
-      return [];
-    })
-    .join("\n");
+  const textBlocks = message.content.flatMap((block) => {
+    if (block.type === "text") return [block.text];
+    if (block.type === "thinking") return [block.thinking];
+    return [];
+  });
   const toolCalls: AgentToolCall[] = [];
-  const blockMatches = stripMarkdownCodeFences(text).matchAll(/<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi);
+  const blockMatches = textBlocks.flatMap((block) =>
+    splitMarkdownFenceSegments(block).flatMap((segment) =>
+      segment.fenced ? [] : [...segment.text.matchAll(/<tool_call\b[^>]*>([\s\S]*?)<\/tool_call>/gi)],
+    ),
+  );
   let index = 0;
   for (const blockMatch of blockMatches) {
     for (const parsed of parseMisplacedToolCallBlock(blockMatch[1])) {
@@ -220,10 +276,18 @@ export function extractMisplacedToolCalls(message: AssistantMessage, tools: Agen
       index++;
     }
   }
-  for (const parsed of extractMisplacedJsonToolCalls(text, toolNames)) {
-    const key = `${parsed.name}:${JSON.stringify(parsed.arguments)}`;
-    const duplicate = toolCalls.some((toolCall) => `${toolCall.name}:${JSON.stringify(toolCall.arguments)}` === key);
-    if (duplicate) continue;
+  const markupCallKeys = toolCalls.map(
+    (call) => `${call.name}:${serializeCanonicalMisplacedToolArguments(call.arguments)}`,
+  );
+  for (const parsed of textBlocks.flatMap((block) => extractMisplacedJsonToolCalls(block, toolNames))) {
+    const argumentsKey =
+      markupCallKeys.length > 0 ? serializeCanonicalMisplacedToolArguments(parsed.arguments) : undefined;
+    const key = argumentsKey === undefined ? undefined : `${parsed.name}:${argumentsKey}`;
+    const duplicateIndex = key === undefined ? -1 : markupCallKeys.indexOf(key);
+    if (duplicateIndex >= 0) {
+      markupCallKeys.splice(duplicateIndex, 1);
+      continue;
+    }
     const toolCall = createRecoveredToolCall(parsed, toolNames, index);
     toolCalls.push(toolCall);
     index++;
