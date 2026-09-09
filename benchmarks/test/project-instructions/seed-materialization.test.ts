@@ -5,15 +5,15 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
-import { AuthStorage } from "../../../packages/coding-agent/dist/core/auth-storage.js";
-import { ModelRegistry } from "../../../packages/coding-agent/dist/core/model-registry.js";
-import { buildProjectInstructionCompilerModelIdentity } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
+import { captureVerifiedCompiledCache } from "../../src/project-instructions/cache.ts";
 import {
+  AuthStorage,
+  buildProjectInstructionCompilerModelIdentity,
+  DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+  ModelRegistry,
   PROJECT_INSTRUCTION_COMPILER_VERSION,
   prepareProjectInstructions,
-} from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
-import { DEFAULT_MODEL_COMPILER_CONTRACT_REVISION } from "../../../packages/coding-agent/dist/core/project-instructions/session-controller.js";
-import { captureVerifiedCompiledCache } from "../../src/project-instructions/cache.ts";
+} from "../../src/project-instructions/coding-agent-runtime-bindings.ts";
 import { assertSeededManifestEvidence } from "../../src/project-instructions/seed-manifest.ts";
 import {
   assertLegacyCellUnseeded,

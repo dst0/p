@@ -22,7 +22,7 @@ test("npm run dev runs the source CLI from outside the repository", () => {
   }
 });
 
-test("benchmarks typecheck succeeds without built dist", () => {
+test("benchmarks typecheck succeeds when built dist is absent", () => {
   const tsgoBin = path.join(repoRoot, "node_modules", ".bin", "tsgo");
   const benchmarkTsconfig = path.join(repoRoot, "benchmarks", "tsconfig.json");
   const output = execFileSync(tsgoBin, ["--noEmit", "-p", benchmarkTsconfig], {
@@ -30,4 +30,9 @@ test("benchmarks typecheck succeeds without built dist", () => {
     encoding: "utf8",
   });
   assert.equal(output.trim(), "");
+});
+
+test("script test suite includes source CLI regressions", () => {
+  const packageJson = JSON.parse(readFileSync(path.join(repoRoot, "package.json"), "utf8"));
+  assert.match(packageJson.scripts["test:scripts"], /(?:^|&&\s*)npm run test:cli(?:\s*&&|$)/u);
 });
