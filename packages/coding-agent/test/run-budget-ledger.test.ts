@@ -73,6 +73,32 @@ describe("task spend ledger", () => {
     expect(() => ledger.admit({ kind: "text", model })).toThrow(/budget_exhausted/);
   });
 
+  it("settles normalized cached usage on a limited budget without becoming uncertain", () => {
+    const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "tokens", limit: 200 } });
+    const bedrockUsage: Usage = {
+      input: 100,
+      output: 50,
+      cacheRead: 10,
+      cacheWrite: 20,
+      totalTokens: 180,
+      cost: {
+        input: 0.0001,
+        output: 0.0001,
+        cacheRead: 0.000001,
+        cacheWrite: 0.000025,
+        total: 0.0001 + 0.0001 + 0.000001 + 0.000025,
+      },
+    };
+    ledger.admit({ kind: "text", model }).settle(bedrockUsage);
+    expect(ledger.snapshot()).toMatchObject({
+      tokens: 180,
+      usd: bedrockUsage.cost.total,
+      uncertainTokens: false,
+      uncertainUsd: false,
+      status: "ready",
+    });
+  });
+
   it("does not treat unknown prices or usage as free", () => {
     const ledger = new RunBudgetLedger({ scopeId: "task", policy: { mode: "limited", unit: "usd", limit: 1 } });
     expect(() =>
