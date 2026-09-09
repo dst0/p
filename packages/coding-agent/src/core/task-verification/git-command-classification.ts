@@ -47,85 +47,34 @@ function isExecutable(token: string | undefined, name: string): boolean {
   return token === name || token?.endsWith(`/${name}`) === true;
 }
 
-export function tokenizeShellCommands(command: string): string[][] {
-  const commands: string[][] = [];
-  let words: string[] = [];
-  let word = "";
-  let wordStarted = false;
-  let quote: "'" | '"' | undefined;
-  let escaped = false;
-
-  const finishWord = (): void => {
-    if (!wordStarted) return;
-    words.push(word);
-    word = "";
-    wordStarted = false;
-  };
-  const finishCommand = (): void => {
-    finishWord();
-    if (words.length > 0) commands.push(words);
-    words = [];
-  };
-
-  for (const character of command) {
-    if (escaped) {
-      word += character;
-      wordStarted = true;
-      escaped = false;
-    } else if (quote) {
-      if (character === quote) {
-        quote = undefined;
-      } else if (character === "\\" && quote === '"') {
-        escaped = true;
-      } else {
-        word += character;
-      }
-      wordStarted = true;
-    } else if (character === "'" || character === '"') {
-      quote = character;
-      wordStarted = true;
-    } else if (character === "\\") {
-      escaped = true;
-      wordStarted = true;
-    } else if (/\s/u.test(character)) {
-      finishWord();
-      if (character === "\n") finishCommand();
-    } else if (character === ";" || character === "&" || character === "|") {
-      finishCommand();
-    } else {
-      word += character;
-      wordStarted = true;
-    }
-  }
-  if (escaped) word += "\\";
-  finishCommand();
-  return commands;
-}
-
 export function commandStart(words: readonly string[]): number {
   let index = 0;
   while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   while (isExecutable(words[index], "command") || isExecutable(words[index], "env")) {
     const wrapper = words[index++];
     if (isExecutable(wrapper, "command")) {
-      while (words[index]?.startsWith("-")) index += 1;
+      while (words[index] === "-p") index += 1;
+      if (words[index] === "--") index += 1;
     } else {
+      let assignmentsStarted = false;
       while (index < words.length) {
         const token = words[index]!;
-        if (token === "--" || token === "-") {
+        if (!assignmentsStarted && (token === "--" || token === "-")) {
           index += 1;
           break;
         }
-        if (ENV_OPTIONS_WITH_SEPARATE_VALUE.has(token)) {
+        if (!assignmentsStarted && ENV_OPTIONS_WITH_SEPARATE_VALUE.has(token)) {
           index += 2;
-        } else if (token.startsWith("-") || SHELL_ASSIGNMENT_PATTERN.test(token)) {
+        } else if (!assignmentsStarted && token.startsWith("-")) {
+          index += 1;
+        } else if (SHELL_ASSIGNMENT_PATTERN.test(token)) {
+          assignmentsStarted = true;
           index += 1;
         } else {
           break;
         }
       }
     }
-    while (SHELL_ASSIGNMENT_PATTERN.test(words[index] ?? "")) index += 1;
   }
   return index;
 }
@@ -139,6 +88,7 @@ export function gitAction(words: readonly string[], startIndex: number): string 
   for (let index = startIndex; index < words.length; index++) {
     const token = words[index]!;
     if (token === "--") return words[index + 1]?.toLocaleLowerCase("en-US");
+    if (token === "--exec-path") return undefined;
     if (GIT_OPTIONS_WITH_SEPARATE_VALUE.has(token)) {
       index += 1;
       continue;
@@ -197,6 +147,7 @@ function invocationPublishes(words: readonly string[], startIndex: number): bool
   for (let index = startIndex; index < words.length; index++) {
     const token = words[index]!;
     if (token === "commit" || token === "push") return true;
+    if (token === "--exec-path") return false;
     if (!token.startsWith("-")) return false;
     if (GIT_OPTIONS_WITH_SEPARATE_VALUE.has(token)) index += 1;
   }
@@ -265,3 +216,7 @@ export function containsGitPublishCommand(command: string): boolean {
 export function isSafePublishCommandSequence(command: string): boolean {
   return isSafePublishCommandSequenceAtDepth(command, 0);
 }
+
+import { tokenizeShellCommands } from "./shell-command-tokenization.ts";
+
+export { tokenizeShellCommands } from "./shell-command-tokenization.ts";

@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import type { BeforeToolCallResult } from "@dst0/p-agent-core";
-import { TYPECHECK_PATTERN } from "../constants.ts";
+import { isAuthoritativeTypecheckCommand } from "../check-command-classification.ts";
 import { frozenSourceOutputRestoreError } from "../critical-proof-source-output-revalidation.ts";
 import { revalidateCriticalProofSources } from "../evidence-critical-proof-observation.ts";
 import { testsRequested, typecheckRequested } from "../requirement-checks.ts";
@@ -226,7 +226,15 @@ function requestedEvidenceError(
   }
   if (
     typecheckRequested(taskText) &&
-    !mappedEvidence.some((item) => isShellTool(item.toolName) && TYPECHECK_PATTERN.test(item.descriptor))
+    !mappedEvidence.some(
+      (item) =>
+        isShellTool(item.toolName) &&
+        isAuthoritativeTypecheckCommand(
+          item.descriptor,
+          self.sessionManager.getCwd(),
+          self.state.mutatedSourcePaths ?? [],
+        ),
+    )
   ) {
     return "The task explicitly requires type checking, but no successful current-revision typecheck evidence is available.";
   }

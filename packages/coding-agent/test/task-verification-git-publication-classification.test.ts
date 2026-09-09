@@ -11,6 +11,16 @@ describe("task-verification Git publication classification", () => {
     expect(containsGitPublishCommand(String.raw`git -c "core.sshCommand=ssh \"quoted\"" push origin HEAD`)).toBe(true);
   });
 
+  it("recognizes publication hidden by an unquoted line continuation", () => {
+    expect(containsGitPublishCommand("g\\\nit push origin HEAD")).toBe(true);
+    expect(containsGitPublishCommand(String.raw`g\it push origin HEAD`)).toBe(true);
+  });
+
+  it("treats git --exec-path without an operand as a query rather than publication", () => {
+    expect(containsGitPublishCommand("git --exec-path push origin HEAD")).toBe(false);
+    expect(containsGitPublishCommand("git --exec-path=/tmp/git-core push origin HEAD")).toBe(true);
+  });
+
   it("follows env option separators into a nested split-string command", () => {
     expect(containsGitPublishCommand("env -- git push origin HEAD")).toBe(true);
     expect(containsGitPublishCommand("env -- env -S 'git push origin HEAD'")).toBe(true);

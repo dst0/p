@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { TYPECHECK_PATTERN } from "../constants.ts";
+import { isAuthoritativeTypecheckCommand } from "../check-command-classification.ts";
 import { computeRequirementSetHash, computeStateUserRequirementsHash } from "../requirement-audit-hashing.ts";
 import { requiredAcceptanceCheckCount, testsRequested, typecheckRequested } from "../requirement-checks.ts";
 import { formatRequirementDefinitionPrompt } from "../requirement-definition-prompt.ts";
@@ -98,7 +98,15 @@ export function do_readyToFinish(self: TaskVerificationController, input: Verifi
   }
   if (
     typecheckRequested(taskText) &&
-    !mappedValues.some((item) => isShellTool(item.toolName) && TYPECHECK_PATTERN.test(item.descriptor))
+    !mappedValues.some(
+      (item) =>
+        isShellTool(item.toolName) &&
+        isAuthoritativeTypecheckCommand(
+          item.descriptor,
+          self.sessionManager.getCwd(),
+          self.state.mutatedSourcePaths ?? [],
+        ),
+    )
   ) {
     return self.rejected(
       "The task explicitly requires type checking, but no successful current-revision typecheck evidence is mapped to an acceptance check.",

@@ -439,7 +439,7 @@ describe("task verification controller", () => {
       task_summary: "Implement the parser exactly and run npm test plus npm run typecheck until both pass",
     });
     await afterTool(agent, "edit", {
-      path: "src/parser.ts",
+      path: "README.md",
       edits: [{ oldText: "old", newText: "new" }],
     });
     const testEvidence = evidenceHandle(
@@ -450,12 +450,7 @@ describe("task verification controller", () => {
         { text: "focused parser tests passed" },
       ),
     );
-    await afterTool(
-      agent,
-      "bash",
-      { command: "npm run typecheck" },
-      { isError: true, text: "Type error in src/parser.ts" },
-    );
+    await afterTool(agent, "bash", { command: "tsc --noEmit" }, { isError: true, text: "Type error in src/parser.ts" });
 
     const blocked = await callVerificationTool(controller, {
       action: "ready_to_finish",
@@ -468,10 +463,10 @@ describe("task verification controller", () => {
       unresolved_failures: [],
     });
     expect(blocked.text).toContain("latest execution still failed");
-    expect(blocked.text).toContain("npm run typecheck");
+    expect(blocked.text).toContain("tsc --noEmit");
 
     const typecheckEvidence = evidenceHandle(
-      await afterTool(agent, "bash", { command: "npm run typecheck" }, { text: "typecheck passed" }),
+      await afterTool(agent, "bash", { command: "tsc --noEmit" }, { text: "typecheck passed" }),
     );
     const ready = await callVerificationTool(controller, {
       action: "ready_to_finish",
