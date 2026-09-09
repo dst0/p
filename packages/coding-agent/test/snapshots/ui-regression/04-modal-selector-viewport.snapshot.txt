@@ -20,5 +20,5 @@
 
   Type to search · Enter/Space to change · Esc to cancel
 ────────────────────────────────────────────────────────────────────────────────
-~/dev/p/packages/coding-agent (main)
+~/dev/p/packages/coding-agent (jules-13474192954446309545-dc91ded6)
 🔎 static-indexing-status
