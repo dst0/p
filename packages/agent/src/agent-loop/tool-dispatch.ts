@@ -54,6 +54,39 @@ export function parseMisplacedToolCallJson(block: string): ParsedMisplacedToolCa
   }
 }
 
+function containsOnlyKnownMisplacedToolCalls(value: unknown, toolNames: ReadonlySet<string>): boolean {
+  if (Array.isArray(value)) {
+    return value.length > 0 && value.every((item) => containsOnlyKnownMisplacedToolCalls(item, toolNames));
+  }
+  if (!isRecord(value)) return false;
+  const nestedToolCalls = value.tool_calls ?? value.toolCalls ?? value.tools;
+  if (Array.isArray(nestedToolCalls)) {
+    return (
+      nestedToolCalls.length > 0 &&
+      nestedToolCalls.every((item) => containsOnlyKnownMisplacedToolCalls(item, toolNames))
+    );
+  }
+  const nestedFunction = value.function;
+  if (isRecord(nestedFunction)) {
+    const name = getStringValue(nestedFunction.name);
+    return name !== undefined && toolNames.has(name);
+  }
+  const name = getStringValue(value.name ?? value.tool_name ?? value.toolName ?? value.tool ?? value.function);
+  return name !== undefined && toolNames.has(name);
+}
+
+export function isFullyRecoverableMisplacedToolCallJson(block: string, toolNames: ReadonlySet<string>): boolean {
+  if (toolNames.size === 0 || !block) return false;
+  if (!(block.startsWith("{") && block.endsWith("}")) && !(block.startsWith("[") && block.endsWith("]"))) {
+    return false;
+  }
+  try {
+    return containsOnlyKnownMisplacedToolCalls(JSON.parse(block) as unknown, toolNames);
+  } catch {
+    return false;
+  }
+}
+
 export function decodeXmlText(value: string): string {
   return value
     .replaceAll("&lt;", "<")

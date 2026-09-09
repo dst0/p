@@ -10,6 +10,7 @@ import {
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
 import { extractMisplacedJsonToolCalls, extractMisplacedToolCalls } from "../src/agent-loop/tool-dispatch.ts";
+import { recoverMisplacedToolCalls } from "../src/agent-loop/tool-execution.ts";
 import { agentLoop } from "../src/agent-loop.ts";
 import type { AgentContext, AgentEvent, AgentLoopConfig, AgentMessage, AgentTool } from "../src/types.ts";
 
@@ -200,5 +201,92 @@ describe("misplaced JSON tool recovery filtering", () => {
 
     const msg = createAssistantMessage([{ type: "text", text }]);
     expect(extractMisplacedToolCalls(msg, [createEchoTool([])])).toEqual([]);
+  });
+
+  it("removes only recovered JSON tool blocks from assistant text while preserving surrounding prose", () => {
+    const text = `Prose before tool call\n\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "first" } })}\n\`\`\`\nProse after tool call`;
+    const msg = createAssistantMessage([{ type: "text", text }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    expect(recovered.content).toHaveLength(2);
+    expect(recovered.content[0]).toEqual({
+      type: "text",
+      text: "Prose before tool call\n\nProse after tool call",
+    });
+    expect(recovered.content[1]).toMatchObject({
+      type: "toolCall",
+      name: "echo",
+      arguments: { value: "first" },
+    });
+  });
+
+  it("preserves unrecovered and unknown JSON blocks in assistant text", () => {
+    const text = `Here is sample data:\n\`\`\`json\n{"total": 42, "items": []}\n\`\`\`\nAnd an unknown tool:\n\`\`\`json\n${JSON.stringify({ name: "unknown_tool", arguments: {} })}\n\`\`\``;
+    const msg = createAssistantMessage([{ type: "text", text }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    expect(recovered.content).toEqual([{ type: "text", text }]);
+    expect(recovered.stopReason).toBe("stop");
+  });
+
+  it("preserves a mixed JSON block when only some calls can be recovered", () => {
+    const calls = [
+      { name: "echo", arguments: { value: "known" } },
+      { name: "unknown_tool", arguments: { secret: "KEEP" } },
+    ];
+    const text = `Mixed calls:\n\`\`\`json\n${JSON.stringify(calls)}\n\`\`\``;
+    const msg = createAssistantMessage([{ type: "text", text }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    expect(recovered.content[0]).toEqual({ type: "text", text });
+    expect(recovered.content[1]).toMatchObject({
+      type: "toolCall",
+      name: "echo",
+      arguments: { value: "known" },
+    });
+  });
+
+  it("preserves a mixed JSON block containing non-call data", () => {
+    const callsAndData = [{ name: "echo", arguments: { value: "known" } }, { evidence: "KEEP" }];
+    const text = `Mixed action and data:\n\`\`\`json\n${JSON.stringify(callsAndData)}\n\`\`\``;
+    const msg = createAssistantMessage([{ type: "text", text }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    expect(recovered.content[0]).toEqual({ type: "text", text });
+    expect(recovered.content[1]).toMatchObject({
+      type: "toolCall",
+      name: "echo",
+      arguments: { value: "known" },
+    });
+  });
+
+  it("removes only recovered blocks and preserves unrecovered blocks in multi-block text", () => {
+    const text = `Step 1:\n\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "part1" } })}\n\`\`\`\nStep 2 (data):\n\`\`\`json\n{"data": true}\n\`\`\`\nStep 3:\n\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "part3" } })}\n\`\`\`\nFinished.`;
+    const msg = createAssistantMessage([{ type: "text", text }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    const textBlocks = recovered.content.filter((b) => b.type === "text");
+    expect(textBlocks).toHaveLength(1);
+    expect(textBlocks[0]).toEqual({
+      type: "text",
+      text: `Step 1:\n\nStep 2 (data):\n\`\`\`json\n{"data": true}\n\`\`\`\nStep 3:\n\nFinished.`,
+    });
+    const toolCalls = recovered.content.filter((b) => b.type === "toolCall");
+    expect(toolCalls).toHaveLength(2);
+    expect(toolCalls[0]).toMatchObject({ name: "echo", arguments: { value: "part1" } });
+    expect(toolCalls[1]).toMatchObject({ name: "echo", arguments: { value: "part3" } });
+  });
+
+  it("removes the text block entirely when it contains only the recovered JSON tool block", () => {
+    const fence = `\`\`\`json\n${JSON.stringify({ name: "echo", arguments: { value: "only" } })}\n\`\`\``;
+    const msg = createAssistantMessage([{ type: "text", text: fence }]);
+    const recovered = recoverMisplacedToolCalls(msg, [createEchoTool([])]);
+
+    expect(recovered.content).toHaveLength(1);
+    expect(recovered.content[0]).toMatchObject({
+      type: "toolCall",
+      name: "echo",
+      arguments: { value: "only" },
+    });
   });
 });

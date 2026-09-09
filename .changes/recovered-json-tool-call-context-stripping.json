@@ -1,0 +1,8 @@
+{
+  "schemaVersion": 1,
+  "packages": [
+    "agent"
+  ],
+  "type": "Fixed",
+  "summary": "Remove only recovered JSON tool-call code blocks from assistant text while preserving surrounding prose and unrecovered JSON."
+}

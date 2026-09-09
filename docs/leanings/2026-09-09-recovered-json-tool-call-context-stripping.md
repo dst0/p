@@ -1,0 +1,22 @@
+# 2026-09-09 — Recovered JSON tool-call context stripping
+
+- **Status:** Resolved
+- **Task/context:** Recovering misplaced JSON tool calls into structured `ToolCall` content blocks without retaining redundant JSON code blocks in assistant text (`packages/agent/src/agent-loop/tool-execution.ts`).
+- **Unexpected observation or failure:** When an assistant message contained JSON tool call blocks in markdown code fences that were recovered into structured `toolCall` blocks, the original JSON code block remained in the assistant text block, creating duplicate tool call markup in subsequent model context. Conversely, stripping all JSON code blocks indiscriminately stripped unrecovered or explanatory data payloads.
+- **Evidence:** The first implementation passed 12 focused tests but review reproductions found two losses: a JSON array containing a registered and an unknown call, and an array containing a registered call plus ordinary non-call data. The regressions failed before their fixes and the final focused suite passed all 14 tests.
+- **Approaches tried:**
+  - **Attempt:** Implement `removeRecoveredJsonToolCallBlocks` using line-aware markdown fence parsing that only discards code blocks whose body parses to a registered tool name.
+    - **Outcome:** Partial
+    - **Why:** Checking whether any parsed call used a registered tool incorrectly removed a mixed block that also contained an unrecovered unknown call.
+  - **Attempt:** Remove a fenced block only when it parses to at least one call and every parsed call names a registered tool.
+    - **Outcome:** Partial
+    - **Why:** The parser omits ordinary non-call array elements, so checking only its filtered calls could still erase unrelated data.
+  - **Attempt:** Validate the complete parsed JSON structure recursively and require every array or tool-list element to be a recognized call.
+    - **Outcome:** Worked
+    - **Why:** Unknown calls and non-call data now keep the whole fence, while blocks composed entirely of calls converted to structured actions are safe to remove. Retaining the closing fence delimiter line ending maintains clean paragraph separation between surrounding prose.
+- **Root cause:** `recoverMisplacedToolCalls` only stripped XML `<tool_call>` markup via `removeRecoveredXmlToolCallMarkup`, leaving recovered JSON code fences intact in the message text.
+- **Resolution:** Introduced `removeRecoveredJsonToolCallBlocks`, combined XML and JSON block removal in `removeRecoveredToolCallMarkup`, and added complete-structure validation before removing a block.
+- **Verification:** Ran focused tests in `packages/agent/test/misplaced-json-tool-recovery.test.ts` (14 passing tests including positive recovery, negative unknown tools, mixed known/unknown calls, mixed action/data arrays, surrounding prose preservation, and complete text block removal).
+- **Prevention/follow-up:** Regression tests ensure prose and unrecovered JSON remain untouched, including when a recognized action shares a fenced array with an unknown action or ordinary data.
+- **Reusable learning:** When recovering structured actions from unstructured or fenced assistant text, strip only the specific recognized and converted block while retaining non-action data fences and preserving line boundary semantics for surrounding text.
+- **References:** `packages/agent/src/agent-loop/tool-execution.ts`, `packages/agent/test/misplaced-json-tool-recovery.test.ts`
