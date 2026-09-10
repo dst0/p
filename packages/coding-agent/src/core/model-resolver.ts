@@ -84,14 +84,21 @@ export function findExactModelReferenceMatch(
 
   const normalizedReference = trimmedReference.toLowerCase();
 
-  const canonicalMatches = availableModels.filter(
-    (model) => `${model.provider}/${model.id}`.toLowerCase() === normalizedReference,
-  );
-  if (canonicalMatches.length === 1) {
-    return canonicalMatches[0];
+  // ⚡ Bolt: Replace `.filter()` with an explicit loop to avoid intermediate array allocations and to short-circuit early
+  let canonicalMatch: Model<Api> | undefined;
+  let canonicalCount = 0;
+  for (let i = 0; i < availableModels.length; i++) {
+    const model = availableModels[i];
+    if (`${model.provider}/${model.id}`.toLowerCase() === normalizedReference) {
+      canonicalMatch = model;
+      canonicalCount++;
+      if (canonicalCount > 1) {
+        return undefined;
+      }
+    }
   }
-  if (canonicalMatches.length > 1) {
-    return undefined;
+  if (canonicalCount === 1) {
+    return canonicalMatch;
   }
 
   const slashIndex = trimmedReference.indexOf("/");
@@ -102,20 +109,40 @@ export function findExactModelReferenceMatch(
       // ⚡ Bolt: Hoist `.toLowerCase()` allocations out of filter loop over full models list
       const lowerProvider = provider.toLowerCase();
       const lowerModelId = modelId.toLowerCase();
-      const providerMatches = availableModels.filter(
-        (model) => model.provider.toLowerCase() === lowerProvider && model.id.toLowerCase() === lowerModelId,
-      );
-      if (providerMatches.length === 1) {
-        return providerMatches[0];
+
+      // ⚡ Bolt: Replace `.filter()` with explicit loop for early exit and reduced allocation
+      let providerMatch: Model<Api> | undefined;
+      let providerCount = 0;
+      for (let i = 0; i < availableModels.length; i++) {
+        const model = availableModels[i];
+        if (model.provider.toLowerCase() === lowerProvider && model.id.toLowerCase() === lowerModelId) {
+          providerMatch = model;
+          providerCount++;
+          if (providerCount > 1) {
+            return undefined;
+          }
+        }
       }
-      if (providerMatches.length > 1) {
-        return undefined;
+      if (providerCount === 1) {
+        return providerMatch;
       }
     }
   }
 
-  const idMatches = availableModels.filter((model) => model.id.toLowerCase() === normalizedReference);
-  return idMatches.length === 1 ? idMatches[0] : undefined;
+  // ⚡ Bolt: Replace `.filter()` with explicit loop for early exit and reduced allocation
+  let idMatch: Model<Api> | undefined;
+  let idCount = 0;
+  for (let i = 0; i < availableModels.length; i++) {
+    const model = availableModels[i];
+    if (model.id.toLowerCase() === normalizedReference) {
+      idMatch = model;
+      idCount++;
+      if (idCount > 1) {
+        return undefined;
+      }
+    }
+  }
+  return idCount === 1 ? idMatch : undefined;
 }
 
 /**

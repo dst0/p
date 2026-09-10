@@ -345,7 +345,7 @@
   },
   "packages/coding-agent/src/core/model-resolver.ts": {
     "classes": 0,
-    "lines": 685
+    "lines": 712
   },
   "packages/coding-agent/src/core/sdk.ts": {
     "classes": 0,
