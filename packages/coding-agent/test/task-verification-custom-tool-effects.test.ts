@@ -60,7 +60,7 @@ describe("task verification custom tool effects", () => {
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.getAllTools().map((tool) => tool.name)).not.toContain(REQUIREMENT_AUDIT_TOOL_NAME);
       expect(session._taskVerificationMode).toBe("evidence");
-      expect(session.agent.state.tools.find((tool) => tool.name === name)?.effect).toMatchObject(
+      expect(session.getAllTools().find((tool) => tool.name === name)?.effect).toMatchObject(
         effect ?? { kind: "unknown", risk: "high", source: "default_unknown" },
       );
     } finally {
@@ -77,7 +77,7 @@ describe("task verification custom tool effects", () => {
       expect(session.getAllTools().map((tool) => tool.name)).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session.getActiveToolNames()).toContain(TASK_VERIFICATION_TOOL_NAME);
       expect(session._taskVerificationMode).toBe("evidence");
-      expect(session.agent.state.tools.find((tool) => tool.name === "lookup_ticket")?.effect).toEqual({
+      expect(session.getAllTools().find((tool) => tool.name === "lookup_ticket")?.effect).toEqual({
         kind: "read",
         risk: "normal",
         domains: [],

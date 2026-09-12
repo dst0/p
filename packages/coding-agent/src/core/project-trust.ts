@@ -3,7 +3,7 @@ import type { LoadExtensionsResult, ProjectTrustContext } from "./extensions/typ
 import type { DefaultProjectTrust } from "./settings-manager.ts";
 import {
   getProjectTrustOptions,
-  hasTrustRequiringProjectResources,
+  getProjectTrustResourceRoots,
   type ProjectTrustOption,
   type ProjectTrustStore,
 } from "./trust-manager.ts";
@@ -42,18 +42,11 @@ function saveProjectTrustPromptResult(trustStore: ProjectTrustStore, result: Pro
   }
 }
 
-export async function resolveProjectTrusted(options: ResolveProjectTrustedOptions): Promise<boolean> {
-  if (options.trustOverride !== undefined) {
-    return options.trustOverride;
-  }
-  if (!hasTrustRequiringProjectResources(options.cwd)) {
-    return true;
-  }
-
+async function resolveTrustRoot(options: ResolveProjectTrustedOptions, trustCwd: string): Promise<boolean> {
   if (options.extensionsResult) {
     const { result, errors } = await emitProjectTrustEvent(
       options.extensionsResult,
-      { type: "project_trust", cwd: options.cwd },
+      { type: "project_trust", cwd: trustCwd },
       options.projectTrustContext,
     );
     for (const error of errors) {
@@ -62,13 +55,13 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
     if (result) {
       const trusted = result.trusted === "yes";
       if (result.remember === true) {
-        options.trustStore.set(options.cwd, trusted);
+        options.trustStore.set(trustCwd, trusted);
       }
       return trusted;
     }
   }
 
-  const decision = options.trustStore.get(options.cwd);
+  const decision = options.trustStore.get(trustCwd);
   if (decision !== null) {
     return decision;
   }
@@ -86,10 +79,19 @@ export async function resolveProjectTrusted(options: ResolveProjectTrustedOption
     return false;
   }
 
-  const selected = await selectProjectTrustOption(options.cwd, options.projectTrustContext);
+  const selected = await selectProjectTrustOption(trustCwd, options.projectTrustContext);
   if (selected !== undefined) {
     saveProjectTrustPromptResult(options.trustStore, selected);
     return selected.trusted;
   }
   return false;
+}
+
+export async function resolveProjectTrusted(options: ResolveProjectTrustedOptions): Promise<boolean> {
+  if (options.trustOverride !== undefined) return options.trustOverride;
+  const trustRoots = getProjectTrustResourceRoots(options.cwd);
+  for (const trustRoot of trustRoots) {
+    if (!(await resolveTrustRoot(options, trustRoot))) return false;
+  }
+  return true;
 }

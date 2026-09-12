@@ -50,6 +50,7 @@ import type { ReadonlyFooterDataProvider } from "../footer-data-provider.ts";
 import type { KeybindingsManager } from "../keybindings.ts";
 import type { CustomMessage } from "../messages.ts";
 import type { ModelRegistry } from "../model-registry.ts";
+import type { RunBudgetPolicy } from "../run-budget-policy.ts";
 import type {
   BranchSummaryEntry,
   CompactionEntry,
@@ -332,6 +333,7 @@ export interface ExtensionContext {
   modelRegistry: ModelRegistry;
   /** Current model (may be undefined) */
   model: Model<any> | undefined;
+  /** Read-only snapshot of the policy selected for the current task budget. */ readonly runBudgetPolicy: Readonly<RunBudgetPolicy>;
   /** Whether the agent is idle (not streaming) */
   isIdle(): boolean;
   /** Whether project-local trust is active for this context. */
@@ -1277,7 +1279,7 @@ export interface ExtensionAPI {
   /** Get the list of currently active tool names. */
   getActiveTools(): string[];
 
-  /** Get all configured tools with parameter schema, prompt guidelines, and source metadata. */
+  /** Get all configured tools with resolved effect, parameter schema, prompt guidelines, and source metadata. */
   getAllTools(): ToolInfo[];
 
   /** Set the active tools by name. */
@@ -1481,15 +1483,12 @@ export type SendUserMessageHandler = (
 ) => void;
 
 export type AppendEntryHandler = <T = unknown>(customType: string, data?: T) => void;
-
 export type SetSessionNameHandler = (name: string) => void;
-
 export type GetSessionNameHandler = () => string | undefined;
-
 export type GetActiveToolsHandler = () => string[];
-
-/** Tool info with name, description, parameter schema, prompt guidelines, and source metadata. */
+/** Tool info with resolved effect, parameter schema, prompt guidelines, and source metadata. */
 export type ToolInfo = Pick<ToolDefinition, "name" | "description" | "parameters" | "promptGuidelines"> & {
+  effect: ToolEffectDeclaration;
   sourceInfo: SourceInfo;
 };
 
@@ -1558,6 +1557,7 @@ export interface ExtensionActions {
  */
 export interface ExtensionContextActions {
   getModel: () => Model<any> | undefined;
+  getRunBudgetPolicy: () => RunBudgetPolicy;
   isIdle: () => boolean;
   isProjectTrusted: () => boolean;
   getSignal: () => AbortSignal | undefined;

@@ -1,0 +1,25 @@
+# 2026-09-09 — Volatile system prompt date breaks cache prefix
+
+- **Status:** Resolved
+- **Task/context:** Improve repeated-call latency and cost on the same model without weakening static guidance.
+- **Unexpected observation or failure:** The otherwise static system prompt embedded the local calendar date, changing its prefix at midnight across every session.
+- **Evidence:** The system-prompt regression showed `Current date:` in the generated prompt even when all task inputs and tools were unchanged. After moving the date to normal request setup, a queued steer or follow-up still bypassed that path and retained only the preceding turn's date across midnight.
+- **Approaches tried:**
+  - **Attempt:** Keep the date in the static prompt for convenience.
+    - **Outcome:** Did not work
+    - **Why:** It invalidates provider prompt-cache prefixes independently of task content.
+  - **Attempt:** Remove the volatile date without replacing its temporal grounding.
+    - **Outcome:** Did not work
+    - **Why:** Questions using words such as `today` or `tomorrow` no longer had an authoritative current date.
+  - **Attempt:** Keep the static prompt date-free and inject the local date into hidden per-request runtime context.
+- **Outcome:** Partial
+    - **Why:** Normal prompts were grounded, but queued turn construction bypassed request setup.
+  - **Attempt:** Stamp hidden temporal context when each steer or follow-up is enqueued.
+    - **Outcome:** Worked
+    - **Why:** The model receives the date that applied when the user submitted that queued turn, without changing the static prompt.
+- **Root cause:** Volatile request context was mixed into the reusable static instruction prefix, then the replacement covered only the normal prompt lifecycle.
+- **Resolution:** `buildSystemPrompt` no longer emits the current date; normal request preparation and queued-turn construction add a hidden `<temporal_context>` containing the current local date and relative-date guidance.
+- **Verification:** `system-prompt.test.ts` asserts date absence and working-directory presence; `runtime-date-context.test.ts` advances the clock across a day boundary, proves the static prompt is unchanged, observes the changing date in faux-provider context, and inspects both queued steer and follow-up payloads.
+- **Prevention/follow-up:** Put time-sensitive facts in request-scoped context and enumerate alternate request entry paths when moving cross-cutting context.
+- **Reusable learning:** Keep cacheable instruction prefixes deterministic and inject volatile context at every turn-construction path, including queues.
+- **References:** `packages/coding-agent/src/core/system-prompt.ts`, `packages/coding-agent/src/core/agent-session/temporal-context.ts`, `packages/coding-agent/test/suite/runtime-date-context.test.ts`

@@ -14,6 +14,7 @@ import type {
   TurnStartEvent,
 } from "../../extensions/index.ts";
 import type { TokenBreakdown } from "../../token-accounting.ts";
+import { resolveToolDefinitionEffect } from "../../tools/tool-effects.ts";
 import type { AgentSession } from "../agentsession.ts";
 import { isInternalAgentMessage } from "../message-utils.ts";
 import type { AgentSessionEventListener } from "../session-types.ts";
@@ -166,6 +167,7 @@ export function do_getAllTools(self: AgentSession): ToolInfo[] {
     .map(({ definition, sourceInfo }) => ({
       name: definition.name,
       description: definition.description,
+      effect: resolveToolDefinitionEffect(definition, sourceInfo.source === "builtin" ? "builtin" : "declared"),
       parameters: definition.parameters,
       promptGuidelines: definition.promptGuidelines,
       sourceInfo,

@@ -275,10 +275,6 @@
     "classes": 0,
     "lines": 426
   },
-  "packages/coding-agent/examples/extensions/plan-mode/index.ts": {
-    "classes": 0,
-    "lines": 333
-  },
   "packages/coding-agent/examples/extensions/preset.ts": {
     "classes": 0,
     "lines": 430
@@ -298,10 +294,6 @@
   "packages/coding-agent/examples/extensions/space-invaders.ts": {
     "classes": 1,
     "lines": 560
-  },
-  "packages/coding-agent/examples/extensions/subagent/index.ts": {
-    "classes": 0,
-    "lines": 983
   },
   "packages/coding-agent/examples/extensions/tic-tac-toe.ts": {
     "classes": 4,

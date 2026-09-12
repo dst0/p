@@ -75,6 +75,7 @@ export function do__bindExtensionCore(self: AgentSession, runner: ExtensionRunne
     },
     {
       getModel: () => self.model,
+      getRunBudgetPolicy: () => self.runBudget.policy,
       isIdle: () => !self.isStreaming,
       isProjectTrusted: () => self.settingsManager.isProjectTrusted(),
       getSignal: () => self.agent.signal,

@@ -1,7 +1,12 @@
 import {
+  closeSync,
   existsSync,
+  fsyncSync,
+  mkdirSync,
   mkdtempSync,
+  openSync,
   readFileSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -60,6 +65,40 @@ describe("durable budget storage recovery", () => {
         state.requests++;
       }),
     ).toThrow(/budget_storage_error/);
+  });
+
+  it("flushes the parent after creating the first budget directory", () => {
+    const sessionDir = join(temporaryDirectory(), "session");
+    mkdirSync(sessionDir);
+    const budgetDir = join(sessionDir, ".budgets");
+    const events: string[] = [];
+    const storage = new RunBudgetStorage(initial, join(budgetDir, "budget.json"), undefined, {
+      closeSync,
+      existsSync,
+      fsyncSync: (fd) => {
+        events.push("fsync-parent");
+        fsyncSync(fd);
+      },
+      mkdirSync: (path, options) => {
+        events.push(`mkdir:${path}`);
+        mkdirSync(path, options);
+      },
+      openSync: (path, flags, mode) => {
+        events.push(`open:${path}`);
+        return openSync(path, flags, mode);
+      },
+    });
+
+    storage.update((state) => {
+      state.requests++;
+    });
+
+    const canonicalSessionDir = realpathSync(sessionDir);
+    expect(events.slice(0, 3)).toEqual([
+      `mkdir:${join(canonicalSessionDir, ".budgets")}`,
+      `open:${canonicalSessionDir}`,
+      "fsync-parent",
+    ]);
   });
 
   it("rejects a symlinked ledger without modifying its target", () => {

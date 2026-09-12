@@ -1,0 +1,22 @@
+# 2026-09-09 — Plan mode preserves active tools
+
+- **Status:** Resolved
+- **Task/context:** Restore plan-mode behavior on the current `p` main line without reviving stale worktree state.
+- **Unexpected observation or failure:** Plan mode replaced the active tool set with fixed lists, dropping extension-provided tools, and its execution message included only the first roadmap step. A first repair kept every custom tool merely because it was not named `edit` or `write`, which also exposed deploy, delete, and external-write tools in a mode advertised as read-only.
+- **Evidence:** Focused regressions first failed because dynamic tool filtering/restoration and full-roadmap formatting were absent. Adversarial review then showed that effectful and unclassified custom tools remained callable.
+- **Approaches tried:**
+  - **Attempt:** Keep fixed plan and normal tool lists.
+    - **Outcome:** Did not work
+    - **Why:** Repository and extension tools can be registered dynamically, so fixed lists erase valid capabilities and can invent capabilities that were not active.
+  - **Attempt:** Preserve every custom tool not named `edit` or `write`.
+    - **Outcome:** Did not work
+    - **Why:** Names are not effect declarations; arbitrary custom tools can deploy, delete, publish, or perform external writes.
+  - **Attempt:** Derive plan tools from the live active set and resolved tool-effect inventory, fail closed for missing or mutating declarations, and restore the union of saved and newly active tools.
+    - **Outcome:** Worked
+    - **Why:** Declared normal read tools remain available, unknown and mutating tools are excluded, and `bash` is the sole explicit exception because every call passes a read-only command guard.
+- **Root cause:** The example assumed one static built-in tool configuration, then treated tool names as a safety boundary, and reduced the execution request to a first-step hint.
+- **Resolution:** The extension API now exposes each configured tool's resolved effect. Plan mode filters the current tool set by that metadata, fails closed for unknown or mutating effects, restores saved and newly registered tools after planning, and sends the complete numbered roadmap when execution begins.
+- **Verification:** `plan-mode-utils.test.ts` and `plan-mode-lifecycle-utils.test.ts` cover declared read tools, unknown/deploy/delete/external-write rejection, the guarded `bash` exception, restoration, full-roadmap delivery, and remaining-step context.
+- **Prevention/follow-up:** Model extension capabilities as runtime state; never reconstruct them from a fixed built-in list.
+- **Reusable learning:** Capability-restriction modes must filter live state by authoritative effect metadata, fail closed when classification is absent, and restore captured state after the restriction ends.
+- **References:** `packages/coding-agent/examples/extensions/plan-mode/`, `packages/coding-agent/test/plan-mode-lifecycle-utils.test.ts`

@@ -5,7 +5,6 @@ import {
   fstatSync,
   fsyncSync,
   lstatSync,
-  mkdirSync,
   openSync,
   readFileSync,
   realpathSync,
@@ -16,6 +15,10 @@ import {
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import lockfile from "proper-lockfile";
 import { validateRunBudgetPolicy } from "../run-budget-policy.ts";
+import {
+  ensureDirectoryDurably,
+  type SessionFileDurabilityOperations,
+} from "../session-manager/session-file-durability.ts";
 import { RunBudgetError } from "./error.ts";
 import type { RunBudgetState } from "./types.ts";
 
@@ -134,14 +137,21 @@ export class RunBudgetStorage {
   private state: RunBudgetState;
   private readonly path: string | undefined;
   private readonly root: string | undefined;
+  private readonly directoryOperations: Partial<SessionFileDurabilityOperations> | undefined;
   private observation: PersistedObservation = {};
   private persisted = false;
 
-  constructor(initial: RunBudgetState, path?: string, intendedRoot?: string) {
+  constructor(
+    initial: RunBudgetState,
+    path?: string,
+    intendedRoot?: string,
+    directoryOperations?: Partial<SessionFileDurabilityOperations>,
+  ) {
     this.state = structuredClone(initial);
     const bound = path ? resolveBoundPath(path, intendedRoot) : undefined;
     this.path = bound?.path;
     this.root = bound?.root;
+    this.directoryOperations = directoryOperations;
     this.read();
   }
 
@@ -230,7 +240,7 @@ export class RunBudgetStorage {
     try {
       if (this.path) {
         assertSafeStorageAncestors(this.root!, this.path);
-        mkdirSync(dirname(this.path), { recursive: true, mode: 0o700 });
+        ensureDirectoryDurably(dirname(this.path), this.directoryOperations, 0o700);
         assertSafeStorageAncestors(this.root!, this.path);
         release = lockfile.lockSync(this.path, { realpath: false });
       }

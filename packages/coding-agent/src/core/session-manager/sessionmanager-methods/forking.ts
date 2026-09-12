@@ -1,10 +1,11 @@
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync } from "fs";
 import { readdir } from "fs/promises";
 import { join } from "path";
 import { getSessionsDir } from "../../../config.ts";
 import { normalizePath, resolvePath } from "../../../utils/paths.ts";
 import { CURRENT_SESSION_VERSION } from "../constants.ts";
 import { getDefaultSessionDir, getDefaultSessionDirPath } from "../session-context.ts";
+import { ensureDirectoryDurably, writeJsonLinesAtomically } from "../session-file-durability.ts";
 import { assertValidSessionId, createSessionId } from "../session-id.ts";
 import { loadEntriesFromFile, sessionCwdMatches } from "../session-io.ts";
 import { buildSessionInfosWithConcurrency, listSessionsFromDir } from "../session-listing.ts";
@@ -30,9 +31,7 @@ export function do_forkFrom(
   }
 
   const dir = sessionDir ? normalizePath(sessionDir) : getDefaultSessionDir(resolvedTargetCwd);
-  if (!existsSync(dir)) {
-    mkdirSync(dir, { recursive: true });
-  }
+  if (!existsSync(dir)) ensureDirectoryDurably(dir);
 
   // Create new session file with new ID but forked content
   if (options?.id !== undefined) {
@@ -52,14 +51,8 @@ export function do_forkFrom(
     cwd: resolvedTargetCwd,
     parentSession: resolvedSourcePath,
   };
-  writeFileSync(newSessionFile, `${JSON.stringify(newHeader)}\n`, { flag: "wx" });
-
-  // Copy all non-header entries from source
-  for (const entry of sourceEntries) {
-    if (entry.type !== "session") {
-      appendFileSync(newSessionFile, `${JSON.stringify(entry)}\n`);
-    }
-  }
+  const entries = [newHeader, ...sourceEntries.filter((entry) => entry.type !== "session")];
+  writeJsonLinesAtomically(newSessionFile, entries, { exclusive: true });
 
   return new SessionManager(resolvedTargetCwd, dir, newSessionFile, true);
 }

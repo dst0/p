@@ -6,7 +6,12 @@ export {
   migrateSessionEntries,
   parseSessionEntries,
 } from "./session-id.ts";
-export { findMostRecentSession, loadEntriesFromFile } from "./session-io.ts";
+export {
+  findMostRecentSession,
+  type LoadEntriesResult,
+  loadEntriesFromFile,
+  loadEntriesFromFileResult,
+} from "./session-io.ts";
 export { SessionManager } from "./sessionmanager.ts";
 export type {
   BranchSummaryEntry,

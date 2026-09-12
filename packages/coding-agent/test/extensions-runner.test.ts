@@ -72,9 +72,9 @@ describe("ExtensionRunner", () => {
     getThinkingLevel: () => "off",
     setThinkingLevel: () => {},
   };
-
   const extensionContextActions: ExtensionContextActions = {
     getModel: () => undefined,
+    getRunBudgetPolicy: () => ({ mode: "unlimited" }),
     isIdle: () => true,
     isProjectTrusted: () => true,
     getSignal: () => undefined,

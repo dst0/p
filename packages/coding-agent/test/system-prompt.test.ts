@@ -176,9 +176,9 @@ describe("buildSystemPrompt", () => {
     expect(prompt).toMatch(/Before answering p questions or performing p work/iu);
   });
 
-  it("includes date and working directory", () => {
+  it("keeps the cache-stable prompt free of the volatile date", () => {
     const prompt = buildSystemPrompt(baseOptions);
-    expect(prompt).toContain("Current date:");
+    expect(prompt).not.toContain("Current date:");
     expect(prompt).toContain("Current working directory: /test");
   });
 
@@ -189,6 +189,8 @@ describe("buildSystemPrompt", () => {
     });
     expect(prompt).toContain("Custom system prompt");
     expect(prompt).not.toContain("Available tools:");
+    expect(prompt).not.toContain("Current date:");
+    expect(prompt).toContain("Current working directory: /test");
   });
 
   it("includes context files in custom prompt mode", () => {

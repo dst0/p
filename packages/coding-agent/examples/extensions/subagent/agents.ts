@@ -5,6 +5,8 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { getAgentDir, parseFrontmatter } from "@dst0/p";
+import type { ThinkingLevel } from "@dst0/p-agent-core";
+import { parseSubagentThinkingLevel } from "./runtime-settings.ts";
 
 export type AgentScope = "user" | "project" | "both";
 
@@ -13,6 +15,7 @@ export interface AgentConfig {
   description: string;
   tools?: string[];
   model?: string;
+  thinking?: ThinkingLevel;
   systemPrompt: string;
   source: "user" | "project";
   filePath: string;
@@ -65,6 +68,7 @@ function loadAgentsFromDir(dir: string, source: "user" | "project"): AgentConfig
       description: frontmatter.description,
       tools: tools && tools.length > 0 ? tools : undefined,
       model: frontmatter.model,
+      thinking: parseSubagentThinkingLevel(frontmatter.thinking),
       systemPrompt: body,
       source,
       filePath,
