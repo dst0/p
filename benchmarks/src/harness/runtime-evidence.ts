@@ -1,14 +1,19 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 
 function copyEvidenceTree(source: string, destination: string): void {
   if (!existsSync(source)) return;
+  assertCertifiedOutputWritePath(destination);
   mkdirSync(destination, { recursive: true });
   for (const entry of readdirSync(source, { withFileTypes: true })) {
     const sourcePath = join(source, entry.name);
     const destinationPath = join(destination, entry.name);
     if (entry.isDirectory()) copyEvidenceTree(sourcePath, destinationPath);
-    else if (entry.isFile()) copyFileSync(sourcePath, destinationPath);
+    else if (entry.isFile()) {
+      assertCertifiedOutputWritePath(destinationPath);
+      copyFileSync(sourcePath, destinationPath);
+    }
   }
 }
 

@@ -1,6 +1,7 @@
 import { closeSync, fsyncSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 import type { BenchmarkRecordingAccounting, BenchmarkRecordingPaths } from "./recording-chunk-store-contract.ts";
 
 export function fsyncRecordingPath(path: string): void {
@@ -32,13 +33,19 @@ export function publishBenchmarkRecordingManifest(manifestPath: string, payload:
   const tempPath = `${manifestPath}.tmp`;
   let created = false;
   try {
+    assertCertifiedOutputWritePath(tempPath);
     writeFileSync(tempPath, payload, { flag: "wx", mode: 0o600 });
     created = true;
     fsyncRecordingPath(tempPath);
+    assertCertifiedOutputWritePath(tempPath);
+    assertCertifiedOutputWritePath(manifestPath);
     renameSync(tempPath, manifestPath);
     fsyncRecordingPath(dirname(manifestPath));
   } catch (error) {
-    if (created) rmSync(tempPath, { force: true });
+    if (created) {
+      assertCertifiedOutputWritePath(tempPath);
+      rmSync(tempPath, { force: true });
+    }
     throw error;
   }
 }

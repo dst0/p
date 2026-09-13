@@ -56,7 +56,17 @@ function captureBenchmarkStreamLine(
     }
     return { progress: eventType !== undefined && progressEventTypes.has(eventType), runtimeContext, userTurn };
   } catch {
-    return {};
+    if (!metricEventTypes.has("error")) return {};
+    const metricEvent = {
+      type: "error",
+      message: "Malformed JSONL recording event",
+      benchmarkEventOrdinal: eventOrdinal,
+    };
+    return {
+      metricEvent,
+      metricLine: `${JSON.stringify(metricEvent)}\n`,
+      progress: false,
+    };
   }
 }
 

@@ -4,8 +4,8 @@ import { fileURLToPath } from "node:url";
 
 const fixturesRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "fixtures");
 
-export function fixtureDirectory(taskId: string): string {
-  return join(fixturesRoot, taskId);
+export function fixtureDirectory(taskId: string, customRoot?: string): string {
+  return join(customRoot ?? fixturesRoot, taskId);
 }
 
 export function listFixtureFiles(root: string, current = root): string[] {
@@ -30,8 +30,8 @@ export function readFixtureFiles(
   );
 }
 
-export function readFixtureText(taskId: string, path: string): string {
-  return readFileSync(join(fixtureDirectory(taskId), path), "utf8");
+export function readFixtureText(taskId: string, path: string, customRoot?: string): string {
+  return readFileSync(join(fixtureDirectory(taskId, customRoot), path), "utf8");
 }
 
 export function readWorkspaceText(path: string): string | undefined {

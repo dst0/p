@@ -38,21 +38,21 @@ test("semantic progress lease renews while an agent keeps streaming supported ev
         const timer = setInterval(() => {
           process.stdout.write(JSON.stringify({ type: "result", count }) + "\\n");
           count += 1;
-          if (count === 12) {
+          if (count === 120) {
             clearInterval(timer);
             setTimeout(() => process.exit(0), 25);
           }
         }, 50);
       `),
-      500,
+      5_000,
       recording,
       metricEventTypes,
-      { timeoutMode: "semantic_progress" },
+      { progressGraceMs: 2_000, timeoutMode: "semantic_progress" },
     );
     assert.equal(result.code, 0);
     assert.equal(result.timedOut, false);
     assert.equal(result.timeoutKind, undefined);
-    assert.ok(result.elapsedMs >= 550);
+    assert.ok(result.elapsedMs >= 5_500);
   });
 });
 
@@ -154,7 +154,7 @@ test("a marker termination cannot be relabeled while cleanup is pending", async 
         process.stdout.write(JSON.stringify({ type: "result", status: "STOP" }) + "\\n");
         setInterval(() => {}, 1000);
       `),
-      500,
+      5_000,
       recording,
       metricEventTypes,
       {

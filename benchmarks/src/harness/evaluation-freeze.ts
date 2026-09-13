@@ -22,6 +22,20 @@ export interface BenchmarkEvaluationFreeze {
   dispose(): void;
 }
 
+export interface BenchmarkEvaluationFreezeOperations {
+  createCandidate(repoRoot: string, temporaryParent: string): string;
+  createEvaluator(repoRoot: string, temporaryParent: string): BenchmarkEvaluationSnapshot;
+  hashCandidate(candidatePath: string, nodeExecutable: string): string;
+  removeCandidate(candidatePath: string): void;
+}
+
+const defaultFreezeOperations: BenchmarkEvaluationFreezeOperations = {
+  createCandidate: createCandidateRuntimeSnapshot,
+  createEvaluator: createBenchmarkEvaluationSnapshot,
+  hashCandidate: hashRuntimeSnapshot,
+  removeCandidate: (path) => rmSync(path, { recursive: true, force: true }),
+};
+
 export function createBenchmarkEvaluationSnapshot(
   repoRoot: string,
   temporaryParent = tmpdir(),
@@ -51,24 +65,51 @@ export function createBenchmarkEvaluationFreeze(
   repoRoot: string,
   temporaryParent = tmpdir(),
   nodeExecutable = process.execPath,
+  operations: BenchmarkEvaluationFreezeOperations = defaultFreezeOperations,
 ): BenchmarkEvaluationFreeze {
-  const candidateRuntimePath = createCandidateRuntimeSnapshot(repoRoot, temporaryParent);
+  const candidateRuntimePath = operations.createCandidate(repoRoot, temporaryParent);
   let evaluator: BenchmarkEvaluationSnapshot | undefined;
   try {
-    evaluator = createBenchmarkEvaluationSnapshot(repoRoot, temporaryParent);
-    const candidateRuntimeSha256 = hashRuntimeSnapshot(candidateRuntimePath, nodeExecutable);
+    evaluator = operations.createEvaluator(repoRoot, temporaryParent);
+    const candidateRuntimeSha256 = operations.hashCandidate(candidateRuntimePath, nodeExecutable);
     return {
       candidateRuntimePath,
       candidateRuntimeSha256,
       evaluator,
-      dispose: () => {
-        evaluator?.dispose();
-        rmSync(candidateRuntimePath, { recursive: true, force: true });
-      },
+      dispose: () => disposeEvaluationFreeze(evaluator, candidateRuntimePath),
     };
   } catch (error) {
-    evaluator?.dispose();
-    rmSync(candidateRuntimePath, { recursive: true, force: true });
+    const errors = [error];
+    try {
+      evaluator?.dispose();
+    } catch (cleanupError) {
+      errors.push(cleanupError);
+    }
+    try {
+      operations.removeCandidate(candidateRuntimePath);
+    } catch (cleanupError) {
+      errors.push(cleanupError);
+    }
+    if (errors.length > 1) throw new AggregateError(errors, "Evaluation freeze setup and cleanup failed");
     throw error;
   }
+}
+
+function disposeEvaluationFreeze(
+  evaluator: BenchmarkEvaluationSnapshot | undefined,
+  candidateRuntimePath: string,
+): void {
+  const errors: unknown[] = [];
+  try {
+    evaluator?.dispose();
+  } catch (error) {
+    errors.push(error);
+  }
+  try {
+    rmSync(candidateRuntimePath, { recursive: true, force: true });
+  } catch (error) {
+    errors.push(error);
+  }
+  if (errors.length === 1) throw errors[0];
+  if (errors.length > 1) throw new AggregateError(errors, "Evaluation freeze cleanup failed");
 }

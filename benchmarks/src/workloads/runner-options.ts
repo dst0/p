@@ -1,6 +1,9 @@
+import { createHash, randomBytes } from "node:crypto";
 import { homedir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { certifiedMinimumRuntimeSeconds } from "./certification-runtime-budget.ts";
+import { printRunnerHelp as displayRunnerHelp } from "./runner-help.ts";
 import { isThinkingLevel, type ThinkingLevel } from "./thinking-level.ts";
 
 export const supportedAgents = ["pi", "p", "kilo", "codex", "agy"] as const;
@@ -20,9 +23,11 @@ export type RunnerOptions = {
   agents: AgentId[];
   modelsFile: string;
   piVersion: string;
+  piExecutable?: string;
   kiloModel?: string;
   kiloVersion: string;
   kiloConfig: string;
+  kiloExecutable?: string;
   expectedResolvedModel?: string;
   kiloStartupTimeoutSeconds: number;
   codexModel?: string;
@@ -36,6 +41,12 @@ export type RunnerOptions = {
   output?: string;
   thinking?: ThinkingLevel;
   outputLimits?: Readonly<Record<string, number>>;
+  certified?: boolean;
+  certifiedNetworkHosts?: string[];
+  candidateRuntimePath?: string;
+  maxDurationRatio?: number;
+  maxTokenRatio?: number;
+  maxCostRatio?: number;
   help?: boolean;
   signal?: AbortSignal;
 };
@@ -52,59 +63,29 @@ const defaultMaxRuntimeSeconds = 900;
 const defaultKiloStartupTimeoutSeconds = 60;
 
 export function printRunnerHelp(): void {
-  console.log(`Usage:
-  npm run benchmark:agents -- --model <provider/id> [options]
-
-Compare this checkout (p) with PI and optional Kilo, Codex, and AGY CLIs, using the same
-underlying model and four deterministic TypeScript coding fixtures, including
-transactional event sourcing and an extreme durable workflow/saga challenge.
-
-Options:
-  --model <provider/id>       PI/P model alias (required when either is selected)
-  --p-cli <path>              P CLI entry point (default: this checkout's build)
-  --agents <list>             Comma-separated sequential order
-                              (default: pi,p; supported: ${supportedAgents.join(",")})
-  --models-file <path>        Custom models.json copied into temporary agent dirs
-                              (default: ~/.p/agent/models.json)
-  --pi-version <ver>          PI package version (default: ${defaultPiVersion})
-  --kilo-model <provider/id>  Kilo model alias (required when Kilo is selected)
-  --kilo-version <ver>        Required installed Kilo version
-                              (default: ${defaultKiloVersion})
-  --kilo-config <path>        Kilo config copied into an isolated temporary XDG home
-                              (default: ~/.config/kilo/kilo.jsonc)
-  --expected-resolved-model <provider/id>
-                              Backend model Kilo must resolve before fixtures start
-  --kilo-startup-timeout-seconds <n>
-                              Bounded timeout for each Kilo startup probe
-                              (default: ${defaultKiloStartupTimeoutSeconds})
-  --codex-model <provider/id> Codex model alias (required when Codex is selected)
-  --codex-config <path>       Codex config.toml (default: ~/.codex/config.toml)
-  --agy-model <model-id>      Google Antigravity model (required when AGY is selected)
-  --task <id>                 Run only one fixture (optional)
-  --project-instructions <mode> P-only mode: compiled, legacy, or off
-  --task-verification <mode>   P-only verification: evidence, audit, or off
-  --project-instruction-compiler-model <provider/id> Dedicated P compiler model
-  --project-instructions-file <path> Authoritative source copied into each P fixture
-  --thinking <level>           P reasoning level: off, minimal, low, medium, high, or xhigh
-  --runs <n>                  Complete repetitions (default: 1)
-  --timeout-seconds <n>       Per-agent nominal budget and semantic-inactivity watchdog
-                              (default: ${defaultTimeoutSeconds})
-  --minimum-timeout-seconds <n> Raise shorter fixture timeouts to at least this value
-  --max-runtime-seconds <n>   Overall deadline (default: ${defaultMaxRuntimeSeconds})
-  --output <dir>              Results directory
-                              (default: benchmarks/results/<timestamp>)
-  --help                      Show this help
-
-Each result directory contains compressed JSONL session recordings, stderr logs, the
-final fixture workspaces, results.json, and report.md. No real session files
-are created; auth and model configuration are copied only to a temporary
-directory and removed when the benchmark exits.
-`);
+  displayRunnerHelp({
+    supportedAgents,
+    defaultPiVersion,
+    defaultKiloVersion,
+    defaultTimeoutSeconds,
+    defaultMaxRuntimeSeconds,
+    defaultKiloStartupTimeoutSeconds,
+  });
 }
 
 function parsePositiveInteger(value: string, name: string): number {
-  const parsed = Number.parseInt(value, 10);
-  if (!Number.isInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`);
+  const trimmed = value.trim();
+  if (!/^\d+$/u.test(trimmed)) throw new Error(`${name} must be a positive integer`);
+  const parsed = Number(trimmed);
+  if (!Number.isSafeInteger(parsed) || parsed < 1) throw new Error(`${name} must be a positive integer`);
+  return parsed;
+}
+
+function parsePositiveFloat(value: string, name: string): number {
+  const trimmed = value.trim();
+  if (!/^\d+(?:\.\d+)?(?:[eE][+-]?\d+)?$/u.test(trimmed)) throw new Error(`${name} must be a positive number`);
+  const parsed = Number(trimmed);
+  if (!Number.isFinite(parsed) || parsed <= 0) throw new Error(`${name} must be a positive number`);
   return parsed;
 }
 
@@ -126,37 +107,40 @@ function assignStringOption(options: RunnerOptions, argument: string, value: str
   else if (argument === "--agents") {
     const agents = value
       .split(",")
-      .map((agent) => agent.trim())
+      .map((a) => a.trim())
       .filter(Boolean);
-    if (!agents.every(isAgentId)) throw new Error(`Unsupported agent: ${agents.find((agent) => !isAgentId(agent))}`);
+    if (!agents.every(isAgentId)) throw new Error(`Unsupported agent: ${agents.find((a) => !isAgentId(a))}`);
     options.agents = agents;
   } else if (argument === "--models-file") options.modelsFile = resolve(value);
   else if (argument === "--pi-version") options.piVersion = value;
+  else if (argument === "--pi-executable") options.piExecutable = resolve(value);
   else if (argument === "--kilo-model") options.kiloModel = value;
   else if (argument === "--kilo-version") options.kiloVersion = value;
   else if (argument === "--kilo-config") options.kiloConfig = resolve(value);
+  else if (argument === "--kilo-executable") options.kiloExecutable = resolve(value);
   else if (argument === "--expected-resolved-model") options.expectedResolvedModel = value;
   else if (argument === "--codex-model") options.codexModel = value;
   else if (argument === "--codex-config") options.codexConfig = resolve(value);
   else if (argument === "--agy-model") options.agyModel = value;
   else if (argument === "--task") options.task = value;
   else if (argument === "--project-instructions") {
-    if (value !== "compiled" && value !== "legacy" && value !== "off") {
+    if (value !== "compiled" && value !== "legacy" && value !== "off")
       throw new Error("--project-instructions must be compiled, legacy, or off");
-    }
     options.projectInstructions = value;
-  } else if (argument === "--project-instruction-compiler-model") {
-    options.projectInstructionCompilerModel = value;
-  } else if (argument === "--task-verification") {
-    if (value !== "evidence" && value !== "audit" && value !== "off") {
+  } else if (argument === "--project-instruction-compiler-model") options.projectInstructionCompilerModel = value;
+  else if (argument === "--task-verification") {
+    if (value !== "evidence" && value !== "audit" && value !== "off")
       throw new Error("--task-verification must be evidence, audit, or off");
-    }
     options.taskVerificationMode = value;
   } else if (argument === "--project-instructions-file") options.projectInstructionsFile = resolve(value);
   else if (argument === "--thinking") {
     if (!isThinkingLevel(value)) throw new Error("--thinking must be off, minimal, low, medium, high, or xhigh");
     options.thinking = value;
   } else if (argument === "--output") options.output = resolve(value);
+  else if (argument === "--certified-network-host") {
+    options.certifiedNetworkHosts ??= [];
+    options.certifiedNetworkHosts.push(value);
+  }
 }
 
 export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
@@ -180,51 +164,45 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
     runs: 1,
     timeoutSeconds: defaultTimeoutSeconds,
     maxRuntimeSeconds: defaultMaxRuntimeSeconds,
+    certifiedNetworkHosts: (process.env.P_BENCHMARK_CERTIFIED_NETWORK_HOSTS ?? "")
+      .split(",")
+      .map((host) => host.trim())
+      .filter(Boolean),
   };
-  const stringOptions = new Set([
-    "--model",
-    "--p-cli",
-    "--project-instruction-probe",
-    "--project-instruction-proof-receipt",
-    "--agents",
-    "--models-file",
-    "--pi-version",
-    "--kilo-model",
-    "--kilo-version",
-    "--kilo-config",
-    "--expected-resolved-model",
-    "--codex-model",
-    "--codex-config",
-    "--agy-model",
-    "--task",
-    "--project-instructions",
-    "--project-instruction-compiler-model",
-    "--task-verification",
-    "--project-instructions-file",
-    "--thinking",
-    "--output",
-  ]);
-  const integerOptions = new Set([
-    "--runs",
-    "--timeout-seconds",
-    "--minimum-timeout-seconds",
-    "--max-runtime-seconds",
-    "--kilo-startup-timeout-seconds",
-  ]);
+  const stringOptions = new Set(
+    "--model --p-cli --project-instruction-probe --project-instruction-proof-receipt --agents --models-file --pi-version --pi-executable --kilo-model --kilo-version --kilo-config --kilo-executable --expected-resolved-model --codex-model --codex-config --agy-model --task --project-instructions --project-instruction-compiler-model --task-verification --project-instructions-file --thinking --output --certified-network-host".split(
+      " ",
+    ),
+  );
+  const integerOptions = new Set(
+    "--runs --timeout-seconds --minimum-timeout-seconds --max-runtime-seconds --kilo-startup-timeout-seconds".split(
+      " ",
+    ),
+  );
+  const floatOptions = new Set(["--max-duration-ratio", "--max-token-ratio", "--max-cost-ratio"]);
+  let explicitAgents = false;
+  let explicitMaxRuntime = false;
+
   for (let index = 0; index < argv.length; index += 1) {
     const argument = argv[index];
-    if (argument === undefined) continue;
+    if (!argument) continue;
     if (argument === "--help" || argument === "-h") {
       options.help = true;
       continue;
     }
+    if (argument === "--certified") {
+      options.certified = true;
+      continue;
+    }
     if (stringOptions.has(argument)) {
+      if (argument === "--agents") explicitAgents = true;
       assignStringOption(options, argument, valueAfter(argv, index, argument));
       index += 1;
       continue;
     }
     if (integerOptions.has(argument)) {
       const value = parsePositiveInteger(valueAfter(argv, index, argument), argument);
+      if (argument === "--max-runtime-seconds") explicitMaxRuntime = true;
       if (argument === "--runs") options.runs = value;
       else if (argument === "--timeout-seconds") options.timeoutSeconds = value;
       else if (argument === "--minimum-timeout-seconds") options.minimumTimeoutSeconds = value;
@@ -233,9 +211,57 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
       index += 1;
       continue;
     }
+    if (floatOptions.has(argument)) {
+      const value = parsePositiveFloat(valueAfter(argv, index, argument), argument);
+      if (argument === "--max-duration-ratio") options.maxDurationRatio = value;
+      else if (argument === "--max-token-ratio") options.maxTokenRatio = value;
+      else options.maxCostRatio = value;
+      index += 1;
+      continue;
+    }
     throw new Error(`Unknown option: ${argument}`);
   }
   if (options.help) return options;
+  if (options.certified) {
+    if (options.thinking) {
+      throw new Error(
+        "Certified mode does not permit asymmetric --thinking generation options; all agents must use equivalent parameters",
+      );
+    }
+    if (options.projectInstructionCompilerModel) {
+      throw new Error("Certified mode does not permit a separate project-instruction compiler model");
+    }
+    if (options.taskVerificationMode && options.taskVerificationMode !== "evidence") {
+      throw new Error("Certified mode requires the default evidence task-verification profile");
+    }
+    if (!options.projectInstructionProofReceipt) {
+      options.projectInstructionProofReceipt = createHash("sha256").update(randomBytes(32)).digest("hex");
+    }
+    if (!explicitAgents) options.agents = ["p", "pi", "kilo"];
+    const certSet = new Set(options.agents);
+    const validCertAgents = certSet.size === 3 && certSet.has("p") && certSet.has("pi") && certSet.has("kilo");
+    if (options.agents.length !== 3 || !validCertAgents) {
+      throw new Error("Certified mode requires exactly agents p, pi, and kilo");
+    }
+    if (options.runs < 3) throw new Error("Certified mode requires at least 3 runs");
+    if (options.task) throw new Error("Certified mode requires all 4 canonical benchmark tasks");
+    if (!options.model) throw new Error("--model is required for certified comparison mode");
+    if (!options.expectedResolvedModel) throw new Error("--expected-resolved-model is required in certified mode");
+    if (options.projectInstructions && options.projectInstructions !== "compiled") {
+      throw new Error("Certified mode requires compiled project instructions");
+    }
+    options.kiloModel ??= options.model;
+    options.projectInstructions = "compiled";
+    options.taskVerificationMode = "evidence";
+    const minimumRuntime = certifiedMinimumRuntimeSeconds(options);
+    if (explicitMaxRuntime && options.maxRuntimeSeconds < minimumRuntime) {
+      throw new Error(`Certified --max-runtime-seconds must be at least ${minimumRuntime}`);
+    }
+    if (!explicitMaxRuntime) options.maxRuntimeSeconds = minimumRuntime;
+    options.maxDurationRatio ??= 1.0;
+    options.maxTokenRatio ??= 1.0;
+    return options;
+  }
   if (options.agents.length === 0) throw new Error("--agents must include at least one agent");
   if (new Set(options.agents).size !== options.agents.length) throw new Error("--agents must not contain duplicates");
   if (options.agents.some((agent) => agent === "pi" || agent === "p") && !options.model) {
@@ -248,15 +274,12 @@ export function parseRunnerArgs(argv: readonly string[]): RunnerOptions {
   if (options.agents.includes("kilo")) {
     options.expectedResolvedModel ??=
       options.kiloModel === "llm-orchestrator/sokann-qwen-27b" ? "mini-pc/sokann-qwen-27b" : options.model;
-    if (!options.expectedResolvedModel) {
+    if (!options.expectedResolvedModel)
       throw new Error("--expected-resolved-model is required when Kilo runs without PI/P");
-    }
   }
-  if (options.agents.includes("codex") && !options.codexModel) {
+  if (options.agents.includes("codex") && !options.codexModel)
     throw new Error("--codex-model is required when Codex is selected");
-  }
-  if (options.agents.includes("agy") && !options.agyModel) {
+  if (options.agents.includes("agy") && !options.agyModel)
     throw new Error("--agy-model is required when AGY is selected");
-  }
   return options;
 }

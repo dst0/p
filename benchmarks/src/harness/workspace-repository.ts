@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { copyFileSync, mkdirSync, writeFileSync } from "node:fs";
 import { devNull } from "node:os";
 import { join } from "node:path";
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 
 const BASELINE_COMMANDS = [
   ["init", "--quiet", "--initial-branch=main"],
@@ -22,6 +23,7 @@ interface BenchmarkWorkspaceTask {
 }
 
 interface BenchmarkWorkspaceOptions {
+  certified?: boolean;
   projectInstructions?: string;
   projectInstructionsFile: string;
 }
@@ -60,6 +62,7 @@ export function initializeBenchmarkWorkspaceRepository(
     GIT_COMMITTER_DATE: "2000-01-01T00:00:00Z",
   };
   for (const args of BASELINE_COMMANDS) {
+    assertCertifiedOutputWritePath(join(workspace, ".git"));
     const result = run("git", args, { cwd: workspace, encoding: "utf8", env: environment, stdio: "pipe" });
     if (result.error) throw new Error("Unable to create the benchmark Git baseline", { cause: result.error });
     if (result.status !== 0) throw new Error("Unable to create the benchmark Git baseline");
@@ -74,13 +77,19 @@ export function createBenchmarkWorkspace(
   options: BenchmarkWorkspaceOptions,
 ): string {
   const workspace = join(root, "workspaces", agent, `run-${runNumber}`, task.id);
-  mkdirSync(workspace, { recursive: true });
+  assertCertifiedOutputWritePath(workspace);
+  mkdirSync(join(workspace, ".."), { recursive: true, mode: 0o700 });
+  assertCertifiedOutputWritePath(workspace);
+  mkdirSync(workspace, { mode: 0o700 });
   for (const [relativePath, content] of Object.entries(task.files)) {
     const path = join(workspace, relativePath);
+    assertCertifiedOutputWritePath(path);
     mkdirSync(join(path, ".."), { recursive: true });
+    assertCertifiedOutputWritePath(path);
     writeFileSync(path, content, "utf8");
   }
-  if (agent === "p" && options.projectInstructions) {
+  if ((agent === "p" || options.certified) && options.projectInstructions) {
+    assertCertifiedOutputWritePath(join(workspace, "AGENTS.md"));
     copyFileSync(options.projectInstructionsFile, join(workspace, "AGENTS.md"));
   }
   initializeBenchmarkWorkspaceRepository(workspace);

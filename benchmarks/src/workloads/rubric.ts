@@ -12,8 +12,8 @@ function isHiddenRubric(value: unknown): value is HiddenRubric {
   );
 }
 
-export function readHiddenRubric(taskId: string): readonly HiddenRubric[] {
-  const parsed: unknown = JSON.parse(readFixtureText(taskId, "rubric.json"));
+export function readHiddenRubric(taskId: string, customRoot?: string): readonly HiddenRubric[] {
+  const parsed: unknown = JSON.parse(readFixtureText(taskId, "rubric.json", customRoot));
   if (!Array.isArray(parsed) || !parsed.every(isHiddenRubric)) {
     throw new Error(`Invalid hidden rubric for ${taskId}`);
   }

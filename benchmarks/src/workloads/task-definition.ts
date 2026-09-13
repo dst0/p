@@ -16,6 +16,11 @@ export type BenchmarkTaskResult = {
   finishNotesCreated?: boolean;
 };
 
+export type TaskVerificationContext = {
+  evaluatorFixturesRoot?: string;
+  evaluator?: { path: string; sha256: string };
+};
+
 export type BenchmarkTask = {
   id: string;
   timeoutSeconds: number;
@@ -23,8 +28,20 @@ export type BenchmarkTask = {
   description: string;
   files: Readonly<Record<string, string>>;
   prompt: string;
-  verify: (workspace: string, baseline: Readonly<Record<string, string>>, finalText: string) => BenchmarkTaskResult;
+  verify: (
+    workspace: string,
+    baseline: Readonly<Record<string, string>>,
+    finalText: string,
+    context?: TaskVerificationContext,
+  ) => BenchmarkTaskResult;
 };
+
+export const canonicalTaskTimeoutSeconds = {
+  "typescript-calculator": 900,
+  "monolith-split": 1200,
+  "event-sourced-inventory": 2400,
+  "durable-workflow-saga": 3600,
+} as const;
 
 export function createTaskResult(
   passed: boolean,

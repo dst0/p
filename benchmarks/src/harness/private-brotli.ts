@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { closeSync, fsyncSync, lstatSync, openSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import { brotliCompressSync, constants as zlibConstants } from "node:zlib";
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 
 const BROTLI_PARAMETERS = {
   [zlibConstants.BROTLI_PARAM_MODE]: zlibConstants.BROTLI_MODE_TEXT,
@@ -45,12 +46,14 @@ export function replacePrivateBrotliText(
   if (typeof text !== "string") throw new Error("Private Brotli text must be a string");
   if (!FAULT_POINTS.has(options.faultAt)) throw new Error("Unknown private Brotli fault point");
   const targetPath = resolve(finalPath);
+  assertCertifiedOutputWritePath(targetPath);
   assertSafeTarget(targetPath);
   const outputDirectory = dirname(targetPath);
   const temporaryPath = join(outputDirectory, `.${basename(targetPath)}.${process.pid}.${randomUUID()}.tmp`);
   const compressed = brotliCompressSync(Buffer.from(text, "utf8"), { params: BROTLI_PARAMETERS });
   let descriptor: number | undefined;
   try {
+    assertCertifiedOutputWritePath(temporaryPath);
     descriptor = openSync(temporaryPath, "wx", 0o600);
     writeFileSync(descriptor, compressed);
     fsyncSync(descriptor);
@@ -58,6 +61,7 @@ export function replacePrivateBrotliText(
     descriptor = undefined;
     fsyncDirectory(outputDirectory);
     if (options.faultAt === "before-publish") injectedFault("before-publish");
+    assertCertifiedOutputWritePath(targetPath);
     renameSync(temporaryPath, targetPath);
     if (options.faultAt === "after-publish") injectedFault("after-publish");
     fsyncDirectory(outputDirectory);

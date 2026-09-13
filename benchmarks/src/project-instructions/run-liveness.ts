@@ -1,6 +1,7 @@
 import { spawnSync } from "node:child_process";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative } from "node:path";
+import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import { replacePrivateBrotliText } from "../harness/private-brotli.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import type { SemanticEventState, SemanticTool } from "./liveness-events.ts";
@@ -151,6 +152,7 @@ function progressRecord(state: MonitorState, event: string, extra: Record<string
 }
 
 function appendProgress(state: MonitorState, event: string, extra?: Record<string, unknown>): void {
+  assertCertifiedOutputWritePath(state.progressPath);
   appendFileSync(state.progressPath, `${JSON.stringify(progressRecord(state, event, extra))}\n`, "utf8");
 }
 
@@ -200,7 +202,9 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
       state.taskVerificationTracker.reset();
     },
   });
+  assertCertifiedOutputWritePath(state.progressPath);
   mkdirSync(dirname(state.progressPath), { recursive: true });
+  assertCertifiedOutputWritePath(state.progressPath);
   writeFileSync(state.progressPath, "", { encoding: "utf8", flag: "wx", mode: 0o600 });
   appendProgress(state, "started");
   const observe = () => {
@@ -271,6 +275,7 @@ export function createCellLivenessMonitor(options: MonitorOptions): {
       });
       const compressedPath = `${state.progressPath}.br`;
       replacePrivateBrotliText(compressedPath, readFileSync(state.progressPath, "utf8"));
+      assertCertifiedOutputWritePath(state.progressPath);
       rmSync(state.progressPath);
       state.finalized = true;
       return {

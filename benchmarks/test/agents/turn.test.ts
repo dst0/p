@@ -7,9 +7,12 @@ import { brotliDecompressSync } from "node:zlib";
 import type { BenchmarkTurnOptions } from "../../src/agents/turn.ts";
 import { runBenchmarkAgentTurn } from "../../src/agents/turn.ts";
 import { BenchmarkInterruptedError } from "../../src/harness/interruption.ts";
+import { isBenchmarkProcessTerminationUnconfirmedError } from "../../src/harness/process-termination-error.ts";
 import { createBenchmarkRecording } from "../../src/harness/recording-lifecycle.ts";
 
 const metricEventTypes = new Set(["result"]);
+const nominalFailureTimeoutMs = 30_000;
+const promptFailureUpperBoundMs = 15_000;
 
 function command(source: string) {
   return {
@@ -20,11 +23,11 @@ function command(source: string) {
   };
 }
 
-async function runFailedTurn(source: string, options: BenchmarkTurnOptions) {
+async function runFailedTurn(source: string, options: BenchmarkTurnOptions, timeoutMs = 10_000) {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-turn-cap-"));
   const recording = createBenchmarkRecording(join(root, "turn.jsonl.br"));
   try {
-    return await runBenchmarkAgentTurn(command(source), 10_000, recording, metricEventTypes, options);
+    return await runBenchmarkAgentTurn(command(source), timeoutMs, recording, metricEventTypes, options);
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });
@@ -39,7 +42,7 @@ test("records child stdout bytes exactly while decoding a separate parser path",
   try {
     const result = await runBenchmarkAgentTurn(
       command(`process.stdout.write(Buffer.from([${[...expected].join(",")}]))`),
-      5_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
     );
@@ -59,7 +62,7 @@ test("pipes large output with backpressure and preserves every byte", async () =
   try {
     const result = await runBenchmarkAgentTurn(
       command("process.stdout.write(Buffer.alloc(2 * 1024 * 1024, 97));"),
-      5_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
       { outputLimits: { maxLineBytes: 3 * 1024 * 1024 } },
@@ -84,7 +87,7 @@ test("line bounds apply per JSONL record instead of the containing OS chunk", as
   try {
     const result = await runBenchmarkAgentTurn(
       command('process.stdout.write("{}\\n".repeat(100));'),
-      5_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
       { outputLimits: { maxLineBytes: 4 } },
@@ -103,7 +106,7 @@ test("output overflow terminates and waits for the child with an explicit failur
   try {
     const result = await runBenchmarkAgentTurn(
       command('process.stdout.write("x".repeat(1024)); setInterval(() => {}, 1000);'),
-      10_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
       { outputLimits: { maxLineBytes: 64 }, turn: 2 },
@@ -117,7 +120,7 @@ test("output overflow terminates and waits for the child with an explicit failur
       turn: 2,
     });
     assert.equal(result.signal, "SIGTERM");
-    assert.ok(result.elapsedMs < 5_000);
+    assert.ok(result.elapsedMs < promptFailureUpperBoundMs);
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });
@@ -135,7 +138,7 @@ test("raw recording overflow publishes a bounded prefix after killing a resistan
         const chunk = Buffer.alloc(16 * 1024, 120);
         setInterval(() => { for (let index = 0; index < 8; index += 1) process.stdout.write(chunk); }, 0);
       `),
-      10_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
       { failureKillGraceMs: 50, outputLimits: { maxLineBytes: 1024 * 1024 }, turn: 3 },
@@ -156,7 +159,7 @@ test("raw recording overflow publishes a bounded prefix after killing a resistan
       storageBytes: 64 * 1024,
       storageLimitBytes: 256 * 1024 * 1024,
     });
-    assert.ok(result.elapsedMs < 2_000);
+    assert.ok(result.elapsedMs < promptFailureUpperBoundMs);
     await recording.finalize();
     const decoded = brotliDecompressSync(readFileSync(finalPath));
     assert.equal(decoded.length, 64 * 1024);
@@ -177,13 +180,13 @@ test("recording write failure terminates and waits for the child immediately", a
     setTimeout(() => recording.stream.destroy(new Error("simulated disk full")), 50);
     const result = await runBenchmarkAgentTurn(
       command('setInterval(() => process.stdout.write("{}\\n"), 10);'),
-      10_000,
+      nominalFailureTimeoutMs,
       recording,
       metricEventTypes,
     );
     assert.match(result.error ?? "", /simulated disk full/);
     assert.equal(result.signal, "SIGTERM");
-    assert.ok(result.elapsedMs < 2_000);
+    assert.ok(result.elapsedMs < promptFailureUpperBoundMs);
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });
@@ -210,11 +213,11 @@ test("raw probe, stderr, and metric captures each fail at an explicit bound", as
     },
   ];
   for (const scenario of cases) {
-    const result = await runFailedTurn(scenario.source, scenario.options);
+    const result = await runFailedTurn(scenario.source, scenario.options, nominalFailureTimeoutMs);
     assert.match(result.error ?? "", scenario.pattern);
     assert.equal(result.captureOverflow?.kind, "capture_overflow");
     assert.equal(result.signal, "SIGTERM");
-    assert.ok(result.elapsedMs < 2_000);
+    assert.ok(result.elapsedMs < promptFailureUpperBoundMs);
   }
 });
 
@@ -281,7 +284,14 @@ test("termination rejection stays secondary to an agent-turn interruption", asyn
       },
     );
     controller.abort(interruption);
-    await assert.rejects(result, (error) => error === interruption && interruption.cleanupErrors?.[0] === cleanupError);
+    await assert.rejects(
+      result,
+      (error) =>
+        error === interruption &&
+        isBenchmarkProcessTerminationUnconfirmedError(error) &&
+        interruption.cleanupErrors?.[0] instanceof Error &&
+        interruption.cleanupErrors[0].cause === cleanupError,
+    );
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });

@@ -15,6 +15,7 @@ import {
 import { dirname, join, relative } from "node:path";
 import { brotliDecompressSync } from "node:zlib";
 
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 import { replacePrivateBrotliText } from "./private-brotli.ts";
 
 const REDACTION = "<REDACTED_AUTH>";
@@ -131,7 +132,9 @@ function retainTree(source: string, destination: string, sanitize: (root: string
       throw new Error("Retained benchmark destination must not already exist");
     }
     try {
+      assertCertifiedOutputWritePath(destination);
       mkdirSync(dirname(destination), { recursive: true });
+      assertCertifiedOutputWritePath(destination);
       copy(source, destination);
       const copiedDestination = describePath(destination);
       if (!copiedDestination?.isDirectory() || copiedDestination.isSymbolicLink()) {
@@ -148,6 +151,7 @@ function retainTree(source: string, destination: string, sanitize: (root: string
 }
 
 function copyTree(source: string, destination: string): void {
+  assertCertifiedOutputWritePath(destination);
   cpSync(source, destination, { recursive: true });
 }
 
@@ -239,6 +243,7 @@ function sanitizeArtifact(
     const contents = bytes.toString("utf8");
     if (!Buffer.from(contents).equals(bytes)) throw new Error("Private data appeared in a binary artifact");
     if (lstatSync(path).nlink > 1) throw new Error("Private data appeared in a hard-linked artifact");
+    assertCertifiedOutputWritePath(path);
     writeFileSync(path, redact(contents, terms));
   } catch {
     rmSync(path, { recursive: true, force: true });
@@ -285,6 +290,11 @@ function describePath(path: string): Stats | undefined {
 
 function removeArtifactRoot(path: string, descriptor = describePath(path)): void {
   if (!descriptor) return;
-  if (descriptor.isSymbolicLink()) unlinkSync(path);
-  else rmSync(path, { recursive: true, force: true });
+  if (descriptor.isSymbolicLink() || descriptor.isFile()) {
+    assertCertifiedOutputWritePath(dirname(path));
+    unlinkSync(path);
+  } else {
+    assertCertifiedOutputWritePath(path);
+    rmSync(path, { recursive: true, force: true });
+  }
 }

@@ -1,0 +1,22 @@
+# 2026-09-12 — Certified receipts require tree-wide cleanup
+
+- **Status:** Resolved
+- **Task/context:** Verifying the ephemeral parity receipt lifecycle in retained benchmark evidence.
+- **Unexpected observation or failure:** Preflight logs were redacted, but the same receipt remained in the generated instruction source, task workspaces, Git objects, and potentially results; Brotli failures were ignored. The first fail-closed cleanup then stopped at a corrupt recording before sanitizing later safe artifacts, and a setup failure after instruction generation left the receipt source behind.
+- **Evidence:** Focused fixtures recovered the literal receipt from every listed location, showed that a corrupt recording prevented a later result file from being redacted, and found `output/instructions` after a deliberate certified binding failure.
+- **Approaches tried:**
+  - **Attempt:** Delete only preflight workspaces and redact only preflight recordings.
+    - **Outcome:** Did not work
+    - **Why:** Task artifacts and Git object storage retained independent copies.
+  - **Attempt:** Fail-closed tree cleanup after resource finalization.
+    - **Outcome:** Partial
+    - **Why:** It correctly failed on corrupt data but aborted traversal, leaving independently sanitizable artifacts untouched.
+  - **Attempt:** Best-effort scrub and verification with aggregated fatal errors plus setup rollback.
+    - **Outcome:** Worked
+    - **Why:** Every reachable artifact is attempted before errors are reported, while setup failure removes generated instructions before disposing the runtime freeze.
+- **Root cause:** Cleanup scope followed one execution phase rather than the published artifact boundary, and fail-closed error propagation was incorrectly coupled to stopping cleanup at the first failure.
+- **Resolution:** Added `sanitizeCertifiedReceiptArtifacts`, aggregate all scrub and verification failures after traversal, and roll back generated instructions when certified setup fails.
+- **Verification:** `certification-artifact-sanitization.test.ts` covers plaintext, Brotli, Git metadata, instruction copies, symlinks, corrupt compressed data, and continued cleanup after corruption; `certification-frozen-probe.test.ts` covers setup rollback.
+- **Prevention/follow-up:** Treat the final output tree, not an individual log, as the secret-lifecycle boundary; report cleanup failure only after attempting every independent cleanup target.
+- **Reusable learning:** Ephemeral challenge material is gone only after recursively verifying every retained artifact class, and one corrupt artifact must not prevent cleanup of the rest.
+- **References:** `benchmarks/src/workloads/certification-receipt-cleanup.ts`.

@@ -2,14 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { listFixtureFiles, readFixtureFiles, readWorkspaceText } from "./fixture-files.ts";
 import { runFixtureCommand } from "./fixture-verification.ts";
-import { type BenchmarkTask, createTaskResult } from "./task-definition.ts";
+import { type BenchmarkTask, canonicalTaskTimeoutSeconds, createTaskResult } from "./task-definition.ts";
 
 const taskId = "monolith-split";
 const maxScore = 6;
 
 export const monolithSplitTask: BenchmarkTask = {
   id: taskId,
-  timeoutSeconds: 1200,
+  timeoutSeconds: canonicalTaskTimeoutSeconds[taskId],
   maxScore,
   description: "Split a large existing TypeScript module into focused files without changing its public behavior",
   files: readFixtureFiles(taskId),

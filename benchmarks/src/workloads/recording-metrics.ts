@@ -1,22 +1,24 @@
-import { type BenchmarkRecordingEvent, createPRecordingAccumulator, parsePRecording } from "../harness/p-recording.ts";
+import { type BenchmarkRecordingEvent, createPRecordingAccumulator } from "../harness/p-recording.ts";
+import { parseCodexRecording } from "./codex-recording-metrics.ts";
+import { readMonetaryCost } from "./monetary-cost.ts";
 import type { AgentId } from "./runner-options.ts";
 
 type JsonRecord = Record<string, unknown>;
-
 export type TokenUsage = {
   input: number;
   output: number;
   cacheRead: number;
   cacheWrite: number;
   totalTokens: number;
+  cost?: unknown;
 };
-
 export type RecordingMetrics = {
   eventCount: number;
   rawEventCount?: number;
   eventTypes: Record<string, number>;
   model?: { provider?: string; id?: string; api?: string };
   responseModel?: string;
+  responseModels?: string[];
   usage: TokenUsage;
   turns?: number;
   assistantMessages?: number;
@@ -29,13 +31,11 @@ export type RecordingMetrics = {
   readRulesBatches?: JsonRecord[];
   phaseRelevantToolCalls?: JsonRecord[];
 };
-
 export interface RecordingMetricsAccumulator {
   endTurn(): void;
   observe(event: JsonRecord): void;
   snapshot(): RecordingMetrics;
 }
-
 function asRecord(value: unknown): JsonRecord | undefined {
   return typeof value === "object" && value !== null ? (value as JsonRecord) : undefined;
 }
@@ -66,15 +66,40 @@ function extractText(content: unknown): string {
     .join("\n");
 }
 
-export function createPRecordingMetricsAccumulator(): RecordingMetricsAccumulator {
+export function createPRecordingMetricsAccumulator(agent: "p" | "pi" = "p"): RecordingMetricsAccumulator {
   const accumulator = createPRecordingAccumulator(extractText);
+  const responseModels = new Set<string>();
+  const streamErrors = new Set<string>();
   return {
     endTurn: accumulator.endTurn,
-    observe(event) {
-      accumulator.observe(event as BenchmarkRecordingEvent);
+    observe: (event) => {
+      const message = asRecord(event.message);
+      for (const responseModel of [message?.responseModel, message?.role === "assistant" ? message.model : undefined]) {
+        if (typeof responseModel === "string" && responseModel) responseModels.add(responseModel);
+      }
+      if (event.type === "error") {
+        streamErrors.add(textAt(asRecord(event.error)?.message) || textAt(event.message) || "P recording error");
+      }
+      const usage = asRecord(message?.usage);
+      let observedEvent = event;
+      if (usage && Object.hasOwn(usage, "cost")) {
+        const parsed = readMonetaryCost(usage.cost, agent);
+        if (!parsed.ok) {
+          streamErrors.add(parsed.error);
+          const validUsage = { ...usage };
+          delete validUsage.cost;
+          observedEvent = { ...event, message: { ...message, usage: validUsage } };
+        }
+      }
+      accumulator.observe(observedEvent as BenchmarkRecordingEvent);
     },
-    snapshot() {
-      return accumulator.snapshot() as unknown as RecordingMetrics;
+    snapshot: () => {
+      const snapshot = accumulator.snapshot() as unknown as RecordingMetrics;
+      return {
+        ...snapshot,
+        responseModels: [...responseModels],
+        errors: [...snapshot.errors, ...streamErrors],
+      };
     },
   };
 }
@@ -138,8 +163,12 @@ export function parseAgyRecording(events: readonly JsonRecord[]): RecordingMetri
 export function parseKiloRecording(rawEvents: readonly JsonRecord[]): RecordingMetrics {
   const events: JsonRecord[] = [];
   const seenEvents = new Set<string>();
+  const responseModels = new Set<string>();
   for (const event of rawEvents) {
     const part = asRecord(event.part);
+    for (const model of [part?.model, event.model, part?.responseModel, event.responseModel]) {
+      if (typeof model === "string" && model.length > 0) responseModels.add(model);
+    }
     const key = part?.id
       ? `${String(event.type)}:${String(part.id)}:${String(asRecord(part.state)?.status ?? "")}`
       : JSON.stringify(event);
@@ -155,10 +184,16 @@ export function parseKiloRecording(rawEvents: readonly JsonRecord[]): RecordingM
   const assistantTexts: string[] = [];
   const errors: string[] = [];
   const seenToolIds = new Set<unknown>();
+  let responseModel: string | undefined;
   let toolErrors = 0;
+  let totalCost: number | undefined;
   for (const event of events) {
     count(eventTypes, event.type);
     const part = asRecord(event.part);
+    const eventModels = [part?.model, event.model, part?.responseModel, event.responseModel].filter(
+      (model): model is string => typeof model === "string" && model.length > 0,
+    );
+    responseModel = eventModels[0] ?? responseModel;
     if (event.type === "tool_use" && part?.type === "tool" && !seenToolIds.has(part.id)) {
       seenToolIds.add(part.id);
       const toolName = textAt(part.tool) || "unknown";
@@ -172,6 +207,12 @@ export function parseKiloRecording(rawEvents: readonly JsonRecord[]): RecordingM
       usage.cacheRead += numberAt(asRecord(tokens?.cache)?.read);
       usage.cacheWrite += numberAt(asRecord(tokens?.cache)?.write);
       usage.totalTokens += numberAt(tokens?.total);
+      const rawCost = tokens?.cost ?? part?.cost ?? event.cost;
+      if (rawCost !== undefined) {
+        const parsedCost = readMonetaryCost(rawCost, "Kilo");
+        if (!parsedCost.ok) errors.push(parsedCost.error);
+        else totalCost = (totalCost ?? 0) + parsedCost.amount;
+      }
       count(stopReasons, part.reason);
       if (part.reason === "error") errors.push("Kilo step failed");
     }
@@ -180,11 +221,14 @@ export function parseKiloRecording(rawEvents: readonly JsonRecord[]): RecordingM
       errors.push(textAt(asRecord(event.error)?.message) || textAt(event.message) || "Kilo error");
     }
   }
+  if (totalCost !== undefined) usage.cost = { total: totalCost };
   const turns = eventTypes.step_finish ?? 0;
   return {
     eventCount: events.length,
     rawEventCount: rawEvents.length,
     eventTypes,
+    responseModel,
+    responseModels: [...responseModels],
     usage,
     turns,
     assistantMessages: turns,
@@ -197,80 +241,43 @@ export function parseKiloRecording(rawEvents: readonly JsonRecord[]): RecordingM
   };
 }
 
-export function parseCodexRecording(rawEvents: readonly JsonRecord[]): RecordingMetrics {
-  const events = rawEvents.filter((event) => {
-    const type = textAt(event.type);
-    return ("type" in event || "message_type" in event) && !type.startsWith("node:") && !type.startsWith("nodejs");
-  });
-  const eventTypes: Record<string, number> = {};
-  const toolNames: Record<string, number> = {};
-  const stopReasons: Record<string, number> = {};
-  const usage = createUsage();
-  const assistantTexts: string[] = [];
-  const errors: string[] = [];
-  const seenToolIds = new Set<unknown>();
-  let toolErrors = 0;
-  for (const event of events) {
-    const type = event.message_type ?? event.type;
-    count(eventTypes, type);
-    if (type === "tool_use" && event.tool_name) {
-      const id = event.tool_use_id ?? event.id;
-      if (id && !seenToolIds.has(id)) {
-        seenToolIds.add(id);
-        count(toolNames, event.tool_name);
-      }
-    }
-    if (type === "tool_result" && event.status === "error") toolErrors += 1;
-    if (type === "assistant" || type === "text") {
-      if (typeof event.content === "string") assistantTexts.push(event.content);
-      else if (Array.isArray(event.content)) {
-        for (const part of event.content.map(asRecord)) {
-          if (part?.type === "text" && typeof part.text === "string") assistantTexts.push(part.text);
-        }
-      }
-    }
-    if (type === "finish" || type === "turn_end" || type === "step_finish") {
-      const tokenUsage = asRecord(event.usage) ?? asRecord(event.token_usage);
-      if (tokenUsage) {
-        const input = numberAt(tokenUsage.input_tokens ?? tokenUsage.prompt_tokens);
-        const output = numberAt(tokenUsage.output_tokens ?? tokenUsage.completion_tokens);
-        usage.input += input;
-        usage.output += output;
-        usage.totalTokens += numberAt(tokenUsage.total_tokens ?? input + output);
-      }
-      count(stopReasons, event.stop_reason);
-    }
-    if (type === "error" || event.error) {
-      errors.push(textAt(asRecord(event.error)?.message) || textAt(event.message) || "Codex error");
-    }
-  }
-  return {
-    eventCount: events.length,
-    rawEventCount: rawEvents.length,
-    eventTypes,
-    usage,
-    toolCalls: seenToolIds.size,
-    toolErrors,
-    toolNames,
-    stopReasons,
-    errors,
-    finalText: assistantTexts.at(-1) ?? "",
-  };
-}
-
 export function parseRecording(stdout: string, agent: AgentId): RecordingMetrics {
   const events: JsonRecord[] = [];
+  let malformedEvents = 0;
   for (const line of stdout.split(/\r?\n/)) {
     if (!line.trim()) continue;
     try {
       const event = asRecord(JSON.parse(line) as unknown);
       if (event) events.push(event);
     } catch {
-      // Malformed lines remain in the recording but are excluded from metrics.
+      malformedEvents += 1;
     }
   }
-  if (agent === "kilo") return parseKiloRecording(events);
-  if (agent === "codex") return parseCodexRecording(events);
-  if (agent === "agy") return parseAgyRecording(events);
-  return parsePRecording(events, extractText) as unknown as RecordingMetrics;
+  const metrics =
+    agent === "kilo"
+      ? parseKiloRecording(events)
+      : agent === "codex"
+        ? parseCodexRecording(events)
+        : agent === "agy"
+          ? parseAgyRecording(events)
+          : (() => {
+              const accumulator = createPRecordingMetricsAccumulator(agent);
+              for (const event of events) accumulator.observe(event);
+              return accumulator.snapshot();
+            })();
+  if ((agent === "agy" || agent === "codex") && metrics.usage && metrics.usage.cost === undefined) {
+    let totalCost: number | undefined;
+    for (const event of events) {
+      const c = asRecord(asRecord(event.message)?.usage)?.cost ?? event.cost;
+      if (c !== undefined) {
+        const parsed = readMonetaryCost(c, agent);
+        if (parsed.ok) totalCost = (totalCost ?? 0) + parsed.amount;
+      }
+    }
+    if (totalCost !== undefined) metrics.usage.cost = { total: totalCost };
+  }
+  if (malformedEvents > 0) {
+    metrics.errors.push(`Malformed JSONL recording event${malformedEvents === 1 ? "" : "s"}: ${malformedEvents}`);
+  }
+  return metrics;
 }

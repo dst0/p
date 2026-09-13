@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { parseBenchmarkCandidateVersion } from "../harness/candidate-version.ts";
+import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import { createPairedSummary, renderPairedReport } from "./run-report.ts";
 
 type PairedBenchmarkDocument = Parameters<typeof renderPairedReport>[0] & {
@@ -21,6 +22,10 @@ export function writePairedBenchmarkEvidence(output: string, document: PairedBen
       document.runs,
       document.conditions,
     ) ?? null;
-  writeFileSync(join(output, "results.json"), `${JSON.stringify(document, null, 2)}\n`, "utf8");
-  writeFileSync(join(output, "report.md"), renderPairedReport(document), "utf8");
+  const resultsPath = join(output, "results.json");
+  const reportPath = join(output, "report.md");
+  assertCertifiedOutputWritePath(resultsPath);
+  writeFileSync(resultsPath, `${JSON.stringify(document, null, 2)}\n`, "utf8");
+  assertCertifiedOutputWritePath(reportPath);
+  writeFileSync(reportPath, renderPairedReport(document), "utf8");
 }

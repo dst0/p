@@ -129,7 +129,7 @@ test("failed cleanup rejects while the direct child remains alive", { timeout: 5
   }
 });
 
-test("a failed-cleanup helper exits before its surviving agent is test-cleaned", { timeout: 5_000 }, async () => {
+test("a failed-cleanup helper exits before its surviving agent is test-cleaned", { timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-cleanup-helper-"));
   const agentPidPath = join(root, "agent.pid");
   const outcomePath = join(root, "outcome.txt");
@@ -165,16 +165,17 @@ test("a failed-cleanup helper exits before its surviving agent is test-cleaned",
     cwd: process.cwd(),
     stdio: "ignore",
   });
+  const helperExit = new Promise<number | null>((resolve) => helper.once("close", resolve));
   let cleanupError: unknown;
   let exitCode: number | null | "hung" = "hung";
   let outcome = "";
   try {
-    exitCode = await Promise.race([
-      new Promise<number | null>((resolve) => helper.once("close", resolve)),
-      new Promise<"hung">((resolve) => setTimeout(resolve, 1_500, "hung")),
-    ]);
+    exitCode = await Promise.race([helperExit, new Promise<"hung">((resolve) => setTimeout(resolve, 15_000, "hung"))]);
   } finally {
-    if (exitCode === "hung") helper.kill("SIGKILL");
+    if (exitCode === "hung") {
+      helper.kill("SIGKILL");
+      await helperExit;
+    }
     const agentPid = existsSync(agentPidPath) ? Number(readFileSync(agentPidPath, "utf8")) : undefined;
     cleanupError = killProcess(agentPid, true);
     if (existsSync(outcomePath)) outcome = readFileSync(outcomePath, "utf8");

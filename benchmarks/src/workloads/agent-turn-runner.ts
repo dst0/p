@@ -11,7 +11,7 @@ import {
   bindProjectInstructionTurnAuthority,
   createProjectInstructionTurnChallenge,
 } from "../project-instructions/turn-authority.ts";
-import { type AgentCommand, commandForAgent } from "./agent-command.ts";
+import { type AgentCommand, commandForAgent, sandboxedCommandIfNeeded } from "./agent-command.ts";
 import { createAgentTaskCompletionGuard } from "./agent-task-completion.ts";
 import { createPRecordingMetricsAccumulator, type RecordingMetrics } from "./recording-metrics.ts";
 import type { AgentId, RunnerOptions } from "./runner-options.ts";
@@ -96,17 +96,14 @@ type EvidenceInput = Record<string, unknown> & {
   query?: unknown;
 };
 
-type UserTurn = EvidenceInput & {
-  bytes?: number;
-  eventOrdinal?: number;
-  sha256?: string;
-};
+type UserTurn = EvidenceInput & { bytes?: number; eventOrdinal?: number; sha256?: string };
 
 export type CommandRunOptions = {
   collectRawStdout?: boolean;
   stopOnMarker?: string;
   signal?: AbortSignal;
   outputLimits?: Readonly<Record<string, number>>;
+  projectInstructionProofReceipt?: string;
 };
 
 export function allowsCanonicalPAgentEnd(agent: AgentId): boolean {
@@ -188,7 +185,8 @@ export async function runAgentTask(
           : undefined;
       const turnOptions = challenge ? { ...options, projectInstructionProofReceipt: challenge.receiptSha256 } : options;
       if (challenge) proofExpectedTurnCount += 1;
-      const command = commandForAgent(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
+      const rawCommand = commandForAgent(agent, turnOptions, task, configDir, workspace, isContinue, currentPrompt);
+      const command = sandboxedCommandIfNeeded(rawCommand, options, workspace, configDir);
       const turnResult = (await runBenchmarkAgentTurn(command, turnTimeoutMs, recording, metricEventTypes, {
         ...turnOptions,
         allowCanonicalPAgentEnd: allowsCanonicalPAgentEnd(agent),
