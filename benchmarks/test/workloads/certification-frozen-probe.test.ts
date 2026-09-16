@@ -8,54 +8,58 @@ import { benchmarkProjectInstructionProbePath } from "../../src/harness/runtime-
 import { setupCertifiedBenchmark } from "../../src/workloads/certification.ts";
 import { parseRunnerArgs } from "../../src/workloads/runner-options.ts";
 
-test("certified setup executes the project-instruction probe from the frozen candidate", () => {
-  const root = mkdtempSync(join(tmpdir(), "certified-frozen-probe-"));
-  const repo = join(root, "repo");
-  const output = join(root, "output");
-  try {
-    createMinimalBenchmarkRepository(repo);
-    mkdirSync(output);
-    bindCertifiedOutputRoot(output);
-    const pi = createVersionExecutable(join(root, "pi-package"), "pi", "1.0.0");
-    const kilo = createVersionExecutable(join(root, "kilo-package"), "kilo", "2.0.0");
-    const options = parseRunnerArgs([
-      "--certified",
-      "--model",
-      "surface/model",
-      "--expected-resolved-model",
-      "backend/model",
-      "--runs",
-      "3",
-      "--pi-executable",
-      pi,
-      "--pi-version",
-      "1.0.0",
-      "--kilo-executable",
-      kilo,
-      "--kilo-version",
-      "2.0.0",
-      "--project-instructions-file",
-      join(repo, "AGENTS.md"),
-    ]);
-
-    const setup = setupCertifiedBenchmark(options, { p: "0.4.0", pi: "1.0.0", kilo: "2.0.0" }, repo, output);
+test(
+  "certified setup executes the project-instruction probe from the frozen candidate",
+  { skip: process.platform !== "darwin" },
+  () => {
+    const root = mkdtempSync(join(tmpdir(), "certified-frozen-probe-"));
+    const repo = join(root, "repo");
+    const output = join(root, "output");
     try {
-      assert.ok(setup.freeze);
-      const expectedProbe = benchmarkProjectInstructionProbePath(setup.freeze.candidateRuntimePath);
-      assert.equal(options.projectInstructionProbe, expectedProbe);
-      assert.equal(existsSync(expectedProbe), true);
-      assert.equal(options.projectInstructionProbe.startsWith(repo), false);
-      assert.equal(options.piExecutable?.startsWith(setup.freeze.candidateRuntimePath), true);
-      assert.equal(options.kiloExecutable?.startsWith(setup.freeze.candidateRuntimePath), true);
-    } finally {
-      setup.freeze?.dispose();
-    }
-  } finally {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+      createMinimalBenchmarkRepository(repo);
+      mkdirSync(output);
+      bindCertifiedOutputRoot(output);
+      const pi = createVersionExecutable(join(root, "pi-package"), "pi", "1.0.0");
+      const kilo = createVersionExecutable(join(root, "kilo-package"), "kilo", "2.0.0");
+      const options = parseRunnerArgs([
+        "--certified",
+        "--model",
+        "surface/model",
+        "--expected-resolved-model",
+        "backend/model",
+        "--runs",
+        "3",
+        "--pi-executable",
+        pi,
+        "--pi-version",
+        "1.0.0",
+        "--kilo-executable",
+        kilo,
+        "--kilo-version",
+        "2.0.0",
+        "--project-instructions-file",
+        join(repo, "AGENTS.md"),
+      ]);
 
-test("failed certified setup removes generated receipt instructions", () => {
+      const setup = setupCertifiedBenchmark(options, { p: "0.4.0", pi: "1.0.0", kilo: "2.0.0" }, repo, output);
+      try {
+        assert.ok(setup.freeze);
+        const expectedProbe = benchmarkProjectInstructionProbePath(setup.freeze.candidateRuntimePath);
+        assert.equal(options.projectInstructionProbe, expectedProbe);
+        assert.equal(existsSync(expectedProbe), true);
+        assert.equal(options.projectInstructionProbe.startsWith(repo), false);
+        assert.equal(options.piExecutable?.startsWith(setup.freeze.candidateRuntimePath), true);
+        assert.equal(options.kiloExecutable?.startsWith(setup.freeze.candidateRuntimePath), true);
+      } finally {
+        setup.freeze?.dispose();
+      }
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  },
+);
+
+test("failed certified setup removes generated receipt instructions", { skip: process.platform !== "darwin" }, () => {
   const root = mkdtempSync(join(tmpdir(), "certified-setup-cleanup-"));
   const repo = join(root, "repo");
   const output = join(root, "output");

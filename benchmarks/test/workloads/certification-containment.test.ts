@@ -134,6 +134,14 @@ test("assertBenchmarkContainment enforces containment boundaries and fails close
   mkdirSync(subEvalInsideRt);
 
   try {
+    if (!benchmarkSandboxExecutable()) {
+      assert.throws(
+        () => assertBenchmarkContainment({ workspace, runtime }, { repoRoot: repo, evaluatorPath: evaluator }),
+        /Certified benchmark mode requires containment via macOS sandbox-exec/u,
+      );
+      return;
+    }
+
     assert.doesNotThrow(() =>
       assertBenchmarkContainment({ workspace, runtime }, { repoRoot: repo, evaluatorPath: evaluator }),
     );
