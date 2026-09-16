@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
+const tsxImportPath = import.meta.resolve("tsx");
 const CLI_CHILD_KILL_TIMEOUT_MS = 60_000;
 const FULL_SUITE_CHILD_PROCESS_TIMEOUT_MS = 150_000;
 const tempDirs: string[] = [];
@@ -63,7 +64,7 @@ async function runCli(
 
   let stderr = "";
   const code = await new Promise<number | null>((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...resolvedArgs], {
+    const child = spawn(process.execPath, ["--import", tsxImportPath, cliPath, ...resolvedArgs], {
       cwd: dirs.projectDir,
       env: {
         ...process.env,

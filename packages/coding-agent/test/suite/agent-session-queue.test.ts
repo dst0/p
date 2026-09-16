@@ -5,6 +5,15 @@ import { Type } from "typebox";
 import { afterEach, describe, expect, it } from "vitest";
 import { createHarness, getAssistantTexts, getMessageText, getUserTexts, type Harness } from "./harness.ts";
 
+function expectQueuedTemporalContext(harness: Harness): void {
+  const contexts = harness.session.messages.filter(
+    (msg) => msg.role === "custom" && msg.customType === "runtime_context",
+  );
+  expect(contexts).toMatchObject(
+    Array(3).fill({ display: false, content: expect.stringContaining("<temporal_context>") }),
+  );
+}
+
 async function createWaitingHarness(
   options: {
     tools?: AgentTool[];
@@ -83,9 +92,7 @@ describe("AgentSession queue characterization", () => {
       ],
     });
     harnesses.push(harness);
-
     await harness.session.prompt("/testcmd hello world");
-
     expect(commandRuns).toEqual(["hello world"]);
     expect(harness.getPendingResponseCount()).toBe(0);
     expect(harness.session.messages).toEqual([]);
@@ -115,11 +122,9 @@ describe("AgentSession queue characterization", () => {
 
     await waitForToolStart;
     await new Promise((resolve) => setTimeout(resolve, 0));
-
     extensionApi?.sendUserMessage("steer now", { deliverAs: "steer" });
     releaseToolExecution();
     await promptPromise;
-
     expect(getUserTexts(harness)).toEqual(["start", "steer now"]);
     expect(getAssistantTexts(harness)).toContain("saw steer");
   });
@@ -151,7 +156,6 @@ describe("AgentSession queue characterization", () => {
     await harness.session.followUp("after current run");
     releaseToolExecution();
     await promptPromise;
-
     expect(getUserTexts(harness)).toEqual(["start", "after current run"]);
     expect(assistantSeenBeforeFollowUp).toContain("");
     expect(getAssistantTexts(harness)).toContain("follow-up response");
@@ -211,7 +215,6 @@ describe("AgentSession queue characterization", () => {
     harnesses.push(harness);
     harness.session.setSteeringMode("all");
     let batchedUserMessages: string[] = [];
-
     harness.setResponses([
       fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
       (context) => {
@@ -221,16 +224,16 @@ describe("AgentSession queue characterization", () => {
         return fauxAssistantMessage("batched steer response");
       },
     ]);
-
     await waitForToolStart;
     await harness.session.steer("steer 1");
     await harness.session.steer("steer 2");
     releaseToolExecution();
     await promptPromise;
-
+    expectQueuedTemporalContext(harness);
+    const temporal = expect.stringContaining("<temporal_context>");
     expect(batchedUserMessages[0]).toBe("start");
-    expect(batchedUserMessages[1]).toContain("<turn_checkpoint>");
-    expect(batchedUserMessages.slice(2)).toEqual(["steer 1", "steer 2"]);
+    expect(batchedUserMessages.slice(1, 3)).toEqual([temporal, expect.stringContaining("<turn_checkpoint>")]);
+    expect(batchedUserMessages.slice(3)).toEqual(["steer 1", temporal, "steer 2", temporal]);
     expect(getAssistantTexts(harness)).toEqual(["", "batched steer response"]);
   });
 
@@ -240,7 +243,6 @@ describe("AgentSession queue characterization", () => {
     harnesses.push(harness);
     harness.session.setFollowUpMode("all");
     let batchedUserMessages: string[] = [];
-
     harness.setResponses([
       fauxAssistantMessage(fauxToolCall("wait", {}), { stopReason: "toolUse" }),
       fauxAssistantMessage("original turn complete"),
@@ -251,16 +253,16 @@ describe("AgentSession queue characterization", () => {
         return fauxAssistantMessage("batched follow-up response");
       },
     ]);
-
     await waitForToolStart;
     await harness.session.followUp("follow-up 1");
     await harness.session.followUp("follow-up 2");
     releaseToolExecution();
     await promptPromise;
-
+    expectQueuedTemporalContext(harness);
+    const temporal = expect.stringContaining("<temporal_context>");
     expect(batchedUserMessages[0]).toBe("start");
-    expect(batchedUserMessages[1]).toContain("<turn_checkpoint>");
-    expect(batchedUserMessages.slice(2)).toEqual(["follow-up 1", "follow-up 2"]);
+    expect(batchedUserMessages.slice(1, 3)).toEqual([temporal, expect.stringContaining("<turn_checkpoint>")]);
+    expect(batchedUserMessages.slice(3)).toEqual(["follow-up 1", temporal, "follow-up 2", temporal]);
     expect(getAssistantTexts(harness)).toEqual(["", "original turn complete", "batched follow-up response"]);
   });
 
@@ -335,12 +337,10 @@ describe("AgentSession queue characterization", () => {
     const harness = await createHarness({ completionMode: "implicit" });
     harnesses.push(harness);
     let sawCustomMessage = false;
-
     await harness.session.sendCustomMessage(
       { customType: "next-turn", content: "carry this", display: true, details: {} },
       { deliverAs: "nextTurn" },
     );
-
     harness.setResponses([
       (context) => {
         sawCustomMessage = context.messages.some(
@@ -352,11 +352,11 @@ describe("AgentSession queue characterization", () => {
         return fauxAssistantMessage("done");
       },
     ]);
-
     await harness.session.prompt("normal prompt");
-
     expect(sawCustomMessage).toBe(true);
-    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "custom", "assistant"]);
+    expect(harness.session.messages[1]).toMatchObject({ customType: "next-turn", display: true });
+    expect(harness.session.messages[2]).toMatchObject({ customType: "runtime_context", display: false });
   });
 
   it("updates pendingMessageCount and removes queued text before message_start is emitted", async () => {

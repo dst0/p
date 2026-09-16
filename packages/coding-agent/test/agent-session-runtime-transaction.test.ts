@@ -11,6 +11,7 @@ import {
   createAgentSessionServices,
 } from "../src/core/agent-session-runtime.ts";
 import { AuthStorage } from "../src/core/auth-storage.ts";
+import type { ExtensionAPI } from "../src/core/extensions/types.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 
 describe("AgentSessionRuntime replacement transaction", () => {
@@ -27,6 +28,7 @@ describe("AgentSessionRuntime replacement transaction", () => {
     const authStorage = AuthStorage.inMemory();
     authStorage.setRuntimeApiKey(faux.getModel().provider, "faux-key");
     const createdSessions: AgentSession[] = [];
+    const capturedApis: ExtensionAPI[] = [];
     const activeExtensionInstances = new Set<number>();
     const lifecycleEvents: string[] = [];
     let extensionInstance = 0;
@@ -38,6 +40,7 @@ describe("AgentSessionRuntime replacement transaction", () => {
         resourceLoaderOptions: {
           extensionFactories: [
             (api) => {
+              capturedApis.push(api);
               const instance = ++extensionInstance;
               api.on("session_start", () => {
                 lifecycleEvents.push(`start:${instance}`);
@@ -80,7 +83,7 @@ describe("AgentSessionRuntime replacement transaction", () => {
       faux.unregister();
       rmSync(root, { recursive: true, force: true });
     });
-    return { activeExtensionInstances, createdSessions, lifecycleEvents, runtimeHost };
+    return { activeExtensionInstances, capturedApis, createdSessions, lifecycleEvents, runtimeHost };
   }
 
   async function expectOldSessionUsable(
@@ -153,8 +156,12 @@ describe("AgentSessionRuntime replacement transaction", () => {
   });
 
   it("rolls back and rebinds the old runtime when withSession rejects", async () => {
-    const { activeExtensionInstances, createdSessions, lifecycleEvents, runtimeHost } = await createRuntimeHost();
+    const { activeExtensionInstances, capturedApis, createdSessions, lifecycleEvents, runtimeHost } =
+      await createRuntimeHost();
     const old = runtimeHost.session;
+    const capturedApi = capturedApis[0]!;
+    capturedApi.setSessionName("original");
+    const capturedOldContext = old.extensionRunner.createContext();
     lifecycleEvents.length = 0;
     let reboundOld = 0;
     runtimeHost.setRebindSession(async (session) => {
@@ -165,6 +172,8 @@ describe("AgentSessionRuntime replacement transaction", () => {
     await expect(
       runtimeHost.newSession({
         withSession: async () => {
+          expect(() => capturedOldContext.sessionManager.getSessionFile()).toThrow(/temporarily unavailable/i);
+          expect(() => capturedApi.setSessionName("provisional write")).toThrow(/temporarily unavailable/i);
           throw new Error("withSession rejected");
         },
       }),
@@ -173,7 +182,45 @@ describe("AgentSessionRuntime replacement transaction", () => {
     expect([...activeExtensionInstances]).toEqual([1]);
     expect(lifecycleEvents).toEqual(["shutdown:1", "start:2", "shutdown:2", "start:1"]);
     expect(reboundOld).toBe(1);
+    expect(() => capturedOldContext.sessionManager.getSessionFile()).not.toThrow();
+    expect(old.sessionManager.getSessionName()).toBe("original");
+    capturedApi.setSessionName("restored write");
+    expect(old.sessionManager.getSessionName()).toBe("restored write");
+    expect(createdSessions.at(-1)!.sessionManager.getSessionName()).not.toBe("restored write");
     await expectOldSessionUsable(runtimeHost, old);
+  });
+
+  it("preserves both errors and restores ownership when rollback rebind fails", async () => {
+    const { activeExtensionInstances, capturedApis, createdSessions, lifecycleEvents, runtimeHost } =
+      await createRuntimeHost();
+    const old = runtimeHost.session;
+    const capturedContext = old.extensionRunner.createContext();
+    const replacementError = new Error("replacement rejected");
+    const rollbackError = new Error("rollback rebind rejected");
+    lifecycleEvents.length = 0;
+    runtimeHost.setRebindSession(async (session) => {
+      if (session === old) throw rollbackError;
+      await session.bindExtensions({});
+    });
+
+    const result = runtimeHost.newSession({
+      withSession: async () => {
+        throw replacementError;
+      },
+    });
+    await expect(result).rejects.toBeInstanceOf(AggregateError);
+    await expect(result).rejects.toMatchObject({
+      message: "Session replacement and host rollback both failed",
+      errors: [replacementError, rollbackError],
+    });
+    expect(runtimeHost.session).toBe(old);
+    expectReplacementDisposed(createdSessions);
+    expect([...activeExtensionInstances]).toEqual([]);
+    expect(lifecycleEvents).toEqual(["shutdown:1", "start:2", "shutdown:2"]);
+    expect(() => capturedContext.sessionManager.getSessionFile()).not.toThrow();
+    capturedApis[0]!.setSessionName("ownership restored");
+    expect(old.sessionManager.getSessionName()).toBe("ownership restored");
+    expect(createdSessions.at(-1)!.sessionManager.getSessionName()).not.toBe("ownership restored");
   });
 
   it("restarts old extension bindings after withSession rejects without a host rebind callback", async () => {

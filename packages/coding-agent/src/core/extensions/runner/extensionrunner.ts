@@ -94,6 +94,10 @@ export class ExtensionRunner {
 
   public staleMessage: string | undefined;
 
+  public suspendedMessage: string | undefined;
+
+  public suspendedRuntimeAssertActive: (() => void) | undefined;
+
   constructor(
     extensions: Extension[],
     runtime: ExtensionRuntime,

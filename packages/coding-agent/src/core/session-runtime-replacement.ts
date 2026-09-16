@@ -25,6 +25,7 @@ interface SessionRuntimeReplacementOptions {
 /** Prepare host callbacks before committing ownership and disposing the previous session. */
 export async function replaceSessionRuntimeTransaction(options: SessionRuntimeReplacementOptions): Promise<void> {
   let hostInvalidationStarted = false;
+  let previousSuspended = false;
   let replacementApplied = false;
   try {
     await options.prepare?.(options.replacement.session);
@@ -35,6 +36,8 @@ export async function replaceSessionRuntimeTransaction(options: SessionRuntimeRe
     });
     hostInvalidationStarted = true;
     options.beforeSessionInvalidate?.();
+    options.previous.session.extensionRunner.suspend();
+    previousSuspended = true;
     options.apply(options.replacement);
     replacementApplied = true;
     await options.rebind?.(options.replacement.session);
@@ -54,6 +57,10 @@ export async function replaceSessionRuntimeTransaction(options: SessionRuntimeRe
       }
     }
     options.replacement.session.dispose();
+    if (previousSuspended) {
+      options.previous.session.extensionRunner.resume();
+      previousSuspended = false;
+    }
     if (hostInvalidationStarted) {
       try {
         if (options.rebind) {
