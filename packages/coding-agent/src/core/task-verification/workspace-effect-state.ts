@@ -18,7 +18,12 @@ export const WORKSPACE_EFFECT_SKIPPED_SEGMENTS: readonly string[] = Object.freez
   "node_modules",
   "target",
 ]);
-const SKIPPED_SEGMENTS = new Set(WORKSPACE_EFFECT_SKIPPED_SEGMENTS);
+// Pre-compiled regex avoids array allocations from .split('/') on every path check
+const SKIPPED_SEGMENTS_PATTERN = new RegExp(
+  `(?:^|\\/)(?:${WORKSPACE_EFFECT_SKIPPED_SEGMENTS.map((segment) =>
+    segment.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"),
+  ).join("|")})(?:\\/|$)`,
+);
 
 export function normalizeWorkspaceEffectPath(value: unknown): string | undefined {
   const normalized = normalizeWorkspaceEffectSyntax(value);
@@ -28,7 +33,8 @@ export function normalizeWorkspaceEffectPath(value: unknown): string | undefined
 
 export function isSkippedWorkspaceEffectPath(value: unknown): boolean {
   const normalized = normalizeWorkspaceEffectSyntax(value);
-  return normalized?.split("/").some((segment) => SKIPPED_SEGMENTS.has(segment)) ?? false;
+  if (!normalized) return false;
+  return SKIPPED_SEGMENTS_PATTERN.test(normalized);
 }
 
 function normalizeWorkspaceEffectSyntax(value: unknown): string | undefined {
