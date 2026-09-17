@@ -131,39 +131,17 @@ export function getShellEnv(): NodeJS.ProcessEnv {
  * - Unicode Format characters (crash string-width due to a bug)
  * - Characters with undefined code points
  */
+// Optimization: Pre-compiled regex to remove control characters and lone surrogates.
+// This avoids expensive array allocations and iterations via Array.from(str).filter(...)
+// in high-frequency streams (see .jules/bolt.md).
+// Matches 0x00-0x1F (except \t \n \r), 0x7F, 0x80-0x9F, and Unicode format chars (0xFFF9-0xFFFB)
+// eslint-disable-next-line no-control-regex
+const SANITIZE_CONTROL_REGEX = /[\x00-\x08\x0b-\x0c\x0e-\x1f\x7f\x80-\x9f\ufff9-\ufffb]/g;
+// Matches lone surrogates without splitting valid surrogate pairs
+const SANITIZE_LONE_SURROGATES_REGEX = /(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])/g;
+
 export function sanitizeBinaryOutput(str: string): string {
-  // Use Array.from to properly iterate over code points (not code units)
-  // This handles surrogate pairs correctly and catches edge cases where
-  // codePointAt() might return undefined
-  return Array.from(str)
-    .filter((char) => {
-      // Filter out characters that cause string-width to crash
-      // This includes:
-      // - Unicode format characters
-      // - Lone surrogates (already filtered by Array.from)
-      // - Control chars except \t \n \r
-      // - Characters with undefined code points
-
-      const code = char.codePointAt(0);
-
-      // Skip if code point is undefined (edge case with invalid strings)
-      if (code === undefined) return false;
-
-      // Allow tab, newline, carriage return
-      if (code === 0x09 || code === 0x0a || code === 0x0d) return true;
-
-      // Filter out control characters (0x00-0x1F except \t \n \r, 0x7F, 0x80-0x9F)
-      if (code <= 0x1f || code === 0x7f || (code >= 0x80 && code <= 0x9f)) return false;
-
-      // Filter out lone surrogates (0xD800-0xDFFF)
-      if (code >= 0xd800 && code <= 0xdfff) return false;
-
-      // Filter out Unicode format characters
-      if (code >= 0xfff9 && code <= 0xfffb) return false;
-
-      return true;
-    })
-    .join("");
+  return str.replace(SANITIZE_CONTROL_REGEX, "").replace(SANITIZE_LONE_SURROGATES_REGEX, "");
 }
 
 /**
