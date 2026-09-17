@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { resolveStartupChoices } from "../src/cli/run-budget-choice.ts";
+import { resolveStartupBudgetPolicies, resolveStartupChoices } from "../src/cli/run-budget-choice.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
 
 const ui = vi.hoisted(() => ({ required: vi.fn(), select: vi.fn(), input: vi.fn(), setup: vi.fn() }));
@@ -32,9 +32,8 @@ describe("budget-first startup sequencing", () => {
       });
     });
     expect(await resolveStartupChoices(settings, "interactive")).toEqual({
-      mode: "limited",
-      unit: "tokens",
-      limit: 1200,
+      current: { mode: "limited", unit: "tokens", limit: 1200 },
+      defaultPolicy: { mode: "limited", unit: "tokens", limit: 1200 },
     });
     expect(ui.required).toHaveBeenCalledOnce();
     expect(ui.setup).toHaveBeenCalledOnce();
@@ -51,7 +50,8 @@ describe("budget-first startup sequencing", () => {
     await resolveStartupChoices(settings, "interactive");
     ui.select.mockClear();
     expect(await resolveStartupChoices(SettingsManager.fromStorage(settings.storage), "interactive")).toEqual({
-      mode: "unlimited",
+      current: { mode: "unlimited" },
+      defaultPolicy: { mode: "unlimited" },
     });
     expect(ui.select).not.toHaveBeenCalled();
     expect(ui.setup).not.toHaveBeenCalled();
@@ -81,10 +81,35 @@ describe("budget-first startup sequencing", () => {
 
   it("never opens terminal UI for explicit automation policies", async () => {
     expect(await resolveStartupChoices(SettingsManager.inMemory(), "rpc", { mode: "unlimited" })).toEqual({
-      mode: "unlimited",
+      current: { mode: "unlimited" },
+      defaultPolicy: undefined,
     });
     expect(ui.required).not.toHaveBeenCalled();
     expect(ui.select).not.toHaveBeenCalled();
     expect(ui.setup).not.toHaveBeenCalled();
+  });
+
+  it("keeps resumed and explicit policies local to the initial task", async () => {
+    const settings = SettingsManager.inMemory();
+    await settings.setRunBudgetPolicy({ mode: "limited", unit: "requests", limit: 1 });
+
+    await expect(
+      resolveStartupBudgetPolicies(settings, "interactive", undefined, { mode: "unlimited" }),
+    ).resolves.toEqual({
+      current: { mode: "unlimited" },
+      defaultPolicy: { mode: "limited", unit: "requests", limit: 1 },
+    });
+    await expect(
+      resolveStartupBudgetPolicies(settings, "print", { mode: "limited", unit: "tokens", limit: 500 }),
+    ).resolves.toEqual({
+      current: { mode: "limited", unit: "tokens", limit: 500 },
+      defaultPolicy: { mode: "limited", unit: "requests", limit: 1 },
+    });
+  });
+
+  it("does not invent a replacement default for a resumed task", async () => {
+    await expect(
+      resolveStartupBudgetPolicies(SettingsManager.inMemory(), "interactive", undefined, { mode: "unlimited" }),
+    ).resolves.toEqual({ current: { mode: "unlimited" }, defaultPolicy: undefined });
   });
 });

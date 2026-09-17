@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Harden plan-mode read-only tools and roadmap delivery, and run subagents with source-bound trust, inherited runtime settings, and reliable process cleanup."
+}

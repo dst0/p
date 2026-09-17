@@ -4,13 +4,15 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { Model } from "@dst0/p-ai";
-import { buildProjectInstructionConstraints } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-constraints.js";
-import { buildProjectInstructionCompilerModelIdentity } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
-import { materializeProjectInstructionCompilerResult } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-validation.js";
-import { splitInstructionSources } from "../../../packages/coding-agent/dist/core/project-instructions/content.js";
-import { PROJECT_INSTRUCTION_COMPILER_VERSION } from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
-import { DEFAULT_MODEL_COMPILER_CONTRACT_REVISION } from "../../../packages/coding-agent/dist/core/project-instructions/session-controller.js";
 import type { ProjectInstructionClassifications } from "../../../packages/coding-agent/src/core/project-instructions/types.ts";
+import {
+  buildProjectInstructionCompilerModelIdentity,
+  buildProjectInstructionConstraints,
+  DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+  materializeProjectInstructionCompilerResult,
+  PROJECT_INSTRUCTION_COMPILER_VERSION,
+  splitInstructionSources,
+} from "../../src/project-instructions/coding-agent-runtime-bindings.ts";
 import { createCertifiedSeedRecord, createSeedCertificate } from "../../src/project-instructions/seed-record.ts";
 
 const helper = fileURLToPath(new URL("../../src/project-instructions/seed.ts", import.meta.url));

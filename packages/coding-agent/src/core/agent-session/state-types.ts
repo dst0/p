@@ -59,6 +59,7 @@ export interface RuntimeContextPrompts {
   repoMapPrompt?: string;
   subagentProfilesPrompt?: string;
   subagentDigestPrompt?: string;
+  temporalContextPrompt?: string;
   combinedPrompt?: string;
   turnContextPrompt?: string;
 }

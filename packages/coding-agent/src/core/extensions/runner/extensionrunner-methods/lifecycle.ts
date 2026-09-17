@@ -38,6 +38,7 @@ export function do_bindCore(
 
   // Context actions (required)
   self.getModel = contextActions.getModel;
+  self.getRunBudgetPolicyFn = contextActions.getRunBudgetPolicy;
   self.isIdleFn = contextActions.isIdle;
   self.isProjectTrustedFn = contextActions.isProjectTrusted;
   self.getSignalFn = contextActions.getSignal;

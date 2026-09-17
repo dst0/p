@@ -2,6 +2,7 @@ import type { Model } from "@dst0/p-ai";
 import { type DelegatedMethods, installDelegatedMethods } from "../../../utils/install-delegated-methods.ts";
 import type { ResourceDiagnostic } from "../../diagnostics.ts";
 import type { ModelRegistry } from "../../model-registry.ts";
+import type { RunBudgetPolicy } from "../../run-budget-policy.ts";
 import type { SessionManager } from "../../session-manager.ts";
 import type { BuildSystemPromptOptions } from "../../system-prompt.ts";
 import type {
@@ -51,6 +52,10 @@ export class ExtensionRunner {
 
   public getModel: () => Model<any> | undefined = () => undefined;
 
+  public getRunBudgetPolicyFn: () => RunBudgetPolicy = () => {
+    throw new Error("Extension runtime is not bound to a task budget");
+  };
+
   public isIdleFn: () => boolean = () => true;
 
   public isProjectTrustedFn: () => boolean = () => true;
@@ -88,6 +93,10 @@ export class ExtensionRunner {
   public commandDiagnostics: ResourceDiagnostic[] = [];
 
   public staleMessage: string | undefined;
+
+  public suspendedMessage: string | undefined;
+
+  public suspendedRuntimeAssertActive: (() => void) | undefined;
 
   constructor(
     extensions: Extension[],

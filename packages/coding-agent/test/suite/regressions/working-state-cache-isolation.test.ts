@@ -262,15 +262,15 @@ describe("working state cache isolation", () => {
     expect(prompts).toHaveLength(2);
     const firstPrompt = prompts[0];
     const secondPrompt = prompts[1];
-    expect(firstPrompt?.roles).toEqual(["user", "user"]);
+    expect(firstPrompt?.roles).toEqual(["user", "user", "user"]);
     expect(firstPrompt?.texts[0]).toBe("hello");
-    expect(firstPrompt?.texts[1]).toContain("<working_state>");
+    expect(firstPrompt?.texts[2]).toContain("<working_state>");
     expect(secondPrompt?.systemPrompt).toBe(firstPrompt?.systemPrompt);
-    expect(secondPrompt?.roles).toEqual(["user", "user", "assistant", "user", "user"]);
-    expect(secondPrompt?.texts.slice(0, 2)).toEqual(firstPrompt?.texts);
-    expect(secondPrompt?.texts[2]).toBe("r1");
-    expect(secondPrompt?.texts[3]).toBe("world");
-    expect(secondPrompt?.texts[4]).toContain("<working_state>");
+    expect(secondPrompt?.roles).toEqual(["user", "user", "user", "assistant", "user", "user", "user"]);
+    expect(secondPrompt?.texts.slice(0, 3)).toEqual(firstPrompt?.texts);
+    expect(secondPrompt?.texts.slice(3, 5)).toEqual(["r1", "world"]);
+    expect(secondPrompt?.texts[5]).toContain("<temporal_context>");
+    expect(secondPrompt?.texts[6]).toContain("<working_state>");
     expect(
       firstPrompt && secondPrompt
         ? serializeCapturedPrompt(secondPrompt).startsWith(serializeCapturedPrompt(firstPrompt))
@@ -330,15 +330,15 @@ describe("working state cache isolation", () => {
     expect(prompts).toHaveLength(2);
     const firstPrompt = prompts[0];
     const secondPrompt = prompts[1];
-    expect(firstPrompt?.roles).toEqual(["user", "user"]);
+    expect(firstPrompt?.roles).toEqual(["user", "user", "user"]);
     expect(firstPrompt?.texts[0]).toBe("hello");
-    expect(firstPrompt?.texts[1]).toContain("<working_state>");
+    expect(firstPrompt?.texts[2]).toContain("<working_state>");
     expect(secondPrompt?.systemPrompt).toBe(firstPrompt?.systemPrompt);
-    expect(secondPrompt?.roles).toEqual(["user", "user", "assistant", "user", "user"]);
-    expect(secondPrompt?.texts.slice(0, 2)).toEqual(firstPrompt?.texts);
-    expect(secondPrompt?.texts[2]).toBe("r1");
-    expect(secondPrompt?.texts[3]).toBe("world");
-    expect(secondPrompt?.texts[4]).toContain("<working_state>");
+    expect(secondPrompt?.roles).toEqual(["user", "user", "user", "assistant", "user", "user", "user"]);
+    expect(secondPrompt?.texts.slice(0, 3)).toEqual(firstPrompt?.texts);
+    expect(secondPrompt?.texts.slice(3, 5)).toEqual(["r1", "world"]);
+    expect(secondPrompt?.texts[5]).toContain("<temporal_context>");
+    expect(secondPrompt?.texts[6]).toContain("<working_state>");
     expect(
       firstPrompt && secondPrompt
         ? serializeCapturedPrompt(secondPrompt).startsWith(serializeCapturedPrompt(firstPrompt))
@@ -495,15 +495,15 @@ describe("working state cache isolation", () => {
 
     await session.prompt("after compaction");
     await session.agent.waitForIdle();
-
     expect(prompts).toHaveLength(1);
     const prompt = prompts[0];
-    expect(prompt?.roles).toEqual(["user", "assistant", "user", "user", "user"]);
+    expect(prompt?.roles).toEqual(["user", "assistant", "user", "user", "user", "user"]);
     expect(prompt?.roles.at(-1)).toBe("user");
     expect(prompt?.texts[0]).toBe("pre-compaction question");
     expect(prompt?.texts[1]).toBe("pre-compaction answer");
     expect(prompt?.texts[2]).toContain("compacted summary");
     expect(prompt?.texts[3]).toBe("after compaction");
-    expect(prompt?.texts[4]).toContain("<working_state>");
+    expect(prompt?.texts[4]).toContain("<temporal_context>");
+    expect(prompt?.texts[5]).toContain("<working_state>");
   }, 30000);
 });

@@ -69,15 +69,42 @@ export function do_invalidate(
   message = "This extension ctx is stale after session replacement or reload. Do not use a captured p or command ctx after ctx.newSession(), ctx.fork(), ctx.switchSession(), or ctx.reload(). For newSession, fork, and switchSession, move post-replacement work into withSession and use the ctx passed to withSession. For reload, do not use the old ctx after await ctx.reload().",
 ): void {
   if (!self.staleMessage) {
+    if (self.suspendedRuntimeAssertActive) {
+      self.runtime.assertActive = self.suspendedRuntimeAssertActive;
+    }
+    self.suspendedMessage = undefined;
+    self.suspendedRuntimeAssertActive = undefined;
     self.staleMessage = message;
     self.runtime.invalidate(message);
   }
 }
 
 export function do_assertActive(self: ExtensionRunner): void {
-  if (self.staleMessage) {
-    throw new Error(self.staleMessage);
+  const inactiveMessage = self.staleMessage ?? self.suspendedMessage;
+  if (inactiveMessage) {
+    throw new Error(inactiveMessage);
   }
+}
+
+export function do_suspend(
+  self: ExtensionRunner,
+  message = "This extension ctx is temporarily unavailable during session replacement.",
+): void {
+  if (self.staleMessage || self.suspendedMessage) return;
+  self.suspendedMessage = message;
+  self.suspendedRuntimeAssertActive = self.runtime.assertActive;
+  self.runtime.assertActive = () => {
+    throw new Error(message);
+  };
+}
+
+export function do_resume(self: ExtensionRunner): void {
+  if (!self.suspendedMessage) return;
+  if (!self.staleMessage && self.suspendedRuntimeAssertActive) {
+    self.runtime.assertActive = self.suspendedRuntimeAssertActive;
+  }
+  self.suspendedMessage = undefined;
+  self.suspendedRuntimeAssertActive = undefined;
 }
 
 export function do_onError(self: ExtensionRunner, listener: ExtensionErrorListener): () => void {

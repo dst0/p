@@ -34,6 +34,11 @@ export function do_createContext(self: ExtensionRunner): ExtensionContext {
       runner.assertActive();
       return getModel();
     },
+    get runBudgetPolicy() {
+      runner.assertActive();
+      const policy = runner.getRunBudgetPolicyFn();
+      return policy.mode === "unlimited" ? ({ mode: "unlimited" } as const) : { ...policy };
+    },
     isIdle: () => {
       runner.assertActive();
       return runner.isIdleFn();

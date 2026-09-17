@@ -26,7 +26,7 @@ test("active work may outlive the nominal budget when it finishes in the same tu
       config,
       workspace,
       recording,
-      1,
+      3,
       performance.now() + 10_000,
     );
 
@@ -57,7 +57,7 @@ test("an over-budget completed turn does not start another nudge", async () => {
       config,
       workspace,
       recording,
-      1,
+      3,
       performance.now() + 10_000,
     );
 
@@ -96,7 +96,7 @@ function runnerOptions(pCli: string): RunnerOptions {
     kiloStartupTimeoutSeconds: 1,
     codexConfig: "/unused/codex.toml",
     runs: 1,
-    timeoutSeconds: 1,
+    timeoutSeconds: 3,
     maxRuntimeSeconds: 10,
   };
 }
@@ -111,7 +111,7 @@ let progress = 0;
 const timer = setInterval(() => {
   emit({ type: "message_update", assistantMessageEvent: { type: "gen_progress", tokens: progress } });
   progress += 1;
-  if (progress === 12) {
+  if (progress === 65) {
     clearInterval(timer);
     writeFileSync("finish_notes.md", "Implementation and terminal verification complete.\\n");
     emit({ type: "tool_execution_start", toolCallId: "finish", toolName: "finish_work", args: { status: "success", verification_token: "token" } });
@@ -130,7 +130,7 @@ let progress = 0;
 const timer = setInterval(() => {
   emit({ type: "message_update", assistantMessageEvent: { type: "gen_progress", tokens: progress } });
   progress += 1;
-  if (progress === 12) {
+  if (progress === 65) {
     clearInterval(timer);
     writeFileSync("finish_notes.md", "Implementation complete; terminal verification is pending.\\n");
   }

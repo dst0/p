@@ -1,0 +1,22 @@
+# 2026-09-08 — Session replacement budget preflight is transactional
+
+- **Status:** Resolved
+- **Task/context:** Enforce a saved budget default when interactive commands create, fork, or switch tasks.
+- **Unexpected observation or failure:** Replacement initially disposed the active runtime before construction; moving only factory creation earlier still left setup, host rebind, and `withSession` callbacks able to reject after disposal.
+- **Evidence:** Behavioral regressions reject factory validation, setup, rebind, and `withSession`, then prompt the original real runtime successfully and verify extension lifecycle resources return to the original instance only.
+- **Approaches tried:**
+  - **Attempt:** Tear down the active task before invoking the runtime factory.
+    - **Outcome:** Did not work
+    - **Why:** Validation errors occur during factory construction, after the irreversible teardown.
+  - **Attempt:** Construct and validate the replacement first, then emit shutdown and dispose the old runtime only after preparation succeeds.
+    - **Outcome:** Incomplete
+    - **Why:** Public setup and host callbacks still ran after the irreversible commit.
+  - **Attempt:** Prepare setup first, delay old-session disposal until rebind and `withSession` succeed, restore/rebind the old binding on rejection, and shut down a partially started replacement before disposal.
+    - **Outcome:** Worked
+    - **Why:** The prepared replacement is the only runtime disposed on a failed transaction.
+- **Root cause:** Session replacement treated teardown and construction as sequential cleanup rather than a prepare-then-commit transaction.
+- **Resolution:** New, fork, switch, and import share a prepare/apply/rollback helper. Setup runs before host invalidation; rebind and `withSession` run against a provisional binding; rollback shuts down a replacement only when extension startup actually began, disposes it, and restarts the old extension binding through the host callback or the session's retained bindings; only full success disposes the old session.
+- **Verification:** Lifecycle tests cover budgetless new/fork/switch and extension-enabled real-runtime rejection from setup, pre-start rebind, partially completed rebind, and `withSession` with and without a host rebind callback, including ordered lifecycle events, balanced resources, rollback rebind, replacement disposal, and a successful old-session prompt.
+- **Prevention/follow-up:** Validate all replacement prerequisites before invalidation; regression tests must prove the previous runtime still performs real work after rejection.
+- **Reusable learning:** Prepare session replacements before teardown so fail-closed validation does not destroy the last usable task.
+- **References:** `packages/coding-agent/src/core/agent-session-runtime.ts`, `packages/coding-agent/test/agent-session-runtime-events.test.ts`

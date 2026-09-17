@@ -1,8 +1,13 @@
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { hasTrustRequiringProjectResources, ProjectTrustStore } from "../src/core/trust-manager.ts";
+import {
+  getProjectTrustResourceRoot,
+  getProjectTrustResourceRoots,
+  hasTrustRequiringProjectResources,
+  ProjectTrustStore,
+} from "../src/core/trust-manager.ts";
 
 describe("ProjectTrustStore", () => {
   let tempDir: string;
@@ -63,5 +68,26 @@ describe("ProjectTrustStore", () => {
         process.env.HOME = originalHome;
       }
     }
+  });
+
+  it("binds ancestor project agents to their actual discovery root", () => {
+    const projectRoot = join(tempDir, "ancestor-project");
+    const nestedCwd = join(projectRoot, "packages", "feature");
+    mkdirSync(join(tempDir, ".p", "agents"), { recursive: true });
+    mkdirSync(join(projectRoot, ".p", "agents"), { recursive: true });
+    mkdirSync(nestedCwd, { recursive: true });
+
+    expect(hasTrustRequiringProjectResources(nestedCwd)).toBe(true);
+    expect(getProjectTrustResourceRoot(nestedCwd)).toBe(realpathSync(projectRoot));
+  });
+
+  it("reports every independently trusted resource root from nearest to farthest", () => {
+    const projectRoot = join(tempDir, "mixed-project");
+    const nestedCwd = join(projectRoot, "packages", "feature");
+    mkdirSync(join(projectRoot, ".p", "agents"), { recursive: true });
+    mkdirSync(join(nestedCwd, ".p"), { recursive: true });
+    writeFileSync(join(nestedCwd, ".p", "settings.json"), "{}");
+
+    expect(getProjectTrustResourceRoots(nestedCwd)).toEqual([realpathSync(nestedCwd), realpathSync(projectRoot)]);
   });
 });

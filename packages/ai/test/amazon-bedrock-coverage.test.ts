@@ -96,7 +96,7 @@ describe("amazon-bedrock comprehensive coverage", () => {
             outputTokens: 50,
             cacheReadInputTokens: 10,
             cacheWriteInputTokens: 20,
-            totalTokens: 180,
+            totalTokens: 150,
           },
         },
       };
@@ -137,7 +137,6 @@ describe("amazon-bedrock comprehensive coverage", () => {
         events.push(evt as { type: string });
       }
     })();
-
     const res = await stream.result();
 
     expect(res.stopReason).toBe("toolUse");
@@ -145,6 +144,7 @@ describe("amazon-bedrock comprehensive coverage", () => {
     expect(res.usage.output).toBe(50);
     expect(res.usage.cacheRead).toBe(10);
     expect(res.usage.cacheWrite).toBe(20);
+    expect(res.usage.totalTokens).toBe(180);
     expect(onPayload).toHaveBeenCalled();
     expect(onResponse).toHaveBeenCalledWith({ status: 200, headers: { "x-amzn-requestid": "req-123" } }, claudeModel);
     expect(events.some((e) => e.type === "toolcall_start")).toBe(true);

@@ -1,0 +1,37 @@
+# 2026-09-09 — Plan mode shell guards need command semantics
+
+- **Status:** Resolved
+- **Task/context:** Restrict the plan-mode `bash` exception to read-only exploration.
+- **Unexpected observation or failure:** A safe command prefix was enough to approve an entire shell program, so `cat package.json; perl ...` could delete a file. Later denylists still admitted write-capable `less`, `diff`, `tree`, `fd`, and `awk`, plus `wget` request configuration. Shell parameter expansion and backslash escaping could synthesize a denied option only after classification. A prefix match for `git status` also admitted a repository-defined `git statusx` shell alias. Even exact nominal readers exposed execution or mutation modes: Git transport helpers, diff text conversion and filesystem-monitor hooks, ripgrep `--hostname-bin`, positional `npm audit fix`, and `file --compile`.
+- **Evidence:** One regression executed the approved compound command against a temporary victim and observed deletion. Later tables proved `sed` write programs, curl request forms, ambiguous reader write flags, `${...}` option synthesis, and escaped option characters were still accepted. Temporary repositories proved aliases, transport helpers, `diff.*.textconv`, and `core.fsmonitor` created markers while nominal Git reads were approved. A ripgrep regression likewise observed `--hostname-bin=./prepare` execute a local helper; classification regressions showed `npm audit fix` and `file -C` were accepted.
+- **Approaches tried:**
+  - **Attempt:** Match a read-oriented command name and scan for a short list of destructive words.
+    - **Outcome:** Did not work
+    - **Why:** Shell composition and command-specific write flags move the mutation outside the matched prefix.
+  - **Attempt:** Reject shell composition, substitutions, redirections, general interpreters, and command-specific mutation options before applying the read allowlist.
+    - **Outcome:** Partial
+    - **Why:** General shell syntax was covered, but `sed` has its own write-capable program language and `curl` has many overlapping request and file-transfer option forms.
+  - **Attempt:** Remove `sed` and `curl` from the plan-mode shell allowance instead of maintaining incomplete parsers for their option languages.
+    - **Outcome:** Partial
+    - **Why:** Other broadly allowlisted tools and shell transformations recreated the same boundary failure.
+  - **Attempt:** Permit only plain whitespace-delimited arguments, reject quoting, escaping, expansion, globbing, composition, and redirection, and remove every ambiguous write-capable reader.
+    - **Outcome:** Partial
+    - **Why:** The classifier saw the same token spelling the executable receives, but Git can map a longer prefix-matching subcommand name to a repository-defined shell alias.
+  - **Attempt:** Require an argument or end-of-input boundary after every allowed Git subcommand and enumerate allowed `ls-*` variants.
+    - **Outcome:** Partial
+    - **Why:** Repository-defined aliases can no longer enter through a built-in command prefix, but an exact built-in such as `ls-remote` can expose its own executable-selection option.
+  - **Attempt:** Remove `git ls-remote` from plan-mode shell access instead of maintaining a transport and configuration option parser.
+    - **Outcome:** Partial
+    - **Why:** It closed that Git transport path, but other permitted tools retained less obvious execution and mutation options.
+  - **Attempt:** Block ripgrep helper execution, audit repair, and magic-database compilation explicitly while retaining their safe read modes.
+    - **Outcome:** Partial
+    - **Why:** Their dangerous modes have narrow option boundaries, but Git repository configuration can attach executable helpers even to ordinary reads.
+  - **Attempt:** Remove repository-scoped Git commands from the shell allowance while retaining `git --version`.
+    - **Outcome:** Worked
+    - **Why:** Git configuration is a helper-dispatch language; a text classifier cannot prove arbitrary repository configuration safe without controlling the execution environment.
+- **Root cause:** Command-name allowlisting was treated as if it classified complete behavior, raw shell text was checked before the shell transformed it into argv, and nominally read-only Git commands were assumed not to launch repository-selected executables.
+- **Resolution:** Plan mode rejects shell transformations and high-risk interpreters, applies mutation-option guards to narrow read commands, excludes commands whose option or embedded languages cannot be proven stdout-only (including package managers like npm and yarn whose read subcommands write logs, cache, and update-notifier artifacts), permits only repository-independent `git --version`, and rejects ripgrep hostname helpers, audit repair, and file compilation.
+- **Verification:** `plan-mode-shell-safety.test.ts` covers the general command boundary and proves npm artifact creation and rejection; `plan-mode-git-config-safety.test.ts` proves textconv and fsmonitor helper execution in real repository fixtures independently and verifies plan-mode classification rejects both commands.
+- **Prevention/follow-up:** Keep the shell allowance intentionally small; complex filenames, patterns, and web access should use dedicated structured tools.
+- **Reusable learning:** A shell safety boundary must bind classification to final argv and subcommand semantics; nominally read-only commands that can select executables or transports must be parsed completely or excluded.
+- **References:** `packages/coding-agent/examples/extensions/plan-mode/utils.ts`, `packages/coding-agent/test/plan-mode-shell-safety.test.ts`, `packages/coding-agent/test/plan-mode-git-config-safety.test.ts`

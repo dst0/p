@@ -1,38 +1,53 @@
-import { appendFileSync, closeSync, existsSync, openSync, writeFileSync } from "fs";
+import { existsSync, statSync } from "fs";
 import { join } from "path";
 import { resolvePath } from "../../../utils/paths.ts";
 import { CURRENT_SESSION_VERSION } from "../constants.ts";
 import { getDefaultSessionDirPath } from "../session-context.ts";
+import {
+  appendJsonLineDurably,
+  assertJsonLineSerializable,
+  backupCorruptedSession,
+  SessionFileAppendError,
+  SessionFilePublicationError,
+  writeJsonLinesAtomically,
+} from "../session-file-durability.ts";
 import { assertValidSessionId, createSessionId, migrateToCurrentVersion } from "../session-id.ts";
-import { loadEntriesFromFile } from "../session-io.ts";
+import { loadEntriesFromFileResult } from "../session-io.ts";
 import type { SessionManager } from "../sessionmanager.ts";
 import type { NewSessionOptions, SessionEntry, SessionHeader } from "../types.ts";
 
 export function do_setSessionFile(self: SessionManager, sessionFile: string): void {
   self.sessionFile = resolvePath(sessionFile);
   if (existsSync(self.sessionFile)) {
-    self.fileEntries = loadEntriesFromFile(self.sessionFile);
+    const stats = statSync(self.sessionFile);
+    const loadResult = loadEntriesFromFileResult(self.sessionFile);
+    self.fileEntries = loadResult.entries;
 
     // If file was empty or corrupted (no valid header), truncate and start fresh
     // to avoid appending messages without a session header (which breaks the session)
     if (self.fileEntries.length === 0) {
+      if (stats.size > 0) backupCorruptedSession(self.sessionFile);
       const explicitPath = self.sessionFile;
       self.newSession();
       self.sessionFile = explicitPath;
       self._rewriteFile();
       self.flushed = true;
+      self.persistenceError = undefined;
       return;
     }
 
     const header = self.fileEntries.find((e) => e.type === "session") as SessionHeader | undefined;
     self.sessionId = header?.id ?? createSessionId();
 
-    if (migrateToCurrentVersion(self.fileEntries)) {
+    const migrated = migrateToCurrentVersion(self.fileEntries);
+    if (loadResult.malformedLineCount > 0) backupCorruptedSession(self.sessionFile);
+    if (migrated || loadResult.tornTail || loadResult.malformedLineCount > 0) {
       self._rewriteFile();
     }
 
     self._buildIndex();
     self.flushed = true;
+    self.persistenceError = undefined;
   } else {
     const explicitPath = self.sessionFile;
     self.newSession();
@@ -59,6 +74,7 @@ export function do_newSession(self: SessionManager, options?: NewSessionOptions)
   self.labelsById.clear();
   self.leafId = null;
   self.flushed = false;
+  self.persistenceError = undefined;
 
   if (self.persist) {
     const fileTimestamp = timestamp.replace(/[:.]/g, "-");
@@ -90,14 +106,7 @@ export function do__buildIndex(self: SessionManager): void {
 
 export function do__rewriteFile(self: SessionManager): void {
   if (!self.persist || !self.sessionFile) return;
-  const fd = openSync(self.sessionFile, "w");
-  try {
-    for (const entry of self.fileEntries) {
-      writeFileSync(fd, `${JSON.stringify(entry)}\n`);
-    }
-  } finally {
-    closeSync(fd);
-  }
+  writeJsonLinesAtomically(self.sessionFile, self.fileEntries, {}, self.durabilityOperations);
 }
 
 export function do_isPersisted(self: SessionManager): boolean {
@@ -130,7 +139,7 @@ export function do__persist(self: SessionManager, entry: SessionEntry): void {
   const hasAssistant = self.fileEntries.some((e) => e.type === "message" && e.message.role === "assistant");
   if (!hasAssistant) {
     if (self.flushed) {
-      appendFileSync(self.sessionFile, `${JSON.stringify(entry)}\n`);
+      appendJsonLineDurably(self.sessionFile, entry, self.durabilityOperations);
     } else {
       // Mark as not flushed so when assistant arrives, all entries get written
       self.flushed = false;
@@ -139,23 +148,40 @@ export function do__persist(self: SessionManager, entry: SessionEntry): void {
   }
 
   if (!self.flushed) {
-    const fd = openSync(self.sessionFile, "wx");
     try {
-      for (const e of self.fileEntries) {
-        writeFileSync(fd, `${JSON.stringify(e)}\n`);
-      }
-    } finally {
-      closeSync(fd);
+      writeJsonLinesAtomically(self.sessionFile, self.fileEntries, { exclusive: true }, self.durabilityOperations);
+      self.flushed = true;
+    } catch (error) {
+      if (error instanceof SessionFilePublicationError) self.flushed = true;
+      throw error;
     }
-    self.flushed = true;
   } else {
-    appendFileSync(self.sessionFile, `${JSON.stringify(entry)}\n`);
+    appendJsonLineDurably(self.sessionFile, entry, self.durabilityOperations);
   }
 }
 
 export function do__appendEntry(self: SessionManager, entry: SessionEntry): void {
+  if (self.persistenceError) {
+    throw new Error("Session persistence is uncertain; reopen or recover the session before appending.", {
+      cause: self.persistenceError,
+    });
+  }
+  if (self.persist) assertJsonLineSerializable(entry);
+  const previousLeafId = self.leafId;
   self.fileEntries.push(entry);
   self.byId.set(entry.id, entry);
   self.leafId = entry.id;
-  self._persist(entry);
+  try {
+    self._persist(entry);
+  } catch (error) {
+    if (error instanceof SessionFilePublicationError || error instanceof SessionFileAppendError) {
+      self.persistenceError = error;
+      self._buildIndex();
+    } else {
+      self.fileEntries.pop();
+      self.byId.delete(entry.id);
+      self.leafId = previousLeafId;
+    }
+    throw error;
+  }
 }

@@ -1,7 +1,7 @@
 import type { ImageContent, Message, TextContent } from "@dst0/p-ai";
-import { existsSync, mkdirSync } from "fs";
 import { normalizePath, resolvePath } from "../../utils/paths.ts";
 import type { BashExecutionMessage, CustomMessage } from "../messages.ts";
+import { ensureDirectoryDurably, type SessionFileDurabilityOperations } from "./session-file-durability.ts";
 import {
   do_appendCompaction,
   do_appendCustomEntry,
@@ -84,6 +84,10 @@ export class SessionManager {
 
   public leafId: string | null = null;
 
+  public durabilityOperations?: Partial<SessionFileDurabilityOperations>;
+
+  public persistenceError?: Error;
+
   public constructor(
     cwd: string,
     sessionDir: string,
@@ -94,9 +98,7 @@ export class SessionManager {
     this.cwd = resolvePath(cwd);
     this.sessionDir = normalizePath(sessionDir);
     this.persist = persist;
-    if (persist && this.sessionDir && !existsSync(this.sessionDir)) {
-      mkdirSync(this.sessionDir, { recursive: true });
-    }
+    if (persist && this.sessionDir) ensureDirectoryDurably(this.sessionDir);
 
     if (sessionFile) {
       this.setSessionFile(sessionFile);

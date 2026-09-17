@@ -38,7 +38,14 @@ describe("queued compiled project-instruction route gates", () => {
       await session.steer("ceruleanquartz");
       await session.steer("amberzephyr");
       const queued = session.agent.steeringQueue.drain();
-      expect(queued.map((message) => message.role)).toEqual(["user", "custom", "user", "custom"]);
+      expect(queued.map((message) => message.role)).toEqual(["user", "custom", "custom", "user", "custom", "custom"]);
+      expect([queued[1], queued[4]]).toMatchObject(
+        Array.from({ length: 2 }, () => ({
+          customType: "runtime_context",
+          display: false,
+          content: expect.stringContaining("<temporal_context>"),
+        })),
+      );
       const batches = queuedRouteBatches(queued);
       expect(batches).toHaveLength(2);
       expect(batches.every((links) => links.length === 1)).toBe(true);
@@ -270,7 +277,10 @@ describe("queued compiled project-instruction route gates", () => {
 
 function queuedRouteBatches(messages: AgentMessage[]): string[][] {
   return messages.flatMap((message) =>
-    message.role === "custom" && message.customType === "runtime_context" && typeof message.content === "string"
+    message.role === "custom" &&
+    message.customType === "runtime_context" &&
+    typeof message.content === "string" &&
+    /<project_rule_routes\b/u.test(message.content)
       ? [[...message.content.matchAll(/`(rules\/[a-z0-9./-]+)`/gu)].map((match) => match[1]!)]
       : [],
   );

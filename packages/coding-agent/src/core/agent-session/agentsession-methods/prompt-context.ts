@@ -24,6 +24,7 @@ import type {
   RuntimeContextPrompts,
   WorkingStatePromptInsertionOptions,
 } from "../state-types.ts";
+import { formatTemporalContext } from "../temporal-context.ts";
 import { mergeProjectRuleGates } from "./agent-event-handling.ts";
 
 export function createProjectRuleTurnContext(self: AgentSession, query: string): ProjectRuleTurnContext {
@@ -112,15 +113,20 @@ export function do__createRuntimeContextPrompts(
     validEntryIds: branchEntryIds,
   });
   const subagentProfilesPrompt = createSubagentProfilesPrompt();
+  const temporalContextPrompt = formatTemporalContext();
   // NOTE: volatile per-turn context is NOT included in the system prompt.
   // It is persisted as hidden custom messages next to the user message that
   // selected it, so later turns replay the exact same prefix for KV cache reuse.
   const prompts = [SESSION_STATE_PROTOCOL_PROMPT, subagentProfilesPrompt].filter(
     (prompt): prompt is string => prompt !== undefined && prompt.length > 0,
   );
-  const turnContextPrompts = [memoryPrompt, rulesPrompt, repoMapPrompt, subagentDigestPrompt].filter(
-    (prompt): prompt is string => prompt !== undefined && prompt.length > 0,
-  );
+  const turnContextPrompts = [
+    temporalContextPrompt,
+    memoryPrompt,
+    rulesPrompt,
+    repoMapPrompt,
+    subagentDigestPrompt,
+  ].filter((prompt): prompt is string => prompt !== undefined && prompt.length > 0);
   return {
     baseSystemPrompt,
     stateProtocolPrompt: SESSION_STATE_PROTOCOL_PROMPT,
@@ -132,6 +138,7 @@ export function do__createRuntimeContextPrompts(
     repoMapPrompt,
     subagentProfilesPrompt,
     subagentDigestPrompt,
+    temporalContextPrompt,
     combinedPrompt: prompts.length > 0 ? prompts.join("\n\n") : undefined,
     turnContextPrompt: turnContextPrompts.length > 0 ? turnContextPrompts.join("\n\n") : undefined,
   };

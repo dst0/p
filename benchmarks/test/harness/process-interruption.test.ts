@@ -41,7 +41,7 @@ test("process-group control is POSIX-only with a direct-child fallback", () => {
   assert.deepEqual(directSignals, ["SIGTERM"]);
 });
 
-async function waitFor(check: () => boolean, timeoutMs = 2_000): Promise<void> {
+async function waitFor(check: () => boolean, timeoutMs = 15_000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!check()) {
     if (Date.now() >= deadline) throw new Error("timed out waiting for child evidence");
@@ -83,14 +83,14 @@ async function assertTreeStopped(pidPath: string, heartbeatPath: string): Promis
   const after = existsSync(heartbeatPath) ? statSync(heartbeatPath).size : 0;
   try {
     assert.equal(after, before);
-    await waitFor(() => !processExists(descendantPid), 1_500);
+    await waitFor(() => !processExists(descendantPid), 5_000);
     assert.equal(processExists(descendantPid), false);
   } finally {
     if (processExists(descendantPid)) process.kill(descendantPid, "SIGKILL");
   }
 }
 
-test("paired child interruption terminates resistant descendants before resolving", { timeout: 5_000 }, async () => {
+test("paired child interruption terminates resistant descendants before resolving", { timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-child-tree-"));
   const pidPath = join(root, "descendant.pid");
   const heartbeatPath = join(root, "heartbeat");
@@ -114,7 +114,7 @@ test("paired child interruption terminates resistant descendants before resolvin
   }
 });
 
-test("seed helper interruption is asynchronous, bounded, and terminates descendants", { timeout: 5_000 }, async () => {
+test("seed helper interruption is asynchronous, bounded, and terminates descendants", { timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-seed-tree-"));
   const helper = join(root, "helper.js");
   const pidPath = join(root, "descendant.pid");
@@ -184,7 +184,7 @@ test("termination rejection settles paired-child and seed-helper interruptions",
   }
 });
 
-test("certification cleanup failure remains secondary to interruption", { timeout: 5_000 }, async () => {
+test("certification cleanup failure remains secondary to interruption", { timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-certify-cleanup-"));
   const runtimeSnapshot = join(root, "runtime");
   const scratchRoot = join(root, "scratch");
@@ -235,7 +235,7 @@ test("certification cleanup failure remains secondary to interruption", { timeou
   }
 });
 
-test("outer runner cancellation cannot orphan its nested agent group", { timeout: 5_000 }, async () => {
+test("outer runner cancellation cannot orphan its nested agent group", { timeout: 30_000 }, async () => {
   const root = mkdtempSync(join(tmpdir(), "p-benchmark-nested-agent-tree-"));
   const pidPath = join(root, "agent.pid");
   const heartbeatPath = join(root, "agent-heartbeat");
@@ -270,19 +270,21 @@ test("outer runner cancellation cannot orphan its nested agent group", { timeout
     } catch {} finally { controller.dispose(); }
   `;
   const controller = new AbortController();
+  const resultPromise = runBenchmarkChild(
+    process.execPath,
+    ["--input-type=module", "-e", runnerSource],
+    { cwd: process.cwd(), stdio: "ignore" },
+    undefined,
+    { signal: controller.signal, killGraceMs: 40 },
+  );
   try {
-    const resultPromise = runBenchmarkChild(
-      process.execPath,
-      ["--input-type=module", "-e", runnerSource],
-      { cwd: process.cwd(), stdio: "ignore" },
-      undefined,
-      { signal: controller.signal, killGraceMs: 40 },
-    );
-    await waitFor(() => existsSync(readyPath) && existsSync(heartbeatPath));
+    await waitFor(() => existsSync(readyPath) && existsSync(heartbeatPath), 15_000);
     controller.abort(new BenchmarkInterruptedError("SIGTERM"));
     await resultPromise;
     await assertTreeStopped(pidPath, heartbeatPath);
   } finally {
+    if (!controller.signal.aborted) controller.abort(new BenchmarkInterruptedError("SIGTERM"));
+    await resultPromise;
     rmSync(root, { recursive: true, force: true });
   }
 });

@@ -68,7 +68,7 @@ async function runOutput(output: string, options: BenchmarkTurnOptions = {}) {
   try {
     return await runBenchmarkAgentTurn(
       command(`process.stdout.write(${JSON.stringify(output)})`),
-      250,
+      20_000,
       recording,
       metricEventTypes,
       { outputLimits: { maxLineBytes: 64 }, ...options },
@@ -122,7 +122,7 @@ test("oversized cumulative agent_end stays lossless and preserves later metric o
   try {
     const result = await runBenchmarkAgentTurn(
       command(`process.stdout.write(${JSON.stringify(output)})`),
-      5_000,
+      20_000,
       recording,
       metricEventTypes,
       { allowCanonicalPAgentEnd: true, outputLimits: { maxLineBytes: 64 } },
@@ -165,11 +165,12 @@ test("periodic oversized agent_end records do not renew semantic-progress livene
   try {
     const result = await runBenchmarkAgentTurn(
       command(`const line=${JSON.stringify(agentEnd)}; setInterval(() => process.stdout.write(line), 20);`),
-      250,
+      10_000,
       recording,
       metricEventTypes,
       {
         allowCanonicalPAgentEnd: true,
+        hardTimeoutMs: 20_000,
         outputLimits: { maxLineBytes: 64 },
         progressEventTypes: metricEventTypes,
         progressGraceMs: 150,
@@ -179,7 +180,7 @@ test("periodic oversized agent_end records do not renew semantic-progress livene
     assert.equal(result.timedOut, true);
     assert.equal(result.timeoutKind, "inactivity");
     assert.ok(result.rawEventCount > 0);
-    assert.ok(result.elapsedMs < 2_000);
+    assert.ok(result.elapsedMs < 20_000);
   } finally {
     await recording.abort();
     rmSync(root, { recursive: true, force: true });

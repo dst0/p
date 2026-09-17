@@ -25,6 +25,7 @@ import {
   constants as zlibConstants,
 } from "node:zlib";
 
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 import { BenchmarkOutputOverflowError } from "./output-overflow-error.ts";
 
 const BROTLI_PARAMS = {
@@ -85,6 +86,7 @@ function chunkPaths(chunkDirectory: string): string[] {
 }
 
 function privateWriteStream(path: string): WriteStream {
+  assertCertifiedOutputWritePath(path);
   const descriptor = openSync(path, "wx", 0o600);
   return createWriteStream(path, { autoClose: true, fd: descriptor });
 }
@@ -118,16 +120,22 @@ export function createVerifiedBrotliChunk(rawPath: string): {
 export function writeVerifiedBrotliChunk(encoded: Buffer, tempPath: string): void {
   let created = false;
   try {
+    assertCertifiedOutputWritePath(tempPath);
     writeFileSync(tempPath, encoded, { flag: "wx", mode: 0o600 });
     created = true;
     fsyncPath(tempPath);
   } catch (error) {
-    if (created) rmSync(tempPath, { force: true });
+    if (created) {
+      assertCertifiedOutputWritePath(tempPath);
+      rmSync(tempPath, { force: true });
+    }
     throw error;
   }
 }
 
 export function publishVerifiedBrotliChunk(tempPath: string, compressedPath: string): void {
+  assertCertifiedOutputWritePath(tempPath);
+  assertCertifiedOutputWritePath(compressedPath);
   renameSync(tempPath, compressedPath);
   fsyncPath(dirname(compressedPath));
 }
@@ -191,11 +199,16 @@ export async function recomposeBenchmarkRecordingChunks(
     fsyncPath(tempPath);
     const storedBytes = statSync(tempPath).size;
     fsyncPath(dirname(finalPath));
+    assertCertifiedOutputWritePath(tempPath);
+    assertCertifiedOutputWritePath(finalPath);
     renameSync(tempPath, finalPath);
     fsyncPath(dirname(finalPath));
     return { bytes: decoded.bytes, sha256: decoded.sha256, storedBytes };
   } catch (error) {
-    if (created) rmSync(tempPath, { force: true });
+    if (created) {
+      assertCertifiedOutputWritePath(tempPath);
+      rmSync(tempPath, { force: true });
+    }
     throw error;
   }
 }

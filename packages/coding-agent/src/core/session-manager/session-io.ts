@@ -9,15 +9,27 @@ import { parseSessionEntryLine } from "./session-context.ts";
 import type { FileEntry, SessionHeader, SessionMessageEntry } from "./types.ts";
 
 export function loadEntriesFromFile(filePath: string): FileEntry[] {
+  return loadEntriesFromFileResult(filePath).entries;
+}
+
+export interface LoadEntriesResult {
+  entries: FileEntry[];
+  tornTail: boolean;
+  malformedLineCount: number;
+}
+
+export function loadEntriesFromFileResult(filePath: string): LoadEntriesResult {
   const resolvedFilePath = normalizePath(filePath);
-  if (!existsSync(resolvedFilePath)) return [];
+  if (!existsSync(resolvedFilePath)) return { entries: [], tornTail: false, malformedLineCount: 0 };
 
   const entries: FileEntry[] = [];
+  let malformedLineCount = 0;
+  let recoveryBoundaryReached = false;
+  let pending = "";
   const fd = openSync(resolvedFilePath, "r");
   try {
     const decoder = new StringDecoder("utf8");
     const buffer = Buffer.allocUnsafe(SESSION_READ_BUFFER_SIZE);
-    let pending = "";
 
     while (true) {
       const bytesRead = readSync(fd, buffer, 0, buffer.length, null);
@@ -27,8 +39,15 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
       let lineStart = 0;
       let newlineIndex = pending.indexOf("\n", lineStart);
       while (newlineIndex !== -1) {
-        const entry = parseSessionEntryLine(pending.slice(lineStart, newlineIndex));
-        if (entry) entries.push(entry);
+        const line = pending.slice(lineStart, newlineIndex);
+        if (line.trim().length > 0 && !recoveryBoundaryReached) {
+          const entry = parseSessionEntryLine(line);
+          if (entry) entries.push(entry);
+          else {
+            malformedLineCount++;
+            recoveryBoundaryReached = true;
+          }
+        }
         lineStart = newlineIndex + 1;
         newlineIndex = pending.indexOf("\n", lineStart);
       }
@@ -36,20 +55,20 @@ export function loadEntriesFromFile(filePath: string): FileEntry[] {
     }
 
     pending += decoder.end();
-    const finalEntry = parseSessionEntryLine(pending);
-    if (finalEntry) entries.push(finalEntry);
   } finally {
     closeSync(fd);
   }
 
+  const tornTail = pending.trim().length > 0;
+
   // Validate session header
-  if (entries.length === 0) return entries;
+  if (entries.length === 0) return { entries, tornTail, malformedLineCount };
   const header = entries[0];
   if (header.type !== "session" || typeof (header as { id?: unknown }).id !== "string") {
-    return [];
+    return { entries: [], tornTail: false, malformedLineCount };
   }
 
-  return entries;
+  return { entries, tornTail, malformedLineCount };
 }
 
 export function readSessionHeader(filePath: string): SessionHeader | null {

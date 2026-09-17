@@ -275,10 +275,6 @@
     "classes": 0,
     "lines": 426
   },
-  "packages/coding-agent/examples/extensions/plan-mode/index.ts": {
-    "classes": 0,
-    "lines": 333
-  },
   "packages/coding-agent/examples/extensions/preset.ts": {
     "classes": 0,
     "lines": 430
@@ -299,10 +295,6 @@
     "classes": 1,
     "lines": 560
   },
-  "packages/coding-agent/examples/extensions/subagent/index.ts": {
-    "classes": 0,
-    "lines": 983
-  },
   "packages/coding-agent/examples/extensions/tic-tac-toe.ts": {
     "classes": 4,
     "lines": 1004
@@ -312,8 +304,8 @@
     "lines": 632
   },
   "packages/coding-agent/src/core/agent-session-runtime.ts": {
-    "classes": 2,
-    "lines": 433
+    "classes": 1,
+    "lines": 431
   },
   "packages/coding-agent/src/core/compaction/branch-summarization.ts": {
     "classes": 0,
@@ -613,7 +605,7 @@
   },
 	"packages/coding-agent/test/task-verification.test.ts": {
 		"classes": 0,
-      "lines": 1000
+      "lines": 995
 	},
   "packages/coding-agent/test/test-harness.test.ts": {
     "classes": 0,

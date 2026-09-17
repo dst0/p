@@ -115,7 +115,7 @@ describe("google-vertex provider comprehensive coverage", () => {
           cachedContentTokenCount: 50,
           candidatesTokenCount: 30,
           thoughtsTokenCount: 20,
-          totalTokenCount: 150,
+          totalTokenCount: 200,
         },
       };
     }
@@ -141,6 +141,7 @@ describe("google-vertex provider comprehensive coverage", () => {
     expect(res.usage.input).toBe(100);
     expect(res.usage.cacheRead).toBe(50);
     expect(res.usage.output).toBe(50);
+    expect(res.usage.totalTokens).toBe(200);
     expect(res.content.some((b) => b.type === "toolCall")).toBe(true);
   });
 

@@ -2,14 +2,14 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readFixtureFiles, readWorkspaceText } from "./fixture-files.ts";
 import { runFixtureCommand } from "./fixture-verification.ts";
-import { type BenchmarkTask, createTaskResult } from "./task-definition.ts";
+import { type BenchmarkTask, canonicalTaskTimeoutSeconds, createTaskResult } from "./task-definition.ts";
 
 const taskId = "typescript-calculator";
 const maxScore = 6;
 
 export const calculatorTask: BenchmarkTask = {
   id: taskId,
-  timeoutSeconds: 900,
+  timeoutSeconds: canonicalTaskTimeoutSeconds[taskId],
   maxScore,
   description: "Build a tested TypeScript calculator library and CLI from a written specification",
   files: readFixtureFiles(taskId),

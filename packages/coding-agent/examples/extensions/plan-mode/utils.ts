@@ -1,7 +1,86 @@
-/**
- * Pure utility functions for plan mode.
- * Extracted for testability.
- */
+import type { AgentMessage, ToolEffectDeclaration } from "@dst0/p-agent-core";
+import type { AssistantMessage, TextContent } from "@dst0/p-ai";
+
+export function isAssistantMessage(message: AgentMessage): message is AssistantMessage {
+  return message.role === "assistant" && Array.isArray(message.content);
+}
+
+export function getTextContent(message: AssistantMessage): string {
+  return message.content
+    .filter((block): block is TextContent => block.type === "text")
+    .map((block) => block.text)
+    .join("\n");
+}
+
+interface PlanModeToolInfo {
+  name: string;
+  effect?: ToolEffectDeclaration;
+}
+
+export function getPlanModeTools(activeTools: readonly string[], allTools: readonly PlanModeToolInfo[]): string[] {
+  const effects = new Map(allTools.map((tool) => [tool.name, tool.effect]));
+  return activeTools.filter((tool) => {
+    if (tool === "bash") return true;
+    const effect = effects.get(tool);
+    return effect?.kind === "read" && effect.risk === "normal";
+  });
+}
+
+export function restorePlanModeTools(savedTools: readonly string[] | null, currentTools: readonly string[]): string[] {
+  return Array.from(new Set([...(savedTools ?? []), ...currentTools]));
+}
+
+export const PLAN_MODE_SYSTEM_INSTRUCTION = `[PLAN MODE ACTIVE]
+You are in plan mode - a read-only exploration mode for safe code analysis.
+
+Restrictions:
+- You can only use read-only tools (edit and write are disabled)
+- Bash is restricted to an allowlist of read-only commands
+
+Ask clarifying questions using the questionnaire tool.
+Use brave-search skill via bash for web research.
+
+Create a detailed numbered plan under a "Plan:" header:
+
+Plan:
+1. First step description
+2. Second step description
+...
+
+Do NOT attempt to make changes - just describe what you would do.`;
+
+export function formatPlanExecutionContext(todoItems: readonly TodoItem[]): string {
+  const remaining = todoItems.filter((item) => !item.completed);
+  const todoList = remaining.map((item) => `${item.step}. ${item.text}`).join("\n");
+  return `[EXECUTING PLAN - Full tool access enabled]\n\nRemaining steps:\n${todoList}\n\nExecute each step in order.\nAfter completing a step, include a [DONE:n] tag in your response.`;
+}
+
+export function formatPlanExecutionRequest(todoItems: readonly TodoItem[]): string {
+  if (todoItems.length === 0) return "Execute the plan you just created.";
+  const todoList = todoItems.map((item) => `${item.step}. ${item.text}`).join("\n");
+  return `Execute the following plan:\n\n${todoList}\n\nStart with step 1: ${todoItems[0].text}`;
+}
+
+export function rebuildResumeCompletionState(entries: readonly unknown[], todoItems: TodoItem[]): void {
+  if (todoItems.length === 0) return;
+  let executeIndex = -1;
+  for (let index = entries.length - 1; index >= 0; index--) {
+    const entry = entries[index] as { customType?: string };
+    if (entry.customType === "plan-mode-execute") {
+      executeIndex = index;
+      break;
+    }
+  }
+
+  const messages: AssistantMessage[] = [];
+  for (let index = executeIndex + 1; index < entries.length; index++) {
+    const entry = entries[index] as { type?: string; message?: unknown };
+    if (entry.type === "message" && entry.message && isAssistantMessage(entry.message as AgentMessage)) {
+      messages.push(entry.message as AssistantMessage);
+    }
+  }
+  markCompletedSteps(messages.map(getTextContent).join("\n"), todoItems);
+}
 
 // Destructive commands blocked in plan mode
 const DESTRUCTIVE_PATTERNS = [
@@ -45,8 +124,6 @@ const SAFE_PATTERNS = [
   /^\s*cat\b/,
   /^\s*head\b/,
   /^\s*tail\b/,
-  /^\s*less\b/,
-  /^\s*more\b/,
   /^\s*grep\b/,
   /^\s*find\b/,
   /^\s*ls\b/,
@@ -54,18 +131,14 @@ const SAFE_PATTERNS = [
   /^\s*echo\b/,
   /^\s*printf\b/,
   /^\s*wc\b/,
-  /^\s*sort\b/,
-  /^\s*uniq\b/,
-  /^\s*diff\b/,
   /^\s*file\b/,
   /^\s*stat\b/,
   /^\s*du\b/,
   /^\s*df\b/,
-  /^\s*tree\b/,
   /^\s*which\b/,
   /^\s*whereis\b/,
   /^\s*type\b/,
-  /^\s*env\b/,
+  /^\s*env\s*$/,
   /^\s*printenv\b/,
   /^\s*uname\b/,
   /^\s*whoami\b/,
@@ -77,24 +150,34 @@ const SAFE_PATTERNS = [
   /^\s*top\b/,
   /^\s*htop\b/,
   /^\s*free\b/,
-  /^\s*git\s+(status|log|diff|show|branch|remote|config\s+--get)/i,
-  /^\s*git\s+ls-/i,
-  /^\s*npm\s+(list|ls|view|info|search|outdated|audit)/i,
-  /^\s*yarn\s+(list|info|why|audit)/i,
+  /^\s*git\s+--version\s*$/i,
   /^\s*node\s+--version/i,
   /^\s*python\s+--version/i,
-  /^\s*curl\s/i,
-  /^\s*wget\s+-O\s*-/i,
   /^\s*jq\b/,
-  /^\s*sed\s+-n/i,
-  /^\s*awk\b/,
   /^\s*rg\b/,
-  /^\s*fd\b/,
-  /^\s*bat\b/,
   /^\s*eza\b/,
 ];
 
+// Plan-mode shell commands use plain whitespace-delimited arguments only.
+// Reject all quoting, escaping, expansion, globbing, composition, and redirection
+// so the classified text is the exact argv shape seen by the executable.
+const UNSAFE_SHELL_SYNTAX = /[;&|<>`\\$'"*?[\]{}\r\n]/;
+const INTERPRETER_PATTERN = /(?:^|\s)(?:\S*\/)?(?:ba|z|fi)?sh\b|(?:^|\s)(?:\S*\/)?(?:perl|ruby|python\d*|node)\b/i;
+const VERSION_ONLY_INTERPRETER = /^\s*(?:node|python\d*)\s+--version\s*$/i;
+const MUTATING_READ_COMMAND_OPTIONS = [
+  /^\s*find\b.*\s-(?:delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)\b/i,
+  /^\s*git\s+branch\b\s+(?!--show-current\s*$|--list(?:\s|$)|--all\s*$|--remotes\s*$|-a\s*$|-r\s*$|-v{1,2}\s*$)/i,
+  /^\s*git\s+remote\s+(?:add|remove|rename|set-head|set-branches|set-url|show|prune|update)\b/i,
+  /^\s*git\s+(?:diff|show|log)\b.*\s--(?:output|ext-diff)(?:=|\s|$)/i,
+  /^\s*file\b.*\s(?:-[A-Za-z]*C[A-Za-z]*|--compile)(?:\s|$)/i,
+  /^\s*curl\b.*(?:\s-[oOT]\b|\s--(?:output|remote-name|upload-file|data|form|json|request)(?:=|\s|$))/i,
+  /^\s*rg\b.*\s--(?:pre|hostname-bin)(?:=|\s|$)/i,
+];
+
 export function isSafeCommand(command: string): boolean {
+  if (UNSAFE_SHELL_SYNTAX.test(command)) return false;
+  if (INTERPRETER_PATTERN.test(command) && !VERSION_ONLY_INTERPRETER.test(command)) return false;
+  if (MUTATING_READ_COMMAND_OPTIONS.some((pattern) => pattern.test(command))) return false;
   const isDestructive = DESTRUCTIVE_PATTERNS.some((p) => p.test(command));
   const isSafe = SAFE_PATTERNS.some((p) => p.test(command));
   return !isDestructive && isSafe;

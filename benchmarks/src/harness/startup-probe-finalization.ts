@@ -1,6 +1,7 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
 
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 import { attachBenchmarkCleanupError, isBenchmarkInterruptedError } from "./interruption.ts";
 import {
   copyKiloRuntimeEvidence,
@@ -25,14 +26,20 @@ export function finalizeKiloStartupEvidence(
   diagnosticsDir: string,
   evidence: StartupEvidence,
   primaryError: unknown,
+  mutableArtifactsSafe = true,
 ): void {
   finalize(() => {
+    if (!mutableArtifactsSafe) {
+      writeState(diagnosticsDir, evidence);
+      return;
+    }
     const dataRoot = join(configDir, "data");
     const stateRoot = join(configDir, "state");
     evidence.runtimeFiles = {
       data: listKiloRuntimeDataEvidence(dataRoot),
       state: listKiloRuntimeStateEvidence(stateRoot),
     };
+    assertCertifiedOutputWritePath(diagnosticsDir);
     copyKiloRuntimeEvidence(dataRoot, stateRoot, diagnosticsDir);
     writeState(diagnosticsDir, evidence);
   }, primaryError);
@@ -47,7 +54,9 @@ export function finalizeBenchmarkStartupEvidence(
 }
 
 function writeState(diagnosticsDir: string, evidence: StartupEvidence): void {
-  writeFileSync(join(diagnosticsDir, "state.json"), `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
+  const statePath = join(diagnosticsDir, "state.json");
+  assertCertifiedOutputWritePath(statePath);
+  writeFileSync(statePath, `${JSON.stringify(evidence, null, 2)}\n`, "utf8");
 }
 
 function finalize(action: () => void, primaryError: unknown): void {
@@ -56,6 +65,9 @@ function finalize(action: () => void, primaryError: unknown): void {
   } catch (cleanupError) {
     if (isBenchmarkInterruptedError(primaryError)) {
       throw attachBenchmarkCleanupError(primaryError, cleanupError);
+    }
+    if (primaryError !== undefined) {
+      throw new AggregateError([primaryError, cleanupError], "Startup probe failed with evidence cleanup errors");
     }
     throw cleanupError;
   }

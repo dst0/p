@@ -137,7 +137,8 @@ export function handleMetadata(
     output.usage.output = event.usage.outputTokens || 0;
     output.usage.cacheRead = event.usage.cacheReadInputTokens || 0;
     output.usage.cacheWrite = event.usage.cacheWriteInputTokens || 0;
-    output.usage.totalTokens = event.usage.totalTokens || output.usage.input + output.usage.output;
+    output.usage.totalTokens =
+      output.usage.input + output.usage.output + output.usage.cacheRead + output.usage.cacheWrite;
     calculateCost(model, output.usage);
   }
 }

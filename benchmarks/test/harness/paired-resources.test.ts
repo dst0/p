@@ -14,8 +14,6 @@ import {
 import { tmpdir } from "node:os";
 import { join, sep } from "node:path";
 import { test } from "node:test";
-import { materializeProjectInstructionCompilerResult } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-validation.js";
-import { prepareProjectInstructions } from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
 import { createBenchmarkAuthOutputGuard } from "../../src/harness/auth-output-guard.ts";
 import type {
   PairedBenchmarkResourceOperations,
@@ -27,6 +25,10 @@ import {
   settlePairedCellEvidence,
 } from "../../src/harness/paired-resources.ts";
 import { captureVerifiedCompiledCache } from "../../src/project-instructions/cache.ts";
+import {
+  materializeProjectInstructionCompilerResult,
+  prepareProjectInstructions,
+} from "../../src/project-instructions/coding-agent-runtime-bindings.ts";
 
 type ResourceFailure = "runtime" | "scratch" | "private" | "dispose-private" | "remove-scratch" | "remove-runtime";
 

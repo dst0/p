@@ -19,11 +19,9 @@ export function createAgentStream(): EventStream<AgentEvent, AgentMessage[]> {
     (event: AgentEvent) => (event.type === "agent_end" ? event.messages : []),
   );
 }
-
 export function resolveCompletionMode(config: AgentLoopConfig): CompletionMode {
   return config.completionMode ?? DEFAULT_COMPLETION_MODE;
 }
-
 export function createCompletionProtocolState(): CompletionProtocolState {
   return {
     turns: 0,
@@ -39,7 +37,6 @@ export function createCompletionProtocolState(): CompletionProtocolState {
 export function isCompletionProtocolEnabled(mode: CompletionMode): boolean {
   return mode === "explicit_finish" || mode === "hybrid";
 }
-
 export function withCompletionProtocolTools(context: AgentContext, mode: CompletionMode): AgentContext {
   if (!isCompletionProtocolEnabled(mode)) {
     return context;
@@ -50,7 +47,6 @@ export function withCompletionProtocolTools(context: AgentContext, mode: Complet
     tools: [...tools.filter((tool) => tool.name !== FINISH_WORK_TOOL_NAME), createFinishWorkTool()],
   };
 }
-
 export function resolveCompletionLimits(config: AgentLoopConfig, mode: CompletionMode): CompletionProtocolLimits {
   const explicitFinishDefault = mode === "explicit_finish" ? Number.POSITIVE_INFINITY : undefined;
   return {
@@ -127,7 +123,6 @@ export async function emitProtocolFailure(
 export function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
-
 export function getStringValue(value: unknown): string | undefined {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : undefined;
 }
@@ -196,24 +191,35 @@ export function expandWaitCheckToolCalls(message: AssistantMessage, tools: Agent
   return expanded ? { ...message, content: expandedContent } : message;
 }
 
-export function stripMarkdownCodeFences(value: string): string {
-  const lines = value.split(/\r?\n/);
+export function isClosingMarkdownFence(line: string, opener: string): boolean {
+  const match = line.match(/^\s*(```+|~~~+)\s*$/);
+  return match !== null && match[1][0] === opener[0] && match[1].length >= opener.length;
+}
+
+export function splitMarkdownFenceSegments(value: string): Array<{ fenced: boolean; text: string }> {
+  const segments: Array<{ fenced: boolean; text: string }> = [];
+  const lines = value.split(/(\r?\n)/);
   let activeFence: string | undefined;
-  return lines
-    .map((line) => {
-      const fenceMatch = line.match(/^\s*(```+|~~~+)/);
-      if (fenceMatch) {
-        const fence = fenceMatch[1][0];
-        if (!activeFence) {
-          activeFence = fence;
-        } else if (activeFence === fence) {
-          activeFence = undefined;
-        }
-        return "";
+  let text = "";
+  for (let index = 0; index < lines.length; index += 2) {
+    const line = lines[index] ?? "";
+    const lineEnd = lines[index + 1] ?? "";
+    const opener = line.match(/^\s*(```+|~~~+)/)?.[1];
+    if (!activeFence && opener) {
+      if (text) segments.push({ fenced: false, text });
+      activeFence = opener;
+      text = line + lineEnd;
+    } else {
+      text += line + lineEnd;
+      if (activeFence && isClosingMarkdownFence(line, activeFence)) {
+        segments.push({ fenced: true, text });
+        activeFence = undefined;
+        text = "";
       }
-      return activeFence ? "" : line;
-    })
-    .join("\n");
+    }
+  }
+  if (text) segments.push({ fenced: activeFence !== undefined, text });
+  return segments;
 }
 
 export function normalizeMisplacedToolArguments(value: unknown): Record<string, unknown> {
@@ -234,4 +240,61 @@ export function normalizeMisplacedToolArguments(value: unknown): Record<string, 
     return {};
   }
   return {};
+}
+
+export function isFullyRecoverableMisplacedToolArguments(body: string): boolean {
+  const text = body.trim();
+  if (!text) return true;
+  const parameterPattern = /<parameter=([A-Za-z0-9_.:-]+)\s*>([\s\S]*?)<\/parameter>/gi;
+  if ([...text.matchAll(parameterPattern)].length > 0) {
+    return text.replace(parameterPattern, "").trim().length === 0;
+  }
+  const argumentsMatch = text.match(/^<arguments>\s*([\s\S]*?)\s*<\/arguments>$/i);
+  const jsonText = argumentsMatch?.[1]?.trim() ?? text;
+  try {
+    return isRecord(JSON.parse(jsonText) as unknown);
+  } catch {
+    return false;
+  }
+}
+
+export function serializeCanonicalMisplacedToolArguments(value: Record<string, unknown>): string | undefined {
+  const output: string[] = [];
+  const stack: Array<{ text: string } | { value: unknown }> = [{ value }];
+  try {
+    while (stack.length > 0) {
+      const frame = stack.pop();
+      if (!frame) break;
+      if ("text" in frame) {
+        output.push(frame.text);
+        continue;
+      }
+      if (Array.isArray(frame.value)) {
+        output.push("[");
+        stack.push({ text: "]" });
+        for (let index = frame.value.length - 1; index >= 0; index--) {
+          stack.push({ value: frame.value[index] });
+          if (index > 0) stack.push({ text: "," });
+        }
+        continue;
+      }
+      if (isRecord(frame.value)) {
+        const keys = Object.keys(frame.value).sort();
+        output.push("{");
+        stack.push({ text: "}" });
+        for (let index = keys.length - 1; index >= 0; index--) {
+          const key = keys[index];
+          stack.push({ value: frame.value[key] }, { text: ":" }, { text: JSON.stringify(key) });
+          if (index > 0) stack.push({ text: "," });
+        }
+        continue;
+      }
+      const encoded = JSON.stringify(frame.value);
+      if (encoded === undefined) return undefined;
+      output.push(encoded);
+    }
+    return output.join("");
+  } catch {
+    return undefined;
+  }
 }

@@ -1,0 +1,52 @@
+# 2026-09-09 — Recovered JSON tool-call context stripping
+
+- **Status:** Resolved
+- **Task/context:** Recovering misplaced JSON tool calls into structured `ToolCall` content blocks without retaining redundant JSON code blocks in assistant text (`packages/agent/src/agent-loop/tool-execution.ts`).
+- **Unexpected observation or failure:** When an assistant message contained JSON tool call blocks in markdown code fences that were recovered into structured `toolCall` blocks, the original JSON code block remained in the assistant text block, creating duplicate tool call markup in subsequent model context. Conversely, stripping all JSON code blocks indiscriminately stripped unrecovered or explanatory data payloads.
+- **Evidence:** The first implementation passed 12 focused tests but review reproductions found mixed known/unknown calls, calls beside ordinary data, unrelated wrapper siblings, ambiguous aliases, lossy argument or metadata normalization, repeated and cross-format-equivalent call errors, and divergent extraction versus stripping behavior. Review also found that recursive canonicalization crashed on deeply nested valid JSON, while treating the failure as distinct duplicated an XML/JSON action. Final parity reviews reproduced fourteen failures: two partially recoverable fences were executed but retained; raw JSON text and thinking remained beside recovered calls; short fence markers and marker lines with non-whitespace suffixes exposed JSON that was still fenced; XML fragments were joined across content blocks or assembled around an intervening Markdown fence; XML-first removal deleted a neighboring raw JSON action that extraction had not recovered; stripping markdown before raw-JSON extraction executed raw actions beside unrelated or separately recovered fences without removing their source text; and unconditional XML cleanup erased both unrecovered XML-shaped data and unrelated siblings inside a partially parsed XML block. Each regression failed before its fix; the final focused suite passed all 47 tests.
+- **Approaches tried:**
+  - **Attempt:** Implement `removeRecoveredJsonToolCallBlocks` using line-aware markdown fence parsing that only discards code blocks whose body parses to a registered tool name.
+    - **Outcome:** Partial
+    - **Why:** Checking whether any parsed call used a registered tool incorrectly removed a mixed block that also contained an unrecovered unknown call.
+  - **Attempt:** Remove a fenced block only when it parses to at least one call and every parsed call names a registered tool.
+    - **Outcome:** Partial
+    - **Why:** The parser omits ordinary non-call array elements, so checking only its filtered calls could still erase unrelated data.
+  - **Attempt:** Validate the complete parsed JSON structure recursively and require every array or tool-list element to be a recognized call.
+    - **Outcome:** Partial
+    - **Why:** Recursing into `tool_calls` still ignored unrelated sibling properties on the wrapper object.
+  - **Attempt:** Validate both recursive elements and the allowed keys of every recognized tool-call envelope.
+    - **Outcome:** Partial
+    - **Why:** Multiple allowed aliases such as `tool_calls` plus `tools`, or `arguments` plus `input`, still let the parser consume one value while context stripping erased every value.
+  - **Attempt:** Require exactly one present alias for tool-list and tool-name groups and at most one argument alias across each consumed envelope.
+    - **Outcome:** Partial
+    - **Why:** A single scalar, array, or malformed string argument could still normalize to `{}`, and arbitrary `type` or `id` metadata was ignored before the original block was erased.
+  - **Attempt:** Additionally require arguments to be absent, records, or JSON strings that parse to records, and constrain optional metadata to recognized tool-call types and non-empty string IDs.
+    - **Outcome:** Partial
+    - **Why:** Extraction still deduplicated all recovered JSON calls by name and normalized arguments, collapsing separate repeated actions before their source block was erased.
+  - **Attempt:** Limit deduplication to matching XML-versus-JSON representations while preserving every distinct JSON occurrence.
+    - **Outcome:** Partial
+    - **Why:** A set of XML call keys still let one XML occurrence suppress every matching JSON occurrence instead of only one equivalent representation.
+  - **Attempt:** Consume cross-format duplicate keys one-to-one as a multiset while retaining all remaining JSON occurrences.
+    - **Outcome:** Partial
+    - **Why:** Raw `JSON.stringify` keys treated semantically equivalent argument objects with different insertion order as different calls, risking duplicate execution of a mutating tool.
+  - **Attempt:** Canonically sort object keys recursively while preserving array order, then apply one-to-one cross-format deduplication.
+    - **Outcome:** Partial
+    - **Why:** Canonicalization ran even without XML candidates and could overflow the JavaScript call stack on deeply nested but valid provider JSON.
+  - **Attempt:** Skip canonicalization when there is no cross-format candidate and make canonical serialization non-throwing, treating uncanonicalizable arguments as non-duplicates.
+    - **Outcome:** Partial
+    - **Why:** Avoiding the crash still duplicated an identical deeply nested XML/JSON action whenever recursive serialization failed.
+  - **Attempt:** Serialize canonical JSON iteratively with an explicit stack, sorted object keys, and preserved array order; skip the work entirely when no cross-format candidate exists.
+    - **Outcome:** Worked
+    - **Why:** Canonicalization became depth-safe and preserved one-to-one XML/JSON multiplicity, but extraction still accepted inputs that stripping did not remove.
+  - **Attempt:** Apply the same full-recoverability predicate to extraction and stripping per content block, test raw JSON against the whole block before separately extracting fences, strip fully recovered raw JSON from text and thinking, require fence closers to use the opener marker with sufficient length and only trailing whitespace, stop assembling XML across content-block boundaries, and remove JSON before XML so removal cannot expose and erase an unrecovered raw action.
+    - **Outcome:** Worked
+    - **Why:** Unknown calls, non-call data, unrelated wrapper fields, ambiguous aliases, and lossy argument or metadata values now prevent both recovery and removal of the whole block. Fully recovered raw or fenced calls are removed exactly where they were extracted, and malformed fences remain ordinary context.
+  - **Attempt:** Make XML parsing fail closed unless the complete inner block and argument markup are consumed, segment fenced and outside text once for both XML extraction and removal, then remove only blocks accepted by that same parser within one contiguous outside segment.
+    - **Outcome:** Worked
+    - **Why:** Malformed XML-shaped data and partially parsed calls now remain untouched, including when another content block triggers cleanup, and an intervening Markdown fence can no longer splice non-contiguous XML into an executable action.
+- **Root cause:** Recovery initially stripped only XML markup; later JSON extraction and stripping evolved as separate parsers, so their accepted inputs diverged and left some executed actions duplicated in model context.
+- **Resolution:** Introduced complete JSON and XML parse contracts, depth-safe canonical cross-format deduplication, shared fence semantics, and removal that strips only individual blocks accepted by the same per-block extraction rules.
+- **Verification:** Ran 47 focused tests across `packages/agent/test/misplaced-json-tool-recovery.test.ts` and `packages/agent/test/recovered-json-tool-context-stripping.test.ts`, plus 6 targeted agent-loop XML/JSON tests, covering partial blocks, raw text and thinking, malformed fence markers, cross-block and cross-fence XML fragments, raw JSON beside XML or markdown fences, XML-shaped data, alias and metadata validation, repeated OpenAI envelopes, canonical one-to-one XML/JSON deduplication, deep arguments, surrounding prose, and complete text block removal.
+- **Prevention/follow-up:** Regression tests require extraction and removal to agree on complete recoverability for both JSON and XML, preserve malformed or partial blocks without executing or deleting them, and retain repeated JSON actions as distinct calls even when names and arguments match.
+- **Reusable learning:** When recovering structured actions from unstructured or fenced assistant text, strip only the specific recognized and converted block while retaining non-action data fences and preserving line boundary semantics for surrounding text.
+- **References:** `packages/agent/src/agent-loop/tool-dispatch.ts`, `packages/agent/src/agent-loop/message-preparation.ts`, `packages/agent/src/agent-loop/tool-execution.ts`, `packages/agent/test/misplaced-json-tool-recovery.test.ts`, `packages/agent/test/recovered-json-tool-context-stripping.test.ts`

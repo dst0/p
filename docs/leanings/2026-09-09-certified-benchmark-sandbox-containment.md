@@ -1,0 +1,22 @@
+# 2026-09-09 — Certified benchmark containment and OpenSSL dynamic linking under macOS sandbox
+
+- **Status:** Resolved
+- **Task/context:** Implementing certified comparison mode with sandbox containment and immutable evaluation freeze.
+- **Unexpected observation or failure:** Node child processes failed with SIGABRT or OpenSSL initialization errors under deny-default `sandbox-exec` when required Homebrew dylibs and OpenSSL config were omitted.
+- **Evidence:** Under `sandbox-exec`, `otool -L $(which node)` showed 20 dylibs dynamically linked in `/opt/homebrew/opt/*/lib/` and `/opt/homebrew/Cellar/*/lib/`, and Node crypto initialization failed with `fopen(/opt/homebrew/etc/openssl@3/openssl.cnf, rb): Operation not permitted` when `/opt/homebrew/etc` was stripped.
+- **Approaches tried:**
+  - **Attempt:** Omit all Homebrew paths to prevent arbitrary access.
+    - **Outcome:** Did not work.
+    - **Why:** Node exited with SIGABRT or OpenSSL initialization failure because the dynamic linker (dyld) and libcrypto could not access linked libraries or configuration.
+  - **Attempt:** Grant `/opt/homebrew/etc` broadly.
+    - **Outcome:** Did not work.
+    - **Why:** Violated containment constraint by granting access to arbitrary Homebrew configuration trees.
+  - **Attempt:** Target specifically `/opt/homebrew/opt`, `/opt/homebrew/Cellar`, and `/opt/homebrew/etc/openssl@3` only when Node is installed in Homebrew, while excluding repo root, evaluator freeze, and `/Users`.
+    - **Outcome:** Worked.
+    - **Why:** Satisfies Node dynamic linking requirements without granting arbitrary Homebrew configuration or home access.
+- **Root cause:** Homebrew-built Node dynamically links external dylibs and requires OpenSSL configuration, requiring explicit narrow grants in `sandbox-exec` profiles.
+- **Resolution:** Permitted only the necessary Homebrew dylib subpaths (`/opt/homebrew/opt`, `/opt/homebrew/Cellar`, `/opt/homebrew/etc/openssl@3`) conditional on Homebrew Node installation, while asserting exclusion of live repository, evaluator fixtures, and `/Users`.
+- **Verification:** Synthetic probe under `sandbox-exec` succeeds in reading allowed runtime file and fails on reading live repo, hidden tests, or writing outside paths.
+- **Prevention/follow-up:** Maintain `assertBenchmarkContainment` to fail closed if runtime or workspace escape containment or breach exclusion boundaries.
+- **Reusable learning:** Sandboxing dynamically linked language runtimes requires profiling their runtime loader dependencies (e.g. via `otool -L`) rather than guessing static binary execution.
+- **References:** `benchmarks/src/harness/benchmark-isolation.ts`, `benchmarks/test/workloads/certification.test.ts`.

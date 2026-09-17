@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["ai"],
+  "type": "Fixed",
+  "summary": "Preserve caller-provided legacy OpenRouter app-title headers when adding attribution defaults."
+}

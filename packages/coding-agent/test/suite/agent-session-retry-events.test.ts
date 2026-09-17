@@ -265,33 +265,34 @@ describe("AgentSession retry and event characterization", () => {
       }
     });
     harness.setResponses([fauxAssistantMessage("done")]);
-
     await harness.session.prompt("hi");
-
-    expect(order).toEqual([
-      "extension:message_start:user",
-      "public:message_start:user",
-      "extension:message_end:user",
-      "public:message_end:user",
-      "extension:message_start:assistant",
-      "public:message_start:assistant",
-      "extension:message_end:assistant",
-      "public:message_end:assistant",
-    ]);
+    expect(order).toEqual(
+      ["user", "custom", "assistant"].flatMap((role) => [
+        `extension:message_start:${role}`,
+        `public:message_start:${role}`,
+        `extension:message_end:${role}`,
+        `public:message_end:${role}`,
+      ]),
+    );
   });
 
   it("emits the expected event order for a single prompt", async () => {
     const harness = await createImplicitHarness();
     harnesses.push(harness);
     harness.setResponses([fauxAssistantMessage("hello")]);
-
     await harness.session.prompt("hi");
-
+    expect(harness.eventsOfType("message_start")[1]?.message).toMatchObject({
+      role: "custom",
+      customType: "runtime_context",
+      display: false,
+    });
     expect(normalizeEventOrder(harness.events)).toEqual([
       "agent_start",
       "turn_start",
       "message_start:user",
       "message_end:user",
+      "message_start:custom",
+      "message_end:custom",
       "request_start",
       "message_start:assistant",
       "message_update",
@@ -320,15 +321,15 @@ describe("AgentSession retry and event characterization", () => {
       fauxAssistantMessage([fauxToolCall("echo", { text: "hello" })], { stopReason: "toolUse" }),
       fauxAssistantMessage("done"),
     ]);
-
     await harness.session.prompt("hi");
-
     expect(toolRuns).toEqual(["hello"]);
     expect(normalizeEventOrder(harness.events)).toEqual([
       "agent_start",
       "turn_start",
       "message_start:user",
       "message_end:user",
+      "message_start:custom",
+      "message_end:custom",
       "request_start",
       "message_start:assistant",
       "message_update",
@@ -374,7 +375,6 @@ describe("AgentSession retry and event characterization", () => {
     const harness = await createImplicitHarness();
     harnesses.push(harness);
     harness.setResponses([fauxAssistantMessage("", { stopReason: "error", errorMessage: "broken" })]);
-
     await harness.session.prompt("hi");
 
     expect(harness.events[harness.events.length - 1]?.type).toBe("agent_end");

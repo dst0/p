@@ -26,6 +26,7 @@ export function do_setupExtensionShortcuts(self: InteractiveMode, extensionRunne
     sessionManager: self.sessionManager,
     modelRegistry: self.session.modelRegistry,
     model: self.session.model,
+    runBudgetPolicy: self.session.runBudget.policy,
     isIdle: () => !self.session.isStreaming,
     isProjectTrusted: () => self.settingsManager.isProjectTrusted(),
     signal: self.session.agent.signal,

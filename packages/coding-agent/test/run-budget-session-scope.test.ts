@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { agentLoop } from "@dst0/p-agent-core";
 import {
   type AssistantMessage,
@@ -206,7 +209,3 @@ describe("session model budget scope", () => {
     expect(budget.snapshot().requests).toBe(1);
   });
 });
-
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";

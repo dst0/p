@@ -133,6 +133,38 @@ Uses `~/.config/kilo/kilo.jsonc` (or `--kilo-config`). Set the model via `--kilo
 
 Uses `~/.codex/config.toml` (or `--codex-config`). Set the model via `--codex-model`.
 
+## Certified Comparison Mode
+
+Run an authoritative comparison across `p`, `pi`, and `kilo`:
+
+```bash
+npm run benchmark:agents -- --certified --model <model> --expected-resolved-model <resolved-model> --runs 3 \
+  --pi-executable <path-to-pi> --kilo-executable <path-to-kilo> \
+  --certified-network-host <llm-host:port>
+```
+
+Certified mode enforces strict comparative rigor:
+- **Agents & Tasks:** Exactly `p`, `pi`, and `kilo` across all 4 canonical benchmark tasks for at least 3 runs.
+- **Model Identity & Parity:** Explicit `--model` and `--expected-resolved-model` required. Surface aliases (such as distinct `--kilo-model` prefixes) are permitted only when runtime evidence confirms identity against `--expected-resolved-model`. Asymmetric generation options and a separate instruction-compiler model are rejected. P is explicitly bound to its default `evidence` task-verification profile so harness completion semantics match the runtime.
+- **Containment & Sandbox Isolation:** Candidate execution runs against a candidate runtime snapshot isolated from the live repository and hidden evaluator fixtures (`hidden.test.ts`, `rubric.json`). Pi and Kilo package runtimes plus P's project-instruction probe are copied into and hashed with that immutable snapshot before any startup or task turn. macOS `sandbox-exec` contains startup probes, parity preflights, and all task cells.
+- **Executable Closure Provenance:** Package links are inspected before copying. External symbolic links fail before destination creation unless the caller explicitly allowlists the exact package-relative link and resolved regular-file target; accepted external bytes are copied as regular files and their SHA-256 provenance is returned with the snapshot.
+- **Instruction Parity & Ephemeral Secret Lifecycle:** All candidate agents (Pi, P, Kilo) are subject to verified runtime instruction parity. Independently generated high-entropy directives are placed at the beginning, middle, and end of the authoritative instructions. Before task cells, an isolated startup preflight accepts only an exact three-part response with zero user-visible file or tool reads, proving automatic loading without a tail-only truncation loophole. Unit tests enforce the fail-closed command and evidence contract; only a live certified preflight against the real P, Pi, and Kilo CLIs supplies final auto-loading proof. Cleanup removes and scans augmented sources, workspace copies, recordings, and published artifacts so no raw receipt survives.
+- **Post-Binding Holdouts:** Every canonical task receives a fresh randomized challenge only after the candidate runtime hash is bound. Its expected digest stays in the evaluator closure rather than the workspace, so a candidate that only hardcodes the canonical fixtures cannot certify. This proves performance on these generated challenge variants, not universal agent intelligence; an adaptive or colluding model endpoint remains outside what a local harness can disprove.
+- **Bounded Network Egress:** Certified runs require one or more explicit `--certified-network-host <host:port>` values (or comma-separated `P_BENCHMARK_CERTIFIED_NETWORK_HOSTS`). The deny-default macOS sandbox grants outbound TCP only on the declared endpoint ports. Current macOS `sandbox-exec` rejects remote-host predicates other than `*` or `localhost`, so the host names are auditable declarations but cannot be enforced by this host mechanism; any destination on an allowed port remains reachable. This containment is macOS-only and does not prevent an authorized or colluding endpoint from receiving prompt data. Strong host-level egress proof requires a separately verified network namespace, firewall, or proxy outside this harness.
+- **Cost Policy & Opt-In Gating:** Monetary cost is accumulated across every streamed provider step (`usage.cost.total`, including Kilo numeric and object forms); malformed, negative, or non-finite values invalidate certification. Tokens are never substituted for cost. Gating on `--max-cost-ratio` is opt-in when cost metrics are available; if cost telemetry is absent, cost gating is skipped while duration and token thresholds remain strictly enforced.
+- **Baseline Quality & Protocol Separation:** Process/protocol completion (`exitCode === 0`, no timeouts or unhandled errors) is evaluated independently of the hidden rubric quality score for baseline comparison agents (Pi and Kilo), preserving valid comparative evidence even on partial benchmark completion. P strictly requires 100% rubric pass and zero penalties across every cell.
+- **Counterbalanced Execution:** Deterministic Latin-square scheduling counterbalances agent execution order across task and run cells.
+- **Certification Gates:** Publishes success only if all cells complete with verified model evidence, P achieves maximum rubric score with zero penalties across every cell, and configured duration, token, and cost ratio thresholds pass against both Pi and Kilo baselines. Multi-cell certified runs bypass single-cell outer authority.
+
+The certified overall deadline defaults to a derived lower bound covering every
+selected task timeout across all 36 minimum cells, one startup preflight per
+agent, Kilo startup probing, fixed setup allowance, and bounded per-cell
+orchestration margin. An explicit `--max-runtime-seconds` below that bound is
+rejected instead of starting a run that cannot complete by design.
+Every certified result row and nested metric is validated at runtime; missing
+models, malformed status or quality fields, non-positive token totals, and
+invalid elapsed or cost values fail closed.
+
 ## Output
 
 Results are written to `benchmarks/results/<timestamp>/` containing:
@@ -147,12 +179,30 @@ Results are written to `benchmarks/results/<timestamp>/` containing:
 
 Retained workspaces intentionally exclude `node_modules`; install from the
 fixture lockfile when reproducing a quality check.
+Certified runs default to a private `p-certified-benchmark-*` temporary directory
+outside the live repository; the exact location is printed at startup. An
+explicit certified output must be absent or an empty, non-symlink mode-`0700`
+directory. Task cells are created exclusively, and private results are published
+without overwrite. Their retained workspaces also omit `.git`, `AGENTS.md`, and
+symlinks after evaluation so ephemeral parity material and external references
+cannot survive publication. If process-tree termination is not confirmed, the
+harness does not traverse candidate-writable workspace, preflight, or
+configuration trees; it still redacts parent-owned receipt artifacts, disposes
+independent immutable state, and reports the primary and all cleanup failures
+together.
+The certified output root and each canonical ancestor are identity-bound by
+device, inode, and owner UID, then rechecked before artifact mutations and
+publication. Existing symlink, foreign-owner, and hard-linked targets fail
+closed. Node does not expose a portable `openat`-style directory-descriptor API,
+so a same-user attacker racing in the interval between a check and its filesystem
+operation is an explicit residual host limitation; run certification on a host
+where no untrusted same-UID process can mutate the output ancestry.
 
 ## Requirements
 
 - Node.js 22.19+
-- Pi CLI installed (`npm install -g @anthropic/pi`)
+- Pi CLI installed (`npm install -g @earendil-works/pi-coding-agent`)
 - P CLI built locally (this repository)
-- Kilo Code CLI installed (optional)
+- Kilo Code CLI installed (required for `--certified`, optional otherwise)
 - Codex CLI installed (optional)
 - Target model accessible via configured provider

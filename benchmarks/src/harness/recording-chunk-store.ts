@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { Writable } from "node:stream";
 import { finished } from "node:stream/promises";
 
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 import { BenchmarkOutputOverflowError } from "./output-overflow-error.ts";
 import {
   createVerifiedBrotliChunk,
@@ -50,6 +51,8 @@ export function createBenchmarkRecordingChunkStore(
   const maxStoredBytes = validateLimit("maxStoredBytes", options.maxStoredBytes ?? 256 * 1024 * 1024);
   const maxArchiveBytes = validateLimit("maxArchiveBytes", options.maxArchiveBytes ?? 256 * 1024 * 1024);
   const { activePath, chunkDirectory, compressedTempPath, manifestPath } = benchmarkRecordingPaths(finalPath);
+  const assertOutput = () => assertCertifiedOutputWritePath(finalPath);
+  assertOutput();
   mkdirSync(chunkDirectory, { mode: 0o700 });
   fsyncRecordingPath(dirname(chunkDirectory));
   try {
@@ -85,6 +88,7 @@ export function createBenchmarkRecordingChunkStore(
   }
 
   function createActiveStream(): void {
+    assertOutput();
     const descriptor = openSync(activePath, "wx", 0o600);
     activeStream = createWriteStream(activePath, { autoClose: true, fd: descriptor });
     activeStream.on("error", notifyFailure);
@@ -100,6 +104,7 @@ export function createBenchmarkRecordingChunkStore(
   async function rotate(): Promise<boolean> {
     if (activeBytes === 0) return true;
     await closeActiveStream();
+    assertOutput();
     const index = String(sequence++).padStart(12, "0");
     const rawPath = join(chunkDirectory, `chunk-${index}.jsonl.raw`);
     const compressedPath = join(chunkDirectory, `chunk-${index}.jsonl.br`);
@@ -123,6 +128,7 @@ export function createBenchmarkRecordingChunkStore(
   }
 
   async function appendBuffer(value: Uint8Array | string): Promise<void> {
+    assertOutput();
     if (state !== "active" && state !== "finalizing") {
       throw new Error(`Cannot append benchmark recording in ${state} state`);
     }
@@ -189,6 +195,7 @@ export function createBenchmarkRecordingChunkStore(
     await queue;
     if (!activeStream.destroyed && !activeStream.writableEnded) activeStream.end();
     await finished(activeStream).catch(() => undefined);
+    assertOutput();
     rmSync(chunkDirectory, { force: true, recursive: true });
     fsyncRecordingPath(dirname(chunkDirectory));
     state = "cleaned";
@@ -215,6 +222,7 @@ export function createBenchmarkRecordingChunkStore(
         notifyFailure(error);
         throw error;
       }
+      assertOutput();
       const result = await recomposeBenchmarkRecordingChunks(
         { ...accounting(), activePath, chunkDirectory },
         finalPath,
@@ -224,9 +232,11 @@ export function createBenchmarkRecordingChunkStore(
           overflowBaseBytes: reservedArchiveBytes,
         },
       );
+      assertOutput();
       publishBenchmarkRecordingManifest(manifestPath, manifest);
       archiveBytes = result.storedBytes + manifest.length;
       await closeActiveStream();
+      assertOutput();
       rmSync(chunkDirectory, { force: true, recursive: true });
       fsyncRecordingPath(dirname(chunkDirectory));
       state = "finalized";

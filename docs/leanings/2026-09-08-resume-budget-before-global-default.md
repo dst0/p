@@ -1,0 +1,25 @@
+# 2026-09-08 — Resume budget before global default
+
+- **Status:** Resolved
+- **Task/context:** Validate first-use task-budget selection for resumed CLI sessions.
+- **Unexpected observation or failure:** Startup required a global budget before it resolved the target session, while cached ledger reads could still overwrite a concurrent atomic replacement during publication.
+- **Evidence:** A headless startup regression returned `budget_required` instead of the restored policy. A deterministic publication race replaced requests `3` with `10` between read and rename; the stale writer previously published `4`.
+- **Approaches tried:**
+  - **Attempt:** Resolve the global default before session selection.
+    - **Outcome:** Did not work
+    - **Why:** The persisted per-session policy was not yet addressable.
+  - **Attempt:** Resolve and bind the target session ledger first, then fall back to explicit or global policy for new tasks.
+    - **Outcome:** Worked
+    - **Why:** Resume can use its own authority while genuinely new headless tasks remain fail-closed.
+  - **Attempt:** Rely on the cooperating lock and monotonic reads alone.
+    - **Outcome:** Did not work
+    - **Why:** A same-user writer that does not honor the lock can replace the destination after the last read.
+  - **Attempt:** Bind the observed content and file identity, revalidate immediately before rename, and verify the published inode and content afterward.
+    - **Outcome:** Worked for cooperating writers and changes visible at the final observation
+    - **Why:** An observed changed destination is preserved and the stale update fails closed instead of overwriting newer accounting.
+- **Root cause:** Budget selection ran before session identity resolution, and discovery used a detached policy snapshot instead of retaining the verified storage object.
+- **Resolution:** CLI startup resolves and caches the session ledger before global fallback. Each write binds its read observation, rejects replacement visible at the final pre-publication check, verifies its atomic publication, and preserves monotonic spend and uncertainty for cooperating writers.
+- **Verification:** Regressions cover headless resume, discovery, deletion, rollback of spend/safety state, and a deterministic callback-time atomic replacement from requests `3` to `10` that remains intact and reloadable.
+- **Prevention/follow-up:** Portable Node filesystem APIs do not provide a compare-and-swap rename. A fully privileged same-user writer can still replace the file after the final observation but before rename, or after post-verification; OS-level access control is required against that adversary. The cooperating lock plus content/inode/version checks fail closed for normal local writers and observable replacements without silently merging uncertain accounting.
+- **Reusable learning:** A resumed task's persisted policy outranks a missing global default.
+- **References:** `packages/coding-agent/src/main/command-dispatch.ts`, `packages/coding-agent/src/core/run-budget/state-storage.ts`, `packages/coding-agent/test/run-budget-session-resume.test.ts`

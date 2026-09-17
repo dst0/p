@@ -70,3 +70,55 @@ test("evaluation freeze separates public candidate bytes from hidden evaluator b
     rmSync(parent, { recursive: true, force: true });
   }
 });
+
+test("evaluation freeze removes candidate runtime even when evaluator disposal fails", () => {
+  const root = mkdtempSync(join(tmpdir(), "evaluation-freeze-best-effort-source-"));
+  const parent = mkdtempSync(join(tmpdir(), "evaluation-freeze-best-effort-parent-"));
+  try {
+    writeEvaluationFixture(root);
+    const freeze = createBenchmarkEvaluationFreeze(root, parent, process.execPath);
+    const candidate = freeze.candidateRuntimePath;
+    freeze.evaluator.dispose = () => {
+      throw new Error("evaluator cleanup failed");
+    };
+    assert.throws(() => freeze.dispose(), /evaluator cleanup failed/u);
+    assert.equal(existsSync(candidate), false);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+    rmSync(parent, { recursive: true, force: true });
+  }
+});
+
+test("evaluation freeze construction rollback preserves primary and attempts every cleanup", () => {
+  const calls: string[] = [];
+  const primary = new Error("hash failed");
+  const evaluatorCleanup = new Error("evaluator cleanup failed");
+  const candidateCleanup = new Error("candidate cleanup failed");
+  assert.throws(
+    () =>
+      createBenchmarkEvaluationFreeze("/unused", "/unused", process.execPath, {
+        createCandidate: () => "/candidate",
+        createEvaluator: () => ({
+          path: "/evaluator",
+          sha256: "hash",
+          dispose: () => {
+            calls.push("evaluator");
+            throw evaluatorCleanup;
+          },
+        }),
+        hashCandidate: () => {
+          throw primary;
+        },
+        removeCandidate: () => {
+          calls.push("candidate");
+          throw candidateCleanup;
+        },
+      }),
+    (error) =>
+      error instanceof AggregateError &&
+      error.errors[0] === primary &&
+      error.errors[1] === evaluatorCleanup &&
+      error.errors[2] === candidateCleanup,
+  );
+  assert.deepEqual(calls, ["evaluator", "candidate"]);
+});

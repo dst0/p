@@ -9,6 +9,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { ENV_AGENT_DIR } from "../src/config.ts";
 
 const cliPath = resolve(__dirname, "../src/cli.ts");
+const tsxImportPath = import.meta.resolve("tsx");
 const tempDirs: string[] = [];
 const servers: Server[] = [];
 
@@ -38,7 +39,7 @@ function createTempDir(prefix: string): string {
 
 async function runCli(cwd: string, agentDir: string, args: string[]): Promise<CliResult> {
   return new Promise((resolvePromise, reject) => {
-    const child = spawn(process.execPath, [cliPath, ...args], {
+    const child = spawn(process.execPath, ["--import", tsxImportPath, cliPath, ...args], {
       cwd,
       env: {
         ...process.env,

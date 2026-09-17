@@ -4,6 +4,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 source "$SCRIPT_DIR/scripts/indexing-reinstall-transaction.sh"
+source "$SCRIPT_DIR/scripts/npm-link-discovery.sh"
 
 INDEXING_REINSTALL_MARKER_ACTIVE=false
 cleanup_indexing_reinstall_marker() {
@@ -74,23 +75,7 @@ echo "=== Globally Relinking P CLI ==="
 NPM_BIN=$(command -v npm)
 LINK_PREFIXES=("$(npm prefix -g)")
 P_COMMANDS=()
-while IFS= read -r P_COMMAND; do
-    [[ -n "$P_COMMAND" && -L "$P_COMMAND" ]] || continue
-    P_COMMAND_TARGET=$(readlink "$P_COMMAND")
-    [[ "$P_COMMAND_TARGET" == *"node_modules/@dst0/p/dist/cli.js" ]] || continue
-    P_COMMANDS+=("$P_COMMAND")
-    P_COMMAND_PREFIX=$(dirname "$(dirname "$P_COMMAND")")
-    PREFIX_RECORDED=false
-    for LINK_PREFIX in "${LINK_PREFIXES[@]}"; do
-        if [[ "$LINK_PREFIX" == "$P_COMMAND_PREFIX" ]]; then
-            PREFIX_RECORDED=true
-            break
-        fi
-    done
-    if [[ "$PREFIX_RECORDED" == false ]]; then
-        LINK_PREFIXES+=("$P_COMMAND_PREFIX")
-    fi
-done < <(type -a -p p 2>/dev/null || true)
+discover_npm_backed_p_links_on_path "${PATH:-}"
 for LINK_PREFIX in "${LINK_PREFIXES[@]}"; do
     if ! npm_config_prefix="$LINK_PREFIX" "$NPM_BIN" link -w @dst0/p --ignore-scripts --no-audit --no-fund --loglevel=error; then
         if sudo -n true 2>/dev/null; then

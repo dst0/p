@@ -1,3 +1,4 @@
+import { type ModelCallAccounting, validateModelCallAccounting } from "./model-call-guard.ts";
 import type { AssistantImages, ImagesApi, ImagesContext, ImagesFunction, ImagesModel, ImagesOptions } from "./types.ts";
 
 export type ImagesApiFunction = (
@@ -9,11 +10,13 @@ export type ImagesApiFunction = (
 export interface ImagesApiProvider<TApi extends ImagesApi = ImagesApi, TOptions extends ImagesOptions = ImagesOptions> {
   api: TApi;
   generateImages: ImagesFunction<TApi, TOptions>;
+  modelCallAccounting?: ModelCallAccounting;
 }
 
 interface ImagesApiProviderInternal {
-  api: ImagesApi;
-  generateImages: ImagesApiFunction;
+  readonly api: ImagesApi;
+  readonly generateImages: ImagesApiFunction;
+  readonly modelCallAccounting?: ModelCallAccounting;
 }
 
 type RegisteredImagesApiProvider = {
@@ -39,11 +42,15 @@ export function registerImagesApiProvider<TApi extends ImagesApi, TOptions exten
   provider: ImagesApiProvider<TApi, TOptions>,
   sourceId?: string,
 ): void {
+  const modelCallAccounting =
+    provider.modelCallAccounting === undefined ? undefined : validateModelCallAccounting(provider.modelCallAccounting);
+  const registeredProvider: ImagesApiProviderInternal = Object.freeze({
+    api: provider.api,
+    generateImages: wrapGenerateImages(provider.api, provider.generateImages),
+    ...(modelCallAccounting ? { modelCallAccounting } : {}),
+  });
   imagesApiProviderRegistry.set(provider.api, {
-    provider: {
-      api: provider.api,
-      generateImages: wrapGenerateImages(provider.api, provider.generateImages),
-    },
+    provider: registeredProvider,
     sourceId,
   });
 }

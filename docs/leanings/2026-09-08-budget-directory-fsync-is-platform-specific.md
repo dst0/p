@@ -1,0 +1,25 @@
+# 2026-09-08 — Budget directory fsync is platform-specific
+
+- **Status:** Resolved
+- **Task/context:** Review the durable task-budget ledger on supported operating systems.
+- **Unexpected observation or failure:** POSIX directory fsync fails on Windows, and checking only the final ledger with `O_NOFOLLOW` still allowed a symlinked `.budgets` ancestor to redirect writes.
+- **Evidence:** One regression simulated Windows directory-handle rejection after rename. Another symlinked `.budgets` to an external directory and observed the ledger written outside the session tree.
+- **Approaches tried:**
+  - **Attempt:** Apply the POSIX directory fsync sequence on every platform.
+    - **Outcome:** Did not work
+    - **Why:** Node does not expose a portable Windows directory-open/fsync sequence.
+  - **Attempt:** Keep file fsync and atomic rename everywhere, then fsync the directory only on POSIX.
+    - **Outcome:** Worked
+    - **Why:** Windows can commit the replacement without the unsupported directory handle while POSIX retains its stronger directory durability barrier.
+  - **Attempt:** Reject final-component symlinks only.
+    - **Outcome:** Did not work
+    - **Why:** Filesystem traversal still followed a symlinked storage directory.
+  - **Attempt:** Canonicalize the intended session root and reject symlinked descendants before creation, locking, and publication.
+    - **Outcome:** Worked
+    - **Why:** Ledger paths stay beneath the bound session tree while normal Windows directories retain the portable write path.
+- **Root cause:** A POSIX-only durability primitive was treated as cross-platform, and final-component protection was mistaken for complete path protection.
+- **Resolution:** The ledger fsyncs the replacement file everywhere, fsyncs the parent only on POSIX, and validates canonical storage ancestry around critical filesystem steps.
+- **Verification:** Windows coverage asserts file fsync/rename under the bound-root abstraction; storage recovery proves a symlinked `.budgets` cannot create an external ledger.
+- **Prevention/follow-up:** Cross-platform persistence must separate portable durability from path-integrity validation.
+- **Reusable learning:** Final-component no-follow flags do not secure ancestor traversal; bind and validate the full writable subtree.
+- **References:** `packages/coding-agent/src/core/run-budget/state-storage.ts`, `packages/coding-agent/test/run-budget-storage-windows-durability.test.ts`

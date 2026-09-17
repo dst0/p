@@ -13,7 +13,7 @@ import { type AppMode, resolveProjectTrusted } from "../core/project-trust.ts";
 import { SessionRunBudget } from "../core/run-budget/session-run-budget.ts";
 import type { RunBudgetPolicy } from "../core/run-budget-policy.ts";
 import { SettingsManager } from "../core/settings-manager.ts";
-import { hasTrustRequiringProjectResources, type ProjectTrustStore } from "../core/trust-manager.ts";
+import { getProjectTrustResourceRoots, type ProjectTrustStore } from "../core/trust-manager.ts";
 import { collectSettingsDiagnostics } from "./cli-entry.ts";
 import { buildSessionOptions } from "./runtime-init.ts";
 import type { MainOptions } from "./types.ts";
@@ -49,12 +49,15 @@ interface CliRuntimeServicesResult {
 function createCliRuntimeServicesFactory(
   options: CliRuntimeFactoryOptions,
 ): (input: CliRuntimeServicesInput) => Promise<CliRuntimeServicesResult> {
-  const projectTrustByCwd = new Map<string, boolean>();
+  const projectTrustByCwd = new Map<string, { resourceSignature: string; trusted: boolean }>();
 
   return async ({ cwd, agentDir, isInitialRuntime, projectTrustContext }) => {
     const projectTrustDiagnostics: AgentSessionRuntimeDiagnostic[] = [];
-    const cachedProjectTrust = projectTrustByCwd.get(cwd);
-    const hasTrustRequiringResources = hasTrustRequiringProjectResources(cwd);
+    const trustRoots = getProjectTrustResourceRoots(cwd);
+    const resourceSignature = trustRoots.join("\0");
+    const cachedTrust = projectTrustByCwd.get(cwd);
+    const cachedProjectTrust = cachedTrust?.resourceSignature === resourceSignature ? cachedTrust.trusted : undefined;
+    const hasTrustRequiringResources = trustRoots.length > 0;
     const shouldResolveProjectTrust =
       options.parsed.projectTrustOverride === undefined &&
       cachedProjectTrust === undefined &&
@@ -63,7 +66,7 @@ function createCliRuntimeServicesFactory(
       ? false
       : (cachedProjectTrust ??
         options.parsed.projectTrustOverride ??
-        (!hasTrustRequiringResources || options.trustStore.get(cwd) === true));
+        (!hasTrustRequiringResources || trustRoots.every((trustRoot) => options.trustStore.get(trustRoot) === true)));
     const runtimeSettingsManager = SettingsManager.create(cwd, agentDir, { projectTrusted });
     const services = await createAgentSessionServices({
       cwd,
@@ -90,7 +93,7 @@ function createCliRuntimeServicesFactory(
                   }),
                 onExtensionError: (message) => projectTrustDiagnostics.push({ type: "warning", message }),
               });
-              projectTrustByCwd.set(cwd, trusted);
+              projectTrustByCwd.set(cwd, { resourceSignature, trusted });
               return trusted;
             },
           }
@@ -136,9 +139,15 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
   const createRuntimeServices = createCliRuntimeServicesFactory(options);
 
   return async ({ cwd, agentDir, sessionManager, sessionStartEvent, projectTrustContext }) => {
+    const initialRunBudget = sessionStartEvent === undefined ? options.parsed.runBudget : undefined;
+    const defaultRunBudget =
+      sessionStartEvent === undefined
+        ? options.defaultRunBudget
+        : SettingsManager.create(cwd, agentDir, { projectTrusted: false }).getRunBudgetPolicy();
     const budget = new SessionRunBudget(sessionManager, {
-      runBudget: options.parsed.runBudget,
-      defaultRunBudget: options.defaultRunBudget,
+      runBudget: initialRunBudget,
+      defaultRunBudget,
+      requireDefaultRunBudget: true,
     });
     const { services, diagnostics } = await budget.run(() =>
       createRuntimeServices({
@@ -179,8 +188,8 @@ export function createCliRuntimeFactory(options: CliRuntimeFactoryOptions): Crea
     }
 
     const created = await createAgentSessionFromServices({
-      runBudget: options.parsed.runBudget,
-      defaultRunBudget: options.defaultRunBudget,
+      runBudget: initialRunBudget,
+      defaultRunBudget,
       services,
       sessionManager,
       sessionStartEvent,

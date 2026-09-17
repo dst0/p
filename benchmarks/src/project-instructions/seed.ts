@@ -13,24 +13,22 @@ import {
 } from "node:fs";
 import { join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { AuthStorage } from "../../../packages/coding-agent/dist/core/auth-storage.js";
-import { ModelRegistry } from "../../../packages/coding-agent/dist/core/model-registry.js";
-import { getProjectInstructionCompilerFailureTelemetry } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-attempt-diagnostics.js";
-import { buildProjectInstructionConstraints } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-constraints.js";
-import { classifyProjectInstructionCompilerError } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-diagnostics.js";
+import type { ProjectInstructionManifest } from "../../../packages/coding-agent/src/core/project-instructions/types.ts";
 import {
+  AuthStorage,
   buildProjectInstructionCompilerModelIdentity,
+  buildProjectInstructionConstraints,
+  classifyProjectInstructionCompilerError,
+  compileProjectInstructionsWithModel,
+  DEFAULT_MODEL_COMPILER_CONTRACT_REVISION,
+  getProjectInstructionCompilerFailureTelemetry,
+  ModelRegistry,
   matchesProjectInstructionCompilerModelIdentity,
-} from "../../../packages/coding-agent/dist/core/project-instructions/compiler-reasoning-control.js";
-import { validateProjectInstructionCompilerResult } from "../../../packages/coding-agent/dist/core/project-instructions/compiler-validation.js";
-import { splitInstructionSources } from "../../../packages/coding-agent/dist/core/project-instructions/content.js";
-import { compileProjectInstructionsWithModel } from "../../../packages/coding-agent/dist/core/project-instructions/model-compiler.js";
-import {
   PROJECT_INSTRUCTION_COMPILER_VERSION,
   prepareProjectInstructions,
-} from "../../../packages/coding-agent/dist/core/project-instructions/processor.js";
-import { DEFAULT_MODEL_COMPILER_CONTRACT_REVISION } from "../../../packages/coding-agent/dist/core/project-instructions/session-controller.js";
-import type { ProjectInstructionManifest } from "../../../packages/coding-agent/src/core/project-instructions/types.ts";
+  splitInstructionSources,
+  validateProjectInstructionCompilerResult,
+} from "./coding-agent-runtime-bindings.ts";
 import { computeAuthorizedProjectInstructionPromptHashes } from "./prompt-projection.ts";
 import {
   assertCertifiedSeedRecord,

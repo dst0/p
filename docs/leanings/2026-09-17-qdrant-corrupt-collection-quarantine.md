@@ -1,0 +1,22 @@
+# 2026-09-17 — Quarantine a corrupt derived Qdrant collection
+
+- **Status:** Resolved
+- **Task/context:** Restore the installed indexing-service smoke after rebuilding the current checkout.
+- **Unexpected observation or failure:** Qdrant 1.18.3 exited with code 101 before readiness while loading one persisted sparse-vector shard, preventing `./reinstall.sh` from completing.
+- **Evidence:** A clean diagnostic start reproduced `Sparse vector deserialization should not fail: Io(Kind(UnexpectedEof))` for collection `p_code_chunks_5d83e1d971c98fa9_mu4fmrae-8b4e7d47`. The affected collection was a derived index of approximately 2.2 GB with 846 non-metadata files; no Qdrant or indexing daemon process remained active before recovery.
+- **Approaches tried:**
+  - **Attempt:** Retry the installer without changing persisted storage.
+    - **Outcome:** Did not work.
+    - **Why:** Qdrant deterministically panicked while loading the same sparse shard.
+  - **Attempt:** Delete the collection in place.
+    - **Outcome:** Not performed.
+    - **Why:** The index is rebuildable, but in-place deletion would remove the rollback path and obscure the exact damaged artifact.
+  - **Attempt:** Move only the identified collection to a same-volume quarantine after verifying device, inode, size, and process ownership.
+    - **Outcome:** Worked.
+    - **Why:** The move preserved the original collection inode and all files in a recoverable quarantine while allowing Qdrant to start and rebuild the missing derived collection.
+- **Root cause:** The persisted sparse-vector artifact is corrupt; whether the corruption came from the external ExFAT storage, an interrupted write, or an earlier runtime event remains unproven.
+- **Resolution:** Quarantined only the failing collection on the same device, leaving all other collections and source repositories untouched. The installer then recreated the service and started Qdrant successfully.
+- **Verification:** The retrying `./reinstall.sh` completed with `Real semantic-search smoke passed (1 result)`, installed `com.dst.p.code-index`, and exited 0. The quarantined tree retained device `16777238`, inode `2914803`, and 846 files.
+- **Prevention/follow-up:** For future Qdrant startup corruption, stop and identity-check all owned processes, capture a manifest, quarantine the exact rebuildable collection on the same volume, and verify service health before considering deletion. Keep the quarantine until rebuilt collections are confirmed healthy.
+- **Reusable learning:** A derived vector index can be safely recoverable without sacrificing evidence, but only after isolating the exact failing collection and preserving a verified same-volume rollback copy.
+- **References:** `packages/code-index/src/embed/qdrant-server.ts`; `scripts/reinstall.sh`; `/Users/dst/.p/agent/code-rag/qdrant/quarantine-20260917T204700Z` (operator-local quarantine).

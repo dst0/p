@@ -29,6 +29,7 @@ type TrustFile = Record<string, boolean | null | undefined>;
 const TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES = [
   "settings.json",
   "extensions",
+  "agents",
   "skills",
   "prompts",
   "themes",
@@ -175,34 +176,49 @@ function withTrustFileLock<T>(path: string, fn: () => T): T {
 }
 
 /**
- * Returns true when cwd has project-local resources that must be gated by
- * project trust: trust-requiring entries under cwd/.p, or .agents/skills in
- * cwd or one of its ancestors. Returns false when no such project resources
- * exist. The user/global ~/.agents/skills directory is always treated as a
- * trusted user resource and is ignored here, even when cwd is $HOME.
+ * Returns every source root for project-local resources that require trust,
+ * ordered from nearest to farthest. The user/global ~/.agents/skills directory
+ * is always treated as trusted and is ignored here, even when cwd is $HOME.
  */
-export function hasTrustRequiringProjectResources(cwd: string): boolean {
+export function getProjectTrustResourceRoots(cwd: string): string[] {
   const homeDir = canonicalizePath(resolvePath(process.env.HOME || homedir()));
   const userAgentsSkillsDir = join(homeDir, ".agents", "skills");
-  let currentDir = canonicalizePath(resolvePath(cwd));
-
-  const configDir = join(currentDir, CONFIG_DIR_NAME);
-  if (TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => existsSync(join(configDir, entry)))) {
-    return true;
-  }
+  const resolvedCwd = canonicalizePath(resolvePath(cwd));
+  let currentDir = resolvedCwd;
+  const resourceRoots = new Set<string>();
+  let foundProjectAgents = false;
 
   while (true) {
+    const configDir = join(currentDir, CONFIG_DIR_NAME);
+    if (
+      currentDir === resolvedCwd &&
+      TRUST_REQUIRING_PROJECT_CONFIG_RESOURCES.some((entry) => entry !== "agents" && existsSync(join(configDir, entry)))
+    ) {
+      resourceRoots.add(currentDir);
+    }
+    if (!foundProjectAgents && existsSync(join(configDir, "agents"))) {
+      foundProjectAgents = true;
+      resourceRoots.add(currentDir);
+    }
     const agentsSkillsDir = join(currentDir, ".agents", "skills");
     if (agentsSkillsDir !== userAgentsSkillsDir && existsSync(agentsSkillsDir)) {
-      return true;
+      resourceRoots.add(currentDir);
     }
 
     const parentDir = dirname(currentDir);
     if (parentDir === currentDir) {
-      return false;
+      return Array.from(resourceRoots);
     }
     currentDir = parentDir;
   }
+}
+
+export function getProjectTrustResourceRoot(cwd: string): string | undefined {
+  return getProjectTrustResourceRoots(cwd)[0];
+}
+
+export function hasTrustRequiringProjectResources(cwd: string): boolean {
+  return getProjectTrustResourceRoots(cwd).length > 0;
 }
 
 export class ProjectTrustStore {

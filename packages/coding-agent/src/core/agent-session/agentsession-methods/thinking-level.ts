@@ -5,6 +5,7 @@ import { stripFrontmatter } from "../../../utils/frontmatter.ts";
 import type { CustomMessage } from "../../messages.ts";
 import { expandPromptTemplate } from "../../prompt-templates.ts";
 import type { AgentSession } from "../agentsession.ts";
+import { formatTemporalContext } from "../temporal-context.ts";
 import { createProjectRuleTurnContext } from "./prompt-context.ts";
 
 export async function do__tryExecuteExtensionCommand(self: AgentSession, text: string): Promise<boolean> {
@@ -98,6 +99,7 @@ export async function do__queueFollowUp(self: AgentSession, text: string, images
 }
 
 function createQueuedTurnMessages(self: AgentSession, text: string, images?: ImageContent[]): AgentMessage[] {
+  const timestamp = Date.now();
   const content: (TextContent | ImageContent)[] = [{ type: "text", text }];
   if (images) {
     content.push(...images);
@@ -105,14 +107,17 @@ function createQueuedTurnMessages(self: AgentSession, text: string, images?: Ima
   const userMessage: AgentMessage = {
     role: "user",
     content,
-    timestamp: Date.now(),
+    timestamp,
   };
-  const messages: AgentMessage[] = [userMessage];
+  const messages: AgentMessage[] = [
+    userMessage,
+    self._createRuntimeContextPromptMessage(formatTemporalContext(new Date(timestamp)), timestamp),
+  ];
   if (self._projectInstructionMode === "compiled") {
     const turn = createProjectRuleTurnContext(self, text);
     if (turn.gate) turn.gate.candidateMerge = "union";
     self._queuedProjectRuleGates.set(userMessage, turn.gate);
-    if (turn.prompt) messages.push(self._createRuntimeContextPromptMessage(turn.prompt, Date.now(), turn.gate));
+    if (turn.prompt) messages.push(self._createRuntimeContextPromptMessage(turn.prompt, timestamp, turn.gate));
   }
   return messages;
 }

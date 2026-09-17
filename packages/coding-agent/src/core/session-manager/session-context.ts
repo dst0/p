@@ -1,9 +1,9 @@
 import type { AgentMessage } from "@dst0/p-agent-core";
-import { existsSync, mkdirSync } from "fs";
 import { join } from "path";
 import { getAgentDir as getDefaultAgentDir } from "../../config.ts";
 import { resolvePath } from "../../utils/paths.ts";
 import { createBranchSummaryMessage, createCompactionSummaryMessage, createCustomMessage } from "../messages.ts";
+import { ensureDirectoryDurably } from "./session-file-durability.ts";
 import type { CompactionEntry, FileEntry, SessionContext, SessionEntry } from "./types.ts";
 
 export function buildSessionContext(
@@ -130,9 +130,7 @@ export function getDefaultSessionDirPath(cwd: string, agentDir: string = getDefa
 
 export function getDefaultSessionDir(cwd: string, agentDir: string = getDefaultAgentDir()): string {
   const sessionDir = getDefaultSessionDirPath(cwd, agentDir);
-  if (!existsSync(sessionDir)) {
-    mkdirSync(sessionDir, { recursive: true });
-  }
+  ensureDirectoryDurably(sessionDir);
   return sessionDir;
 }
 

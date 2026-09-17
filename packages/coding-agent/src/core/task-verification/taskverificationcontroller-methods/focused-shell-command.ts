@@ -1,3 +1,4 @@
+import { normalize } from "node:path";
 import { tokenizeShellCommands } from "../git-command-classification.ts";
 
 type ShellConnector = "&&" | "||" | ";" | "&" | "|" | "newline";
@@ -59,7 +60,8 @@ function literalDirectoryChange(words: readonly string[]): string | undefined {
   const pathIndex = words[1] === "--" ? 2 : 1;
   const path = words[pathIndex];
   if (!path || words.length !== pathIndex + 1 || path.startsWith("-") || path.startsWith("~")) return undefined;
-  return [...path].some((character) => NON_LITERAL_DIRECTORY_CHARACTERS.has(character)) ? undefined : path;
+  if ([...path].some((character) => NON_LITERAL_DIRECTORY_CHARACTERS.has(character))) return undefined;
+  return normalize(path);
 }
 
 function splitTopLevelShell(command: string): ShellShape | undefined {

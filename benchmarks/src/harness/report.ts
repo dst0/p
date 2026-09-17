@@ -1,5 +1,6 @@
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { assertCertifiedOutputWritePath } from "./certified-output-integrity.ts";
 
 export interface BenchmarkUsage {
   input: number;
@@ -219,6 +220,8 @@ export function createBenchmarkReport(
   }
   report +=
     "- Provider latency, model sampling, cache state, agent order, and package versions can dominate this small sample.\n";
-  writeFileSync(join(output, "report.md"), report, "utf8");
+  const reportPath = join(output, "report.md");
+  assertCertifiedOutputWritePath(reportPath);
+  writeFileSync(reportPath, report, "utf8");
   return { ...summaries, winner };
 }

@@ -1,14 +1,16 @@
 import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
+import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import {
   benchmarkStartupProbeFailure,
   finalizeBenchmarkStartupEvidence,
   finalizeKiloStartupEvidence,
 } from "../harness/startup-probe-finalization.ts";
 import { benchmarkStderrLogName, writeBenchmarkStderrLog } from "../harness/stderr-log.ts";
-import { commandForAgent, commandForKiloModelResolution } from "./agent-command.ts";
+import { commandForAgent, commandForKiloModelResolution, sandboxedCommandIfNeeded } from "./agent-command.ts";
 import { type AgentTaskResult, type CommandRunOptions, runRecordedCommand } from "./agent-turn-runner.ts";
+import { isBenchmarkMutableArtifactsUnsafeError } from "./benchmark-run-finalization.ts";
 import { parseRecording, type RecordingMetrics } from "./recording-metrics.ts";
 import type { RunnerOptions } from "./runner-options.ts";
 
@@ -105,9 +107,11 @@ export async function runKiloStartupProbe(
   configDir: string,
   output: string,
   deadline: number,
+  runCommand: typeof runRecordedCommand = runRecordedCommand,
 ): Promise<KiloStartupEvidence> {
   const diagnosticsDir = join(output, "diagnostics", "kilo-startup");
   const workspace = join(configDir, "startup-probe-workspace");
+  assertCertifiedOutputWritePath(diagnosticsDir);
   mkdirSync(diagnosticsDir, { recursive: true });
   mkdirSync(workspace, { recursive: true });
   const evidence: KiloStartupEvidence = {
@@ -120,8 +124,15 @@ export async function runKiloStartupProbe(
   let probeFailure: unknown;
   try {
     const resolutionRecording = "model-resolution.log.br";
-    const resolutionResult = await runRecordedCommand(
+    const resolutionCommand = sandboxedCommandIfNeeded(
       commandForKiloModelResolution(options, configDir, workspace),
+      options,
+      workspace,
+      configDir,
+    );
+    const resolutionResult = await runStartupRecordedCommand(
+      runCommand,
+      resolutionCommand,
       Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
       join(diagnosticsDir, resolutionRecording),
       { collectRawStdout: true, signal: options.signal },
@@ -146,7 +157,7 @@ export async function runKiloStartupProbe(
     }
     const requestRecording = "request.jsonl.br";
     const marker = "benchmark-startup-ok";
-    const requestResult = await runRecordedCommand(
+    const requestCommand = sandboxedCommandIfNeeded(
       commandForAgent(
         "kilo",
         options,
@@ -154,34 +165,51 @@ export async function runKiloStartupProbe(
         configDir,
         workspace,
       ),
+      options,
+      workspace,
+      configDir,
+    );
+    const requestResult = await runStartupRecordedCommand(
+      runCommand,
+      requestCommand,
       Math.min(options.kiloStartupTimeoutSeconds * 1000, Math.max(1, deadline - performance.now())),
       join(diagnosticsDir, requestRecording),
       { stopOnMarker: marker, signal: options.signal },
     );
     const requestStderr = writeBenchmarkStderrLog(diagnosticsDir, "request.stderr", requestResult.stderr);
     const metrics = parseRecording(requestResult.stdout, "kilo");
-    const responseMatched =
-      metrics.finalText.trim() === marker ||
-      metrics.finalText.includes(marker) ||
-      requestResult.stdout.includes(marker);
-    const requestPassed =
-      !requestResult.timedOut &&
-      (requestResult.code === 0 || responseMatched) &&
-      metrics.errors.length === 0 &&
-      responseMatched;
+    const responseMatched = metrics.finalText.trim() === marker;
+    const observedModels = metrics.responseModels ?? [];
+    const modelMatched =
+      observedModels.length > 0 && observedModels.every((model) => model === options.expectedResolvedModel);
+    const cleanProcess =
+      !requestResult.timedOut && requestResult.code === 0 && !requestResult.signal && !requestResult.error;
+    const requestPassed = cleanProcess && metrics.errors.length === 0 && responseMatched && modelMatched;
     evidence.request = {
       ...commandProbeEvidence(requestResult, requestRecording, requestStderr),
       status: requestPassed ? "passed" : requestResult.timedOut ? "timed_out" : "failed",
       responseMatched,
       errors: metrics.errors,
     };
+    if (!requestPassed) {
+      throw new Error(
+        `Kilo request probe failed: process=${cleanProcess} response=${responseMatched} model=${modelMatched}`,
+      );
+    }
     evidence.status = "passed";
     return evidence;
   } catch (error) {
-    probeFailure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir);
+    const failure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir);
+    probeFailure = isBenchmarkMutableArtifactsUnsafeError(error) ? error : failure;
     throw probeFailure;
   } finally {
-    finalizeKiloStartupEvidence(configDir, diagnosticsDir, evidence, probeFailure);
+    finalizeKiloStartupEvidence(
+      configDir,
+      diagnosticsDir,
+      evidence,
+      probeFailure,
+      !isBenchmarkMutableArtifactsUnsafeError(probeFailure),
+    );
   }
 }
 
@@ -190,9 +218,11 @@ export async function runAgyStartupProbe(
   configDir: string,
   output: string,
   deadline: number,
+  runCommand: typeof runRecordedCommand = runRecordedCommand,
 ): Promise<AgyStartupEvidence> {
   const diagnosticsDir = join(output, "diagnostics", "agy-startup");
   const workspace = join(configDir, "startup-probe-workspace");
+  assertCertifiedOutputWritePath(diagnosticsDir);
   mkdirSync(diagnosticsDir, { recursive: true });
   mkdirSync(workspace, { recursive: true });
   const recording = "request.jsonl.br";
@@ -206,7 +236,8 @@ export async function runAgyStartupProbe(
   };
   let probeFailure: unknown;
   try {
-    const result = await runRecordedCommand(
+    const result = await runStartupRecordedCommand(
+      runCommand,
       commandForAgent("agy", options, { prompt: `Reply exactly: ${marker}`, timeoutSeconds: 60 }, configDir, workspace),
       Math.min(60_000, Math.max(1, deadline - performance.now())),
       join(diagnosticsDir, recording),
@@ -228,9 +259,17 @@ export async function runAgyStartupProbe(
     evidence.status = "passed";
     return evidence;
   } catch (error) {
-    probeFailure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir);
+    const failure = benchmarkStartupProbeFailure(error, evidence, diagnosticsDir);
+    probeFailure = isBenchmarkMutableArtifactsUnsafeError(error) ? error : failure;
     throw probeFailure;
   } finally {
     finalizeBenchmarkStartupEvidence(diagnosticsDir, evidence, probeFailure);
   }
+}
+
+async function runStartupRecordedCommand(
+  runCommand: typeof runRecordedCommand,
+  ...args: Parameters<typeof runRecordedCommand>
+): Promise<Awaited<ReturnType<typeof runRecordedCommand>>> {
+  return runCommand(...args);
 }

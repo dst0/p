@@ -57,7 +57,44 @@ cache-write subset is not added twice. Token and USD limits are observed-usage
 thresholds: the current response can exceed the remaining amount. They are not
 hard provider billing caps. Missing usage blocks further estimated-budget work
 instead of being interpreted as free usage. USD requires usable model pricing;
-an all-zero custom/local model table is not proof of a free service.
+all four input/output/cache-read/cache-write rate fields must be finite and
+non-negative before USD dispatch, and an all-zero custom/local model table is
+not proof of a free service. Returned token usage is accepted only when its
+total exactly equals those four token components; an inconsistent report makes
+the applicable token or USD ledger uncertain and blocks another dispatch.
+For text model-rate accounting, an all-zero cost report paired with zero tokens
+is treated as an unavailable/error sentinel rather than proof of a free call.
+An independently reported image charge of exactly zero remains authoritative.
+
+Image adapters declare their accounting contract before dispatch. Declarations
+are validated and stored with the immutable registry-owned provider record;
+incomplete, unknown, contradictory, and later-mutated capabilities are rejected.
+For OpenRouter images, the adapter uses the returned generation ID for one
+bounded authenticated metadata lookup after the image response because the
+inline chat `usage` object does not document the required BYOK discriminator. A
+non-BYOK request uses the metadata `total_cost` exactly; a BYOK request adds its
+separately paid `upstream_inference_cost`. This adds one metadata-request round
+trip. A missing generation ID or failed lookup does not discard the returned
+image, but missing or malformed `is_byok` or required cost components make USD
+unknown and block another USD-budget call.
+Token and USD accounting are settled independently, so a known reported charge
+does not make the USD ledger incomplete merely because token usage is
+unavailable. Provider-reported aggregates stay in `reportedUsd`;
+`Usage.cost.total` remains the exact sum of its input/output/cache-read/
+cache-write components. The ledger conservatively keeps the larger valid
+reported total and model-rate estimate when both are available.
+
+An image adapter without a declared token or USD accounting source is rejected
+before dispatch under that limited policy. Request budgets and Unlimited remain
+available and continue to count the adapter invocation exactly. OpenRouter token
+fields can be absent or partial, so its image adapter rejects token-limited
+dispatch. A returned `Usage` is retained only when prompt and completion counts
+plus the separate cache-read and cache-write counters are complete, non-negative
+safe integers and an optional total is exactly consistent. The direct
+OpenAI-compatible image adapter currently has no
+safe USD bound across all quality and size variants and does not promise usage
+reports for custom servers, so it also requires requests or Unlimited until that
+contract is added explicitly.
 
 Token/USD policies permit one unresolved call at a time. Concurrent admission is
 rejected until that call settles; request budgets and Unlimited permit concurrent
@@ -68,8 +105,13 @@ The ledger is not a retrospective invoice or an account-wide/day-wide limit.
 
 Pricing is expressed per million tokens with separate input/output/cache rates.
 Cache modifiers and upstream billing semantics matter; a subscription or BYOK
-gateway showing zero does not establish zero provider cost. See the primary
-[Kilo usage and billing contract](https://kilo.ai/docs/gateway/usage-and-billing)
+gateway charge alone does not establish zero provider cost. Text accounting
+retains the larger of static model-rate pricing and an internally consistent
+provider-computed component total, including OpenAI priority multipliers and
+Anthropic one-hour cache-write pricing. See the primary
+[OpenRouter usage accounting](https://openrouter.ai/docs/cookbook/administration/usage-accounting),
+[OpenRouter generation metadata](https://openrouter.ai/docs/api/api-reference/generations/get-generation),
+[Kilo usage and billing contract](https://kilo.ai/docs/gateway/usage-and-billing),
 and [Anthropic pricing contract](https://platform.claude.com/docs/en/about-claude/pricing).
 
 Budget state contains identifiers, aggregate counts, and unresolved receipt IDs,

@@ -24,6 +24,11 @@ import { installCacheRoutingProjectInstructions } from "../project-instruction-c
 import { createTestResourceLoader } from "../utilities.ts";
 import { createHarness as createBaseHarness, getMessageText, type Harness, type HarnessOptions } from "./harness.ts";
 
+function expectTemporalContext(message: AgentMessage | undefined): void {
+  expect(message).toMatchObject({ role: "custom", customType: "runtime_context", display: false });
+  expect(getMessageText(message)).toContain("<temporal_context>");
+}
+
 describe("AgentSession prompt characterization", () => {
   const harnesses: Harness[] = [];
   const tempDirs: string[] = [];
@@ -67,10 +72,10 @@ describe("AgentSession prompt characterization", () => {
     harnesses.push(harness);
 
     harness.setResponses([fauxAssistantMessage("hello")]);
-
     await harness.session.prompt("hi");
 
-    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+    expectTemporalContext(harness.session.messages[1]);
     expect(getMessageText(harness.session.messages[0]!)).toBe("hi");
     expect(harness.getPendingResponseCount()).toBe(0);
   });
@@ -133,7 +138,7 @@ describe("AgentSession prompt characterization", () => {
     expect(firstSystemPrompt).toContain("Only when work has real sub-tasks");
     expect(firstSystemPrompt).toContain("set each child's parentId to its direct parent's id");
     expect(firstSystemPrompt).toContain("keep nesting to 2-3 levels");
-    expect(getMessageText(harness.session.messages[1]!)).toBe("Recorded.");
+    expect(getMessageText(harness.session.messages.find((message) => message.role === "assistant"))).toBe("Recorded.");
     expect(
       harness.sessionManager
         .getEntries()
@@ -189,7 +194,7 @@ describe("AgentSession prompt characterization", () => {
       .getEntries()
       .filter((entry) => entry.type === "custom" && entry.customType === STRUCTURED_SESSION_STATE_CUSTOM_TYPE);
 
-    expect(getMessageText(harness.session.messages[1]!)).toBe("Working.");
+    expect(getMessageText(harness.session.messages.find((message) => message.role === "assistant"))).toBe("Working.");
     expect(snapshot.state.canonicalRequest.current).toBe(
       "Fix smart state so an omitted metadata goal cannot erase the real objective",
     );
@@ -316,14 +321,11 @@ describe("AgentSession prompt characterization", () => {
     await harness.session.prompt("Start a multi-turn tool loop");
     expect(toolRuns).toEqual(["warm-cache"]);
     expect(harness.session.state.isStreaming).toBe(false);
-    expect(harness.session.messages.map((message) => message.role)).toEqual([
-      "user",
-      "assistant",
-      "toolResult",
-      "custom",
-      "assistant",
-    ]);
-    expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
+    expect(harness.session.messages.map((message) => message.role).join(",")).toBe(
+      "user,custom,assistant,toolResult,custom,assistant",
+    );
+    expectTemporalContext(harness.session.messages[1]);
+    expect(getMessageText(harness.session.messages[4])).toContain("SUCCESS echo");
 
     vi.useFakeTimers();
     try {
@@ -850,16 +852,13 @@ describe("AgentSession prompt characterization", () => {
     await harness.session.prompt("start");
 
     expect(toolRuns).toEqual(["hello"]);
-    expect(harness.session.messages.map((message) => message.role)).toEqual([
-      "user",
-      "assistant",
-      "toolResult",
-      "custom",
-      "assistant",
-    ]);
-    expect(harness.session.messages[2]?.role).toBe("toolResult");
-    expect(getMessageText(harness.session.messages[3])).toContain("SUCCESS echo");
-    expect(harness.session.messages[4]?.role).toBe("assistant");
+    expect(harness.session.messages.map((message) => message.role).join(",")).toBe(
+      "user,custom,assistant,toolResult,custom,assistant",
+    );
+    expectTemporalContext(harness.session.messages[1]);
+    expect(harness.session.messages[3]?.role).toBe("toolResult");
+    expect(getMessageText(harness.session.messages[4])).toContain("SUCCESS echo");
+    expect(harness.session.messages[5]?.role).toBe("assistant");
   });
 
   it("executes multiple tool calls from one response and continues with a single follow-up response", async () => {
@@ -1042,7 +1041,8 @@ describe("AgentSession prompt characterization", () => {
 
     await harness.session.sendUserMessage("from extension");
 
-    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "assistant"]);
+    expect(harness.session.messages.map((message) => message.role)).toEqual(["user", "custom", "assistant"]);
+    expectTemporalContext(harness.session.messages[1]);
     expect(getMessageText(harness.session.messages[0]!)).toBe("from extension");
   });
 

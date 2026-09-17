@@ -1,0 +1,31 @@
+# 2026-09-09 — Headless project agents require explicit trust
+
+- **Status:** Resolved
+- **Task/context:** Run repository-local subagent profiles from TUI, JSON, and API modes.
+- **Unexpected observation or failure:** Confirmation was conditional on `ctx.hasUI`; headless execution therefore skipped the dialog and silently ran repo-controlled `.p/agents`. A proposed `confirmProjectAgents:false` escape hatch was also model-controlled tool input, not trusted operator authorization. Later fixes still reduced independently sourced resources to one root, so an ancestor allow could hide a nested deny, and a trusted project agent could request a child cwd outside that project or escape through a symlink. The runtime then cached a trust decision only by cwd, and the executor discarded its validated realpath before waiting for confirmation, allowing changed resource roots or a retargeted symlink to reuse stale authority.
+- **Evidence:** Executor regressions requested a project-scoped agent with `hasUI:false` and proved both the default and model-supplied bypass spawned before the first fix. Mixed-source regressions placed nested `.p/settings.json` under ancestor `.p/agents` and proved either explicit deny must reject. Cwd regressions requested both a lexical sibling and a symlink to that sibling and observed spawn before containment was added. Later tests changed the discovered roots for the same cwd and retargeted an approved cwd symlink during confirmation; both reused authority before cache and spawn inputs were bound to validated canonical values.
+- **Approaches tried:**
+  - **Attempt:** Ask for confirmation only when dialog-capable UI exists.
+    - **Outcome:** Did not work
+    - **Why:** Absence of UI was interpreted as approval.
+  - **Attempt:** Let a tool-call parameter disable confirmation.
+    - **Outcome:** Did not work
+    - **Why:** The model supplies tool arguments and therefore cannot grant its own trust.
+  - **Attempt:** Remove the model-controlled bypass and require either interactive approval or the runtime's explicit project-trust decision.
+    - **Outcome:** Partial
+    - **Why:** The executor failed closed only when the runtime had first recognized and resolved the actual project resource.
+  - **Attempt:** Treat `.p/agents` as trust-requiring and resolve the decision against the nearest ancestor directory that actually supplied those agents.
+    - **Outcome:** Partial
+    - **Why:** One returned root still could not represent simultaneous settings, skills, and agents sources.
+  - **Attempt:** Aggregate every actual resource root and require all decisions to allow; canonicalize each project-agent child cwd and require containment under its source project.
+    - **Outcome:** Partial
+    - **Why:** No broader allow masked a specific deny, but cached trust did not include the root set and execution still used the original path after canonical validation.
+  - **Attempt:** Cache trust by cwd plus the ordered resource-root signature and pass the validated canonical cwd to the child runner.
+    - **Outcome:** Worked
+    - **Why:** Resource discovery changes force a fresh decision, and later symlink retargeting cannot change the approved execution directory.
+- **Root cause:** UI capability controlled authorization, while resource discovery, trust storage, and child execution were modeled as one cwd instead of a set of source-bound capabilities.
+- **Resolution:** Project-scope requests throw before spawn in untrusted headless mode. The schema has no model-controlled confirmation bypass. Runtime trust aggregates all discovered resource roots, invalidates cached decisions when that root set changes, and project agents execute only from the canonical directory validated inside the project root that supplied them.
+- **Verification:** `subagent-executor.test.ts` proves headless bypasses and lexical/symlink cwd escapes do not spawn and approved symlinks cannot be retargeted before execution; `trust-manager.test.ts` verifies all source roots; `runtime-factory.test.ts` proves changed root sets invalidate trust cache entries; `project-trust-agent-root.test.ts` proves mixed allow/deny decisions fail closed.
+- **Prevention/follow-up:** Treat missing UI as missing consent, require every independently sourced resource to be trusted, and bind delegated filesystem authority to the authorized source root.
+- **Reusable learning:** Authorization defaults must fail closed, aggregate all resource origins, and remain valid for the exact execution target.
+- **References:** `packages/coding-agent/src/core/trust-manager.ts`, `packages/coding-agent/src/main/runtime-factory.ts`, `packages/coding-agent/examples/extensions/subagent/executor.ts`, `packages/coding-agent/test/trust-manager.test.ts`, `packages/coding-agent/test/runtime-factory.test.ts`, `packages/coding-agent/test/project-trust-agent-root.test.ts`, `packages/coding-agent/test/subagent-executor.test.ts`

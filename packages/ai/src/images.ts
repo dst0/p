@@ -4,6 +4,8 @@ import { getImagesApiProvider } from "./images-api-registry.ts";
 import { admitModelCall } from "./model-call-guard.ts";
 import type { AssistantImages, ImagesApi, ImagesContext, ImagesModel, ProviderImagesOptions } from "./types.ts";
 
+const UNKNOWN_IMAGE_ACCOUNTING = Object.freeze({ tokens: "unsupported", usd: "unsupported" } as const);
+
 function resolveImagesApiProvider(api: ImagesApi) {
   const provider = getImagesApiProvider(api);
   if (!provider) {
@@ -36,13 +38,18 @@ export async function generateImages<TApi extends ImagesApi>(
         cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0, total: 0 },
       },
     };
-  const receipt = admitModelCall({ kind: "image", model, signal: options?.signal });
+  const receipt = admitModelCall({
+    kind: "image",
+    model,
+    signal: options?.signal,
+    accounting: provider.modelCallAccounting ?? UNKNOWN_IMAGE_ACCOUNTING,
+  });
   let settled = false;
   let result: AssistantImages | undefined;
   try {
     result = await provider.generateImages(model, context, options);
     settled = true;
-    receipt?.settle(result.usage);
+    receipt?.settle(result.usage, { reportedUsd: result.reportedUsd });
     return result;
   } catch (error) {
     if (!settled) receipt?.settle(undefined);

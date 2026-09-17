@@ -11,6 +11,7 @@ function createContext(tokens: number | null, compact = vi.fn()): ExtensionConte
     sessionManager: {} as ExtensionContext["sessionManager"],
     modelRegistry: {} as ExtensionContext["modelRegistry"],
     model: undefined,
+    runBudgetPolicy: { mode: "unlimited" },
     isIdle: () => true,
     isProjectTrusted: () => true,
     signal: undefined,

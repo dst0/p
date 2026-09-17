@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { registerApiProvider, unregisterApiProviders } from "../src/api-registry.ts";
-import { registerModelCallGuard } from "../src/model-call-guard.ts";
+import { registerModelCallGuard, validateModelCallAccounting } from "../src/model-call-guard.ts";
 import { complete, completeSimple, streamSimple } from "../src/stream.ts";
 import type { AssistantMessage, Model } from "../src/types.ts";
 import { createAssistantMessageEventStream } from "../src/utils/event-stream.ts";
@@ -42,6 +42,13 @@ afterEach(() => {
 });
 
 describe("public model-call admission", () => {
+  it("rejects malformed accounting declarations at the trust boundary", () => {
+    expect(() => validateModelCallAccounting(null)).toThrow("Invalid model call accounting declaration");
+    expect(() => validateModelCallAccounting({ tokens: "unknown", usd: "reported" })).toThrow(
+      "Invalid model call accounting token declaration",
+    );
+  });
+
   it("settles a provider result even when the provider closes without a terminal event", async () => {
     const settle = vi.fn();
     const dispatch = () => {

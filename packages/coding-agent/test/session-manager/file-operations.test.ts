@@ -53,7 +53,7 @@ describe("loadEntriesFromFile", () => {
     expect(entries[1].type).toBe("message");
   });
 
-  it("skips malformed lines but keeps valid ones", () => {
+  it("stops at the first malformed line", () => {
     const file = join(tempDir, "mixed.jsonl");
     writeFileSync(
       file,
@@ -62,7 +62,7 @@ describe("loadEntriesFromFile", () => {
         '{"type":"message","id":"1","parentId":null,"timestamp":"2025-01-01T00:00:01Z","message":{"role":"user","content":"hi","timestamp":1}}\n',
     );
     const entries = loadEntriesFromFile(file);
-    expect(entries).toHaveLength(2);
+    expect(entries).toHaveLength(1);
   });
 
   it("opens session files larger than Node's max string length", () => {
@@ -87,8 +87,8 @@ describe("loadEntriesFromFile", () => {
 
     const sessionManager = SessionManager.open(file, tempDir);
     expect(sessionManager.getSessionId()).toBe("abc");
-    expect(sessionManager.getEntries()).toHaveLength(1);
-    expect(sessionManager.buildSessionContext().messages).toEqual([{ role: "user", content: "hi", timestamp: 1 }]);
+    expect(sessionManager.getEntries()).toHaveLength(0);
+    expect(sessionManager.buildSessionContext().messages).toEqual([]);
   }, 60_000);
 });
 

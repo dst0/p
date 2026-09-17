@@ -125,7 +125,7 @@ describe("task verification modes", () => {
         }),
       ).toContain("Completion checklist recorded");
 
-      const writeArgs = { path: "src/feature.ts", content: "export {};\n" };
+      const writeArgs = { path: "result.json", content: "{}\n" };
       const writeCall = toolCall("write", writeArgs);
       expect((await beforeTool(harness.agent, "write", writeArgs, writeCall))?.block).not.toBe(true);
       writeFileSync(join(cwd, writeArgs.path), writeArgs.content);
@@ -151,7 +151,7 @@ describe("task verification modes", () => {
         ),
       );
       const typecheckEvidence = evidenceHandle(
-        await afterTool(harness.agent, "bash", { command: "npm run typecheck" }, "typecheck passed"),
+        await afterTool(harness.agent, "bash", { command: "tsc --noEmit" }, "typecheck passed"),
       );
       const ready = await callVerification(harness.controller, {
         action: "ready_to_finish",
@@ -169,7 +169,7 @@ describe("task verification modes", () => {
       const finish = await beforeTool(harness.agent, "finish_work", {
         status: "success",
         verification_token: token,
-        files_changed: ["src/feature.ts"],
+        files_changed: ["result.json"],
       });
       expect(finish?.block).not.toBe(true);
     } finally {

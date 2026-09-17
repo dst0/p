@@ -15,6 +15,7 @@ import {
   resolveBenchmarkOutputLimits,
 } from "../harness/output-capture.ts";
 import { benchmarkProcessGroupOptions, terminateBenchmarkProcessTree } from "../harness/process-control.ts";
+import { benchmarkUnconfirmedTerminationError } from "../harness/process-termination-error.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import { createProjectInstructionProofIpcCapture } from "../project-instructions/proof-ipc.ts";
 import { type BenchmarkEventCapture, createBenchmarkEventCapture } from "../project-instructions/stream.ts";
@@ -34,13 +35,11 @@ interface BenchmarkTurnCommand {
   cwd: string;
   env: NodeJS.ProcessEnv;
 }
-
 interface BenchmarkRecording {
   stream: Writable;
   capture: BenchmarkRecordingCapture;
   onFailure(handler: (error: unknown) => void): () => void;
 }
-
 export interface BenchmarkRecordingCapture {
   format: string;
   archiveBytes: number;
@@ -51,11 +50,6 @@ export interface BenchmarkRecordingCapture {
   storageBytes: number;
   storageLimitBytes: number;
 }
-interface BenchmarkProofCapture {
-  accept(message: unknown): void;
-  finish(): Record<string, unknown> | undefined;
-}
-
 export interface BenchmarkTurnOptions {
   allowCanonicalPAgentEnd?: boolean;
   outputLimits?: Partial<BenchmarkOutputLimits>;
@@ -112,8 +106,8 @@ export function runBenchmarkAgentTurn(
   return new Promise((resolveResult, rejectResult) => {
     const limits = resolveBenchmarkOutputLimits(options.outputLimits);
     const startedAt = performance.now();
-    const proofCapture: BenchmarkProofCapture | undefined = options.projectInstructionProofReceipt
-      ? (createProjectInstructionProofIpcCapture(options.projectInstructionProofReceipt) as BenchmarkProofCapture)
+    const proofCapture = options.projectInstructionProofReceipt
+      ? createProjectInstructionProofIpcCapture(options.projectInstructionProofReceipt)
       : undefined;
     const stdio: ["ignore", "pipe", "pipe"] | ["ignore", "pipe", "pipe", "ipc"] = proofCapture
       ? ["ignore", "pipe", "pipe", "ipc"]
@@ -253,9 +247,11 @@ export function runBenchmarkAgentTurn(
       if (failedCleanupTimer) clearTimeout(failedCleanupTimer);
       const terminationError = typeof termination === "object" ? termination.terminationError : undefined;
       const treeStopped = typeof termination === "boolean" ? termination : false;
-      const cleanupError =
-        terminationError ??
-        (terminationPromise && !treeStopped ? new Error("benchmark process tree did not terminate") : undefined);
+      const cleanupError = benchmarkUnconfirmedTerminationError(
+        terminationError,
+        terminationPromise !== undefined,
+        treeStopped,
+      );
       removeFailureHandler();
       options.signal?.removeEventListener("abort", interrupt);
       if (cleanupError && interruption) attachBenchmarkCleanupError(interruption, cleanupError);

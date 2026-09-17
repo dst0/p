@@ -11,4 +11,4 @@ if [ ! -x "$tsx_bin" ]; then
 fi
 
 cd "$caller_dir"
-exec "$tsx_bin" "$script_dir/packages/coding-agent/src/cli.ts" "$@"
+exec "$tsx_bin" --tsconfig "$script_dir/tsconfig.json" "$script_dir/packages/coding-agent/src/cli.ts" "$@"

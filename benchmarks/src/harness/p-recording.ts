@@ -100,6 +100,7 @@ export function createPRecordingAccumulator(
   let model: BenchmarkRecordingEvent["model"];
   let responseModel: string | undefined;
   let toolErrors = 0;
+  let accumulatedCost: number | undefined;
   const endTurn = (): void => {
     taskVerification.endTurn();
     for (const bytes of pendingPhaseBytes.values()) retention.release(bytes);
@@ -235,6 +236,16 @@ export function createPRecordingAccumulator(
       for (const key of Object.keys(usage) as Array<keyof BenchmarkUsage>) {
         usage[key] += Number(event.message.usage?.[key] ?? 0);
       }
+      const costRaw = (event.message.usage as Record<string, unknown> | undefined)?.cost;
+      if (costRaw !== undefined && costRaw !== null) {
+        const amt =
+          typeof costRaw === "number"
+            ? costRaw
+            : typeof (costRaw as Record<string, unknown>).total === "number"
+              ? Number((costRaw as Record<string, unknown>).total)
+              : undefined;
+        if (amt !== undefined && Number.isFinite(amt)) accumulatedCost = (accumulatedCost ?? 0) + amt;
+      }
       if (event.message.stopReason === "error") {
         const error = event.message.errorMessage ?? "assistant error";
         retention.ensureCollectionEntry("P metric errors", errors.length);
@@ -259,7 +270,10 @@ export function createPRecordingAccumulator(
         eventTypes: { ...counts },
         model: model ? { provider: model.provider, id: model.id, api: model.api } : undefined,
         responseModel,
-        usage: { ...usage },
+        usage: {
+          ...usage,
+          ...(accumulatedCost !== undefined ? { cost: { total: Math.round(accumulatedCost * 1e6) / 1e6 } } : {}),
+        },
         turns: counts.turn_end ?? 0,
         assistantMessages: assistantMessageCount,
         toolCalls: counts.tool_execution_start ?? 0,

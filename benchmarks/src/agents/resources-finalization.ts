@@ -1,5 +1,6 @@
 import { join } from "node:path";
 import type { BenchmarkAuthOutputGuard } from "../harness/auth-output-guard.ts";
+import { assertCertifiedOutputWritePath } from "../harness/certified-output-integrity.ts";
 import {
   attachBenchmarkCleanupError,
   benchmarkInterruptionFromSignal,
@@ -17,7 +18,7 @@ export async function abortBenchmarkRecording(
     if (isBenchmarkInterruptedError(primaryError)) {
       throw attachBenchmarkCleanupError(primaryError, cleanupError);
     }
-    throw cleanupError;
+    throw new AggregateError([primaryError, cleanupError], "Benchmark recording abort failed after primary failure");
   }
   throw primaryError;
 }
@@ -35,7 +36,10 @@ export function finalizeBenchmarkAgentResources(
     }
     attempt(() => agentDirs.dispose(), cleanupErrors);
   }
-  attempt(() => authOutputGuard.sanitizeTree(output), cleanupErrors);
+  attempt(() => {
+    assertCertifiedOutputWritePath(output);
+    authOutputGuard.sanitizeTree(output);
+  }, cleanupErrors);
   if (cleanupErrors.length === 0) return;
   const interruption = benchmarkInterruptionFromSignal(signal);
   if (interruption) {

@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { augmentBenchmarkPath } from "../agents/environment.ts";
+import { createSandboxedBenchmarkCommand } from "../harness/benchmark-isolation.ts";
 import { sanitizeBenchmarkGitEnvironment } from "../harness/workspace-repository.ts";
 import { configureProjectInstructionProbe } from "../project-instructions/evidence.ts";
 import { type AgentId, type RunnerOptions, repoRoot } from "./runner-options.ts";
@@ -69,7 +70,7 @@ export function commandForAgent(
     args.push("--dir", workspace);
     if (isContinue) args.push("--continue");
     args.push(prompt);
-    return { executable: "kilo", args, env: kiloEnvironment(configDir), cwd: workspace };
+    return { executable: options.kiloExecutable ?? "kilo", args, env: kiloEnvironment(configDir), cwd: workspace };
   }
   if (agent === "codex") {
     return {
@@ -105,7 +106,9 @@ export function commandForAgent(
   if (agent === "p" && options.taskVerificationMode) {
     commonArgs.push("--task-verification", options.taskVerificationMode);
   }
-  if (!(agent === "p" && options.projectInstructions)) commonArgs.push("--no-context-files");
+  if (!(agent === "p" && options.projectInstructions) && !(agent === "pi" && options.certified)) {
+    commonArgs.push("--no-context-files");
+  }
   if (isContinue) commonArgs.push("--continue");
   const env: NodeJS.ProcessEnv = sanitizeBenchmarkGitEnvironment();
   delete env.NODE_TLS_REJECT_UNAUTHORIZED;
@@ -131,6 +134,9 @@ export function commandForAgent(
   if (agent === "p") {
     return { executable: process.execPath, args: [options.pCli, ...commonArgs], env, cwd: workspace };
   }
+  if (options.piExecutable) {
+    return { executable: options.piExecutable, args: commonArgs, env, cwd: workspace };
+  }
   return {
     executable: "npm",
     args: [
@@ -155,9 +161,40 @@ export function commandForKiloModelResolution(
   const separator = kiloModel.indexOf("/");
   const provider = separator === -1 ? kiloModel : kiloModel.slice(0, separator);
   return {
-    executable: "kilo",
+    executable: options.kiloExecutable ?? "kilo",
     args: ["models", provider, "--verbose", "--pure"],
     env: kiloEnvironment(configDir),
     cwd: workspace,
+  };
+}
+
+export function sandboxedCommandIfNeeded(
+  command: AgentCommand,
+  options: RunnerOptions,
+  workspace: string,
+  configDir: string,
+): AgentCommand {
+  if (!options.certified || !options.candidateRuntimePath) return command;
+  const sandboxed = createSandboxedBenchmarkCommand(
+    {
+      workspace,
+      runtime: options.candidateRuntimePath,
+      configDir,
+      extraReadPaths: [
+        command.executable,
+        options.pCli,
+        options.piExecutable,
+        options.kiloExecutable,
+        options.projectInstructionProbe,
+      ].filter(Boolean) as string[],
+      networkHosts: options.certifiedNetworkHosts,
+    },
+    command.executable,
+    command.args,
+  );
+  return {
+    ...command,
+    executable: sandboxed.executable,
+    args: sandboxed.args,
   };
 }

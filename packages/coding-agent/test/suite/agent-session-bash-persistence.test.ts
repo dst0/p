@@ -164,6 +164,7 @@ describe("AgentSession bash and persistence characterization", () => {
     expect(entries.map((entry) => entry.type)).toEqual([
       "custom_message",
       "message",
+      "custom_message",
       "message",
       "message",
       "custom_message",
@@ -172,11 +173,18 @@ describe("AgentSession bash and persistence characterization", () => {
     expect(harness.session.messages.map((message) => message.role)).toEqual([
       "custom",
       "user",
+      "custom",
       "assistant",
       "toolResult",
       "custom",
       "assistant",
     ]);
+    expect(entries[2]).toMatchObject({ type: "custom_message", customType: "runtime_context", display: false });
+    expect(harness.session.messages[2]).toMatchObject({
+      customType: "runtime_context",
+      display: false,
+      content: expect.stringContaining("<temporal_context>"),
+    });
   });
 
   it("does not emit message_end for bash execution messages", async () => {

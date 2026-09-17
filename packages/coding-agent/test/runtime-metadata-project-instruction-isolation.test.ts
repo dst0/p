@@ -14,6 +14,7 @@ const mocks = vi.hoisted(() => {
     createAgentSessionFromServices: vi.fn(),
     listModels: vi.fn(async (_modelRegistry: ModelRegistry, _searchPattern?: string) => undefined),
     printHelp: vi.fn(),
+    resolveStartupChoices: vi.fn(async () => undefined),
   };
 });
 
@@ -29,6 +30,10 @@ vi.mock("../src/cli/args.ts", async (importOriginal) => ({
   printHelp: mocks.printHelp,
 }));
 vi.mock("../src/cli/list-models.ts", () => ({ listModels: mocks.listModels }));
+vi.mock("../src/cli/run-budget-choice.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../src/cli/run-budget-choice.ts")>()),
+  resolveStartupChoices: mocks.resolveStartupChoices,
+}));
 vi.mock("../src/core/http-dispatcher.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../src/core/http-dispatcher.ts")>()),
   configureHttpDispatcher: vi.fn(),
@@ -108,5 +113,12 @@ describe("runtime metadata commands", () => {
       expect.objectContaining({ id: "metadata-model", provider: "metadata-provider" }),
     );
     expect(mocks.listModels).toHaveBeenCalledWith(modelRegistry, undefined);
+  });
+
+  it("restores stdout and stops when startup budget selection is cancelled", async () => {
+    await expect(main(["--mode", "rpc"], { extensionFactories: [metadataExtension] })).resolves.toBeUndefined();
+
+    expect(mocks.resolveStartupChoices).toHaveBeenCalledOnce();
+    expect(mocks.createAgentSessionRuntime).not.toHaveBeenCalled();
   });
 });

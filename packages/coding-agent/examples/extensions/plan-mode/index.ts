@@ -14,31 +14,28 @@
 
 import type { ExtensionAPI, ExtensionContext } from "@dst0/p";
 import type { AgentMessage } from "@dst0/p-agent-core";
-import type { AssistantMessage, TextContent } from "@dst0/p-ai";
+import type { TextContent } from "@dst0/p-ai";
 import { Key } from "@dst0/p-tui";
-import { extractTodoItems, isSafeCommand, markCompletedSteps, type TodoItem } from "./utils.ts";
-
-// Tools
-const PLAN_MODE_TOOLS = ["read", "bash", "grep", "find", "ls", "questionnaire"];
-const NORMAL_MODE_TOOLS = ["read", "bash", "edit", "write"];
-
-// Type guard for assistant messages
-function isAssistantMessage(m: AgentMessage): m is AssistantMessage {
-  return m.role === "assistant" && Array.isArray(m.content);
-}
-
-// Extract text content from an assistant message
-function getTextContent(message: AssistantMessage): string {
-  return message.content
-    .filter((block): block is TextContent => block.type === "text")
-    .map((block) => block.text)
-    .join("\n");
-}
+import {
+  extractTodoItems,
+  formatPlanExecutionContext,
+  formatPlanExecutionRequest,
+  getPlanModeTools,
+  getTextContent,
+  isAssistantMessage,
+  isSafeCommand,
+  markCompletedSteps,
+  PLAN_MODE_SYSTEM_INSTRUCTION,
+  rebuildResumeCompletionState,
+  restorePlanModeTools,
+  type TodoItem,
+} from "./utils.ts";
 
 export default function planModeExtension(p: ExtensionAPI): void {
   let planModeEnabled = false;
   let executionMode = false;
   let todoItems: TodoItem[] = [];
+  let savedActiveTools: string[] | null = null;
 
   p.registerFlag("plan", {
     description: "Start in plan mode (read-only exploration)",
@@ -77,10 +74,13 @@ export default function planModeExtension(p: ExtensionAPI): void {
     todoItems = [];
 
     if (planModeEnabled) {
-      p.setActiveTools(PLAN_MODE_TOOLS);
-      ctx.ui.notify(`Plan mode enabled. Tools: ${PLAN_MODE_TOOLS.join(", ")}`);
+      savedActiveTools = p.getActiveTools();
+      const planTools = getPlanModeTools(savedActiveTools, p.getAllTools());
+      p.setActiveTools(planTools);
+      ctx.ui.notify(`Plan mode enabled. Tools: ${planTools.join(", ")}`);
     } else {
-      p.setActiveTools(NORMAL_MODE_TOOLS);
+      p.setActiveTools(restorePlanModeTools(savedActiveTools, p.getActiveTools()));
+      savedActiveTools = null;
       ctx.ui.notify("Plan mode disabled. Full access restored.");
     }
     updateStatus(ctx);
@@ -129,75 +129,46 @@ export default function planModeExtension(p: ExtensionAPI): void {
     }
   });
 
-  // Filter out stale plan mode context when not in plan mode
+  // Inject one ephemeral plan instruction and remove stale copies.
   p.on("context", async (event) => {
-    if (planModeEnabled) return;
-
-    return {
-      messages: event.messages.filter((m) => {
-        const msg = m as AgentMessage & { customType?: string };
-        if (msg.customType === "plan-mode-context") return false;
-        if (msg.role !== "user") return true;
-
-        const content = msg.content;
-        if (typeof content === "string") {
-          return !content.includes("[PLAN MODE ACTIVE]");
-        }
-        if (Array.isArray(content)) {
-          return !content.some((c) => c.type === "text" && (c as TextContent).text?.includes("[PLAN MODE ACTIVE]"));
-        }
+    const isPlanContext = (message: unknown): boolean => {
+      const candidate = message as AgentMessage & { customType?: string };
+      if (candidate.customType === "plan-mode-context" || candidate.customType === "plan-execution-context")
         return true;
-      }),
+      if (candidate.role !== "user") return false;
+      if (typeof candidate.content === "string") return candidate.content.includes("[PLAN MODE ACTIVE]");
+      return (
+        Array.isArray(candidate.content) &&
+        candidate.content.some(
+          (content) => content.type === "text" && (content as TextContent).text?.includes("[PLAN MODE ACTIVE]"),
+        )
+      );
     };
-  });
 
-  // Inject plan/execution context before agent starts
-  p.on("before_agent_start", async () => {
-    if (planModeEnabled) {
-      return {
-        message: {
-          customType: "plan-mode-context",
-          content: `[PLAN MODE ACTIVE]
-You are in plan mode - a read-only exploration mode for safe code analysis.
-
-Restrictions:
-- You can only use: read, bash, grep, find, ls, questionnaire
-- You CANNOT use: edit, write (file modifications are disabled)
-- Bash is restricted to an allowlist of read-only commands
-
-Ask clarifying questions using the questionnaire tool.
-Use brave-search skill via bash for web research.
-
-Create a detailed numbered plan under a "Plan:" header:
-
-Plan:
-1. First step description
-2. Second step description
-...
-
-Do NOT attempt to make changes - just describe what you would do.`,
-          display: false,
-        },
-      };
-    }
-
+    const messages = event.messages.filter((message) => !isPlanContext(message));
+    const contextMessages: AgentMessage[] = [];
     if (executionMode && todoItems.length > 0) {
-      const remaining = todoItems.filter((t) => !t.completed);
-      const todoList = remaining.map((t) => `${t.step}. ${t.text}`).join("\n");
-      return {
-        message: {
-          customType: "plan-execution-context",
-          content: `[EXECUTING PLAN - Full tool access enabled]
-
-Remaining steps:
-${todoList}
-
-Execute each step in order.
-After completing a step, include a [DONE:n] tag in your response.`,
-          display: false,
-        },
-      };
+      contextMessages.push({
+        role: "custom",
+        customType: "plan-execution-context",
+        content: formatPlanExecutionContext(todoItems),
+        display: false,
+        timestamp: Date.now(),
+      });
     }
+    if (!planModeEnabled) return { messages: [...contextMessages, ...messages] };
+    return {
+      messages: [
+        {
+          role: "user",
+          customType: "plan-mode-context",
+          content: [{ type: "text", text: PLAN_MODE_SYSTEM_INSTRUCTION }],
+          timestamp: Date.now(),
+        } as AgentMessage,
+        ...contextMessages,
+        ...messages,
+      ],
+    };
   });
 
   // Track progress after each turn
@@ -224,7 +195,8 @@ After completing a step, include a [DONE:n] tag in your response.`,
         );
         executionMode = false;
         todoItems = [];
-        p.setActiveTools(NORMAL_MODE_TOOLS);
+        p.setActiveTools(restorePlanModeTools(savedActiveTools, p.getActiveTools()));
+        savedActiveTools = null;
         updateStatus(ctx);
         persistState(); // Save cleared state so resume doesn't restore old execution mode
       }
@@ -264,13 +236,11 @@ After completing a step, include a [DONE:n] tag in your response.`,
     if (choice?.startsWith("Execute")) {
       planModeEnabled = false;
       executionMode = todoItems.length > 0;
-      p.setActiveTools(NORMAL_MODE_TOOLS);
+      p.setActiveTools(restorePlanModeTools(savedActiveTools, p.getActiveTools()));
+      savedActiveTools = null;
       updateStatus(ctx);
 
-      const execMessage =
-        todoItems.length > 0
-          ? `Execute the plan. Start with: ${todoItems[0].text}`
-          : "Execute the plan you just created.";
+      const execMessage = formatPlanExecutionRequest(todoItems);
       p.sendMessage({ customType: "plan-mode-execute", content: execMessage, display: true }, { triggerTurn: true });
     } else if (choice === "Refine the plan") {
       const refinement = await ctx.ui.editor("Refine the plan:", "");
@@ -299,34 +269,15 @@ After completing a step, include a [DONE:n] tag in your response.`,
       executionMode = planModeEntry.data.executing ?? executionMode;
     }
 
-    // On resume: re-scan messages to rebuild completion state
-    // Only scan messages AFTER the last "plan-mode-execute" to avoid picking up [DONE:n] from previous plans
+    // On resume: re-scan messages to rebuild completion state.
     const isResume = planModeEntry !== undefined;
     if (isResume && executionMode && todoItems.length > 0) {
-      // Find the index of the last plan-mode-execute entry (marks when current execution started)
-      let executeIndex = -1;
-      for (let i = entries.length - 1; i >= 0; i--) {
-        const entry = entries[i] as { type: string; customType?: string };
-        if (entry.customType === "plan-mode-execute") {
-          executeIndex = i;
-          break;
-        }
-      }
-
-      // Only scan messages after the execute marker
-      const messages: AssistantMessage[] = [];
-      for (let i = executeIndex + 1; i < entries.length; i++) {
-        const entry = entries[i];
-        if (entry.type === "message" && "message" in entry && isAssistantMessage(entry.message as AgentMessage)) {
-          messages.push(entry.message as AssistantMessage);
-        }
-      }
-      const allText = messages.map(getTextContent).join("\n");
-      markCompletedSteps(allText, todoItems);
+      rebuildResumeCompletionState(entries, todoItems);
     }
 
     if (planModeEnabled) {
-      p.setActiveTools(PLAN_MODE_TOOLS);
+      savedActiveTools = p.getActiveTools();
+      p.setActiveTools(getPlanModeTools(savedActiveTools, p.getAllTools()));
     }
     updateStatus(ctx);
   });

@@ -1,5 +1,12 @@
 import { randomUUID } from "node:crypto";
-import type { ModelCallAdmission, ModelCallReceipt, Usage } from "@dst0/p-ai";
+import {
+  type ModelCallAccounting,
+  type ModelCallAdmission,
+  type ModelCallReceipt,
+  type ModelCallSettlementDetails,
+  type Usage,
+  validateModelCallAccounting,
+} from "@dst0/p-ai";
 import { type RunBudgetPolicy, validateRunBudgetPolicy } from "../run-budget-policy.ts";
 import { RunBudgetError } from "./error.ts";
 import { RunBudgetStorage } from "./state-storage.ts";
@@ -9,7 +16,18 @@ export class RunBudgetLedger {
   private readonly storage: RunBudgetStorage;
   private storageFailed = false;
 
-  constructor(options: { scopeId: string; policy: RunBudgetPolicy; path?: string; override?: boolean }) {
+  static openPersisted(options: { scopeId: string; path: string; storageRoot?: string }): RunBudgetLedger | undefined {
+    const ledger = new RunBudgetLedger({ ...options, policy: { mode: "unlimited" } });
+    return ledger.storage.hasPersistedState ? ledger : undefined;
+  }
+
+  constructor(options: {
+    scopeId: string;
+    policy: RunBudgetPolicy;
+    path?: string;
+    storageRoot?: string;
+    override?: boolean;
+  }) {
     this.storage = new RunBudgetStorage(
       {
         version: 1,
@@ -23,6 +41,7 @@ export class RunBudgetLedger {
         uncertainUsd: false,
       },
       options.path,
+      options.storageRoot,
     );
     if (options.override) this.setPolicy(options.policy);
   }
@@ -58,21 +77,20 @@ export class RunBudgetLedger {
 
   admit(call: ModelCallAdmission): ModelCallReceipt {
     const id = randomUUID();
+    const kind = call.kind;
     const rates = { ...call.model.cost };
+    const accounting = resolveAccounting(call);
     this.storage.update((state) => {
       const problem = this.problem(state);
       if (problem) throw problem;
-      if (state.policy.mode === "limited" && state.policy.unit === "usd") {
-        if (
-          !Object.values(rates).every((rate) => Number.isFinite(rate) && rate >= 0) ||
-          rates.input <= 0 ||
-          rates.output <= 0
-        ) {
+      if (state.policy.mode === "limited") {
+        if (state.policy.unit === "tokens" && accounting.tokens === "unsupported") {
           throw new RunBudgetError(
             "budget_pricing_required",
-            "This model needs known input/output USD rates. Supply model pricing or choose requests, tokens, or Unlimited.",
+            "This image adapter cannot report token usage. Choose requests or Unlimited before generating images.",
           );
         }
+        if (state.policy.unit === "usd") this.requireUsdAccounting(call, accounting, rates);
       }
       if (!Number.isSafeInteger(state.requests + 1))
         throw new RunBudgetError("budget_uncertain", "Request accounting capacity exceeded.");
@@ -81,17 +99,45 @@ export class RunBudgetLedger {
     });
     let settled = false;
     return {
-      settle: (usage) => {
+      settle: (usage, details) => {
         if (settled) return;
         settled = true;
         try {
-          this.settle(id, usage, rates);
+          this.settle(id, usage, rates, accounting, kind, details);
         } catch (error) {
           this.storageFailed = true;
           throw error;
         }
       },
     };
+  }
+
+  private requireUsdAccounting(
+    call: ModelCallAdmission,
+    accounting: ModelCallAccounting,
+    rates: ModelCallAdmission["model"]["cost"],
+  ): void {
+    if (accounting.usd === "unsupported") {
+      throw new RunBudgetError(
+        "budget_pricing_required",
+        "This image adapter cannot report or safely estimate USD cost. Choose requests or Unlimited before generating images.",
+      );
+    }
+    if (!hasValidRates(rates)) {
+      throw new RunBudgetError(
+        "budget_pricing_required",
+        "This model needs known USD rates. Supply model pricing or choose requests, tokens, or Unlimited.",
+      );
+    }
+    if (accounting.usd === "reported") return;
+    const usableRates =
+      call.kind === "text" ? rates.input > 0 && rates.output > 0 : rates.input > 0 || rates.output > 0;
+    if (!usableRates) {
+      throw new RunBudgetError(
+        "budget_pricing_required",
+        "This model needs known USD rates. Supply model pricing or choose requests, tokens, or Unlimited.",
+      );
+    }
   }
 
   private problem(state: RunBudgetState): RunBudgetError | undefined {
@@ -115,41 +161,98 @@ export class RunBudgetLedger {
     return undefined;
   }
 
-  private settle(id: string, usage: Usage | undefined, rates: ModelCallAdmission["model"]["cost"]): void {
+  private settle(
+    id: string,
+    usage: Usage | undefined,
+    rates: ModelCallAdmission["model"]["cost"],
+    accounting: ModelCallAccounting,
+    kind: ModelCallAdmission["kind"],
+    details?: ModelCallSettlementDetails,
+  ): void {
     this.storage.update((state) => {
       if (!state.pending.includes(id)) return;
       state.pending = state.pending.filter((pending) => pending !== id);
-      const counts = usage ? [usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.totalTokens] : [];
-      if (!usage || counts.some((count) => !Number.isSafeInteger(count) || count < 0)) {
+      const validCounts = usage !== undefined && hasConsistentTokenCounts(usage);
+      const tokens = validCounts ? usage.totalTokens : undefined;
+      if (tokens === undefined || tokens <= 0 || !Number.isSafeInteger(state.tokens + tokens)) {
         state.uncertainTokens = true;
-        state.uncertainUsd = true;
-        return;
+      } else {
+        state.tokens += tokens;
       }
-      const tokens = Math.max(usage.totalTokens, usage.input + usage.output + usage.cacheRead + usage.cacheWrite);
-      if (tokens <= 0 || !Number.isSafeInteger(state.tokens + tokens)) {
-        state.uncertainTokens = true;
-        state.uncertainUsd = true;
-        return;
-      }
-      state.tokens += tokens;
-      const reported = usage.cost?.total;
-      const priced =
-        (usage.input * rates.input +
-          usage.output * rates.output +
-          usage.cacheRead * rates.cacheRead +
-          usage.cacheWrite * rates.cacheWrite) /
-        1_000_000;
-      const cost = typeof reported === "number" ? Math.max(reported, priced) : priced;
-      if (
-        !Number.isFinite(cost) ||
-        cost < 0 ||
-        !Number.isFinite(state.usd + cost) ||
-        (cost === 0 && rates.input <= 0 && rates.output <= 0)
-      ) {
+
+      const cost = resolveUsdCost(usage, rates, accounting, kind, details);
+      if (cost === undefined || !Number.isFinite(state.usd + cost)) {
         state.uncertainUsd = true;
         return;
       }
       state.usd += cost;
     });
   }
+}
+
+function resolveAccounting(call: ModelCallAdmission): ModelCallAccounting {
+  if (call.kind === "text") return { tokens: "reported", usd: "model-rates" };
+  return validateModelCallAccounting(call.accounting ?? { tokens: "unsupported", usd: "unsupported" });
+}
+
+function resolveUsdCost(
+  usage: Usage | undefined,
+  rates: ModelCallAdmission["model"]["cost"],
+  accounting: ModelCallAccounting,
+  kind: ModelCallAdmission["kind"],
+  details?: ModelCallSettlementDetails,
+): number | undefined {
+  if (accounting.usd === "unsupported") return undefined;
+  if (usage !== undefined && !hasConsistentTokenCounts(usage)) return undefined;
+  const validRates = hasValidRates(rates);
+  const priced =
+    usage && validRates
+      ? (usage.input * rates.input +
+          usage.output * rates.output +
+          usage.cacheRead * rates.cacheRead +
+          usage.cacheWrite * rates.cacheWrite) /
+        1_000_000
+      : undefined;
+  if (accounting.usd === "model-rates") {
+    if (!isValidCost(priced)) return undefined;
+    if (kind === "image") return priced;
+    if (
+      usage?.totalTokens === 0 &&
+      usage.cost.input === 0 &&
+      usage.cost.output === 0 &&
+      usage.cost.cacheRead === 0 &&
+      usage.cost.cacheWrite === 0 &&
+      usage.cost.total === 0
+    ) {
+      return undefined;
+    }
+    const providerComputed = resolveProviderComputedCost(usage);
+    return providerComputed === undefined ? undefined : Math.max(priced, providerComputed);
+  }
+  const reported = details?.reportedUsd;
+  if (!isValidCost(reported)) return undefined;
+  return isValidCost(priced) ? Math.max(reported, priced) : reported;
+}
+
+function hasValidRates(rates: ModelCallAdmission["model"]["cost"]): boolean {
+  return [rates.input, rates.output, rates.cacheRead, rates.cacheWrite].every(isValidCost);
+}
+
+function hasConsistentTokenCounts(usage: Usage): boolean {
+  const counts = [usage.input, usage.output, usage.cacheRead, usage.cacheWrite, usage.totalTokens];
+  if (!counts.every((count) => Number.isSafeInteger(count) && count >= 0)) return false;
+  const componentTotal = usage.input + usage.output + usage.cacheRead + usage.cacheWrite;
+  return Number.isSafeInteger(componentTotal) && usage.totalTokens === componentTotal;
+}
+
+function resolveProviderComputedCost(usage: Usage | undefined): number | undefined {
+  if (!usage) return undefined;
+  const components = [usage.cost.input, usage.cost.output, usage.cost.cacheRead, usage.cost.cacheWrite];
+  if (!components.every(isValidCost) || !isValidCost(usage.cost.total)) return undefined;
+  const total = components.reduce((sum, component) => sum + component, 0);
+  return Number.isFinite(total) && usage.cost.total === total ? total : undefined;
+}
+
+function isValidCost(value: number | undefined): value is number {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0;
 }

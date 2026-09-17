@@ -1,0 +1,28 @@
+# 2026-09-09 — Subagent child signals need explicit lifecycle state
+
+- **Status:** Resolved
+- **Task/context:** Abort spawned subagent CLI processes reliably and report their exit status.
+- **Unexpected observation or failure:** A child closed by a signal produced `code=null` and was reported as exit code zero. After direct-child signaling was fixed, a descendant that inherited stdout/stderr could survive, keep `close` pending, and outlive both runner and test timeout. A descendant with detached stdio exposed the inverse race: the direct child closed early, clearing escalation while the process group remained alive. Windows cancellation also targeted only the direct process, and the first tree fix falsely treated a successful direct-child fallback as confirmation that a failed `taskkill /t` had stopped the tree.
+- **Evidence:** Mocked regressions covered null close codes, ignored TERM, successful and failed Windows tree termination, and the distinction between direct-child signal delivery and confirmed tree delivery. Real fixtures spawned ignored-TERM descendants both with inherited stdio and with detached stdio plus an early-closing parent; direct-child lifecycle alone failed to join each tree.
+- **Approaches tried:**
+  - **Attempt:** Infer liveness from `ChildProcess.killed` and convert a null close code to zero.
+    - **Outcome:** Did not work
+    - **Why:** `killed` means a signal was sent, not that the process exited, and a signal-only close is not success.
+  - **Attempt:** Track close/settlement explicitly, map signal-only close to failure, escalate any still-open process, and clear the timer and abort listener when settled.
+    - **Outcome:** Partial
+    - **Why:** Direct-child lifecycle state does not own descendants or their inherited pipes.
+  - **Attempt:** Create a POSIX process group, signal the whole group, bound post-KILL pipe settlement, and give the real CLI test its own earlier AbortController deadline.
+    - **Outcome:** Partial
+    - **Why:** Parent and descendants shared one signal boundary, but direct-child close still incorrectly ended ownership while an independently piped descendant remained alive.
+  - **Attempt:** Keep escalation active until the POSIX process group is gone and use Windows `taskkill /t /f` for the full tree.
+    - **Outcome:** Partial
+    - **Why:** Settlement followed the owned POSIX tree, but a failed Windows `taskkill` followed by successful `child.kill` still returned a false tree-success signal.
+  - **Attempt:** Fall back to direct-child kill while preserving an unconfirmed-tree result and deferring settlement through escalation.
+    - **Outcome:** Worked
+    - **Why:** The direct child is still stopped when possible, but callers receive an explicit failure instead of treating an unverified descendant tree as terminated.
+- **Root cause:** Signal delivery was conflated with exit, then process ownership was limited to the direct child instead of the spawned tree.
+- **Resolution:** The runner tracks direct-child close separately from tree settlement, signals its POSIX process group, retains escalation while that group lives, uses Windows tree termination, reports failed tree confirmation even when direct-child fallback succeeds, bounds pipe settlement, and removes timers/listeners. Real CLI tests own an abort deadline shorter than their suite timeout.
+- **Verification:** `subagent-runner-signals.test.ts` covers unit lifecycle semantics, Windows tree success, failed `taskkill` fallback, and explicit unconfirmed-tree failure; `subagent-runner-process-tree.test.ts` proves both PID exits for real inherited-stdio and early-close detached-stdio descendants; `subagent-runner.test.ts` exercises the deadline-protected faux-provider CLI.
+- **Prevention/follow-up:** Test wrappers with signal-only close, ignored graceful termination, inherited stdio descendants, and a harness-owned deadline.
+- **Reusable learning:** Process cleanup must own the complete child tree and begin before the framework timeout; direct-child signal state is insufficient.
+- **References:** `packages/coding-agent/examples/extensions/subagent/runner.ts`, `packages/coding-agent/test/subagent-runner-signals.test.ts`, `packages/coding-agent/test/subagent-runner-process-tree.test.ts`, `packages/coding-agent/test/subagent-runner.test.ts`

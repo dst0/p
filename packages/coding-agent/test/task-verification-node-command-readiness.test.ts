@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -56,7 +56,15 @@ describe("Node command readiness evidence", () => {
 
   it("accepts the local TypeScript executable after a real successful typecheck", async () => {
     const harness = await createWorkspace("Create result.txt and run typecheck.");
-    symlinkSync(join(import.meta.dirname, "../../../node_modules"), join(harness.cwd, "node_modules"));
+    mkdirSync(join(harness.cwd, "node_modules/.bin"), { recursive: true });
+    cpSync(
+      join(import.meta.dirname, "../../../node_modules/typescript"),
+      join(harness.cwd, "node_modules/typescript"),
+      {
+        recursive: true,
+      },
+    );
+    symlinkSync("../typescript/bin/tsc", join(harness.cwd, "node_modules/.bin/tsc"));
     writeFileSync(join(harness.cwd, "index.ts"), "export const value: string = 'requested result';\n");
     writeFileSync(
       join(harness.cwd, "tsconfig.json"),
@@ -72,6 +80,17 @@ describe("Node command readiness evidence", () => {
 
     expect(await ready(harness)).toContain("verification_token:");
   });
+
+  it.each(["npx tsc --noEmit", "npm exec tsc --noEmit", "node_modules/.bin/tsc empty.ts --noEmit"])(
+    "does not accept non-authoritative typecheck evidence: %s",
+    async (command) => {
+      const harness = await createWorkspace("Create result.txt and run typecheck.");
+      await mutateResult(harness, "requested result\n");
+      await afterEvidenceTool(harness.agent, "bash", { command }, "typecheck passed");
+
+      expect(await ready(harness)).toContain("no successful current-revision typecheck evidence");
+    },
+  );
 });
 
 async function createWorkspace(prompt: string) {
