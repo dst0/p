@@ -46,6 +46,7 @@ describe("task-verification typecheck command authority", () => {
     "node_modules/.bin/tsc -b -d",
     "node_modules/.bin/tsc -d -b",
     "node_modules/.bin/tsc --build --clean",
+    "node_modules/.bin/tsgo --noEmit",
   ])("rejects a non-authoritative or partial compiler invocation: %s", (command) => {
     expect(isAuthoritativeTypecheckCommand(command, process.cwd())).toBe(false);
   });
@@ -71,6 +72,10 @@ describe("task-verification typecheck command authority", () => {
     const compiler = join(workspace, "node_modules/.bin/tsc");
     expect(execFileSync(compiler, ["-version"], { cwd: workspace, encoding: "utf8" })).toContain("Version");
     expect(isAuthoritativeTypecheckCommand("node_modules/.bin/tsc -version", workspace)).toBe(false);
+  });
+
+  it("rejects a local native-preview compiler shim when its target is not the expected executable", () => {
+    expect(isAuthoritativeTypecheckCommand("node_modules/.bin/tsgo --noEmit", repositoryRoot)).toBe(false);
   });
 
   it("rejects a real partial-file check that bypasses a project error", () => {
@@ -182,6 +187,64 @@ describe("task-verification typecheck command authority", () => {
     expect(isAuthoritativeTypecheckCommand("tsc --project tsconfig.json --noEmit", workspace, ["src/changed.ts"])).toBe(
       false,
     );
+  });
+
+  it("keeps package-runner directories and safe flags inside the workspace", () => {
+    const workspace = createConfigWorkspace();
+    const packageDirectory = join(workspace, "package");
+    mkdirSync(join(packageDirectory, "src"), { recursive: true });
+    writeFileSync(join(packageDirectory, "src/changed.ts"), "export {};\n");
+    writeFileSync(join(packageDirectory, "tsconfig.json"), '{"include":["src"]}\n');
+    writeFileSync(join(packageDirectory, "package.json"), '{"scripts":{"typecheck":"tsc --noEmit"}}\n');
+    const sourcePaths = ["package/src/changed.ts"];
+
+    expect(isAuthoritativeTypecheckCommand("npm --prefix=package --silent run typecheck", workspace, sourcePaths)).toBe(
+      true,
+    );
+    expect(isAuthoritativeTypecheckCommand("npm --prefix package run typecheck", workspace, sourcePaths)).toBe(true);
+    expect(isAuthoritativeTypecheckCommand("npm --prefix=package --prefix=package run typecheck", workspace)).toBe(
+      false,
+    );
+    expect(isAuthoritativeTypecheckCommand("npm --prefix=../outside run typecheck", workspace)).toBe(false);
+    expect(isAuthoritativeTypecheckCommand("npm --bogus run typecheck", workspace)).toBe(false);
+
+    writeFileSync(join(packageDirectory, "package.json"), "not json\n");
+    expect(isAuthoritativeTypecheckCommand("npm --prefix package run typecheck", workspace, sourcePaths)).toBe(false);
+  });
+
+  it("covers project builds, bounded compiler options, and missing roots", () => {
+    const workspace = createConfigWorkspace();
+    writeFileSync(join(workspace, "tsconfig.json"), '{"include":["src"]}\n');
+    const sourcePaths = ["src/changed.ts"];
+
+    expect(isAuthoritativeTypecheckCommand("tsc --build tsconfig.json --outDir dist", workspace, sourcePaths)).toBe(
+      true,
+    );
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit --outDir=dist --target es2022", workspace, sourcePaths)).toBe(
+      true,
+    );
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit --target", workspace, sourcePaths)).toBe(false);
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit --rootDir=../outside", workspace, sourcePaths)).toBe(false);
+    expect(isAuthoritativeTypecheckCommand("tsc --project missing.json --noEmit", workspace, sourcePaths)).toBe(false);
+  });
+
+  it("fails closed for malformed configs while accepting nested lookup and absent source bytes", () => {
+    const workspace = createConfigWorkspace();
+    mkdirSync(join(workspace, "nested/child"), { recursive: true });
+    writeFileSync(join(workspace, "tsconfig.json"), '{"include":["src"]}\n');
+    expect(isAuthoritativeTypecheckCommand("cd nested/child && tsc --noEmit", workspace, ["src/changed.ts"])).toBe(
+      true,
+    );
+
+    writeFileSync(join(workspace, "tsconfig.json"), "{not json\n");
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit", workspace, ["src/changed.ts"])).toBe(false);
+
+    writeFileSync(join(workspace, "tsconfig.json"), '{"include":["src"] /* block comment */}\n');
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit", workspace, ["src/not-created.ts"])).toBe(true);
+
+    const missingRoot = join(tmpdir(), "p-typecheck-authority-missing-root");
+    rmSync(missingRoot, { recursive: true, force: true });
+    expect(isAuthoritativeTypecheckCommand("tsc --noEmit", missingRoot, ["src/changed.ts"])).toBe(false);
   });
 });
 

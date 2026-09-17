@@ -1,10 +1,12 @@
-import { mkdirSync, readFileSync, rmSync } from "node:fs";
+import { closeSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import {
+  appendJsonLineDurably,
   SessionFileAppendError,
   type SessionFileDurabilityOperations,
+  SessionFilePublicationError,
 } from "../../src/core/session-manager/session-file-durability.ts";
 import { SessionManager } from "../../src/core/session-manager.ts";
 
@@ -82,6 +84,64 @@ describe("session append persistence consistency", () => {
 
     const recovered = SessionManager.open(session.getSessionFile()!, tempDir);
     expect(() => recovered.appendCustomEntry("after-recovery", { value: 3 })).not.toThrow();
+  });
+
+  it("keeps a published initial session marked flushed after directory durability fails", () => {
+    const session = SessionManager.create(tempDir, tempDir);
+    session.appendMessage({ role: "user", content: "hello", timestamp: 1 });
+    let fsyncCalls = 0;
+    session.durabilityOperations = {
+      fsyncSync: (_fd: number) => {
+        fsyncCalls++;
+        if (fsyncCalls === 2) throw new Error("directory fsync");
+      },
+    };
+
+    expect(() => session.appendMessage(assistantMessage("world"))).toThrow(SessionFilePublicationError);
+    expect(fsyncCalls).toBe(2);
+    expect(session.flushed).toBe(true);
+    expect(session.persistenceError).toBeInstanceOf(SessionFilePublicationError);
+    expect(SessionManager.open(session.getSessionFile()!, tempDir).getEntries()).toHaveLength(2);
+  });
+
+  it("rolls back the in-memory entry after an unexpected persistence failure", () => {
+    const session = SessionManager.create(tempDir, tempDir);
+    session.appendMessage({ role: "user", content: "hello", timestamp: 1 });
+    const beforeEntries = session.getEntries();
+    const beforeLeaf = session.getLeafId();
+    session._persist = () => {
+      throw new Error("unexpected persistence failure");
+    };
+
+    expect(() => session.appendCustomEntry("unexpected-failure", { value: 1 })).toThrow(
+      "unexpected persistence failure",
+    );
+    expect(session.getEntries()).toEqual(beforeEntries);
+    expect(session.getLeafId()).toBe(beforeLeaf);
+    expect(session.persistenceError).toBeUndefined();
+  });
+
+  it("reports a close failure even when the append was otherwise durable", () => {
+    const file = join(tempDir, "append-close-failure.jsonl");
+    writeFileSync(file, '{"type":"session"}\n');
+    let closeAttempts = 0;
+
+    expect(() =>
+      appendJsonLineDurably(
+        file,
+        { type: "message", id: "entry" },
+        {
+          closeSync: (fd: number) => {
+            closeAttempts++;
+            closeSync(fd);
+            throw new Error("append close");
+          },
+        },
+      ),
+    ).toThrow(SessionFileAppendError);
+
+    expect(closeAttempts).toBe(1);
+    expect(readFileSync(file, "utf8")).toBe('{"type":"session"}\n{"type":"message","id":"entry"}\n');
   });
 });
 

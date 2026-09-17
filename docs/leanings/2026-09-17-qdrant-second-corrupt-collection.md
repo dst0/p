@@ -1,0 +1,22 @@
+# 2026-09-17 — Isolate a second corrupt Qdrant collection
+
+- **Status:** Resolved
+- **Task/context:** Complete the mandatory reinstall and restore the local indexing daemon after a test-only branch rebuild.
+- **Unexpected observation or failure:** The first reinstall stopped at the readiness gate after a transient Core AI probe failure. A retry then stopped the daemon and Qdrant exited with code 101 while loading a different persisted collection, leaving the LaunchAgent unloaded.
+- **Evidence:** A standalone Qdrant 1.18.3 start reproduced `Failed to deserialize Vec<ecow::EcoString>` with `invalid type: integer \`0\`, expected a sequence` while loading `p_code_chunks_5d83e1d971c98fa9_mu4nscbf-ccfb4f68`. The failing shard and payload-index stack were captured before any recovery action; no Qdrant writer was active during quarantine.
+- **Approaches tried:**
+  - **Attempt:** Retry the reinstall without changing persisted storage.
+    - **Outcome:** Did not work.
+    - **Why:** Qdrant deterministically failed on the same collection during startup.
+  - **Attempt:** Delete the failing collection in place.
+    - **Outcome:** Not performed.
+    - **Why:** The derived index is rebuildable, but deletion would remove the rollback evidence.
+  - **Attempt:** Move the exact collection and its AppleDouble sidecar to a same-volume quarantine, then bootstrap the generated LaunchAgent.
+    - **Outcome:** Worked.
+    - **Why:** Qdrant loaded the remaining collections, the CPU embedding backend became ready, and the daemon resumed indexing without touching source repositories.
+- **Root cause:** The persisted collection payload-index bytes are corrupt. Whether the corruption is related to external ExFAT storage, an interrupted write, or an earlier runtime event remains unproven.
+- **Resolution:** Quarantined only the identified rebuildable collection at `/Users/dst/.p/agent/code-rag/qdrant/quarantine-20260917T095500Z`, preserving the original bytes and sidecar for recovery.
+- **Verification:** `node scripts/indexing-service-health.js "$HOME/.p/agent"` passed; the live embedding health endpoint reported `ready` with the configured CPU backend; `node scripts/smoke-code-index.js` returned `Real semantic-search smoke passed (1 result)`; the LaunchAgent is running with the integration worktree identity.
+- **Prevention/follow-up:** Keep each quarantine until the replacement collection is rebuilt and independently checked. For future startup code 101 failures, capture a standalone Qdrant diagnostic and quarantine only the named rebuildable collection after verifying process ownership.
+- **Reusable learning:** When a persisted Qdrant store contains multiple damaged generations, recover one exact collection at a time and preserve every moved artifact; a successful service restart is not evidence that unrelated collections are safe.
+- **References:** `scripts/reinstall.sh`; `scripts/indexing-service-health.js`; `scripts/smoke-code-index.js`; operator-local quarantine at `/Users/dst/.p/agent/code-rag/qdrant/quarantine-20260917T095500Z`.

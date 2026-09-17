@@ -42,6 +42,31 @@ function temporaryDirectory(): string {
 }
 
 describe("durable budget storage recovery", () => {
+  it("rejects a ledger path that names its intended storage root", () => {
+    const directory = temporaryDirectory();
+
+    expect(() => new RunBudgetStorage(initial, directory, directory)).toThrow(
+      "Budget path escapes its intended storage root",
+    );
+  });
+
+  it("rejects a regular file used as the intended storage root", () => {
+    const directory = temporaryDirectory();
+    const root = join(directory, "not-a-directory");
+    writeFileSync(root, "not a directory");
+
+    expect(() => new RunBudgetStorage(initial, join(root, "budget.json"), root)).toThrow(/budget_storage_error/);
+  });
+
+  it("revalidates the bound root before reading a retargeted ledger path", () => {
+    const directory = temporaryDirectory();
+    const storage = new RunBudgetStorage(initial, join(directory, "budget.json"), directory);
+    const internals = storage as unknown as { path: string };
+    internals.path = join(directory, "..", "escaped-budget.json");
+
+    expect(() => storage.read()).toThrow(/budget_storage_error/);
+  });
+
   it("does not silently recreate a previously persisted ledger after deletion", () => {
     const path = join(temporaryDirectory(), "budget.json");
     const storage = new RunBudgetStorage(initial, path);

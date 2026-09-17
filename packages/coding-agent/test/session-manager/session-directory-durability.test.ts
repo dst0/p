@@ -43,4 +43,29 @@ describe("session directory durability", () => {
         : [`mkdir:${first}`, `open:${tempDir}`, "fsync", `mkdir:${second}`, `open:${first}`, "fsync"],
     );
   });
+
+  it("tolerates another writer winning the mkdir race", () => {
+    const directory = join(tempDir, "racing-session-directory");
+    const events: string[] = [];
+
+    expect(() =>
+      ensureDirectoryDurably(directory, {
+        mkdirSync: (path, options) => {
+          mkdirSync(path, options);
+          throw Object.assign(new Error("directory already exists"), { code: "EEXIST" });
+        },
+        openSync: (path, flags, mode) => {
+          events.push(`open:${path}`);
+          return openSync(path, flags, mode);
+        },
+        fsyncSync: (fd) => {
+          events.push("fsync");
+          fsyncSync(fd);
+        },
+        closeSync,
+      }),
+    ).not.toThrow();
+
+    expect(events).toContain("fsync");
+  });
 });

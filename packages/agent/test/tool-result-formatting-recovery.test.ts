@@ -8,6 +8,11 @@ import {
 } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
+import {
+  isFullyRecoverableMisplacedToolArguments,
+  serializeCanonicalMisplacedToolArguments,
+} from "../src/agent-loop/message-preparation.ts";
+import { extractMisplacedJsonToolCalls, parseMisplacedToolCallBlock } from "../src/agent-loop/tool-dispatch.ts";
 import { detectCompletionProtocolRepair } from "../src/agent-loop/tool-result-formatting.ts";
 import { agentLoop } from "../src/agent-loop.ts";
 import { FINISH_WORK_TOOL_NAME } from "../src/completion-protocol.ts";
@@ -220,5 +225,31 @@ describe("truncated tool-call recovery", () => {
           event.reason === "repetitive_model_output",
       ),
     ).toHaveLength(1);
+  });
+});
+
+describe("misplaced tool-call parser boundaries", () => {
+  it("accepts complete bare function arguments and rejects malformed JSON", () => {
+    expect(parseMisplacedToolCallBlock('<function>echo</function><arguments>{"value":"ok"}</arguments>')).toEqual([
+      { name: "echo", arguments: { value: "ok" } },
+    ]);
+    expect(parseMisplacedToolCallBlock("<function>echo</function>not-json")).toEqual([]);
+    expect(isFullyRecoverableMisplacedToolArguments("<arguments>{broken</arguments>")).toBe(false);
+    expect(extractMisplacedJsonToolCalls("{malformed}", new Set(["echo"]))).toEqual([]);
+  });
+
+  it("canonicalizes nested arrays and fails closed when argument keys cannot be read", () => {
+    expect(serializeCanonicalMisplacedToolArguments({ values: [2, { first: true }] })).toBe(
+      '{"values":[2,{"first":true}]}',
+    );
+    const throwingRecord = new Proxy<Record<string, unknown>>(
+      {},
+      {
+        ownKeys() {
+          throw new Error("argument keys unavailable");
+        },
+      },
+    );
+    expect(serializeCanonicalMisplacedToolArguments(throwingRecord)).toBeUndefined();
   });
 });

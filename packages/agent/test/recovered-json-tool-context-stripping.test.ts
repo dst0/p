@@ -1,7 +1,12 @@
 import type { AssistantMessage } from "@dst0/p-ai";
 import { Type } from "typebox";
 import { describe, expect, it } from "vitest";
-import { recoverMisplacedToolCalls, removeRecoveredJsonToolCallBlocks } from "../src/agent-loop/tool-execution.ts";
+import { extractMisplacedToolCalls } from "../src/agent-loop/tool-dispatch.ts";
+import {
+  recoverMisplacedToolCalls,
+  removeRecoveredJsonToolCallBlocks,
+  removeRecoveredToolCallMarkup,
+} from "../src/agent-loop/tool-execution.ts";
 import type { AgentTool } from "../src/types.ts";
 
 const toolNames = new Set(["echo"]);
@@ -262,5 +267,29 @@ describe("recovered JSON tool context stripping", () => {
     expect(removeRecoveredJsonToolCallBlocks(text, toolNames)).toBe(
       `Step 1:\n\nStep 2:\n${jsonFence({ data: true })}\nStep 3:\n\nFinished.`,
     );
+  });
+
+  it("preserves an unterminated markdown fence while stripping nothing from it", () => {
+    const text = `Before\n${jsonFence({ name: "echo", arguments: { value: "open" } }).slice(0, -3)}`;
+    expect(removeRecoveredJsonToolCallBlocks(text, toolNames)).toBe(text.trim());
+  });
+
+  it("preserves native tool-call blocks while cleaning textual recovery markup", () => {
+    const message = assistantMessage([
+      { type: "toolCall", id: "native", name: "echo", arguments: { value: "native" } },
+      { type: "text", text: "keep this explanation" },
+    ]);
+
+    expect(removeRecoveredToolCallMarkup(message, toolNames)).toEqual(message);
+  });
+
+  it("ignores native tool calls while recovering textual JSON", () => {
+    const message = assistantMessage([
+      { type: "toolCall", id: "native", name: "echo", arguments: { value: "native" } },
+      { type: "text", text: JSON.stringify({ name: "echo", arguments: { value: "recovered" } }) },
+    ]);
+    expect(extractMisplacedToolCalls(message, [echoTool])).toEqual([
+      expect.objectContaining({ name: "echo", arguments: { value: "recovered" } }),
+    ]);
   });
 });

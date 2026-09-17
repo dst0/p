@@ -43,4 +43,12 @@ describe("extension budget context", () => {
     (snapshot as { limit: number }).limit = 1;
     expect(runner.createContext().runBudgetPolicy).toEqual(policy);
   });
+
+  it("returns no model until the host binds one", () => {
+    const modelRegistry = ModelRegistry.create(AuthStorage.create(join(tempDir, "auth.json")));
+    const runner = new ExtensionRunner([], createExtensionRuntime(), tempDir, SessionManager.inMemory(), modelRegistry);
+
+    expect(runner.getModel()).toBeUndefined();
+    expect(() => runner.getRunBudgetPolicyFn()).toThrow("not bound to a task budget");
+  });
 });
