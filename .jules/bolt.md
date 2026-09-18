@@ -23,3 +23,6 @@
 ## 2026-08-29 - Pre-compiled Regex is vastly faster than Array filtering for string sanitization
 **Learning:** In hot paths processing large text outputs (like shell output chunks), using `Array.from(str).filter(...).join('')` creates massive memory allocations and performance degradation due to the creation of large intermediate arrays. A pre-compiled Regex `.replace()` avoids these allocations and runs orders of magnitude faster (~20x+ in tests).
 **Action:** When sanitizing or filtering characters out of large strings in hot paths, use a pre-compiled Regex with `.replace()` rather than converting the string to an array for filtering.
+## 2026-09-18 - Replacing chained array filters with explicit iteration
+**Learning:** Performing multiple `.filter()` passes and array creations (like filtering based on include/exclude match rules) creates many intermediate arrays and iterators that degrade performance in hot paths processing large arrays (such as thousands of file paths).
+**Action:** When filtering logic requires multiple sequential steps and states (e.g. includes, exclusions, force-includes), combine them into a single, explicit `for` loop that iterates once over the array and updates a boolean flag, pushing passing elements to a final result structure.
