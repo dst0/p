@@ -405,7 +405,7 @@
   },
   "packages/coding-agent/src/modes/interactive/components/tree-selector.ts": {
     "classes": 5,
-    "lines": 1319
+    "lines": 1318
   },
   "packages/coding-agent/src/modes/interactive/components/user-message-selector.ts": {
     "classes": 2,

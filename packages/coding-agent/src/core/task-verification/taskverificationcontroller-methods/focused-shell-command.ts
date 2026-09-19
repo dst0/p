@@ -13,23 +13,8 @@ export interface FocusedShellInvocation {
   workingDirectory?: string;
 }
 
-const NON_LITERAL_DIRECTORY_CHARACTERS = new Set([
-  "$",
-  "`",
-  "*",
-  "?",
-  "[",
-  "]",
-  "{",
-  "}",
-  "(",
-  ")",
-  "<",
-  ">",
-  ";",
-  "&",
-  "|",
-]);
+// Optimization: Pre-compiled regex checking is faster than expanding string to array and using .some()
+const NON_LITERAL_DIRECTORY_PATTERN = /[$`*?[\]{}()<>;&|]/;
 
 export function focusedShellInvocationWords(command: string): string[] | undefined {
   return focusedShellInvocation(command)?.words;
@@ -60,7 +45,7 @@ function literalDirectoryChange(words: readonly string[]): string | undefined {
   const pathIndex = words[1] === "--" ? 2 : 1;
   const path = words[pathIndex];
   if (!path || words.length !== pathIndex + 1 || path.startsWith("-") || path.startsWith("~")) return undefined;
-  if ([...path].some((character) => NON_LITERAL_DIRECTORY_CHARACTERS.has(character))) return undefined;
+  if (NON_LITERAL_DIRECTORY_PATTERN.test(path)) return undefined;
   return normalize(path);
 }
 
