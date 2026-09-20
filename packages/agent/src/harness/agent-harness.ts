@@ -848,19 +848,25 @@ export class AgentHarness<
         editorText =
           typeof content === "string"
             ? content
-            : content
-                .filter((c): c is { readonly type: "text"; readonly text: string } => c.type === "text")
-                .map((c) => c.text)
-                .join("");
+            : (() => {
+                let res = "";
+                for (const c of content) {
+                  if (c.type === "text") res += c.text;
+                }
+                return res;
+              })();
       } else if (targetEntry.type === "custom_message") {
         newLeafId = targetEntry.parentId;
         editorText =
           typeof targetEntry.content === "string"
             ? targetEntry.content
-            : targetEntry.content
-                .filter((c): c is { readonly type: "text"; readonly text: string } => c.type === "text")
-                .map((c) => c.text)
-                .join("");
+            : (() => {
+                let res = "";
+                for (const c of targetEntry.content) {
+                  if (c.type === "text") res += c.text;
+                }
+                return res;
+              })();
       } else {
         newLeafId = targetId;
       }

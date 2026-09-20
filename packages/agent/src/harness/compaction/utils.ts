@@ -93,13 +93,14 @@ export function serializeConversation(messages: Message[]): string {
 
   for (const msg of messages) {
     if (msg.role === "user") {
-      const content =
-        typeof msg.content === "string"
-          ? msg.content
-          : msg.content
-              .filter((c): c is { type: "text"; text: string } => c.type === "text")
-              .map((c) => c.text)
-              .join("");
+      let content = "";
+      if (typeof msg.content === "string") {
+        content = msg.content;
+      } else {
+        for (const c of msg.content) {
+          if (c.type === "text") content += c.text;
+        }
+      }
       if (content) parts.push(`[User]: ${content}`);
     } else if (msg.role === "assistant") {
       const textParts: string[] = [];
@@ -130,10 +131,10 @@ export function serializeConversation(messages: Message[]): string {
         parts.push(`[Assistant tool calls]: ${toolCalls.join("; ")}`);
       }
     } else if (msg.role === "toolResult") {
-      const content = msg.content
-        .filter((c): c is { type: "text"; text: string } => c.type === "text")
-        .map((c) => c.text)
-        .join("");
+      let content = "";
+      for (const c of msg.content) {
+        if (c.type === "text") content += c.text;
+      }
       if (content) {
         parts.push(`[Tool result]: ${truncateForSummary(content, TOOL_RESULT_MAX_CHARS)}`);
       }

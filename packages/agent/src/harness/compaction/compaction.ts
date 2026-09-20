@@ -598,10 +598,12 @@ export async function generateSummary(
     );
   }
 
-  const textContent = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
+  let textContent = "";
+  for (const c of response.content) {
+    if (c.type === "text") {
+      textContent += (textContent ? "\n" : "") + c.text;
+    }
+  }
 
   return ok(textContent);
 }
@@ -841,10 +843,11 @@ async function generateTurnPrefixSummary(
     );
   }
 
-  return ok(
-    response.content
-      .filter((c): c is { type: "text"; text: string } => c.type === "text")
-      .map((c) => c.text)
-      .join("\n"),
-  );
+  let textContent = "";
+  for (const c of response.content) {
+    if (c.type === "text") {
+      textContent += (textContent ? "\n" : "") + c.text;
+    }
+  }
+  return ok(textContent);
 }

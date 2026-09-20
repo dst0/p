@@ -243,11 +243,13 @@ export async function generateBranchSummary(
     );
   }
 
-  let summary = response.content
-    .filter((c): c is { type: "text"; text: string } => c.type === "text")
-    .map((c) => c.text)
-    .join("\n");
-  summary = BRANCH_SUMMARY_PREAMBLE + summary;
+  let summaryText = "";
+  for (const c of response.content) {
+    if (c.type === "text") {
+      summaryText += (summaryText ? "\n" : "") + c.text;
+    }
+  }
+  let summary = BRANCH_SUMMARY_PREAMBLE + summaryText;
   const { readFiles, modifiedFiles } = computeFileLists(fileOps);
   summary += formatFileOperations(readFiles, modifiedFiles);
 
