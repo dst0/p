@@ -852,9 +852,7 @@ export class AgentHarness<
                 let res = "";
                 if (Array.isArray(content)) {
                   for (const c of content) {
-                    if (typeof c === "object" && c !== null && "type" in c && c.type === "text" && "text" in c) {
-                      res += c.text;
-                    }
+                    if (c && typeof c === "object" && "type" in c && c.type === "text") res += (c as any).text || "";
                   }
                 }
                 return res;
@@ -868,9 +866,7 @@ export class AgentHarness<
                 let res = "";
                 if (Array.isArray(targetEntry.content)) {
                   for (const c of targetEntry.content) {
-                    if (typeof c === "object" && c !== null && "type" in c && c.type === "text" && "text" in c) {
-                      res += c.text;
-                    }
+                    if (c && typeof c === "object" && "type" in c && c.type === "text") res += (c as any).text || "";
                   }
                 }
                 return res;
