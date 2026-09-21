@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { createAgentSession } from "../src/core/sdk.ts";
 import { SessionManager } from "../src/core/session-manager.ts";
 import { SettingsManager } from "../src/core/settings-manager.ts";
+import { TASK_VERIFICATION_TOOL_NAME } from "../src/core/task-verification/constants.ts";
 import {
   cleanupProjectInstructionModeWorkspaces,
   createProjectInstructionModeWorkspace,
@@ -105,6 +106,31 @@ describe("compiled fallback read-only tool routing", () => {
           projectInstructionToolHookInput("bash", { command: "diskutil eraseDisk APFS Empty disk9" }),
         ),
       ).resolves.toMatchObject({ block: true, reason: expect.stringContaining("legacy") });
+    } finally {
+      session.dispose();
+    }
+  });
+
+  it("keeps identity-bound verification control-plane actions available in fallback mode", async () => {
+    const workspace = createProjectInstructionModeWorkspace();
+    const { session } = await createAgentSession({
+      cwd: workspace.root,
+      agentDir: join(workspace.root, ".agent-fallback-verification"),
+      resourceLoader: workspace.resourceLoader,
+      sessionManager: SessionManager.inMemory(workspace.root),
+      projectInstructionMode: "compiled",
+      taskVerificationMode: "audit",
+      projectInstructionCompiler: async () => {
+        throw new Error("compiler unavailable");
+      },
+    });
+    try {
+      session._createRuntimeContextPrompts("inspect verification state", session.systemPrompt);
+      await expect(
+        session.agent.beforeToolCall?.(
+          projectInstructionToolHookInput(TASK_VERIFICATION_TOOL_NAME, { action: "status" }),
+        ),
+      ).resolves.toBeUndefined();
     } finally {
       session.dispose();
     }
