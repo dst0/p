@@ -105,6 +105,17 @@ test("binary build hydrates native bindings without npm workspace graph resoluti
   assert.doesNotMatch(binaryBuildScript, /npm install --include=optional/);
 });
 
+test("macOS binary builds receive a runnable ad-hoc signature", () => {
+  const signStart = binaryBuildScript.indexOf('if [[ "$platform" == darwin-*');
+  assert.notEqual(signStart, -1, "Darwin signing guard must exist");
+  const signBlock = binaryBuildScript.slice(signStart, binaryBuildScript.indexOf("\n    fi\n", signStart) + 8);
+  assert.match(signBlock, /uname -s/);
+  assert.match(signBlock, /command -v codesign/);
+  assert.match(signBlock, /codesign --force --sign -/);
+  assert.match(signBlock, /codesign --verify --strict/);
+  assert.ok(signStart > binaryBuildScript.indexOf("bun build --compile"));
+});
+
 test("validation skips optional local LLM tests only when Ollama is unavailable", () => {
   const validate = job("validate", "build");
   const testStart = validate.indexOf("name: Test all, including configured live tests");

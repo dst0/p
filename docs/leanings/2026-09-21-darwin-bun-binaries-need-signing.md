@@ -1,0 +1,22 @@
+# 2026-09-21 — Darwin Bun binaries need a local signature
+
+- **Status:** Resolved
+- **Task/context:** Verify the local release artifacts and make the native CLI build usable on macOS.
+- **Unexpected observation or failure:** A Darwin-arm64 binary compiled with the installed Bun 1.4.0 exited with status 137 before printing `--help`. `codesign --verify` reported an invalid signature; signing the same temporary binary ad hoc made it start normally.
+- **Evidence:** The generated Mach-O binary was terminated immediately with `SIGKILL` (137). `codesign --force --deep --sign - <binary>` changed the result to a successful help invocation. The release workflow remains pinned to Bun 1.3.10 for Linux cross-builds.
+- **Approaches tried:**
+  - **Attempt:** Run the unsigned local Darwin binary.
+    - **Outcome:** Did not work.
+    - **Why:** macOS terminated the malformedly signed executable before CLI startup.
+  - **Attempt:** Rebuild with Bun 1.3.10.
+    - **Outcome:** Worked for the temporary smoke binary.
+    - **Why:** The older compiler output starts on this host, but local users may have a newer Bun.
+  - **Attempt:** Ad-hoc sign Darwin binaries after compilation.
+    - **Outcome:** Worked.
+    - **Why:** macOS receives a valid local code signature without requiring a developer identity.
+- **Root cause:** The local Bun compiler can emit a Darwin executable whose code-signature metadata is rejected by macOS. The build script had no host-specific signing step.
+- **Resolution:** `scripts/build-binaries.sh` now ad-hoc signs Darwin outputs when running on macOS and fails closed if `codesign` is unavailable. Linux cross-builds retain their existing path because Apple's signing tool is not available there.
+- **Verification:** A signed temporary Darwin binary successfully printed `--help`; the release workflow regression test asserts the guarded signing step and the normal build/check suite remains applicable.
+- **Prevention/follow-up:** Keep the Bun version pinned in release CI and preserve the macOS signing guard for local native builds. Re-test the final release artifact on macOS before distributing it.
+- **Reusable learning:** A successful Bun compile is not sufficient proof of a runnable macOS CLI; verify the Mach-O signature and startup behavior on the target host.
+- **References:** `scripts/build-binaries.sh`, `scripts/release-workflow.test.js`.
