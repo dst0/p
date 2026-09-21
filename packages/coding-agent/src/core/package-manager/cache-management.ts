@@ -27,34 +27,44 @@ export function applyPatterns(allPaths: string[], patterns: string[], baseDir: s
   const forceIncludesSet = new Set(forceIncludes.map(normalizeExactPattern));
   const forceExcludesSet = new Set(forceExcludes.map(normalizeExactPattern));
 
-  // Step 1: Apply includes (or all if no includes)
-  let result: string[];
-  if (includes.length === 0) {
-    result = [...allPaths];
-  } else {
-    result = allPaths.filter((filePath) => matchesAnyPattern(filePath, compiledIncludes, baseDir));
-  }
+  // ⚡ Bolt: Combine multiple filter passes and intermediate array allocations into a single explicit loop
+  const result = new Set<string>();
 
-  // Step 2: Apply excludes
-  if (excludes.length > 0) {
-    result = result.filter((filePath) => !matchesAnyPattern(filePath, compiledExcludes, baseDir));
-  }
+  for (const filePath of allPaths) {
+    let isIncluded = false;
 
-  // Step 3: Force-include (add back from allPaths, overriding exclusions)
-  if (forceIncludesSet.size > 0) {
-    const resultSet = new Set(result);
-    for (const filePath of allPaths) {
-      if (!resultSet.has(filePath) && matchesAnyExactPattern(filePath, forceIncludesSet, baseDir)) {
-        result.push(filePath);
-        resultSet.add(filePath);
+    // Step 1: Apply includes (or all if no includes)
+    if (includes.length === 0) {
+      isIncluded = true;
+    } else {
+      isIncluded = matchesAnyPattern(filePath, compiledIncludes, baseDir);
+    }
+
+    // Step 2: Apply excludes
+    if (isIncluded && excludes.length > 0) {
+      if (matchesAnyPattern(filePath, compiledExcludes, baseDir)) {
+        isIncluded = false;
       }
+    }
+
+    // Step 3: Force-include (overriding exclusions)
+    if (!isIncluded && forceIncludesSet.size > 0) {
+      if (matchesAnyExactPattern(filePath, forceIncludesSet, baseDir)) {
+        isIncluded = true;
+      }
+    }
+
+    // Step 4: Force-exclude (remove even if included or force-included)
+    if (isIncluded && forceExcludesSet.size > 0) {
+      if (matchesAnyExactPattern(filePath, forceExcludesSet, baseDir)) {
+        isIncluded = false;
+      }
+    }
+
+    if (isIncluded) {
+      result.add(filePath);
     }
   }
 
-  // Step 4: Force-exclude (remove even if included or force-included)
-  if (forceExcludesSet.size > 0) {
-    result = result.filter((filePath) => !matchesAnyExactPattern(filePath, forceExcludesSet, baseDir));
-  }
-
-  return new Set(result);
+  return result;
 }
