@@ -96,11 +96,13 @@ test("binary build verifies standalone package metadata before release upload", 
   assert.ok(verificationStart < build.indexOf("name: Create GitHub Release and upload binaries"));
 });
 
-test("binary build isolates native binding installation from the npm workspace graph", () => {
+test("binary build hydrates native bindings without npm workspace graph resolution", () => {
   assert.match(
     binaryBuildScript,
-    /npm install --workspaces=false --include=optional --no-save --package-lock=false --force --ignore-scripts/,
+    /npm pack --ignore-scripts --silent --pack-destination/,
   );
+  assert.match(binaryBuildScript, /tar -xzf .*--strip-components=1/);
+  assert.doesNotMatch(binaryBuildScript, /npm install --include=optional/);
 });
 
 test("validation skips optional local LLM tests only when Ollama is unavailable", () => {

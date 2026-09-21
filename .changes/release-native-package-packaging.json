@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Hydrate cross-platform native bindings with npm pack so binary release builds do not invoke the failing npm workspace graph."
+}
