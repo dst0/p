@@ -1,0 +1,22 @@
+# 2026-09-21 — Bun compiler version must match the release toolchain
+
+- **Status:** Resolved
+- **Task/context:** Running the complete local non-Docker suite after repairing and reinstalling the `p` CLI.
+- **Unexpected observation or failure:** Every standalone metadata fixture was terminated by `SIGKILL` even when run alone. The failure occurred before fixture assertions and was not a child-process timeout.
+- **Evidence:** Bun `1.4.0` compiled both the metadata probe and a one-line hello program into arm64 Mach-O executables that `codesign --verify` reported as having invalid signatures; macOS killed both immediately. The repository release workflow pins Bun `1.3.10`, whose checksum-verified binary produced an executable that passed the same focused test.
+- **Approaches tried:**
+  - **Attempt:** Increase or reinterpret the test timeout.
+    - **Outcome:** Did not work
+    - **Why:** `spawnSync` reported `signal: SIGKILL` in about one second and the generated executable failed code-signature verification.
+  - **Attempt:** Ad-hoc re-sign the malformed Bun `1.4.0` executable.
+    - **Outcome:** Did not work
+    - **Why:** The code-signing subsystem rejected the generated Mach-O during strict validation.
+  - **Attempt:** Execute the test with the exact Bun `1.3.10` toolchain pinned by release CI.
+    - **Outcome:** Worked
+    - **Why:** The fixture executable launched normally and all standalone metadata assertions passed.
+- **Root cause:** The machine-global Bun version differed from the release toolchain and produced invalid native executables on this macOS host.
+- **Resolution:** Verify local release-sensitive tests with the repository-pinned Bun version instead of weakening or skipping the executable regression.
+- **Verification:** The focused standalone metadata suite passed 3/3 with checksum-verified Bun `1.3.10`; the full non-Docker suite was rerun with the same toolchain.
+- **Prevention/follow-up:** Add or retain an explicit repository toolchain pin for local development so release-sensitive tests cannot silently select an incompatible global Bun.
+- **Reusable learning:** A compiler being present is not proof that its artifacts are executable; use the exact release version and distinguish OS signature kills from test timeouts.
+- **References:** `.github/workflows/build-binaries.yml`, `packages/coding-agent/test/standalone-package-version.test.ts`

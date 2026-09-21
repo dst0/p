@@ -47,6 +47,7 @@ done
 
 # ---------------------------------------------------------------------------
 # ---------------------------------------------------------------------------
+assert_no_local_checkout_p_alias_shadow
 AGENT_DIR="${P_CODING_AGENT_DIR:-$HOME/.p/agent}"
 begin_indexing_reinstall_transaction "$AGENT_DIR"
 node "$SCRIPT_DIR/scripts/indexing-config.js" migrate "$AGENT_DIR"

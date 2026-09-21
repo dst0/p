@@ -30,6 +30,15 @@ describe("read-only shell verification integration", () => {
     ["diff --output=result.patch before after", false],
     ["diff --output result.patch before after", false],
     ["diff -u before after", true],
+    ["echo ok && sw_vers && diskutil list", true],
+    ["df -h /Volumes/External && ioreg -p IOUSB", true],
+    [
+      "diskutil list external; echo '---MOUNT---'; mount | grep -v '^devfs\\|^/dev/disk\\|home /\\|/System' | head -40; system_profiler SPUSBDataType 2>/dev/null | head -120",
+      true,
+    ],
+    ["diskutil eraseDisk APFS Empty disk9", false],
+    ["mount /dev/disk9 /Volumes/external", false],
+    ["echo changed > result.txt", false],
   ] as const)("classifies %s as read-only=%s", (command, expected) => {
     expect(isConfidentlyReadOnlyShellTool("bash", { command })).toBe(expected);
   });
@@ -64,8 +73,8 @@ describe("read-only shell verification integration", () => {
           expect((await beforeAuditTool(harness.agent, toolName, { command }))?.block).not.toBe(true);
         }
       }
-      expect(harness.controller.bashFingerprints.size).toBe(6);
-      expect(harness.controller.workspaceTestSnapshots.size).toBe(6);
+      expect(harness.controller.bashFingerprints.size).toBe(4);
+      expect(harness.controller.workspaceTestSnapshots.size).toBe(4);
       expect((await beforeAuditTool(harness.agent, "edit", { path: "src/main.ts", edits: [] }))?.block).toBe(true);
       expect((await beforeAuditTool(harness.agent, "write", { path: "config.json", content: "" }))?.block).toBe(true);
     } finally {

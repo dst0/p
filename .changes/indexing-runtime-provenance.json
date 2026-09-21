@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "Fixed",
+  "summary": "Restart the indexing daemon when reinstalling from a different canonical runtime checkout."
+}
