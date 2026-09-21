@@ -94,8 +94,12 @@ if [[ "$SKIP_DEPS" == "false" ]]; then
     # npm ci only installs optional deps for the current platform
     # We need the base clipboard package and all platform bindings for bun cross-compilation
     # Use --force to bypass platform checks (os/cpu restrictions in package.json)
-    # Install all in one command to avoid npm removing packages from previous installs
-    npm install --include=optional --no-save --package-lock=false --force --ignore-scripts \
+    # Keep npm out of the workspace graph: this install only hydrates the
+    # cross-platform packages that the binary archives copy into their bundles.
+    # Resolving the full workspace graph here can fail in npm's Arborist with
+    # "Cannot read properties of null (reading 'edgesOut')" on release runners.
+    # Install all in one command to avoid npm removing packages from previous installs.
+    npm install --workspaces=false --include=optional --no-save --package-lock=false --force --ignore-scripts \
         @mariozechner/clipboard@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-darwin-arm64@"$CLIPBOARD_VERSION" \
         @mariozechner/clipboard-darwin-x64@"$CLIPBOARD_VERSION" \

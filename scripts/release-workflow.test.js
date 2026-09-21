@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import test from "node:test";
 
 const workflow = readFileSync(resolve(".github/workflows/build-binaries.yml"), "utf8");
+const binaryBuildScript = readFileSync(resolve("scripts/build-binaries.sh"), "utf8");
 
 function job(name, nextName) {
   const start = workflow.indexOf(`\n  ${name}:`);
@@ -93,6 +94,13 @@ test("binary build verifies standalone package metadata before release upload", 
   );
   assert.ok(verification.indexOf("bun --version") < verification.indexOf("node ../../node_modules"));
   assert.ok(verificationStart < build.indexOf("name: Create GitHub Release and upload binaries"));
+});
+
+test("binary build isolates native binding installation from the npm workspace graph", () => {
+  assert.match(
+    binaryBuildScript,
+    /npm install --workspaces=false --include=optional --no-save --package-lock=false --force --ignore-scripts/,
+  );
 });
 
 test("validation skips optional local LLM tests only when Ollama is unavailable", () => {
