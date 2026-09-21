@@ -297,3 +297,17 @@ describe("print-mode repaired final response", () => {
     }
   });
 });
+
+  it("does not recover if any message before repair has a tool call", () => {
+    const summary = "Authoritative finish summary";
+    const prefix = [
+      createAssistantMessage({
+        text: "Candidate answer",
+        stopReason: "toolUse",
+        toolCall: { id: "test", name: "some_tool", arguments: {} }
+      }),
+      createCompletionProtocolRepairMessage(MISSING_FINISH_REASON),
+    ];
+    const corridor = createSuccessfulFinish(summary);
+    expect(getTextModeFinalOutput([...prefix, ...corridor])).toEqual({ text: summary, exitCode: 0 });
+  });
