@@ -23,3 +23,6 @@
 ## 2026-08-29 - Pre-compiled Regex is vastly faster than Array filtering for string sanitization
 **Learning:** In hot paths processing large text outputs (like shell output chunks), using `Array.from(str).filter(...).join('')` creates massive memory allocations and performance degradation due to the creation of large intermediate arrays. A pre-compiled Regex `.replace()` avoids these allocations and runs orders of magnitude faster (~20x+ in tests).
 **Action:** When sanitizing or filtering characters out of large strings in hot paths, use a pre-compiled Regex with `.replace()` rather than converting the string to an array for filtering.
+## 2026-09-21 - Removed nested functional array iterations from message processing
+**Learning:** Functions like `isVerificationOnlyRepairSequence` and `getRepairedFinalResponse` called functional array methods such as `.filter().map().join()` and `.some()` which caused heavy intermediate array allocations in tight string evaluation loops and generated garbage collection pressure.
+**Action:** Replace functional array chaining like `.flatMap().filter().map().join()` with standard explicit `for` loops in performance-critical text processing components to minimize intermediate allocations.

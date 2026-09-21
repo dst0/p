@@ -44,9 +44,19 @@ export function getFinalResponseAssistantMessages(messages: readonly AgentMessag
 }
 
 export function assistantMessagesText(messages: readonly AssistantMessage[]): string {
-  return messages
-    .flatMap((message) => message.content.filter((content) => content.type === "text").map((content) => content.text))
-    .join("");
+  let text = "";
+  for (let i = 0; i < messages.length; i++) {
+    const message = messages[i];
+    if (message?.content) {
+      for (let j = 0; j < message.content.length; j++) {
+        const content = message.content[j];
+        if (content?.type === "text") {
+          text += content.text;
+        }
+      }
+    }
+  }
+  return text;
 }
 
 function findLastFinishWorkResultIndex(messages: readonly AgentMessage[]): number {
@@ -82,10 +92,21 @@ function isVerificationOnlyRepairSequence(messages: readonly AgentMessage[]): bo
     const assistant = messages[index];
     const result = messages[index + 1];
     if (assistant?.role !== "assistant" || result?.role !== "toolResult") return false;
-    const toolCalls = assistant.content.filter((content) => content.type === "toolCall");
-    const call = toolCalls[0];
+
+    let call: any;
+    let toolCallCount = 0;
+    if (assistant.content) {
+      for (let j = 0; j < assistant.content.length; j++) {
+        const content = assistant.content[j];
+        if (content?.type === "toolCall") {
+          if (toolCallCount === 0) call = content;
+          toolCallCount++;
+        }
+      }
+    }
+
     if (
-      toolCalls.length !== 1 ||
+      toolCallCount !== 1 ||
       !call ||
       !COMPLETION_REPAIR_TOOLS.has(call.name) ||
       seenToolCallIds.has(call.id) ||
@@ -119,13 +140,25 @@ export function getRepairedFinalResponse(messages: readonly AgentMessage[]): str
     return undefined;
   }
   if (finishCallMessage?.role !== "assistant") return undefined;
-  const finishCalls = finishCallMessage.content.filter((content) => content.type === "toolCall");
+
+  let finishCall: any;
+  let finishCallCount = 0;
+  if (finishCallMessage.content) {
+    for (let i = 0; i < finishCallMessage.content.length; i++) {
+      const content = finishCallMessage.content[i];
+      if (content?.type === "toolCall") {
+        if (finishCallCount === 0) finishCall = content;
+        finishCallCount++;
+      }
+    }
+  }
+
   const finishText = assistantMessagesText([finishCallMessage]);
   if (
-    finishCalls.length !== 1 ||
-    finishCalls[0]?.name !== "finish_work" ||
-    finishCalls[0].id !== finishResult.toolCallId ||
-    finishCalls[0].arguments.status !== "success" ||
+    finishCallCount !== 1 ||
+    finishCall?.name !== "finish_work" ||
+    finishCall.id !== finishResult.toolCallId ||
+    finishCall.arguments.status !== "success" ||
     finishText.trim().length > 0
   ) {
     return undefined;
@@ -139,7 +172,22 @@ export function getRepairedFinalResponse(messages: readonly AgentMessage[]): str
     return undefined;
   }
   const response = getFinalResponseAssistantMessages(messages.slice(0, repairIndex));
-  if (response.some((candidate) => candidate.content.some((content) => content.type === "toolCall"))) return undefined;
+
+  let hasToolCall = false;
+  for (let i = 0; i < response.length; i++) {
+    const candidate = response[i];
+    if (candidate?.content) {
+      for (let j = 0; j < candidate.content.length; j++) {
+        if (candidate.content[j]?.type === "toolCall") {
+          hasToolCall = true;
+          break;
+        }
+      }
+    }
+    if (hasToolCall) break;
+  }
+  if (hasToolCall) return undefined;
+
   const text = assistantMessagesText(response);
   return text.trim().length > 0 ? text : undefined;
 }
