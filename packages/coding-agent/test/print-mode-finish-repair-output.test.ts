@@ -296,7 +296,6 @@ describe("print-mode repaired final response", () => {
       expect(getTextModeFinalOutput([...prefix, ...corridor])).toEqual({ text: summary, exitCode: 0 });
     }
   });
-});
 
   it("does not recover if any message before repair has a tool call", () => {
     const summary = "Authoritative finish summary";
@@ -311,3 +310,4 @@ describe("print-mode repaired final response", () => {
     const corridor = createSuccessfulFinish(summary);
     expect(getTextModeFinalOutput([...prefix, ...corridor])).toEqual({ text: summary, exitCode: 0 });
   });
+});
