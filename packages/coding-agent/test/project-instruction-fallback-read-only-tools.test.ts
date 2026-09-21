@@ -123,6 +123,16 @@ describe("compiled fallback read-only tool routing", () => {
       projectInstructionCompiler: async () => {
         throw new Error("compiler unavailable");
       },
+      customTools: [
+        {
+          name: "mutate_project",
+          label: "Mutate project",
+          effect: { kind: "workspace_write", risk: "normal" },
+          description: "A mutation that activates task verification",
+          parameters: Type.Object({ path: Type.String() }),
+          execute: async () => ({ content: [{ type: "text", text: "mutated" }], details: {} }),
+        },
+      ],
     });
     try {
       session._createRuntimeContextPrompts("inspect verification state", session.systemPrompt);

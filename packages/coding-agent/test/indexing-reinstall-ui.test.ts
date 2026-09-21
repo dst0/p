@@ -104,6 +104,13 @@ describe("indexing reinstall UI continuity", () => {
     ) as { runtimeProvenance?: unknown };
     expect(persisted.runtimeProvenance).toEqual(provenance);
   });
+
+  it("omits daemon provenance when the daemon path cannot be resolved", () => {
+    const fixture = createFixture();
+    expect(
+      getIndexingRuntimeProvenance(path.join(fixture.root, "missing", "indexing-service-daemon.js")),
+    ).toBeUndefined();
+  });
 });
 
 function createFixture(): { root: string; repo: string; agentDir: string } {

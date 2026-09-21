@@ -31,8 +31,8 @@ export function isTrustedProjectRuleTool(self: AgentSession, toolName: string, a
   return (
     isTrustedProjectRuleReadOnlyShellTool(self, toolName, args) ||
     isTrustedProjectRuleSafeTool(self, toolName) ||
-    isTrustedDeclaredReadOnlyTool(self, toolName) ||
-    isTrustedVerificationControlPlaneTool(self, toolName, args)
+    isTrustedVerificationControlPlaneTool(self, toolName, args) ||
+    isTrustedDeclaredReadOnlyTool(self, toolName)
   );
 }
 
