@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep cross-platform native binding installation out of the npm workspace graph so release binary builds do not hit the Arborist edgesOut failure."
+}
