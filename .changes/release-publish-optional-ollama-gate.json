@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Apply the optional Ollama availability gate to the npm publish test job so unavailable local services cannot stall trusted publishing."
+}
