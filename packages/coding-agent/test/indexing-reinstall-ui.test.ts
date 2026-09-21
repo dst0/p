@@ -4,6 +4,7 @@ import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { enableIndexingForRepo } from "../src/core/indexed-repos.ts";
 import {
+  getIndexingRuntimeProvenance,
   INDEXING_SERVICE_REINSTALL_FILE,
   IndexingService,
   writeIndexingServiceStatus,
@@ -75,15 +76,43 @@ describe("indexing reinstall UI continuity", () => {
     writeReinstallMarker(fixture.agentDir, daemonPid, new Date(Date.now() + 60_000).toISOString());
     expect(new IndexingService(fixture.agentDir).getStatus(fixture.repo).serviceRunning).toBe(false);
   });
+
+  it("writes canonical daemon provenance into the service status", () => {
+    const fixture = createFixture();
+    const runtimeRoot = path.join(fixture.root, "runtime");
+    const linkedRoot = path.join(fixture.root, "linked-runtime");
+    const daemonPath = path.join(runtimeRoot, "packages", "coding-agent", "dist", "indexing-service-daemon.js");
+    fs.mkdirSync(path.dirname(daemonPath), { recursive: true });
+    fs.writeFileSync(daemonPath, "export {};\n");
+    fs.symlinkSync(runtimeRoot, linkedRoot, "dir");
+
+    const provenance = getIndexingRuntimeProvenance(
+      path.join(linkedRoot, "packages", "coding-agent", "dist", "indexing-service-daemon.js"),
+    );
+    expect(provenance).toEqual({ daemonPath: fs.realpathSync(daemonPath), runtimeRoot: fs.realpathSync(runtimeRoot) });
+    writeIndexingServiceStatus(fixture.agentDir, {
+      pid: process.pid,
+      running: true,
+      startedAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      repos: [],
+      runtimeProvenance: provenance,
+    });
+
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(fixture.agentDir, "indexing-service-status.json"), "utf8"),
+    ) as { runtimeProvenance?: unknown };
+    expect(persisted.runtimeProvenance).toEqual(provenance);
+  });
 });
 
-function createFixture(): { repo: string; agentDir: string } {
+function createFixture(): { root: string; repo: string; agentDir: string } {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "p-indexing-reinstall-ui-"));
   temporaryDirectories.push(root);
   const repo = path.join(root, "repo");
   const agentDir = path.join(root, "agent");
   fs.mkdirSync(path.join(repo, ".git"), { recursive: true });
-  return { repo, agentDir };
+  return { root, repo, agentDir };
 }
 
 function writeReinstallMarker(agentDir: string, pid: number, startedAt: string): void {
