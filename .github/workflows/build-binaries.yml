@@ -70,9 +70,6 @@ jobs:
           node-version: '22'
           cache: npm
 
-      - name: Verify release certificate
-        run: node scripts/verify-release-certificate.js "$RELEASE_TAG"
-
       - name: Install system dependencies
         run: |
           sudo apt-get update
@@ -81,6 +78,9 @@ jobs:
 
       - name: Install dependencies
         run: npm ci --ignore-scripts
+
+      - name: Verify release certificate
+        run: node scripts/verify-release-certificate.js "$RELEASE_TAG"
 
       - name: Build
         run: npm run build
