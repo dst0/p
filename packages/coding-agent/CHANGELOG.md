@@ -1,6 +1,10 @@
 # Changelog
 
-## [Unreleased]
+## [5.0.2] - 2026-09-21
+
+### Fixed
+
+- Ad-hoc sign locally built Darwin binaries so macOS can start the CLI after Bun compilation.
 
 ## [5.0.1] - 2026-09-21
 
