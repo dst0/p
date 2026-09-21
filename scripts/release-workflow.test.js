@@ -33,6 +33,16 @@ test("validate pins the exact remote lightweight release tag commit", () => {
   assert.ok(validate.indexOf("git cat-file -t") < validate.indexOf("release_sha=${remote_sha}"));
 });
 
+test("validate installs locked dependencies before verifying the release certificate", () => {
+  const validate = job("validate", "build");
+  const install = validate.indexOf("name: Install dependencies");
+  const verify = validate.indexOf("name: Verify release certificate");
+  assert.notEqual(install, -1, "dependency installation must exist");
+  assert.notEqual(verify, -1, "release certificate verification must exist");
+  assert.ok(install < verify, "certificate verification imports locked dependencies");
+  assert.match(validate.slice(install, verify), /run: npm ci --ignore-scripts/);
+});
+
 test("downstream release jobs checkout only the validated SHA", () => {
   const build = job("build", "publish-npm");
   const publish = job("publish-npm");

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": 1,
+  "packages": ["coding-agent"],
+  "type": "None",
+  "reason": "Keep release authorization coverage aligned with the current lockstep version after a certified release."
+}
