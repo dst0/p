@@ -91,11 +91,12 @@ export function selectIndexingDaemonPids(processTable, options) {
 
 export function isManagedBackendCommand(command, options) {
   return (
-    hasArgumentSequence(command, [options.qdrantBinary, "--config-path", options.qdrantConfigPath]) ||
+    (options.qdrantConfigPath
+      ? hasArgumentSequence(command, [options.qdrantBinary, "--config-path", options.qdrantConfigPath])
+      : command.trimStart().startsWith(`${options.qdrantBinary} --config-path `)) ||
     hasArgumentSequence(command, [options.embeddingScript, "--port", String(options.embeddingPort)])
   );
 }
-
 export function selectManagedBackendPids(processTable, options) {
   const selected = new Set();
   for (const line of processTable.split("\n")) {
@@ -106,7 +107,6 @@ export function selectManagedBackendPids(processTable, options) {
   }
   return [...selected];
 }
-
 export function renderLaunchdPlist(values) {
   const environment = Object.entries(values.environment)
     .map(([key, value]) => `        <key>${escapeXml(key)}</key>\n        <string>${escapeXml(value)}</string>`)
