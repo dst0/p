@@ -187,7 +187,7 @@ With the default agent directory, indexing state is stored under `~/.p/agent`:
 | `indexing-service/daemon.lock` | Singleton ownership for the active daemon process |
 | `code-rag.json` | User-level code-index configuration |
 | `code-rag/<repo-id>/` | Repository manifests and sparse-vocabulary data |
-| `code-rag/qdrant/` | Managed Qdrant configuration and database |
+| `code-rag/qdrant/` | Default managed Qdrant configuration and database; an explicit `qdrantDataDirectory` may place this root on another supported local filesystem |
 | `indexing-service/bin/qdrant` | Managed Qdrant binary |
 | `indexing-service/venv/` | Managed Python environment |
 | `indexing-service/amd-phoenix-iron/` | Pinned MLIR-AIE source, compiled Qwen artifacts, and NPU1 JIT cache |
@@ -216,6 +216,7 @@ Important fields include:
   "autoRefresh": true,
   "allowStaleSearch": true,
   "qdrantUrl": "http://127.0.0.1:6333",
+  "qdrantDataDirectory": "/Users/you/.p/agent/code-rag/qdrant",
   "qdrantStartupTimeoutMs": 300000,
   "embeddingServerUrl": "http://127.0.0.1:18742",
   "embeddingModel": "Qwen/Qwen3-Embedding-0.6B",
@@ -266,7 +267,7 @@ Embedding resource controls are safe caps rather than fixed utilization targets:
 | `minAcceleratorMemoryReserveBytes` | Minimum VRAM left outside the model budget, default 512 MiB |
 | `embeddingModelParameterCount` | Conservative parameter-count estimate for custom models whose name does not include a size such as `0.6B` |
 
-Edit these fields in `~/.p/agent/code-rag.json` and rerun `./reinstall.sh`. The generated launchd or systemd service receives only the agent-directory and vendor runtime paths; indexing behavior always comes from the config file.
+Edit these fields in `~/.p/agent/code-rag.json` and rerun `./reinstall.sh`. The generated launchd or systemd service receives only the agent-directory and vendor runtime paths; indexing behavior always comes from the config file. An explicit `qdrantDataDirectory` is preserved by reinstall, so a verified local APFS destination is not silently replaced by the default path.
 
 Remote Qdrant or embedding URLs are rejected unless `remoteBackendsAllowed` is explicitly enabled. Managed local Qdrant accepts plain HTTP on `127.0.0.1` (or canonicalized `localhost`), defaults a missing port to `6333`, and owns only that local process and storage. HTTPS loopback, IPv6 loopback, and remote endpoints are connected as externally managed services and are never spawned, stopped, or orphan-cleaned by p. Qdrant URLs with credentials, wildcard hosts, paths, queries, fragments, or non-HTTP(S) schemes are rejected.
 

@@ -104,7 +104,10 @@ export function buildManagedIndexingConfig(currentConfig, devicePlan, torchPlan,
 }
 
 export function resolveManagedQdrantDataDirectory(currentConfig, defaultDirectory = QDRANT_DATA_DIR) {
-  return currentConfig.qdrantDataDirectory ?? defaultDirectory;
+  const configuredDirectory = currentConfig?.qdrantDataDirectory;
+  return typeof configuredDirectory === "string" && configuredDirectory.length > 0
+    ? configuredDirectory
+    : defaultDirectory;
 }
 
 export function persistManagedIndexingConfig(agentDirectory, managedConfig, reuseApproved) {

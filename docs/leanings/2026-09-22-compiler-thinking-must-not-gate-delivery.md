@@ -1,0 +1,22 @@
+# 2026-09-22 — Compiler thinking must not gate delivery
+
+- **Status:** Resolved
+- **Task/context:** Diagnose a fresh `p` v5.0.2 run that could not execute a read-only macOS disk inspection command.
+- **Unexpected observation or failure:** The first shell call was rejected immediately with `Compiled project instructions are unavailable` even though the user task was investigative and no subprocess started.
+- **Evidence:** The compiled-instruction compiler rejected a reasoning-capable model without explicit thinking-off metadata before invoking the provider. The compiler then entered fallback mode, whose fail-closed action gate rejected the composite shell command before execution.
+- **Approaches tried:**
+  - **Attempt:** Start the same task in legacy project-instruction mode.
+    - **Outcome:** Worked as an operational workaround, but bypassed compiled delivery.
+    - **Why:** Legacy mode does not install the compiled compiler/action gate.
+  - **Attempt:** Require a verified provider-specific thinking-off format for every reasoning model.
+    - **Outcome:** Did not work for dynamically discovered local models.
+    - **Why:** Missing metadata was treated as an instruction compiler failure instead of an unknown transport detail.
+  - **Attempt:** Preserve final-text validation while allowing the configured thinking level.
+    - **Outcome:** Worked.
+    - **Why:** The compiler parser consumes only text blocks, while separate thinking blocks are not persisted.
+- **Root cause:** The compiler's safety contract conflated deterministic final-envelope validation with a mandatory provider capability to disable thinking.
+- **Resolution:** The compiler now passes an explicitly configured session thinking level, preserves `off` as an explicit disable request, keeps model selection permissive when thinking metadata is incomplete, hashes the requested level and effective mappings into compiler identity, and validates only the final text envelope.
+- **Verification:** Focused compiler reasoning, metadata lifecycle, model compiler, and session compiler tests pass (20 tests before the final regression expansion). The request-level regressions assert enabled and disabled Qwen controls, no guessed control when no level is requested, and successful parsing when reasoning is a separate response block.
+- **Prevention/follow-up:** Keep provider-specific controls best-effort and fail only on malformed final compiler output or provider failures; never turn missing thinking metadata into compiled-delivery unavailability.
+- **Reusable learning:** Reasoning control is a transport optimization, not a prerequisite for compiler correctness. Validate the final structured result and keep hidden reasoning out of persisted evidence.
+- **References:** `packages/coding-agent/src/core/project-instructions/compiler-reasoning-control.ts`, `packages/coding-agent/src/core/project-instructions/model-compiler.ts`, `packages/coding-agent/test/project-instruction-compiler-reasoning-control.test.ts`

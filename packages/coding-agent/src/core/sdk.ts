@@ -388,7 +388,6 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
     }
     sessionManager.appendThinkingLevelChange(thinkingLevel);
   }
-
   const projectInstructions =
     projectInstructionMode === "compiled"
       ? await runBudget.run(() =>
@@ -398,6 +397,7 @@ export async function createAgentSession(options: CreateAgentSessionOptions = {}
             modelRegistry,
             settingsManager,
             getModel: () => agent.state.model,
+            thinkingLevel,
             compilerModel: projectInstructionCompilerModel,
             compiler: options.projectInstructionCompiler,
             compilerIdentity: options.projectInstructionCompilerIdentity,

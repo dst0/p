@@ -94,6 +94,22 @@ test("does not rewrite runtime configuration after reuse was approved", () => {
   }
 });
 
+test("preserves an explicitly configured Qdrant data directory", () => {
+	const config = buildManagedIndexingConfig(
+		{ qdrantDataDirectory: "/Users/dst/.p/agent/qdrant-apfs-20260921" },
+		{
+			installAmdPhoenixIron: false,
+			installAmdRyzenAi: false,
+			installIntelOpenVino: false,
+			ragDevice: "cpu",
+		},
+		{ backend: "default" },
+		"/managed/venv/bin/python",
+		"/managed/qdrant",
+	);
+	assert.equal(config.qdrantDataDirectory, "/Users/dst/.p/agent/qdrant-apfs-20260921");
+});
+
 test("recognizes only the installed indexing daemon command", () => {
   assert.equal(isIndexingDaemonCommand("/usr/bin/node /opt/p/indexing-service-daemon.js"), true);
   assert.equal(isIndexingDaemonCommand("/usr/bin/node /opt/p/indexing-service-daemon.js --verbose"), true);

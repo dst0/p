@@ -1,0 +1,22 @@
+# 2026-09-22 — ExFAT Qdrant storage can hide a sparse-index startup panic
+
+- **Status:** Resolved
+- **Task/context:** Restore the installed indexing service after `./reinstall.sh --select-indexing` failed before launching the daemon.
+- **Unexpected observation or failure:** Package build, CLI relink, and configuration selection passed, but the real semantic-search verification reported `Qdrant exited with code 101` before readiness.
+- **Evidence:** The configured `~/.p/agent/code-rag` path resolved through a symlink to an ExFAT external volume. A direct Qdrant 1.18.3 probe emitted the filesystem warning and then panicked while loading one collection's sparse index with `index out of bounds: the len is 0 but the index is 0`. The prepared APFS copy under the local agent directory started in about eight seconds and loaded its collections successfully.
+- **Approaches tried:**
+  - **Attempt:** Treat the installer exit code as a generic build or embedding failure.
+    - **Outcome:** Did not work.
+    - **Why:** Build and Python setup had completed; the owned Qdrant child log identified the storage filesystem and collection-specific panic.
+  - **Attempt:** Delete or repair the external collection in place.
+    - **Outcome:** Rejected.
+    - **Why:** The external store is retained as rollback evidence and the corrupted generation was not safely repairable from this run.
+  - **Attempt:** Start the existing verified APFS copy and preserve its explicit data-directory setting during reinstall.
+    - **Outcome:** Worked.
+    - **Why:** APFS startup succeeded, while the installer change prevents its configured path from being overwritten and makes stale-backend cleanup follow that active path.
+- **Root cause:** The active Qdrant root was on unsupported ExFAT storage and contained a sparse-index state that caused Qdrant 1.18.3 to panic during recovery. The installer also unconditionally rewrote a configured Qdrant path to the ExFAT default, so a verified local copy could not remain active.
+- **Resolution:** Selected the verified local APFS Qdrant root in the user config, retained the external symlink and data untouched, and changed installer configuration generation and stale-backend detection to preserve and use an explicit `qdrantDataDirectory`.
+- **Verification:** The regression test failed before the source change and passes after it. Direct APFS Qdrant health succeeded; direct ExFAT startup reproduced exit 101 with the sparse-index panic. Package source remains subject to the normal check and reinstall gates.
+- **Prevention/follow-up:** Keep managed Qdrant data on a supported local POSIX filesystem, verify the resolved mount before activation, and retain external storage until current manifests and retrieval are independently revalidated. Do not overwrite an explicit data-directory choice during reinstall.
+- **Reusable learning:** A Qdrant exit 101 before readiness must be diagnosed from the native child log and resolved at the storage/collection boundary; build success is not backend health.
+- **References:** `scripts/install-indexing-service.js`, `scripts/indexing-install-fallback.js`, `scripts/install-indexing-service.test.js`, `packages/coding-agent/docs/code-indexing.md`.

@@ -1,4 +1,4 @@
-import { type Api, completeSimple, type Model } from "@dst0/p-ai";
+import { type Api, completeSimple, type Model, type ModelThinkingLevel, type ThinkingLevel } from "@dst0/p-ai";
 import {
   createProjectInstructionCompilerFailure,
   createProjectInstructionCompilerOutputError,
@@ -34,6 +34,7 @@ interface CompileProjectInstructionsWithModelOptions {
   headers?: Record<string, string>;
   timeoutMs?: number;
   maxTokens?: number;
+  reasoning?: ModelThinkingLevel;
 }
 
 export async function compileProjectInstructionsWithModel(
@@ -45,8 +46,13 @@ export async function compileProjectInstructionsWithModel(
   const controlledOptions = {
     ...options,
     model: enforceProjectInstructionCompilerReasoningControl(options.model),
+    reasoning: normalizeCompilerReasoning(options.reasoning),
   };
   return compileRequest(request, userContent, controlledOptions, maxTokens);
+}
+
+function normalizeCompilerReasoning(level: ModelThinkingLevel | undefined): ThinkingLevel | undefined {
+  return level === "off" ? undefined : level;
 }
 
 async function compileRequest(
@@ -76,6 +82,7 @@ async function compileRequest(
           timeoutMs: options.timeoutMs ?? 60_000,
           maxTokens,
           temperature: 0,
+          reasoning: normalizeCompilerReasoning(options.reasoning),
         },
       );
     } catch (error) {

@@ -58,7 +58,6 @@ const SERVICE_LABEL = "com.dst.p.code-index";
 const LEGACY_SERVICE_LABEL = "com.dst.p.code-index-embedding";
 const DRY_RUN = process.argv.includes("--dry-run");
 
-
 export function getSystemdUserUnitDirectory(
   configHome = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"),
 ) {
@@ -92,11 +91,12 @@ export function selectIndexingDaemonPids(processTable, options) {
 
 export function isManagedBackendCommand(command, options) {
   return (
-    command.trimStart().startsWith(`${options.qdrantBinary} --config-path `) ||
+    (options.qdrantConfigPath
+      ? hasArgumentSequence(command, [options.qdrantBinary, "--config-path", options.qdrantConfigPath])
+      : command.trimStart().startsWith(`${options.qdrantBinary} --config-path `)) ||
     hasArgumentSequence(command, [options.embeddingScript, "--port", String(options.embeddingPort)])
   );
 }
-
 export function selectManagedBackendPids(processTable, options) {
   const selected = new Set();
   for (const line of processTable.split("\n")) {
@@ -107,7 +107,6 @@ export function selectManagedBackendPids(processTable, options) {
   }
   return [...selected];
 }
-
 export function renderLaunchdPlist(values) {
   const environment = Object.entries(values.environment)
     .map(([key, value]) => `        <key>${escapeXml(key)}</key>\n        <string>${escapeXml(value)}</string>`)
@@ -476,6 +475,7 @@ function isManagedBackendProcess(pid, options) {
 function managedBackendOptions() {
   return {
     qdrantBinary: path.join(BIN_DIR, "qdrant"),
+    qdrantConfigPath: path.join(resolveManagedQdrantDataDirectory(readCodeRagConfig(AGENT_DIR)), "config.yaml"),
     embeddingScript: EMBEDDING_SCRIPT,
     embeddingPort: EMBEDDING_PORT,
   };

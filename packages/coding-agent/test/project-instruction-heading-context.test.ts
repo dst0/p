@@ -105,7 +105,7 @@ describe("project instruction heading context", () => {
     expect(prepared.manifest.mode).toBe("compiled");
     expect(prepared.manifest.compilerVersion).toBe(PROJECT_INSTRUCTION_COMPILER_VERSION);
     expect(PROJECT_INSTRUCTION_COMPILER_VERSION).toBe("project-instructions-v4-exact-source-v15-module-dependencies");
-    expect(DEFAULT_MODEL_COMPILER_CONTRACT_REVISION).toBe("exact-source-v10-sparse-scope-calibration");
+    expect(DEFAULT_MODEL_COMPILER_CONTRACT_REVISION).toBe("exact-source-v11-sparse-scope-reasoning");
     expect(prepared.prompt).toContain("## Ніколи не публікуй секрети в кожному завданні");
     expect(prepared.prompt).toContain(
       "## Safety\n### Required behavior\nAlways protect credentials across every task.",
